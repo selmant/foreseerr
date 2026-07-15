@@ -85,17 +85,17 @@ export class UserSettings {
   @Column({ nullable: true })
   public watchlistSyncTv?: boolean;
 
-  @Column({ nullable: true, select: false })
-  public traktAccessToken?: string | null;
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public traktAccessToken?: string;
 
-  @Column({ nullable: true, select: false })
-  public traktRefreshToken?: string | null;
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public traktRefreshToken?: string;
 
   @Column({ type: 'bigint', nullable: true, select: false })
-  public traktTokenExpiresAt?: number | null;
+  public traktTokenExpiresAt?: string;
 
-  @Column({ nullable: true })
-  public traktUsername?: string | null;
+  @Column({ type: 'varchar', nullable: true })
+  public traktUsername?: string;
 
   @Column({
     type: 'text',

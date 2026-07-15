@@ -72,7 +72,7 @@ export async function createTraktUserClient(userId: number): Promise<TraktAPI> {
     onTokenRefresh: async ({ accessToken, refreshToken, expiresAt }) => {
       settings.traktAccessToken = accessToken;
       settings.traktRefreshToken = refreshToken;
-      settings.traktTokenExpiresAt = expiresAt;
+      settings.traktTokenExpiresAt = String(expiresAt);
       await settingsRepository.save(settings);
     },
   });

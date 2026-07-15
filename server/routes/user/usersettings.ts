@@ -669,7 +669,7 @@ userSettingsRoutes.post<{ id: string }>(
       const userSettings = await ensureUserSettings(Number(req.params.id));
       userSettings.traktAccessToken = result.tokens.access_token;
       userSettings.traktRefreshToken = result.tokens.refresh_token;
-      userSettings.traktTokenExpiresAt = result.tokens.expiresAt;
+      userSettings.traktTokenExpiresAt = String(result.tokens.expiresAt);
       userSettings.traktUsername = profile.username;
       await getRepository(UserSettings).save(userSettings);
 
@@ -702,11 +702,15 @@ userSettingsRoutes.delete<{ id: string }>(
         return res.status(204).send();
       }
 
-      userSettings.traktAccessToken = null;
-      userSettings.traktRefreshToken = null;
-      userSettings.traktTokenExpiresAt = null;
-      userSettings.traktUsername = null;
-      await getRepository(UserSettings).save(userSettings);
+      await getRepository(UserSettings).update(
+        { id: userSettings.id },
+        {
+          traktAccessToken: null,
+          traktRefreshToken: null,
+          traktTokenExpiresAt: null,
+          traktUsername: null,
+        }
+      );
 
       return res.status(204).send();
     } catch (e) {
