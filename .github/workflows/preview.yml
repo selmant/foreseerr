@@ -1,6 +1,6 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Seerr Preview
+name: Foreseer Preview
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  DOCKER_HUB: seerr/seerr
+  DOCKER_HUB: selmant/foreseer
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

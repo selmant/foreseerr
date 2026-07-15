@@ -35,7 +35,7 @@ const defaultCheckResponse = {
   Code: '123456',
   DeviceId: 'device-1',
   DeviceName: 'Test',
-  AppName: 'Seerr',
+  AppName: 'Foreseer',
   AppVersion: '1.0',
   DateAdded: new Date().toISOString(),
 };

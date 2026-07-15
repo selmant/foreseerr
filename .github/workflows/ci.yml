@@ -1,6 +1,6 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Seerr CI
+name: Foreseer CI
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  DOCKER_HUB: seerr/seerr
+  DOCKER_HUB: selmant/foreseer
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
