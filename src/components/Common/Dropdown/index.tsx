@@ -7,6 +7,7 @@ import {
   type AnchorHTMLAttributes,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
+  type ReactNode,
 } from 'react';
 
 interface DropdownItemProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
@@ -16,19 +17,38 @@ interface DropdownItemProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
 const DropdownItem = ({
   children,
   buttonType = 'primary',
+  href,
+  onClick,
   ...props
 }: DropdownItemProps) => {
+  const className = [
+    'button-md flex w-full cursor-pointer items-center rounded px-4 py-2 text-left text-sm leading-5 text-white focus:text-white focus:outline-none',
+    buttonType === 'ghost'
+      ? 'bg-transparent from-indigo-600 to-purple-600 hover:bg-gradient-to-br focus:border-gray-500'
+      : 'bg-indigo-600 hover:bg-indigo-500 focus:border-indigo-700',
+  ].join(' ');
+
+  // Prefer a real button for onClick-only items so Headless UI / browsers
+  // don't treat a bare <a> as navigation (can surface as a client Oops).
+  if (!href) {
+    return (
+      <Menu.Item>
+        <button
+          type="button"
+          className={className}
+          onClick={
+            onClick as unknown as ButtonHTMLAttributes<HTMLButtonElement>['onClick']
+          }
+        >
+          {children}
+        </button>
+      </Menu.Item>
+    );
+  }
+
   return (
     <Menu.Item>
-      <a
-        className={[
-          'button-md flex cursor-pointer items-center rounded px-4 py-2 text-sm leading-5 text-white focus:text-white focus:outline-none',
-          buttonType === 'ghost'
-            ? 'bg-transparent from-indigo-600 to-purple-600 hover:bg-gradient-to-br focus:border-gray-500'
-            : 'bg-indigo-600 hover:bg-indigo-500 focus:border-indigo-700',
-        ].join(' ')}
-        {...props}
-      >
+      <a className={className} href={href} onClick={onClick} {...props}>
         {children}
       </a>
     </Menu.Item>
@@ -72,8 +92,8 @@ const DropdownItems = ({
 };
 
 interface DropdownProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  text: React.ReactNode;
-  dropdownIcon?: React.ReactNode;
+  text: ReactNode;
+  dropdownIcon?: ReactNode;
   buttonType?: 'primary' | 'ghost';
 }
 

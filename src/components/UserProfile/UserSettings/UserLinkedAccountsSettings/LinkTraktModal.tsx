@@ -2,8 +2,10 @@ import Modal from '@app/components/Common/Modal';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { Transition } from '@headlessui/react';
 import axios from 'axios';
 import { useRouter } from 'next/router';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -12,7 +14,7 @@ const messages = defineMessages(
   {
     title: 'Link Trakt Account',
     instructions:
-      'Enter this code at <VerificationLink>{url}</VerificationLink> to authorize {applicationName}.',
+      'Enter this code at <VerificationLink>trakt.tv/activate</VerificationLink> to authorize {applicationName}.',
     waiting: 'Waiting for authorization…',
     success: 'Trakt account linked as {username}.',
     expired: 'The code expired. Close this dialog and try again.',
@@ -41,7 +43,15 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
   const intl = useIntl();
   const settings = useSettings();
   const router = useRouter();
-  const { user } = useUser({ id: Number(router.query.userId) });
+  const routeUserId = Number(router.query.userId);
+  const { user: routeUser } = useUser(
+    Number.isFinite(routeUserId) && routeUserId > 0
+      ? { id: routeUserId }
+      : undefined
+  );
+  const { user: currentUser } = useUser();
+  const user = routeUser ?? currentUser;
+
   const [device, setDevice] = useState<DeviceCodeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<
@@ -97,8 +107,13 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
           setError(intl.formatMessage(messages.denied));
           return;
         }
+        const apiMessage = response.data?.message;
         setStatus('error');
-        setError(response.data?.message || intl.formatMessage(messages.error));
+        setError(
+          typeof apiMessage === 'string'
+            ? apiMessage
+            : intl.formatMessage(messages.error)
+        );
       } catch {
         setStatus('error');
         setError(intl.formatMessage(messages.error));
@@ -128,7 +143,6 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
         setDevice(data);
         setStatus('polling');
         deadline.current = Date.now() + data.expires_in * 1000;
-        window.open(data.verification_url, '_blank', 'noopener,noreferrer');
         pollTimer.current = setTimeout(
           () => poll(data.device_code, data.interval),
           Math.max(data.interval, 5) * 1000
@@ -136,15 +150,19 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
       } catch (e) {
         if (cancelled) return;
         setStatus('error');
-        const message =
+        const apiMessage =
           axios.isAxiosError(e) && e.response?.data?.message
             ? e.response.data.message
+            : null;
+        setError(
+          typeof apiMessage === 'string'
+            ? apiMessage
             : intl.formatMessage(
                 settings.currentSettings.traktConfigured
                   ? messages.error
                   : messages.notConfigured
-              );
-        setError(message);
+              )
+        );
       }
     };
 
@@ -156,59 +174,70 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
     };
   }, [show, user?.id, intl, poll, settings.currentSettings.traktConfigured]);
 
-  if (!show) {
-    return null;
-  }
-
   return (
-    <Modal
-      title={intl.formatMessage(messages.title)}
-      onCancel={onClose}
-      cancelText={status === 'success' ? undefined : undefined}
-      onOk={status === 'success' ? onClose : undefined}
-      okText={status === 'success' ? 'Done' : undefined}
-      loading={status === 'loading'}
+    <Transition
+      as="div"
+      appear
+      show={show}
+      enter="transition-opacity ease-in-out duration-300"
+      enterFrom="opacity-0"
+      enterTo="opacity-100"
+      leave="transition-opacity ease-in-out duration-300"
+      leaveFrom="opacity-100"
+      leaveTo="opacity-0"
     >
-      {error && <p className="text-red-400">{error}</p>}
-      {status === 'success' && (
-        <p className="text-green-400">
-          {intl.formatMessage(messages.success, {
-            username: username || 'Trakt',
-          })}
-        </p>
-      )}
-      {device && status === 'polling' && (
-        <div className="space-y-4">
-          <p>
-            {intl.formatMessage(messages.instructions, {
-              url: device.verification_url,
-              applicationName: settings.currentSettings.applicationTitle,
-              VerificationLink: (msg: React.ReactNode) => (
-                <a
-                  href={device.verification_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-white underline"
-                >
-                  {msg}
-                </a>
-              ),
-            })}
-          </p>
-          <div>
-            <div className="text-sm text-gray-400">
-              {intl.formatMessage(messages.yourCode)}
-            </div>
-            <div className="mt-1 font-mono text-3xl tracking-widest text-white">
-              {device.user_code}
-            </div>
-          </div>
-          <p className="text-sm text-gray-400">
+      <Modal
+        title={intl.formatMessage(messages.title)}
+        onCancel={onClose}
+        onOk={status === 'success' ? onClose : undefined}
+        okText={status === 'success' ? 'Done' : undefined}
+        dialogClass="sm:max-w-lg"
+      >
+        {error && <p className="text-red-400">{error}</p>}
+        {status === 'loading' && !error && (
+          <p className="text-gray-400">
             {intl.formatMessage(messages.waiting)}
           </p>
-        </div>
-      )}
-    </Modal>
+        )}
+        {status === 'success' && (
+          <p className="text-green-400">
+            {intl.formatMessage(messages.success, {
+              username: username || 'Trakt',
+            })}
+          </p>
+        )}
+        {device && status === 'polling' && (
+          <div className="space-y-4">
+            <p>
+              {intl.formatMessage(messages.instructions, {
+                applicationName: settings.currentSettings.applicationTitle,
+                VerificationLink: (msg: ReactNode) => (
+                  <a
+                    href={device.verification_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-white underline"
+                  >
+                    {msg}
+                  </a>
+                ),
+              })}
+            </p>
+            <div>
+              <div className="text-sm text-gray-400">
+                {intl.formatMessage(messages.yourCode)}
+              </div>
+              <div className="mt-1 font-mono text-3xl tracking-widest text-white">
+                {device.user_code}
+              </div>
+            </div>
+            <p className="text-sm text-gray-400">
+              {intl.formatMessage(messages.waiting)}
+            </p>
+          </div>
+        )}
+      </Modal>
+    </Transition>
   );
 };
 
