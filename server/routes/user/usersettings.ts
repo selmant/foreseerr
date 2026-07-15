@@ -702,15 +702,17 @@ userSettingsRoutes.delete<{ id: string }>(
         return res.status(204).send();
       }
 
-      await getRepository(UserSettings).update(
-        { id: userSettings.id },
-        {
-          traktAccessToken: null,
-          traktRefreshToken: null,
-          traktTokenExpiresAt: null,
-          traktUsername: null,
-        }
-      );
+      await getRepository(UserSettings)
+        .createQueryBuilder()
+        .update(UserSettings)
+        .set({
+          traktAccessToken: () => 'NULL',
+          traktRefreshToken: () => 'NULL',
+          traktTokenExpiresAt: () => 'NULL',
+          traktUsername: () => 'NULL',
+        })
+        .where('id = :id', { id: userSettings.id })
+        .execute();
 
       return res.status(204).send();
     } catch (e) {
