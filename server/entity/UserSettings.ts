@@ -85,6 +85,18 @@ export class UserSettings {
   @Column({ nullable: true })
   public watchlistSyncTv?: boolean;
 
+  @Column({ nullable: true, select: false })
+  public traktAccessToken?: string | null;
+
+  @Column({ nullable: true, select: false })
+  public traktRefreshToken?: string | null;
+
+  @Column({ type: 'bigint', nullable: true, select: false })
+  public traktTokenExpiresAt?: number | null;
+
+  @Column({ nullable: true })
+  public traktUsername?: string | null;
+
   @Column({
     type: 'text',
     nullable: true,

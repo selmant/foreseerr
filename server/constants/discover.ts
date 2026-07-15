@@ -22,6 +22,9 @@ export enum DiscoverSliderType {
   TMDB_NETWORK,
   TMDB_MOVIE_STREAMING_SERVICES,
   TMDB_TV_STREAMING_SERVICES,
+  TRAKT_RECOMMENDATIONS,
+  TRAKT_WATCHLIST,
+  TRAKT_LIST,
 }
 
 export const defaultSliders: Partial<DiscoverSlider>[] = [
@@ -96,5 +99,17 @@ export const defaultSliders: Partial<DiscoverSlider>[] = [
     enabled: true,
     isBuiltIn: true,
     order: 11,
+  },
+  {
+    type: DiscoverSliderType.TRAKT_RECOMMENDATIONS,
+    enabled: true,
+    isBuiltIn: true,
+    order: 12,
+  },
+  {
+    type: DiscoverSliderType.TRAKT_WATCHLIST,
+    enabled: true,
+    isBuiltIn: true,
+    order: 13,
   },
 ];

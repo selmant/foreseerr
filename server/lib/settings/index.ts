@@ -65,6 +65,11 @@ export interface TautulliSettings {
   externalUrl?: string;
 }
 
+export interface TraktSettings {
+  clientId: string;
+  clientSecret: string;
+}
+
 export interface DVRSettings {
   id: number;
   name: string;
@@ -215,6 +220,7 @@ interface FullPublicSettings extends PublicSettings {
   newPlexLogin: boolean;
   youtubeUrl: string;
   plexClientIdentifier: string;
+  traktConfigured: boolean;
 }
 
 export interface NotificationAgentConfig {
@@ -378,6 +384,7 @@ export interface AllSettings {
   plex: PlexSettings;
   jellyfin: JellyfinSettings;
   tautulli: TautulliSettings;
+  trakt: TraktSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
   public: PublicSettings;
@@ -450,6 +457,10 @@ class Settings {
         apiKey: '',
       },
       tautulli: {},
+      trakt: {
+        clientId: '',
+        clientSecret: '',
+      },
       metadataSettings: {
         tv: MetadataProviderType.TMDB,
         anime: MetadataProviderType.TMDB,
@@ -667,6 +678,20 @@ class Settings {
     this.data.tautulli = mergeSettings(this.data.tautulli, data);
   }
 
+  get trakt(): TraktSettings {
+    if (!this.data.trakt) {
+      this.data.trakt = { clientId: '', clientSecret: '' };
+    }
+    return this.data.trakt;
+  }
+
+  set trakt(data: TraktSettings) {
+    this.data.trakt = mergeSettings(
+      this.data.trakt ?? { clientId: '', clientSecret: '' },
+      data
+    );
+  }
+
   get metadataSettings(): MetadataSettings {
     return this.data.metadataSettings;
   }
@@ -735,6 +760,9 @@ class Settings {
       newPlexLogin: this.data.main.newPlexLogin,
       youtubeUrl: this.data.main.youtubeUrl,
       plexClientIdentifier: this.data.clientId,
+      traktConfigured: Boolean(
+        this.data.trakt?.clientId && this.data.trakt?.clientSecret
+      ),
     };
   }
 

@@ -2,6 +2,8 @@ import PlexTvAPI from '@server/api/plextv';
 import type { SortOptions } from '@server/api/themoviedb';
 import TheMovieDb from '@server/api/themoviedb';
 import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
+import TraktAPI from '@server/api/trakt';
+import type { TraktMediaItem } from '@server/api/trakt/interfaces';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
@@ -9,9 +11,16 @@ import { User } from '@server/entity/User';
 import { Watchlist } from '@server/entity/Watchlist';
 import type {
   GenreSliderItem,
+  WatchlistItem,
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import { getSettings } from '@server/lib/settings';
+import {
+  TraktNotConfiguredError,
+  TraktNotLinkedError,
+  createTraktAppClient,
+  createTraktUserClient,
+} from '@server/lib/trakt';
 import logger from '@server/logger';
 import { mapProductionCompany } from '@server/models/Movie';
 import {
@@ -25,6 +34,33 @@ import { isCollection, isMovie, isPerson } from '@server/utils/typeHelpers';
 import { Router } from 'express';
 import { sortBy } from 'lodash';
 import { z } from 'zod';
+
+const mapTraktItems = (items: TraktMediaItem[]): WatchlistItem[] =>
+  items.map((item) => ({
+    id: item.tmdbId,
+    ratingKey: `trakt-${item.mediaType}-${item.tmdbId}`,
+    tmdbId: item.tmdbId,
+    mediaType: item.mediaType,
+    title: item.title,
+  }));
+
+const handleTraktRouteError = (
+  e: unknown,
+  next: (err?: unknown) => void,
+  fallbackMessage: string
+) => {
+  if (e instanceof TraktNotConfiguredError) {
+    return next({ status: 400, message: e.message });
+  }
+  if (e instanceof TraktNotLinkedError) {
+    return next({ status: 404, message: e.message });
+  }
+  logger.error(fallbackMessage, {
+    label: 'API',
+    errorMessage: e instanceof Error ? e.message : 'unknown error',
+  });
+  return next({ status: 500, message: fallbackMessage });
+};
 
 export const createTmdbWithRegionLanguage = (user?: User): TheMovieDb => {
   const settings = getSettings();
@@ -981,5 +1017,254 @@ discoverRoutes.get<Record<string, unknown>, WatchlistResponse>(
     });
   }
 );
+
+discoverRoutes.get('/trakt/recommendations', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const mediaType =
+      req.query.type === 'movie' || req.query.type === 'tv'
+        ? req.query.type
+        : 'both';
+    const itemsPerPage = 20;
+    const trakt = await createTraktUserClient(req.user.id);
+
+    // Trakt recommendations are not paginated; fetch a window and slice locally
+    const limit = Math.min(page * itemsPerPage, 100);
+    let items: TraktMediaItem[] = [];
+
+    if (mediaType === 'both') {
+      const [movies, shows] = await Promise.all([
+        trakt.getRecommendations('movie', { limit }),
+        trakt.getRecommendations('tv', { limit }),
+      ]);
+      const maxLen = Math.max(movies.length, shows.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (movies[i]) items.push(movies[i]);
+        if (shows[i]) items.push(shows[i]);
+      }
+    } else {
+      items = await trakt.getRecommendations(mediaType, { limit });
+    }
+
+    const offset = (page - 1) * itemsPerPage;
+    const pageItems = items.slice(offset, offset + itemsPerPage);
+    const totalResults = items.length;
+
+    return res.status(200).json({
+      page,
+      totalPages: Math.max(1, Math.ceil(totalResults / itemsPerPage)),
+      totalResults,
+      results: mapTraktItems(pageItems),
+    } satisfies WatchlistResponse);
+  } catch (e) {
+    return handleTraktRouteError(
+      e,
+      next,
+      'Unable to retrieve Trakt recommendations.'
+    );
+  }
+});
+
+discoverRoutes.get('/trakt/watchlist', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const itemsPerPage = 20;
+    const trakt = await createTraktUserClient(req.user.id);
+    const items = await trakt.getWatchlistItems('me', 'both', {
+      page,
+      limit: itemsPerPage,
+    });
+
+    return res.status(200).json({
+      page,
+      // Trakt does not return total counts for watchlist pages; estimate
+      totalPages: items.length < itemsPerPage ? page : page + 1,
+      totalResults: (page - 1) * itemsPerPage + items.length,
+      results: mapTraktItems(items),
+    } satisfies WatchlistResponse);
+  } catch (e) {
+    return handleTraktRouteError(
+      e,
+      next,
+      'Unable to retrieve Trakt watchlist.'
+    );
+  }
+});
+
+discoverRoutes.get('/trakt/lists', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+
+    const trakt = await createTraktUserClient(req.user.id);
+    const lists = await trakt.getUserLists('me');
+    const withWatchlist = [
+      {
+        id: 'watchlist',
+        slug: 'watchlist',
+        name: 'Watchlist',
+        itemCount: 0,
+        isWatchlist: true as const,
+      },
+      ...lists,
+    ];
+
+    return res.status(200).json({ results: withWatchlist });
+  } catch (e) {
+    return handleTraktRouteError(e, next, 'Unable to retrieve Trakt lists.');
+  }
+});
+
+discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const itemsPerPage = 20;
+    const listId = String(req.params.id);
+    const trakt = await createTraktUserClient(req.user.id);
+
+    let items: TraktMediaItem[];
+    if (listId === 'watchlist') {
+      items = await trakt.getWatchlistItems('me', 'both', {
+        page,
+        limit: itemsPerPage,
+      });
+    } else {
+      items = await trakt.getListItems('me', listId, 'both', {
+        page,
+        limit: itemsPerPage,
+      });
+    }
+
+    return res.status(200).json({
+      page,
+      totalPages: items.length < itemsPerPage ? page : page + 1,
+      totalResults: (page - 1) * itemsPerPage + items.length,
+      results: mapTraktItems(items),
+    } satisfies WatchlistResponse);
+  } catch (e) {
+    return handleTraktRouteError(
+      e,
+      next,
+      'Unable to retrieve Trakt list items.'
+    );
+  }
+});
+
+discoverRoutes.get('/trakt/list', async (req, res, next) => {
+  try {
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const itemsPerPage = 20;
+    const url = String(req.query.url ?? '').trim();
+    if (!url) {
+      return next({ status: 400, message: 'url query parameter is required' });
+    }
+
+    const { username, listRef } = TraktAPI.parseListUrl(url);
+    let trakt: TraktAPI;
+    try {
+      trakt = req.user?.id
+        ? await createTraktUserClient(req.user.id)
+        : createTraktAppClient();
+    } catch (e) {
+      if (e instanceof TraktNotLinkedError) {
+        trakt = createTraktAppClient();
+      } else {
+        throw e;
+      }
+    }
+
+    let items: TraktMediaItem[];
+    let metadataName = listRef;
+
+    if (listRef === 'watchlist') {
+      if (!username) {
+        return next({
+          status: 400,
+          message: 'Watchlist URL must include a username',
+        });
+      }
+      items = await trakt.getWatchlistItems(username, 'both', {
+        page,
+        limit: itemsPerPage,
+      });
+      metadataName = `${username}'s Watchlist`;
+    } else {
+      try {
+        const metadata = await trakt.getListMetadata(username, listRef);
+        metadataName = metadata.name || listRef;
+      } catch {
+        // Metadata is optional for browsing items
+      }
+      items = await trakt.getListItems(username, listRef, 'both', {
+        page,
+        limit: itemsPerPage,
+      });
+    }
+
+    return res.status(200).json({
+      page,
+      totalPages: items.length < itemsPerPage ? page : page + 1,
+      totalResults: (page - 1) * itemsPerPage + items.length,
+      results: mapTraktItems(items),
+      title: metadataName,
+    });
+  } catch (e) {
+    return handleTraktRouteError(
+      e,
+      next,
+      'Unable to retrieve Trakt public list.'
+    );
+  }
+});
+
+discoverRoutes.post('/trakt/lists/resolve', async (req, res, next) => {
+  try {
+    const url = String(req.body.url ?? '').trim();
+    if (!url) {
+      return next({ status: 400, message: 'url is required' });
+    }
+
+    const { username, listRef } = TraktAPI.parseListUrl(url);
+    const trakt = createTraktAppClient();
+
+    if (listRef === 'watchlist') {
+      if (!username) {
+        return next({
+          status: 400,
+          message: 'Watchlist URL must include a username',
+        });
+      }
+      return res.status(200).json({
+        id: 'watchlist',
+        slug: 'watchlist',
+        name: `${username}'s Watchlist`,
+        username,
+        isWatchlist: true,
+        listUrl: url,
+      });
+    }
+
+    const metadata = await trakt.getListMetadata(username, listRef);
+    return res.status(200).json({
+      ...metadata,
+      listUrl: url,
+    });
+  } catch (e) {
+    return handleTraktRouteError(e, next, 'Unable to resolve Trakt list URL.');
+  }
+});
 
 export default discoverRoutes;

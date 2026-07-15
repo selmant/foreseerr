@@ -469,6 +469,54 @@ settingsRoutes.post('/tautulli', async (req, res, next) => {
   return res.status(200).json(settings.tautulli);
 });
 
+settingsRoutes.get('/trakt', (_req, res) => {
+  const settings = getSettings();
+
+  res.status(200).json({
+    clientId: settings.trakt.clientId,
+    // Never return the full secret; indicate whether one is set
+    clientSecret: settings.trakt.clientSecret ? '********' : '',
+    configured: Boolean(settings.trakt.clientId && settings.trakt.clientSecret),
+  });
+});
+
+settingsRoutes.post('/trakt', async (req, res, next) => {
+  const settings = getSettings();
+
+  try {
+    const clientId = String(req.body.clientId ?? '').trim();
+    let clientSecret = String(req.body.clientSecret ?? '').trim();
+
+    // Preserve existing secret when the masked placeholder is submitted
+    if (!clientSecret || clientSecret === '********') {
+      clientSecret = settings.trakt.clientSecret;
+    }
+
+    settings.trakt = {
+      clientId,
+      clientSecret,
+    };
+    await settings.save();
+
+    return res.status(200).json({
+      clientId: settings.trakt.clientId,
+      clientSecret: settings.trakt.clientSecret ? '********' : '',
+      configured: Boolean(
+        settings.trakt.clientId && settings.trakt.clientSecret
+      ),
+    });
+  } catch (e) {
+    logger.error('Something went wrong saving Trakt settings', {
+      label: 'API',
+      errorMessage: e.message,
+    });
+    return next({
+      status: 500,
+      message: 'Unable to save Trakt settings.',
+    });
+  }
+});
+
 settingsRoutes.get(
   '/plex/users',
   isAuthenticated(Permission.MANAGE_USERS),

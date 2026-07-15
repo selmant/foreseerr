@@ -11,6 +11,9 @@ import PlexWatchlistSlider from '@app/components/Discover/PlexWatchlistSlider';
 import RecentRequestsSlider from '@app/components/Discover/RecentRequestsSlider';
 import RecentlyAddedSlider from '@app/components/Discover/RecentlyAddedSlider';
 import StudioSlider from '@app/components/Discover/StudioSlider';
+import TraktListSlider from '@app/components/Discover/TraktListSlider';
+import TraktRecommendationsSlider from '@app/components/Discover/TraktRecommendationsSlider';
+import TraktWatchlistSlider from '@app/components/Discover/TraktWatchlistSlider';
 import TvGenreSlider from '@app/components/Discover/TvGenreSlider';
 import { sliderTitles } from '@app/components/Discover/constants';
 import MediaSlider from '@app/components/MediaSlider';
@@ -393,6 +396,21 @@ const Discover = () => {
                 linkUrl={`/discover/tv?watchRegion=${
                   slider.data?.split(',')[0]
                 }&watchProviders=${slider.data?.split(',')[1]}`}
+              />
+            );
+            break;
+          case DiscoverSliderType.TRAKT_RECOMMENDATIONS:
+            sliderComponent = <TraktRecommendationsSlider />;
+            break;
+          case DiscoverSliderType.TRAKT_WATCHLIST:
+            sliderComponent = <TraktWatchlistSlider />;
+            break;
+          case DiscoverSliderType.TRAKT_LIST:
+            sliderComponent = (
+              <TraktListSlider
+                sliderKey={`custom-slider-${slider.id}`}
+                title={slider.title ?? ''}
+                url={slider.data ?? ''}
               />
             );
             break;

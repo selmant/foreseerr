@@ -68,6 +68,10 @@ const useDiscover = <
     BaseSearchResult<T> & S
   >(
     (pageIndex: number, previousPageData) => {
+      if (!endpoint) {
+        return null;
+      }
+
       if (previousPageData && pageIndex + 1 > previousPageData.totalPages) {
         return null;
       }

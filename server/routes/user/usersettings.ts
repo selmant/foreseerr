@@ -1,5 +1,6 @@
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
+import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
@@ -12,6 +13,12 @@ import type {
 } from '@server/interfaces/api/userSettingsInterfaces';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
+import {
+  TraktNotConfiguredError,
+  createTraktAppClient,
+  ensureUserSettings,
+  getUserTraktSettings,
+} from '@server/lib/trakt';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { quickConnectSecret } from '@server/routes/auth';
@@ -583,6 +590,127 @@ userSettingsRoutes.post<{ secret: string }>(
 
       const status = e instanceof ApiError ? e.statusCode : 500;
       return res.status(status).send();
+    }
+  }
+);
+
+userSettingsRoutes.get<{ id: string }>(
+  '/linked-accounts/trakt',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const settings = await getUserTraktSettings(Number(req.params.id));
+      return res.status(200).json({
+        connected: Boolean(settings?.traktAccessToken),
+        username: settings?.traktUsername ?? null,
+      });
+    } catch (e) {
+      next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/trakt/device/code',
+  isOwnProfile(),
+  async (req, res) => {
+    try {
+      const trakt = createTraktAppClient();
+      const deviceCode = await trakt.requestDeviceCode();
+      return res.status(200).json(deviceCode);
+    } catch (e) {
+      if (e instanceof TraktNotConfiguredError) {
+        return res.status(400).json({ message: e.message });
+      }
+      logger.error('Failed to start Trakt device auth', {
+        label: 'API',
+        errorMessage: e instanceof Error ? e.message : 'unknown error',
+      });
+      return res.status(500).json({
+        message: 'Unable to start Trakt device authorization.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/trakt/device/token',
+  isOwnProfile(),
+  async (req, res) => {
+    try {
+      const deviceCode = String(req.body.deviceCode ?? '').trim();
+      if (!deviceCode) {
+        return res.status(400).json({ message: 'deviceCode is required' });
+      }
+
+      const trakt = createTraktAppClient();
+      const result = await trakt.pollForToken(deviceCode);
+
+      if (result.status === 'pending') {
+        return res.status(202).json({ status: 'pending' });
+      }
+      if (result.status === 'expired') {
+        return res.status(410).json({ status: 'expired' });
+      }
+      if (result.status === 'denied') {
+        return res.status(409).json({ status: 'denied' });
+      }
+
+      const traktSettings = getSettings().trakt;
+      const authenticated = new TraktAPI({
+        clientId: traktSettings.clientId,
+        clientSecret: traktSettings.clientSecret,
+        accessToken: result.tokens.access_token,
+        refreshToken: result.tokens.refresh_token,
+        expiresAt: result.tokens.expiresAt,
+      });
+      const profile = await authenticated.getUserSettings();
+
+      const userSettings = await ensureUserSettings(Number(req.params.id));
+      userSettings.traktAccessToken = result.tokens.access_token;
+      userSettings.traktRefreshToken = result.tokens.refresh_token;
+      userSettings.traktTokenExpiresAt = result.tokens.expiresAt;
+      userSettings.traktUsername = profile.username;
+      await getRepository(UserSettings).save(userSettings);
+
+      return res.status(200).json({
+        status: 'authorized',
+        username: profile.username,
+      });
+    } catch (e) {
+      if (e instanceof TraktNotConfiguredError) {
+        return res.status(400).json({ message: e.message });
+      }
+      logger.error('Failed to complete Trakt device auth', {
+        label: 'API',
+        errorMessage: e instanceof Error ? e.message : 'unknown error',
+      });
+      return res.status(500).json({
+        message: 'Unable to complete Trakt device authorization.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.delete<{ id: string }>(
+  '/linked-accounts/trakt',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const userSettings = await getUserTraktSettings(Number(req.params.id));
+      if (!userSettings) {
+        return res.status(204).send();
+      }
+
+      userSettings.traktAccessToken = null;
+      userSettings.traktRefreshToken = null;
+      userSettings.traktTokenExpiresAt = null;
+      userSettings.traktUsername = null;
+      await getRepository(UserSettings).save(userSettings);
+
+      return res.status(204).send();
+    } catch (e) {
+      next({ status: 500, message: e.message });
     }
   }
 );

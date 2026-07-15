@@ -1,6 +1,7 @@
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
 import { sliderTitles } from '@app/components/Discover/constants';
+import TraktListSlider from '@app/components/Discover/TraktListSlider';
 import MediaSlider from '@app/components/MediaSlider';
 import { WatchProviderSelector } from '@app/components/Selector';
 import { encodeURIExtraParams } from '@app/hooks/useDiscover';
@@ -31,6 +32,7 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   providetmdbsearch: 'Provide a search query',
   providetmdbstudio: 'Provide TMDB Studio ID',
   providetmdbnetwork: 'Provide TMDB Network ID',
+  providetraktlisturl: 'Provide a Trakt list or watchlist URL',
   addsuccess: 'Created new slider and saved discover customization settings.',
   addfail: 'Failed to create new slider.',
   editsuccess: 'Edited slider and saved discover customization settings.',
@@ -295,6 +297,14 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       params: 'watchRegion=$regionValue&watchProviders=$providersValue',
       titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
     },
+    {
+      type: DiscoverSliderType.TRAKT_LIST,
+      title: intl.formatMessage(sliderTitles.traktlist),
+      dataUrl: '/api/v1/discover/trakt/list',
+      params: 'url=$value',
+      titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
+      dataPlaceholderText: intl.formatMessage(messages.providetraktlisturl),
+    },
   ];
 
   return (
@@ -534,34 +544,44 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
 
             {activeOption && values.title && values.data && (
               <div className="relative py-4">
-                <MediaSlider
-                  sliderKey={`preview-${values.title}`}
-                  title={values.title}
-                  url={activeOption?.dataUrl.replace(
-                    '$value',
-                    encodeURIExtraParams(values.data)
-                  )}
-                  extraParams={
-                    activeOption.type ===
-                      DiscoverSliderType.TMDB_MOVIE_STREAMING_SERVICES ||
-                    activeOption.type ===
-                      DiscoverSliderType.TMDB_TV_STREAMING_SERVICES
-                      ? activeOption.params
-                          ?.replace(
-                            '$regionValue',
-                            encodeURIExtraParams(values?.data.split(',')[0])
+                {activeOption.type === DiscoverSliderType.TRAKT_LIST ? (
+                  <TraktListSlider
+                    sliderKey={`preview-${values.title}`}
+                    title={values.title}
+                    url={values.data}
+                    hideTitle
+                    onNewTitles={updateResultCount}
+                  />
+                ) : (
+                  <MediaSlider
+                    sliderKey={`preview-${values.title}`}
+                    title={values.title}
+                    url={activeOption?.dataUrl.replace(
+                      '$value',
+                      encodeURIExtraParams(values.data)
+                    )}
+                    extraParams={
+                      activeOption.type ===
+                        DiscoverSliderType.TMDB_MOVIE_STREAMING_SERVICES ||
+                      activeOption.type ===
+                        DiscoverSliderType.TMDB_TV_STREAMING_SERVICES
+                        ? activeOption.params
+                            ?.replace(
+                              '$regionValue',
+                              encodeURIExtraParams(values?.data.split(',')[0])
+                            )
+                            .replace(
+                              '$providersValue',
+                              encodeURIExtraParams(values?.data.split(',')[1])
+                            )
+                        : activeOption.params?.replace(
+                            '$value',
+                            encodeURIExtraParams(values.data)
                           )
-                          .replace(
-                            '$providersValue',
-                            encodeURIExtraParams(values?.data.split(',')[1])
-                          )
-                      : activeOption.params?.replace(
-                          '$value',
-                          encodeURIExtraParams(values.data)
-                        )
-                  }
-                  onNewTitles={updateResultCount}
-                />
+                    }
+                    onNewTitles={updateResultCount}
+                  />
+                )}
               </div>
             )}
           </Form>

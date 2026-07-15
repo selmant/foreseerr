@@ -549,6 +549,19 @@ components:
         externalUrl:
           type: string
           nullable: true
+    TraktSettings:
+      type: object
+      properties:
+        clientId:
+          type: string
+          example: 'your-trakt-client-id'
+        clientSecret:
+          type: string
+          description: Masked on GET responses when configured
+          example: '********'
+        configured:
+          type: boolean
+          example: true
     RadarrSettings:
       type: object
       properties:
@@ -714,6 +727,10 @@ components:
           format: uuid
           description: Instance Plex OAuth client identifier
           example: 6919275e-142a-48d8-be6b-93594cbd4626
+        traktConfigured:
+          type: boolean
+          description: Whether admin Trakt API credentials are configured
+          example: false
     MovieResult:
       type: object
       required:
@@ -2695,6 +2712,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TautulliSettings'
+  /settings/trakt:
+    get:
+      summary: Get Trakt settings
+      description: Retrieves current Trakt application credentials (secret masked).
+      tags:
+        - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktSettings'
+    post:
+      summary: Update Trakt settings
+      description: Updates Trakt application Client ID and Client Secret.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TraktSettings'
+      responses:
+        '200':
+          description: Values were successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraktSettings'
   /settings/radarr:
     get:
       summary: Get Radarr settings
@@ -6355,6 +6403,75 @@ paths:
                     name:
                       type: string
                       example: Genre Name
+  /discover/trakt/recommendations:
+    get:
+      summary: Get personalized Trakt recommendations for the current user.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [movie, tv, both]
+            default: both
+      responses:
+        '200':
+          description: Trakt recommendations returned
+        '404':
+          description: Trakt account not linked
+  /discover/trakt/watchlist:
+    get:
+      summary: Get the authenticated user's Trakt watchlist.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+      responses:
+        '200':
+          description: Trakt watchlist returned
+        '404':
+          description: Trakt account not linked
+  /discover/trakt/lists:
+    get:
+      summary: List the authenticated user's Trakt lists.
+      tags:
+        - search
+      responses:
+        '200':
+          description: Trakt lists returned
+  /discover/trakt/list:
+    get:
+      summary: Browse a Trakt list by public URL or shorthand reference.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: url
+          required: true
+          schema:
+            type: string
+            example: https://trakt.tv/users/justin/lists/watched
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+      responses:
+        '200':
+          description: Trakt list items returned
   /discover/watchlist:
     get:
       summary: Get the Plex watchlist.
