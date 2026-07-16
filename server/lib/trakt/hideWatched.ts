@@ -11,14 +11,19 @@ export interface WatchedIdSets {
   tv: Set<number>;
 }
 
+/**
+ * @deprecated Prefer resolveIgnoreWatchedFromDefaults + discoverFilterDefaults.
+ * Kept for call sites that still pass a bare boolean default.
+ */
 export function resolveIgnoreWatched(
   userHideWatched: boolean | null | undefined,
   queryValue: unknown
 ): boolean {
-  if (queryValue === 'true' || queryValue === '1') {
+  // OpenAPI coerces boolean query params to real booleans; browsers send strings.
+  if (queryValue === true || queryValue === 'true' || queryValue === '1') {
     return true;
   }
-  if (queryValue === 'false' || queryValue === '0') {
+  if (queryValue === false || queryValue === 'false' || queryValue === '0') {
     return false;
   }
   return userHideWatched === true;

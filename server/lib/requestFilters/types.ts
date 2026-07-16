@@ -1,3 +1,31 @@
+export interface RequestProfileRoute {
+  serverId: number | null;
+  profileId: number | null;
+  rootFolder: string | null;
+  languageProfileId?: number | null;
+}
+
+export interface RequestProfileRouting {
+  defaultMovie: RequestProfileRoute;
+  defaultTv: RequestProfileRoute;
+  animeMovie: RequestProfileRoute;
+  animeTv: RequestProfileRoute;
+}
+
+export const EMPTY_PROFILE_ROUTE: RequestProfileRoute = {
+  serverId: null,
+  profileId: null,
+  rootFolder: null,
+  languageProfileId: null,
+};
+
+export const DEFAULT_PROFILE_ROUTING: RequestProfileRouting = {
+  defaultMovie: { ...EMPTY_PROFILE_ROUTE },
+  defaultTv: { ...EMPTY_PROFILE_ROUTE },
+  animeMovie: { ...EMPTY_PROFILE_ROUTE },
+  animeTv: { ...EMPTY_PROFILE_ROUTE },
+};
+
 export interface RequestFiltersSettings {
   /** When false, Discover quality filters are skipped entirely. */
   enabled: boolean;
@@ -22,12 +50,15 @@ export interface RequestFiltersSettings {
   /** Hide titles that include any of these TMDB genre ids. */
   excludedGenreIds: number[];
   /**
-   * Optional dedicated Sonarr server id for anime (non-4K).
-   * Null = default Sonarr server with that server's anime profile/folder.
+   * @deprecated Use profileRouting.animeTv.serverId
    */
   animeSonarrServerId: number | null;
-  /** Optional dedicated Sonarr server id for anime 4K requests. */
+  /**
+   * @deprecated Use profileRouting.animeTv.serverId on a 4K Sonarr instance
+   */
   animeSonarrServerId4k: number | null;
+  /** Optional Radarr/Sonarr server, profile, and folder overrides per media kind. */
+  profileRouting: RequestProfileRouting;
 }
 
 export const DEFAULT_REQUEST_FILTERS: RequestFiltersSettings = {
@@ -45,6 +76,7 @@ export const DEFAULT_REQUEST_FILTERS: RequestFiltersSettings = {
   excludedGenreIds: [],
   animeSonarrServerId: null,
   animeSonarrServerId4k: null,
+  profileRouting: { ...DEFAULT_PROFILE_ROUTING },
 };
 
 /** True when any gate needs MDBList / combined ratings. */
@@ -66,3 +98,27 @@ export const hasAnyQualityGate = (settings: RequestFiltersSettings): boolean =>
     needsMdblistRatings(settings) ||
     settings.minReleaseYear != null ||
     settings.excludedGenreIds.length > 0);
+
+export const hasProfileRouteConfig = (route: RequestProfileRoute): boolean =>
+  route.serverId != null ||
+  route.profileId != null ||
+  route.rootFolder != null ||
+  route.languageProfileId != null;
+
+export const normalizeProfileRoute = (
+  route: Partial<RequestProfileRoute> | undefined
+): RequestProfileRoute => ({
+  serverId: route?.serverId ?? null,
+  profileId: route?.profileId ?? null,
+  rootFolder: route?.rootFolder?.trim() ? route.rootFolder.trim() : null,
+  languageProfileId: route?.languageProfileId ?? null,
+});
+
+export const normalizeProfileRouting = (
+  routing: Partial<RequestProfileRouting> | undefined
+): RequestProfileRouting => ({
+  defaultMovie: normalizeProfileRoute(routing?.defaultMovie),
+  defaultTv: normalizeProfileRoute(routing?.defaultTv),
+  animeMovie: normalizeProfileRoute(routing?.animeMovie),
+  animeTv: normalizeProfileRoute(routing?.animeTv),
+});

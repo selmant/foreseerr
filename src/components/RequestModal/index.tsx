@@ -52,6 +52,7 @@ const RequestModal = ({
         />
       ) : type === 'tv' ? (
         <TvRequestModal
+          key={`${tmdbId}-${is4k ? '4k' : 'hd'}-${initialSeasonSelection}`}
           onComplete={onComplete}
           onCancel={onCancel}
           tmdbId={tmdbId}

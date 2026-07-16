@@ -15,8 +15,13 @@ import type {
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import {
+  applyDiscoverFilterDefaultsToQuery,
+  safeParseDiscoverFilterDefaults,
+} from '@server/lib/discover/filterDefaults';
+import {
   filterDiscoverResults,
   filterTraktDiscoverItems,
+  traktExtendedForBrowseQuery,
 } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import {
@@ -33,12 +38,10 @@ import {
   filterWatchedMixedBrowseResults,
   filterWatchedTraktItems,
   loadWatchedIdSets,
-  resolveIgnoreWatched,
 } from '@server/lib/trakt/hideWatched';
 import {
   TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE,
-  getTraktRecommendationItems,
-  paginateTraktRecommendationItems,
+  getTraktRecommendationPage,
 } from '@server/lib/trakt/recommendations';
 import logger from '@server/logger';
 import { mapProductionCompany } from '@server/models/Movie';
@@ -77,15 +80,12 @@ async function applyBrowseDiscoverFilters<T extends BrowseResult>(
   user: User | undefined,
   query: Request['query']
 ): Promise<T[]> {
-  const filtered = await filterDiscoverResults(results);
+  const filtered = await filterDiscoverResults(results, query);
   if (!user?.id) {
     return filtered;
   }
 
-  const ignoreWatched = resolveIgnoreWatched(
-    user.settings?.hideTraktWatched,
-    query.ignoreWatched
-  );
+  const ignoreWatched = parseTraktTruthyQuery(query.ignoreWatched);
   if (!ignoreWatched) {
     return filtered;
   }
@@ -114,15 +114,16 @@ const mapFilteredTraktItems = async (
   options: MapFilteredTraktItemsOptions = {}
 ): Promise<WatchlistItem[]> => {
   const tmdb = options.tmdb ?? new TheMovieDb();
-  let filtered = await filterTraktDiscoverItems(items, tmdb);
+  let filtered = await filterTraktDiscoverItems(
+    items,
+    tmdb,
+    options.query ?? {}
+  );
 
   if (
     !options.skipWatchedFilter &&
     options.user?.id &&
-    resolveIgnoreWatched(
-      options.user.settings?.hideTraktWatched,
-      options.query?.ignoreWatched
-    )
+    parseTraktTruthyQuery(options.query?.ignoreWatched)
   ) {
     try {
       const trakt = await createTraktUserClient(options.user.id);
@@ -172,7 +173,8 @@ function toTraktFetchMediaType(
 }
 
 function parseTraktTruthyQuery(value: unknown): boolean {
-  return value === 'true' || value === '1';
+  // OpenAPI boolean query params arrive as real booleans after validation.
+  return value === true || value === 'true' || value === '1';
 }
 
 export const createTmdbWithRegionLanguage = (user?: User): TheMovieDb => {
@@ -208,6 +210,18 @@ export const createTmdbWithBlocklistSettings = (): TheMovieDb => {
 };
 
 const discoverRoutes = Router();
+
+/** Apply per-user Discover filter defaults when query keys are omitted. */
+discoverRoutes.use((req, _res, next) => {
+  if (parseTraktTruthyQuery(req.query.ignoreDiscoverDefaults)) {
+    return next();
+  }
+  req.query = applyDiscoverFilterDefaultsToQuery(
+    req.query,
+    safeParseDiscoverFilterDefaults(req.user?.settings?.discoverFilterDefaults)
+  );
+  next();
+});
 
 const QueryFilterOptions = z.object({
   page: z.coerce.string().optional(),
@@ -1193,22 +1207,23 @@ discoverRoutes.get('/trakt/recommendations', async (req, res, next) => {
     const ignoreWatchlisted = parseTraktTruthyQuery(
       req.query.ignoreWatchlisted
     );
-    const ignoreWatched = resolveIgnoreWatched(
-      req.user.settings?.hideTraktWatched,
-      req.query.ignoreWatched
-    );
+    const ignoreWatched = parseTraktTruthyQuery(req.query.ignoreWatched);
     const trakt = await createTraktUserClient(req.user.id);
     const tmdb = createTmdbWithRegionLanguage(req.user);
 
-    const items = await getTraktRecommendationItems(req.user.id, trakt, tmdb, {
-      mediaType,
-      ignoreCollected,
-      ignoreWatchlisted,
-      ignoreWatched,
-    });
+    const extended = traktExtendedForBrowseQuery(req.query);
     const { pageItems, totalPages, totalResults } =
-      paginateTraktRecommendationItems(
-        items,
+      await getTraktRecommendationPage(
+        req.user.id,
+        trakt,
+        tmdb,
+        {
+          mediaType,
+          ignoreCollected,
+          ignoreWatchlisted,
+          ignoreWatched,
+          extended,
+        },
         page,
         TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE
       );
@@ -1245,6 +1260,7 @@ discoverRoutes.get('/trakt/watchlist', async (req, res, next) => {
     const trakt = await createTraktUserClient(req.user.id);
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
+    const extended = traktExtendedForBrowseQuery(req.query);
 
     let items: TraktMediaItem[];
     let hasMore = false;
@@ -1254,6 +1270,7 @@ discoverRoutes.get('/trakt/watchlist', async (req, res, next) => {
           trakt.getWatchlistItems('me', traktFetchType, {
             page: traktPage,
             limit: itemsPerPage,
+            extended,
           }),
         page,
         itemsPerPage,
@@ -1265,6 +1282,7 @@ discoverRoutes.get('/trakt/watchlist', async (req, res, next) => {
           trakt.getWatchlistItems('me', traktFetchType, {
             page: traktPage,
             limit: itemsPerPage,
+            extended,
           }),
         page,
         itemsPerPage,
@@ -1274,6 +1292,7 @@ discoverRoutes.get('/trakt/watchlist', async (req, res, next) => {
       items = await trakt.getWatchlistItems('me', traktFetchType, {
         page,
         limit: itemsPerPage,
+        extended,
       });
       hasMore = items.length >= itemsPerPage;
     }
@@ -1310,6 +1329,7 @@ discoverRoutes.get('/trakt/history', async (req, res, next) => {
     const trakt = await createTraktUserClient(req.user.id);
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
+    const extended = traktExtendedForBrowseQuery(req.query);
 
     let items: TraktMediaItem[];
     let hasMore = false;
@@ -1319,6 +1339,7 @@ discoverRoutes.get('/trakt/history', async (req, res, next) => {
           trakt.getHistoryItems(traktFetchType, {
             page: traktPage,
             limit: itemsPerPage,
+            extended,
           }),
         page,
         itemsPerPage,
@@ -1330,6 +1351,7 @@ discoverRoutes.get('/trakt/history', async (req, res, next) => {
           trakt.getHistoryItems(traktFetchType, {
             page: traktPage,
             limit: itemsPerPage,
+            extended,
           }),
         page,
         itemsPerPage,
@@ -1339,6 +1361,7 @@ discoverRoutes.get('/trakt/history', async (req, res, next) => {
       items = await trakt.getHistoryItems(traktFetchType, {
         page,
         limit: itemsPerPage,
+        extended,
       });
       hasMore = items.length >= itemsPerPage;
     }
@@ -1413,6 +1436,7 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
     const trakt = await createTraktUserClient(req.user.id);
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
+    const extended = traktExtendedForBrowseQuery(req.query);
 
     let items: TraktMediaItem[];
     let hasMore = false;
@@ -1422,10 +1446,12 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
           ? trakt.getWatchlistItems('me', traktFetchType, {
               page: traktPage,
               limit: itemsPerPage,
+              extended,
             })
           : trakt.getListItems('me', listId, traktFetchType, {
               page: traktPage,
               limit: itemsPerPage,
+              extended,
             });
       ({ items, hasMore } = await fetchPaginatedTraktAnimeItems(
         fetchPage,
@@ -1439,10 +1465,12 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
           ? trakt.getWatchlistItems('me', traktFetchType, {
               page: traktPage,
               limit: itemsPerPage,
+              extended,
             })
           : trakt.getListItems('me', listId, traktFetchType, {
               page: traktPage,
               limit: itemsPerPage,
+              extended,
             });
       ({ items, hasMore } = await fetchPaginatedTraktNonAnimeItems(
         fetchPage,
@@ -1454,12 +1482,14 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
       items = await trakt.getWatchlistItems('me', traktFetchType, {
         page,
         limit: itemsPerPage,
+        extended,
       });
       hasMore = items.length >= itemsPerPage;
     } else {
       items = await trakt.getListItems('me', listId, traktFetchType, {
         page,
         limit: itemsPerPage,
+        extended,
       });
       hasMore = items.length >= itemsPerPage;
     }
@@ -1512,6 +1542,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
     let hasMore = false;
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
+    const extended = traktExtendedForBrowseQuery(req.query);
 
     if (listRef === 'watchlist') {
       if (!username) {
@@ -1526,6 +1557,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
             trakt.getWatchlistItems(username, traktFetchType, {
               page: traktPage,
               limit: itemsPerPage,
+              extended,
             }),
           page,
           itemsPerPage,
@@ -1537,6 +1569,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
             trakt.getWatchlistItems(username, traktFetchType, {
               page: traktPage,
               limit: itemsPerPage,
+              extended,
             }),
           page,
           itemsPerPage,
@@ -1546,6 +1579,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
         items = await trakt.getWatchlistItems(username, traktFetchType, {
           page,
           limit: itemsPerPage,
+          extended,
         });
         hasMore = items.length >= itemsPerPage;
       }
@@ -1563,6 +1597,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
             trakt.getListItems(username, listRef, traktFetchType, {
               page: traktPage,
               limit: itemsPerPage,
+              extended,
             }),
           page,
           itemsPerPage,
@@ -1574,6 +1609,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
             trakt.getListItems(username, listRef, traktFetchType, {
               page: traktPage,
               limit: itemsPerPage,
+              extended,
             }),
           page,
           itemsPerPage,
@@ -1583,6 +1619,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
         items = await trakt.getListItems(username, listRef, traktFetchType, {
           page,
           limit: itemsPerPage,
+          extended,
         });
         hasMore = items.length >= itemsPerPage;
       }

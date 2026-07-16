@@ -119,6 +119,24 @@ export const QueryFilterOptions = z.object({
   certificationLte: z.string().optional(),
   certificationCountry: z.string().optional(),
   certificationMode: z.enum(['exact', 'range']).optional(),
+  ignoreWatched: z.enum(['true', 'false']).optional(),
+  ignoreCollected: z.string().optional(),
+  ignoreWatchlisted: z.string().optional(),
+  /** MDBList extras — rating ranges (unset = off) */
+  imdbRatingGte: z.string().optional(),
+  imdbRatingLte: z.string().optional(),
+  imdbVotesGte: z.string().optional(),
+  imdbVotesLte: z.string().optional(),
+  rtCriticsGte: z.string().optional(),
+  rtCriticsLte: z.string().optional(),
+  rtAudienceGte: z.string().optional(),
+  rtAudienceLte: z.string().optional(),
+  metacriticGte: z.string().optional(),
+  metacriticLte: z.string().optional(),
+  traktRatingGte: z.string().optional(),
+  traktRatingLte: z.string().optional(),
+  /** When 'false', hide titles missing a required external rating */
+  includeNoRating: z.enum(['true', 'false']).optional(),
 });
 
 export type FilterOptions = z.infer<typeof QueryFilterOptions>;
@@ -230,6 +248,58 @@ export const prepareFilterValues = (
     filterValues.certificationMode = 'range';
   }
 
+  if (values.ignoreWatched) {
+    filterValues.ignoreWatched = values.ignoreWatched;
+  }
+
+  if (values.ignoreCollected) {
+    filterValues.ignoreCollected = values.ignoreCollected;
+  }
+
+  if (values.ignoreWatchlisted) {
+    filterValues.ignoreWatchlisted = values.ignoreWatchlisted;
+  }
+
+  if (values.imdbRatingGte) {
+    filterValues.imdbRatingGte = values.imdbRatingGte;
+  }
+  if (values.imdbRatingLte) {
+    filterValues.imdbRatingLte = values.imdbRatingLte;
+  }
+  if (values.imdbVotesGte) {
+    filterValues.imdbVotesGte = values.imdbVotesGte;
+  }
+  if (values.imdbVotesLte) {
+    filterValues.imdbVotesLte = values.imdbVotesLte;
+  }
+  if (values.rtCriticsGte) {
+    filterValues.rtCriticsGte = values.rtCriticsGte;
+  }
+  if (values.rtCriticsLte) {
+    filterValues.rtCriticsLte = values.rtCriticsLte;
+  }
+  if (values.rtAudienceGte) {
+    filterValues.rtAudienceGte = values.rtAudienceGte;
+  }
+  if (values.rtAudienceLte) {
+    filterValues.rtAudienceLte = values.rtAudienceLte;
+  }
+  if (values.metacriticGte) {
+    filterValues.metacriticGte = values.metacriticGte;
+  }
+  if (values.metacriticLte) {
+    filterValues.metacriticLte = values.metacriticLte;
+  }
+  if (values.traktRatingGte) {
+    filterValues.traktRatingGte = values.traktRatingGte;
+  }
+  if (values.traktRatingLte) {
+    filterValues.traktRatingLte = values.traktRatingLte;
+  }
+  if (values.includeNoRating) {
+    filterValues.includeNoRating = values.includeNoRating;
+  }
+
   return filterValues;
 };
 
@@ -255,6 +325,42 @@ export const countActiveFilters = (filterValues: FilterOptions): number => {
     delete clonedFilters.withRuntimeLte;
   }
 
+  if (clonedFilters.imdbRatingGte || filterValues.imdbRatingLte) {
+    totalCount += 1;
+    delete clonedFilters.imdbRatingGte;
+    delete clonedFilters.imdbRatingLte;
+  }
+
+  if (clonedFilters.imdbVotesGte || filterValues.imdbVotesLte) {
+    totalCount += 1;
+    delete clonedFilters.imdbVotesGte;
+    delete clonedFilters.imdbVotesLte;
+  }
+
+  if (clonedFilters.rtCriticsGte || filterValues.rtCriticsLte) {
+    totalCount += 1;
+    delete clonedFilters.rtCriticsGte;
+    delete clonedFilters.rtCriticsLte;
+  }
+
+  if (clonedFilters.rtAudienceGte || filterValues.rtAudienceLte) {
+    totalCount += 1;
+    delete clonedFilters.rtAudienceGte;
+    delete clonedFilters.rtAudienceLte;
+  }
+
+  if (clonedFilters.metacriticGte || filterValues.metacriticLte) {
+    totalCount += 1;
+    delete clonedFilters.metacriticGte;
+    delete clonedFilters.metacriticLte;
+  }
+
+  if (clonedFilters.traktRatingGte || filterValues.traktRatingLte) {
+    totalCount += 1;
+    delete clonedFilters.traktRatingGte;
+    delete clonedFilters.traktRatingLte;
+  }
+
   if (clonedFilters.watchProviders) {
     totalCount += 1;
     delete clonedFilters.watchProviders;
@@ -275,6 +381,17 @@ export const countActiveFilters = (filterValues: FilterOptions): number => {
   }
 
   delete clonedFilters.certificationMode;
+
+  // Trakt toggles are counted by FilterSlideover when those sections are shown.
+  delete clonedFilters.ignoreWatched;
+  delete clonedFilters.ignoreCollected;
+  delete clonedFilters.ignoreWatchlisted;
+
+  if (clonedFilters.includeNoRating === 'false') {
+    totalCount += 1;
+  }
+  delete clonedFilters.includeNoRating;
+
   totalCount += Object.keys(clonedFilters).length;
 
   return totalCount;

@@ -4,7 +4,9 @@ import { MediaServerType } from '@server/constants/server';
 import { Permission } from '@server/lib/permissions';
 import {
   DEFAULT_REQUEST_FILTERS,
+  normalizeProfileRouting,
   type RequestFiltersSettings,
+  type RequestProfileRouting,
 } from '@server/lib/requestFilters/types';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
@@ -795,6 +797,9 @@ class Settings {
           : DEFAULT_REQUEST_FILTERS.excludedGenreIds,
         animeSonarrServerId: legacy.animeSonarrServerId ?? null,
         animeSonarrServerId4k: legacy.animeSonarrServerId4k ?? null,
+        profileRouting: normalizeProfileRouting(
+          legacy.profileRouting as RequestProfileRouting | undefined
+        ),
       };
     }
     return this.data.requestFilters;

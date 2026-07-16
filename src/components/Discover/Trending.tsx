@@ -1,7 +1,18 @@
+import Button from '@app/components/Common/Button';
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import {
+  countActiveFilters,
+  prepareFilterValues,
+} from '@app/components/Discover/constants';
+import FilterSlideover from '@app/components/Discover/FilterSlideover';
+import {
+  discoverDefaultsRequestExtras,
+  mergeFilterDefaults,
+} from '@app/components/Discover/mergeFilterDefaults';
 import useDiscover from '@app/hooks/useDiscover';
+import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -11,6 +22,7 @@ import type {
   PersonResult,
   TvResult,
 } from '@server/models/Search';
+import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -18,6 +30,8 @@ const messages = defineMessages('components.Discover', {
   trending: 'Trending',
   timeWindowDay: 'Daily',
   timeWindowWeek: 'Weekly',
+  activefilters:
+    '{count, plural, one {# Active Filter} other {# Active Filters}}',
 });
 
 type MediaType = 'all' | 'movie' | 'tv';
@@ -26,8 +40,24 @@ type TimeWindow = 'day' | 'week';
 
 const Trending = () => {
   const intl = useIntl();
+  const router = useRouter();
   const [currentMediaType, setCurrentMediaType] = useState<MediaType>('all');
   const [currentTimeWindow, setCurrentTimeWindow] = useState<TimeWindow>('day');
+  const [showFilters, setShowFilters] = useState(false);
+  const { data: discoverDefaults } = useDiscoverFilterDefaults();
+  const preparedFilters = mergeFilterDefaults(
+    prepareFilterValues(router.query),
+    discoverDefaults
+  );
+  const filterType: 'movie' | 'tv' = currentMediaType === 'tv' ? 'tv' : 'movie';
+
+  const activeFilterCount =
+    countActiveFilters(preparedFilters) +
+    (preparedFilters.ignoreWatched === 'true' ||
+    preparedFilters.ignoreWatched === 'false'
+      ? 1
+      : 0);
+
   const {
     isLoadingInitialData,
     isEmpty,
@@ -38,7 +68,12 @@ const Trending = () => {
     error,
   } = useDiscover<MovieResult | TvResult | PersonResult>(
     '/api/v1/discover/trending',
-    { mediaType: currentMediaType, timeWindow: currentTimeWindow }
+    {
+      mediaType: currentMediaType,
+      timeWindow: currentTimeWindow,
+      ...preparedFilters,
+      ...discoverDefaultsRequestExtras(),
+    }
   );
 
   if (error) {
@@ -93,6 +128,24 @@ const Trending = () => {
                 {intl.formatMessage(messages.timeWindowWeek)}
               </option>
             </select>
+          </div>
+          <FilterSlideover
+            type={filterType}
+            mode="browse"
+            showHideWatched
+            currentFilters={preparedFilters}
+            onClose={() => setShowFilters(false)}
+            show={showFilters}
+          />
+          <div className="mb-2 flex flex-grow sm:mb-0 lg:flex-grow-0">
+            <Button onClick={() => setShowFilters(true)} className="w-full">
+              <FunnelIcon />
+              <span>
+                {intl.formatMessage(messages.activefilters, {
+                  count: activeFilterCount,
+                })}
+              </span>
+            </Button>
           </div>
         </div>
       </div>

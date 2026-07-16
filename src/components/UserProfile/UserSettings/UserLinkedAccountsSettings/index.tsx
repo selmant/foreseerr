@@ -36,10 +36,6 @@ const messages = defineMessages(
     plexErrorExists: 'This account is already linked to a Plex user',
     errorUnknown: 'An unknown error occurred',
     deleteFailed: 'Unable to delete linked account.',
-    traktDiscover: 'Trakt Discover',
-    hideWatchedDiscover:
-      'Hide titles you have already watched on Trakt from Discover browse, recommendations, and lists.',
-    hideWatched: 'Hide watched',
   }
 );
 
@@ -73,7 +69,6 @@ const UserLinkedAccountsSettings = () => {
   const { data: traktStatus, mutate: revalidateTrakt } = useSWR<{
     connected: boolean;
     username: string | null;
-    hideWatched?: boolean;
   }>(
     user && settings.currentSettings.traktConfigured
       ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
@@ -310,36 +305,6 @@ const UserLinkedAccountsSettings = () => {
           <h3 className="text-lg font-semibold text-gray-400">
             {intl.formatMessage(messages.noLinkedAccounts)}
           </h3>
-        </div>
-      )}
-
-      {traktStatus?.connected && currentUser?.id === user?.id && (
-        <div className="mt-6 rounded-lg bg-gray-800/50 px-4 py-5 shadow ring-1 ring-gray-700 sm:p-6">
-          <h3 className="text-lg font-semibold text-white">
-            {intl.formatMessage(messages.traktDiscover)}
-          </h3>
-          <p className="mt-1 text-sm text-gray-400">
-            {intl.formatMessage(messages.hideWatchedDiscover)}
-          </p>
-          <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-            <input
-              type="checkbox"
-              className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-              checked={traktStatus.hideWatched === true}
-              onChange={async (e) => {
-                try {
-                  await axios.post(
-                    `/api/v1/user/${user?.id}/settings/linked-accounts/trakt/preferences`,
-                    { hideWatched: e.target.checked }
-                  );
-                  void revalidateTrakt();
-                } catch {
-                  setError(intl.formatMessage(messages.errorUnknown));
-                }
-              }}
-            />
-            {intl.formatMessage(messages.hideWatched)}
-          </label>
         </div>
       )}
 

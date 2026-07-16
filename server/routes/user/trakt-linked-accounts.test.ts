@@ -147,7 +147,10 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     );
 
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body, { connected: false, username: null });
+    assert.deepEqual(res.body, {
+      connected: false,
+      username: null,
+    });
   });
 
   it('POST device/code returns Trakt device payload', async () => {
@@ -263,7 +266,10 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     const status = await agent.get(
       `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
     );
-    assert.deepEqual(status.body, { connected: false, username: null });
+    assert.deepEqual(status.body, {
+      connected: false,
+      username: null,
+    });
   });
 
   it('POST device/code returns 400 when Trakt is not configured', async () => {

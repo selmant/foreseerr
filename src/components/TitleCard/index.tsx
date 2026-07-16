@@ -1,7 +1,6 @@
 import Spinner from '@app/assets/spinner.svg';
 import BlocklistModal from '@app/components/BlocklistModal';
 import Button from '@app/components/Common/Button';
-import ButtonWithDropdown from '@app/components/Common/ButtonWithDropdown';
 import CachedImage from '@app/components/Common/CachedImage';
 import RatingBadges from '@app/components/Common/RatingBadges';
 import StatusBadgeMini from '@app/components/Common/StatusBadgeMini';
@@ -10,6 +9,7 @@ import RequestModal from '@app/components/RequestModal';
 import ErrorCard from '@app/components/TitleCard/ErrorCard';
 import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
+import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchContext';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
@@ -29,6 +29,7 @@ import {
   MinusCircleIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
+import { ChevronDownIcon } from '@heroicons/react/24/solid';
 import type { RatingResponse } from '@server/api/ratings';
 import { MediaStatus } from '@server/constants/media';
 import type { Watchlist } from '@server/entity/Watchlist';
@@ -36,6 +37,7 @@ import type { MediaType } from '@server/models/Search';
 import axios from 'axios';
 import Link from 'next/link';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useInView } from 'react-intersection-observer';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
@@ -55,6 +57,30 @@ interface TitleCardProps {
   mutateParent?: () => void;
 }
 
+// Temporary visual-QA fixture for rating badge work. Remove once the ratings
+// provider rate limit resets.
+const MOCK_RATING_MOVIE_ID = 1340110; // Redux Redux
+const MOCK_RATING_DATA: RatingResponse = {
+  provider: 'mdblist',
+  rt: {
+    title: 'Redux Redux',
+    year: 2025,
+    criticsRating: 'Certified Fresh',
+    criticsScore: 87,
+    audienceRating: 'Upright',
+    audienceScore: 82,
+    url: 'https://www.rottentomatoes.com/m/redux_redux',
+  },
+  imdb: {
+    title: 'Redux Redux',
+    url: 'https://www.imdb.com/title/tt33295741/',
+    criticsScore: 7.4,
+    criticsScoreCount: 1240,
+  },
+  metacritic: { score: 76 },
+  trakt: { rating: 8.1, votes: 684 },
+};
+
 const messages = defineMessages('components.TitleCard', {
   addToWatchList: 'Add to watchlist',
   watchlistSuccess:
@@ -64,10 +90,13 @@ const messages = defineMessages('components.TitleCard', {
   watchlistCancel: 'watchlist for <strong>{title}</strong> canceled.',
   watchlistError: 'Something went wrong. Please try again.',
   requestseason1: 'Season 1',
-  requestall: 'Request All…',
-  requestadvanced: 'Advanced…',
+  requestall: 'Request All',
+  selectseasons: 'Select Seasons…',
   season1Success: 'Season 1 requested successfully!',
   season1Error: 'Could not request season 1. Opening the full request form.',
+  requestAllSuccess: 'All seasons requested successfully!',
+  requestAllError:
+    'Could not request all seasons. Opening the full request form.',
   movieSuccess: 'Requested successfully!',
   movieError: 'Could not request. Opening the full request form.',
 });
@@ -113,23 +142,39 @@ const TitleCard = ({
   const [initialSeasonSelection, setInitialSeasonSelection] = useState<
     'none' | 'all'
   >('none');
+  const [showTvMenu, setShowTvMenu] = useState(false);
+  const [tvMenuPos, setTvMenuPos] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [isQuickRequesting, setIsQuickRequesting] = useState(false);
   const { addToast } = useToasts();
   const [toggleWatchlist, setToggleWatchlist] =
     useState<boolean>(!isAddedToWatchlist);
   const [showBlocklistModal, setShowBlocklistModal] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const tvMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const tvMenuRef = useRef<HTMLDivElement>(null);
   const { ref: ratingsRef, inView: ratingsInView } = useInView({
     triggerOnce: true,
     rootMargin: '100px',
   });
 
+  const isMockRatingMovie =
+    mediaType === 'movie' && id === MOCK_RATING_MOVIE_ID;
   const canFetchRatings =
     (mediaType === 'movie' || mediaType === 'tv') &&
-    settings.currentSettings.mdblistConfigured;
+    settings.currentSettings.mdblistConfigured &&
+    !isMockRatingMovie;
 
-  const { data: ratingData } = useSWR<RatingResponse>(
-    canFetchRatings && ratingsInView
+  const batch = useTitleCardBatch();
+  const batchRatings =
+    canFetchRatings && (mediaType === 'movie' || mediaType === 'tv')
+      ? batch?.getRatings(mediaType, id)
+      : undefined;
+
+  const { data: swrRatingData } = useSWR<RatingResponse>(
+    canFetchRatings && ratingsInView && !batch?.active
       ? `/api/v1/${mediaType}/${id}/ratingscombined`
       : null,
     {
@@ -137,6 +182,11 @@ const TitleCard = ({
       revalidateOnFocus: false,
     }
   );
+  const ratingData = isMockRatingMovie
+    ? MOCK_RATING_DATA
+    : batchRatings !== undefined
+      ? (batchRatings ?? undefined)
+      : swrRatingData;
 
   // Just to get the year from the date
   if (year) {
@@ -154,9 +204,46 @@ const TitleCard = ({
   }, []);
 
   const openTvRequestModal = (selection: 'none' | 'all' = 'none') => {
+    setShowTvMenu(false);
     setInitialSeasonSelection(selection);
     setShowRequestModal(true);
   };
+
+  const toggleTvMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (showTvMenu) {
+      setShowTvMenu(false);
+      return;
+    }
+    const rect = tvMenuButtonRef.current?.getBoundingClientRect();
+    if (rect) {
+      // Open upward so the menu sits over the poster, not under the card edge.
+      setTvMenuPos({
+        top: rect.top - 8,
+        left: Math.min(rect.right, window.innerWidth - 8),
+      });
+    }
+    setShowTvMenu(true);
+  };
+
+  useEffect(() => {
+    if (!showTvMenu) {
+      return;
+    }
+    const onDoc = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        tvMenuRef.current?.contains(target) ||
+        tvMenuButtonRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowTvMenu(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [showTvMenu]);
 
   const requestSeason1 = async () => {
     if (isQuickRequesting) {
@@ -178,6 +265,33 @@ const TitleCard = ({
         autoDismiss: true,
       });
       openTvRequestModal('none');
+    } finally {
+      setIsQuickRequesting(false);
+      setIsUpdating(false);
+    }
+  };
+
+  const requestAllSeasons = async () => {
+    if (isQuickRequesting) {
+      return;
+    }
+    setShowTvMenu(false);
+    setIsQuickRequesting(true);
+    setIsUpdating(true);
+    try {
+      await quickRequestTvSeasons({ tmdbId: id, seasons: 'all' });
+      addToast(intl.formatMessage(messages.requestAllSuccess), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+      setCurrentStatus(MediaStatus.PENDING);
+      mutateParent?.();
+    } catch {
+      addToast(intl.formatMessage(messages.requestAllError), {
+        appearance: 'warning',
+        autoDismiss: true,
+      });
+      openTvRequestModal('all');
     } finally {
       setIsQuickRequesting(false);
       setIsUpdating(false);
@@ -484,7 +598,11 @@ const TitleCard = ({
             setShowDetail(true);
           }
         }}
-        onMouseLeave={() => setShowDetail(false)}
+        onMouseLeave={() => {
+          if (!showTvMenu) {
+            setShowDetail(false);
+          }
+        }}
         onClick={() => setShowDetail(true)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -539,6 +657,7 @@ const TitleCard = ({
                       tmdbId={id}
                       mediaType={mediaType as 'movie' | 'tv'}
                       enabled={mediaActionsEnabled}
+                      onStatusChange={mutateParent}
                     />
                   )}
                   {user?.userType !== UserType.PLEX &&
@@ -622,7 +741,7 @@ const TitleCard = ({
 
           <Transition
             as={Fragment}
-            show={!image || showDetail || showRequestModal}
+            show={!image || showDetail || showRequestModal || showTvMenu}
             enter="transition-opacity"
             enterFrom="opacity-0"
             enterTo="opacity-100"
@@ -693,76 +812,118 @@ const TitleCard = ({
                 </div>
               </Link>
 
-              <div className="absolute bottom-0 left-0 right-0 flex justify-between px-2 py-2">
+              <div className="absolute bottom-0 left-0 right-0 z-40 flex justify-between px-2 py-2">
                 {showRequestButton &&
                   (!currentStatus ||
                     currentStatus === MediaStatus.UNKNOWN ||
                     currentStatus === MediaStatus.DELETED) &&
                   (mediaType === 'tv' ? (
-                    <ButtonWithDropdown
-                      text={
-                        <>
-                          <ArrowDownTrayIcon className="h-4 w-4" />
-                          <span>
-                            {isQuickRequesting
-                              ? intl.formatMessage(globalMessages.requesting)
-                              : intl.formatMessage(messages.requestseason1)}
-                          </span>
-                        </>
-                      }
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        requestSeason1();
-                      }}
-                      disabled={isQuickRequesting}
-                      className="!h-7 !w-full !justify-center !px-2 !py-0 text-xs"
-                    >
-                      <ButtonWithDropdown.Item
+                    <div className="relative z-40 flex w-full">
+                      <button
+                        type="button"
+                        disabled={isQuickRequesting}
+                        className="button-md relative z-40 inline-flex h-7 flex-1 items-center justify-center rounded-l-md border border-indigo-500 bg-indigo-600/80 px-2 text-xs font-medium leading-5 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          openTvRequestModal('all');
+                          setShowTvMenu(false);
+                          requestSeason1();
                         }}
-                      >
-                        <ArrowDownTrayIcon className="h-4 w-4" />
-                        <span>{intl.formatMessage(messages.requestall)}</span>
-                      </ButtonWithDropdown.Item>
-                    </ButtonWithDropdown>
-                  ) : (
-                    <ButtonWithDropdown
-                      text={
-                        <>
-                          <ArrowDownTrayIcon className="h-4 w-4" />
-                          <span>
-                            {isQuickRequesting
-                              ? intl.formatMessage(globalMessages.requesting)
-                              : intl.formatMessage(globalMessages.request)}
-                          </span>
-                        </>
-                      }
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        requestMovieInstant();
-                      }}
-                      disabled={isQuickRequesting}
-                      className="!h-7 !w-full !justify-center !px-2 !py-0 text-xs"
-                    >
-                      <ButtonWithDropdown.Item
-                        onClick={(e) => {
-                          e.preventDefault();
+                        onMouseDown={(e) => {
                           e.stopPropagation();
-                          setShowRequestModal(true);
                         }}
                       >
                         <ArrowDownTrayIcon className="h-4 w-4" />
-                        <span>
-                          {intl.formatMessage(messages.requestadvanced)}
+                        <span className="ml-1">
+                          {isQuickRequesting
+                            ? intl.formatMessage(globalMessages.requesting)
+                            : intl.formatMessage(messages.requestseason1)}
                         </span>
-                      </ButtonWithDropdown.Item>
-                    </ButtonWithDropdown>
-                  ))}
+                      </button>
+                      <button
+                        ref={tvMenuButtonRef}
+                        type="button"
+                        disabled={isQuickRequesting}
+                        aria-expanded={showTvMenu}
+                        aria-haspopup="menu"
+                        aria-label="More request options"
+                        className="button-md relative z-40 inline-flex h-7 items-center justify-center rounded-r-md border border-l-0 border-indigo-500 bg-indigo-600/80 px-2 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={toggleTvMenu}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <ChevronDownIcon className="h-4 w-4" />
+                      </button>
+                      {showTvMenu &&
+                        tvMenuPos &&
+                        createPortal(
+                          <div
+                            ref={tvMenuRef}
+                            role="menu"
+                            className="fixed z-[100] w-44 -translate-x-full -translate-y-full rounded-md border border-indigo-500 bg-indigo-600 p-1 shadow-lg"
+                            style={{
+                              top: tvMenuPos.top,
+                              left: tvMenuPos.left,
+                            }}
+                          >
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void requestAllSeasons();
+                              }}
+                            >
+                              <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
+                              {intl.formatMessage(messages.requestall)}
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                window.setTimeout(
+                                  () => openTvRequestModal('none'),
+                                  0
+                                );
+                              }}
+                            >
+                              <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
+                              {intl.formatMessage(messages.selectseasons)}
+                            </button>
+                          </div>,
+                          document.body
+                        )}
+                    </div>
+                  ) : mediaType === 'movie' || mediaType === 'collection' ? (
+                    <Button
+                      buttonType="primary"
+                      buttonSize="sm"
+                      disabled={isQuickRequesting}
+                      className="z-40 w-full"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (mediaType === 'movie') {
+                          requestMovieInstant();
+                        } else {
+                          setShowRequestModal(true);
+                        }
+                      }}
+                    >
+                      <ArrowDownTrayIcon />{' '}
+                      <span>
+                        {isQuickRequesting
+                          ? intl.formatMessage(globalMessages.requesting)
+                          : intl.formatMessage(globalMessages.request)}
+                      </span>
+                    </Button>
+                  ) : null)}
               </div>
             </div>
           </Transition>

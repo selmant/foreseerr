@@ -21,6 +21,8 @@ export const TRAKT_RECOMMENDATIONS_LIMIT_MAX = 500;
 const TRAKT_REFRESH_WINDOW_SECONDS = 300;
 const TRAKT_RETRY_AFTER_MAX_SECONDS = 5;
 const TRAKT_RATE_LIMIT_FALLBACK_SECONDS = 1;
+/** Trakt currently caps sync collection pages at 250 items. */
+export const TRAKT_SYNC_PAGE_SIZE = 250;
 
 export class TraktDevicePendingError extends Error {
   constructor(message = 'Trakt device authorization pending') {
@@ -251,6 +253,7 @@ class TraktAPI extends ExternalAPI {
       limit?: number;
       ignoreCollected?: boolean;
       ignoreWatchlisted?: boolean;
+      extended?: 'min' | 'full';
     } = {}
   ): Promise<TraktMediaItem[]> {
     await this.ensureFreshToken();
@@ -263,7 +266,7 @@ class TraktAPI extends ExternalAPI {
         1,
         Math.min(options.limit ?? 20, TRAKT_RECOMMENDATIONS_LIMIT_MAX)
       ),
-      extended: 'min',
+      extended: options.extended ?? 'min',
     };
     if (options.ignoreCollected) {
       params.ignore_collected = 'true';
@@ -348,7 +351,7 @@ class TraktAPI extends ExternalAPI {
   ): Promise<TraktListEntry[]> {
     const path =
       mediaType === 'movie' ? '/sync/watched/movies' : '/sync/watched/shows';
-    return this.getAuthenticated<TraktListEntry[]>(path);
+    return this.getAllSyncPages(path);
   }
 
   public async getSyncRatings(
@@ -356,7 +359,27 @@ class TraktAPI extends ExternalAPI {
   ): Promise<TraktListEntry[]> {
     const path =
       mediaType === 'movie' ? '/sync/ratings/movies' : '/sync/ratings/shows';
-    return this.getAuthenticated<TraktListEntry[]>(path);
+    return this.getAllSyncPages(path);
+  }
+
+  private async getAllSyncPages(path: string): Promise<TraktListEntry[]> {
+    const items: TraktListEntry[] = [];
+    let page = 1;
+
+    while (true) {
+      const batch = await this.getAuthenticated<TraktListEntry[]>(path, {
+        params: {
+          page,
+          limit: TRAKT_SYNC_PAGE_SIZE,
+        },
+      });
+      items.push(...(batch || []));
+
+      if (!batch || batch.length < TRAKT_SYNC_PAGE_SIZE) {
+        return items;
+      }
+      page += 1;
+    }
   }
 
   public static payloadContainsTmdb(
@@ -448,7 +471,7 @@ class TraktAPI extends ExternalAPI {
     listUser: string | null,
     listRef: string,
     mediaType: 'movie' | 'tv' | 'both' = 'both',
-    options: { limit?: number; page?: number } = {}
+    options: { limit?: number; page?: number; extended?: 'min' | 'full' } = {}
   ): Promise<TraktMediaItem[]> {
     const ref = String(listRef || '').trim();
     if (!ref) {
@@ -459,7 +482,7 @@ class TraktAPI extends ExternalAPI {
     const params = {
       limit: Math.max(1, Math.min(options.limit ?? 20, 100)),
       page: Math.max(1, options.page ?? 1),
-      extended: 'min',
+      extended: options.extended ?? 'min',
     };
     const path = listUser
       ? `/users/${listUser}/lists/${ref}/items/${itemTypes}`
@@ -475,7 +498,7 @@ class TraktAPI extends ExternalAPI {
   public async getWatchlistItems(
     listUser = 'me',
     mediaType: 'movie' | 'tv' | 'both' = 'both',
-    options: { limit?: number; page?: number } = {}
+    options: { limit?: number; page?: number; extended?: 'min' | 'full' } = {}
   ): Promise<TraktMediaItem[]> {
     await this.ensureFreshToken();
     const user = (listUser || 'me').trim() || 'me';
@@ -483,6 +506,7 @@ class TraktAPI extends ExternalAPI {
     const page = Math.max(1, options.page ?? 1);
     const mediaTypes: ('movie' | 'tv')[] =
       mediaType === 'both' ? ['movie', 'tv'] : [mediaType];
+    const extended = options.extended ?? 'min';
 
     const items: TraktMediaItem[] = [];
     const seen = new Set<string>();
@@ -495,7 +519,7 @@ class TraktAPI extends ExternalAPI {
           params: {
             limit: perTypeLimit,
             page,
-            extended: 'min',
+            extended,
           },
         }
       );
@@ -516,13 +540,14 @@ class TraktAPI extends ExternalAPI {
    */
   public async getHistoryItems(
     mediaType: 'movie' | 'tv' | 'both' = 'both',
-    options: { limit?: number; page?: number } = {}
+    options: { limit?: number; page?: number; extended?: 'min' | 'full' } = {}
   ): Promise<TraktMediaItem[]> {
     await this.ensureFreshToken();
     const perTypeLimit = Math.max(1, Math.min(options.limit ?? 20, 100));
     const page = Math.max(1, options.page ?? 1);
     const mediaTypes: ('movie' | 'tv')[] =
       mediaType === 'both' ? ['movie', 'tv'] : [mediaType];
+    const extended = options.extended ?? 'min';
 
     const items: TraktMediaItem[] = [];
     const seen = new Set<string>();
@@ -535,7 +560,7 @@ class TraktAPI extends ExternalAPI {
           params: {
             limit: perTypeLimit,
             page,
-            extended: 'min',
+            extended,
           },
         }
       );
@@ -738,11 +763,18 @@ class TraktAPI extends ExternalAPI {
     if (!item?.ids?.tmdb) {
       return null;
     }
+    const communityRating =
+      item.rating != null && Number.isFinite(Number(item.rating))
+        ? Number(item.rating)
+        : undefined;
     return {
       tmdbId: Number(item.ids.tmdb),
       mediaType,
       title: item.title || item.name || '',
       year: item.year,
+      ...(communityRating != null
+        ? { traktCommunityRating: communityRating }
+        : {}),
     };
   }
 

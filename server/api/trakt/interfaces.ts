@@ -11,6 +11,9 @@ export interface TraktMediaObject {
   name?: string;
   year?: number;
   ids?: TraktIds;
+  /** Community rating 0–10 when fetched with extended=full */
+  rating?: number;
+  votes?: number;
 }
 
 export interface TraktListEntry {
@@ -20,6 +23,15 @@ export interface TraktListEntry {
   episode?: TraktMediaObject;
   watched_at?: string;
   rating?: number;
+}
+
+export interface TraktMediaItem {
+  tmdbId: number;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  year?: number;
+  /** Community rating from Trakt extended=full payloads */
+  traktCommunityRating?: number;
 }
 
 export interface TraktUserList {
@@ -65,13 +77,6 @@ export interface TraktUserSettingsResponse {
       trakt?: number;
     };
   };
-}
-
-export interface TraktMediaItem {
-  tmdbId: number;
-  mediaType: 'movie' | 'tv';
-  title: string;
-  year?: number;
 }
 
 export interface TraktListMetadata {

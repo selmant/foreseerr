@@ -1,5 +1,6 @@
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
+import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchContext';
 import defineMessages from '@app/utils/defineMessages';
 import {
   CheckCircleIcon as CheckCircleOutline,
@@ -11,8 +12,9 @@ import {
 } from '@heroicons/react/24/solid';
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useIntl } from 'react-intl';
-import useSWR from 'swr';
+import useSWR, { mutate as globalMutate } from 'swr';
 
 export interface MediaActionStatusResponse {
   tmdbId: number;
@@ -34,6 +36,8 @@ interface MediaActionControlsProps {
   tmdbId: number;
   mediaType: 'movie' | 'tv';
   enabled: boolean;
+  /** Called after watched/rating changes so hide-watched lists can refresh. */
+  onStatusChange?: () => void;
 }
 
 const messages = defineMessages('components.TitleCard.MediaActionControls', {
@@ -49,21 +53,40 @@ const MediaActionControls = ({
   tmdbId,
   mediaType,
   enabled,
+  onStatusChange,
 }: MediaActionControlsProps) => {
   const intl = useIntl();
+  const batch = useTitleCardBatch();
   const [busy, setBusy] = useState(false);
   const [showRate, setShowRate] = useState(false);
   const [draftStars, setDraftStars] = useState(3);
+  const [localOverride, setLocalOverride] =
+    useState<MediaActionStatusResponse | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const rateButtonRef = useRef<HTMLButtonElement>(null);
+  const ratePopoverRef = useRef<HTMLDivElement>(null);
+  const [ratePopoverPosition, setRatePopoverPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
 
   const statusKey =
     enabled && (mediaType === 'movie' || mediaType === 'tv')
       ? `/api/v1/media-actions/${mediaType}/${tmdbId}/status`
       : null;
 
-  const { data, mutate } = useSWR<MediaActionStatusResponse>(statusKey, {
-    revalidateOnFocus: false,
-  });
+  // Inside a grid batch provider: rely on status-batch (and SWR cache seed).
+  const { data: swrData, mutate } = useSWR<MediaActionStatusResponse>(
+    batch?.active ? null : statusKey,
+    {
+      revalidateOnFocus: false,
+    }
+  );
+  const data = localOverride ?? batch?.getStatus(mediaType, tmdbId) ?? swrData;
+
+  useEffect(() => {
+    setLocalOverride(null);
+  }, [tmdbId, mediaType]);
 
   useEffect(() => {
     if (data?.ratingStars != null) {
@@ -75,8 +98,8 @@ const MediaActionControls = ({
     if (!showRate) return;
     const onDocClick = (event: MouseEvent) => {
       if (
-        popoverRef.current &&
-        !popoverRef.current.contains(event.target as Node)
+        !popoverRef.current?.contains(event.target as Node) &&
+        !ratePopoverRef.current?.contains(event.target as Node)
       ) {
         setShowRate(false);
       }
@@ -90,24 +113,37 @@ const MediaActionControls = ({
     e.stopPropagation();
   }, []);
 
+  const applyNext = useCallback(
+    async (next: MediaActionStatusResponse) => {
+      setLocalOverride(next);
+      if (statusKey) {
+        await globalMutate(statusKey, next, { revalidate: false });
+      }
+      if (!batch?.active) {
+        await mutate(next, false);
+      }
+      onStatusChange?.();
+    },
+    [batch?.active, mutate, onStatusChange, statusKey]
+  );
+
   const toggleWatched = useCallback(
     async (e: React.MouseEvent) => {
       stop(e);
       if (busy || !enabled) return;
       setBusy(true);
       try {
-        // Distinct backend endpoints; UI is a single toggle.
         const action = data?.watched ? 'unwatched' : 'watched';
         const { data: next } = await axios.post<MediaActionStatusResponse>(
           `/api/v1/media-actions/${mediaType}/${tmdbId}/${action}`,
           {}
         );
-        await mutate(next, false);
+        await applyNext(next);
       } finally {
         setBusy(false);
       }
     },
-    [busy, data?.watched, enabled, mediaType, mutate, stop, tmdbId]
+    [applyNext, busy, data?.watched, enabled, mediaType, stop, tmdbId]
   );
 
   const submitRating = useCallback(
@@ -119,13 +155,13 @@ const MediaActionControls = ({
           `/api/v1/media-actions/${mediaType}/${tmdbId}/rate`,
           { ratingStars: stars }
         );
-        await mutate(next, false);
+        await applyNext(next);
         setShowRate(false);
       } finally {
         setBusy(false);
       }
     },
-    [busy, enabled, mediaType, mutate, tmdbId]
+    [applyNext, busy, enabled, mediaType, tmdbId]
   );
 
   if (!enabled) {
@@ -157,13 +193,33 @@ const MediaActionControls = ({
       <div className="relative" ref={popoverRef}>
         <Tooltip content={intl.formatMessage(messages.rate)}>
           <Button
+            ref={rateButtonRef}
             buttonType="ghost"
             className="z-40"
             buttonSize="sm"
             disabled={busy}
             onClick={(e) => {
               stop(e);
-              setShowRate((v) => !v);
+              setShowRate((v) => {
+                const next = !v;
+                const rect = rateButtonRef.current?.getBoundingClientRect();
+                if (next && rect) {
+                  const width = 224;
+                  const height = 176;
+                  const gap = 8;
+                  setRatePopoverPosition({
+                    top:
+                      rect.bottom + gap + height > window.innerHeight
+                        ? Math.max(gap, rect.top - height - gap)
+                        : rect.bottom + gap,
+                    left: Math.min(
+                      Math.max(gap, rect.right - width),
+                      window.innerWidth - width - gap
+                    ),
+                  });
+                }
+                return next;
+              });
             }}
           >
             {data?.ratingStars != null ? (
@@ -173,13 +229,31 @@ const MediaActionControls = ({
             )}
           </Button>
         </Tooltip>
-        {showRate && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded-md border border-gray-600 bg-gray-800 p-2 shadow-lg">
-            <label className="mb-1 block text-[10px] uppercase tracking-wide text-gray-300">
-              {intl.formatMessage(messages.ratingLabel, {
-                stars: draftStars.toFixed(1),
-              })}
-            </label>
+      </div>
+      {showRate &&
+        ratePopoverPosition &&
+        createPortal(
+          <div
+            ref={ratePopoverRef}
+            role="dialog"
+            aria-label={intl.formatMessage(messages.rate)}
+            className="fixed z-[100] w-56 rounded-xl border border-white/15 bg-gray-950/95 p-3 text-white shadow-2xl shadow-black/50 backdrop-blur-xl"
+            style={ratePopoverPosition}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-gray-400">
+                  Your rating
+                </p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-amber-300">
+                  {draftStars.toFixed(1)}
+                  <span className="ml-1 text-xs font-medium text-gray-500">
+                    / 5
+                  </span>
+                </p>
+              </div>
+              <HandThumbUpSolid className="mt-1 h-5 w-5 text-amber-300" />
+            </div>
             <input
               type="range"
               min={0}
@@ -189,7 +263,8 @@ const MediaActionControls = ({
                 0,
                 STAR_STEPS.findIndex((s) => s === draftStars)
               )}
-              className="w-full accent-amber-400"
+              aria-label={intl.formatMessage(messages.rate)}
+              className="h-1.5 w-full cursor-pointer accent-amber-400"
               onChange={(e) => {
                 const idx = Number(e.target.value);
                 setDraftStars(STAR_STEPS[idx] ?? 3);
@@ -209,9 +284,16 @@ const MediaActionControls = ({
                 }
               }}
             />
-          </div>
+            <div className="mt-1 flex justify-between text-[0.62rem] tabular-nums text-gray-500">
+              <span>0.5</span>
+              <span>5.0</span>
+            </div>
+            <p className="mt-3 border-t border-white/10 pt-2 text-[0.62rem] text-gray-500">
+              Release the slider to save to Trakt.
+            </p>
+          </div>,
+          document.body
         )}
-      </div>
     </div>
   );
 };

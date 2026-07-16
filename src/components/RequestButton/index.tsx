@@ -30,15 +30,18 @@ const messages = defineMessages('components.RequestButton', {
   requestmore4k: 'Request More in 4K',
   requestseason1: 'Request Season 1',
   requestseason14k: 'Request Season 1 in 4K',
-  requestall: 'Request All…',
-  requestall4k: 'Request All in 4K…',
-  requestadvanced: 'Advanced…',
-  requestadvanced4k: 'Advanced 4K…',
+  requestall: 'Request All',
+  requestall4k: 'Request All in 4K',
+  selectseasons: 'Select Seasons…',
+  selectseasons4k: 'Select Seasons in 4K…',
   // Reserved for a future single-episode request flow
   requestepisodes: 'Request Episodes…',
   requestepisodes4k: 'Request Episodes in 4K…',
   season1Success: 'Season 1 requested successfully!',
   season1Error: 'Could not request season 1. Opening the full request form.',
+  requestAllSuccess: 'All seasons requested successfully!',
+  requestAllError:
+    'Could not request all seasons. Opening the full request form.',
   movieSuccess: 'Requested successfully!',
   movieError: 'Could not request. Opening the full request form.',
   approverequest: 'Approve Request',
@@ -177,6 +180,34 @@ const RequestButton = ({
         autoDismiss: true,
       });
       openTvModal(is4k, 'none');
+    } finally {
+      setIsQuickRequesting(false);
+    }
+  };
+
+  const requestAllSeasons = async (is4k: boolean) => {
+    if (isQuickRequesting) {
+      return;
+    }
+
+    setIsQuickRequesting(true);
+    try {
+      await quickRequestTvSeasons({
+        tmdbId,
+        seasons: 'all',
+        is4k,
+      });
+      addToast(intl.formatMessage(messages.requestAllSuccess), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+      onUpdate();
+    } catch {
+      addToast(intl.formatMessage(messages.requestAllError), {
+        appearance: 'warning',
+        autoDismiss: true,
+      });
+      openTvModal(is4k, 'all');
     } finally {
       setIsQuickRequesting(false);
     }
@@ -387,31 +418,28 @@ const RequestButton = ({
           id: 'request-all',
           text: intl.formatMessage(messages.requestall),
           action: () => {
-            openTvModal(false, 'all');
+            void requestAllSeasons(false);
+          },
+          svg: <ArrowDownTrayIcon />,
+        },
+        {
+          id: 'select-seasons',
+          text: intl.formatMessage(messages.selectseasons),
+          action: () => {
+            openTvModal(false, 'none');
           },
           svg: <ArrowDownTrayIcon />,
         }
       );
     } else {
-      buttons.push(
-        {
-          id: 'request',
-          text: intl.formatMessage(globalMessages.request),
-          action: () => {
-            requestMovie(false);
-          },
-          svg: <ArrowDownTrayIcon />,
+      buttons.push({
+        id: 'request',
+        text: intl.formatMessage(globalMessages.request),
+        action: () => {
+          requestMovie(false);
         },
-        {
-          id: 'request-advanced',
-          text: intl.formatMessage(messages.requestadvanced),
-          action: () => {
-            setEditRequest(false);
-            setShowRequestModal(true);
-          },
-          svg: <ArrowDownTrayIcon />,
-        }
-      );
+        svg: <ArrowDownTrayIcon />,
+      });
     }
   } else if (
     mediaType === 'tv' &&
@@ -464,31 +492,28 @@ const RequestButton = ({
           id: 'request-all-4k',
           text: intl.formatMessage(messages.requestall4k),
           action: () => {
-            openTvModal(true, 'all');
+            void requestAllSeasons(true);
+          },
+          svg: <ArrowDownTrayIcon />,
+        },
+        {
+          id: 'select-seasons-4k',
+          text: intl.formatMessage(messages.selectseasons4k),
+          action: () => {
+            openTvModal(true, 'none');
           },
           svg: <ArrowDownTrayIcon />,
         }
       );
     } else {
-      buttons.push(
-        {
-          id: 'request4k',
-          text: intl.formatMessage(globalMessages.request4k),
-          action: () => {
-            requestMovie(true);
-          },
-          svg: <ArrowDownTrayIcon />,
+      buttons.push({
+        id: 'request4k',
+        text: intl.formatMessage(globalMessages.request4k),
+        action: () => {
+          requestMovie(true);
         },
-        {
-          id: 'request-advanced-4k',
-          text: intl.formatMessage(messages.requestadvanced4k),
-          action: () => {
-            setEditRequest(false);
-            setShowRequest4kModal(true);
-          },
-          svg: <ArrowDownTrayIcon />,
-        }
-      );
+        svg: <ArrowDownTrayIcon />,
+      });
     }
   } else if (
     mediaType === 'tv' &&
@@ -563,6 +588,7 @@ const RequestButton = ({
             <span>
               {isQuickRequesting &&
               (buttonOne.id.startsWith('request-season-1') ||
+                buttonOne.id.startsWith('request-all') ||
                 buttonOne.id === 'request' ||
                 buttonOne.id === 'request4k')
                 ? intl.formatMessage(globalMessages.requesting)
@@ -574,10 +600,12 @@ const RequestButton = ({
         disabled={isQuickRequesting}
         className="ml-2"
       >
-        {others && others.length > 0
+        {others.length > 0
           ? others.map((button) => (
               <ButtonWithDropdown.Item
-                onClick={button.action}
+                onClick={() => {
+                  window.setTimeout(() => button.action(), 0);
+                }}
                 key={`request-option-${button.id}`}
               >
                 {button.svg}

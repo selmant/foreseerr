@@ -19,6 +19,7 @@ describe('OpenAPI MDBList ratings contract', () => {
     '/settings/mdblist': ['get', 'post'],
     '/movie/{movieId}/ratingscombined': ['get'],
     '/tv/{tvId}/ratingscombined': ['get'],
+    '/ratings/batch': ['post'],
   };
 
   for (const [path, methods] of Object.entries(requiredPaths)) {

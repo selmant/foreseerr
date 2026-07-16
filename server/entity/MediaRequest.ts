@@ -12,7 +12,10 @@ import type { MediaRequestBody } from '@server/interfaces/api/requestInterfaces'
 import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { Permission } from '@server/lib/permissions';
-import { resolveAnimeSonarrRouting } from '@server/lib/requestFilters';
+import {
+  applyResolvedRoutingToRequest,
+  resolveRequestProfileRouting,
+} from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
@@ -365,33 +368,28 @@ export class MediaRequest {
     let serverId = requestBody.serverId;
     let languageProfileId = requestBody.languageProfileId;
 
-    // Apply anime Sonarr routing when the requester did not pick overrides
-    if (requestBody.mediaType === MediaType.TV && mediaIsAnime) {
-      const animeRouting = resolveAnimeSonarrRouting({
-        sonarr: settings.sonarr,
-        filters: settings.requestFilters,
-        is4k: Boolean(requestBody.is4k),
-        isAnime: true,
-      });
+    const profileRouting = resolveRequestProfileRouting({
+      mediaType: requestBody.mediaType,
+      isAnime: mediaIsAnime,
+      is4k: Boolean(requestBody.is4k),
+      filters: settings.requestFilters,
+      radarr: settings.radarr,
+      sonarr: settings.sonarr,
+    });
 
-      if (animeRouting) {
-        if (serverId == null) {
-          serverId = animeRouting.serverId ?? undefined;
-        }
-        if (profileId == null) {
-          profileId = animeRouting.profileId;
-        }
-        if (rootFolder == null || rootFolder === '') {
-          rootFolder = animeRouting.rootFolder;
-        }
-        if (languageProfileId == null) {
-          languageProfileId = animeRouting.languageProfileId;
-        }
-        if (tags == null && animeRouting.tags) {
-          tags = animeRouting.tags;
-        }
-      }
-    }
+    const routingDraft = {
+      serverId: serverId ?? null,
+      profileId: profileId ?? null,
+      rootFolder: rootFolder ?? null,
+      languageProfileId: languageProfileId ?? null,
+      tags: tags ?? null,
+    };
+    applyResolvedRoutingToRequest(profileRouting, routingDraft);
+    serverId = routingDraft.serverId ?? undefined;
+    profileId = routingDraft.profileId ?? undefined;
+    rootFolder = routingDraft.rootFolder ?? undefined;
+    languageProfileId = routingDraft.languageProfileId ?? undefined;
+    tags = routingDraft.tags ?? undefined;
 
     if (requestBody.mediaType === MediaType.MOVIE) {
       await mediaRepository.save(media);

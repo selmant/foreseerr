@@ -15,7 +15,7 @@ const messages = defineMessages('components.Settings', {
   menuServices: 'Services',
   menuTrakt: 'Trakt',
   menuMdblist: 'MDBList',
-  menuRequestFilters: 'Discover Filters',
+  menuRequestFilters: 'Request Routing',
   menuNetwork: 'Network',
   menuNotifications: 'Notifications',
   menuLogs: 'Logs',

@@ -1,27 +1,44 @@
 import type TheMovieDb from '@server/api/themoviedb';
 import type { TraktMediaItem } from '@server/api/trakt/interfaces';
+import cacheManager from '@server/lib/cache';
+import {
+  EXTERNAL_ENRICHMENT_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 
 const MAX_TRAKT_PAGES = 10;
+const ANIME_CACHE_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 async function hasAnimeKeyword(
   tmdb: TheMovieDb,
   item: TraktMediaItem
 ): Promise<boolean> {
-  return tmdb.mediaHasAnimeKeyword({
+  const cache = cacheManager.getCache('tmdb');
+  const cacheKey = `anime-keyword:${item.mediaType}:${item.tmdbId}`;
+  const cached = cache.data.get<boolean>(cacheKey);
+  if (typeof cached === 'boolean') {
+    return cached;
+  }
+
+  const isAnime = await tmdb.mediaHasAnimeKeyword({
     mediaType: item.mediaType,
     tmdbId: item.tmdbId,
   });
+  cache.data.set(cacheKey, isAnime, ANIME_CACHE_TTL_SECONDS);
+  return isAnime;
 }
 
 async function classifyTraktItemsByAnime(
   items: TraktMediaItem[],
   tmdb: TheMovieDb
 ): Promise<{ item: TraktMediaItem; isAnime: boolean }[]> {
-  return Promise.all(
-    items.map(async (item) => ({
+  return mapWithConcurrency(
+    items,
+    EXTERNAL_ENRICHMENT_CONCURRENCY,
+    async (item) => ({
       item,
       isAnime: await hasAnimeKeyword(tmdb, item),
-    }))
+    })
   );
 }
 
@@ -132,4 +149,24 @@ export async function applyTraktMediaTypeFilter(
   }
 
   return items;
+}
+
+/**
+ * Classify a chunk for progressive recommendation filtering.
+ * movie → pass through; anime → keep anime; tv/both → drop anime.
+ */
+export async function filterTraktMediaTypeChunk(
+  items: TraktMediaItem[],
+  mediaType: 'movie' | 'tv' | 'both' | 'anime',
+  tmdb: TheMovieDb
+): Promise<TraktMediaItem[]> {
+  if (!items.length || mediaType === 'movie') {
+    return items;
+  }
+
+  const results = await classifyTraktItemsByAnime(items, tmdb);
+  if (mediaType === 'anime') {
+    return results.filter((r) => r.isAnime).map((r) => r.item);
+  }
+  return results.filter((r) => !r.isAnime).map((r) => r.item);
 }

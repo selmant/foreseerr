@@ -17,11 +17,29 @@ export interface SyncItemPatch {
   rating?: number | null;
 }
 
+interface PendingPatch {
+  mediaType: 'movie' | 'tv';
+  tmdbId: number;
+  update: SyncItemPatch;
+}
+
 const cache = new Map<string, UserSyncSnapshot>();
 const inflight = new Map<string, Promise<UserSyncSnapshot>>();
+/** Local mutations applied on top of Trakt fetches until Trakt reflects them. */
+const pendingPatches = new Map<string, PendingPatch[]>();
 
 function cacheKey(userId: number): string {
   return String(userId);
+}
+
+function emptySnapshot(): UserSyncSnapshot {
+  return {
+    watchedMovies: [],
+    watchedShows: [],
+    ratingsMovies: [],
+    ratingsShows: [],
+    fetchedAt: Date.now() / 1000,
+  };
 }
 
 export function invalidateUserSyncCache(userId: number): void {
@@ -31,6 +49,7 @@ export function invalidateUserSyncCache(userId: number): void {
 export function clearSyncCache(): void {
   cache.clear();
   inflight.clear();
+  pendingPatches.clear();
 }
 
 /** Test helper — seed or inspect a user's snapshot. */
@@ -94,22 +113,12 @@ function upsertRating(
   return next;
 }
 
-/**
- * Surgically update one item in the per-user sync snapshot.
- * No-op if the user has no warm cache (next read will fetch from Trakt).
- * Preserves fetchedAt so TTL is not reset.
- */
-export function patchUserSyncItem(
-  userId: number,
+function applyPatchToSnapshot(
+  snapshot: UserSyncSnapshot,
   mediaType: 'movie' | 'tv',
   tmdbId: number,
   update: SyncItemPatch
 ): void {
-  const snapshot = cache.get(cacheKey(userId));
-  if (!snapshot) {
-    return;
-  }
-
   const key = itemKey(mediaType);
   const watchedList =
     mediaType === 'movie' ? snapshot.watchedMovies : snapshot.watchedShows;
@@ -138,6 +147,96 @@ export function patchUserSyncItem(
     snapshot.watchedShows = nextWatched;
     snapshot.ratingsShows = nextRatings;
   }
+}
+
+function coalescePending(patches: PendingPatch[]): PendingPatch[] {
+  const byKey = new Map<string, PendingPatch>();
+  for (const patch of patches) {
+    const key = `${patch.mediaType}:${patch.tmdbId}`;
+    const prev = byKey.get(key);
+    byKey.set(key, {
+      mediaType: patch.mediaType,
+      tmdbId: patch.tmdbId,
+      update: { ...prev?.update, ...patch.update },
+    });
+  }
+  return [...byKey.values()];
+}
+
+function patchIsReflected(
+  snapshot: UserSyncSnapshot,
+  patch: PendingPatch
+): boolean {
+  const status = lookupItemStatus(snapshot, patch.mediaType, patch.tmdbId);
+  const { update } = patch;
+
+  if (update.watched === true && !status.watched) {
+    return false;
+  }
+  if (update.watched === false && status.watched) {
+    return false;
+  }
+  if (update.rating === null && status.rating != null) {
+    return false;
+  }
+  if (typeof update.rating === 'number' && status.rating !== update.rating) {
+    return false;
+  }
+  return true;
+}
+
+function applyPendingPatches(
+  userKey: string,
+  snapshot: UserSyncSnapshot
+): void {
+  const pending = pendingPatches.get(userKey) ?? [];
+  if (!pending.length) {
+    return;
+  }
+
+  const remaining: PendingPatch[] = [];
+  for (const patch of pending) {
+    if (!patchIsReflected(snapshot, patch)) {
+      remaining.push(patch);
+      applyPatchToSnapshot(
+        snapshot,
+        patch.mediaType,
+        patch.tmdbId,
+        patch.update
+      );
+    }
+  }
+
+  if (remaining.length) {
+    pendingPatches.set(userKey, remaining);
+  } else {
+    pendingPatches.delete(userKey);
+  }
+}
+
+/**
+ * Surgically update one item in the per-user sync snapshot.
+ * Seeds an empty snapshot when none exists so mark-watched is not lost.
+ * Pending patches survive concurrent Trakt re-fetches until Trakt matches.
+ */
+export function patchUserSyncItem(
+  userId: number,
+  mediaType: 'movie' | 'tv',
+  tmdbId: number,
+  update: SyncItemPatch
+): void {
+  const key = cacheKey(userId);
+  let snapshot = cache.get(key);
+  if (!snapshot) {
+    snapshot = emptySnapshot();
+    cache.set(key, snapshot);
+  }
+
+  applyPatchToSnapshot(snapshot, mediaType, tmdbId, update);
+
+  const pending = pendingPatches.get(key) ?? [];
+  pending.push({ mediaType, tmdbId, update });
+  pendingPatches.set(key, coalescePending(pending));
 }
 
 export function lookupItemStatus(
@@ -177,6 +276,7 @@ export async function warmUserSyncCache(
   const key = cacheKey(userId);
   const existing = cache.get(key);
   if (existing && !isExpired(existing, ttlSeconds)) {
+    applyPendingPatches(key, existing);
     return existing;
   }
 
@@ -188,6 +288,7 @@ export async function warmUserSyncCache(
   const load = (async (): Promise<UserSyncSnapshot> => {
     const cached = cache.get(key);
     if (cached && !isExpired(cached, ttlSeconds)) {
+      applyPendingPatches(key, cached);
       return cached;
     }
 
@@ -206,6 +307,10 @@ export async function warmUserSyncCache(
       ratingsShows: ratingsShows || [],
       fetchedAt: Date.now() / 1000,
     };
+
+    // Re-apply local mark/unmark/rate that Trakt has not caught up with yet,
+    // and avoid clobbering patches applied while this fetch was in flight.
+    applyPendingPatches(key, snapshot);
     cache.set(key, snapshot);
     return snapshot;
   })();

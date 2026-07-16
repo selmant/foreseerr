@@ -38,6 +38,7 @@ import mediaRoutes from './media';
 import mediaActionsRoutes from './mediaActions';
 import movieRoutes from './movie';
 import personRoutes from './person';
+import ratingsRoutes from './ratings';
 import requestRoutes from './request';
 import searchRoutes from './search';
 import serviceRoutes from './service';
@@ -166,6 +167,7 @@ router.use(
 );
 router.use('/movie', isAuthenticated(), movieRoutes);
 router.use('/tv', isAuthenticated(), tvRoutes);
+router.use('/ratings', isAuthenticated(), ratingsRoutes);
 router.use('/media', isAuthenticated(), mediaRoutes);
 router.use('/media-actions', isAuthenticated(), mediaActionsRoutes);
 router.use('/person', isAuthenticated(), personRoutes);

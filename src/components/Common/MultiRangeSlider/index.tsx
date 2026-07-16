@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 type MultiRangeSliderProps = {
   min: number;
   max: number;
+  step?: number;
   defaultMinValue?: number;
   defaultMaxValue?: number;
   subText?: string;
@@ -12,9 +13,18 @@ type MultiRangeSliderProps = {
   onUpdateMax: (max: number) => void;
 };
 
+const formatSliderValue = (value: number, step: number): string => {
+  if (step < 1) {
+    const digits = Math.max(0, Math.ceil(-Math.log10(step)));
+    return value.toFixed(digits);
+  }
+  return value.toString();
+};
+
 const MultiRangeSlider = ({
   min,
   max,
+  step = 1,
   defaultMinValue,
   defaultMaxValue,
   subText,
@@ -53,7 +63,7 @@ const MultiRangeSlider = ({
   return (
     <div className={`relative ${subText ? 'h-8' : 'h-4'} w-full`}>
       <Tooltip
-        content={valueMin.toString()}
+        content={formatSliderValue(valueMin, step)}
         tooltipConfig={{
           placement: 'top',
         }}
@@ -62,6 +72,7 @@ const MultiRangeSlider = ({
           type="range"
           min={min}
           max={max}
+          step={step}
           value={valueMin}
           className={`pointer-events-none absolute h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-700 ${
             valueMin >= valueMax && valueMin !== min ? 'z-30' : 'z-10'
@@ -76,13 +87,13 @@ const MultiRangeSlider = ({
           }}
         />
       </Tooltip>
-      <Tooltip content={valueMax}>
+      <Tooltip content={formatSliderValue(valueMax, step)}>
         <input
           type="range"
           min={min}
           max={max}
+          step={step}
           value={valueMax}
-          step="1"
           className={`pointer-events-none absolute left-0 right-0 top-0 z-20 h-2 w-full cursor-pointer appearance-none rounded-lg bg-transparent`}
           onChange={(e) => {
             const value = Number(e.target.value);

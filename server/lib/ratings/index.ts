@@ -3,6 +3,10 @@ import MdblistAPI from '@server/api/mdblist';
 import IMDBRadarrProxy from '@server/api/rating/imdbRadarrProxy';
 import RottenTomatoes from '@server/api/rating/rottentomatoes';
 import type { RatingResponse } from '@server/api/ratings';
+import {
+  EXTERNAL_ENRICHMENT_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import { getSettings } from '@server/lib/settings';
 
 const criticsLabel = (
@@ -98,7 +102,7 @@ export const fetchCombinedRatings = async ({
   const mdblistConfigured = Boolean(settings.mdblist?.apiKey?.trim());
 
   if (mdblistConfigured) {
-    const mdblist = new MdblistAPI();
+    const mdblist = MdblistAPI.getInstance();
     const parsed = await mdblist.getRatings(mediaType, tmdbId);
     if (parsed) {
       const mapped = mapMdblistToRatingResponse(parsed, { title, year });
@@ -132,4 +136,39 @@ export const fetchCombinedRatings = async ({
     ...(rtratings ? { rt: rtratings } : {}),
     ...(imdbRatings ? { imdb: imdbRatings } : {}),
   };
+};
+
+export type RatingsBatchItem = {
+  mediaType: 'movie' | 'tv';
+  tmdbId: number;
+  title?: string;
+  year?: number;
+};
+
+export type RatingsBatchResult = RatingsBatchItem & {
+  ratings: RatingResponse | null;
+};
+
+/**
+ * Concurrent multi-item ratings fetch (MDBList-oriented grids).
+ */
+export const fetchBatchCombinedRatings = async (
+  items: RatingsBatchItem[]
+): Promise<RatingsBatchResult[]> => {
+  return mapWithConcurrency(
+    items,
+    EXTERNAL_ENRICHMENT_CONCURRENCY,
+    async (item) => ({
+      mediaType: item.mediaType,
+      tmdbId: item.tmdbId,
+      title: item.title,
+      year: item.year,
+      ratings: await fetchCombinedRatings({
+        mediaType: item.mediaType,
+        tmdbId: item.tmdbId,
+        title: item.title || (item.mediaType === 'movie' ? 'Movie' : 'Series'),
+        year: item.year,
+      }),
+    })
+  );
 };

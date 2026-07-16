@@ -18,7 +18,7 @@ import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
-import { resolveAnimeSonarrRouting } from '@server/lib/requestFilters';
+import { resolveRequestProfileRouting } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isEqual, truncate } from 'lodash';
@@ -189,6 +189,18 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       try {
         const mediaRepository = getRepository(Media);
         const settings = getSettings();
+        const tmdb = new TheMovieDb();
+        const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
+        const mediaIsAnime = isAnimeMedia(movie);
+        const profileRouting = resolveRequestProfileRouting({
+          mediaType: MediaType.MOVIE,
+          isAnime: mediaIsAnime,
+          is4k: entity.is4k,
+          filters: settings.requestFilters,
+          radarr: settings.radarr,
+          sonarr: settings.sonarr,
+        });
+
         if (settings.radarr.length === 0 && !settings.radarr[0]) {
           logger.info(
             'No Radarr server configured, skipping request processing',
@@ -204,6 +216,13 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         let radarrSettings = settings.radarr.find(
           (radarr) => radarr.isDefault && radarr.is4k === entity.is4k
         );
+
+        if (
+          profileRouting?.radarrServer &&
+          (entity.serverId === null || entity.serverId === undefined)
+        ) {
+          radarrSettings = profileRouting.radarrServer;
+        }
 
         if (
           entity.serverId !== null &&
@@ -281,12 +300,10 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           });
         }
 
-        const tmdb = new TheMovieDb();
         const radarr = new RadarrAPI({
           apiKey: radarrSettings.apiKey,
           url: RadarrAPI.buildUrl(radarrSettings, '/api/v3'),
         });
-        const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
 
         const media = await mediaRepository.findOne({
           where: { id: entity.media.id },
@@ -533,24 +550,24 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         }
 
         const mediaIsAnime = isAnimeMedia(series);
-        const animeRouting = resolveAnimeSonarrRouting({
-          sonarr: settings.sonarr,
-          filters: settings.requestFilters,
-          is4k: entity.is4k,
+        const profileRouting = resolveRequestProfileRouting({
+          mediaType: MediaType.TV,
           isAnime: mediaIsAnime,
+          is4k: entity.is4k,
+          filters: settings.requestFilters,
+          radarr: settings.radarr,
+          sonarr: settings.sonarr,
         });
 
         let sonarrSettings = settings.sonarr.find(
           (sonarr) => sonarr.isDefault && sonarr.is4k === entity.is4k
         );
 
-        // Prefer dedicated anime server when request has no explicit server override
         if (
-          mediaIsAnime &&
-          animeRouting?.server &&
+          profileRouting?.sonarrServer &&
           (entity.serverId === null || entity.serverId === undefined)
         ) {
-          sonarrSettings = animeRouting.server;
+          sonarrSettings = profileRouting.sonarrServer;
         }
 
         if (
@@ -596,7 +613,10 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         let seriesType: SonarrSeries['seriesType'] = 'standard';
 
         if (mediaIsAnime) {
-          seriesType = sonarrSettings.animeSeriesType ?? 'anime';
+          seriesType =
+            profileRouting?.seriesType ??
+            sonarrSettings.animeSeriesType ??
+            'anime';
         }
 
         let rootFolder =

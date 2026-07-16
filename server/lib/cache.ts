@@ -61,7 +61,7 @@ class CacheManager {
       checkPeriod: 60 * 30,
     }),
     mdblist: new Cache('mdblist', 'MDBList API', {
-      stdTtl: 43200,
+      stdTtl: 86400 * 2, // 48h — ratings move slowly; saves daily quota
       checkPeriod: 60 * 30,
     }),
     github: new Cache('github', 'GitHub API', {

@@ -282,12 +282,12 @@ const TvRequestModal = ({
   };
 
   useEffect(() => {
-    if (
-      editRequest ||
-      initialSeasonSelection !== 'all' ||
-      !data ||
-      didApplyInitialSelection
-    ) {
+    if (initialSeasonSelection !== 'all') {
+      setDidApplyInitialSelection(false);
+      return;
+    }
+
+    if (editRequest || !data || didApplyInitialSelection) {
       return;
     }
 

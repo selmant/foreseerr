@@ -11,6 +11,10 @@ import type {
   UserSettingsGeneralResponse,
   UserSettingsNotificationsResponse,
 } from '@server/interfaces/api/userSettingsInterfaces';
+import {
+  parseDiscoverFilterDefaults,
+  type DiscoverFilterDefaults,
+} from '@server/lib/discover/filterDefaults';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import {
@@ -603,7 +607,6 @@ userSettingsRoutes.get<{ id: string }>(
       return res.status(200).json({
         connected: Boolean(settings?.traktAccessToken),
         username: settings?.traktUsername ?? null,
-        hideWatched: settings?.hideTraktWatched === true,
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -611,23 +614,60 @@ userSettingsRoutes.get<{ id: string }>(
   }
 );
 
-userSettingsRoutes.post<{ id: string }>(
-  '/linked-accounts/trakt/preferences',
-  isOwnProfile(),
+userSettingsRoutes.get<{ id: string }, DiscoverFilterDefaults>(
+  '/discover',
+  isOwnProfileOrAdmin(),
   async (req, res, next) => {
     try {
       const userSettings = await ensureUserSettings(Number(req.params.id));
-      userSettings.hideTraktWatched = req.body.hideWatched === true;
-      await getRepository(UserSettings).save(userSettings);
-
-      return res.status(200).json({
-        hideWatched: userSettings.hideTraktWatched === true,
-      });
+      return res.status(200).json(userSettings.discoverFilterDefaults ?? {});
     } catch (e) {
       next({ status: 500, message: e.message });
     }
   }
 );
+
+userSettingsRoutes.post<
+  { id: string },
+  DiscoverFilterDefaults,
+  DiscoverFilterDefaults
+>('/discover', isOwnProfileOrAdmin(), async (req, res, next) => {
+  try {
+    const userRepository = getRepository(User);
+    const user = await userRepository.findOne({
+      where: { id: Number(req.params.id) },
+    });
+
+    if (!user) {
+      return next({ status: 404, message: 'User not found.' });
+    }
+
+    if (user.id === 1 && req.user?.id !== 1) {
+      return next({
+        status: 403,
+        message: "You do not have permission to modify this user's settings.",
+      });
+    }
+
+    let parsed: DiscoverFilterDefaults;
+    try {
+      parsed = parseDiscoverFilterDefaults(req.body ?? {});
+    } catch {
+      return next({
+        status: 400,
+        message: 'Invalid discover filter defaults.',
+      });
+    }
+
+    const userSettings = await ensureUserSettings(Number(req.params.id));
+    userSettings.discoverFilterDefaults = parsed;
+    await getRepository(UserSettings).save(userSettings);
+
+    return res.status(200).json(userSettings.discoverFilterDefaults ?? {});
+  } catch (e) {
+    next({ status: 500, message: e.message });
+  }
+});
 
 userSettingsRoutes.post<{ id: string }>(
   '/linked-accounts/trakt/device/code',

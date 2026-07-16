@@ -18,6 +18,11 @@ import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
 import { Permission } from '@server/lib/permissions';
+import {
+  normalizeProfileRoute,
+  normalizeProfileRouting,
+  type RequestProfileRoute,
+} from '@server/lib/requestFilters/types';
 import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import { plexFullScanner } from '@server/lib/scanners/plex';
 import type { JobId, Library, MainSettings } from '@server/lib/settings';
@@ -564,6 +569,19 @@ const nullableNumber = (value: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+const parseProfileRoute = (value: unknown) =>
+  normalizeProfileRoute({
+    serverId: nullableNumber((value as RequestProfileRoute)?.serverId),
+    profileId: nullableNumber((value as RequestProfileRoute)?.profileId),
+    rootFolder:
+      typeof (value as RequestProfileRoute)?.rootFolder === 'string'
+        ? (value as RequestProfileRoute).rootFolder
+        : null,
+    languageProfileId: nullableNumber(
+      (value as RequestProfileRoute)?.languageProfileId
+    ),
+  });
+
 const requestFiltersResponse = () => {
   const settings = getSettings();
   return { ...settings.requestFilters };
@@ -577,27 +595,21 @@ settingsRoutes.post('/request-filters', async (req, res, next) => {
   const settings = getSettings();
 
   try {
-    const excludedGenreIds = Array.isArray(req.body.excludedGenreIds)
-      ? req.body.excludedGenreIds
-          .map((id: unknown) => Number(id))
-          .filter((id: number) => Number.isFinite(id))
-      : settings.requestFilters.excludedGenreIds;
+    const profileRouting = normalizeProfileRouting({
+      defaultMovie: parseProfileRoute(req.body.profileRouting?.defaultMovie),
+      defaultTv: parseProfileRoute(req.body.profileRouting?.defaultTv),
+      animeMovie: parseProfileRoute(req.body.profileRouting?.animeMovie),
+      animeTv: parseProfileRoute(req.body.profileRouting?.animeTv),
+    });
 
     settings.requestFilters = {
-      enabled: req.body.enabled === true,
-      tmdbThreshold: nullableNumber(req.body.tmdbThreshold),
-      tmdbMinVotes: nullableNumber(req.body.tmdbMinVotes),
-      imdbThreshold: nullableNumber(req.body.imdbThreshold),
-      imdbMinVotes: nullableNumber(req.body.imdbMinVotes),
-      rtCriticsThreshold: nullableNumber(req.body.rtCriticsThreshold),
-      rtAudienceThreshold: nullableNumber(req.body.rtAudienceThreshold),
-      metacriticThreshold: nullableNumber(req.body.metacriticThreshold),
-      traktThreshold: nullableNumber(req.body.traktThreshold),
-      includeNoRating: req.body.includeNoRating !== false,
-      minReleaseYear: nullableNumber(req.body.minReleaseYear),
-      excludedGenreIds,
-      animeSonarrServerId: nullableNumber(req.body.animeSonarrServerId),
-      animeSonarrServerId4k: nullableNumber(req.body.animeSonarrServerId4k),
+      ...settings.requestFilters,
+      profileRouting,
+      animeSonarrServerId:
+        nullableNumber(req.body.animeSonarrServerId) ??
+        profileRouting.animeTv.serverId,
+      animeSonarrServerId4k:
+        nullableNumber(req.body.animeSonarrServerId4k) ?? null,
     };
     await settings.save();
 

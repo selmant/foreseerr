@@ -108,9 +108,75 @@ describe('patchUserSyncItem', () => {
     });
   });
 
-  it('is a no-op when user has no cached snapshot', () => {
+  it('seeds a snapshot when user has no cached entry', () => {
     patchUserSyncItem(999, 'movie', 550, { watched: true });
-    assert.equal(getUserSyncSnapshot(999), undefined);
+    const snapshot = getUserSyncSnapshot(999);
+    assert.ok(snapshot);
+    assert.deepEqual(lookupItemStatus(snapshot, 'movie', 550), {
+      watched: true,
+      rating: null,
+    });
+  });
+
+  it('keeps local mark-watched across a stale Trakt re-fetch', async () => {
+    const { warmUserSyncCache } = await import('./syncCache');
+    const client = {
+      getSyncWatched: async (mediaType: 'movie' | 'tv') => {
+        if (mediaType === 'movie') {
+          // Stale: missing 550 that we just marked watched locally
+          return [{ movie: { ids: { tmdb: 111 } } }];
+        }
+        return [];
+      },
+      getSyncRatings: async () => [],
+    };
+
+    patchUserSyncItem(42, 'movie', 550, { watched: true });
+    assert.equal(
+      lookupItemStatus(getUserSyncSnapshot(42)!, 'movie', 550).watched,
+      true
+    );
+
+    // Expire by rewriting fetchedAt
+    const snap = getUserSyncSnapshot(42)!;
+    snap.fetchedAt = 1;
+
+    const warmed = await warmUserSyncCache(client as never, 42, 60);
+    assert.equal(lookupItemStatus(warmed, 'movie', 550).watched, true);
+    assert.equal(lookupItemStatus(warmed, 'movie', 111).watched, true);
+  });
+
+  it('preserves mark-watched when a concurrent warm finishes after patch', async () => {
+    const { warmUserSyncCache } = await import('./syncCache');
+    let releaseFetch: () => void = () => undefined;
+    const fetchGate = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+
+    const client = {
+      getSyncWatched: async (mediaType: 'movie' | 'tv') => {
+        await fetchGate;
+        if (mediaType === 'movie') {
+          return [{ movie: { ids: { tmdb: 111 } } }];
+        }
+        return [];
+      },
+      getSyncRatings: async () => {
+        await fetchGate;
+        return [];
+      },
+    };
+
+    const warmPromise = warmUserSyncCache(client as never, 77, 60);
+    // Allow the warm to start and hit the gate
+    await new Promise((r) => setTimeout(r, 10));
+
+    patchUserSyncItem(77, 'movie', 550, { watched: true });
+    releaseFetch();
+
+    const warmed = await warmPromise;
+    assert.equal(lookupItemStatus(warmed, 'movie', 550).watched, true);
+    assert.equal(lookupItemStatus(warmed, 'movie', 111).watched, true);
   });
 
   it('updates rating only when watched omitted', () => {

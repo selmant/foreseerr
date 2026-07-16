@@ -1,4 +1,10 @@
 import type { UserSyncSnapshot } from '@server/lib/mediaActions/syncCache';
+import {
+  clearSyncCache,
+  getUserSyncSnapshot,
+  patchUserSyncItem,
+  seedUserSyncCache,
+} from '@server/lib/mediaActions/syncCache';
 import type { MovieResult, TvResult } from '@server/models/Search';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -21,7 +27,9 @@ describe('hideWatched', () => {
 
   it('resolves ignoreWatched from query then user setting', () => {
     assert.equal(resolveIgnoreWatched(false, 'true'), true);
+    assert.equal(resolveIgnoreWatched(false, true), true);
     assert.equal(resolveIgnoreWatched(true, 'false'), false);
+    assert.equal(resolveIgnoreWatched(true, false), false);
     assert.equal(resolveIgnoreWatched(true, undefined), true);
     assert.equal(resolveIgnoreWatched(false, undefined), false);
     assert.equal(resolveIgnoreWatched(null, undefined), false);
@@ -67,6 +75,35 @@ describe('hideWatched', () => {
     assert.deepEqual(
       browse.map((i) => i.id),
       [42]
+    );
+  });
+
+  it('picks up titles marked watched via sync cache patch', () => {
+    clearSyncCache();
+    seedUserSyncCache(7, {
+      watchedMovies: [],
+      watchedShows: [],
+      ratingsMovies: [],
+      ratingsShows: [],
+      fetchedAt: Date.now() / 1000,
+    });
+
+    const before = buildWatchedIdSets(getUserSyncSnapshot(7)!);
+    assert.equal(isWatchedInSets(before, 'movie', 550), false);
+
+    patchUserSyncItem(7, 'movie', 550, { watched: true });
+
+    const after = buildWatchedIdSets(getUserSyncSnapshot(7)!);
+    assert.equal(isWatchedInSets(after, 'movie', 550), true);
+    assert.deepEqual(
+      filterWatchedTraktItems(
+        [
+          { tmdbId: 550, mediaType: 'movie', title: 'Fight Club' },
+          { tmdbId: 999, mediaType: 'movie', title: 'Other' },
+        ],
+        after
+      ).map((i) => i.tmdbId),
+      [999]
     );
   });
 });

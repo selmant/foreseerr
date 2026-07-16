@@ -5,6 +5,7 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { Watchlist } from '@server/entity/Watchlist';
 import { fetchCombinedRatings } from '@server/lib/ratings';
+import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { mapMovieDetails } from '@server/models/Movie';
 import { mapMovieResult } from '@server/models/Search';
@@ -185,23 +186,42 @@ movieRoutes.get('/:id/ratings', async (req, res, next) => {
 
 /**
  * Combined multi-source ratings (MDBList when configured; else RT + IMDB).
+ * When MDBList is configured, skip the heavy TMDB detail fetch — MDBList only needs tmdbId.
  */
 movieRoutes.get('/:id/ratingscombined', async (req, res, next) => {
-  const tmdb = new TheMovieDb();
-
   try {
-    const movie = await tmdb.getMovie({
-      movieId: Number(req.params.id),
-    });
+    const tmdbId = Number(req.params.id);
+    if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
+      return next({ status: 400, message: 'Invalid movie id' });
+    }
+
+    const settings = getSettings();
+    const mdblistConfigured = Boolean(settings.mdblist?.apiKey?.trim());
+
+    let title = typeof req.query.title === 'string' ? req.query.title : 'Movie';
+    let year =
+      typeof req.query.year === 'string' &&
+      Number.isFinite(Number(req.query.year))
+        ? Number(req.query.year)
+        : undefined;
+    let imdbId: string | null | undefined;
+
+    if (!mdblistConfigured) {
+      const tmdb = new TheMovieDb();
+      const movie = await tmdb.getMovie({ movieId: tmdbId });
+      title = movie.title;
+      year = movie.release_date
+        ? Number(movie.release_date.slice(0, 4))
+        : undefined;
+      imdbId = movie.imdb_id;
+    }
 
     const ratings = await fetchCombinedRatings({
       mediaType: 'movie',
-      tmdbId: movie.id,
-      title: movie.title,
-      year: movie.release_date
-        ? Number(movie.release_date.slice(0, 4))
-        : undefined,
-      imdbId: movie.imdb_id,
+      tmdbId,
+      title,
+      year,
+      imdbId,
     });
 
     if (!ratings) {
