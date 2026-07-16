@@ -81,9 +81,8 @@ const RatingBadges = ({
   const list = (
     <div
       className={[
-        'flex items-start',
-        compact && expanded ? 'grid w-full grid-cols-2 gap-1.5' : 'flex-col',
-        compact && !expanded ? 'gap-1' : !compact ? 'gap-2' : '',
+        'flex flex-col items-start',
+        compact ? 'gap-1' : 'gap-2',
         className,
       ]
         .filter(Boolean)
@@ -93,52 +92,31 @@ const RatingBadges = ({
       {badges.map((badge) => {
         const content = (
           <>
-            <span className="flex min-w-0 items-center gap-1.5">
-              <BadgeIcon badge={badge} />
-              {compact && expanded && (
-                <span className="truncate text-[0.58rem] font-medium uppercase tracking-wide text-gray-300">
-                  {badge.label}
-                </span>
-              )}
-            </span>
-            <span className="text-[0.7rem] font-bold tabular-nums leading-none text-white">
+            <BadgeIcon badge={badge} />
+            <span className="text-[0.7rem] font-semibold leading-none text-white">
               {badge.value}
             </span>
           </>
         );
 
         const classes =
-          'inline-flex min-w-0 items-center justify-between gap-1 text-gray-100 transition hover:text-white';
+          'inline-flex w-full items-center gap-1.5 text-gray-100 transition hover:text-white';
 
-        const itemClasses =
-          compact && expanded
-            ? 'min-w-0 rounded-md border border-white/10 bg-black/20 px-2 py-1.5 shadow-sm transition hover:border-white/20 hover:bg-black/30'
-            : '';
-
-        const item = badge.href ? (
-          <a
-            href={badge.href}
-            className={`${classes} ${itemClasses}`}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            title={badge.title}
-          >
-            {content}
-          </a>
-        ) : (
-          <span className={`${classes} ${itemClasses}`} title={badge.title}>
-            {content}
-          </span>
-        );
-
-        return compact && expanded ? (
-          <div key={badge.key} className="min-w-0">
-            {item}
-          </div>
-        ) : (
+        return (
           <Tooltip key={badge.key} content={badge.title}>
-            {item}
+            {badge.href ? (
+              <a
+                href={badge.href}
+                className={classes}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {content}
+              </a>
+            ) : (
+              <span className={classes}>{content}</span>
+            )}
           </Tooltip>
         );
       })}
@@ -150,23 +128,7 @@ const RatingBadges = ({
   }
 
   return (
-    <div
-      className={`pointer-events-auto inline-flex max-w-full flex-col rounded-lg border px-2 py-1.5 shadow-lg backdrop-blur-md ${
-        expanded
-          ? 'w-[11rem] border-white/15 bg-gray-950/80'
-          : 'border-gray-600/70 bg-gray-800/85'
-      }`}
-    >
-      {expanded && (
-        <div className="mb-1.5 flex items-center justify-between border-b border-white/10 pb-1.5">
-          <span className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-gray-400">
-            Ratings
-          </span>
-          <span className="text-[0.58rem] tabular-nums text-gray-500">
-            {badges.length}
-          </span>
-        </div>
-      )}
+    <div className="pointer-events-auto inline-flex max-w-full flex-col rounded-lg border border-gray-600/70 bg-gray-800/85 px-2 py-1.5 shadow-md backdrop-blur-[2px]">
       {list}
     </div>
   );

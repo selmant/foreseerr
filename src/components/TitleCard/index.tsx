@@ -57,30 +57,6 @@ interface TitleCardProps {
   mutateParent?: () => void;
 }
 
-// Temporary visual-QA fixture for rating badge work. Remove once the ratings
-// provider rate limit resets.
-const MOCK_RATING_MOVIE_ID = 1340110; // Redux Redux
-const MOCK_RATING_DATA: RatingResponse = {
-  provider: 'mdblist',
-  rt: {
-    title: 'Redux Redux',
-    year: 2025,
-    criticsRating: 'Certified Fresh',
-    criticsScore: 87,
-    audienceRating: 'Upright',
-    audienceScore: 82,
-    url: 'https://www.rottentomatoes.com/m/redux_redux',
-  },
-  imdb: {
-    title: 'Redux Redux',
-    url: 'https://www.imdb.com/title/tt33295741/',
-    criticsScore: 7.4,
-    criticsScoreCount: 1240,
-  },
-  metacritic: { score: 76 },
-  trakt: { rating: 8.1, votes: 684 },
-};
-
 const messages = defineMessages('components.TitleCard', {
   addToWatchList: 'Add to watchlist',
   watchlistSuccess:
@@ -160,12 +136,9 @@ const TitleCard = ({
     rootMargin: '100px',
   });
 
-  const isMockRatingMovie =
-    mediaType === 'movie' && id === MOCK_RATING_MOVIE_ID;
   const canFetchRatings =
     (mediaType === 'movie' || mediaType === 'tv') &&
-    settings.currentSettings.mdblistConfigured &&
-    !isMockRatingMovie;
+    settings.currentSettings.mdblistConfigured;
 
   const batch = useTitleCardBatch();
   const batchRatings =
@@ -182,11 +155,8 @@ const TitleCard = ({
       revalidateOnFocus: false,
     }
   );
-  const ratingData = isMockRatingMovie
-    ? MOCK_RATING_DATA
-    : batchRatings !== undefined
-      ? (batchRatings ?? undefined)
-      : swrRatingData;
+  const ratingData =
+    batchRatings !== undefined ? (batchRatings ?? undefined) : swrRatingData;
 
   // Just to get the year from the date
   if (year) {
