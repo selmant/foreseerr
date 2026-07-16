@@ -97,6 +97,9 @@ export class UserSettings {
   @Column({ type: 'varchar', nullable: true })
   public traktUsername?: string;
 
+  @Column({ default: false })
+  public hideTraktWatched?: boolean;
+
   @Column({
     type: 'text',
     nullable: true,

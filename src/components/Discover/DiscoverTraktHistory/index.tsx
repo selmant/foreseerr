@@ -81,7 +81,7 @@ const DiscoverTraktHistory = () => {
       <PageTitle title={intl.formatMessage(messages.title)} />
       <div className="mb-5 mt-1 flex flex-col justify-between lg:flex-row lg:items-end">
         <Header>{intl.formatMessage(messages.title)}</Header>
-        <TraktDiscoverFilters />
+        <TraktDiscoverFilters showHideWatchedFilter={false} />
       </div>
       <ListView
         plexItems={titles}

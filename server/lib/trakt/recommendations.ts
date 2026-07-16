@@ -4,6 +4,10 @@ import { TRAKT_RECOMMENDATIONS_LIMIT_MAX } from '@server/api/trakt';
 import type { TraktMediaItem } from '@server/api/trakt/interfaces';
 import cacheManager from '@server/lib/cache';
 import { applyTraktMediaTypeFilter } from '@server/lib/trakt/animeFilter';
+import {
+  filterWatchedTraktItems,
+  loadWatchedIdSets,
+} from '@server/lib/trakt/hideWatched';
 
 export const TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE = 20;
 
@@ -11,6 +15,7 @@ export interface TraktRecommendationQueryOptions {
   mediaType: 'movie' | 'tv' | 'both' | 'anime';
   ignoreCollected: boolean;
   ignoreWatchlisted: boolean;
+  ignoreWatched: boolean;
 }
 
 async function fetchRawTraktRecommendations(
@@ -52,7 +57,7 @@ function recommendationsCacheKey(
   userId: number,
   options: TraktRecommendationQueryOptions
 ): string {
-  return `recommendations:${userId}:${options.mediaType}:${options.ignoreCollected}:${options.ignoreWatchlisted}`;
+  return `recommendations:${userId}:${options.mediaType}:${options.ignoreCollected}:${options.ignoreWatchlisted}:${options.ignoreWatched}`;
 }
 
 export async function getTraktRecommendationItems(
@@ -77,6 +82,11 @@ export async function getTraktRecommendationItems(
 
   let items = await fetchRawTraktRecommendations(trakt, fetchType, options);
   items = await applyTraktMediaTypeFilter(items, options.mediaType, tmdb);
+
+  if (options.ignoreWatched) {
+    const watchedSets = await loadWatchedIdSets(userId, trakt);
+    items = filterWatchedTraktItems(items, watchedSets);
+  }
 
   cache.data.set(cacheKey, items);
   return items;

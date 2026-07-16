@@ -603,6 +603,25 @@ userSettingsRoutes.get<{ id: string }>(
       return res.status(200).json({
         connected: Boolean(settings?.traktAccessToken),
         username: settings?.traktUsername ?? null,
+        hideWatched: settings?.hideTraktWatched === true,
+      });
+    } catch (e) {
+      next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/trakt/preferences',
+  isOwnProfile(),
+  async (req, res, next) => {
+    try {
+      const userSettings = await ensureUserSettings(Number(req.params.id));
+      userSettings.hideTraktWatched = req.body.hideWatched === true;
+      await getRepository(UserSettings).save(userSettings);
+
+      return res.status(200).json({
+        hideWatched: userSettings.hideTraktWatched === true,
       });
     } catch (e) {
       next({ status: 500, message: e.message });

@@ -15,6 +15,11 @@ export function prepareTraktDiscoverOptions(
   if (query.ignoreWatchlisted === 'true') {
     options.ignoreWatchlisted = 'true';
   }
+  if (query.ignoreWatched === 'true') {
+    options.ignoreWatched = 'true';
+  } else if (query.ignoreWatched === 'false') {
+    options.ignoreWatched = 'false';
+  }
 
   for (const key of extraKeys) {
     const value = query[key];
