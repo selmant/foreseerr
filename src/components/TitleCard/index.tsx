@@ -1,17 +1,25 @@
 import Spinner from '@app/assets/spinner.svg';
 import BlocklistModal from '@app/components/BlocklistModal';
 import Button from '@app/components/Common/Button';
+import ButtonWithDropdown from '@app/components/Common/ButtonWithDropdown';
 import CachedImage from '@app/components/Common/CachedImage';
+import RatingBadges from '@app/components/Common/RatingBadges';
 import StatusBadgeMini from '@app/components/Common/StatusBadgeMini';
 import Tooltip from '@app/components/Common/Tooltip';
 import RequestModal from '@app/components/RequestModal';
 import ErrorCard from '@app/components/TitleCard/ErrorCard';
+import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
 import { useIsTouch } from '@app/hooks/useIsTouch';
+import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import {
+  quickRequestMovie,
+  quickRequestTvSeasons,
+} from '@app/utils/quickRequest';
 import { withProperties } from '@app/utils/typeHelpers';
 import { Transition } from '@headlessui/react';
 import {
@@ -21,14 +29,16 @@ import {
   MinusCircleIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
+import type { RatingResponse } from '@server/api/ratings';
 import { MediaStatus } from '@server/constants/media';
 import type { Watchlist } from '@server/entity/Watchlist';
 import type { MediaType } from '@server/models/Search';
 import axios from 'axios';
 import Link from 'next/link';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useInView } from 'react-intersection-observer';
 import { useIntl } from 'react-intl';
-import { mutate } from 'swr';
+import useSWR, { mutate } from 'swr';
 
 interface TitleCardProps {
   id: number;
@@ -53,6 +63,13 @@ const messages = defineMessages('components.TitleCard', {
     '<strong>{title}</strong> Removed from watchlist  successfully!',
   watchlistCancel: 'watchlist for <strong>{title}</strong> canceled.',
   watchlistError: 'Something went wrong. Please try again.',
+  requestseason1: 'Season 1',
+  requestall: 'Request All…',
+  requestadvanced: 'Advanced…',
+  season1Success: 'Season 1 requested successfully!',
+  season1Error: 'Could not request season 1. Opening the full request form.',
+  movieSuccess: 'Requested successfully!',
+  movieError: 'Could not request. Opening the full request form.',
 });
 
 const TitleCard = ({
@@ -61,6 +78,7 @@ const TitleCard = ({
   summary,
   year,
   title,
+  userScore,
   status,
   mediaType,
   isAddedToWatchlist = false,
@@ -70,16 +88,55 @@ const TitleCard = ({
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
+  const settings = useSettings();
   const { user, hasPermission } = useUser();
   const [isUpdating, setIsUpdating] = useState(false);
+
+  const traktLinkKey =
+    settings.currentSettings.traktConfigured &&
+    settings.currentSettings.mediaActionsTraktEnabled &&
+    user
+      ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
+      : null;
+  const { data: traktLink } = useSWR<{ connected: boolean }>(traktLinkKey, {
+    revalidateOnFocus: false,
+  });
+  const mediaActionsEnabled = Boolean(
+    settings.currentSettings.traktConfigured &&
+    settings.currentSettings.mediaActionsTraktEnabled !== false &&
+    traktLink?.connected &&
+    (mediaType === 'movie' || mediaType === 'tv')
+  );
   const [currentStatus, setCurrentStatus] = useState(status);
   const [showDetail, setShowDetail] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
+  const [initialSeasonSelection, setInitialSeasonSelection] = useState<
+    'none' | 'all'
+  >('none');
+  const [isQuickRequesting, setIsQuickRequesting] = useState(false);
   const { addToast } = useToasts();
   const [toggleWatchlist, setToggleWatchlist] =
     useState<boolean>(!isAddedToWatchlist);
   const [showBlocklistModal, setShowBlocklistModal] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const { ref: ratingsRef, inView: ratingsInView } = useInView({
+    triggerOnce: true,
+    rootMargin: '100px',
+  });
+
+  const canFetchRatings =
+    (mediaType === 'movie' || mediaType === 'tv') &&
+    settings.currentSettings.mdblistConfigured;
+
+  const { data: ratingData } = useSWR<RatingResponse>(
+    canFetchRatings && ratingsInView
+      ? `/api/v1/${mediaType}/${id}/ratingscombined`
+      : null,
+    {
+      shouldRetryOnError: false,
+      revalidateOnFocus: false,
+    }
+  );
 
   // Just to get the year from the date
   if (year) {
@@ -93,7 +150,65 @@ const TitleCard = ({
   const requestComplete = useCallback((newStatus: MediaStatus) => {
     setCurrentStatus(newStatus);
     setShowRequestModal(false);
+    setInitialSeasonSelection('none');
   }, []);
+
+  const openTvRequestModal = (selection: 'none' | 'all' = 'none') => {
+    setInitialSeasonSelection(selection);
+    setShowRequestModal(true);
+  };
+
+  const requestSeason1 = async () => {
+    if (isQuickRequesting) {
+      return;
+    }
+    setIsQuickRequesting(true);
+    setIsUpdating(true);
+    try {
+      await quickRequestTvSeasons({ tmdbId: id, seasons: [1] });
+      addToast(intl.formatMessage(messages.season1Success), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+      setCurrentStatus(MediaStatus.PENDING);
+      mutateParent?.();
+    } catch {
+      addToast(intl.formatMessage(messages.season1Error), {
+        appearance: 'warning',
+        autoDismiss: true,
+      });
+      openTvRequestModal('none');
+    } finally {
+      setIsQuickRequesting(false);
+      setIsUpdating(false);
+    }
+  };
+
+  const requestMovieInstant = async () => {
+    if (isQuickRequesting) {
+      return;
+    }
+    setIsQuickRequesting(true);
+    setIsUpdating(true);
+    try {
+      await quickRequestMovie({ tmdbId: id });
+      addToast(intl.formatMessage(messages.movieSuccess), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+      setCurrentStatus(MediaStatus.PENDING);
+      mutateParent?.();
+    } catch {
+      addToast(intl.formatMessage(messages.movieError), {
+        appearance: 'warning',
+        autoDismiss: true,
+      });
+      setShowRequestModal(true);
+    } finally {
+      setIsQuickRequesting(false);
+      setIsUpdating(false);
+    }
+  };
 
   const requestUpdating = useCallback(
     (status: boolean) => setIsUpdating(status),
@@ -298,7 +413,10 @@ const TitleCard = ({
     setIsUpdating(false);
   };
 
-  const closeModal = useCallback(() => setShowRequestModal(false), []);
+  const closeModal = useCallback(() => {
+    setShowRequestModal(false);
+    setInitialSeasonSelection('none');
+  }, []);
 
   const showRequestButton = hasPermission(
     [
@@ -330,6 +448,9 @@ const TitleCard = ({
               ? 'collection'
               : 'tv'
         }
+        initialSeasonSelection={
+          mediaType === 'tv' ? initialSeasonSelection : 'none'
+        }
         onComplete={requestComplete}
         onUpdating={requestUpdating}
         onCancel={closeModal}
@@ -349,6 +470,7 @@ const TitleCard = ({
         isUpdating={isUpdating}
       />
       <div
+        ref={ratingsRef}
         className={`relative transform-gpu cursor-default overflow-hidden rounded-xl bg-gray-800 bg-cover outline-none ring-1 transition duration-300 ${
           showDetail
             ? 'scale-105 shadow-lg ring-gray-500'
@@ -385,79 +507,94 @@ const TitleCard = ({
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             fill
           />
-          <div className="absolute left-0 right-0 flex items-center justify-between p-2">
-            <div
-              className={`pointer-events-none z-40 self-start rounded-full border shadow-md ${
-                mediaType === 'movie' || mediaType === 'collection'
-                  ? 'border-blue-500 bg-blue-600/80'
-                  : 'border-purple-600 bg-purple-600/80'
-              }`}
-            >
-              <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
-                {mediaType === 'movie'
-                  ? intl.formatMessage(globalMessages.movie)
-                  : mediaType === 'collection'
-                    ? intl.formatMessage(globalMessages.collection)
-                    : intl.formatMessage(globalMessages.tvshow)}
+          <div className="absolute left-0 right-0 z-30 flex items-start justify-between gap-2 p-2">
+            <div className="flex min-w-0 flex-col items-start gap-1.5">
+              <div
+                className={`pointer-events-none self-start rounded-full border shadow-md ${
+                  mediaType === 'movie' || mediaType === 'collection'
+                    ? 'border-blue-500 bg-blue-600/80'
+                    : 'border-purple-600 bg-purple-600/80'
+                }`}
+              >
+                <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
+                  {mediaType === 'movie'
+                    ? intl.formatMessage(globalMessages.movie)
+                    : mediaType === 'collection'
+                      ? intl.formatMessage(globalMessages.collection)
+                      : intl.formatMessage(globalMessages.tvshow)}
+                </div>
               </div>
+              <RatingBadges
+                item={{ tmdbRating: userScore, ratings: ratingData }}
+                badgeSettings={settings.currentSettings.ratingBadges}
+                compact
+                expanded={showDetail}
+              />
             </div>
-            {showDetail && currentStatus !== MediaStatus.BLOCKLISTED && (
-              <div className="flex flex-col gap-1">
-                {user?.userType !== UserType.PLEX &&
-                  (toggleWatchlist ? (
-                    <Button
-                      buttonType={'ghost'}
-                      className="z-40"
-                      buttonSize={'sm'}
-                      onClick={onClickWatchlistBtn}
-                    >
-                      <StarIcon className={'h-3 text-amber-300'} />
-                    </Button>
-                  ) : (
-                    <Button
-                      className="z-40"
-                      buttonSize={'sm'}
-                      onClick={onClickDeleteWatchlistBtn}
-                    >
-                      <MinusCircleIcon className={'h-3'} />
-                    </Button>
-                  ))}
-                {showHideButton &&
-                  currentStatus !== MediaStatus.PROCESSING &&
-                  currentStatus !== MediaStatus.AVAILABLE &&
-                  currentStatus !== MediaStatus.PARTIALLY_AVAILABLE &&
-                  currentStatus !== MediaStatus.PENDING && (
-                    <Button
-                      buttonType={'ghost'}
-                      className="z-40"
-                      buttonSize={'sm'}
-                      onClick={() => setShowBlocklistModal(true)}
-                    >
-                      <EyeSlashIcon className={'h-3'} />
-                    </Button>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              {showDetail && currentStatus !== MediaStatus.BLOCKLISTED && (
+                <div className="flex flex-col gap-1">
+                  {mediaActionsEnabled && (
+                    <MediaActionControls
+                      tmdbId={id}
+                      mediaType={mediaType as 'movie' | 'tv'}
+                      enabled={mediaActionsEnabled}
+                    />
                   )}
-              </div>
-            )}
-            {showDetail &&
-              showHideButton &&
-              currentStatus == MediaStatus.BLOCKLISTED && (
-                <Tooltip
-                  content={intl.formatMessage(
-                    globalMessages.removefromBlocklist
-                  )}
-                >
-                  <Button
-                    buttonType={'ghost'}
-                    className="z-40"
-                    buttonSize={'sm'}
-                    onClick={() => onClickShowBlocklistBtn()}
-                  >
-                    <EyeIcon className={'h-3'} />
-                  </Button>
-                </Tooltip>
+                  {user?.userType !== UserType.PLEX &&
+                    (toggleWatchlist ? (
+                      <Button
+                        buttonType={'ghost'}
+                        className="z-40"
+                        buttonSize={'sm'}
+                        onClick={onClickWatchlistBtn}
+                      >
+                        <StarIcon className={'h-3 text-amber-300'} />
+                      </Button>
+                    ) : (
+                      <Button
+                        className="z-40"
+                        buttonSize={'sm'}
+                        onClick={onClickDeleteWatchlistBtn}
+                      >
+                        <MinusCircleIcon className={'h-3'} />
+                      </Button>
+                    ))}
+                  {showHideButton &&
+                    currentStatus !== MediaStatus.PROCESSING &&
+                    currentStatus !== MediaStatus.AVAILABLE &&
+                    currentStatus !== MediaStatus.PARTIALLY_AVAILABLE &&
+                    currentStatus !== MediaStatus.PENDING && (
+                      <Button
+                        buttonType={'ghost'}
+                        className="z-40"
+                        buttonSize={'sm'}
+                        onClick={() => setShowBlocklistModal(true)}
+                      >
+                        <EyeSlashIcon className={'h-3'} />
+                      </Button>
+                    )}
+                </div>
               )}
-            {currentStatus && currentStatus !== MediaStatus.UNKNOWN && (
-              <div className="flex flex-col items-center gap-1">
+              {showDetail &&
+                showHideButton &&
+                currentStatus == MediaStatus.BLOCKLISTED && (
+                  <Tooltip
+                    content={intl.formatMessage(
+                      globalMessages.removefromBlocklist
+                    )}
+                  >
+                    <Button
+                      buttonType={'ghost'}
+                      className="z-40"
+                      buttonSize={'sm'}
+                      onClick={() => onClickShowBlocklistBtn()}
+                    >
+                      <EyeIcon className={'h-3'} />
+                    </Button>
+                  </Tooltip>
+                )}
+              {currentStatus && currentStatus !== MediaStatus.UNKNOWN && (
                 <div className="pointer-events-none z-40 flex">
                   <StatusBadgeMini
                     status={currentStatus}
@@ -465,8 +602,8 @@ const TitleCard = ({
                     shrink
                   />
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
           <Transition
             as={Fragment}
@@ -560,20 +697,72 @@ const TitleCard = ({
                 {showRequestButton &&
                   (!currentStatus ||
                     currentStatus === MediaStatus.UNKNOWN ||
-                    currentStatus === MediaStatus.DELETED) && (
-                    <Button
-                      buttonType="primary"
-                      buttonSize="sm"
+                    currentStatus === MediaStatus.DELETED) &&
+                  (mediaType === 'tv' ? (
+                    <ButtonWithDropdown
+                      text={
+                        <>
+                          <ArrowDownTrayIcon className="h-4 w-4" />
+                          <span>
+                            {isQuickRequesting
+                              ? intl.formatMessage(globalMessages.requesting)
+                              : intl.formatMessage(messages.requestseason1)}
+                          </span>
+                        </>
+                      }
                       onClick={(e) => {
                         e.preventDefault();
-                        setShowRequestModal(true);
+                        e.stopPropagation();
+                        requestSeason1();
                       }}
-                      className="h-7 w-full"
+                      disabled={isQuickRequesting}
+                      className="!h-7 !w-full !justify-center !px-2 !py-0 text-xs"
                     >
-                      <ArrowDownTrayIcon />
-                      <span>{intl.formatMessage(globalMessages.request)}</span>
-                    </Button>
-                  )}
+                      <ButtonWithDropdown.Item
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openTvRequestModal('all');
+                        }}
+                      >
+                        <ArrowDownTrayIcon className="h-4 w-4" />
+                        <span>{intl.formatMessage(messages.requestall)}</span>
+                      </ButtonWithDropdown.Item>
+                    </ButtonWithDropdown>
+                  ) : (
+                    <ButtonWithDropdown
+                      text={
+                        <>
+                          <ArrowDownTrayIcon className="h-4 w-4" />
+                          <span>
+                            {isQuickRequesting
+                              ? intl.formatMessage(globalMessages.requesting)
+                              : intl.formatMessage(globalMessages.request)}
+                          </span>
+                        </>
+                      }
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        requestMovieInstant();
+                      }}
+                      disabled={isQuickRequesting}
+                      className="!h-7 !w-full !justify-center !px-2 !py-0 text-xs"
+                    >
+                      <ButtonWithDropdown.Item
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowRequestModal(true);
+                        }}
+                      >
+                        <ArrowDownTrayIcon className="h-4 w-4" />
+                        <span>
+                          {intl.formatMessage(messages.requestadvanced)}
+                        </span>
+                      </ButtonWithDropdown.Item>
+                    </ButtonWithDropdown>
+                  ))}
               </div>
             </div>
           </Transition>

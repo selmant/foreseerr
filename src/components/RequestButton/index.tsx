@@ -1,9 +1,14 @@
 import ButtonWithDropdown from '@app/components/Common/ButtonWithDropdown';
 import RequestModal from '@app/components/RequestModal';
 import useSettings from '@app/hooks/useSettings';
+import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import {
+  quickRequestMovie,
+  quickRequestTvSeasons,
+} from '@app/utils/quickRequest';
 import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import {
   CheckIcon,
@@ -23,6 +28,19 @@ const messages = defineMessages('components.RequestButton', {
   viewrequest4k: 'View 4K Request',
   requestmore: 'Request More',
   requestmore4k: 'Request More in 4K',
+  requestseason1: 'Request Season 1',
+  requestseason14k: 'Request Season 1 in 4K',
+  requestall: 'Request All…',
+  requestall4k: 'Request All in 4K…',
+  requestadvanced: 'Advanced…',
+  requestadvanced4k: 'Advanced 4K…',
+  // Reserved for a future single-episode request flow
+  requestepisodes: 'Request Episodes…',
+  requestepisodes4k: 'Request Episodes in 4K…',
+  season1Success: 'Season 1 requested successfully!',
+  season1Error: 'Could not request season 1. Opening the full request form.',
+  movieSuccess: 'Requested successfully!',
+  movieError: 'Could not request. Opening the full request form.',
   approverequest: 'Approve Request',
   approverequest4k: 'Approve 4K Request',
   declinerequest: 'Decline Request',
@@ -36,7 +54,6 @@ const messages = defineMessages('components.RequestButton', {
   decline4krequests:
     'Decline {requestCount, plural, one {4K Request} other {{requestCount} 4K Requests}}',
 });
-
 interface ButtonOption {
   id: string;
   text: string;
@@ -63,10 +80,15 @@ const RequestButton = ({
 }: RequestButtonProps) => {
   const intl = useIntl();
   const settings = useSettings();
+  const { addToast } = useToasts();
   const { user, hasPermission } = useUser();
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [showRequest4kModal, setShowRequest4kModal] = useState(false);
   const [editRequest, setEditRequest] = useState(false);
+  const [initialSeasonSelection, setInitialSeasonSelection] = useState<
+    'none' | 'all'
+  >('none');
+  const [isQuickRequesting, setIsQuickRequesting] = useState(false);
 
   // All pending requests
   const activeRequests = media?.requests.filter(
@@ -122,6 +144,73 @@ const RequestButton = ({
     mutate('/api/v1/request/count');
   };
 
+  const openTvModal = (is4k: boolean, selection: 'none' | 'all' = 'none') => {
+    setEditRequest(false);
+    setInitialSeasonSelection(selection);
+    if (is4k) {
+      setShowRequest4kModal(true);
+    } else {
+      setShowRequestModal(true);
+    }
+  };
+
+  const requestSeason1 = async (is4k: boolean) => {
+    if (isQuickRequesting) {
+      return;
+    }
+
+    setIsQuickRequesting(true);
+    try {
+      await quickRequestTvSeasons({
+        tmdbId,
+        seasons: [1],
+        is4k,
+      });
+      addToast(intl.formatMessage(messages.season1Success), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+      onUpdate();
+    } catch {
+      addToast(intl.formatMessage(messages.season1Error), {
+        appearance: 'warning',
+        autoDismiss: true,
+      });
+      openTvModal(is4k, 'none');
+    } finally {
+      setIsQuickRequesting(false);
+    }
+  };
+
+  const requestMovie = async (is4k: boolean) => {
+    if (isQuickRequesting) {
+      return;
+    }
+
+    setIsQuickRequesting(true);
+    try {
+      await quickRequestMovie({ tmdbId, is4k });
+      addToast(intl.formatMessage(messages.movieSuccess), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+      onUpdate();
+    } catch {
+      addToast(intl.formatMessage(messages.movieError), {
+        appearance: 'warning',
+        autoDismiss: true,
+      });
+      setEditRequest(false);
+      if (is4k) {
+        setShowRequest4kModal(true);
+      } else {
+        setShowRequestModal(true);
+      }
+    } finally {
+      setIsQuickRequesting(false);
+    }
+  };
+
   const buttons: ButtonOption[] = [];
 
   // If there are pending requests, show request management options first
@@ -137,6 +226,7 @@ const RequestButton = ({
         text: intl.formatMessage(messages.viewrequest),
         action: () => {
           setEditRequest(true);
+          setInitialSeasonSelection('none');
           setShowRequestModal(true);
         },
         svg: <InformationCircleIcon />,
@@ -207,6 +297,7 @@ const RequestButton = ({
         text: intl.formatMessage(messages.viewrequest4k),
         action: () => {
           setEditRequest(true);
+          setInitialSeasonSelection('none');
           setShowRequest4kModal(true);
         },
         svg: <InformationCircleIcon />,
@@ -282,15 +373,46 @@ const RequestButton = ({
       { type: 'or' }
     )
   ) {
-    buttons.push({
-      id: 'request',
-      text: intl.formatMessage(globalMessages.request),
-      action: () => {
-        setEditRequest(false);
-        setShowRequestModal(true);
-      },
-      svg: <ArrowDownTrayIcon />,
-    });
+    if (mediaType === 'tv') {
+      buttons.push(
+        {
+          id: 'request-season-1',
+          text: intl.formatMessage(messages.requestseason1),
+          action: () => {
+            requestSeason1(false);
+          },
+          svg: <ArrowDownTrayIcon />,
+        },
+        {
+          id: 'request-all',
+          text: intl.formatMessage(messages.requestall),
+          action: () => {
+            openTvModal(false, 'all');
+          },
+          svg: <ArrowDownTrayIcon />,
+        }
+      );
+    } else {
+      buttons.push(
+        {
+          id: 'request',
+          text: intl.formatMessage(globalMessages.request),
+          action: () => {
+            requestMovie(false);
+          },
+          svg: <ArrowDownTrayIcon />,
+        },
+        {
+          id: 'request-advanced',
+          text: intl.formatMessage(messages.requestadvanced),
+          action: () => {
+            setEditRequest(false);
+            setShowRequestModal(true);
+          },
+          svg: <ArrowDownTrayIcon />,
+        }
+      );
+    }
   } else if (
     mediaType === 'tv' &&
     (!activeRequest || activeRequest.requestedBy.id !== user?.id) &&
@@ -305,8 +427,7 @@ const RequestButton = ({
       id: 'request-more',
       text: intl.formatMessage(messages.requestmore),
       action: () => {
-        setEditRequest(false);
-        setShowRequestModal(true);
+        openTvModal(false, 'none');
       },
       svg: <ArrowDownTrayIcon />,
     });
@@ -329,15 +450,46 @@ const RequestButton = ({
     ((settings.currentSettings.movie4kEnabled && mediaType === 'movie') ||
       (settings.currentSettings.series4kEnabled && mediaType === 'tv'))
   ) {
-    buttons.push({
-      id: 'request4k',
-      text: intl.formatMessage(globalMessages.request4k),
-      action: () => {
-        setEditRequest(false);
-        setShowRequest4kModal(true);
-      },
-      svg: <ArrowDownTrayIcon />,
-    });
+    if (mediaType === 'tv') {
+      buttons.push(
+        {
+          id: 'request-season-1-4k',
+          text: intl.formatMessage(messages.requestseason14k),
+          action: () => {
+            requestSeason1(true);
+          },
+          svg: <ArrowDownTrayIcon />,
+        },
+        {
+          id: 'request-all-4k',
+          text: intl.formatMessage(messages.requestall4k),
+          action: () => {
+            openTvModal(true, 'all');
+          },
+          svg: <ArrowDownTrayIcon />,
+        }
+      );
+    } else {
+      buttons.push(
+        {
+          id: 'request4k',
+          text: intl.formatMessage(globalMessages.request4k),
+          action: () => {
+            requestMovie(true);
+          },
+          svg: <ArrowDownTrayIcon />,
+        },
+        {
+          id: 'request-advanced-4k',
+          text: intl.formatMessage(messages.requestadvanced4k),
+          action: () => {
+            setEditRequest(false);
+            setShowRequest4kModal(true);
+          },
+          svg: <ArrowDownTrayIcon />,
+        }
+      );
+    }
   } else if (
     mediaType === 'tv' &&
     (!active4kRequest || active4kRequest.requestedBy.id !== user?.id) &&
@@ -353,8 +505,7 @@ const RequestButton = ({
       id: 'request-more-4k',
       text: intl.formatMessage(messages.requestmore4k),
       action: () => {
-        setEditRequest(false);
-        setShowRequest4kModal(true);
+        openTvModal(true, 'none');
       },
       svg: <ArrowDownTrayIcon />,
     });
@@ -372,33 +523,55 @@ const RequestButton = ({
         tmdbId={tmdbId}
         show={showRequestModal}
         type={mediaType}
+        initialSeasonSelection={
+          mediaType === 'tv' ? initialSeasonSelection : 'none'
+        }
         editRequest={editRequest ? activeRequest : undefined}
         onComplete={() => {
           onUpdate();
           setShowRequestModal(false);
+          setInitialSeasonSelection('none');
         }}
-        onCancel={() => setShowRequestModal(false)}
+        onCancel={() => {
+          setShowRequestModal(false);
+          setInitialSeasonSelection('none');
+        }}
       />
       <RequestModal
         tmdbId={tmdbId}
         show={showRequest4kModal}
         type={mediaType}
+        initialSeasonSelection={
+          mediaType === 'tv' ? initialSeasonSelection : 'none'
+        }
         editRequest={editRequest ? active4kRequest : undefined}
         is4k
         onComplete={() => {
           onUpdate();
           setShowRequest4kModal(false);
+          setInitialSeasonSelection('none');
         }}
-        onCancel={() => setShowRequest4kModal(false)}
+        onCancel={() => {
+          setShowRequest4kModal(false);
+          setInitialSeasonSelection('none');
+        }}
       />
       <ButtonWithDropdown
         text={
           <>
             {buttonOne.svg}
-            <span>{buttonOne.text}</span>
+            <span>
+              {isQuickRequesting &&
+              (buttonOne.id.startsWith('request-season-1') ||
+                buttonOne.id === 'request' ||
+                buttonOne.id === 'request4k')
+                ? intl.formatMessage(globalMessages.requesting)
+                : buttonOne.text}
+            </span>
           </>
         }
         onClick={buttonOne.action}
+        disabled={isQuickRequesting}
         className="ml-2"
       >
         {others && others.length > 0
