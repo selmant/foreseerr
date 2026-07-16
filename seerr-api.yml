@@ -562,6 +562,249 @@ components:
         configured:
           type: boolean
           example: true
+        actionsEnabled:
+          type: boolean
+          description: Whether Trakt is enabled as a media-actions provider (watched/rate fan-out)
+          example: true
+    MediaActionProviderResult:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: [trakt]
+        ok:
+          type: boolean
+        watched:
+          type: boolean
+        rating:
+          type: number
+          nullable: true
+          description: Provider-native score (Trakt 1–10)
+        ratingStars:
+          type: number
+          nullable: true
+          description: UI half-stars (0.5–5)
+        error:
+          type: string
+    MediaActionStatus:
+      type: object
+      properties:
+        tmdbId:
+          type: number
+        mediaType:
+          type: string
+          enum: [movie, tv]
+        watched:
+          type: boolean
+        rating:
+          type: number
+          nullable: true
+        ratingStars:
+          type: number
+          nullable: true
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaActionProviderResult'
+    RatingBadgeSettings:
+      type: object
+      properties:
+        showTmdb:
+          type: boolean
+          example: true
+        showImdb:
+          type: boolean
+          example: true
+        showRt:
+          type: boolean
+          example: true
+        showRtUser:
+          type: boolean
+          example: true
+        showMetacritic:
+          type: boolean
+          example: true
+        showTraktCommunity:
+          type: boolean
+          example: true
+        posterTmdb:
+          type: boolean
+          description: Show TMDB on idle (unfocused) posters
+          example: true
+        posterImdb:
+          type: boolean
+          example: true
+        posterRt:
+          type: boolean
+          example: true
+        posterRtUser:
+          type: boolean
+          example: false
+        posterMetacritic:
+          type: boolean
+          example: false
+        posterTraktCommunity:
+          type: boolean
+          example: false
+    MdbListSettings:
+      type: object
+      properties:
+        apiKey:
+          type: string
+          description: Masked on GET responses when configured
+          example: '********'
+        configured:
+          type: boolean
+          example: true
+        showTmdb:
+          type: boolean
+          example: true
+        showImdb:
+          type: boolean
+          example: true
+        showRt:
+          type: boolean
+          example: true
+        showRtUser:
+          type: boolean
+          example: true
+        showMetacritic:
+          type: boolean
+          example: true
+        showTraktCommunity:
+          type: boolean
+          example: true
+        posterTmdb:
+          type: boolean
+          example: true
+        posterImdb:
+          type: boolean
+          example: true
+        posterRt:
+          type: boolean
+          example: true
+        posterRtUser:
+          type: boolean
+          example: false
+        posterMetacritic:
+          type: boolean
+          example: false
+        posterTraktCommunity:
+          type: boolean
+          example: false
+    RequestFiltersSettings:
+      type: object
+      description: Discover browse quality filters (empty thresholds are off). Does not block manual requests.
+      properties:
+        enabled:
+          type: boolean
+          example: false
+        tmdbThreshold:
+          type: number
+          nullable: true
+          example: null
+        tmdbMinVotes:
+          type: number
+          nullable: true
+          example: null
+        imdbThreshold:
+          type: number
+          nullable: true
+          example: null
+        imdbMinVotes:
+          type: number
+          nullable: true
+          example: null
+        rtCriticsThreshold:
+          type: number
+          nullable: true
+          description: Minimum Rotten Tomatoes critics score (0–100) via MDBList
+          example: null
+        rtAudienceThreshold:
+          type: number
+          nullable: true
+          description: Minimum Rotten Tomatoes audience score (0–100) via MDBList
+          example: null
+        metacriticThreshold:
+          type: number
+          nullable: true
+          description: Minimum Metacritic score (0–100) via MDBList
+          example: null
+        traktThreshold:
+          type: number
+          nullable: true
+          description: Minimum Trakt community rating (0–10) via MDBList
+          example: null
+        includeNoRating:
+          type: boolean
+          example: true
+        minReleaseYear:
+          type: number
+          nullable: true
+          example: null
+        excludedGenreIds:
+          type: array
+          items:
+            type: number
+          example: []
+        animeSonarrServerId:
+          type: number
+          nullable: true
+          example: null
+        animeSonarrServerId4k:
+          type: number
+          nullable: true
+          example: null
+    RatingResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+          enum: [mdblist, legacy]
+        rt:
+          type: object
+          properties:
+            title:
+              type: string
+            year:
+              type: number
+            url:
+              type: string
+            criticsScore:
+              type: number
+            criticsRating:
+              type: string
+              enum: ['Rotten', 'Fresh', 'Certified Fresh']
+            audienceScore:
+              type: number
+            audienceRating:
+              type: string
+              enum: ['Spilled', 'Upright']
+        imdb:
+          type: object
+          properties:
+            title:
+              type: string
+            url:
+              type: string
+            criticsScore:
+              type: number
+            criticsScoreCount:
+              type: number
+        metacritic:
+          type: object
+          properties:
+            score:
+              type: number
+              example: 86
+        trakt:
+          type: object
+          properties:
+            rating:
+              type: number
+              example: 8.8
+            votes:
+              type: number
     RadarrSettings:
       type: object
       properties:
@@ -731,6 +974,16 @@ components:
           type: boolean
           description: Whether admin Trakt API credentials are configured
           example: false
+        mediaActionsTraktEnabled:
+          type: boolean
+          description: Whether Trakt is enabled for watched/unwatched/rate fan-out
+          example: true
+        mdblistConfigured:
+          type: boolean
+          description: Whether an MDBList API key is configured
+          example: false
+        ratingBadges:
+          $ref: '#/components/schemas/RatingBadgeSettings'
     MovieResult:
       type: object
       required:
@@ -2743,6 +2996,68 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TraktSettings'
+  /settings/mdblist:
+    get:
+      summary: Get MDBList settings
+      description: Retrieves MDBList API key (masked) and rating badge visibility toggles.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MdbListSettings'
+    post:
+      summary: Update MDBList settings
+      description: Updates MDBList API key and which rating badges to display.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MdbListSettings'
+      responses:
+        '200':
+          description: Values were successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MdbListSettings'
+  /settings/request-filters:
+    get:
+      summary: Get Discover filter and anime routing settings
+      description: Retrieves Discover browse quality filters and optional dedicated anime Sonarr server routing. Empty thresholds are off; filters do not block manual requests.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestFiltersSettings'
+    post:
+      summary: Update Discover filter and anime routing settings
+      description: Updates Discover browse quality filters and anime Sonarr routing. Empty thresholds are off; filters do not block manual requests.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestFiltersSettings'
+      responses:
+        '200':
+          description: Values were successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestFiltersSettings'
   /settings/radarr:
     get:
       summary: Get Radarr settings
@@ -6596,6 +6911,29 @@ paths:
           description: Trakt watchlist returned
         '404':
           description: Trakt account not linked
+  /discover/trakt/history:
+    get:
+      summary: Get the authenticated user's Trakt watch history.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [movie, tv, both, anime]
+            default: both
+      responses:
+        '200':
+          description: Trakt history returned
+        '404':
+          description: Trakt account not linked
   /discover/trakt/lists:
     get:
       summary: List the authenticated user's Trakt lists.
@@ -7214,8 +7552,10 @@ paths:
                     enum: ['Spilled', 'Upright']
   /movie/{movieId}/ratingscombined:
     get:
-      summary: Get RT and IMDB movie ratings combined
-      description: Returns ratings from RottenTomatoes and IMDB based on the provided movieId in a JSON object.
+      summary: Get combined movie ratings
+      description: >
+        Returns multi-source ratings for a movie. Uses MDBList when configured;
+        otherwise falls back to Rotten Tomatoes + IMDB scrapers.
       tags:
         - movies
       parameters:
@@ -7231,44 +7571,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  rt:
-                    type: object
-                    properties:
-                      title:
-                        type: string
-                        example: Mulan
-                      year:
-                        type: number
-                        example: 2020
-                      url:
-                        type: string
-                        example: 'http://www.rottentomatoes.com/m/mulan_2020/'
-                      criticsScore:
-                        type: number
-                        example: 85
-                      criticsRating:
-                        type: string
-                        enum: ['Rotten', 'Fresh', 'Certified Fresh']
-                      audienceScore:
-                        type: number
-                        example: 65
-                      audienceRating:
-                        type: string
-                        enum: ['Spilled', 'Upright']
-                  imdb:
-                    type: object
-                    properties:
-                      title:
-                        type: string
-                        example: I am Legend
-                      url:
-                        type: string
-                        example: 'https://www.imdb.com/title/tt0480249'
-                      criticsScore:
-                        type: number
-                        example: 6.5
+                $ref: '#/components/schemas/RatingResponse'
   /tv/{tvId}:
     get:
       summary: Get TV details
@@ -7451,6 +7754,28 @@ paths:
                   criticsRating:
                     type: string
                     enum: ['Rotten', 'Fresh']
+  /tv/{tvId}/ratingscombined:
+    get:
+      summary: Get combined TV ratings
+      description: >
+        Returns multi-source ratings for a series. Uses MDBList when configured;
+        otherwise falls back to Rotten Tomatoes.
+      tags:
+        - tv
+      parameters:
+        - in: path
+          name: tvId
+          required: true
+          schema:
+            type: number
+            example: 76479
+      responses:
+        '200':
+          description: Ratings returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatingResponse'
   /person/{personId}:
     get:
       summary: Get person details
@@ -7512,6 +7837,182 @@ paths:
                       $ref: '#/components/schemas/CreditCrew'
                   id:
                     type: number
+  /media-actions/status-batch:
+    post:
+      summary: Batch media action status
+      description: Returns watched/rating status for many titles via enabled action providers (fan-out).
+      tags:
+        - media
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - mediaType
+                      - tmdbId
+                    properties:
+                      mediaType:
+                        type: string
+                        enum: [movie, tv]
+                      tmdbId:
+                        type: number
+      responses:
+        '200':
+          description: Statuses returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MediaActionStatus'
+  /media-actions/{mediaType}/{tmdbId}/status:
+    get:
+      summary: Get media action status
+      description: Returns watched/rating status aggregated from enabled action providers.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaType
+          required: true
+          schema:
+            type: string
+            enum: [movie, tv]
+        - in: path
+          name: tmdbId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
+  /media-actions/{mediaType}/{tmdbId}/watched:
+    post:
+      summary: Mark media watched
+      description: Fans out mark-watched (and optional rating) to all enabled action providers.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaType
+          required: true
+          schema:
+            type: string
+            enum: [movie, tv]
+        - in: path
+          name: tmdbId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                watchedAt:
+                  type: string
+                  enum: [now, release]
+                  default: now
+                ratingStars:
+                  type: number
+                  minimum: 0.5
+                  maximum: 5
+      responses:
+        '200':
+          description: Marked watched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
+  /media-actions/{mediaType}/{tmdbId}/unwatched:
+    post:
+      summary: Mark media unwatched
+      description: Fans out unmark-watched to all enabled action providers.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaType
+          required: true
+          schema:
+            type: string
+            enum: [movie, tv]
+        - in: path
+          name: tmdbId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                removeRating:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Marked unwatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
+  /media-actions/{mediaType}/{tmdbId}/rate:
+    post:
+      summary: Rate media
+      description: Fans out user score to all enabled action providers.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaType
+          required: true
+          schema:
+            type: string
+            enum: [movie, tv]
+        - in: path
+          name: tmdbId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ratingStars
+              properties:
+                ratingStars:
+                  type: number
+                  minimum: 0.5
+                  maximum: 5
+      responses:
+        '200':
+          description: Rated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
   /media:
     get:
       summary: Get media

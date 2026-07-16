@@ -21,6 +21,7 @@ describe('OpenAPI Trakt contract', () => {
     '/user/{userId}/settings/linked-accounts/trakt/device/token': ['post'],
     '/discover/trakt/recommendations': ['get'],
     '/discover/trakt/watchlist': ['get'],
+    '/discover/trakt/history': ['get'],
     '/discover/trakt/lists': ['get'],
     '/discover/trakt/lists/search': ['get'],
     '/discover/trakt/lists/{id}': ['get'],
