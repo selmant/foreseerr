@@ -19,6 +19,9 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
     'Configure your Trakt API application credentials. Users can then link their Trakt accounts to browse personalized recommendations, lists, and watchlists.',
   clientId: 'Client ID',
   clientSecret: 'Client Secret',
+  actionsEnabled: 'Enable watched / rate actions',
+  actionsEnabledTip:
+    'When enabled, linked users can mark titles watched/unwatched and give a score from title posters. Actions fan out to every enabled provider (Trakt is the first).',
   validationClientId: 'You must provide a Client ID',
   validationClientSecret: 'You must provide a Client Secret',
   toastSettingsSuccess: 'Trakt settings saved successfully!',
@@ -33,6 +36,7 @@ interface TraktSettingsResponse {
   clientId: string;
   clientSecret: string;
   configured: boolean;
+  actionsEnabled: boolean;
 }
 
 const SettingsTrakt = () => {
@@ -97,6 +101,7 @@ const SettingsTrakt = () => {
         initialValues={{
           clientId: data?.clientId ?? '',
           clientSecret: data?.clientSecret ?? '',
+          actionsEnabled: data?.actionsEnabled !== false,
         }}
         enableReinitialize
         validationSchema={TraktSettingsSchema}
@@ -105,6 +110,7 @@ const SettingsTrakt = () => {
             await axios.post('/api/v1/settings/trakt', {
               clientId: values.clientId.trim(),
               clientSecret: values.clientSecret.trim(),
+              actionsEnabled: values.actionsEnabled,
             });
             addToast(intl.formatMessage(messages.toastSettingsSuccess), {
               autoDismiss: true,
@@ -120,7 +126,15 @@ const SettingsTrakt = () => {
           }
         }}
       >
-        {({ errors, touched, handleSubmit, isSubmitting, isValid }) => (
+        {({
+          errors,
+          touched,
+          values,
+          handleSubmit,
+          isSubmitting,
+          isValid,
+          setFieldValue,
+        }) => (
           <form className="section" onSubmit={handleSubmit}>
             <div className="form-row">
               <label htmlFor="clientId" className="text-label">
@@ -162,6 +176,24 @@ const SettingsTrakt = () => {
                   typeof errors.clientSecret === 'string' && (
                     <div className="error">{errors.clientSecret}</div>
                   )}
+              </div>
+            </div>
+            <div className="form-row">
+              <label htmlFor="actionsEnabled" className="text-label">
+                {intl.formatMessage(messages.actionsEnabled)}
+              </label>
+              <div className="form-input-area">
+                <Field
+                  type="checkbox"
+                  id="actionsEnabled"
+                  name="actionsEnabled"
+                  onChange={() =>
+                    setFieldValue('actionsEnabled', !values.actionsEnabled)
+                  }
+                />
+                <p className="text-sm text-gray-400">
+                  {intl.formatMessage(messages.actionsEnabledTip)}
+                </p>
               </div>
             </div>
             <div className="actions">
