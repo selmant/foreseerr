@@ -1,0 +1,243 @@
+import Badge from '@app/components/Common/Badge';
+import LoadingSpinner from '@app/components/Common/LoadingSpinner';
+import PageTitle from '@app/components/Common/PageTitle';
+import SensitiveInput from '@app/components/Common/SensitiveInput';
+import useToasts from '@app/hooks/useToasts';
+import globalMessages from '@app/i18n/globalMessages';
+import defineMessages from '@app/utils/defineMessages';
+import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
+import type { RatingBadgeSettings } from '@server/constants/ratingBadges';
+import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
+import axios from 'axios';
+import { Field, Formik } from 'formik';
+import { useIntl } from 'react-intl';
+import useSWR, { mutate as globalMutate } from 'swr';
+
+const messages = defineMessages('components.Settings.SettingsMdblist', {
+  mdblist: 'MDBList',
+  mdblistSettings: 'MDBList Settings',
+  mdblistSettingsDescription:
+    'Configure an MDBList API key to show aggregated IMDb, Rotten Tomatoes, Metacritic, and Trakt rating badges on title cards and media details.',
+  apiKey: 'API Key',
+  createAppTip:
+    'Get a free API key at <MdbListLink>mdblist.com/preferences</MdbListLink>.',
+  ratingBadges: 'Rating sources',
+  ratingBadgesDescription:
+    'Sources enabled here appear on detail pages and when a poster is focused/hovered.',
+  posterIdle: 'Poster (idle)',
+  posterIdleDescription:
+    'Which enabled sources also show on posters before focus. Hover/focus shows all enabled sources above.',
+  showTmdb: 'TMDB',
+  showImdb: 'IMDb',
+  showRt: 'Rotten Tomatoes (critics)',
+  showRtUser: 'Rotten Tomatoes (audience)',
+  showMetacritic: 'Metacritic',
+  showTraktCommunity: 'Trakt community',
+  toastSettingsSuccess: 'MDBList settings saved successfully!',
+  toastSettingsFailure: 'Something went wrong while saving MDBList settings.',
+  configured: 'Configured',
+  notConfigured: 'Not Configured',
+});
+
+type MdbListSettingsResponse = {
+  apiKey: string;
+  configured: boolean;
+} & RatingBadgeSettings;
+
+const SOURCE_FIELDS = [
+  ['showTmdb', 'posterTmdb', messages.showTmdb],
+  ['showImdb', 'posterImdb', messages.showImdb],
+  ['showRt', 'posterRt', messages.showRt],
+  ['showRtUser', 'posterRtUser', messages.showRtUser],
+  ['showMetacritic', 'posterMetacritic', messages.showMetacritic],
+  ['showTraktCommunity', 'posterTraktCommunity', messages.showTraktCommunity],
+] as const;
+
+const SettingsMdblist = () => {
+  const intl = useIntl();
+  const { addToast } = useToasts();
+  const { data, error, mutate } = useSWR<MdbListSettingsResponse>(
+    '/api/v1/settings/mdblist'
+  );
+
+  if (!data && !error) {
+    return <LoadingSpinner />;
+  }
+
+  return (
+    <>
+      <PageTitle
+        title={[
+          intl.formatMessage(messages.mdblist),
+          intl.formatMessage(globalMessages.settings),
+        ]}
+      />
+      <div className="mb-6">
+        <h3 className="heading">
+          {intl.formatMessage(messages.mdblistSettings)}
+          <Badge
+            badgeType={data?.configured ? 'success' : 'warning'}
+            className="ml-2"
+          >
+            {intl.formatMessage(
+              data?.configured ? messages.configured : messages.notConfigured
+            )}
+          </Badge>
+        </h3>
+        <p className="description">
+          {intl.formatMessage(messages.mdblistSettingsDescription)}
+        </p>
+        <p className="description mt-2">
+          {intl.formatMessage(messages.createAppTip, {
+            MdbListLink: (msg: React.ReactNode) => (
+              <a
+                href="https://mdblist.com/preferences/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-white underline transition hover:text-gray-200"
+              >
+                {msg}
+              </a>
+            ),
+          })}
+        </p>
+      </div>
+      <Formik
+        initialValues={{
+          apiKey: data?.apiKey ?? '',
+          ...DEFAULT_RATING_BADGE_SETTINGS,
+          ...data,
+        }}
+        enableReinitialize
+        onSubmit={async (values) => {
+          try {
+            await axios.post('/api/v1/settings/mdblist', {
+              apiKey: values.apiKey.trim(),
+              showTmdb: values.showTmdb,
+              showImdb: values.showImdb,
+              showRt: values.showRt,
+              showRtUser: values.showRtUser,
+              showMetacritic: values.showMetacritic,
+              showTraktCommunity: values.showTraktCommunity,
+              posterTmdb: values.posterTmdb,
+              posterImdb: values.posterImdb,
+              posterRt: values.posterRt,
+              posterRtUser: values.posterRtUser,
+              posterMetacritic: values.posterMetacritic,
+              posterTraktCommunity: values.posterTraktCommunity,
+            });
+            addToast(intl.formatMessage(messages.toastSettingsSuccess), {
+              autoDismiss: true,
+              appearance: 'success',
+            });
+          } catch {
+            addToast(intl.formatMessage(messages.toastSettingsFailure), {
+              autoDismiss: true,
+              appearance: 'error',
+            });
+          } finally {
+            mutate();
+            globalMutate('/api/v1/settings/public');
+          }
+        }}
+      >
+        {({ handleSubmit, isSubmitting, values }) => (
+          <form className="section" onSubmit={handleSubmit}>
+            <div className="form-row">
+              <label htmlFor="apiKey" className="text-label">
+                {intl.formatMessage(messages.apiKey)}
+              </label>
+              <div className="form-input-area">
+                <div className="form-input-field">
+                  <SensitiveInput
+                    as="field"
+                    id="apiKey"
+                    name="apiKey"
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mb-6 mt-8">
+              <h3 className="heading">
+                {intl.formatMessage(messages.ratingBadges)}
+              </h3>
+              <p className="description">
+                {intl.formatMessage(messages.ratingBadgesDescription)}
+              </p>
+            </div>
+
+            {SOURCE_FIELDS.map(([showName, , label]) => (
+              <div className="form-row" key={showName}>
+                <label htmlFor={showName} className="checkbox-label">
+                  {intl.formatMessage(label)}
+                </label>
+                <div className="form-input-area">
+                  <Field
+                    type="checkbox"
+                    id={showName}
+                    name={showName}
+                    className="form-checkbox"
+                  />
+                </div>
+              </div>
+            ))}
+
+            <div className="mb-6 mt-8">
+              <h3 className="heading">
+                {intl.formatMessage(messages.posterIdle)}
+              </h3>
+              <p className="description">
+                {intl.formatMessage(messages.posterIdleDescription)}
+              </p>
+            </div>
+
+            {SOURCE_FIELDS.map(([showName, posterName, label]) => (
+              <div className="form-row" key={posterName}>
+                <label
+                  htmlFor={posterName}
+                  className={`checkbox-label ${
+                    !values[showName] ? 'opacity-50' : ''
+                  }`}
+                >
+                  {intl.formatMessage(label)}
+                </label>
+                <div className="form-input-area">
+                  <Field
+                    type="checkbox"
+                    id={posterName}
+                    name={posterName}
+                    className="form-checkbox"
+                    disabled={!values[showName]}
+                  />
+                </div>
+              </div>
+            ))}
+
+            <div className="actions">
+              <div className="flex justify-end">
+                <span className="ml-3 inline-flex rounded-md shadow-sm">
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={isSubmitting}
+                  >
+                    <ArrowDownOnSquareIcon />
+                    <span>
+                      {isSubmitting
+                        ? intl.formatMessage(globalMessages.saving)
+                        : intl.formatMessage(globalMessages.save)}
+                    </span>
+                  </button>
+                </span>
+              </div>
+            </div>
+          </form>
+        )}
+      </Formik>
+    </>
+  );
+};
+
+export default SettingsMdblist;

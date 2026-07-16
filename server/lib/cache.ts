@@ -6,6 +6,7 @@ export type AvailableCacheIds =
   | 'sonarr'
   | 'rt'
   | 'imdb'
+  | 'mdblist'
   | 'github'
   | 'plexguid'
   | 'plextv'
@@ -56,6 +57,10 @@ class CacheManager {
       checkPeriod: 60 * 30,
     }),
     imdb: new Cache('imdb', 'IMDB Radarr Proxy', {
+      stdTtl: 43200,
+      checkPeriod: 60 * 30,
+    }),
+    mdblist: new Cache('mdblist', 'MDBList API', {
       stdTtl: 43200,
       checkPeriod: 60 * 30,
     }),

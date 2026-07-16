@@ -1,11 +1,10 @@
-import IMDBRadarrProxy from '@server/api/rating/imdbRadarrProxy';
 import RottenTomatoes from '@server/api/rating/rottentomatoes';
-import { type RatingResponse } from '@server/api/ratings';
 import TheMovieDb from '@server/api/themoviedb';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { Watchlist } from '@server/entity/Watchlist';
+import { fetchCombinedRatings } from '@server/lib/ratings';
 import logger from '@server/logger';
 import { mapMovieDetails } from '@server/models/Movie';
 import { mapMovieResult } from '@server/models/Search';
@@ -185,39 +184,32 @@ movieRoutes.get('/:id/ratings', async (req, res, next) => {
 });
 
 /**
- * Endpoint combining RottenTomatoes and IMDB
+ * Combined multi-source ratings (MDBList when configured; else RT + IMDB).
  */
 movieRoutes.get('/:id/ratingscombined', async (req, res, next) => {
   const tmdb = new TheMovieDb();
-  const rtapi = new RottenTomatoes();
-  const imdbApi = new IMDBRadarrProxy();
 
   try {
     const movie = await tmdb.getMovie({
       movieId: Number(req.params.id),
     });
 
-    const rtratings = await rtapi.getMovieRatings(
-      movie.title,
-      Number(movie.release_date.slice(0, 4))
-    );
+    const ratings = await fetchCombinedRatings({
+      mediaType: 'movie',
+      tmdbId: movie.id,
+      title: movie.title,
+      year: movie.release_date
+        ? Number(movie.release_date.slice(0, 4))
+        : undefined,
+      imdbId: movie.imdb_id,
+    });
 
-    let imdbRatings;
-    if (movie.imdb_id) {
-      imdbRatings = await imdbApi.getMovieRatings(movie.imdb_id);
-    }
-
-    if (!rtratings && !imdbRatings) {
+    if (!ratings) {
       return next({
         status: 404,
         message: 'No ratings found.',
       });
     }
-
-    const ratings: RatingResponse = {
-      ...(rtratings ? { rt: rtratings } : {}),
-      ...(imdbRatings ? { imdb: imdbRatings } : {}),
-    };
 
     return res.status(200).json(ratings);
   } catch (e) {
