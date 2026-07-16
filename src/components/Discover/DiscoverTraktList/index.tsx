@@ -1,6 +1,8 @@
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters';
+import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
 import useDiscover from '@app/hooks/useDiscover';
 import useSettings from '@app/hooks/useSettings';
 import ErrorPage from '@app/pages/_error';
@@ -31,7 +33,7 @@ const DiscoverTraktList = () => {
     mutate,
   } = useDiscover<WatchlistItem & { title?: string }>(
     url ? '/api/v1/discover/trakt/list' : '',
-    { url }
+    prepareTraktDiscoverOptions(router.query, ['url'])
   );
 
   if (!settings.currentSettings.traktConfigured) {
@@ -61,8 +63,9 @@ const DiscoverTraktList = () => {
   return (
     <>
       <PageTitle title={pageTitle} />
-      <div className="mb-5 mt-1">
+      <div className="mb-5 mt-1 flex flex-col justify-between lg:flex-row lg:items-end">
         <Header>{pageTitle}</Header>
+        <TraktDiscoverFilters />
       </div>
       <ListView
         plexItems={titles}

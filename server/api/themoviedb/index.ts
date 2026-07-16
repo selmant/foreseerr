@@ -3,6 +3,7 @@ import type { TvShowProvider } from '@server/api/provider';
 import cacheManager from '@server/lib/cache';
 import { getSettings } from '@server/lib/settings';
 import { sortBy } from 'lodash';
+import { ANIME_KEYWORD_ID } from './constants';
 import type {
   TmdbCollection,
   TmdbCompanySearchResponse,
@@ -1224,6 +1225,46 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         cause: e,
       });
     }
+  }
+
+  public async mediaHasKeyword({
+    mediaType,
+    tmdbId,
+    keywordId,
+  }: {
+    mediaType: 'movie' | 'tv';
+    tmdbId: number;
+    keywordId: number;
+  }): Promise<boolean> {
+    try {
+      const path =
+        mediaType === 'movie'
+          ? `/movie/${tmdbId}/keywords`
+          : `/tv/${tmdbId}/keywords`;
+      const data = await this.get<{ results: TmdbKeyword[] }>(
+        path,
+        undefined,
+        604800
+      );
+
+      return data.results?.some((keyword) => keyword.id === keywordId) ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  public async mediaHasAnimeKeyword({
+    mediaType,
+    tmdbId,
+  }: {
+    mediaType: 'movie' | 'tv';
+    tmdbId: number;
+  }): Promise<boolean> {
+    return this.mediaHasKeyword({
+      mediaType,
+      tmdbId,
+      keywordId: ANIME_KEYWORD_ID,
+    });
   }
 
   public async searchKeyword({

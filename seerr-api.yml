@@ -6556,8 +6556,18 @@ paths:
           name: type
           schema:
             type: string
-            enum: [movie, tv, both]
+            enum: [movie, tv, both, anime]
             default: both
+        - in: query
+          name: ignoreCollected
+          schema:
+            type: boolean
+            default: false
+        - in: query
+          name: ignoreWatchlisted
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Trakt recommendations returned
@@ -6575,6 +6585,12 @@ paths:
             type: number
             example: 1
             default: 1
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [movie, tv, both, anime]
+            default: both
       responses:
         '200':
           description: Trakt watchlist returned
@@ -6623,6 +6639,12 @@ paths:
             type: number
             example: 1
             default: 1
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [movie, tv, both, anime]
+            default: both
       responses:
         '200':
           description: Trakt list items returned
@@ -6668,6 +6690,12 @@ paths:
             type: number
             example: 1
             default: 1
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [movie, tv, both, anime]
+            default: both
       responses:
         '200':
           description: Trakt list items returned

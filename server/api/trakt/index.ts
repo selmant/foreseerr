@@ -17,7 +17,7 @@ import { proxyRequestInterceptor } from '@server/utils/customProxyAgent';
 import axios, { type AxiosInstance } from 'axios';
 
 const TRAKT_BASE_URL = 'https://api.trakt.tv';
-const TRAKT_RECOMMENDATIONS_LIMIT_MAX = 250;
+export const TRAKT_RECOMMENDATIONS_LIMIT_MAX = 500;
 const TRAKT_REFRESH_WINDOW_SECONDS = 300;
 const TRAKT_RETRY_AFTER_MAX_SECONDS = 5;
 const TRAKT_RATE_LIMIT_FALLBACK_SECONDS = 1;

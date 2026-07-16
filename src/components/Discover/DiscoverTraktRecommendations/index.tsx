@@ -1,6 +1,8 @@
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters';
+import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
 import useDiscover from '@app/hooks/useDiscover';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
@@ -8,6 +10,7 @@ import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
@@ -22,6 +25,7 @@ const messages = defineMessages(
 
 const DiscoverTraktRecommendations = () => {
   const intl = useIntl();
+  const router = useRouter();
   const settings = useSettings();
   const { user } = useUser();
   const { data: traktStatus } = useSWR<{
@@ -43,7 +47,8 @@ const DiscoverTraktRecommendations = () => {
     error,
     mutate,
   } = useDiscover<WatchlistItem>(
-    traktStatus?.connected ? '/api/v1/discover/trakt/recommendations' : ''
+    traktStatus?.connected ? '/api/v1/discover/trakt/recommendations' : '',
+    prepareTraktDiscoverOptions(router.query)
   );
 
   if (!settings.currentSettings.traktConfigured) {
@@ -77,7 +82,7 @@ const DiscoverTraktRecommendations = () => {
   return (
     <>
       <PageTitle title={intl.formatMessage(messages.title)} />
-      <div className="mb-5 mt-1">
+      <div className="mb-5 mt-1 flex flex-col justify-between lg:flex-row lg:items-end">
         <Header
           subtext={
             <Link href="/discover/trakt/lists" className="hover:underline">
@@ -87,6 +92,7 @@ const DiscoverTraktRecommendations = () => {
         >
           {intl.formatMessage(messages.title)}
         </Header>
+        <TraktDiscoverFilters showRecommendationFilters />
       </div>
       <ListView
         plexItems={titles}
