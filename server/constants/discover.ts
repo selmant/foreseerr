@@ -25,6 +25,7 @@ export enum DiscoverSliderType {
   TRAKT_RECOMMENDATIONS,
   TRAKT_WATCHLIST,
   TRAKT_LIST,
+  TRAKT_HISTORY,
 }
 
 export const defaultSliders: Partial<DiscoverSlider>[] = [
@@ -111,5 +112,11 @@ export const defaultSliders: Partial<DiscoverSlider>[] = [
     enabled: true,
     isBuiltIn: true,
     order: 13,
+  },
+  {
+    type: DiscoverSliderType.TRAKT_HISTORY,
+    enabled: true,
+    isBuiltIn: true,
+    order: 14,
   },
 ];

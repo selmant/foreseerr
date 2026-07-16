@@ -477,6 +477,7 @@ settingsRoutes.get('/trakt', (_req, res) => {
     // Never return the full secret; indicate whether one is set
     clientSecret: settings.trakt.clientSecret ? '********' : '',
     configured: Boolean(settings.trakt.clientId && settings.trakt.clientSecret),
+    actionsEnabled: settings.mediaActions?.providers?.trakt !== false,
   });
 });
 
@@ -496,6 +497,11 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
       clientId,
       clientSecret,
     };
+    settings.mediaActions = {
+      providers: {
+        trakt: req.body.actionsEnabled !== false,
+      },
+    };
     await settings.save();
 
     return res.status(200).json({
@@ -504,6 +510,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
       configured: Boolean(
         settings.trakt.clientId && settings.trakt.clientSecret
       ),
+      actionsEnabled: settings.mediaActions.providers.trakt !== false,
     });
   } catch (e) {
     logger.error('Something went wrong saving Trakt settings', {
@@ -513,6 +520,153 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
     return next({
       status: 500,
       message: 'Unable to save Trakt settings.',
+    });
+  }
+});
+
+const boolOrDefault = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  return fallback;
+};
+
+const mdblistSettingsResponse = () => {
+  const settings = getSettings();
+  const m = settings.mdblist;
+  return {
+    apiKey: m.apiKey ? '********' : '',
+    configured: Boolean(m.apiKey?.trim()),
+    showTmdb: m.showTmdb,
+    showImdb: m.showImdb,
+    showRt: m.showRt,
+    showRtUser: m.showRtUser,
+    showMetacritic: m.showMetacritic,
+    showTraktCommunity: m.showTraktCommunity,
+    posterTmdb: m.posterTmdb,
+    posterImdb: m.posterImdb,
+    posterRt: m.posterRt,
+    posterRtUser: m.posterRtUser,
+    posterMetacritic: m.posterMetacritic,
+    posterTraktCommunity: m.posterTraktCommunity,
+  };
+};
+
+settingsRoutes.get('/mdblist', (_req, res) => {
+  res.status(200).json(mdblistSettingsResponse());
+});
+
+const nullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const requestFiltersResponse = () => {
+  const settings = getSettings();
+  return { ...settings.requestFilters };
+};
+
+settingsRoutes.get('/request-filters', (_req, res) => {
+  res.status(200).json(requestFiltersResponse());
+});
+
+settingsRoutes.post('/request-filters', async (req, res, next) => {
+  const settings = getSettings();
+
+  try {
+    const excludedGenreIds = Array.isArray(req.body.excludedGenreIds)
+      ? req.body.excludedGenreIds
+          .map((id: unknown) => Number(id))
+          .filter((id: number) => Number.isFinite(id))
+      : settings.requestFilters.excludedGenreIds;
+
+    settings.requestFilters = {
+      enabled: req.body.enabled === true,
+      tmdbThreshold: nullableNumber(req.body.tmdbThreshold),
+      tmdbMinVotes: nullableNumber(req.body.tmdbMinVotes),
+      imdbThreshold: nullableNumber(req.body.imdbThreshold),
+      imdbMinVotes: nullableNumber(req.body.imdbMinVotes),
+      rtCriticsThreshold: nullableNumber(req.body.rtCriticsThreshold),
+      rtAudienceThreshold: nullableNumber(req.body.rtAudienceThreshold),
+      metacriticThreshold: nullableNumber(req.body.metacriticThreshold),
+      traktThreshold: nullableNumber(req.body.traktThreshold),
+      includeNoRating: req.body.includeNoRating !== false,
+      minReleaseYear: nullableNumber(req.body.minReleaseYear),
+      excludedGenreIds,
+      animeSonarrServerId: nullableNumber(req.body.animeSonarrServerId),
+      animeSonarrServerId4k: nullableNumber(req.body.animeSonarrServerId4k),
+    };
+    await settings.save();
+
+    return res.status(200).json(requestFiltersResponse());
+  } catch (e) {
+    logger.error('Something went wrong saving discover filter settings', {
+      label: 'API',
+      errorMessage: e.message,
+    });
+    return next({
+      status: 500,
+      message: 'Unable to save discover filter settings.',
+    });
+  }
+});
+
+settingsRoutes.post('/mdblist', async (req, res, next) => {
+  const settings = getSettings();
+
+  try {
+    let apiKey = String(req.body.apiKey ?? '').trim();
+
+    // Preserve existing key when the masked placeholder is submitted
+    if (!apiKey || apiKey === '********') {
+      apiKey = settings.mdblist.apiKey;
+    }
+
+    settings.mdblist = {
+      apiKey,
+      showTmdb: req.body.showTmdb !== false,
+      showImdb: req.body.showImdb !== false,
+      showRt: req.body.showRt !== false,
+      showRtUser: req.body.showRtUser !== false,
+      showMetacritic: req.body.showMetacritic !== false,
+      showTraktCommunity: req.body.showTraktCommunity !== false,
+      // Poster idle: explicit false allowed; missing keys keep prior/default
+      posterTmdb: boolOrDefault(
+        req.body.posterTmdb,
+        settings.mdblist.posterTmdb
+      ),
+      posterImdb: boolOrDefault(
+        req.body.posterImdb,
+        settings.mdblist.posterImdb
+      ),
+      posterRt: boolOrDefault(req.body.posterRt, settings.mdblist.posterRt),
+      posterRtUser: boolOrDefault(
+        req.body.posterRtUser,
+        settings.mdblist.posterRtUser
+      ),
+      posterMetacritic: boolOrDefault(
+        req.body.posterMetacritic,
+        settings.mdblist.posterMetacritic
+      ),
+      posterTraktCommunity: boolOrDefault(
+        req.body.posterTraktCommunity,
+        settings.mdblist.posterTraktCommunity
+      ),
+    };
+    await settings.save();
+
+    return res.status(200).json(mdblistSettingsResponse());
+  } catch (e) {
+    logger.error('Something went wrong saving MDBList settings', {
+      label: 'API',
+      errorMessage: e.message,
+    });
+    return next({
+      status: 500,
+      message: 'Unable to save MDBList settings.',
     });
   }
 });

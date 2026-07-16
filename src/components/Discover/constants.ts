@@ -91,6 +91,7 @@ export const sliderTitles = defineMessages('components.Discover', {
   traktrecommendations: 'Trakt Recommendations',
   traktwatchlist: 'Trakt Watchlist',
   traktlist: 'Trakt List',
+  trakthistory: 'Trakt History',
 });
 
 export const QueryFilterOptions = z.object({

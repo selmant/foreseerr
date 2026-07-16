@@ -20,8 +20,7 @@ async function classifyTraktItemsByAnime(
   return Promise.all(
     items.map(async (item) => ({
       item,
-      isAnime:
-        item.mediaType === 'tv' ? await hasAnimeKeyword(tmdb, item) : false,
+      isAnime: await hasAnimeKeyword(tmdb, item),
     }))
   );
 }

@@ -9,8 +9,10 @@ import {
 import { getRepository } from '@server/datasource';
 import OverrideRule from '@server/entity/OverrideRule';
 import type { MediaRequestBody } from '@server/interfaces/api/requestInterfaces';
+import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { Permission } from '@server/lib/permissions';
+import { resolveAnimeSonarrRouting } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
@@ -144,6 +146,9 @@ export class MediaRequest {
         ? await tmdb.getMovie({ movieId: requestBody.mediaId })
         : await tmdb.getTvShow({ tvId: requestBody.mediaId });
 
+    const isAutoRequest = options.isAutoRequest ?? false;
+    const mediaIsAnime = isAnimeMedia(tmdbMedia);
+
     let media = await mediaRepository.findOne({
       where: {
         tmdbId: requestBody.mediaId,
@@ -261,18 +266,12 @@ export class MediaRequest {
       });
 
       const appliedOverrideRules = overrideRules.filter((rule) => {
-        const hasAnimeKeyword =
-          'results' in tmdbMedia.keywords &&
-          tmdbMedia.keywords.results.some(
-            (keyword: TmdbKeyword) => keyword.id === ANIME_KEYWORD_ID
-          );
-
         // Skip override rules if the media is an anime TV show as anime TV
         // is handled by default and override rules do not explicitly include
         // the anime keyword
         if (
           requestBody.mediaType === MediaType.TV &&
-          hasAnimeKeyword &&
+          mediaIsAnime &&
           (!rule.keywords ||
             !rule.keywords.split(',').map(Number).includes(ANIME_KEYWORD_ID))
         ) {
@@ -363,6 +362,37 @@ export class MediaRequest {
       }
     }
 
+    let serverId = requestBody.serverId;
+    let languageProfileId = requestBody.languageProfileId;
+
+    // Apply anime Sonarr routing when the requester did not pick overrides
+    if (requestBody.mediaType === MediaType.TV && mediaIsAnime) {
+      const animeRouting = resolveAnimeSonarrRouting({
+        sonarr: settings.sonarr,
+        filters: settings.requestFilters,
+        is4k: Boolean(requestBody.is4k),
+        isAnime: true,
+      });
+
+      if (animeRouting) {
+        if (serverId == null) {
+          serverId = animeRouting.serverId ?? undefined;
+        }
+        if (profileId == null) {
+          profileId = animeRouting.profileId;
+        }
+        if (rootFolder == null || rootFolder === '') {
+          rootFolder = animeRouting.rootFolder;
+        }
+        if (languageProfileId == null) {
+          languageProfileId = animeRouting.languageProfileId;
+        }
+        if (tags == null && animeRouting.tags) {
+          tags = animeRouting.tags;
+        }
+      }
+    }
+
     if (requestBody.mediaType === MediaType.MOVIE) {
       await mediaRepository.save(media);
 
@@ -400,11 +430,11 @@ export class MediaRequest {
           ? user
           : undefined,
         is4k: requestBody.is4k,
-        serverId: requestBody.serverId,
+        serverId: serverId,
         profileId: profileId,
         rootFolder: rootFolder,
         tags: tags,
-        isAutoRequest: options.isAutoRequest ?? false,
+        isAutoRequest,
         ignoreQuota,
       });
 
@@ -512,10 +542,10 @@ export class MediaRequest {
           ? user
           : undefined,
         is4k: requestBody.is4k,
-        serverId: requestBody.serverId,
+        serverId: serverId,
         profileId: profileId,
         rootFolder: rootFolder,
-        languageProfileId: requestBody.languageProfileId,
+        languageProfileId: languageProfileId,
         tags: tags,
         seasons: finalSeasons.map(
           (sn) =>
@@ -537,7 +567,7 @@ export class MediaRequest {
                 : MediaRequestStatus.PENDING,
             })
         ),
-        isAutoRequest: options.isAutoRequest ?? false,
+        isAutoRequest,
         ignoreQuota,
       });
 

@@ -1,3 +1,4 @@
+import type { RatingBadgeSettings } from '@server/constants/ratingBadges';
 import type { DnsEntries, DnsStats } from 'dns-caching';
 import type { PaginatedResponse } from './common';
 
@@ -50,6 +51,9 @@ export interface PublicSettingsResponse {
   youtubeUrl: string;
   plexClientIdentifier: string;
   traktConfigured: boolean;
+  mediaActionsTraktEnabled: boolean;
+  mdblistConfigured: boolean;
+  ratingBadges: RatingBadgeSettings;
 }
 
 export interface CacheItem {

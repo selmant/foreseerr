@@ -1,3 +1,4 @@
+import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
 import React from 'react';
@@ -33,6 +34,9 @@ const defaultSettings = {
   youtubeUrl: '',
   plexClientIdentifier: '',
   traktConfigured: false,
+  mediaActionsTraktEnabled: true,
+  mdblistConfigured: false,
+  ratingBadges: { ...DEFAULT_RATING_BADGE_SETTINGS },
 };
 
 export const SettingsContext = React.createContext<SettingsContextProps>({

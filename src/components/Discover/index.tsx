@@ -11,6 +11,7 @@ import PlexWatchlistSlider from '@app/components/Discover/PlexWatchlistSlider';
 import RecentRequestsSlider from '@app/components/Discover/RecentRequestsSlider';
 import RecentlyAddedSlider from '@app/components/Discover/RecentlyAddedSlider';
 import StudioSlider from '@app/components/Discover/StudioSlider';
+import TraktHistorySlider from '@app/components/Discover/TraktHistorySlider';
 import TraktListSlider from '@app/components/Discover/TraktListSlider';
 import TraktRecommendationsSlider from '@app/components/Discover/TraktRecommendationsSlider';
 import TraktWatchlistSlider from '@app/components/Discover/TraktWatchlistSlider';
@@ -404,6 +405,9 @@ const Discover = () => {
             break;
           case DiscoverSliderType.TRAKT_WATCHLIST:
             sliderComponent = <TraktWatchlistSlider />;
+            break;
+          case DiscoverSliderType.TRAKT_HISTORY:
+            sliderComponent = <TraktHistorySlider />;
             break;
           case DiscoverSliderType.TRAKT_LIST:
             sliderComponent = (

@@ -62,7 +62,7 @@ type CreateSliderProps = {
 type CreateOption = {
   type: DiscoverSliderType;
   title: string;
-  dataUrl: string;
+  dataUrl?: string;
   params?: string;
   titlePlaceholderText: string;
   dataPlaceholderText?: string;
@@ -239,6 +239,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
     title: Yup.string().required(
       intl.formatMessage(messages.validationTitlerequired)
     ),
+    sliderType: Yup.number().required(),
     data: Yup.string().required(
       intl.formatMessage(messages.validationDatarequired)
     ),
@@ -455,6 +456,14 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
     },
   ];
 
+  const visibleOptions = options.filter((option) => {
+    if (option.type === DiscoverSliderType.TRAKT_LIST) {
+      return settings.currentSettings.traktConfigured;
+    }
+
+    return true;
+  });
+
   return (
     <Formik
       initialValues={
@@ -511,9 +520,10 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       }}
     >
       {({ values, isValid, isSubmitting, errors, touched, setFieldValue }) => {
-        const activeOption = options.find(
+        const activeOption = visibleOptions.find(
           (option) => option.type === Number(values.sliderType)
         );
+        const canSubmit = resultCount > 0 && isValid;
 
         let dataInput: React.ReactNode;
 
@@ -688,8 +698,15 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         return (
           <Form data-testid="create-discover-option-form">
             <div className="flex flex-col space-y-2 text-gray-100">
-              <Field as="select" id="sliderType" name="sliderType">
-                {options.map((option) => (
+              <Field
+                as="select"
+                id="sliderType"
+                name="sliderType"
+                onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
+                  setFieldValue('sliderType', Number(event.target.value));
+                }}
+              >
+                {visibleOptions.map((option) => (
                   <option value={option.type} key={`type-${option.type}`}>
                     {option.title}
                   </option>
@@ -713,7 +730,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                   <div className="error">{errors.data}</div>
                 )}
               <div className="flex-1" />
-              {resultCount === 0 ? (
+              {!canSubmit ? (
                 <Tooltip content={intl.formatMessage(messages.needresults)}>
                   <div>
                     <Button buttonType="primary" buttonSize="sm" disabled>
@@ -726,7 +743,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                   <Button
                     buttonType="primary"
                     buttonSize="sm"
-                    disabled={isSubmitting || !isValid}
+                    disabled={isSubmitting}
                   >
                     {intl.formatMessage(
                       slider ? messages.editSlider : messages.addSlider
@@ -742,7 +759,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                   <TraktListSlider
                     sliderKey={`preview-${values.title}`}
                     title={values.title}
-                    url={values.data}
+                    url={values.data ?? ''}
                     hideTitle
                     onNewTitles={updateResultCount}
                   />
@@ -750,10 +767,12 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                   <MediaSlider
                     sliderKey={`preview-${values.title}`}
                     title={values.title}
-                    url={activeOption?.dataUrl.replace(
-                      '$value',
-                      encodeURIExtraParams(values.data)
-                    )}
+                    url={
+                      activeOption?.dataUrl?.replace(
+                        '$value',
+                        encodeURIExtraParams(values.data ?? '')
+                      ) ?? ''
+                    }
                     extraParams={
                       activeOption.type ===
                         DiscoverSliderType.TMDB_MOVIE_STREAMING_SERVICES ||
@@ -762,15 +781,19 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                         ? activeOption.params
                             ?.replace(
                               '$regionValue',
-                              encodeURIExtraParams(values?.data.split(',')[0])
+                              encodeURIExtraParams(
+                                values?.data?.split(',')[0] ?? ''
+                              )
                             )
                             .replace(
                               '$providersValue',
-                              encodeURIExtraParams(values?.data.split(',')[1])
+                              encodeURIExtraParams(
+                                values?.data?.split(',')[1] ?? ''
+                              )
                             )
                         : activeOption.params?.replace(
                             '$value',
-                            encodeURIExtraParams(values.data)
+                            encodeURIExtraParams(values.data ?? '')
                           )
                     }
                     onNewTitles={updateResultCount}

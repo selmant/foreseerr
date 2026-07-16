@@ -288,6 +288,107 @@ class TraktAPI extends ExternalAPI {
     return this.normalizeUserLists(payload);
   }
 
+  public async addToHistory(
+    mediaType: 'movie' | 'tv',
+    tmdbId: number,
+    watchedAt?: string
+  ): Promise<unknown> {
+    const item: Record<string, unknown> = {
+      ids: { tmdb: Number(tmdbId) },
+    };
+    if (watchedAt) {
+      item.watched_at = watchedAt;
+    }
+    return this.postAuthenticated(
+      '/sync/history',
+      this.syncBody(mediaType, item)
+    );
+  }
+
+  public async removeFromHistory(
+    mediaType: 'movie' | 'tv',
+    tmdbId: number
+  ): Promise<unknown> {
+    return this.postAuthenticated(
+      '/sync/history/remove',
+      this.syncBody(mediaType, { ids: { tmdb: Number(tmdbId) } })
+    );
+  }
+
+  public async addRating(
+    mediaType: 'movie' | 'tv',
+    tmdbId: number,
+    rating: number
+  ): Promise<unknown> {
+    const value = Math.trunc(rating);
+    if (value < 1 || value > 10) {
+      throw new Error('Trakt rating must be between 1 and 10');
+    }
+    return this.postAuthenticated(
+      '/sync/ratings',
+      this.syncBody(mediaType, {
+        ids: { tmdb: Number(tmdbId) },
+        rating: value,
+      })
+    );
+  }
+
+  public async removeRating(
+    mediaType: 'movie' | 'tv',
+    tmdbId: number
+  ): Promise<unknown> {
+    return this.postAuthenticated(
+      '/sync/ratings/remove',
+      this.syncBody(mediaType, { ids: { tmdb: Number(tmdbId) } })
+    );
+  }
+
+  public async getSyncWatched(
+    mediaType: 'movie' | 'tv'
+  ): Promise<TraktListEntry[]> {
+    const path =
+      mediaType === 'movie' ? '/sync/watched/movies' : '/sync/watched/shows';
+    return this.getAuthenticated<TraktListEntry[]>(path);
+  }
+
+  public async getSyncRatings(
+    mediaType: 'movie' | 'tv'
+  ): Promise<TraktListEntry[]> {
+    const path =
+      mediaType === 'movie' ? '/sync/ratings/movies' : '/sync/ratings/shows';
+    return this.getAuthenticated<TraktListEntry[]>(path);
+  }
+
+  public static payloadContainsTmdb(
+    payload: TraktListEntry[] | undefined,
+    itemKey: 'movie' | 'show',
+    tmdbId: number | string
+  ): boolean {
+    const needle = String(tmdbId);
+    for (const entry of payload || []) {
+      const ids = entry?.[itemKey]?.ids;
+      if (ids?.tmdb != null && String(ids.tmdb) === needle) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public static findRatingForTmdb(
+    payload: TraktListEntry[] | undefined,
+    itemKey: 'movie' | 'show',
+    tmdbId: number | string
+  ): number | null {
+    const needle = String(tmdbId);
+    for (const entry of payload || []) {
+      const ids = entry?.[itemKey]?.ids;
+      if (ids?.tmdb != null && String(ids.tmdb) === needle) {
+        return entry.rating != null ? Number(entry.rating) : null;
+      }
+    }
+    return null;
+  }
+
   public async searchLists(
     query: string,
     options: { limit?: number } = {}
@@ -409,6 +510,46 @@ class TraktAPI extends ExternalAPI {
     return items;
   }
 
+  /**
+   * Recent watch history (chronological). Uses /sync/history which returns
+   * the authenticated user's most recent plays first.
+   */
+  public async getHistoryItems(
+    mediaType: 'movie' | 'tv' | 'both' = 'both',
+    options: { limit?: number; page?: number } = {}
+  ): Promise<TraktMediaItem[]> {
+    await this.ensureFreshToken();
+    const perTypeLimit = Math.max(1, Math.min(options.limit ?? 20, 100));
+    const page = Math.max(1, options.page ?? 1);
+    const mediaTypes: ('movie' | 'tv')[] =
+      mediaType === 'both' ? ['movie', 'tv'] : [mediaType];
+
+    const items: TraktMediaItem[] = [];
+    const seen = new Set<string>();
+
+    for (const type of mediaTypes) {
+      const traktType = type === 'movie' ? 'movies' : 'shows';
+      const payload = await this.getAuthenticated<TraktListEntry[]>(
+        `/sync/history/${traktType}`,
+        {
+          params: {
+            limit: perTypeLimit,
+            page,
+            extended: 'min',
+          },
+        }
+      );
+      for (const item of this.normalizeListItems(payload)) {
+        const key = `${item.mediaType}:${item.tmdbId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(item);
+      }
+    }
+
+    return items;
+  }
+
   private applyTokens(
     payload: TraktTokenResponse
   ): TraktTokenResponse & { expiresAt: number } {
@@ -457,6 +598,23 @@ class TraktAPI extends ExternalAPI {
     ) {
       await this.refreshAccessToken();
     }
+  }
+
+  private syncBody(
+    mediaType: 'movie' | 'tv',
+    item: Record<string, unknown>
+  ): Record<string, Record<string, unknown>[]> {
+    if (mediaType === 'movie') {
+      return { movies: [item] };
+    }
+    return { shows: [item] };
+  }
+
+  private async postAuthenticated<T>(
+    endpoint: string,
+    data: unknown
+  ): Promise<T> {
+    return this.requestWithRetry<T>('POST', endpoint, { data });
   }
 
   private async getAuthenticated<T>(

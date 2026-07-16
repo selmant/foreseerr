@@ -40,15 +40,20 @@ function createTmdbStub(animeIds: Set<number>): TheMovieDb {
 describe('Trakt anime filters', () => {
   const tmdb = createTmdbStub(new Set([1]));
 
-  it('keeps only anime TV items', async () => {
+  it('keeps anime items for movie and TV', async () => {
+    const animeMovie: TraktMediaItem = {
+      mediaType: 'movie',
+      tmdbId: 1,
+      title: 'Anime Movie',
+    };
     const filtered = await filterTraktAnimeItems(
-      [tvAnime, tvSeries, movie],
+      [tvAnime, tvSeries, movie, animeMovie],
       tmdb
     );
-    assert.deepEqual(filtered, [tvAnime]);
+    assert.deepEqual(filtered, [tvAnime, animeMovie]);
   });
 
-  it('removes anime TV items but keeps movies and regular TV', async () => {
+  it('removes anime items but keeps non-anime movies and TV', async () => {
     const filtered = await excludeTraktAnimeItems(
       [tvAnime, tvSeries, movie],
       tmdb

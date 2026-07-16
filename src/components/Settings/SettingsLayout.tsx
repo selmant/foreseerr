@@ -14,6 +14,8 @@ const messages = defineMessages('components.Settings', {
   menuJellyfinSettings: '{mediaServerName}',
   menuServices: 'Services',
   menuTrakt: 'Trakt',
+  menuMdblist: 'MDBList',
+  menuRequestFilters: 'Discover Filters',
   menuNetwork: 'Network',
   menuNotifications: 'Notifications',
   menuLogs: 'Logs',
@@ -60,6 +62,16 @@ const SettingsLayout = ({ children }: SettingsLayoutProps) => {
       text: intl.formatMessage(messages.menuTrakt),
       route: '/settings/trakt',
       regex: /^\/settings\/trakt/,
+    },
+    {
+      text: intl.formatMessage(messages.menuMdblist),
+      route: '/settings/mdblist',
+      regex: /^\/settings\/mdblist/,
+    },
+    {
+      text: intl.formatMessage(messages.menuRequestFilters),
+      route: '/settings/request-filters',
+      regex: /^\/settings\/request-filters/,
     },
     {
       text: intl.formatMessage(messages.menuNetwork),

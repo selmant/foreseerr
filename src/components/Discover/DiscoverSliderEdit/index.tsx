@@ -175,6 +175,8 @@ const DiscoverSliderEdit = ({
         return intl.formatMessage(sliderTitles.traktwatchlist);
       case DiscoverSliderType.TRAKT_LIST:
         return slider.title || intl.formatMessage(sliderTitles.traktlist);
+      case DiscoverSliderType.TRAKT_HISTORY:
+        return intl.formatMessage(sliderTitles.trakthistory);
       default:
         return 'Unknown Slider';
     }

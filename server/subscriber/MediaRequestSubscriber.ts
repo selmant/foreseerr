@@ -6,7 +6,6 @@ import type {
 } from '@server/api/servarr/sonarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import TheMovieDb from '@server/api/themoviedb';
-import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import {
   MediaRequestStatus,
   MediaStatus,
@@ -17,7 +16,9 @@ import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
+import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
+import { resolveAnimeSonarrRouting } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isEqual, truncate } from 'lodash';
@@ -494,12 +495,67 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           return;
         }
 
+        const media = await mediaRepository.findOne({
+          where: { id: entity.media.id },
+        });
+
+        if (!media) {
+          throw new Error('Media data not found');
+        }
+
+        if (
+          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
+        ) {
+          logger.warn('Media already exists, marking request as COMPLETED', {
+            label: 'Media Request',
+            requestId: entity.id,
+            mediaId: entity.media.id,
+          });
+
+          const requestRepository = getRepository(MediaRequest);
+          entity.status = MediaRequestStatus.COMPLETED;
+          entity.seasons.forEach((season) => {
+            season.status = MediaRequestStatus.COMPLETED;
+          });
+          await requestRepository.save(entity);
+          return;
+        }
+
+        const tmdb = new TheMovieDb();
+        const series = await tmdb.getTvShow({ tvId: media.tmdbId });
+        const tvdbId = series.external_ids.tvdb_id ?? media.tvdbId;
+
+        if (!tvdbId) {
+          const requestRepository = getRepository(MediaRequest);
+          await mediaRepository.remove(media);
+          await requestRepository.remove(entity);
+          throw new Error('TVDB ID not found');
+        }
+
+        const mediaIsAnime = isAnimeMedia(series);
+        const animeRouting = resolveAnimeSonarrRouting({
+          sonarr: settings.sonarr,
+          filters: settings.requestFilters,
+          is4k: entity.is4k,
+          isAnime: mediaIsAnime,
+        });
+
         let sonarrSettings = settings.sonarr.find(
           (sonarr) => sonarr.isDefault && sonarr.is4k === entity.is4k
         );
 
+        // Prefer dedicated anime server when request has no explicit server override
+        if (
+          mediaIsAnime &&
+          animeRouting?.server &&
+          (entity.serverId === null || entity.serverId === undefined)
+        ) {
+          sonarrSettings = animeRouting.server;
+        }
+
         if (
           entity.serverId !== null &&
+          entity.serverId !== undefined &&
           entity.serverId >= 0 &&
           sonarrSettings?.id !== entity.serverId
         ) {
@@ -532,55 +588,14 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           return;
         }
 
-        const media = await mediaRepository.findOne({
-          where: { id: entity.media.id },
-        });
-
-        if (!media) {
-          throw new Error('Media data not found');
-        }
-
-        if (
-          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
-        ) {
-          logger.warn('Media already exists, marking request as COMPLETED', {
-            label: 'Media Request',
-            requestId: entity.id,
-            mediaId: entity.media.id,
-          });
-
-          const requestRepository = getRepository(MediaRequest);
-          entity.status = MediaRequestStatus.COMPLETED;
-          entity.seasons.forEach((season) => {
-            season.status = MediaRequestStatus.COMPLETED;
-          });
-          await requestRepository.save(entity);
-          return;
-        }
-
-        const tmdb = new TheMovieDb();
         const sonarr = new SonarrAPI({
           apiKey: sonarrSettings.apiKey,
           url: SonarrAPI.buildUrl(sonarrSettings, '/api/v3'),
         });
-        const series = await tmdb.getTvShow({ tvId: media.tmdbId });
-        const tvdbId = series.external_ids.tvdb_id ?? media.tvdbId;
-
-        if (!tvdbId) {
-          const requestRepository = getRepository(MediaRequest);
-          await mediaRepository.remove(media);
-          await requestRepository.remove(entity);
-          throw new Error('TVDB ID not found');
-        }
 
         let seriesType: SonarrSeries['seriesType'] = 'standard';
 
-        // Change series type to anime if the anime keyword is present on tmdb
-        if (
-          series.keywords.results.some(
-            (keyword) => keyword.id === ANIME_KEYWORD_ID
-          )
-        ) {
+        if (mediaIsAnime) {
           seriesType = sonarrSettings.animeSeriesType ?? 'anime';
         }
 
