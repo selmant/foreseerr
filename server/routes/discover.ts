@@ -1124,6 +1124,21 @@ discoverRoutes.get('/trakt/lists', async (req, res, next) => {
   }
 });
 
+discoverRoutes.get('/trakt/lists/search', async (req, res, next) => {
+  try {
+    const query = String(req.query.query ?? '').trim();
+    if (!query) {
+      return res.status(200).json({ results: [] });
+    }
+
+    const trakt = createTraktAppClient();
+    const results = await trakt.searchLists(query);
+    return res.status(200).json({ results });
+  } catch (e) {
+    return handleTraktRouteError(e, next, 'Unable to search Trakt lists.');
+  }
+});
+
 discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
   try {
     if (!req.user?.id) {

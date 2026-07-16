@@ -100,6 +100,7 @@ async function loginAsAdmin() {
   const agent = request.agent(app);
   const settings = getSettings();
   settings.main.localLogin = true;
+  settings.main.applicationUrl = 'http://localhost:5055';
   settings.trakt = {
     clientId: 'test-client-id',
     clientSecret: 'test-client-secret',

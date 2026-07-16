@@ -251,6 +251,9 @@ const DiscoverSliderEdit = ({
           {slider.type === DiscoverSliderType.TMDB_SEARCH && (
             <Tag iconSvg={<MagnifyingGlassIcon />}>{slider.data}</Tag>
           )}
+          {slider.type === DiscoverSliderType.TRAKT_LIST && slider.data && (
+            <Tag>{slider.data}</Tag>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           {!slider.isBuiltIn && (

@@ -339,7 +339,7 @@ const UserLinkedAccountsSettings = () => {
         onClose={() => setShowTraktModal(false)}
         onSave={() => {
           setShowTraktModal(false);
-          revalidateTrakt();
+          void revalidateTrakt();
         }}
       />
     </>

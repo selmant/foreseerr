@@ -84,6 +84,11 @@ export interface TraktListMetadata {
   isWatchlist?: boolean;
 }
 
+export interface TraktSearchListEntry {
+  type?: string;
+  list?: TraktUserList;
+}
+
 export type TraktDevicePollResult =
   | { status: 'authorized'; tokens: TraktTokenResponse & { expiresAt: number } }
   | { status: 'pending' }

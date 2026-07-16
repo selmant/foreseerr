@@ -6590,6 +6590,22 @@ paths:
           description: Trakt lists returned
         '404':
           description: Trakt account not linked
+  /discover/trakt/lists/search:
+    get:
+      summary: Search public Trakt lists
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching public Trakt lists
+        '400':
+          description: Trakt is not configured
   /discover/trakt/lists/{id}:
     get:
       summary: Get items from one of the authenticated user's Trakt lists.

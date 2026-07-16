@@ -6,6 +6,7 @@ import type {
   TraktListMetadata,
   TraktMediaItem,
   TraktMediaObject,
+  TraktSearchListEntry,
   TraktTokenResponse,
   TraktUserList,
   TraktUserSettingsResponse,
@@ -175,13 +176,17 @@ class TraktAPI extends ExternalAPI {
         const tokens = this.applyTokens(response.data);
         return { status: 'authorized', tokens };
       }
-      if (response.status === 400 || response.status === 429) {
+      if (
+        response.status === 400 ||
+        response.status === 429 ||
+        response.status === 409
+      ) {
         return { status: 'pending' };
       }
       if (response.status === 410) {
         return { status: 'expired' };
       }
-      if (response.status === 418 || response.status === 409) {
+      if (response.status === 418) {
         return { status: 'denied' };
       }
 
@@ -281,6 +286,42 @@ class TraktAPI extends ExternalAPI {
       { params: { extended: 'min' } }
     );
     return this.normalizeUserLists(payload);
+  }
+
+  public async searchLists(
+    query: string,
+    options: { limit?: number } = {}
+  ): Promise<TraktListMetadata[]> {
+    const q = String(query || '').trim();
+    if (!q) {
+      return [];
+    }
+
+    const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
+    const payload = await this.get<TraktSearchListEntry[]>(
+      '/search/list',
+      { params: { query: q, limit } },
+      300
+    );
+
+    const items: TraktListMetadata[] = [];
+    const seen = new Set<string>();
+    for (const entry of payload || []) {
+      if (entry.type !== 'list' || !entry.list) {
+        continue;
+      }
+      const normalized = this.normalizeListMetadata(entry.list);
+      const key = normalized.username
+        ? `${normalized.username}/${normalized.slug || normalized.id}`
+        : normalized.slug || normalized.id;
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      items.push(normalized);
+    }
+
+    return items;
   }
 
   public async getListMetadata(
