@@ -5,13 +5,22 @@ import defineMessages from '@app/utils/defineMessages';
 import {
   CheckCircleIcon as CheckCircleOutline,
   HandThumbUpIcon as HandThumbUpOutline,
+  StarIcon as StarOutline,
 } from '@heroicons/react/24/outline';
 import {
   CheckCircleIcon as CheckCircleSolid,
   HandThumbUpIcon as HandThumbUpSolid,
+  StarIcon as StarSolid,
 } from '@heroicons/react/24/solid';
 import axios from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate as globalMutate } from 'swr';
 
@@ -43,10 +52,88 @@ const messages = defineMessages('components.TitleCard.MediaActionControls', {
   markWatched: 'Mark watched',
   markUnwatched: 'Mark unwatched',
   rate: 'Rate',
-  ratingLabel: 'Your rating: {stars}',
+  ratingLabel: 'Your rating',
+  ratingOutOf: '{score}/10',
+  ratingHint: 'Click a star to save',
 });
 
-const STAR_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+const STAR_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] as const;
+
+function starsToTrakt(stars: number): number {
+  return Math.max(1, Math.min(10, Math.round(stars * 2)));
+}
+
+function starFillAmount(displayStars: number, index: number): number {
+  const remaining = displayStars - index;
+  if (remaining >= 1) return 1;
+  if (remaining >= 0.5) return 0.5;
+  return 0;
+}
+
+function nearestStarStep(stars: number): number {
+  return STAR_STEPS.reduce((best, step) =>
+    Math.abs(step - stars) < Math.abs(best - stars) ? step : best
+  );
+}
+
+interface RatingStarProps {
+  index: number;
+  fill: number;
+  disabled: boolean;
+  onHover: (stars: number) => void;
+  onPick: (stars: number) => void;
+}
+
+const RatingStar = ({
+  index,
+  fill,
+  disabled,
+  onHover,
+  onPick,
+}: RatingStarProps) => {
+  const halfValue = index + 0.5;
+  const fullValue = index + 1;
+
+  return (
+    <span className="relative inline-flex h-7 w-7 shrink-0">
+      <StarOutline className="absolute inset-0 h-7 w-7 text-gray-500" />
+      {fill > 0 && (
+        <span
+          className="absolute inset-0 overflow-hidden"
+          style={{ width: `${fill * 100}%` }}
+        >
+          <StarSolid className="h-7 w-7 text-amber-300" />
+        </span>
+      )}
+      <button
+        type="button"
+        aria-label={`${starsToTrakt(halfValue)}/10`}
+        disabled={disabled}
+        className="absolute inset-y-0 left-0 z-10 w-1/2 cursor-pointer disabled:cursor-wait"
+        onMouseEnter={() => onHover(halfValue)}
+        onFocus={() => onHover(halfValue)}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onPick(halfValue);
+        }}
+      />
+      <button
+        type="button"
+        aria-label={`${starsToTrakt(fullValue)}/10`}
+        disabled={disabled}
+        className="absolute inset-y-0 right-0 z-10 w-1/2 cursor-pointer disabled:cursor-wait"
+        onMouseEnter={() => onHover(fullValue)}
+        onFocus={() => onHover(fullValue)}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onPick(fullValue);
+        }}
+      />
+    </span>
+  );
+};
 
 const MediaActionControls = ({
   tmdbId,
@@ -59,8 +146,14 @@ const MediaActionControls = ({
   const [busy, setBusy] = useState(false);
   const [showRate, setShowRate] = useState(false);
   const [draftStars, setDraftStars] = useState(3);
+  const [hoverStars, setHoverStars] = useState<number | null>(null);
+  const [popoverPos, setPopoverPos] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [localOverride, setLocalOverride] =
     useState<MediaActionStatusResponse | null>(null);
+  const rateAnchorRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const statusKey =
@@ -87,18 +180,60 @@ const MediaActionControls = ({
     }
   }, [data?.ratingStars]);
 
+  useLayoutEffect(() => {
+    if (!showRate) {
+      setPopoverPos(null);
+      setHoverStars(null);
+      return;
+    }
+
+    const updatePos = () => {
+      const rect = rateAnchorRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = 208;
+      const gap = 8;
+      const left = Math.max(
+        8,
+        Math.min(rect.right - width, window.innerWidth - width - 8)
+      );
+      setPopoverPos({
+        top: rect.bottom + gap,
+        left,
+      });
+    };
+
+    updatePos();
+    window.addEventListener('resize', updatePos);
+    window.addEventListener('scroll', updatePos, true);
+    return () => {
+      window.removeEventListener('resize', updatePos);
+      window.removeEventListener('scroll', updatePos, true);
+    };
+  }, [showRate]);
+
   useEffect(() => {
     if (!showRate) return;
     const onDocClick = (event: MouseEvent) => {
+      const target = event.target as Node;
       if (
-        popoverRef.current &&
-        !popoverRef.current.contains(event.target as Node)
+        popoverRef.current?.contains(target) ||
+        rateAnchorRef.current?.contains(target)
       ) {
+        return;
+      }
+      setShowRate(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
         setShowRate(false);
       }
     };
     document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [showRate]);
 
   const stop = useCallback((e: React.MouseEvent) => {
@@ -142,11 +277,13 @@ const MediaActionControls = ({
   const submitRating = useCallback(
     async (stars: number) => {
       if (busy || !enabled) return;
+      const clamped = nearestStarStep(stars);
+      setDraftStars(clamped);
       setBusy(true);
       try {
         const { data: next } = await axios.post<MediaActionStatusResponse>(
           `/api/v1/media-actions/${mediaType}/${tmdbId}/rate`,
-          { ratingStars: stars }
+          { ratingStars: clamped }
         );
         await applyNext(next);
         setShowRate(false);
@@ -163,6 +300,10 @@ const MediaActionControls = ({
 
   const watched = Boolean(data?.watched);
   const WatchIcon = watched ? CheckCircleSolid : CheckCircleOutline;
+  const displayStars = hoverStars ?? draftStars;
+  const displayScore = starsToTrakt(displayStars);
+  const savedStars = data?.ratingStars ?? null;
+  const hasRating = savedStars != null;
 
   return (
     <div className="relative flex flex-col items-end gap-1">
@@ -183,8 +324,16 @@ const MediaActionControls = ({
           />
         </Button>
       </Tooltip>
-      <div className="relative" ref={popoverRef}>
-        <Tooltip content={intl.formatMessage(messages.rate)}>
+      <div className="relative" ref={rateAnchorRef}>
+        <Tooltip
+          content={
+            hasRating
+              ? intl.formatMessage(messages.ratingOutOf, {
+                  score: starsToTrakt(savedStars),
+                })
+              : intl.formatMessage(messages.rate)
+          }
+        >
           <Button
             buttonType="ghost"
             className="z-40"
@@ -195,51 +344,60 @@ const MediaActionControls = ({
               setShowRate((v) => !v);
             }}
           >
-            {data?.ratingStars != null ? (
-              <HandThumbUpSolid className="h-3 text-amber-300" />
+            {hasRating ? (
+              <span className="flex items-center gap-0.5 text-[10px] font-semibold tabular-nums text-amber-300">
+                <HandThumbUpSolid className="h-3" />
+                {starsToTrakt(savedStars)}
+              </span>
             ) : (
               <HandThumbUpOutline className="h-3 text-white" />
             )}
           </Button>
         </Tooltip>
-        {showRate && (
-          <div className="absolute right-0 top-full z-50 mt-1 w-40 rounded-md border border-gray-600 bg-gray-800 p-2 shadow-lg">
-            <label className="mb-1 block text-[10px] uppercase tracking-wide text-gray-300">
-              {intl.formatMessage(messages.ratingLabel, {
-                stars: draftStars.toFixed(1),
-              })}
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={STAR_STEPS.length - 1}
-              step={1}
-              value={Math.max(
-                0,
-                STAR_STEPS.findIndex((s) => s === draftStars)
-              )}
-              className="w-full accent-amber-400"
-              onChange={(e) => {
-                const idx = Number(e.target.value);
-                setDraftStars(STAR_STEPS[idx] ?? 3);
-              }}
-              onMouseUp={(e) => {
-                const idx = Number((e.target as HTMLInputElement).value);
-                submitRating(STAR_STEPS[idx] ?? draftStars);
-              }}
-              onTouchEnd={(e) => {
-                const idx = Number((e.target as HTMLInputElement).value);
-                submitRating(STAR_STEPS[idx] ?? draftStars);
-              }}
-              onKeyUp={(e) => {
-                if (e.key === 'Enter') {
-                  const idx = Number((e.target as HTMLInputElement).value);
-                  submitRating(STAR_STEPS[idx] ?? draftStars);
-                }
-              }}
-            />
-          </div>
-        )}
+        {showRate &&
+          popoverPos &&
+          createPortal(
+            <div
+              ref={popoverRef}
+              className="fixed z-[100] w-52 rounded-xl border border-gray-600/80 bg-gray-900/95 p-3 shadow-2xl backdrop-blur-sm"
+              style={{ top: popoverPos.top, left: popoverPos.left }}
+            >
+              <div className="mb-2.5 flex items-end justify-between gap-2">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                  {intl.formatMessage(messages.ratingLabel)}
+                </span>
+                <span className="tabular-nums leading-none">
+                  <span
+                    className={`text-2xl font-semibold tracking-tight transition-colors ${
+                      hoverStars != null ? 'text-amber-200' : 'text-amber-300'
+                    }`}
+                  >
+                    {displayScore}
+                  </span>
+                  <span className="ml-0.5 text-xs text-gray-500">/10</span>
+                </span>
+              </div>
+              <div
+                className="flex items-center justify-between px-0.5"
+                onMouseLeave={() => setHoverStars(null)}
+              >
+                {[0, 1, 2, 3, 4].map((index) => (
+                  <RatingStar
+                    key={index}
+                    index={index}
+                    fill={starFillAmount(displayStars, index)}
+                    disabled={busy}
+                    onHover={setHoverStars}
+                    onPick={submitRating}
+                  />
+                ))}
+              </div>
+              <p className="mt-2.5 text-center text-[10px] text-gray-500">
+                {intl.formatMessage(messages.ratingHint)}
+              </p>
+            </div>,
+            document.body
+          )}
       </div>
     </div>
   );
