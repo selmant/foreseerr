@@ -2683,6 +2683,18 @@ components:
       schema:
         type: boolean
       description: Ignore persisted Discover filter defaults for this request.
+    DiscoverIgnoreCollected:
+      in: query
+      name: ignoreCollected
+      schema:
+        type: boolean
+      description: Hide titles already collected in the configured media server.
+    DiscoverIgnoreWatchlisted:
+      in: query
+      name: ignoreWatchlisted
+      schema:
+        type: boolean
+      description: Hide titles already present in the user's watchlist.
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -6366,6 +6378,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverIgnoreCollected'
+        - $ref: '#/components/parameters/DiscoverIgnoreWatchlisted'
         - in: query
           name: page
           schema:
@@ -6707,6 +6721,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverIgnoreCollected'
+        - $ref: '#/components/parameters/DiscoverIgnoreWatchlisted'
         - in: query
           name: page
           schema:
@@ -7053,6 +7069,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverIgnoreCollected'
+        - $ref: '#/components/parameters/DiscoverIgnoreWatchlisted'
         - in: query
           name: page
           schema:
