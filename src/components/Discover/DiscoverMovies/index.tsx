@@ -81,7 +81,18 @@ const DiscoverMovies = () => {
   const [showFilters, setShowFilters] = useState(false);
 
   if (error) {
-    return <ErrorPage statusCode={500} />;
+    const statusCode =
+      typeof error === 'object' && error !== null && 'response' in error
+        ? Number(
+            (error as { response?: { status?: unknown } }).response?.status
+          )
+        : undefined;
+
+    return (
+      <ErrorPage
+        statusCode={Number.isFinite(statusCode) ? statusCode : undefined}
+      />
+    );
   }
 
   const title = intl.formatMessage(messages.discovermovies);

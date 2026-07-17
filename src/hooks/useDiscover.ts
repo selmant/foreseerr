@@ -159,12 +159,14 @@ const useDiscover = <
     (!!lastPageData && !!data && data.length >= lastPageData.totalPages);
 
   useEffect(() => {
+    if (error) {
+      console.error('Error while fetching discover titles:', error);
+    }
     if (error && titles.length) {
       addToast(intl.formatMessage(globalMessages.error), {
         appearance: 'error',
         autoDismiss: true,
       });
-      console.error('Error while fetching discover titles:', error);
     }
   }, [data, error, addToast, intl, titles.length]);
 
