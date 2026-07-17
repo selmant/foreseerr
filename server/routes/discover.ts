@@ -95,7 +95,13 @@ async function applyBrowseDiscoverFilters<T extends BrowseResult>(
     const watchedSets = await loadWatchedIdSets(user.id, trakt);
     return filterWatchedMixedBrowseResults(filtered, watchedSets);
   } catch (e) {
-    if (e instanceof TraktNotLinkedError) {
+    // Hiding watched titles is optional. The persisted default is enabled for
+    // existing users, so an unconfigured/unlinked Trakt account must not make
+    // ordinary TMDB browse requests fail.
+    if (
+      e instanceof TraktNotConfiguredError ||
+      e instanceof TraktNotLinkedError
+    ) {
       return filtered;
     }
     throw e;
