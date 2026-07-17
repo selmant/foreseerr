@@ -10,16 +10,16 @@ import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
 import type { MediaRequest } from '@server/entity/MediaRequest';
 import type SeasonRequest from '@server/entity/SeasonRequest';
 import type { NonFunctionProperties } from '@server/interfaces/api/common';
 import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
+import { isAnimeMedia } from '@server/lib/anime/detect';
 import { Permission } from '@server/lib/permissions';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
 
@@ -58,6 +58,8 @@ interface RequestModalProps extends React.HTMLAttributes<HTMLDivElement> {
   onComplete?: (newStatus: MediaStatus) => void;
   onUpdating?: (isUpdating: boolean) => void;
   is4k?: boolean;
+  /** When `all`, pre-check every requestable season once details load. */
+  initialSeasonSelection?: 'none' | 'all';
   editRequest?: NonFunctionProperties<MediaRequest>;
 }
 
@@ -68,6 +70,7 @@ const TvRequestModal = ({
   onUpdating,
   editRequest,
   is4k = false,
+  initialSeasonSelection = 'none',
 }: RequestModalProps) => {
   const settings = useSettings();
   const { addToast } = useToasts();
@@ -80,6 +83,8 @@ const TvRequestModal = ({
   const [selectedSeasons, setSelectedSeasons] = useState<number[]>(
     editRequest ? editingSeasons : []
   );
+  const [didApplyInitialSelection, setDidApplyInitialSelection] =
+    useState(false);
   const intl = useIntl();
   const { user, hasPermission } = useUser();
   const [searchModal, setSearchModal] = useState<{
@@ -199,6 +204,7 @@ const TvRequestModal = ({
         tvdbId: tvdbId ?? data?.externalIds.tvdbId,
         mediaType: 'tv',
         is4k,
+        ignoreQuota: requestOverrides?.ignoreQuota,
         seasons: settings.currentSettings.partialRequestsEnabled
           ? selectedSeasons.sort((a, b) => a - b)
           : getAllSeasons().filter(
@@ -274,6 +280,23 @@ const TvRequestModal = ({
 
     return [...requestedSeasons, ...availableSeasons];
   };
+
+  useEffect(() => {
+    if (initialSeasonSelection !== 'all') {
+      setDidApplyInitialSelection(false);
+      return;
+    }
+
+    if (editRequest || !data || didApplyInitialSelection) {
+      return;
+    }
+
+    const requested = getAllRequestedSeasons();
+    setSelectedSeasons(
+      getAllSeasons().filter((season) => !requested.includes(season))
+    );
+    setDidApplyInitialSelection(true);
+  }, [data, didApplyInitialSelection, editRequest, initialSeasonSelection]);
 
   const isSelectedSeason = (seasonNumber: number): boolean =>
     selectedSeasons.includes(seasonNumber);
@@ -437,7 +460,8 @@ const TvRequestModal = ({
           ? false
           : !settings.currentSettings.partialRequestsEnabled &&
               quota?.tv.limit &&
-              unrequestedSeasons.length > quota.tv.limit
+              unrequestedSeasons.length > quota.tv.limit &&
+              !requestOverrides?.ignoreQuota
             ? true
             : getAllRequestedSeasons().length >= getAllSeasons().length ||
               (settings.currentSettings.partialRequestsEnabled &&
@@ -717,9 +741,17 @@ const TvRequestModal = ({
         <AdvancedRequester
           type="tv"
           is4k={is4k}
-          isAnime={data?.keywords.some(
-            (keyword) => keyword.id === ANIME_KEYWORD_ID
-          )}
+          isAnime={
+            data
+              ? isAnimeMedia({
+                  genres: data.genres,
+                  original_language: data.originalLanguage,
+                  origin_country: data.originCountry,
+                  keywords: data.keywords,
+                })
+              : false
+          }
+          quota={quota}
           onChange={(overrides) => setRequestOverrides(overrides)}
           requestUser={editRequest?.requestedBy}
           defaultOverrides={

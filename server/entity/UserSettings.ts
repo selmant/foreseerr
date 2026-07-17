@@ -1,4 +1,6 @@
 import type { NotificationAgentTypes } from '@server/interfaces/api/userSettingsInterfaces';
+import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
+import { safeParseDiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
 import { hasNotificationType, Notification } from '@server/lib/notifications';
 import { NotificationAgentKey } from '@server/lib/settings';
 import {
@@ -84,6 +86,43 @@ export class UserSettings {
 
   @Column({ nullable: true })
   public watchlistSyncTv?: boolean;
+
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public traktAccessToken?: string;
+
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public traktRefreshToken?: string;
+
+  @Column({ type: 'bigint', nullable: true, select: false })
+  public traktTokenExpiresAt?: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  public traktUsername?: string;
+
+  @Column({
+    type: 'text',
+    nullable: true,
+    transformer: {
+      from: (value: string | null): DiscoverFilterDefaults => {
+        if (!value) {
+          return {};
+        }
+        try {
+          return safeParseDiscoverFilterDefaults(JSON.parse(value));
+        } catch {
+          return {};
+        }
+      },
+      to: (value: DiscoverFilterDefaults | null): string | null => {
+        if (!value || typeof value !== 'object') {
+          return null;
+        }
+        const parsed = safeParseDiscoverFilterDefaults(value);
+        return Object.keys(parsed).length > 0 ? JSON.stringify(parsed) : null;
+      },
+    },
+  })
+  public discoverFilterDefaults?: DiscoverFilterDefaults;
 
   @Column({
     type: 'text',

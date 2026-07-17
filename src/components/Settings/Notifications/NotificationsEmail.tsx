@@ -19,9 +19,9 @@ const messages = defineMessages('components.Settings.Notifications', {
   validationSmtpPortRequired: 'You must provide a valid port number',
   agentenabled: 'Enable Agent',
   embedPoster: 'Embed Poster',
-  usePublicLogo: 'Use public Seerr logo instead of instance logo',
+  usePublicLogo: 'Use public Foreseer logo instead of instance logo',
   usePublicLogoTip:
-    'If your Seerr instance is not publicly accessible, enable this option so email clients outside your network can display the image. The image will be pulled from the public GitHub repository.',
+    'If your Foreseer instance is not publicly accessible, enable this option so email clients outside your network can display the image. The image will be pulled from the public GitHub repository.',
   userEmailRequired: 'Require user email',
   emailsender: 'Sender Address',
   smtpHost: 'SMTP Host',

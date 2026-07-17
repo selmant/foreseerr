@@ -8,6 +8,8 @@ import type {
 import JellyfinAPI from '@server/api/jellyfin';
 import type { PlexMetadata } from '@server/api/plexapi';
 import PlexAPI from '@server/api/plexapi';
+import type { RadarrMovie } from '@server/api/servarr/radarr';
+import RadarrAPI from '@server/api/servarr/radarr';
 import type { SonarrSeason, SonarrSeries } from '@server/api/servarr/sonarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import TheMovieDb from '@server/api/themoviedb';
@@ -21,7 +23,7 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import Season from '@server/entity/Season';
 import { User } from '@server/entity/User';
-import type { SonarrSettings } from '@server/lib/settings';
+import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import { setupTestDb } from '@server/test/db';
 
@@ -117,6 +119,19 @@ let getSeriesByIdImpl: (id: number) => Promise<SonarrSeries> = async () => {
 Object.defineProperty(SonarrAPI.prototype, 'getSeriesById', {
   get() {
     return async (id: number) => getSeriesByIdImpl(id);
+  },
+  set() {},
+  configurable: true,
+});
+
+// --- Mock RadarrAPI ---
+let getMovieImpl: (id: number) => Promise<RadarrMovie> = async () => {
+  throw new Error('404');
+};
+
+Object.defineProperty(RadarrAPI.prototype, 'getMovie', {
+  get() {
+    return async ({ id }: { id: number }) => getMovieImpl(id);
   },
   set() {},
   configurable: true,
@@ -232,6 +247,33 @@ function configureSonarr(overrides: Partial<SonarrSettings>[] = [{}]): void {
     ...o,
   })) as SonarrSettings[];
   settings.radarr = [];
+}
+
+function configureRadarr(overrides: Partial<RadarrSettings>[] = [{}]): void {
+  const settings = getSettings();
+  settings.radarr = overrides.map((o, i) => ({
+    id: i,
+    name: `Radarr ${i}`,
+    hostname: 'localhost',
+    port: 7878,
+    apiKey: 'test-key',
+    baseUrl: '',
+    useSsl: false,
+    activeProfileId: 1,
+    activeProfileName: 'Default',
+    activeDirectory: '/movies',
+    minimumAvailability: 'released',
+    tags: [],
+    is4k: false,
+    isDefault: i === 0,
+    syncEnabled: true,
+    preventSearch: false,
+    tagRequests: false,
+    overrideRule: [],
+    externalUrl: '',
+    ...o,
+  })) as RadarrSettings[];
+  settings.sonarr = [];
 }
 
 function configureJellyfin(): void {
@@ -386,6 +428,9 @@ describe('AvailabilitySync', () => {
     };
     getChildrenMetadataImpl = async () => [];
     getSeriesByIdImpl = async () => {
+      throw new Error('404');
+    };
+    getMovieImpl = async () => {
       throw new Error('404');
     };
     getTvShowImpl = async ({ tvId }) =>
@@ -1000,6 +1045,86 @@ describe('AvailabilitySync', () => {
       );
     });
 
+    it('should mark a deleted show as DELETED when a second standard Sonarr instance has a colliding externalServiceId', async () => {
+      configurePlex();
+      configureSonarr([{ syncEnabled: true }, { syncEnabled: true }]);
+
+      const mediaRepository = getRepository(Media);
+
+      const media = new Media();
+      media.tmdbId = 3000;
+      media.tvdbId = 73255;
+      media.mediaType = MediaType.TV;
+      media.status = MediaStatus.AVAILABLE;
+      media.ratingKey = 'gone-from-plex-rk';
+      media.externalServiceId = 200;
+      media.serviceId = 0;
+      media.seasons = [
+        new Season({
+          seasonNumber: 1,
+          status: MediaStatus.AVAILABLE,
+          status4k: MediaStatus.UNKNOWN,
+        }),
+        new Season({
+          seasonNumber: 2,
+          status: MediaStatus.AVAILABLE,
+          status4k: MediaStatus.UNKNOWN,
+        }),
+      ];
+
+      await mediaRepository.save(media);
+
+      // Probed once per standard instance with the same id (200): origin 404s
+      // (deleted); the other instance has a different series at 200.
+      let sonarrCall = 0;
+      getSeriesByIdImpl = async (id: number) => {
+        if (id !== 200) {
+          throw new Error('404');
+        }
+        sonarrCall += 1;
+        if (sonarrCall === 1) {
+          throw new Error('404');
+        }
+        return {
+          tvdbId: 999999,
+          id: 200,
+          title: 'Unrelated Colliding Series',
+          titleSlug: 'unrelated-colliding-series',
+          monitored: true,
+          statistics: {
+            episodeFileCount: 12,
+            totalEpisodeCount: 12,
+            episodeCount: 12,
+            percentOfEpisodes: 100,
+            sizeOnDisk: 0,
+            seasonCount: 1,
+          },
+          seasons: fakeSonarrSeasons(1, { 1: 12 }),
+        } as unknown as SonarrSeries;
+      };
+
+      await availabilitySync.run();
+
+      const updated = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 3000 },
+        relations: ['seasons'],
+      });
+
+      for (const season of updated.seasons) {
+        assert.strictEqual(
+          season.status,
+          MediaStatus.DELETED,
+          `Season ${season.seasonNumber} should be DELETED (collision must not keep it available) but was ${season.status}`
+        );
+      }
+
+      assert.strictEqual(
+        updated.status,
+        MediaStatus.DELETED,
+        'Show deleted from its origin instance and Plex must not be kept alive by a colliding externalServiceId on another standard instance'
+      );
+    });
+
     it('should assume season exists when getChildrenMetadata fails for episodes (safe fallback)', async () => {
       configurePlex();
       configureSonarr([{ syncEnabled: true }]);
@@ -1164,6 +1289,338 @@ describe('AvailabilitySync', () => {
         updated.status,
         MediaStatus.PARTIALLY_AVAILABLE,
         'Show should be PARTIALLY_AVAILABLE after season removal'
+      );
+    });
+  });
+
+  describe('movie availability - Radarr', () => {
+    it('should mark a deleted movie as DELETED when a second standard Radarr instance has a colliding externalServiceId', async () => {
+      configurePlex();
+      configureRadarr([{ syncEnabled: true }, { syncEnabled: true }]);
+
+      const mediaRepository = getRepository(Media);
+
+      const media = new Media();
+      media.tmdbId = 5000;
+      media.mediaType = MediaType.MOVIE;
+      media.status = MediaStatus.AVAILABLE;
+      media.ratingKey = 'gone-from-plex-rk';
+      media.externalServiceId = 300;
+      media.serviceId = 0;
+
+      await mediaRepository.save(media);
+
+      // Probed once per standard instance with the same id (300): origin 404s
+      // (deleted); the other instance has a different movie at 300.
+      let radarrCall = 0;
+      getMovieImpl = async (id: number) => {
+        if (id !== 300) {
+          throw new Error('404');
+        }
+        radarrCall += 1;
+        if (radarrCall === 1) {
+          throw new Error('404');
+        }
+        return {
+          id: 300,
+          tmdbId: 999999,
+          title: 'Unrelated Colliding Movie',
+          hasFile: true,
+        } as unknown as RadarrMovie;
+      };
+
+      await availabilitySync.run();
+
+      const updated = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 5000 },
+      });
+
+      assert.strictEqual(
+        updated.status,
+        MediaStatus.DELETED,
+        'Movie deleted from its origin instance and Plex must not be kept alive by a colliding externalServiceId on another standard instance'
+      );
+    });
+  });
+
+  describe('specials season handling', () => {
+    const tmdbSeasonsWithSpecials = [
+      {
+        id: 100,
+        air_date: '2024-01-01',
+        episode_count: 3,
+        name: 'Specials',
+        overview: '',
+        season_number: 0,
+      },
+      {
+        id: 101,
+        air_date: '2024-01-01',
+        episode_count: 10,
+        name: 'Season 1',
+        overview: '',
+        season_number: 1,
+      },
+    ];
+
+    it('should not demote an available show when only the specials season is missing (Jellyfin)', async () => {
+      configureJellyfin();
+      configureSonarr([{ syncEnabled: true }]);
+
+      const mediaRepository = getRepository(Media);
+
+      const media = new Media();
+      media.tmdbId = 13862;
+      media.mediaType = MediaType.TV;
+      media.status = MediaStatus.AVAILABLE;
+      media.jellyfinMediaId = 'jellyfin-shogun-id';
+      media.externalServiceId = 300;
+      media.seasons = [
+        new Season({
+          seasonNumber: 0,
+          status: MediaStatus.UNKNOWN,
+          status4k: MediaStatus.UNKNOWN,
+        }),
+        new Season({
+          seasonNumber: 1,
+          status: MediaStatus.AVAILABLE,
+          status4k: MediaStatus.UNKNOWN,
+        }),
+      ];
+
+      await mediaRepository.save(media);
+
+      getTvShowImpl = async () => fakeTmdbShow(13862, tmdbSeasonsWithSpecials);
+
+      getItemDataImpl = async (id: string) => {
+        if (id === 'jellyfin-shogun-id') {
+          return fakeJellyfinShow('jellyfin-shogun-id', '13862');
+        }
+        return undefined;
+      };
+
+      getSeasonsImpl = async (seriesID: string) => {
+        if (seriesID === 'jellyfin-shogun-id') {
+          return [fakeJellyfinSeason(1, 'jellyfin-shogun-s1-id')];
+        }
+        return [];
+      };
+
+      getEpisodesImpl = async (_seriesID: string, seasonID: string) => {
+        if (seasonID === 'jellyfin-shogun-s1-id') {
+          return fakeJellyfinEpisodes(10);
+        }
+        return [];
+      };
+
+      getSeriesByIdImpl = async (id: number) => {
+        if (id === 300) {
+          return {
+            tvdbId: 70814,
+            id: 300,
+            title: 'Shogun',
+            titleSlug: 'shogun',
+            monitored: true,
+            statistics: {
+              episodeFileCount: 10,
+              totalEpisodeCount: 10,
+              episodeCount: 10,
+              percentOfEpisodes: 100,
+              sizeOnDisk: 0,
+              seasonCount: 1,
+            },
+            seasons: fakeSonarrSeasons(1, { 1: 10 }),
+          } as unknown as SonarrSeries;
+        }
+        throw new Error('404');
+      };
+
+      await availabilitySync.run();
+
+      const updated = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 13862 },
+        relations: ['seasons'],
+      });
+
+      assert.strictEqual(
+        updated.status,
+        MediaStatus.AVAILABLE,
+        'Show should stay AVAILABLE when only the specials season is missing'
+      );
+    });
+
+    it('should not demote an available show when only the specials season is missing (Plex)', async () => {
+      configurePlex();
+      configureSonarr([{ syncEnabled: true }]);
+
+      const mediaRepository = getRepository(Media);
+
+      const media = new Media();
+      media.tmdbId = 13863;
+      media.mediaType = MediaType.TV;
+      media.status = MediaStatus.AVAILABLE;
+      media.ratingKey = 'plex-shogun-rk';
+      media.externalServiceId = 301;
+      media.seasons = [
+        new Season({
+          seasonNumber: 0,
+          status: MediaStatus.UNKNOWN,
+          status4k: MediaStatus.UNKNOWN,
+        }),
+        new Season({
+          seasonNumber: 1,
+          status: MediaStatus.AVAILABLE,
+          status4k: MediaStatus.UNKNOWN,
+        }),
+      ];
+
+      await mediaRepository.save(media);
+
+      getTvShowImpl = async () => fakeTmdbShow(13863, tmdbSeasonsWithSpecials);
+
+      getMetadataImpl = async (key: string) => {
+        if (key === 'plex-shogun-rk') {
+          return fakePlexShow('plex-shogun-rk');
+        }
+        throw new Error('404');
+      };
+
+      getChildrenMetadataImpl = async (key: string) => {
+        if (key === 'plex-shogun-rk') {
+          return [fakePlexSeason(1, 'plex-shogun-s1-rk')];
+        }
+        if (key === 'plex-shogun-s1-rk') {
+          return fakePlexEpisodes(10);
+        }
+        return [];
+      };
+
+      getSeriesByIdImpl = async (id: number) => {
+        if (id === 301) {
+          return {
+            tvdbId: 70814,
+            id: 301,
+            title: 'Shogun',
+            titleSlug: 'shogun',
+            monitored: true,
+            statistics: {
+              episodeFileCount: 10,
+              totalEpisodeCount: 10,
+              episodeCount: 10,
+              percentOfEpisodes: 100,
+              sizeOnDisk: 0,
+              seasonCount: 1,
+            },
+            seasons: fakeSonarrSeasons(1, { 1: 10 }),
+          } as unknown as SonarrSeries;
+        }
+        throw new Error('404');
+      };
+
+      await availabilitySync.run();
+
+      const updated = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 13863 },
+        relations: ['seasons'],
+      });
+
+      assert.strictEqual(
+        updated.status,
+        MediaStatus.AVAILABLE,
+        'Show should stay AVAILABLE when only the specials season is missing'
+      );
+    });
+
+    it('should mark a removed specials season as DELETED without demoting the show (Jellyfin)', async () => {
+      configureJellyfin();
+      configureSonarr([{ syncEnabled: true }]);
+
+      const mediaRepository = getRepository(Media);
+
+      const media = new Media();
+      media.tmdbId = 13864;
+      media.mediaType = MediaType.TV;
+      media.status = MediaStatus.AVAILABLE;
+      media.jellyfinMediaId = 'jellyfin-specials-id';
+      media.externalServiceId = 302;
+      media.seasons = [
+        new Season({
+          seasonNumber: 0,
+          status: MediaStatus.AVAILABLE,
+          status4k: MediaStatus.UNKNOWN,
+        }),
+        new Season({
+          seasonNumber: 1,
+          status: MediaStatus.AVAILABLE,
+          status4k: MediaStatus.UNKNOWN,
+        }),
+      ];
+
+      await mediaRepository.save(media);
+
+      getTvShowImpl = async () => fakeTmdbShow(13864, tmdbSeasonsWithSpecials);
+
+      getItemDataImpl = async (id: string) => {
+        if (id === 'jellyfin-specials-id') {
+          return fakeJellyfinShow('jellyfin-specials-id', '13864');
+        }
+        return undefined;
+      };
+
+      getSeasonsImpl = async (seriesID: string) => {
+        if (seriesID === 'jellyfin-specials-id') {
+          return [fakeJellyfinSeason(1, 'jellyfin-specials-s1-id')];
+        }
+        return [];
+      };
+
+      getEpisodesImpl = async (_seriesID: string, seasonID: string) => {
+        if (seasonID === 'jellyfin-specials-s1-id') {
+          return fakeJellyfinEpisodes(10);
+        }
+        return [];
+      };
+
+      getSeriesByIdImpl = async (id: number) => {
+        if (id === 302) {
+          return {
+            tvdbId: 70814,
+            id: 302,
+            title: 'Shogun',
+            titleSlug: 'shogun',
+            monitored: true,
+            statistics: {
+              episodeFileCount: 10,
+              totalEpisodeCount: 10,
+              episodeCount: 10,
+              percentOfEpisodes: 100,
+              sizeOnDisk: 0,
+              seasonCount: 1,
+            },
+            seasons: fakeSonarrSeasons(1, { 1: 10 }),
+          } as unknown as SonarrSeries;
+        }
+        throw new Error('404');
+      };
+
+      await availabilitySync.run();
+
+      const updated = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 13864 },
+        relations: ['seasons'],
+      });
+
+      const specials = updated.seasons.find((s) => s.seasonNumber === 0);
+      assert.strictEqual(
+        specials?.status,
+        MediaStatus.DELETED,
+        'Removed specials season should be marked DELETED'
+      );
+
+      assert.strictEqual(
+        updated.status,
+        MediaStatus.AVAILABLE,
+        'Show should stay AVAILABLE when only specials were removed'
       );
     });
   });

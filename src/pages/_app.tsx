@@ -12,6 +12,7 @@ import { Permission, useUser } from '@app/hooks/useUser';
 import '@app/styles/globals.css';
 import { polyfillIntl } from '@app/utils/polyfillIntl';
 import '@fontsource-variable/inter';
+import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
 import type { AvailableLocale } from '@server/types/languages';
@@ -261,6 +262,10 @@ CoreApp.getInitialProps = async (initialProps) => {
     newPlexLogin: true,
     youtubeUrl: '',
     plexClientIdentifier: '',
+    traktConfigured: false,
+    mediaActionsTraktEnabled: true,
+    mdblistConfigured: false,
+    ratingBadges: { ...DEFAULT_RATING_BADGE_SETTINGS },
   };
 
   if (ctx.res) {

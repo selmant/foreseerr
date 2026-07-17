@@ -8,7 +8,12 @@ import {
   prepareFilterValues,
 } from '@app/components/Discover/constants';
 import FilterSlideover from '@app/components/Discover/FilterSlideover';
+import {
+  discoverDefaultsRequestExtras,
+  mergeFilterDefaults,
+} from '@app/components/Discover/mergeFilterDefaults';
 import useDiscover from '@app/hooks/useDiscover';
+import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -48,8 +53,18 @@ const DiscoverTv = () => {
   const intl = useIntl();
   const router = useRouter();
   const [showFilters, setShowFilters] = useState(false);
-  const preparedFilters = prepareFilterValues(router.query);
+  const { data: discoverDefaults } = useDiscoverFilterDefaults();
+  const preparedFilters = mergeFilterDefaults(
+    prepareFilterValues(router.query),
+    discoverDefaults
+  );
   const updateQueryParams = useUpdateQueryParams({});
+  const activeFilterCount =
+    countActiveFilters(preparedFilters) +
+    (preparedFilters.ignoreWatched === 'true' ||
+    preparedFilters.ignoreWatched === 'false'
+      ? 1
+      : 0);
 
   const {
     isLoadingInitialData,
@@ -61,6 +76,7 @@ const DiscoverTv = () => {
     error,
   } = useDiscover<TvResult, never, FilterOptions>('/api/v1/discover/tv', {
     ...preparedFilters,
+    ...discoverDefaultsRequestExtras(),
   });
 
   if (error) {
@@ -114,6 +130,7 @@ const DiscoverTv = () => {
           </div>
           <FilterSlideover
             type="tv"
+            showHideWatched
             currentFilters={preparedFilters}
             onClose={() => setShowFilters(false)}
             show={showFilters}
@@ -123,7 +140,7 @@ const DiscoverTv = () => {
               <FunnelIcon />
               <span>
                 {intl.formatMessage(messages.activefilters, {
-                  count: countActiveFilters(preparedFilters),
+                  count: activeFilterCount,
                 })}
               </span>
             </Button>

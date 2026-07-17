@@ -18,8 +18,17 @@ import axios from 'axios';
 import { Router } from 'express';
 import net from 'net';
 import validator from 'validator';
+import { z } from 'zod';
 
 const authRoutes = Router();
+
+export const quickConnectSecret = z.object({
+  secret: z
+    .string()
+    .min(8)
+    .max(128)
+    .regex(/^[A-Fa-f0-9]+$/),
+});
 
 authRoutes.get('/me', isAuthenticated(), async (req, res) => {
   const userRepository = getRepository(User);
@@ -161,7 +170,7 @@ authRoutes.post('/plex', async (req, res, next) => {
           });
         } else {
           logger.info(
-            'Sign-in attempt from Plex user with access to the media server; creating new Seerr user',
+            'Sign-in attempt from Plex user with access to the media server; creating new Foreseer user',
             {
               label: 'API',
               ip: req.ip,
@@ -331,7 +340,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
 
       if (missingAdminUser) {
         logger.info(
-          'Sign-in attempt from Jellyfin user with access to the media server; creating initial admin user for Seerr',
+          'Sign-in attempt from Jellyfin user with access to the media server; creating initial admin user for Foreseer',
           {
             label: 'API',
             ip: req.ip,
@@ -360,7 +369,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
         await userRepository.save(user);
       } else {
         logger.info(
-          'Sign-in attempt from Jellyfin user with access to the media server; editing admin user for Seerr',
+          'Sign-in attempt from Jellyfin user with access to the media server; editing admin user for Foreseer',
           {
             label: 'API',
             ip: req.ip,
@@ -397,7 +406,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
         account.AccessToken,
         deviceId
       );
-      const apiKey = await jellyfinClient.createApiToken('Seerr');
+      const apiKey = await jellyfinClient.createApiToken('Foreseer');
 
       const serverName = await jellyfinserver.getServerName();
 
@@ -453,7 +462,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       });
     } else if (!user) {
       logger.info(
-        'Sign-in attempt from Jellyfin user with access to the media server; creating new Seerr user',
+        'Sign-in attempt from Jellyfin user with access to the media server; creating new Foreseer user',
         {
           label: 'API',
           ip: req.ip,
@@ -593,6 +602,177 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
   }
 });
 
+authRoutes.post('/jellyfin/quickconnect/initiate', async (req, res, next) => {
+  try {
+    const hostname = getHostname();
+    const jellyfinServer = new JellyfinAPI(
+      hostname ?? '',
+      undefined,
+      undefined
+    );
+
+    const response = await jellyfinServer.initiateQuickConnect();
+
+    return res.status(200).json({
+      code: response.Code,
+      secret: response.Secret,
+    });
+  } catch (error) {
+    logger.error('Error initiating Jellyfin quick connect', {
+      label: 'Auth',
+      errorMessage: error.message,
+    });
+    return next({
+      status: 500,
+      message: 'Failed to initiate quick connect.',
+    });
+  }
+});
+
+authRoutes.get('/jellyfin/quickconnect/check', async (req, res, next) => {
+  const result = quickConnectSecret.safeParse(req.query);
+  if (!result.success) {
+    return next({
+      status: 400,
+      message: 'Invalid secret format',
+    });
+  }
+
+  const { secret } = result.data;
+
+  try {
+    const hostname = getHostname();
+    const jellyfinServer = new JellyfinAPI(
+      hostname ?? '',
+      undefined,
+      undefined
+    );
+
+    const response = await jellyfinServer.checkQuickConnect(secret);
+
+    return res.status(200).json({ authenticated: response.Authenticated });
+  } catch (e) {
+    return next({
+      status: e.statusCode || 500,
+      message: 'Failed to check Quick Connect status',
+    });
+  }
+});
+
+authRoutes.post(
+  '/jellyfin/quickconnect/authenticate',
+  async (req, res, next) => {
+    const settings = getSettings();
+    const userRepository = getRepository(User);
+    const result = quickConnectSecret.safeParse(req.body);
+    if (!result.success) {
+      return next({
+        status: 400,
+        message: 'Secret required',
+      });
+    }
+
+    const { secret } = result.data;
+
+    if (
+      settings.main.mediaServerType === MediaServerType.NOT_CONFIGURED ||
+      !(await userRepository.count())
+    ) {
+      return next({
+        status: 403,
+        message: 'Quick Connect is not available during initial setup.',
+      });
+    }
+
+    try {
+      const hostname = getHostname();
+      const jellyfinServer = new JellyfinAPI(
+        hostname ?? '',
+        undefined,
+        undefined
+      );
+
+      const account = await jellyfinServer.authenticateQuickConnect(secret);
+
+      let user = await userRepository.findOne({
+        where: { jellyfinUserId: account.User.Id },
+      });
+
+      const deviceId = Buffer.from(
+        `BOT_seerr_${account.User.Name ?? ''}`
+      ).toString('base64');
+
+      if (user) {
+        logger.info('Quick Connect sign-in from existing user', {
+          label: 'API',
+          ip: req.ip,
+          jellyfinUsername: account.User.Name,
+          userId: user.id,
+        });
+
+        user.jellyfinAuthToken = account.AccessToken;
+        user.jellyfinDeviceId = deviceId;
+        user.avatar = getUserAvatarUrl(user);
+        await userRepository.save(user);
+      } else if (!settings.main.newPlexLogin) {
+        logger.warn(
+          'Failed Quick Connect sign-in attempt by unimported Jellyfin user',
+          {
+            label: 'API',
+            ip: req.ip,
+            jellyfinUserId: account.User.Id,
+            jellyfinUsername: account.User.Name,
+          }
+        );
+        return next({
+          status: 403,
+          message: 'Access denied.',
+        });
+      } else {
+        logger.info(
+          'Quick Connect sign-in from new Jellyfin user; creating new Foreseer user',
+          {
+            label: 'API',
+            ip: req.ip,
+            jellyfinUsername: account.User.Name,
+          }
+        );
+
+        user = new User({
+          email: account.User.Name,
+          jellyfinUsername: account.User.Name,
+          jellyfinUserId: account.User.Id,
+          jellyfinDeviceId: deviceId,
+          permissions: settings.main.defaultPermissions,
+          userType:
+            settings.main.mediaServerType === MediaServerType.JELLYFIN
+              ? UserType.JELLYFIN
+              : UserType.EMBY,
+        });
+        user.avatar = getUserAvatarUrl(user);
+        await userRepository.save(user);
+      }
+
+      // Set session
+      if (req.session) {
+        req.session.userId = user.id;
+      }
+
+      return res.status(200).json(user?.filter() ?? {});
+    } catch (e) {
+      logger.error('Quick Connect authentication failed', {
+        label: 'Auth',
+        error: e.message,
+        ip: req.ip,
+      });
+      return next({
+        status: e.statusCode || 500,
+        message: ApiErrorCode.InvalidCredentials,
+      });
+    }
+  }
+);
+
 authRoutes.post('/local', async (req, res, next) => {
   const settings = getSettings();
   const userRepository = getRepository(User);
@@ -613,7 +793,7 @@ authRoutes.post('/local', async (req, res, next) => {
       .getOne();
 
     if (!user || !(await user.passwordMatch(body.password))) {
-      logger.warn('Failed sign-in attempt using invalid Seerr password', {
+      logger.warn('Failed sign-in attempt using invalid Foreseer password', {
         label: 'API',
         ip: req.ip,
         email: body.email,
@@ -632,7 +812,7 @@ authRoutes.post('/local', async (req, res, next) => {
 
     return res.status(200).json(user?.filter() ?? {});
   } catch (e) {
-    logger.error('Something went wrong authenticating with Seerr password', {
+    logger.error('Something went wrong authenticating with Foreseer password', {
       label: 'API',
       errorMessage: e.message,
       ip: req.ip,
@@ -671,7 +851,7 @@ authRoutes.post('/logout', async (req, res, next) => {
             await axios.delete(`${baseUrl}/Devices`, {
               params: { Id: user.jellyfinDeviceId },
               headers: {
-                'X-Emby-Authorization': `MediaBrowser Client="Seerr", Device="Seerr", DeviceId="seerr", Version="${
+                'X-Emby-Authorization': `MediaBrowser Client="Foreseer", Device="Foreseer", DeviceId="foreseer", Version="${
                   settings.main.mediaServerType === MediaServerType.EMBY
                     ? '1.0.0'
                     : getAppVersion()

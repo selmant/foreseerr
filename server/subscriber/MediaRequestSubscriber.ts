@@ -6,7 +6,6 @@ import type {
 } from '@server/api/servarr/sonarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import TheMovieDb from '@server/api/themoviedb';
-import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import {
   MediaRequestStatus,
   MediaStatus,
@@ -17,7 +16,9 @@ import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
+import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
+import { resolveRequestProfileRouting } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isEqual, truncate } from 'lodash';
@@ -188,6 +189,18 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       try {
         const mediaRepository = getRepository(Media);
         const settings = getSettings();
+        const tmdb = new TheMovieDb();
+        const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
+        const mediaIsAnime = isAnimeMedia(movie);
+        const profileRouting = resolveRequestProfileRouting({
+          mediaType: MediaType.MOVIE,
+          isAnime: mediaIsAnime,
+          is4k: entity.is4k,
+          filters: settings.requestFilters,
+          radarr: settings.radarr,
+          sonarr: settings.sonarr,
+        });
+
         if (settings.radarr.length === 0 && !settings.radarr[0]) {
           logger.info(
             'No Radarr server configured, skipping request processing',
@@ -203,6 +216,13 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         let radarrSettings = settings.radarr.find(
           (radarr) => radarr.isDefault && radarr.is4k === entity.is4k
         );
+
+        if (
+          profileRouting?.radarrServer &&
+          (entity.serverId === null || entity.serverId === undefined)
+        ) {
+          radarrSettings = profileRouting.radarrServer;
+        }
 
         if (
           entity.serverId !== null &&
@@ -280,12 +300,10 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           });
         }
 
-        const tmdb = new TheMovieDb();
         const radarr = new RadarrAPI({
           apiKey: radarrSettings.apiKey,
           url: RadarrAPI.buildUrl(radarrSettings, '/api/v3'),
         });
-        const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
 
         const media = await mediaRepository.findOne({
           where: { id: entity.media.id },
@@ -494,12 +512,67 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           return;
         }
 
+        const media = await mediaRepository.findOne({
+          where: { id: entity.media.id },
+        });
+
+        if (!media) {
+          throw new Error('Media data not found');
+        }
+
+        if (
+          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
+        ) {
+          logger.warn('Media already exists, marking request as COMPLETED', {
+            label: 'Media Request',
+            requestId: entity.id,
+            mediaId: entity.media.id,
+          });
+
+          const requestRepository = getRepository(MediaRequest);
+          entity.status = MediaRequestStatus.COMPLETED;
+          entity.seasons.forEach((season) => {
+            season.status = MediaRequestStatus.COMPLETED;
+          });
+          await requestRepository.save(entity);
+          return;
+        }
+
+        const tmdb = new TheMovieDb();
+        const series = await tmdb.getTvShow({ tvId: media.tmdbId });
+        const tvdbId = series.external_ids.tvdb_id ?? media.tvdbId;
+
+        if (!tvdbId) {
+          const requestRepository = getRepository(MediaRequest);
+          await mediaRepository.remove(media);
+          await requestRepository.remove(entity);
+          throw new Error('TVDB ID not found');
+        }
+
+        const mediaIsAnime = isAnimeMedia(series);
+        const profileRouting = resolveRequestProfileRouting({
+          mediaType: MediaType.TV,
+          isAnime: mediaIsAnime,
+          is4k: entity.is4k,
+          filters: settings.requestFilters,
+          radarr: settings.radarr,
+          sonarr: settings.sonarr,
+        });
+
         let sonarrSettings = settings.sonarr.find(
           (sonarr) => sonarr.isDefault && sonarr.is4k === entity.is4k
         );
 
         if (
+          profileRouting?.sonarrServer &&
+          (entity.serverId === null || entity.serverId === undefined)
+        ) {
+          sonarrSettings = profileRouting.sonarrServer;
+        }
+
+        if (
           entity.serverId !== null &&
+          entity.serverId !== undefined &&
           entity.serverId >= 0 &&
           sonarrSettings?.id !== entity.serverId
         ) {
@@ -532,56 +605,18 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           return;
         }
 
-        const media = await mediaRepository.findOne({
-          where: { id: entity.media.id },
-        });
-
-        if (!media) {
-          throw new Error('Media data not found');
-        }
-
-        if (
-          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
-        ) {
-          logger.warn('Media already exists, marking request as COMPLETED', {
-            label: 'Media Request',
-            requestId: entity.id,
-            mediaId: entity.media.id,
-          });
-
-          const requestRepository = getRepository(MediaRequest);
-          entity.status = MediaRequestStatus.COMPLETED;
-          entity.seasons.forEach((season) => {
-            season.status = MediaRequestStatus.COMPLETED;
-          });
-          await requestRepository.save(entity);
-          return;
-        }
-
-        const tmdb = new TheMovieDb();
         const sonarr = new SonarrAPI({
           apiKey: sonarrSettings.apiKey,
           url: SonarrAPI.buildUrl(sonarrSettings, '/api/v3'),
         });
-        const series = await tmdb.getTvShow({ tvId: media.tmdbId });
-        const tvdbId = series.external_ids.tvdb_id ?? media.tvdbId;
-
-        if (!tvdbId) {
-          const requestRepository = getRepository(MediaRequest);
-          await mediaRepository.remove(media);
-          await requestRepository.remove(entity);
-          throw new Error('TVDB ID not found');
-        }
 
         let seriesType: SonarrSeries['seriesType'] = 'standard';
 
-        // Change series type to anime if the anime keyword is present on tmdb
-        if (
-          series.keywords.results.some(
-            (keyword) => keyword.id === ANIME_KEYWORD_ID
-          )
-        ) {
-          seriesType = sonarrSettings.animeSeriesType ?? 'anime';
+        if (mediaIsAnime) {
+          seriesType =
+            profileRouting?.seriesType ??
+            sonarrSettings.animeSeriesType ??
+            'anime';
         }
 
         let rootFolder =

@@ -6,7 +6,7 @@ sidebar_position: 1
 
 # Watchlist Auto Request
 
-The Plex Watchlist Auto Request feature allows Seerr to automatically create requests for media items you add to your Plex Watchlist. Simply add content to your Plex Watchlist, and Seerr will automatically request it for you.
+The Plex Watchlist Auto Request feature allows Foreseer to automatically create requests for media items you add to your Plex Watchlist. Simply add content to your Plex Watchlist, and Foreseer will automatically request it for you.
 
 :::info
 This feature is only available for Plex users. Local users cannot use the Watchlist Auto Request feature.
@@ -14,9 +14,9 @@ This feature is only available for Plex users. Local users cannot use the Watchl
 
 ## Prerequisites
 
-- You must have logged into Seerr at least once with your Plex account
+- You must have logged into Foreseer at least once with your Plex account
 - Your administrator must have granted you the necessary permissions
-- Your Plex account must have access to the Plex server configured in Seerr
+- Your Plex account must have access to the Plex server configured in Foreseer
 
 ## Permission System
 
@@ -54,12 +54,12 @@ Contact your administrator to verify you have been granted:
 
 ### Step 3: Start Using
 - Add movies and TV shows to your Plex Watchlist
-- Seerr will automatically create requests for new items
+- Foreseer will automatically create requests for new items
 - You'll receive notifications when items are auto-requested
 
 ## How It Works
 
-Once properly configured, Seerr will:
+Once properly configured, Foreseer will:
 
 1. Periodically checks your Plex Watchlist for new items
 2. Verify if the content already exists in your media libraries
@@ -90,6 +90,6 @@ Auto-request only works for standard quality content. 4K content must be request
 
 - Local users cannot use this feature
 - 4K content requires manual requests
-- Users must have logged into Seerr with their Plex account
+- Users must have logged into Foreseer with their Plex account
 - Respects user request limits and quotas
 - Won't request content already in your libraries

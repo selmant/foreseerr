@@ -3,7 +3,9 @@ import type { TvShowProvider } from '@server/api/provider';
 import cacheManager from '@server/lib/cache';
 import { getSettings } from '@server/lib/settings';
 import { sortBy } from 'lodash';
+import { ANIME_KEYWORD_ID } from './constants';
 import type {
+  TmdbBrowseMetadata,
   TmdbCollection,
   TmdbCompanySearchResponse,
   TmdbExternalIdResponse,
@@ -269,6 +271,94 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
     } catch (e) {
       throw new Error(
         `[TMDB] Failed to fetch person combined credits: ${e.message}`,
+        { cause: e }
+      );
+    }
+  };
+
+  /**
+   * Lightweight movie metadata for browse filters (no append_to_response).
+   */
+  public getMovieBrowseMetadata = async ({
+    movieId,
+    language = this.locale,
+  }: {
+    movieId: number;
+    language?: string;
+  }): Promise<TmdbBrowseMetadata> => {
+    try {
+      const data = await this.get<{
+        id: number;
+        title: string;
+        vote_average: number;
+        vote_count: number;
+        original_language: string;
+        release_date?: string;
+        genres?: { id: number }[];
+      }>(
+        `/movie/${movieId}`,
+        {
+          params: { language },
+        },
+        43200
+      );
+
+      return {
+        id: data.id,
+        title: data.title,
+        vote_average: data.vote_average,
+        vote_count: data.vote_count,
+        original_language: data.original_language,
+        release_date: data.release_date || null,
+        genre_ids: (data.genres ?? []).map((genre) => genre.id),
+      };
+    } catch (e) {
+      throw new Error(
+        `[TMDB] Failed to fetch movie browse metadata: ${e.message}`,
+        { cause: e }
+      );
+    }
+  };
+
+  /**
+   * Lightweight TV metadata for browse filters (no append_to_response).
+   */
+  public getTvBrowseMetadata = async ({
+    tvId,
+    language = this.locale,
+  }: {
+    tvId: number;
+    language?: string;
+  }): Promise<TmdbBrowseMetadata> => {
+    try {
+      const data = await this.get<{
+        id: number;
+        name: string;
+        vote_average: number;
+        vote_count: number;
+        original_language: string;
+        first_air_date?: string;
+        genres?: { id: number }[];
+      }>(
+        `/tv/${tvId}`,
+        {
+          params: { language },
+        },
+        43200
+      );
+
+      return {
+        id: data.id,
+        title: data.name,
+        vote_average: data.vote_average,
+        vote_count: data.vote_count,
+        original_language: data.original_language,
+        release_date: data.first_air_date || null,
+        genre_ids: (data.genres ?? []).map((genre) => genre.id),
+      };
+    } catch (e) {
+      throw new Error(
+        `[TMDB] Failed to fetch TV browse metadata: ${e.message}`,
         { cause: e }
       );
     }
@@ -1224,6 +1314,46 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         cause: e,
       });
     }
+  }
+
+  public async mediaHasKeyword({
+    mediaType,
+    tmdbId,
+    keywordId,
+  }: {
+    mediaType: 'movie' | 'tv';
+    tmdbId: number;
+    keywordId: number;
+  }): Promise<boolean> {
+    try {
+      const path =
+        mediaType === 'movie'
+          ? `/movie/${tmdbId}/keywords`
+          : `/tv/${tmdbId}/keywords`;
+      const data = await this.get<{ results: TmdbKeyword[] }>(
+        path,
+        undefined,
+        604800
+      );
+
+      return data.results?.some((keyword) => keyword.id === keywordId) ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  public async mediaHasAnimeKeyword({
+    mediaType,
+    tmdbId,
+  }: {
+    mediaType: 'movie' | 'tv';
+    tmdbId: number;
+  }): Promise<boolean> {
+    return this.mediaHasKeyword({
+      mediaType,
+      tmdbId,
+      keywordId: ANIME_KEYWORD_ID,
+    });
   }
 
   public async searchKeyword({

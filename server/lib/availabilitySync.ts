@@ -379,6 +379,11 @@ class AvailabilitySync {
           if (tvShow) {
             // fill the finalSeasons and finalSeasons4k maps with false for missing seasons
             media.seasons.forEach((season) => {
+              // Specials don't count towards availability (baseScanner skips them too)
+              // TODO: doesn't respect enableSpecialEpisodes; needs a shared predicate with baseScanner.ts
+              if (season.seasonNumber === 0) {
+                return;
+              }
               if (
                 !finalSeasons.has(season.seasonNumber) &&
                 tvShow.seasons.find(
@@ -599,6 +604,8 @@ class AvailabilitySync {
     );
     // Retrieve the season keys to pass into our log
     const seasonKeys = [...seasonsPendingRemoval.keys()];
+    // Specials can still be marked DELETED below, but shouldn't demote the show
+    const nonSpecialSeasonKeys = seasonKeys.filter((key) => key !== 0);
 
     try {
       for (const mediaSeason of media.seasons) {
@@ -613,12 +620,15 @@ class AvailabilitySync {
         }
       }
 
-      if (media[is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE) {
+      if (
+        nonSpecialSeasonKeys.length > 0 &&
+        media[is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
+      ) {
         media[is4k ? 'status4k' : 'status'] = MediaStatus.PARTIALLY_AVAILABLE;
         logger.debug(
           `Marking the ${
             is4k ? '4K' : 'non-4K'
-          } show [TMDB ID ${media.tmdbId}] as PARTIALLY_AVAILABLE because season(s) [${seasonKeys}] was not found in any ${
+          } show [TMDB ID ${media.tmdbId}] as PARTIALLY_AVAILABLE because season(s) [${nonSpecialSeasonKeys}] was not found in any ${
             media.mediaType === 'tv' ? 'Sonarr' : 'Radarr'
           } and ${
             mediaServerType === MediaServerType.PLEX
@@ -684,6 +694,10 @@ class AvailabilitySync {
           });
         }
 
+        if (radarr && radarr.tmdbId !== media.tmdbId) {
+          continue;
+        }
+
         if (radarr && radarr.hasFile) {
           const resolution =
             radarr?.movieFile?.mediaInfo?.resolution?.split('x');
@@ -741,18 +755,26 @@ class AvailabilitySync {
 
         if (media.externalServiceId && !is4k) {
           sonarr = await sonarrAPI.getSeriesById(media.externalServiceId);
-          this.sonarrSeasonsCache[`${server.id}-${media.externalServiceId}`] =
-            sonarr.seasons;
         }
 
         if (media.externalServiceId4k && is4k) {
           sonarr = await sonarrAPI.getSeriesById(media.externalServiceId4k);
-          this.sonarrSeasonsCache[`${server.id}-${media.externalServiceId4k}`] =
-            sonarr.seasons;
         }
 
-        if (sonarr && sonarr.statistics.episodeFileCount > 0) {
-          existsInSonarr = true;
+        if (sonarr && media.tvdbId != null && sonarr.tvdbId !== media.tvdbId) {
+          continue;
+        }
+
+        if (sonarr) {
+          const externalServiceId = is4k
+            ? media.externalServiceId4k
+            : media.externalServiceId;
+          this.sonarrSeasonsCache[`${server.id}-${externalServiceId}`] =
+            sonarr.seasons;
+
+          if (sonarr.statistics.episodeFileCount > 0) {
+            existsInSonarr = true;
+          }
         }
       } catch (ex) {
         if (!ex.message.includes('404')) {

@@ -1,6 +1,6 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: 'Seerr Labeller'
+name: 'Foreseer Labeller'
 
 on:
   pull_request_target:
@@ -86,7 +86,7 @@ jobs:
             :wave: @${{ env.ISSUE_AUTHOR }}, we use the issue tracker exclusively
             for bug reports and feature requests. However, this issue appears
             to be a support request. Please use our support channels
-            to get help with Seerr.
+            to get help with Foreseer.
 
             - [Discord](https://discord.gg/seerr)
         run: |

@@ -1,10 +1,13 @@
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
+import TraktListSlider from '@app/components/Discover/TraktListSlider';
 import { sliderTitles } from '@app/components/Discover/constants';
 import MediaSlider from '@app/components/MediaSlider';
 import { WatchProviderSelector } from '@app/components/Selector';
 import { encodeURIExtraParams } from '@app/hooks/useDiscover';
+import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
+import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import type {
   TmdbCompanySearchResponse,
@@ -31,6 +34,11 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   providetmdbsearch: 'Provide a search query',
   providetmdbstudio: 'Provide TMDB Studio ID',
   providetmdbnetwork: 'Provide TMDB Network ID',
+  providetraktlisturl: 'Paste a Trakt list URL or username/list-slug',
+  searchTraktLists: 'Search public or your Trakt lists…',
+  customTraktList: 'Use: {value}',
+  traktListNotLinked:
+    'Search finds public lists. Link Trakt to also include your personal lists.',
   addsuccess: 'Created new slider and saved discover customization settings.',
   addfail: 'Failed to create new slider.',
   editsuccess: 'Edited slider and saved discover customization settings.',
@@ -54,18 +62,50 @@ type CreateSliderProps = {
 type CreateOption = {
   type: DiscoverSliderType;
   title: string;
-  dataUrl: string;
+  dataUrl?: string;
   params?: string;
   titlePlaceholderText: string;
   dataPlaceholderText?: string;
 };
 
+interface TraktListOption {
+  id: string;
+  slug: string;
+  name: string;
+  itemCount: number;
+  isWatchlist?: boolean;
+  username?: string;
+}
+
+const formatTraktListReference = (list: TraktListOption): string => {
+  if (list.isWatchlist || list.id === 'watchlist') {
+    return 'me/watchlist';
+  }
+
+  const slug = list.slug || list.id;
+  if (!list.username) {
+    return slug;
+  }
+  if (list.username === 'me') {
+    return `me/${slug}`;
+  }
+  return `${list.username}/${slug}`;
+};
+
+const looksLikeTraktListReference = (value: string): boolean =>
+  value.includes('trakt.tv') ||
+  value.startsWith('http') ||
+  /^[\w-]+\/[\w-]+/.test(value) ||
+  /^\d+$/.test(value);
+
 const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
+  const settings = useSettings();
+  const { user } = useUser();
   const [resultCount, setResultCount] = useState(0);
   const [defaultDataValue, setDefaultDataValue] = useState<
-    { label: string; value: number }[] | null
+    { label: string; value: string | number }[] | null
   >(null);
 
   useEffect(() => {
@@ -138,6 +178,44 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         ]);
       };
 
+      const loadDefaultTraktList = async (): Promise<void> => {
+        if (!slider.data) {
+          return;
+        }
+
+        try {
+          const listsResponse = await axios.get<{ results: TraktListOption[] }>(
+            '/api/v1/discover/trakt/lists'
+          );
+          const listRef = slider.data.replace(/^me\//, '');
+          const match = listsResponse.data.results.find(
+            (list) =>
+              list.slug === listRef ||
+              list.id === listRef ||
+              formatTraktListReference(list) === slider.data
+          );
+
+          if (match) {
+            setDefaultDataValue([
+              {
+                label: `${match.name} (${match.itemCount})`,
+                value: slider.data,
+              },
+            ]);
+            return;
+          }
+        } catch {
+          // Fall back to showing the stored reference below.
+        }
+
+        setDefaultDataValue([
+          {
+            label: slider.data,
+            value: slider.data,
+          },
+        ]);
+      };
+
       switch (slider.type) {
         case DiscoverSliderType.TMDB_MOVIE_KEYWORD:
         case DiscoverSliderType.TMDB_TV_KEYWORD:
@@ -150,6 +228,9 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         case DiscoverSliderType.TMDB_STUDIO:
           loadDefaultCompany();
           break;
+        case DiscoverSliderType.TRAKT_LIST:
+          loadDefaultTraktList();
+          break;
       }
     }
   }, [slider]);
@@ -158,6 +239,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
     title: Yup.string().required(
       intl.formatMessage(messages.validationTitlerequired)
     ),
+    sliderType: Yup.number().required(),
     data: Yup.string().required(
       intl.formatMessage(messages.validationDatarequired)
     ),
@@ -228,6 +310,75 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
     }));
   };
 
+  const loadTraktListOptions = async (inputValue: string) => {
+    const input = inputValue.trim();
+    const options: { label: string; value: string }[] = [];
+    const seen = new Set<string>();
+
+    const addOption = (label: string, value: string) => {
+      if (!value || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      options.push({ label, value });
+    };
+
+    if (input && looksLikeTraktListReference(input)) {
+      addOption(
+        intl.formatMessage(messages.customTraktList, { value: input }),
+        input
+      );
+    }
+
+    if (input.length >= 2 && !looksLikeTraktListReference(input)) {
+      try {
+        const { data } = await axios.get<{ results: TraktListOption[] }>(
+          '/api/v1/discover/trakt/lists/search',
+          { params: { query: input } }
+        );
+
+        for (const list of data.results) {
+          const label = list.username
+            ? `${list.name} · ${list.username} (${list.itemCount})`
+            : `${list.name} (${list.itemCount})`;
+          addOption(label, formatTraktListReference(list));
+        }
+      } catch {
+        // Public search is optional when Trakt is not configured.
+      }
+    }
+
+    if (
+      settings.currentSettings.traktConfigured &&
+      user &&
+      (!input || !looksLikeTraktListReference(input))
+    ) {
+      try {
+        const { data } = await axios.get<{ results: TraktListOption[] }>(
+          '/api/v1/discover/trakt/lists'
+        );
+        const query = input.toLowerCase();
+
+        for (const list of data.results) {
+          if (list.isWatchlist || list.id === 'watchlist') {
+            continue;
+          }
+          if (query && !list.name.toLowerCase().includes(query)) {
+            continue;
+          }
+          addOption(
+            `${list.name} · yours (${list.itemCount})`,
+            formatTraktListReference({ ...list, username: 'me' })
+          );
+        }
+      } catch {
+        // User may not have linked Trakt yet.
+      }
+    }
+
+    return options;
+  };
+
   const options: CreateOption[] = [
     {
       type: DiscoverSliderType.TMDB_MOVIE_KEYWORD,
@@ -295,7 +446,23 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       params: 'watchRegion=$regionValue&watchProviders=$providersValue',
       titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
     },
+    {
+      type: DiscoverSliderType.TRAKT_LIST,
+      title: intl.formatMessage(sliderTitles.traktlist),
+      dataUrl: '/api/v1/discover/trakt/list',
+      params: 'url=$value',
+      titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
+      dataPlaceholderText: intl.formatMessage(messages.providetraktlisturl),
+    },
   ];
+
+  const visibleOptions = options.filter((option) => {
+    if (option.type === DiscoverSliderType.TRAKT_LIST) {
+      return settings.currentSettings.traktConfigured;
+    }
+
+    return true;
+  });
 
   return (
     <Formik
@@ -353,9 +520,10 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       }}
     >
       {({ values, isValid, isSubmitting, errors, touched, setFieldValue }) => {
-        const activeOption = options.find(
+        const activeOption = visibleOptions.find(
           (option) => option.type === Number(values.sliderType)
         );
+        const canSubmit = resultCount > 0 && isValid;
 
         let dataInput: React.ReactNode;
 
@@ -470,6 +638,52 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
               />
             );
             break;
+          case DiscoverSliderType.TRAKT_LIST:
+            dataInput = (
+              <div className="space-y-3">
+                <AsyncSelect
+                  key={`trakt-list-select-${defaultDataValue}`}
+                  inputId="trakt-list-picker"
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  defaultValue={defaultDataValue?.[0]}
+                  defaultOptions
+                  cacheOptions
+                  loadOptions={loadTraktListOptions}
+                  placeholder={intl.formatMessage(messages.searchTraktLists)}
+                  noOptionsMessage={({ inputValue }) =>
+                    inputValue.length < 2
+                      ? intl.formatMessage(messages.starttyping)
+                      : intl.formatMessage(messages.nooptions)
+                  }
+                  onChange={(value) => {
+                    const listValue = value?.value?.toString() ?? '';
+                    setFieldValue('data', listValue);
+
+                    const label = value?.label?.toString() ?? '';
+                    if (!values.title?.trim() && label) {
+                      const titleFromList = label
+                        .replace(/\s+·\s+yours\s+\(\d+\)$/, '')
+                        .replace(/\s+·\s+[\w.-]+\s+\(\d+\)$/, '')
+                        .replace(/\s+\(\d+\)$/, '');
+                      if (titleFromList) {
+                        setFieldValue('title', titleFromList);
+                      }
+                    }
+                  }}
+                />
+                <Field
+                  type="text"
+                  name="data"
+                  id="data"
+                  placeholder={intl.formatMessage(messages.providetraktlisturl)}
+                />
+                <p className="text-sm text-gray-400">
+                  {intl.formatMessage(messages.traktListNotLinked)}
+                </p>
+              </div>
+            );
+            break;
           default:
             dataInput = (
               <Field
@@ -484,8 +698,15 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         return (
           <Form data-testid="create-discover-option-form">
             <div className="flex flex-col space-y-2 text-gray-100">
-              <Field as="select" id="sliderType" name="sliderType">
-                {options.map((option) => (
+              <Field
+                as="select"
+                id="sliderType"
+                name="sliderType"
+                onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
+                  setFieldValue('sliderType', Number(event.target.value));
+                }}
+              >
+                {visibleOptions.map((option) => (
                   <option value={option.type} key={`type-${option.type}`}>
                     {option.title}
                   </option>
@@ -509,7 +730,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                   <div className="error">{errors.data}</div>
                 )}
               <div className="flex-1" />
-              {resultCount === 0 ? (
+              {!canSubmit ? (
                 <Tooltip content={intl.formatMessage(messages.needresults)}>
                   <div>
                     <Button buttonType="primary" buttonSize="sm" disabled>
@@ -522,7 +743,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                   <Button
                     buttonType="primary"
                     buttonSize="sm"
-                    disabled={isSubmitting || !isValid}
+                    disabled={isSubmitting}
                   >
                     {intl.formatMessage(
                       slider ? messages.editSlider : messages.addSlider
@@ -534,34 +755,50 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
 
             {activeOption && values.title && values.data && (
               <div className="relative py-4">
-                <MediaSlider
-                  sliderKey={`preview-${values.title}`}
-                  title={values.title}
-                  url={activeOption?.dataUrl.replace(
-                    '$value',
-                    encodeURIExtraParams(values.data)
-                  )}
-                  extraParams={
-                    activeOption.type ===
-                      DiscoverSliderType.TMDB_MOVIE_STREAMING_SERVICES ||
-                    activeOption.type ===
-                      DiscoverSliderType.TMDB_TV_STREAMING_SERVICES
-                      ? activeOption.params
-                          ?.replace(
-                            '$regionValue',
-                            encodeURIExtraParams(values?.data.split(',')[0])
+                {activeOption.type === DiscoverSliderType.TRAKT_LIST ? (
+                  <TraktListSlider
+                    sliderKey={`preview-${values.title}`}
+                    title={values.title}
+                    url={values.data ?? ''}
+                    hideTitle
+                    onNewTitles={updateResultCount}
+                  />
+                ) : (
+                  <MediaSlider
+                    sliderKey={`preview-${values.title}`}
+                    title={values.title}
+                    url={
+                      activeOption?.dataUrl?.replace(
+                        '$value',
+                        encodeURIExtraParams(values.data ?? '')
+                      ) ?? ''
+                    }
+                    extraParams={
+                      activeOption.type ===
+                        DiscoverSliderType.TMDB_MOVIE_STREAMING_SERVICES ||
+                      activeOption.type ===
+                        DiscoverSliderType.TMDB_TV_STREAMING_SERVICES
+                        ? activeOption.params
+                            ?.replace(
+                              '$regionValue',
+                              encodeURIExtraParams(
+                                values?.data?.split(',')[0] ?? ''
+                              )
+                            )
+                            .replace(
+                              '$providersValue',
+                              encodeURIExtraParams(
+                                values?.data?.split(',')[1] ?? ''
+                              )
+                            )
+                        : activeOption.params?.replace(
+                            '$value',
+                            encodeURIExtraParams(values.data ?? '')
                           )
-                          .replace(
-                            '$providersValue',
-                            encodeURIExtraParams(values?.data.split(',')[1])
-                          )
-                      : activeOption.params?.replace(
-                          '$value',
-                          encodeURIExtraParams(values.data)
-                        )
-                  }
-                  onNewTitles={updateResultCount}
-                />
+                    }
+                    onNewTitles={updateResultCount}
+                  />
+                )}
               </div>
             )}
           </Form>

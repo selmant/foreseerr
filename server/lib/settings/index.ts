@@ -1,5 +1,13 @@
+import type { RatingBadgeSettings } from '@server/constants/ratingBadges';
+import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
 import { Permission } from '@server/lib/permissions';
+import {
+  DEFAULT_REQUEST_FILTERS,
+  normalizeProfileRouting,
+  type RequestFiltersSettings,
+  type RequestProfileRouting,
+} from '@server/lib/requestFilters/types';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
 import { randomBytes, randomUUID } from 'crypto';
@@ -7,6 +15,9 @@ import fs from 'fs/promises';
 import { mergeWith } from 'lodash';
 import path from 'path';
 import webpush from 'web-push';
+
+export { DEFAULT_RATING_BADGE_SETTINGS, DEFAULT_REQUEST_FILTERS };
+export type { RatingBadgeSettings, RequestFiltersSettings };
 
 // Prevents stale array entries when incoming data has fewer elements
 const mergeSettings = <T>(current: T, incoming: Partial<T>): T =>
@@ -63,6 +74,21 @@ export interface TautulliSettings {
   urlBase?: string;
   apiKey?: string;
   externalUrl?: string;
+}
+
+export interface TraktSettings {
+  clientId: string;
+  clientSecret: string;
+}
+
+export interface MediaActionsSettings {
+  providers: {
+    trakt: boolean;
+  };
+}
+
+export interface MdbListSettings extends RatingBadgeSettings {
+  apiKey: string;
 }
 
 export interface DVRSettings {
@@ -215,6 +241,10 @@ interface FullPublicSettings extends PublicSettings {
   newPlexLogin: boolean;
   youtubeUrl: string;
   plexClientIdentifier: string;
+  traktConfigured: boolean;
+  mediaActionsTraktEnabled: boolean;
+  mdblistConfigured: boolean;
+  ratingBadges: RatingBadgeSettings;
 }
 
 export interface NotificationAgentConfig {
@@ -229,6 +259,7 @@ export interface NotificationAgentDiscord extends NotificationAgentConfig {
     botAvatarUrl?: string;
     webhookUrl: string;
     webhookRoleId?: string;
+    webhookThreadId?: string;
     enableMentions: boolean;
     locale: AvailableLocale;
     useUserLocale: boolean;
@@ -377,6 +408,10 @@ export interface AllSettings {
   plex: PlexSettings;
   jellyfin: JellyfinSettings;
   tautulli: TautulliSettings;
+  trakt: TraktSettings;
+  mediaActions: MediaActionsSettings;
+  mdblist: MdbListSettings;
+  requestFilters: RequestFiltersSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
   public: PublicSettings;
@@ -403,7 +438,7 @@ class Settings {
       vapidPublic: '',
       main: {
         apiKey: '',
-        applicationTitle: 'Seerr',
+        applicationTitle: 'Foreseer',
         applicationUrl: '',
         cacheImages: false,
         defaultPermissions: Permission.REQUEST,
@@ -449,6 +484,20 @@ class Settings {
         apiKey: '',
       },
       tautulli: {},
+      trakt: {
+        clientId: '',
+        clientSecret: '',
+      },
+      mediaActions: {
+        providers: {
+          trakt: true,
+        },
+      },
+      mdblist: {
+        apiKey: '',
+        ...DEFAULT_RATING_BADGE_SETTINGS,
+      },
+      requestFilters: { ...DEFAULT_REQUEST_FILTERS },
       metadataSettings: {
         tv: MetadataProviderType.TMDB,
         anime: MetadataProviderType.TMDB,
@@ -472,7 +521,7 @@ class Settings {
               ignoreTls: false,
               requireTls: false,
               allowSelfSigned: false,
-              senderName: 'Seerr',
+              senderName: 'Foreseer',
               usePublicLogo: false,
             },
           },
@@ -666,6 +715,103 @@ class Settings {
     this.data.tautulli = mergeSettings(this.data.tautulli, data);
   }
 
+  get trakt(): TraktSettings {
+    if (!this.data.trakt) {
+      this.data.trakt = { clientId: '', clientSecret: '' };
+    }
+    return this.data.trakt;
+  }
+
+  set trakt(data: TraktSettings) {
+    this.data.trakt = mergeSettings(
+      this.data.trakt ?? { clientId: '', clientSecret: '' },
+      data
+    );
+  }
+
+  get mediaActions(): MediaActionsSettings {
+    if (!this.data.mediaActions) {
+      this.data.mediaActions = { providers: { trakt: true } };
+    } else if (!this.data.mediaActions.providers) {
+      this.data.mediaActions.providers = { trakt: true };
+    } else if (this.data.mediaActions.providers.trakt === undefined) {
+      this.data.mediaActions.providers.trakt = true;
+    }
+    return this.data.mediaActions;
+  }
+
+  set mediaActions(data: MediaActionsSettings) {
+    this.data.mediaActions = mergeSettings(
+      this.data.mediaActions ?? { providers: { trakt: true } },
+      data
+    );
+  }
+
+  get mdblist(): MdbListSettings {
+    if (!this.data.mdblist) {
+      this.data.mdblist = {
+        apiKey: '',
+        ...DEFAULT_RATING_BADGE_SETTINGS,
+      };
+    } else {
+      // Backfill newer poster-* keys for installs that predate them
+      this.data.mdblist = {
+        ...DEFAULT_RATING_BADGE_SETTINGS,
+        ...this.data.mdblist,
+      };
+    }
+    return this.data.mdblist;
+  }
+
+  set mdblist(data: MdbListSettings) {
+    this.data.mdblist = mergeSettings(
+      this.data.mdblist ?? {
+        apiKey: '',
+        ...DEFAULT_RATING_BADGE_SETTINGS,
+      },
+      data
+    );
+  }
+
+  get requestFilters(): RequestFiltersSettings {
+    if (!this.data.requestFilters) {
+      this.data.requestFilters = { ...DEFAULT_REQUEST_FILTERS };
+    } else {
+      const legacy = this.data.requestFilters as RequestFiltersSettings &
+        Record<string, unknown>;
+      this.data.requestFilters = {
+        ...DEFAULT_REQUEST_FILTERS,
+        enabled: Boolean(legacy.enabled),
+        tmdbThreshold: legacy.tmdbThreshold ?? null,
+        tmdbMinVotes: legacy.tmdbMinVotes ?? null,
+        imdbThreshold: legacy.imdbThreshold ?? null,
+        imdbMinVotes: legacy.imdbMinVotes ?? null,
+        rtCriticsThreshold: legacy.rtCriticsThreshold ?? null,
+        rtAudienceThreshold: legacy.rtAudienceThreshold ?? null,
+        metacriticThreshold: legacy.metacriticThreshold ?? null,
+        traktThreshold: legacy.traktThreshold ?? null,
+        includeNoRating: legacy.includeNoRating !== false,
+        minReleaseYear: legacy.minReleaseYear ?? null,
+        excludedGenreIds: Array.isArray(legacy.excludedGenreIds)
+          ? legacy.excludedGenreIds
+          : DEFAULT_REQUEST_FILTERS.excludedGenreIds,
+        animeSonarrServerId: legacy.animeSonarrServerId ?? null,
+        animeSonarrServerId4k: legacy.animeSonarrServerId4k ?? null,
+        profileRouting: normalizeProfileRouting(
+          legacy.profileRouting as RequestProfileRouting | undefined
+        ),
+      };
+    }
+    return this.data.requestFilters;
+  }
+
+  set requestFilters(data: RequestFiltersSettings) {
+    this.data.requestFilters = mergeSettings(
+      this.data.requestFilters ?? { ...DEFAULT_REQUEST_FILTERS },
+      data
+    );
+  }
+
   get metadataSettings(): MetadataSettings {
     return this.data.metadataSettings;
   }
@@ -734,6 +880,46 @@ class Settings {
       newPlexLogin: this.data.main.newPlexLogin,
       youtubeUrl: this.data.main.youtubeUrl,
       plexClientIdentifier: this.data.clientId,
+      traktConfigured: Boolean(
+        this.data.trakt?.clientId && this.data.trakt?.clientSecret
+      ),
+      mediaActionsTraktEnabled:
+        this.data.mediaActions?.providers?.trakt !== false,
+      mdblistConfigured: Boolean(this.data.mdblist?.apiKey?.trim()),
+      ratingBadges: {
+        showTmdb:
+          this.data.mdblist?.showTmdb ?? DEFAULT_RATING_BADGE_SETTINGS.showTmdb,
+        showImdb:
+          this.data.mdblist?.showImdb ?? DEFAULT_RATING_BADGE_SETTINGS.showImdb,
+        showRt:
+          this.data.mdblist?.showRt ?? DEFAULT_RATING_BADGE_SETTINGS.showRt,
+        showRtUser:
+          this.data.mdblist?.showRtUser ??
+          DEFAULT_RATING_BADGE_SETTINGS.showRtUser,
+        showMetacritic:
+          this.data.mdblist?.showMetacritic ??
+          DEFAULT_RATING_BADGE_SETTINGS.showMetacritic,
+        showTraktCommunity:
+          this.data.mdblist?.showTraktCommunity ??
+          DEFAULT_RATING_BADGE_SETTINGS.showTraktCommunity,
+        posterTmdb:
+          this.data.mdblist?.posterTmdb ??
+          DEFAULT_RATING_BADGE_SETTINGS.posterTmdb,
+        posterImdb:
+          this.data.mdblist?.posterImdb ??
+          DEFAULT_RATING_BADGE_SETTINGS.posterImdb,
+        posterRt:
+          this.data.mdblist?.posterRt ?? DEFAULT_RATING_BADGE_SETTINGS.posterRt,
+        posterRtUser:
+          this.data.mdblist?.posterRtUser ??
+          DEFAULT_RATING_BADGE_SETTINGS.posterRtUser,
+        posterMetacritic:
+          this.data.mdblist?.posterMetacritic ??
+          DEFAULT_RATING_BADGE_SETTINGS.posterMetacritic,
+        posterTraktCommunity:
+          this.data.mdblist?.posterTraktCommunity ??
+          DEFAULT_RATING_BADGE_SETTINGS.posterTraktCommunity,
+      },
     };
   }
 

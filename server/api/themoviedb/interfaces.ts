@@ -137,6 +137,17 @@ export interface TmdbProductionCompany {
   description?: string;
 }
 
+/** Slim movie/TV fields for discover browse filters (no append_to_response). */
+export interface TmdbBrowseMetadata {
+  id: number;
+  title: string;
+  vote_average: number;
+  vote_count: number;
+  original_language: string;
+  release_date: string | null;
+  genre_ids: number[];
+}
+
 export interface TmdbMovieDetails {
   id: number;
   imdb_id?: string;

@@ -6,6 +6,7 @@ import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
 import {
   Column,
   Entity,
+  In,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -14,21 +15,39 @@ import {
 class DiscoverSlider {
   public static async bootstrapSliders(): Promise<void> {
     const sliderRepository = getRepository(DiscoverSlider);
+    const builtInTypes = defaultSliders.map((slider) => slider.type);
 
     for (const slider of defaultSliders) {
-      const existingSlider = await sliderRepository.findOne({
+      const existingBuiltIn = await sliderRepository.findOne({
         where: {
           type: slider.type,
+          isBuiltIn: true,
         },
       });
 
-      if (!existingSlider) {
+      if (!existingBuiltIn) {
         logger.info('Creating built-in discovery slider', {
           label: 'Discover Slider',
           slider,
         });
         await sliderRepository.save(new DiscoverSlider(slider));
       }
+    }
+
+    const duplicateCustomSliders = await sliderRepository.find({
+      where: {
+        type: In(builtInTypes),
+        isBuiltIn: false,
+      },
+    });
+
+    for (const duplicate of duplicateCustomSliders) {
+      logger.info('Removing duplicate custom discovery slider', {
+        label: 'Discover Slider',
+        sliderId: duplicate.id,
+        type: duplicate.type,
+      });
+      await sliderRepository.delete(duplicate.id);
     }
   }
 

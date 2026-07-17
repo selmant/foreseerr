@@ -1,3 +1,4 @@
+import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
 import React from 'react';
@@ -10,7 +11,7 @@ export interface SettingsContextProps {
 
 const defaultSettings = {
   initialized: false,
-  applicationTitle: 'Seerr',
+  applicationTitle: 'Foreseer',
   applicationUrl: '',
   hideAvailable: false,
   hideBlocklisted: false,
@@ -32,6 +33,10 @@ const defaultSettings = {
   newPlexLogin: true,
   youtubeUrl: '',
   plexClientIdentifier: '',
+  traktConfigured: false,
+  mediaActionsTraktEnabled: true,
+  mdblistConfigured: false,
+  ratingBadges: { ...DEFAULT_RATING_BADGE_SETTINGS },
 };
 
 export const SettingsContext = React.createContext<SettingsContextProps>({
