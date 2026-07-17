@@ -2677,6 +2677,12 @@ components:
       description: >
         Hide titles the user has marked watched on Trakt. When omitted, the
         user's Discover filter defaults (ignoreWatched) are used.
+    DiscoverIgnoreDefaults:
+      in: query
+      name: ignoreDiscoverDefaults
+      schema:
+        type: boolean
+      description: Ignore persisted Discover filter defaults for this request.
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -6358,6 +6364,8 @@ paths:
       tags:
         - search
       parameters:
+        - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
         - in: query
           name: page
           schema:
@@ -6697,6 +6705,8 @@ paths:
       tags:
         - search
       parameters:
+        - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
         - in: query
           name: page
           schema:
@@ -7041,6 +7051,8 @@ paths:
       tags:
         - search
       parameters:
+        - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
         - in: query
           name: page
           schema:
@@ -7277,6 +7289,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverTraktRatingLte'
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: Trakt recommendations returned
@@ -7324,6 +7337,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverTraktRatingLte'
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: Trakt watchlist returned
@@ -7371,6 +7385,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverTraktRatingLte'
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: Trakt history returned
@@ -7449,6 +7464,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverTraktRatingLte'
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: Trakt list items returned
@@ -7524,6 +7540,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverTraktRatingLte'
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: Trakt list items returned

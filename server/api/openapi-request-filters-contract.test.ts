@@ -79,4 +79,18 @@ describe('OpenAPI request filters contract', () => {
       }
     }
   });
+
+  it('declares Discover default-control query params on regular browse routes', () => {
+    for (const path of [
+      '/discover/movies',
+      '/discover/tv',
+      '/discover/trending',
+    ]) {
+      const parameterNames = resolveParameterNames(
+        apiDocs.paths[path]?.get?.parameters
+      );
+      assert.ok(parameterNames.includes('ignoreWatched'));
+      assert.ok(parameterNames.includes('ignoreDiscoverDefaults'));
+    }
+  });
 });
