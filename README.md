@@ -29,35 +29,61 @@ Near-term additions on top of Seerr (see the Foreseer master plan):
 
 AI / LLM recommendation features are explicitly out of scope unless reopened.
 
-## Getting Started
+## Installation
 
-### Docker Compose (dev)
+Foreseer is currently distributed as a Docker image. Docker and Docker Compose must be installed on the host; see the [Docker installation guide](https://docs.docker.com/get-docker/) if needed.
 
-```bash
-docker compose up --build
-```
+### Docker CLI
 
-App listens on port **5055**. Config lives under `./config` locally and `/app/config` in containers (unchanged from Seerr).
-
-Postgres variant: `docker compose -f compose.postgres.yaml up --build`.
-
-### From source
-
-Follow upstream Seerr build docs, or:
+Create a persistent directory for Foreseer’s configuration. The container runs as UID/GID `1000`, so make sure it can write to this directory:
 
 ```bash
-pnpm install
-pnpm build
-pnpm start
+mkdir -p ./foreseer-config
+sudo chown -R 1000:1000 ./foreseer-config
 ```
 
-### Kubernetes
+Start the released alpha image:
 
 ```bash
-helm install foreseer oci://ghcr.io/selmant/seerr/foreseer-chart
+docker run -d \
+  --name foreseer \
+  --init \
+  --restart unless-stopped \
+  -p 5055:5055 \
+  -v "$(pwd)/foreseer-config:/app/config" \
+  ghcr.io/selmant/seerr:v0.1.0-alpha.1
 ```
 
-Images publish to `ghcr.io/selmant/seerr` (and optionally Docker Hub `selmant/foreseer` when credentials are configured).
+Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
+
+To update, replace the image tag with the version you want, then recreate the container with the same volume mount. Because this is an alpha release, back up `foreseer-config` before updating.
+
+### Docker Compose
+
+The equivalent production-style Compose service is:
+
+```yaml
+services:
+  foreseer:
+    image: ghcr.io/selmant/seerr:v0.1.0-alpha.1
+    container_name: foreseer
+    init: true
+    restart: unless-stopped
+    ports:
+      - "5055:5055"
+    volumes:
+      - ./foreseer-config:/app/config
+```
+
+Start it with:
+
+```bash
+mkdir -p foreseer-config
+sudo chown -R 1000:1000 foreseer-config
+docker compose up -d
+```
+
+The image is published at `ghcr.io/selmant/seerr`. Use an explicit version tag for alpha deployments rather than relying on `latest`.
 
 ## Migrating from Seerr / Overseerr / Jellyseerr
 
