@@ -80,7 +80,18 @@ async function applyBrowseDiscoverFilters<T extends BrowseResult>(
   user: User | undefined,
   query: Request['query']
 ): Promise<T[]> {
-  const filtered = await filterDiscoverResults(results, query);
+  let filtered: T[];
+  try {
+    filtered = await filterDiscoverResults(results, query);
+  } catch (e) {
+    // Browse filtering/enrichment is optional. A failure in an external
+    // provider or concurrent enrichment must not turn a TMDB browse into 500.
+    logger.debug('Skipping Discover result filtering', {
+      label: 'API',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    filtered = results;
+  }
   if (!user?.id) {
     return filtered;
   }
@@ -96,15 +107,13 @@ async function applyBrowseDiscoverFilters<T extends BrowseResult>(
     return filterWatchedMixedBrowseResults(filtered, watchedSets);
   } catch (e) {
     // Hiding watched titles is optional. The persisted default is enabled for
-    // existing users, so an unconfigured/unlinked Trakt account must not make
+    // existing users, so any unavailable Trakt account/API must not make
     // ordinary TMDB browse requests fail.
-    if (
-      e instanceof TraktNotConfiguredError ||
-      e instanceof TraktNotLinkedError
-    ) {
-      return filtered;
-    }
-    throw e;
+    logger.debug('Skipping watched-title filtering', {
+      label: 'API',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    return filtered;
   }
 }
 
