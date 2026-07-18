@@ -49,6 +49,11 @@ export interface TraktUserList {
   };
 }
 
+export interface TraktLikedList {
+  liked_at?: string;
+  list?: TraktUserList;
+}
+
 export interface TraktDeviceCodeResponse {
   device_code: string;
   user_code: string;
@@ -87,6 +92,7 @@ export interface TraktListMetadata {
   privacy?: string;
   username?: string;
   isWatchlist?: boolean;
+  isLiked?: boolean;
 }
 
 export interface TraktSearchListEntry {

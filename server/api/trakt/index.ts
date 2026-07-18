@@ -2,6 +2,7 @@ import ExternalAPI from '@server/api/externalapi';
 import type {
   TraktDeviceCodeResponse,
   TraktDevicePollResult,
+  TraktLikedList,
   TraktListEntry,
   TraktListMetadata,
   TraktMediaItem,
@@ -289,6 +290,25 @@ class TraktAPI extends ExternalAPI {
       { params: { extended: 'min' } }
     );
     return this.normalizeUserLists(payload);
+  }
+
+  public async getLikedLists(): Promise<TraktListMetadata[]> {
+    await this.ensureFreshToken();
+    const payload =
+      await this.getAuthenticated<TraktLikedList[]>('/users/likes/lists');
+
+    return (payload || [])
+      .map((entry) =>
+        entry.list
+          ? {
+              ...this.normalizeListMetadata(entry.list),
+              isLiked: true as const,
+            }
+          : null
+      )
+      .filter(
+        (list): list is TraktListMetadata & { isLiked: true } => list !== null
+      );
   }
 
   public async addToHistory(

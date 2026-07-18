@@ -1405,7 +1405,10 @@ discoverRoutes.get('/trakt/lists', async (req, res, next) => {
     }
 
     const trakt = await createTraktUserClient(req.user.id);
-    const lists = await trakt.getUserLists('me');
+    const [lists, likedLists] = await Promise.all([
+      trakt.getUserLists('me'),
+      trakt.getLikedLists(),
+    ]);
     const withWatchlist = [
       {
         id: 'watchlist',
@@ -1415,6 +1418,7 @@ discoverRoutes.get('/trakt/lists', async (req, res, next) => {
         isWatchlist: true as const,
       },
       ...lists,
+      ...likedLists,
     ];
 
     return res.status(200).json({ results: withWatchlist });
