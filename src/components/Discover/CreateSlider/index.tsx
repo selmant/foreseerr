@@ -36,8 +36,6 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   providetmdbnetwork: 'Provide TMDB Network ID',
   providetraktlisturl: 'Paste a Trakt list URL or username/list-slug',
   searchTraktLists: 'Search public or your Trakt lists…',
-  searchMode: 'Search lists',
-  manualMode: 'Paste a URL',
   customTraktList: 'Use: {value}',
   traktListNotLinked:
     'Search finds public lists. Link Trakt to also include your personal lists.',
@@ -110,9 +108,6 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
   const [defaultDataValue, setDefaultDataValue] = useState<
     { label: string; value: string | number }[] | null
   >(null);
-  const [traktListInputMode, setTraktListInputMode] = useState<
-    'search' | 'manual'
-  >('search');
 
   useEffect(() => {
     if (slider) {
@@ -650,74 +645,37 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
           case DiscoverSliderType.TRAKT_LIST:
             dataInput = (
               <div className="space-y-3">
-                <div
-                  className="inline-flex rounded-lg bg-gray-900 p-1"
-                  aria-label={intl.formatMessage(messages.searchTraktLists)}
-                  role="tablist"
-                >
-                  {(['search', 'manual'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="tab"
-                      aria-selected={traktListInputMode === mode}
-                      onClick={() => setTraktListInputMode(mode)}
-                      className={`rounded-md px-3 py-1.5 text-sm transition ${
-                        traktListInputMode === mode
-                          ? 'bg-gray-700 text-white shadow-sm'
-                          : 'text-gray-400 hover:text-gray-200'
-                      }`}
-                    >
-                      {intl.formatMessage(
-                        mode === 'search'
-                          ? messages.searchMode
-                          : messages.manualMode
-                      )}
-                    </button>
-                  ))}
-                </div>
-                {traktListInputMode === 'search' ? (
-                  <AsyncSelect
-                    key={`trakt-list-select-${defaultDataValue}`}
-                    inputId="trakt-list-picker"
-                    className="react-select-container"
-                    classNamePrefix="react-select"
-                    defaultValue={defaultDataValue?.[0]}
-                    defaultOptions
-                    cacheOptions
-                    loadOptions={loadTraktListOptions}
-                    placeholder={intl.formatMessage(messages.searchTraktLists)}
-                    noOptionsMessage={({ inputValue }) =>
-                      inputValue.length < 2
-                        ? intl.formatMessage(messages.starttyping)
-                        : intl.formatMessage(messages.nooptions)
-                    }
-                    onChange={(value) => {
-                      const listValue = value?.value?.toString() ?? '';
-                      setFieldValue('data', listValue);
+                <AsyncSelect
+                  key={`trakt-list-select-${defaultDataValue}`}
+                  inputId="trakt-list-picker"
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  defaultValue={defaultDataValue?.[0]}
+                  defaultOptions
+                  cacheOptions
+                  loadOptions={loadTraktListOptions}
+                  placeholder={intl.formatMessage(messages.searchTraktLists)}
+                  noOptionsMessage={({ inputValue }) =>
+                    inputValue.length < 2
+                      ? intl.formatMessage(messages.starttyping)
+                      : intl.formatMessage(messages.nooptions)
+                  }
+                  onChange={(value) => {
+                    const listValue = value?.value?.toString() ?? '';
+                    setFieldValue('data', listValue);
 
-                      const label = value?.label?.toString() ?? '';
-                      if (!values.title?.trim() && label) {
-                        const titleFromList = label
-                          .replace(/\s+·\s+(?:yours|liked)\s+\(\d+\)$/, '')
-                          .replace(/\s+·\s+[\w.-]+\s+\(\d+\)$/, '')
-                          .replace(/\s+\(\d+\)$/, '');
-                        if (titleFromList) {
-                          setFieldValue('title', titleFromList);
-                        }
+                    const label = value?.label?.toString() ?? '';
+                    if (!values.title?.trim() && label) {
+                      const titleFromList = label
+                        .replace(/\s+·\s+(?:yours|liked)\s+\(\d+\)$/, '')
+                        .replace(/\s+·\s+[\w.-]+\s+\(\d+\)$/, '')
+                        .replace(/\s+\(\d+\)$/, '');
+                      if (titleFromList) {
+                        setFieldValue('title', titleFromList);
                       }
-                    }}
-                  />
-                ) : (
-                  <Field
-                    type="text"
-                    name="data"
-                    id="data"
-                    placeholder={intl.formatMessage(
-                      messages.providetraktlisturl
-                    )}
-                  />
-                )}
+                    }
+                  }}
+                />
                 <p className="text-sm text-gray-400">
                   {intl.formatMessage(messages.traktListNotLinked)}
                 </p>
