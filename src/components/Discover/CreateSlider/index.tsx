@@ -762,7 +762,9 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                 <Tooltip content={intl.formatMessage(messages.needresults)}>
                   <div>
                     <Button buttonType="primary" buttonSize="sm" disabled>
-                      {intl.formatMessage(messages.addSlider)}
+                      {intl.formatMessage(
+                        slider ? messages.editSlider : messages.addSlider
+                      )}
                     </Button>
                   </div>
                 </Tooltip>
