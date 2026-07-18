@@ -181,6 +181,15 @@ function parseTraktMediaTypeQuery(
   return 'both';
 }
 
+function parseTraktListSortQuery(
+  value: unknown
+): { sortBy: 'added' | 'released'; sortHow: 'desc' } | undefined {
+  if (value === 'added' || value === 'released') {
+    return { sortBy: value, sortHow: 'desc' };
+  }
+  return undefined;
+}
+
 function toTraktFetchMediaType(
   mediaType: 'movie' | 'tv' | 'both' | 'anime'
 ): 'movie' | 'tv' | 'both' {
@@ -1456,6 +1465,7 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
     const extended = traktExtendedForBrowseQuery(req.query);
+    const listSort = parseTraktListSortQuery(req.query.sort);
 
     let items: TraktMediaItem[];
     let hasMore = false;
@@ -1471,6 +1481,7 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
               page: traktPage,
               limit: itemsPerPage,
               extended,
+              ...listSort,
             });
       ({ items, hasMore } = await fetchPaginatedTraktAnimeItems(
         fetchPage,
@@ -1490,6 +1501,7 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
               page: traktPage,
               limit: itemsPerPage,
               extended,
+              ...listSort,
             });
       ({ items, hasMore } = await fetchPaginatedTraktNonAnimeItems(
         fetchPage,
@@ -1509,6 +1521,7 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
         page,
         limit: itemsPerPage,
         extended,
+        ...listSort,
       });
       hasMore = items.length >= itemsPerPage;
     }
@@ -1562,6 +1575,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
     const extended = traktExtendedForBrowseQuery(req.query);
+    const listSort = parseTraktListSortQuery(req.query.sort);
 
     if (listRef === 'watchlist') {
       if (!username) {
@@ -1617,6 +1631,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
               page: traktPage,
               limit: itemsPerPage,
               extended,
+              ...listSort,
             }),
           page,
           itemsPerPage,
@@ -1629,6 +1644,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
               page: traktPage,
               limit: itemsPerPage,
               extended,
+              ...listSort,
             }),
           page,
           itemsPerPage,
@@ -1639,6 +1655,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
           page,
           limit: itemsPerPage,
           extended,
+          ...listSort,
         });
         hasMore = items.length >= itemsPerPage;
       }

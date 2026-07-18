@@ -74,6 +74,9 @@ class DiscoverSlider {
   @Column({ nullable: true })
   public data?: string;
 
+  @Column({ nullable: true })
+  public sort?: string;
+
   @DbAwareColumn({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
   public createdAt: Date;
 

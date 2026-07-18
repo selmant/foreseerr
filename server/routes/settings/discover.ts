@@ -30,6 +30,7 @@ discoverSettingRoutes.post('/', async (req, res) => {
       if (!existingSlider.isBuiltIn) {
         existingSlider.title = slider.title;
         existingSlider.data = slider.data;
+        existingSlider.sort = slider.sort;
         existingSlider.type = slider.type;
       }
 
@@ -38,6 +39,7 @@ discoverSettingRoutes.post('/', async (req, res) => {
       const newSlider = new DiscoverSlider({
         isBuiltIn: false,
         data: slider.data,
+        sort: slider.sort,
         title: slider.title,
         enabled: slider.enabled,
         order: x,
@@ -58,6 +60,7 @@ discoverSettingRoutes.post('/add', async (req, res) => {
   const newSlider = new DiscoverSlider({
     isBuiltIn: false,
     data: slider.data,
+    sort: slider.sort,
     title: slider.title,
     enabled: false,
     order: -1,
@@ -93,6 +96,7 @@ discoverSettingRoutes.put('/:sliderId', async (req, res, next) => {
     if (!existingSlider.isBuiltIn) {
       existingSlider.title = slider.title;
       existingSlider.data = slider.data;
+      existingSlider.sort = slider.sort;
       existingSlider.type = slider.type;
     }
 

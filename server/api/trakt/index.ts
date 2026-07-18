@@ -491,7 +491,13 @@ class TraktAPI extends ExternalAPI {
     listUser: string | null,
     listRef: string,
     mediaType: 'movie' | 'tv' | 'both' = 'both',
-    options: { limit?: number; page?: number; extended?: 'min' | 'full' } = {}
+    options: {
+      limit?: number;
+      page?: number;
+      extended?: 'min' | 'full';
+      sortBy?: 'added' | 'released';
+      sortHow?: 'asc' | 'desc';
+    } = {}
   ): Promise<TraktMediaItem[]> {
     const ref = String(listRef || '').trim();
     if (!ref) {
@@ -504,9 +510,12 @@ class TraktAPI extends ExternalAPI {
       page: Math.max(1, options.page ?? 1),
       extended: options.extended ?? 'min',
     };
+    const sortPath = options.sortBy
+      ? `/${options.sortBy}/${options.sortHow ?? 'desc'}`
+      : '';
     const path = listUser
-      ? `/users/${listUser}/lists/${ref}/items/${itemTypes}`
-      : `/lists/${ref}/items/${itemTypes}`;
+      ? `/users/${listUser}/lists/${ref}/items/${itemTypes}${sortPath}`
+      : `/lists/${ref}/items/${itemTypes}${sortPath}`;
 
     const payload = this.accessToken
       ? await this.getAuthenticatedOrPublic<TraktListEntry[]>(path, { params })

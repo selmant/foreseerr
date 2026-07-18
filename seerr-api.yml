@@ -7274,6 +7274,12 @@ paths:
             enum: [movie, tv, both, anime]
             default: both
         - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [added, released]
+            description: Sort a Trakt list by date added or release date, newest first.
+        - in: query
           name: ignoreCollected
           schema:
             type: boolean

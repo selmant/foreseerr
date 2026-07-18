@@ -33,7 +33,7 @@ const DiscoverTraktList = () => {
     mutate,
   } = useDiscover<WatchlistItem & { title?: string }>(
     url ? '/api/v1/discover/trakt/list' : '',
-    prepareTraktDiscoverOptions(router.query, ['url'])
+    prepareTraktDiscoverOptions(router.query, ['url', 'sort'])
   );
 
   if (!settings.currentSettings.traktConfigured) {
