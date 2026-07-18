@@ -16,6 +16,10 @@ import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.TraktDiscoverFilters', {
   anime: 'Anime',
+  sortLabel: 'Sort',
+  traktOrder: 'Trakt list order',
+  dateAdded: 'Date added (newest first)',
+  releaseDate: 'Release date (newest first)',
   activefilters:
     '{count, plural, one {# Active Filter} other {# Active Filters}}',
 });
@@ -49,6 +53,10 @@ const TraktDiscoverFilters = ({
       : 'all';
 
   const filterType: 'movie' | 'tv' = currentType === 'tv' ? 'tv' : 'movie';
+  const currentSort =
+    router.query.sort === 'added' || router.query.sort === 'released'
+      ? router.query.sort
+      : '';
 
   const activeFilterCount =
     countActiveFilters(preparedFilters) +
@@ -99,6 +107,28 @@ const TraktDiscoverFilters = ({
         onClose={() => setShowFilters(false)}
         show={showFilters}
       />
+      <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
+        <label htmlFor="traktListSort" className="sr-only">
+          {intl.formatMessage(messages.sortLabel)}
+        </label>
+        <select
+          id="traktListSort"
+          name="traktListSort"
+          className="rounded-md"
+          value={currentSort}
+          onChange={(e) =>
+            updateQueryParams('sort', e.target.value || undefined)
+          }
+        >
+          <option value="">{intl.formatMessage(messages.traktOrder)}</option>
+          <option value="added">
+            {intl.formatMessage(messages.dateAdded)}
+          </option>
+          <option value="released">
+            {intl.formatMessage(messages.releaseDate)}
+          </option>
+        </select>
+      </div>
       <div className="mb-2 flex flex-grow sm:mb-0 lg:flex-grow-0">
         <Button onClick={() => setShowFilters(true)} className="w-full">
           <FunnelIcon />

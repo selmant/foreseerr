@@ -17,7 +17,6 @@ const messages = defineMessages('components.Discover.TraktListSlider', {
 interface TraktListSliderProps {
   title: string;
   url: string;
-  sort?: string;
   sliderKey: string;
   hideTitle?: boolean;
   onNewTitles?: (titleCount: number) => void;
@@ -26,7 +25,6 @@ interface TraktListSliderProps {
 const TraktListSlider = ({
   title,
   url,
-  sort,
   sliderKey,
   hideTitle = false,
   onNewTitles,
@@ -41,9 +39,7 @@ const TraktListSlider = ({
     results: WatchlistItem[];
   }>(
     settings.currentSettings.traktConfigured && url
-      ? `/api/v1/discover/trakt/list?url=${encodeURIExtraParams(url)}${
-          sort ? `&sort=${encodeURIExtraParams(sort)}` : ''
-        }`
+      ? `/api/v1/discover/trakt/list?url=${encodeURIExtraParams(url)}`
       : null,
     { revalidateOnMount: true }
   );
@@ -63,9 +59,7 @@ const TraktListSlider = ({
       {!hideTitle && (
         <div className="slider-header">
           <Link
-            href={`/discover/trakt/list?url=${encodeURIComponent(url)}${
-              sort ? `&sort=${encodeURIComponent(sort)}` : ''
-            }`}
+            href={`/discover/trakt/list?url=${encodeURIComponent(url)}`}
             className="slider-title"
           >
             <span>{title}</span>

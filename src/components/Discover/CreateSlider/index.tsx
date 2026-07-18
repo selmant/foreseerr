@@ -36,10 +36,6 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   providetmdbnetwork: 'Provide TMDB Network ID',
   providetraktlisturl: 'Paste a Trakt list URL or username/list-slug',
   searchTraktLists: 'Search public or your Trakt lists…',
-  traktListSortLabel: 'Sort list by',
-  traktListSortDefault: 'Trakt list order',
-  traktListSortAdded: 'Date added (newest first)',
-  traktListSortReleased: 'Release date (newest first)',
   customTraktList: 'Use: {value}',
   traktListNotLinked:
     'Search finds public lists. Link Trakt to also include your personal lists.',
@@ -472,13 +468,11 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
               sliderType: slider.type,
               title: slider.title,
               data: slider.data,
-              sort: slider.sort ?? '',
             }
           : {
               sliderType: DiscoverSliderType.TMDB_MOVIE_KEYWORD,
               title: '',
               data: '',
-              sort: '',
             }
       }
       validationSchema={CreateSliderSchema}
@@ -490,14 +484,12 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
               type: Number(values.sliderType),
               title: values.title,
               data: values.data,
-              sort: values.sort,
             });
           } else {
             await axios.post('/api/v1/settings/discover/add', {
               type: Number(values.sliderType),
               title: values.title,
               data: values.data,
-              sort: values.sort,
             });
           }
 
@@ -676,28 +668,6 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                     }
                   }}
                 />
-                <label
-                  htmlFor="trakt-list-sort"
-                  className="block text-sm text-gray-300"
-                >
-                  {intl.formatMessage(messages.traktListSortLabel)}
-                </label>
-                <Field
-                  as="select"
-                  id="trakt-list-sort"
-                  name="sort"
-                  className="w-full"
-                >
-                  <option value="">
-                    {intl.formatMessage(messages.traktListSortDefault)}
-                  </option>
-                  <option value="added">
-                    {intl.formatMessage(messages.traktListSortAdded)}
-                  </option>
-                  <option value="released">
-                    {intl.formatMessage(messages.traktListSortReleased)}
-                  </option>
-                </Field>
                 <p className="text-sm text-gray-400">
                   {intl.formatMessage(messages.traktListNotLinked)}
                 </p>
@@ -782,7 +752,6 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                     sliderKey={`preview-${values.title}`}
                     title={values.title}
                     url={values.data ?? ''}
-                    sort={values.sort}
                     hideTitle
                   />
                 ) : (
