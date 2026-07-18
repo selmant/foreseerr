@@ -20,7 +20,7 @@ import type { GenreSliderItem } from '@server/interfaces/api/discoverInterfaces'
 import type { Keyword, ProductionCompany } from '@server/models/common';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import AsyncSelect from 'react-select/async';
 import * as Yup from 'yup';
@@ -108,7 +108,6 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
   const { addToast } = useToasts();
   const settings = useSettings();
   const { user } = useUser();
-  const [resultCount, setResultCount] = useState(0);
   const [defaultDataValue, setDefaultDataValue] = useState<
     { label: string; value: string | number }[] | null
   >(null);
@@ -249,13 +248,6 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       intl.formatMessage(messages.validationDatarequired)
     ),
   });
-
-  const updateResultCount = useCallback(
-    (count: number) => {
-      setResultCount(count);
-    },
-    [setResultCount]
-  );
 
   const loadKeywordOptions = async (inputValue: string) => {
     const results = await axios.get<TmdbKeywordSearchResponse>(
@@ -535,7 +527,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         const activeOption = visibleOptions.find(
           (option) => option.type === Number(values.sliderType)
         );
-        const canSubmit = resultCount > 0 && isValid;
+        const canSubmit = isValid && Boolean(values.data?.trim());
 
         let dataInput: React.ReactNode;
 
@@ -792,7 +784,6 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                     url={values.data ?? ''}
                     sort={values.sort}
                     hideTitle
-                    onNewTitles={updateResultCount}
                   />
                 ) : (
                   <MediaSlider
@@ -827,7 +818,6 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                             encodeURIExtraParams(values.data ?? '')
                           )
                     }
-                    onNewTitles={updateResultCount}
                   />
                 )}
               </div>
