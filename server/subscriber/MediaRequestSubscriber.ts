@@ -189,6 +189,19 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       try {
         const mediaRepository = getRepository(Media);
         const settings = getSettings();
+
+        if (settings.radarr.length === 0) {
+          logger.info(
+            'No Radarr server configured, skipping request processing',
+            {
+              label: 'Media Request',
+              requestId: entity.id,
+              mediaId: entity.media.id,
+            }
+          );
+          return;
+        }
+
         const tmdb = new TheMovieDb();
         const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
         const mediaIsAnime = isAnimeMedia(movie);
@@ -200,18 +213,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           radarr: settings.radarr,
           sonarr: settings.sonarr,
         });
-
-        if (settings.radarr.length === 0 && !settings.radarr[0]) {
-          logger.info(
-            'No Radarr server configured, skipping request processing',
-            {
-              label: 'Media Request',
-              requestId: entity.id,
-              mediaId: entity.media.id,
-            }
-          );
-          return;
-        }
 
         let radarrSettings = settings.radarr.find(
           (radarr) => radarr.isDefault && radarr.is4k === entity.is4k

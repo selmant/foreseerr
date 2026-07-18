@@ -63,6 +63,8 @@ before(async () => {
 
 beforeEach(() => {
   sendNotificationMock.resetCalls();
+  getSettings().radarr = [];
+  getSettings().sonarr = [];
 });
 
 setupTestDb();
