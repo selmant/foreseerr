@@ -1,4 +1,5 @@
 import Badge from '@app/components/Common/Badge';
+import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
@@ -199,9 +200,9 @@ const SettingsTrakt = () => {
             <div className="actions">
               <div className="flex justify-end">
                 <span className="ml-3 inline-flex rounded-md shadow-sm">
-                  <button
+                  <Button
+                    buttonType="primary"
                     type="submit"
-                    className="btn btn-primary"
                     disabled={isSubmitting || !isValid}
                   >
                     <ArrowDownOnSquareIcon />
@@ -210,7 +211,7 @@ const SettingsTrakt = () => {
                         ? intl.formatMessage(globalMessages.saving)
                         : intl.formatMessage(globalMessages.save)}
                     </span>
-                  </button>
+                  </Button>
                 </span>
               </div>
             </div>
