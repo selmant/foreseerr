@@ -20,14 +20,14 @@ const messages = defineMessages('components.Settings.SettingsNetwork', {
   network: 'Network',
   networksettings: 'Network Settings',
   networksettingsDescription:
-    'Configure network settings for your Seerr instance.',
+    'Configure network settings for your Foreseer instance.',
   csrfProtection: 'Enable CSRF Protection',
   csrfProtectionTip: 'Set external API access to read-only (requires HTTPS)',
   csrfProtectionHoverTip:
     'Do NOT enable this setting unless you understand what you are doing!',
   trustProxy: 'Enable Proxy Support',
   trustProxyTip:
-    'Allow Seerr to correctly register client IP addresses behind a proxy',
+    'Allow Foreseer to correctly register client IP addresses behind a proxy',
   proxyEnabled: 'HTTP(S) Proxy',
   proxyEnabledTip:
     'Send ALL outgoing HTTP/HTTPS requests through a proxy server (host/port). Does NOT enable HTTPS, SSL, or certificate configuration.',
@@ -48,7 +48,7 @@ const messages = defineMessages('components.Settings.SettingsNetwork', {
   docs: 'documentation',
   forceIpv4First: 'Force IPv4 Resolution First',
   forceIpv4FirstTip:
-    'Force Seerr to resolve IPv4 addresses first instead of IPv6',
+    'Force Foreseer to resolve IPv4 addresses first instead of IPv6',
   dnsCache: 'DNS Cache',
   dnsCacheTip:
     'Enable caching of DNS lookups to optimize performance and avoid making unnecessary API calls',

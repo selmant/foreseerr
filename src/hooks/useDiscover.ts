@@ -64,10 +64,15 @@ const useDiscover = <
   const { hasPermission } = useUser();
   const { addToast } = useToasts();
   const intl = useIntl();
+  const optionsKey = JSON.stringify(options ?? {});
   const { data, error, size, setSize, isValidating, mutate } = useSWRInfinite<
     BaseSearchResult<T> & S
   >(
     (pageIndex: number, previousPageData) => {
+      if (!endpoint) {
+        return null;
+      }
+
       if (previousPageData && pageIndex + 1 > previousPageData.totalPages) {
         return null;
       }
@@ -93,6 +98,10 @@ const useDiscover = <
       revalidateOnFocus: false,
     }
   );
+
+  useEffect(() => {
+    setSize(1);
+  }, [endpoint, optionsKey, setSize]);
 
   const resultIds: Set<number> = new Set<number>();
 
@@ -143,19 +152,21 @@ const useDiscover = <
   }
 
   const isEmpty = !isLoadingInitialData && titles?.length === 0;
+  const lastPageData = data?.[data.length - 1];
   const isReachingEnd =
     isEmpty ||
-    (!!data && (data[data?.length - 1]?.results.length ?? 0) < 20) ||
-    (!!data && (data[data?.length - 1]?.totalResults ?? 0) <= size * 20) ||
-    (!!data && (data[data?.length - 1]?.totalResults ?? 0) < 41);
+    (!!lastPageData && lastPageData.results.length === 0) ||
+    (!!lastPageData && !!data && data.length >= lastPageData.totalPages);
 
   useEffect(() => {
+    if (error) {
+      console.error('Error while fetching discover titles:', error);
+    }
     if (error && titles.length) {
       addToast(intl.formatMessage(globalMessages.error), {
         appearance: 'error',
         autoDismiss: true,
       });
-      console.error('Error while fetching discover titles:', error);
     }
   }, [data, error, addToast, intl, titles.length]);
 

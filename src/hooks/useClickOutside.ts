@@ -14,7 +14,12 @@ const useClickOutside = (
   callback: (e: MouseEvent) => void
 ): void => {
   useEffect(() => {
+    // Ignore the click that opened the overlay (same task / very next tick).
+    const openedAt = performance.now();
     const handleBodyClick = (e: MouseEvent) => {
+      if (performance.now() - openedAt < 100) {
+        return;
+      }
       if (ref.current && !ref.current.contains(e.target as Node)) {
         callback(e);
       }

@@ -8,7 +8,12 @@ import {
   prepareFilterValues,
 } from '@app/components/Discover/constants';
 import FilterSlideover from '@app/components/Discover/FilterSlideover';
+import {
+  discoverDefaultsRequestExtras,
+  mergeFilterDefaults,
+} from '@app/components/Discover/mergeFilterDefaults';
 import useDiscover from '@app/hooks/useDiscover';
+import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -49,7 +54,17 @@ const DiscoverMovies = () => {
   const router = useRouter();
   const updateQueryParams = useUpdateQueryParams({});
 
-  const preparedFilters = prepareFilterValues(router.query);
+  const { data: discoverDefaults } = useDiscoverFilterDefaults();
+  const preparedFilters = mergeFilterDefaults(
+    prepareFilterValues(router.query),
+    discoverDefaults
+  );
+  const activeFilterCount =
+    countActiveFilters(preparedFilters) +
+    (preparedFilters.ignoreWatched === 'true' ||
+    preparedFilters.ignoreWatched === 'false'
+      ? 1
+      : 0);
 
   const {
     isLoadingInitialData,
@@ -61,12 +76,23 @@ const DiscoverMovies = () => {
     error,
   } = useDiscover<MovieResult, unknown, FilterOptions>(
     '/api/v1/discover/movies',
-    preparedFilters
+    { ...preparedFilters, ...discoverDefaultsRequestExtras() }
   );
   const [showFilters, setShowFilters] = useState(false);
 
   if (error) {
-    return <ErrorPage statusCode={500} />;
+    const statusCode =
+      typeof error === 'object' && error !== null && 'response' in error
+        ? Number(
+            (error as { response?: { status?: unknown } }).response?.status
+          )
+        : undefined;
+
+    return (
+      <ErrorPage
+        statusCode={Number.isFinite(statusCode) ? statusCode : undefined}
+      />
+    );
   }
 
   const title = intl.formatMessage(messages.discovermovies);
@@ -116,6 +142,7 @@ const DiscoverMovies = () => {
           </div>
           <FilterSlideover
             type="movie"
+            showHideWatched
             currentFilters={preparedFilters}
             onClose={() => setShowFilters(false)}
             show={showFilters}
@@ -125,7 +152,7 @@ const DiscoverMovies = () => {
               <FunnelIcon />
               <span>
                 {intl.formatMessage(messages.activefilters, {
-                  count: countActiveFilters(preparedFilters),
+                  count: activeFilterCount,
                 })}
               </span>
             </Button>

@@ -18,6 +18,11 @@ import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
 import { Permission } from '@server/lib/permissions';
+import {
+  normalizeProfileRoute,
+  normalizeProfileRouting,
+  type RequestProfileRoute,
+} from '@server/lib/requestFilters/types';
 import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import { plexFullScanner } from '@server/lib/scanners/plex';
 import type { JobId, Library, MainSettings } from '@server/lib/settings';
@@ -467,6 +472,215 @@ settingsRoutes.post('/tautulli', async (req, res, next) => {
   }
 
   return res.status(200).json(settings.tautulli);
+});
+
+settingsRoutes.get('/trakt', (_req, res) => {
+  const settings = getSettings();
+
+  res.status(200).json({
+    clientId: settings.trakt.clientId,
+    // Never return the full secret; indicate whether one is set
+    clientSecret: settings.trakt.clientSecret ? '********' : '',
+    configured: Boolean(settings.trakt.clientId && settings.trakt.clientSecret),
+    actionsEnabled: settings.mediaActions?.providers?.trakt !== false,
+  });
+});
+
+settingsRoutes.post('/trakt', async (req, res, next) => {
+  const settings = getSettings();
+
+  try {
+    const clientId = String(req.body.clientId ?? '').trim();
+    let clientSecret = String(req.body.clientSecret ?? '').trim();
+
+    // Preserve existing secret when the masked placeholder is submitted
+    if (!clientSecret || clientSecret === '********') {
+      clientSecret = settings.trakt.clientSecret;
+    }
+
+    settings.trakt = {
+      clientId,
+      clientSecret,
+    };
+    settings.mediaActions = {
+      providers: {
+        trakt: req.body.actionsEnabled !== false,
+      },
+    };
+    await settings.save();
+
+    return res.status(200).json({
+      clientId: settings.trakt.clientId,
+      clientSecret: settings.trakt.clientSecret ? '********' : '',
+      configured: Boolean(
+        settings.trakt.clientId && settings.trakt.clientSecret
+      ),
+      actionsEnabled: settings.mediaActions.providers.trakt !== false,
+    });
+  } catch (e) {
+    logger.error('Something went wrong saving Trakt settings', {
+      label: 'API',
+      errorMessage: e.message,
+    });
+    return next({
+      status: 500,
+      message: 'Unable to save Trakt settings.',
+    });
+  }
+});
+
+const boolOrDefault = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  return fallback;
+};
+
+const mdblistSettingsResponse = () => {
+  const settings = getSettings();
+  const m = settings.mdblist;
+  return {
+    apiKey: m.apiKey ? '********' : '',
+    configured: Boolean(m.apiKey?.trim()),
+    showTmdb: m.showTmdb,
+    showImdb: m.showImdb,
+    showRt: m.showRt,
+    showRtUser: m.showRtUser,
+    showMetacritic: m.showMetacritic,
+    showTraktCommunity: m.showTraktCommunity,
+    posterTmdb: m.posterTmdb,
+    posterImdb: m.posterImdb,
+    posterRt: m.posterRt,
+    posterRtUser: m.posterRtUser,
+    posterMetacritic: m.posterMetacritic,
+    posterTraktCommunity: m.posterTraktCommunity,
+  };
+};
+
+settingsRoutes.get('/mdblist', (_req, res) => {
+  res.status(200).json(mdblistSettingsResponse());
+});
+
+const nullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const parseProfileRoute = (value: unknown) =>
+  normalizeProfileRoute({
+    serverId: nullableNumber((value as RequestProfileRoute)?.serverId),
+    profileId: nullableNumber((value as RequestProfileRoute)?.profileId),
+    rootFolder:
+      typeof (value as RequestProfileRoute)?.rootFolder === 'string'
+        ? (value as RequestProfileRoute).rootFolder
+        : null,
+    languageProfileId: nullableNumber(
+      (value as RequestProfileRoute)?.languageProfileId
+    ),
+  });
+
+const requestFiltersResponse = () => {
+  const settings = getSettings();
+  return { ...settings.requestFilters };
+};
+
+settingsRoutes.get('/request-filters', (_req, res) => {
+  res.status(200).json(requestFiltersResponse());
+});
+
+settingsRoutes.post('/request-filters', async (req, res, next) => {
+  const settings = getSettings();
+
+  try {
+    const profileRouting = normalizeProfileRouting({
+      defaultMovie: parseProfileRoute(req.body.profileRouting?.defaultMovie),
+      defaultTv: parseProfileRoute(req.body.profileRouting?.defaultTv),
+      animeMovie: parseProfileRoute(req.body.profileRouting?.animeMovie),
+      animeTv: parseProfileRoute(req.body.profileRouting?.animeTv),
+    });
+
+    settings.requestFilters = {
+      ...settings.requestFilters,
+      profileRouting,
+      animeSonarrServerId:
+        nullableNumber(req.body.animeSonarrServerId) ??
+        profileRouting.animeTv.serverId,
+      animeSonarrServerId4k:
+        nullableNumber(req.body.animeSonarrServerId4k) ?? null,
+    };
+    await settings.save();
+
+    return res.status(200).json(requestFiltersResponse());
+  } catch (e) {
+    logger.error('Something went wrong saving discover filter settings', {
+      label: 'API',
+      errorMessage: e.message,
+    });
+    return next({
+      status: 500,
+      message: 'Unable to save discover filter settings.',
+    });
+  }
+});
+
+settingsRoutes.post('/mdblist', async (req, res, next) => {
+  const settings = getSettings();
+
+  try {
+    let apiKey = String(req.body.apiKey ?? '').trim();
+
+    // Preserve existing key when the masked placeholder is submitted
+    if (!apiKey || apiKey === '********') {
+      apiKey = settings.mdblist.apiKey;
+    }
+
+    settings.mdblist = {
+      apiKey,
+      showTmdb: req.body.showTmdb !== false,
+      showImdb: req.body.showImdb !== false,
+      showRt: req.body.showRt !== false,
+      showRtUser: req.body.showRtUser !== false,
+      showMetacritic: req.body.showMetacritic !== false,
+      showTraktCommunity: req.body.showTraktCommunity !== false,
+      // Poster idle: explicit false allowed; missing keys keep prior/default
+      posterTmdb: boolOrDefault(
+        req.body.posterTmdb,
+        settings.mdblist.posterTmdb
+      ),
+      posterImdb: boolOrDefault(
+        req.body.posterImdb,
+        settings.mdblist.posterImdb
+      ),
+      posterRt: boolOrDefault(req.body.posterRt, settings.mdblist.posterRt),
+      posterRtUser: boolOrDefault(
+        req.body.posterRtUser,
+        settings.mdblist.posterRtUser
+      ),
+      posterMetacritic: boolOrDefault(
+        req.body.posterMetacritic,
+        settings.mdblist.posterMetacritic
+      ),
+      posterTraktCommunity: boolOrDefault(
+        req.body.posterTraktCommunity,
+        settings.mdblist.posterTraktCommunity
+      ),
+    };
+    await settings.save();
+
+    return res.status(200).json(mdblistSettingsResponse());
+  } catch (e) {
+    logger.error('Something went wrong saving MDBList settings', {
+      label: 'API',
+      errorMessage: e.message,
+    });
+    return next({
+      status: 500,
+      message: 'Unable to save MDBList settings.',
+    });
+  }
 });
 
 settingsRoutes.get(

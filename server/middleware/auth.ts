@@ -20,12 +20,16 @@ export const checkUser: Middleware = async (req, _res, next) => {
       userId = Number(req.header('X-API-User'));
     }
 
-    user = await userRepository.findOne({ where: { id: userId } });
+    user = await userRepository.findOne({
+      where: { id: userId },
+      relations: { settings: true },
+    });
   } else if (req.session?.userId) {
     const userRepository = getRepository(User);
 
     user = await userRepository.findOne({
       where: { id: req.session.userId },
+      relations: { settings: true },
     });
   }
 

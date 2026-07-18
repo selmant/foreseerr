@@ -44,7 +44,7 @@ export const runMigrations = async (
         }
         migrated = newSettings;
       } catch (e) {
-        // we stop Seerr if the migration failed
+        // we stop Foreseer if the migration failed
         logger.error(
           `Error while running migration '${migration}': ${e.message}\n${e.stack}`,
           {
@@ -81,7 +81,7 @@ export const runMigrations = async (
       await fs.writeFile(BACKUP_PATH, oldBackup.toString());
     }
   } catch (e) {
-    // we stop Seerr if the migration failed
+    // we stop Foreseer if the migration failed
     logger.error(
       `Something went wrong while running settings migrations: ${e.message}`,
       {

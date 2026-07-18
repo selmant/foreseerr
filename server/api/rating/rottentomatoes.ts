@@ -41,8 +41,8 @@ interface RTAlgoliaHit {
 export interface RTRating {
   title: string;
   year: number;
-  criticsRating: 'Certified Fresh' | 'Fresh' | 'Rotten';
-  criticsScore: number;
+  criticsRating?: 'Certified Fresh' | 'Fresh' | 'Rotten';
+  criticsScore?: number;
   audienceRating?: 'Upright' | 'Spilled';
   audienceScore?: number;
   url: string;

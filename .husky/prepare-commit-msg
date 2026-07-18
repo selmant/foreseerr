@@ -1,2 +1,8 @@
+#!/usr/bin/env sh
+
+# Skip Commitizen in non-interactive environments (CI/agents).
+if [ -n "$CI" ] || [ ! -t 1 ]; then
+  exit 0
+fi
 
 exec < /dev/tty && npx cz --hook || true

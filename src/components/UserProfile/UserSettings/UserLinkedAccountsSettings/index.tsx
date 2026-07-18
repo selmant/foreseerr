@@ -1,11 +1,13 @@
 import EmbyLogo from '@app/assets/services/emby-icon-only.svg';
 import JellyfinLogo from '@app/assets/services/jellyfin-icon.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
+import TraktLogo from '@app/assets/services/trakt.svg';
 import Alert from '@app/components/Common/Alert';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import Dropdown from '@app/components/Common/Dropdown';
 import PageTitle from '@app/components/Common/PageTitle';
 import LinkJellyfinQuickConnectModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkJellyfinQuickConnectModal';
+import LinkTraktModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkTraktModal';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -43,6 +45,7 @@ enum LinkedAccountType {
   Plex = 'Plex',
   Jellyfin = 'Jellyfin',
   Emby = 'Emby',
+  Trakt = 'Trakt',
 }
 
 type LinkedAccount = {
@@ -63,9 +66,18 @@ const UserLinkedAccountsSettings = () => {
   const { data: passwordInfo } = useSWR<{ hasPassword: boolean }>(
     user ? `/api/v1/user/${user?.id}/settings/password` : null
   );
+  const { data: traktStatus, mutate: revalidateTrakt } = useSWR<{
+    connected: boolean;
+    username: string | null;
+  }>(
+    user && settings.currentSettings.traktConfigured
+      ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
+      : null
+  );
   const [showJellyfinModal, setShowJellyfinModal] = useState(false);
   const [showJellyfinQuickConnectModal, setShowJellyfinQuickConnectModal] =
     useState(false);
+  const [showTraktModal, setShowTraktModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const applicationName = settings.currentSettings.applicationTitle;
@@ -88,8 +100,13 @@ const UserLinkedAccountsSettings = () => {
         type: LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
+    if (traktStatus?.connected && traktStatus.username)
+      accounts.push({
+        type: LinkedAccountType.Trakt,
+        username: traktStatus.username,
+      });
     return accounts;
-  }, [user]);
+  }, [user, traktStatus]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -143,6 +160,13 @@ const UserLinkedAccountsSettings = () => {
         settings.currentSettings.mediaServerType !== MediaServerType.EMBY ||
         accounts.some((a) => a.type === LinkedAccountType.Emby),
     },
+    {
+      name: 'Trakt',
+      action: () => setShowTraktModal(true),
+      hide:
+        !settings.currentSettings.traktConfigured ||
+        accounts.some((a) => a.type === LinkedAccountType.Trakt),
+    },
   ].filter((l) => !l.hide);
 
   const deleteRequest = async (account: string) => {
@@ -155,6 +179,9 @@ const UserLinkedAccountsSettings = () => {
     }
 
     await revalidateUser();
+    if (account === 'trakt') {
+      await revalidateTrakt();
+    }
   };
 
   if (
@@ -178,6 +205,27 @@ const UserLinkedAccountsSettings = () => {
   }
 
   const enableMediaServerUnlink = user?.id !== 1 && passwordInfo?.hasPassword;
+
+  const renderAccountLogo = (type: LinkedAccountType) => {
+    if (type === LinkedAccountType.Plex) {
+      return (
+        <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800">
+          <PlexLogo className="w-9" />
+        </div>
+      );
+    }
+    if (type === LinkedAccountType.Emby) {
+      return <EmbyLogo />;
+    }
+    if (type === LinkedAccountType.Trakt) {
+      return (
+        <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800 p-2">
+          <TraktLogo className="w-9" />
+        </div>
+      );
+    }
+    return <JellyfinLogo />;
+  };
 
   return (
     <>
@@ -219,17 +267,7 @@ const UserLinkedAccountsSettings = () => {
               key={i}
               className="flex items-center gap-4 overflow-hidden rounded-lg bg-gray-800/50 px-4 py-5 shadow ring-1 ring-gray-700 sm:p-6"
             >
-              <div className="w-12">
-                {acct.type === LinkedAccountType.Plex ? (
-                  <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800">
-                    <PlexLogo className="w-9" />
-                  </div>
-                ) : acct.type === LinkedAccountType.Emby ? (
-                  <EmbyLogo />
-                ) : (
-                  <JellyfinLogo />
-                )}
-              </div>
+              <div className="w-12">{renderAccountLogo(acct.type)}</div>
               <div>
                 <div className="truncate text-sm font-bold text-gray-300">
                   {acct.type}
@@ -239,11 +277,18 @@ const UserLinkedAccountsSettings = () => {
                 </div>
               </div>
               <div className="flex-grow" />
-              {enableMediaServerUnlink && (
+              {(acct.type === LinkedAccountType.Trakt
+                ? currentUser?.id === user?.id ||
+                  hasPermission(Permission.MANAGE_USERS)
+                : enableMediaServerUnlink) && (
                 <ConfirmButton
                   onClick={() => {
                     deleteRequest(
-                      acct.type === LinkedAccountType.Plex ? 'plex' : 'jellyfin'
+                      acct.type === LinkedAccountType.Plex
+                        ? 'plex'
+                        : acct.type === LinkedAccountType.Trakt
+                          ? 'trakt'
+                          : 'jellyfin'
                     );
                   }}
                   confirmText={intl.formatMessage(globalMessages.areyousure)}
@@ -286,6 +331,15 @@ const UserLinkedAccountsSettings = () => {
         onSwitchToPassword={() => {
           setShowJellyfinQuickConnectModal(false);
           setShowJellyfinModal(true);
+        }}
+      />
+
+      <LinkTraktModal
+        show={showTraktModal}
+        onClose={() => setShowTraktModal(false)}
+        onSave={() => {
+          setShowTraktModal(false);
+          void revalidateTrakt();
         }}
       />
     </>

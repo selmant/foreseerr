@@ -170,7 +170,7 @@ authRoutes.post('/plex', async (req, res, next) => {
           });
         } else {
           logger.info(
-            'Sign-in attempt from Plex user with access to the media server; creating new Seerr user',
+            'Sign-in attempt from Plex user with access to the media server; creating new Foreseer user',
             {
               label: 'API',
               ip: req.ip,
@@ -340,7 +340,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
 
       if (missingAdminUser) {
         logger.info(
-          'Sign-in attempt from Jellyfin user with access to the media server; creating initial admin user for Seerr',
+          'Sign-in attempt from Jellyfin user with access to the media server; creating initial admin user for Foreseer',
           {
             label: 'API',
             ip: req.ip,
@@ -369,7 +369,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
         await userRepository.save(user);
       } else {
         logger.info(
-          'Sign-in attempt from Jellyfin user with access to the media server; editing admin user for Seerr',
+          'Sign-in attempt from Jellyfin user with access to the media server; editing admin user for Foreseer',
           {
             label: 'API',
             ip: req.ip,
@@ -406,7 +406,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
         account.AccessToken,
         deviceId
       );
-      const apiKey = await jellyfinClient.createApiToken('Seerr');
+      const apiKey = await jellyfinClient.createApiToken('Foreseer');
 
       const serverName = await jellyfinserver.getServerName();
 
@@ -462,7 +462,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       });
     } else if (!user) {
       logger.info(
-        'Sign-in attempt from Jellyfin user with access to the media server; creating new Seerr user',
+        'Sign-in attempt from Jellyfin user with access to the media server; creating new Foreseer user',
         {
           label: 'API',
           ip: req.ip,
@@ -730,7 +730,7 @@ authRoutes.post(
         });
       } else {
         logger.info(
-          'Quick Connect sign-in from new Jellyfin user; creating new Seerr user',
+          'Quick Connect sign-in from new Jellyfin user; creating new Foreseer user',
           {
             label: 'API',
             ip: req.ip,
@@ -793,7 +793,7 @@ authRoutes.post('/local', async (req, res, next) => {
       .getOne();
 
     if (!user || !(await user.passwordMatch(body.password))) {
-      logger.warn('Failed sign-in attempt using invalid Seerr password', {
+      logger.warn('Failed sign-in attempt using invalid Foreseer password', {
         label: 'API',
         ip: req.ip,
         email: body.email,
@@ -812,7 +812,7 @@ authRoutes.post('/local', async (req, res, next) => {
 
     return res.status(200).json(user?.filter() ?? {});
   } catch (e) {
-    logger.error('Something went wrong authenticating with Seerr password', {
+    logger.error('Something went wrong authenticating with Foreseer password', {
       label: 'API',
       errorMessage: e.message,
       ip: req.ip,
@@ -851,7 +851,7 @@ authRoutes.post('/logout', async (req, res, next) => {
             await axios.delete(`${baseUrl}/Devices`, {
               params: { Id: user.jellyfinDeviceId },
               headers: {
-                'X-Emby-Authorization': `MediaBrowser Client="Seerr", Device="Seerr", DeviceId="seerr", Version="${
+                'X-Emby-Authorization': `MediaBrowser Client="Foreseer", Device="Foreseer", DeviceId="foreseer", Version="${
                   settings.main.mediaServerType === MediaServerType.EMBY
                     ? '1.0.0'
                     : getAppVersion()

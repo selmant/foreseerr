@@ -6,11 +6,13 @@ export type AvailableCacheIds =
   | 'sonarr'
   | 'rt'
   | 'imdb'
+  | 'mdblist'
   | 'github'
   | 'plexguid'
   | 'plextv'
   | 'plexwatchlist'
-  | 'tvdb';
+  | 'tvdb'
+  | 'trakt';
 
 const DEFAULT_TTL = 300;
 const DEFAULT_CHECK_PERIOD = 120;
@@ -58,6 +60,10 @@ class CacheManager {
       stdTtl: 43200,
       checkPeriod: 60 * 30,
     }),
+    mdblist: new Cache('mdblist', 'MDBList API', {
+      stdTtl: 86400 * 2, // 48h — ratings move slowly; saves daily quota
+      checkPeriod: 60 * 30,
+    }),
     github: new Cache('github', 'GitHub API', {
       stdTtl: 21600,
       checkPeriod: 60 * 30,
@@ -74,6 +80,10 @@ class CacheManager {
     tvdb: new Cache('tvdb', 'The TVDB API', {
       stdTtl: 21600,
       checkPeriod: 60 * 30,
+    }),
+    trakt: new Cache('trakt', 'Trakt API', {
+      stdTtl: 300,
+      checkPeriod: 60,
     }),
   };
 

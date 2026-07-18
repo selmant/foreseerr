@@ -1,5 +1,9 @@
 import PersonCard from '@app/components/PersonCard';
 import TitleCard from '@app/components/TitleCard';
+import {
+  TitleCardBatchProvider,
+  type TitleCardBatchRef,
+} from '@app/components/TitleCard/TitleCardBatchContext';
 import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
 import { Permission, useUser } from '@app/hooks/useUser';
 import useVerticalScroll from '@app/hooks/useVerticalScroll';
@@ -12,6 +16,7 @@ import type {
   PersonResult,
   TvResult,
 } from '@server/models/Search';
+import { useMemo } from 'react';
 import { useIntl } from 'react-intl';
 
 type ListViewProps = {
@@ -42,8 +47,43 @@ const ListView = ({
     { type: 'or' }
   );
 
+  const batchRefs = useMemo((): TitleCardBatchRef[] => {
+    const refs: TitleCardBatchRef[] = [];
+    for (const title of items ?? []) {
+      if (title.mediaType === 'movie') {
+        refs.push({
+          mediaType: 'movie',
+          tmdbId: title.id,
+          title: title.title,
+          year: title.releaseDate
+            ? Number(String(title.releaseDate).slice(0, 4))
+            : undefined,
+        });
+      } else if (title.mediaType === 'tv') {
+        refs.push({
+          mediaType: 'tv',
+          tmdbId: title.id,
+          title: title.name,
+          year: title.firstAirDate
+            ? Number(String(title.firstAirDate).slice(0, 4))
+            : undefined,
+        });
+      }
+    }
+    for (const title of plexItems ?? []) {
+      if (title.mediaType === 'movie' || title.mediaType === 'tv') {
+        refs.push({
+          mediaType: title.mediaType,
+          tmdbId: title.tmdbId,
+          title: title.title,
+        });
+      }
+    }
+    return refs;
+  }, [items, plexItems]);
+
   return (
-    <>
+    <TitleCardBatchProvider refs={batchRefs}>
       {isEmpty && (
         <div className="mt-64 w-full text-center text-2xl text-gray-400">
           {intl.formatMessage(globalMessages.noresults)}
@@ -155,7 +195,7 @@ const ListView = ({
             </li>
           ))}
       </ul>
-    </>
+    </TitleCardBatchProvider>
   );
 };
 

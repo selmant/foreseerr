@@ -1,5 +1,5 @@
 services:
-  seerr:
+  foreseer:
     build:
       context: .
       dockerfile: Dockerfile.local

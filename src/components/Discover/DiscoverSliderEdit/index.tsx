@@ -169,6 +169,14 @@ const DiscoverSliderEdit = ({
         return intl.formatMessage(sliderTitles.tmdbmoviestreamingservices);
       case DiscoverSliderType.TMDB_TV_STREAMING_SERVICES:
         return intl.formatMessage(sliderTitles.tmdbtvstreamingservices);
+      case DiscoverSliderType.TRAKT_RECOMMENDATIONS:
+        return intl.formatMessage(sliderTitles.traktrecommendations);
+      case DiscoverSliderType.TRAKT_WATCHLIST:
+        return intl.formatMessage(sliderTitles.traktwatchlist);
+      case DiscoverSliderType.TRAKT_LIST:
+        return slider.title || intl.formatMessage(sliderTitles.traktlist);
+      case DiscoverSliderType.TRAKT_HISTORY:
+        return intl.formatMessage(sliderTitles.trakthistory);
       default:
         return 'Unknown Slider';
     }
@@ -244,6 +252,9 @@ const DiscoverSliderEdit = ({
           )}
           {slider.type === DiscoverSliderType.TMDB_SEARCH && (
             <Tag iconSvg={<MagnifyingGlassIcon />}>{slider.data}</Tag>
+          )}
+          {slider.type === DiscoverSliderType.TRAKT_LIST && slider.data && (
+            <Tag>{slider.data}</Tag>
           )}
         </div>
         <div className="flex items-center space-x-2">

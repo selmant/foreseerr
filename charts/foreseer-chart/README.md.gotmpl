@@ -1,0 +1,17 @@
+# foreseer-chart
+
+Helm chart for deploying [Foreseer](https://github.com/selmant/seerr) on Kubernetes.
+
+Foreseer is a Seerr fork with SuggestArr-inspired features. Config mounts remain Seerr-compatible at `/app/config`.
+
+## Installation
+
+```bash
+helm install foreseer oci://ghcr.io/selmant/seerr/foreseer-chart
+```
+
+## Update Notes
+
+### From `seerr-chart`
+
+This chart was renamed from `seerr-chart`. Helper templates use `foreseer.*`. Config still mounts at `/app/config`.
