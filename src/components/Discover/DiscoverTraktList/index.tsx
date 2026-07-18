@@ -28,10 +28,11 @@ const DiscoverTraktList = () => {
     isLoadingMore,
     isReachingEnd,
     titles,
+    firstResultData,
     fetchMore,
     error,
     mutate,
-  } = useDiscover<WatchlistItem & { title?: string }>(
+  } = useDiscover<WatchlistItem, { title?: string }>(
     url ? '/api/v1/discover/trakt/list' : '',
     prepareTraktDiscoverOptions(router.query, ['url', 'sort'])
   );
@@ -58,7 +59,8 @@ const DiscoverTraktList = () => {
     return <ErrorPage statusCode={500} />;
   }
 
-  const pageTitle = intl.formatMessage(messages.title);
+  const pageTitle =
+    firstResultData?.title || intl.formatMessage(messages.title);
 
   return (
     <>
