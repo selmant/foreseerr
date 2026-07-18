@@ -510,16 +510,24 @@ class TraktAPI extends ExternalAPI {
       page: Math.max(1, options.page ?? 1),
       extended: options.extended ?? 'min',
     };
-    const sortPath = options.sortBy
-      ? `/${options.sortBy}/${options.sortHow ?? 'desc'}`
-      : '';
     const path = listUser
-      ? `/users/${listUser}/lists/${ref}/items/${itemTypes}${sortPath}`
-      : `/lists/${ref}/items/${itemTypes}${sortPath}`;
+      ? `/users/${listUser}/lists/${ref}/items/${itemTypes}`
+      : `/lists/${ref}/items/${itemTypes}`;
+    const config = {
+      params,
+      ...(options.sortBy
+        ? {
+            headers: {
+              'X-Sort-By': options.sortBy,
+              'X-Sort-How': options.sortHow ?? 'desc',
+            },
+          }
+        : {}),
+    };
 
     const payload = this.accessToken
-      ? await this.getAuthenticatedOrPublic<TraktListEntry[]>(path, { params })
-      : await this.get<TraktListEntry[]>(path, { params }, 300);
+      ? await this.getAuthenticatedOrPublic<TraktListEntry[]>(path, config)
+      : await this.get<TraktListEntry[]>(path, config, 300);
 
     return this.normalizeListItems(payload);
   }
@@ -673,14 +681,20 @@ class TraktAPI extends ExternalAPI {
 
   private async getAuthenticated<T>(
     endpoint: string,
-    config?: { params?: Record<string, string | number> }
+    config?: {
+      params?: Record<string, string | number>;
+      headers?: Record<string, string>;
+    }
   ): Promise<T> {
     return this.requestWithRetry<T>('GET', endpoint, config);
   }
 
   private async getAuthenticatedOrPublic<T>(
     endpoint: string,
-    config?: { params?: Record<string, string | number> }
+    config?: {
+      params?: Record<string, string | number>;
+      headers?: Record<string, string>;
+    }
   ): Promise<T> {
     try {
       return await this.getAuthenticated<T>(endpoint, config);
