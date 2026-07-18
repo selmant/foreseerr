@@ -14,6 +14,8 @@ export interface TraktMediaObject {
   /** Community rating 0–10 when fetched with extended=full */
   rating?: number;
   votes?: number;
+  released?: string;
+  first_aired?: string;
 }
 
 export interface TraktListEntry {
@@ -23,6 +25,7 @@ export interface TraktListEntry {
   episode?: TraktMediaObject;
   watched_at?: string;
   rating?: number;
+  listed_at?: string;
 }
 
 export interface TraktMediaItem {
@@ -32,6 +35,9 @@ export interface TraktMediaItem {
   year?: number;
   /** Community rating from Trakt extended=full payloads */
   traktCommunityRating?: number;
+  /** Trakt list metadata used for app-side list sorting. */
+  traktAddedAt?: string;
+  traktReleaseDate?: string;
 }
 
 export interface TraktUserList {

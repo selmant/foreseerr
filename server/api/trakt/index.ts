@@ -513,23 +513,13 @@ class TraktAPI extends ExternalAPI {
     const path = listUser
       ? `/users/${listUser}/lists/${ref}/items/${itemTypes}`
       : `/lists/${ref}/items/${itemTypes}`;
-    const config = {
-      params,
-      ...(options.sortBy
-        ? {
-            headers: {
-              'X-Sort-By': options.sortBy,
-              'X-Sort-How': options.sortHow ?? 'desc',
-            },
-          }
-        : {}),
-    };
+    const config = { params };
 
     const payload = this.accessToken
       ? await this.getAuthenticatedOrPublic<TraktListEntry[]>(path, config)
       : await this.get<TraktListEntry[]>(path, config, 300);
 
-    return this.normalizeListItems(payload);
+    return this.normalizeListItems(payload, options.sortBy);
   }
 
   public async getWatchlistItems(
@@ -837,7 +827,8 @@ class TraktAPI extends ExternalAPI {
   }
 
   private normalizeListItems(
-    payload: TraktListEntry[] | undefined
+    payload: TraktListEntry[] | undefined,
+    sortBy?: 'added' | 'released'
   ): TraktMediaItem[] {
     const items: TraktMediaItem[] = [];
     const seen = new Set<string>();
@@ -852,8 +843,29 @@ class TraktAPI extends ExternalAPI {
       const key = `${normalized.mediaType}:${normalized.tmdbId}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push(normalized);
+      const media = entry.movie || entry.show;
+      items.push({
+        ...normalized,
+        ...(entry.listed_at ? { traktAddedAt: entry.listed_at } : {}),
+        ...(media?.released || media?.first_aired
+          ? {
+              traktReleaseDate: media.released || media.first_aired,
+            }
+          : {}),
+      });
     }
+
+    if (sortBy) {
+      const getSortValue = (item: TraktMediaItem): number => {
+        const value =
+          sortBy === 'added' ? item.traktAddedAt : item.traktReleaseDate;
+        const timestamp = value ? Date.parse(value) : Number.NaN;
+        return Number.isFinite(timestamp) ? timestamp : 0;
+      };
+
+      items.sort((a, b) => getSortValue(b) - getSortValue(a));
+    }
+
     return items;
   }
 

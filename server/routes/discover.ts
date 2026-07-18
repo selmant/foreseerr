@@ -1464,8 +1464,8 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
     const trakt = await createTraktUserClient(req.user.id);
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
-    const extended = traktExtendedForBrowseQuery(req.query);
     const listSort = parseTraktListSortQuery(req.query.sort);
+    const extended = listSort ? 'full' : traktExtendedForBrowseQuery(req.query);
 
     let items: TraktMediaItem[];
     let hasMore = false;
@@ -1574,8 +1574,8 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
     let hasMore = false;
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
-    const extended = traktExtendedForBrowseQuery(req.query);
     const listSort = parseTraktListSortQuery(req.query.sort);
+    const extended = listSort ? 'full' : traktExtendedForBrowseQuery(req.query);
 
     if (listRef === 'watchlist') {
       if (!username) {
