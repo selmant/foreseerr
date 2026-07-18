@@ -87,7 +87,9 @@ The image is published at `ghcr.io/selmant/seerr`. Use an explicit version tag f
 
 ## Migrating from Seerr / Overseerr / Jellyseerr
 
-Point Foreseer at the same config volume (`/app/config`). Defaults and packaging are rebranded; on-disk layout and `CONFIG_DIRECTORY` semantics match Seerr so existing data can continue to be used.
+Foreseer uses Seerr-compatible config paths and database settings, so an existing Seerr configuration can be reused when replacing Seerr. Stop the existing instance first, back up its config/database, and do not run both instances against the same config directory or database.
+
+See the [migration guide](docs/migration-guide.mdx) for the replacement procedure and for running Foreseer alongside Seerr with isolated storage.
 
 Upstream Seerr migration notes: [docs.seerr.dev/migration-guide](https://docs.seerr.dev/migration-guide).
 

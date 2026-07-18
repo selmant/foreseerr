@@ -2,13 +2,102 @@
 title: Migration guide
 ---
 :::info Foreseer
-**Foreseer** is a Seerr fork. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`). If you already run Seerr, reuse the same config volume. The guide below is upstream Seerr’s Overseerr/Jellyseerr migration; the same steps apply when moving that data onto Foreseer.
+**Foreseer** is a Seerr fork. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 :::
 
 
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+
+## Migrating from Seerr to Foreseer
+
+Foreseer can use an existing Seerr configuration because it uses the same config-directory layout and database settings. This preserves the existing users, authentication settings, media-server integrations, Radarr/Sonarr settings, requests, and preferences.
+
+:::danger
+Foreseer is currently alpha software. Compatibility with every Seerr version, installation method, and database configuration has not been fully validated. Do not use your only production Seerr config or database for initial testing.
+
+Back up the complete Seerr config directory and database before migrating. Keep the original instance and backup until you have confirmed that Foreseer is working correctly.
+:::
+
+:::warning
+The safest way to evaluate Foreseer is to clone your Seerr data and run Foreseer against the clone on a different port. Do not run Seerr and Foreseer against the same config directory or database at the same time. A different port does not make shared application data safe.
+:::
+
+### Recommended first step: test a clone
+
+Before changing the live Seerr instance:
+
+1. Stop Seerr briefly while making the copy. This prevents the database from changing during the backup.
+2. Back up the complete config directory and database.
+3. Create a clone of the config directory and, if applicable, restore a database dump into a separate database.
+4. Start Foreseer using the cloned config/database and a different host port, such as `5056:5055`.
+5. Verify login, users, requests, media-server connections, Radarr/Sonarr settings, notifications, and any reverse-proxy configuration.
+
+For SQLite, copy the config directory only while Seerr is stopped. For PostgreSQL, use a dump and restore it into a separate database; do not point Foreseer at the live Seerr database.
+
+The cloned instance may contain real user information and credentials, so protect it in the same way as the original config and do not expose it publicly during testing.
+
+### Recommended migration: replace Seerr
+
+Use this method only after the cloned instance has been tested successfully and Foreseer is going to take over from Seerr:
+
+1. Back up the Seerr config directory and database. For Docker, the config is the host directory mounted to `/app/config`.
+2. Stop Seerr. Do not run Seerr and Foreseer against the same config directory or database at the same time.
+3. Start Foreseer using the same config directory mounted at `/app/config`.
+4. Open Foreseer and verify the imported users, login/authentication, media-server connections, request history, and download settings.
+5. After confirming everything works, remove the old Seerr container if desired. Keep the backup for rollback.
+
+For Docker Compose, the service can be changed from Seerr to Foreseer while keeping the existing volume path:
+
+```yaml
+services:
+  foreseer:
+    image: ghcr.io/selmant/seerr:v0.1.0-alpha.1
+    container_name: foreseer
+    init: true
+    restart: unless-stopped
+    ports:
+      - "5055:5055"
+    volumes:
+      - /path/to/existing/seerr-config:/app/config
+```
+
+If the config directory is not writable by the container, update its ownership first:
+
+```bash
+sudo chown -R 1000:1000 /path/to/existing/seerr-config
+```
+
+The first Foreseer startup may run database migrations automatically. These migrations can change the database schema, so a backup and a stopped old instance are essential. If anything looks wrong, stop Foreseer and restore the original Seerr instance and backup instead of continuing to use the modified data.
+
+### Running Foreseer alongside Seerr for testing
+
+This is a different setup. Use a new config directory and, when using PostgreSQL, a separate database. Change only the host-side port mapping; the container can continue listening on port `5055`:
+
+```yaml
+services:
+  foreseer-test:
+    image: ghcr.io/selmant/seerr:v0.1.0-alpha.1
+    container_name: foreseer-test
+    init: true
+    restart: unless-stopped
+    ports:
+      - "5056:5055"
+    volumes:
+      - ./foreseer-test-config:/app/config
+```
+
+This creates a separate Foreseer instance, so a brand-new config will not automatically contain the Seerr users or settings. To test with existing data, use a copy of the backed-up config/database—not the live Seerr data.
+
+Do not point both running instances at the same `/app/config` directory or database. A different port alone does not make shared application data safe.
+
+### What to choose
+
+- To evaluate Foreseer safely: use a different port and a cloned config/database.
+- To replace Seerr after testing: stop Seerr, take one final backup, and migrate Foreseer onto the existing config/database.
+
+The migration path is not a substitute for a backup or a complete compatibility test. Existing users should keep the original Seerr instance and backup available until the migration has been verified.
 
 :::important
 Read our [release announcement](/blog/seerr-release) to learn what Seerr means for Jellyseerr and Overseerr users.
