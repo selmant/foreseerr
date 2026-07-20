@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DOCKER_HUB: selmant/foreseer
+  DOCKER_HUB: selmantr/foreseer
 
 jobs:
   changelog:
