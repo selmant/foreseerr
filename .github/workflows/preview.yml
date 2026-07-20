@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  DOCKER_HUB: selmant/foreseer
+  DOCKER_HUB: selmantr/foreseer
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
