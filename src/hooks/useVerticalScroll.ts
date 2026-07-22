@@ -3,7 +3,9 @@ import type { MutableRefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 const IS_SCROLLING_CHECK_THROTTLE = 200;
-const BUFFER_HEIGHT = 200;
+// Start fetching the next page before the user reaches the end so network
+// latency is hidden behind the remaining scroll distance.
+const BUFFER_HEIGHT = 1000;
 
 /**
  * useVerticalScroll is a custom hook to handle infinite scrolling

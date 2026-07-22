@@ -515,7 +515,15 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         }
       }}
     >
-      {({ values, isValid, isSubmitting, errors, touched, setFieldValue }) => {
+      {({
+        values,
+        isValid,
+        isSubmitting,
+        errors,
+        touched,
+        setFieldValue,
+        setValues,
+      }) => {
         const activeOption = visibleOptions.find(
           (option) => option.type === Number(values.sliderType)
         );
@@ -654,18 +662,29 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                   }
                   onChange={(value) => {
                     const listValue = value?.value?.toString() ?? '';
-                    setFieldValue('data', listValue);
-
                     const label = value?.label?.toString() ?? '';
-                    if (!values.title?.trim() && label) {
+                    let title = values.title;
+
+                    if (!title?.trim() && label) {
                       const titleFromList = label
                         .replace(/\s+·\s+(?:yours|liked)\s+\(\d+\)$/, '')
                         .replace(/\s+·\s+[\w.-]+\s+\(\d+\)$/, '')
                         .replace(/\s+\(\d+\)$/, '');
                       if (titleFromList) {
-                        setFieldValue('title', titleFromList);
+                        title = titleFromList;
                       }
                     }
+
+                    // Update the dependent fields together so validation never
+                    // sees the transient state where only one is populated.
+                    setValues(
+                      (currentValues) => ({
+                        ...currentValues,
+                        data: listValue,
+                        title,
+                      }),
+                      true
+                    );
                   }}
                 />
                 <p className="text-sm text-gray-400">
