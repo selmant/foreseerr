@@ -47,11 +47,14 @@ ratingsRoutes.post('/batch', async (req, res, next) => {
         entry?.year != null && Number.isFinite(Number(entry.year))
           ? Number(entry.year)
           : undefined;
+      const releaseDate =
+        typeof entry?.releaseDate === 'string' ? entry.releaseDate : undefined;
       items.push({
         mediaType,
         tmdbId,
         title: typeof entry?.title === 'string' ? entry.title : undefined,
         year,
+        releaseDate,
       });
     }
 

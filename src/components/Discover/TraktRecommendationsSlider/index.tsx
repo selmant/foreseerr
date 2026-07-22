@@ -67,6 +67,7 @@ const TraktRecommendationsSlider = () => {
             key={`trakt-recs-slider-item-${item.ratingKey}`}
             tmdbId={item.tmdbId}
             type={item.mediaType}
+            ratings={item.ratings}
           />
         ))}
       />

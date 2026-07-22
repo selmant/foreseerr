@@ -1,6 +1,7 @@
 import TheMovieDb from '@server/api/themoviedb';
 import { MediaType } from '@server/constants/media';
 import Media from '@server/entity/Media';
+import { enrichResultsWithRatings } from '@server/lib/ratings';
 import logger from '@server/logger';
 import { mapCollection } from '@server/models/Collection';
 import { Router } from 'express';
@@ -24,7 +25,9 @@ collectionRoutes.get<{ id: string }>('/:id', async (req, res, next) => {
       }))
     );
 
-    return res.status(200).json(mapCollection(collection, media));
+    const mapped = mapCollection(collection, media);
+    mapped.parts = await enrichResultsWithRatings(mapped.parts);
+    return res.status(200).json(mapped);
   } catch (e) {
     logger.debug('Something went wrong retrieving collection', {
       label: 'API',

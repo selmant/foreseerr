@@ -4,7 +4,10 @@ import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { Watchlist } from '@server/entity/Watchlist';
-import { fetchCombinedRatings } from '@server/lib/ratings';
+import {
+  enrichResultsWithRatings,
+  fetchCombinedRatings,
+} from '@server/lib/ratings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { mapMovieDetails } from '@server/models/Movie';
@@ -35,6 +38,14 @@ movieRoutes.get('/:id', async (req, res, next) => {
     });
 
     const data = mapMovieDetails(tmdbMovie, media, onUserWatchlist);
+    data.ratings = await fetchCombinedRatings({
+      mediaType: 'movie',
+      tmdbId: data.id,
+      title: data.title,
+      year: data.releaseDate ? Number(data.releaseDate.slice(0, 4)) : undefined,
+      releaseDate: data.releaseDate,
+      imdbId: data.imdbId,
+    });
 
     // TMDB issue where it doesnt fallback to English when no overview is available in requested locale.
     if (!data.overview) {
@@ -78,12 +89,14 @@ movieRoutes.get('/:id/recommendations', async (req, res, next) => {
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: results.results.map((result) =>
-        mapMovieResult(
-          result,
-          media.find(
-            (req) =>
-              req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+      results: await enrichResultsWithRatings(
+        results.results.map((result) =>
+          mapMovieResult(
+            result,
+            media.find(
+              (req) =>
+                req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+            )
           )
         )
       ),
@@ -123,12 +136,14 @@ movieRoutes.get('/:id/similar', async (req, res, next) => {
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: results.results.map((result) =>
-        mapMovieResult(
-          result,
-          media.find(
-            (req) =>
-              req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+      results: await enrichResultsWithRatings(
+        results.results.map((result) =>
+          mapMovieResult(
+            result,
+            media.find(
+              (req) =>
+                req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+            )
           )
         )
       ),
@@ -204,12 +219,17 @@ movieRoutes.get('/:id/ratingscombined', async (req, res, next) => {
       Number.isFinite(Number(req.query.year))
         ? Number(req.query.year)
         : undefined;
+    let releaseDate =
+      typeof req.query.releaseDate === 'string'
+        ? req.query.releaseDate
+        : undefined;
     let imdbId: string | null | undefined;
 
     if (!mdblistConfigured) {
       const tmdb = new TheMovieDb();
       const movie = await tmdb.getMovie({ movieId: tmdbId });
       title = movie.title;
+      releaseDate = movie.release_date || undefined;
       year = movie.release_date
         ? Number(movie.release_date.slice(0, 4))
         : undefined;
@@ -221,6 +241,7 @@ movieRoutes.get('/:id/ratingscombined', async (req, res, next) => {
       tmdbId,
       title,
       year,
+      releaseDate,
       imdbId,
     });
 

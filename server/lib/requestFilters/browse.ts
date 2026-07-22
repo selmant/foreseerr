@@ -4,7 +4,10 @@ import {
   EXTERNAL_ENRICHMENT_CONCURRENCY,
   mapWithConcurrency,
 } from '@server/lib/concurrency';
-import { fetchCombinedRatings } from '@server/lib/ratings';
+import {
+  enrichResultsWithRatings,
+  fetchCombinedRatings,
+} from '@server/lib/ratings';
 import type {
   CollectionResult,
   MovieResult,
@@ -205,7 +208,8 @@ const fetchExternalRatings = async (
   mediaType: 'movie' | 'tv',
   tmdbId: number,
   title: string,
-  year?: number
+  year?: number,
+  releaseDate?: string | null
 ): Promise<ExternalRatings> => {
   try {
     const ratings = await fetchCombinedRatings({
@@ -213,6 +217,7 @@ const fetchExternalRatings = async (
       tmdbId,
       title,
       year,
+      releaseDate,
     });
     return {
       imdbRating: ratings?.imdb?.criticsScore ?? null,
@@ -260,45 +265,43 @@ export const filterDiscoverResults = async <T extends BrowseResult>(
   }
 
   const needMdblist = needsMdblistBrowseFilters(filters);
+  const enrichedResults = needMdblist
+    ? await enrichResultsWithRatings(results)
+    : results;
 
-  const decisions = await mapWithConcurrency(
-    results,
-    EXTERNAL_ENRICHMENT_CONCURRENCY,
-    async (item): Promise<T | null> => {
-      if (!isMovieOrTv(item)) {
-        return item;
-      }
-
-      let external: ExternalRatings = {};
-      if (needMdblist) {
-        const title = item.mediaType === 'movie' ? item.title : item.name;
-        const releaseDate = releaseDateForItem(item);
-        external = await fetchExternalRatings(
-          item.mediaType,
-          item.id,
-          title,
-          releaseYearFromDate(releaseDate)
-        );
-      }
-
-      if (
-        matchesBrowseFilters(
-          {
-            voteAverage: item.voteAverage,
-            voteCount: item.voteCount,
-            genreIds: item.genreIds ?? [],
-            originalLanguage: item.originalLanguage,
-            releaseDate: releaseDateForItem(item),
-          },
-          filters,
-          external
-        )
-      ) {
-        return item;
-      }
-      return null;
+  const decisions = enrichedResults.map((item): T | null => {
+    if (!isMovieOrTv(item)) {
+      return item;
     }
-  );
+
+    const external: ExternalRatings = needMdblist
+      ? {
+          imdbRating: item.ratings?.imdb?.criticsScore ?? null,
+          imdbVotes: item.ratings?.imdb?.criticsScoreCount ?? null,
+          rtCriticsScore: item.ratings?.rt?.criticsScore ?? null,
+          rtAudienceScore: item.ratings?.rt?.audienceScore ?? null,
+          metacriticScore: item.ratings?.metacritic?.score ?? null,
+          traktRating: item.ratings?.trakt?.rating ?? null,
+        }
+      : {};
+
+    if (
+      matchesBrowseFilters(
+        {
+          voteAverage: item.voteAverage,
+          voteCount: item.voteCount,
+          genreIds: item.genreIds ?? [],
+          originalLanguage: item.originalLanguage,
+          releaseDate: releaseDateForItem(item),
+        },
+        filters,
+        external
+      )
+    ) {
+      return item;
+    }
+    return null;
+  });
 
   return decisions.filter((item): item is T => item != null);
 };
@@ -369,7 +372,8 @@ export const filterTraktDiscoverItems = async (
           item.mediaType,
           item.tmdbId,
           title,
-          releaseYearFromDate(releaseDate) ?? item.year ?? undefined
+          releaseYearFromDate(releaseDate) ?? item.year ?? undefined,
+          releaseDate
         );
         external = {
           ...fetched,

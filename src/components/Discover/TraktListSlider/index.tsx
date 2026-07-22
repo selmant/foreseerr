@@ -78,6 +78,7 @@ const TraktListSlider = ({
             key={`trakt-list-slider-item-${item.ratingKey}`}
             tmdbId={item.tmdbId}
             type={item.mediaType}
+            ratings={item.ratings}
           />
         ))}
       />

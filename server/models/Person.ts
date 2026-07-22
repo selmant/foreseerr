@@ -1,3 +1,4 @@
+import type { RatingResponse } from '@server/api/ratings';
 import type {
   TmdbPersonCreditCast,
   TmdbPersonCreditCrew,
@@ -45,6 +46,7 @@ export interface PersonCredit {
   adult: boolean;
   releaseDate: string;
   mediaInfo?: Media;
+  ratings?: RatingResponse | null;
 }
 
 export interface PersonCreditCast extends PersonCredit {

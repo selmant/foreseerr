@@ -64,6 +64,7 @@ const TraktWatchlistSlider = () => {
             key={`trakt-watchlist-slider-item-${item.ratingKey}`}
             tmdbId={item.tmdbId}
             type={item.mediaType}
+            ratings={item.ratings}
           />
         ))}
       />

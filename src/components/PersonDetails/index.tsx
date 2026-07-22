@@ -174,6 +174,7 @@ const PersonDetails = () => {
                 id={media.id}
                 title={media.mediaType === 'movie' ? media.title : media.name}
                 userScore={media.voteAverage}
+                ratings={media.ratings}
                 year={
                   media.mediaType === 'movie'
                     ? media.releaseDate
@@ -215,6 +216,7 @@ const PersonDetails = () => {
                 id={media.id}
                 title={media.mediaType === 'movie' ? media.title : media.name}
                 userScore={media.voteAverage}
+                ratings={media.ratings}
                 year={
                   media.mediaType === 'movie'
                     ? media.releaseDate

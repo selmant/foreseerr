@@ -1,3 +1,4 @@
+import type { RatingResponse } from '@server/api/ratings';
 import type {
   TmdbMovieDetails,
   TmdbMovieReleaseResult,
@@ -86,6 +87,7 @@ export interface MovieDetails {
   watchProviders?: WatchProviders[];
   keywords: Keyword[];
   onUserWatchlist?: boolean;
+  ratings?: RatingResponse | null;
 }
 
 export const mapProductionCompany = (

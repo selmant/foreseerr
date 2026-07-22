@@ -1133,6 +1133,11 @@ components:
           example: false
         mediaInfo:
           $ref: '#/components/schemas/MediaInfo'
+        ratings:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/RatingResponse'
     TvResult:
       type: object
       properties:
@@ -1176,6 +1181,11 @@ components:
           type: string
         mediaInfo:
           $ref: '#/components/schemas/MediaInfo'
+        ratings:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/RatingResponse'
     PersonResult:
       type: object
       properties:
@@ -1408,6 +1418,11 @@ components:
           $ref: '#/components/schemas/ExternalIds'
         mediaInfo:
           $ref: '#/components/schemas/MediaInfo'
+        ratings:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/RatingResponse'
         watchProviders:
           type: array
           items:
@@ -1595,6 +1610,11 @@ components:
             $ref: '#/components/schemas/Keyword'
         mediaInfo:
           $ref: '#/components/schemas/MediaInfo'
+        ratings:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/RatingResponse'
         watchProviders:
           type: array
           items:
@@ -8096,6 +8116,11 @@ paths:
           schema:
             type: number
             example: 337401
+        - in: query
+          name: releaseDate
+          description: Release date used to select the ratings cache lifetime.
+          schema:
+            type: string
       responses:
         '200':
           description: Ratings returned
@@ -8138,6 +8163,8 @@ paths:
                         type: string
                       year:
                         type: number
+                      releaseDate:
+                        type: string
       responses:
         '200':
           description: Ratings returned
@@ -8161,6 +8188,7 @@ paths:
                         year:
                           type: number
                         ratings:
+                          type: object
                           allOf:
                             - $ref: '#/components/schemas/RatingResponse'
                           nullable: true
@@ -8361,6 +8389,11 @@ paths:
           schema:
             type: number
             example: 76479
+        - in: query
+          name: releaseDate
+          description: First air date used to select the ratings cache lifetime.
+          schema:
+            type: string
       responses:
         '200':
           description: Ratings returned

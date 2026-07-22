@@ -1,6 +1,7 @@
 import TheMovieDb from '@server/api/themoviedb';
 import type { TmdbSearchMultiResponse } from '@server/api/themoviedb/interfaces';
 import Media from '@server/entity/Media';
+import { enrichResultsWithRatings } from '@server/lib/ratings';
 import { findSearchProvider } from '@server/lib/search';
 import logger from '@server/logger';
 import { mapSearchResults } from '@server/models/Search';
@@ -45,7 +46,9 @@ searchRoutes.get('/', async (req, res, next) => {
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: mapSearchResults(results.results, media),
+      results: await enrichResultsWithRatings(
+        mapSearchResults(results.results, media)
+      ),
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving search results', {

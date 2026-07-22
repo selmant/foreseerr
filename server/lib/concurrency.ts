@@ -30,5 +30,5 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
-/** Match shared MDBList client pacing (~3 RPS) — keep under remote quota. */
+/** Bound legacy external-provider enrichment when no batch API is available. */
 export const EXTERNAL_ENRICHMENT_CONCURRENCY = 2;

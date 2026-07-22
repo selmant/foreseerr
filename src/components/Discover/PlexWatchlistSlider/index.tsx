@@ -67,6 +67,7 @@ const PlexWatchlistSlider = () => {
             key={`watchlist-slider-item-${item.ratingKey}`}
             tmdbId={item.tmdbId}
             type={item.mediaType}
+            ratings={item.ratings}
             isAddedToWatchlist={true}
           />
         ))}

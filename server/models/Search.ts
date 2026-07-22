@@ -1,3 +1,4 @@
+import type { RatingResponse } from '@server/api/ratings';
 import type {
   TmdbCollectionResult,
   TmdbMovieDetails,
@@ -24,6 +25,7 @@ interface SearchResult {
   overview: string;
   originalLanguage: string;
   mediaInfo?: Media;
+  ratings?: RatingResponse | null;
 }
 
 export interface MovieResult extends SearchResult {

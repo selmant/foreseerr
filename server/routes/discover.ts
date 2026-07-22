@@ -18,6 +18,7 @@ import {
   applyDiscoverFilterDefaultsToQuery,
   safeParseDiscoverFilterDefaults,
 } from '@server/lib/discover/filterDefaults';
+import { enrichResultsWithRatings } from '@server/lib/ratings';
 import {
   filterDiscoverResults,
   filterTraktDiscoverItems,
@@ -93,18 +94,20 @@ async function applyBrowseDiscoverFilters<T extends BrowseResult>(
     filtered = results;
   }
   if (!user?.id) {
-    return filtered;
+    return enrichResultsWithRatings(filtered);
   }
 
   const ignoreWatched = parseTraktTruthyQuery(query.ignoreWatched);
   if (!ignoreWatched) {
-    return filtered;
+    return enrichResultsWithRatings(filtered);
   }
 
   try {
     const trakt = await createTraktUserClient(user.id);
     const watchedSets = await loadWatchedIdSets(user.id, trakt);
-    return filterWatchedMixedBrowseResults(filtered, watchedSets);
+    return enrichResultsWithRatings(
+      filterWatchedMixedBrowseResults(filtered, watchedSets)
+    );
   } catch (e) {
     // Hiding watched titles is optional. The persisted default is enabled for
     // existing users, so any unavailable Trakt account/API must not make
@@ -113,7 +116,7 @@ async function applyBrowseDiscoverFilters<T extends BrowseResult>(
       label: 'API',
       errorMessage: e instanceof Error ? e.message : 'unknown error',
     });
-    return filtered;
+    return enrichResultsWithRatings(filtered);
   }
 }
 
@@ -151,7 +154,7 @@ const mapFilteredTraktItems = async (
     }
   }
 
-  return mapTraktItems(filtered);
+  return enrichResultsWithRatings(mapTraktItems(filtered));
 };
 
 const handleTraktRouteError = (
@@ -1204,17 +1207,21 @@ discoverRoutes.get<Record<string, unknown>, WatchlistResponse>(
 
     const watchlist = await plexTV.getWatchlist({ offset });
 
+    const results = await enrichResultsWithRatings(
+      watchlist.items.map((item) => ({
+        id: item.tmdbId,
+        ratingKey: item.ratingKey,
+        title: item.title,
+        mediaType: item.type === 'show' ? ('tv' as const) : ('movie' as const),
+        tmdbId: item.tmdbId,
+      }))
+    );
+
     return res.json({
       page,
       totalPages: Math.ceil(watchlist.totalSize / itemsPerPage),
       totalResults: watchlist.totalSize,
-      results: watchlist.items.map((item) => ({
-        id: item.tmdbId,
-        ratingKey: item.ratingKey,
-        title: item.title,
-        mediaType: item.type === 'show' ? 'tv' : 'movie',
-        tmdbId: item.tmdbId,
-      })),
+      results,
     });
   }
 );

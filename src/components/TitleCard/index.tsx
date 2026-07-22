@@ -9,7 +9,6 @@ import RequestModal from '@app/components/RequestModal';
 import ErrorCard from '@app/components/TitleCard/ErrorCard';
 import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
-import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchContext';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
@@ -38,7 +37,6 @@ import axios from 'axios';
 import Link from 'next/link';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useInView } from 'react-intersection-observer';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
 
@@ -49,6 +47,7 @@ interface TitleCardProps {
   year?: string;
   title: string;
   userScore?: number;
+  ratings?: RatingResponse | null;
   mediaType: MediaType;
   status?: MediaStatus;
   canExpand?: boolean;
@@ -84,6 +83,7 @@ const TitleCard = ({
   year,
   title,
   userScore,
+  ratings,
   status,
   mediaType,
   isAddedToWatchlist = false,
@@ -131,32 +131,6 @@ const TitleCard = ({
   const cardRef = useRef<HTMLDivElement>(null);
   const tvMenuButtonRef = useRef<HTMLButtonElement>(null);
   const tvMenuRef = useRef<HTMLDivElement>(null);
-  const { ref: ratingsRef, inView: ratingsInView } = useInView({
-    triggerOnce: true,
-    rootMargin: '100px',
-  });
-
-  const canFetchRatings =
-    (mediaType === 'movie' || mediaType === 'tv') &&
-    settings.currentSettings.mdblistConfigured;
-
-  const batch = useTitleCardBatch();
-  const batchRatings =
-    canFetchRatings && (mediaType === 'movie' || mediaType === 'tv')
-      ? batch?.getRatings(mediaType, id)
-      : undefined;
-
-  const { data: swrRatingData } = useSWR<RatingResponse>(
-    canFetchRatings && ratingsInView && !batch?.active
-      ? `/api/v1/${mediaType}/${id}/ratingscombined`
-      : null,
-    {
-      shouldRetryOnError: false,
-      revalidateOnFocus: false,
-    }
-  );
-  const ratingData =
-    batchRatings !== undefined ? (batchRatings ?? undefined) : swrRatingData;
 
   // Just to get the year from the date
   if (year) {
@@ -554,7 +528,6 @@ const TitleCard = ({
         isUpdating={isUpdating}
       />
       <div
-        ref={ratingsRef}
         className={`relative transform-gpu cursor-default overflow-hidden rounded-xl bg-gray-800 bg-cover outline-none ring-1 transition duration-300 ${
           showDetail
             ? 'scale-105 shadow-lg ring-gray-500'
@@ -613,7 +586,7 @@ const TitleCard = ({
                 </div>
               </div>
               <RatingBadges
-                item={{ tmdbRating: userScore, ratings: ratingData }}
+                item={{ tmdbRating: userScore, ratings }}
                 badgeSettings={settings.currentSettings.ratingBadges}
                 compact
                 expanded={showDetail}

@@ -6,7 +6,10 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { Watchlist } from '@server/entity/Watchlist';
 import { isAnimeMedia } from '@server/lib/anime/detect';
-import { fetchCombinedRatings } from '@server/lib/ratings';
+import {
+  enrichResultsWithRatings,
+  fetchCombinedRatings,
+} from '@server/lib/ratings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { mapTvResult } from '@server/models/Search';
@@ -42,6 +45,15 @@ tvRoutes.get('/:id', async (req, res, next) => {
     });
 
     const data = mapTvDetails(tv, media, onUserWatchlist);
+    data.ratings = await fetchCombinedRatings({
+      mediaType: 'tv',
+      tmdbId: data.id,
+      title: data.name,
+      year: data.firstAirDate
+        ? Number(data.firstAirDate.slice(0, 4))
+        : undefined,
+      releaseDate: data.firstAirDate,
+    });
 
     // TMDB issue where it doesnt fallback to English when no overview is available in requested locale.
     if (!data.overview) {
@@ -118,11 +130,14 @@ tvRoutes.get('/:id/recommendations', async (req, res, next) => {
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: results.results.map((result) =>
-        mapTvResult(
-          result,
-          media.find(
-            (req) => req.tmdbId === result.id && req.mediaType === MediaType.TV
+      results: await enrichResultsWithRatings(
+        results.results.map((result) =>
+          mapTvResult(
+            result,
+            media.find(
+              (req) =>
+                req.tmdbId === result.id && req.mediaType === MediaType.TV
+            )
           )
         )
       ),
@@ -162,11 +177,14 @@ tvRoutes.get('/:id/similar', async (req, res, next) => {
       page: results.page,
       totalPages: results.total_pages,
       totalResults: results.total_results,
-      results: results.results.map((result) =>
-        mapTvResult(
-          result,
-          media.find(
-            (req) => req.tmdbId === result.id && req.mediaType === MediaType.TV
+      results: await enrichResultsWithRatings(
+        results.results.map((result) =>
+          mapTvResult(
+            result,
+            media.find(
+              (req) =>
+                req.tmdbId === result.id && req.mediaType === MediaType.TV
+            )
           )
         )
       ),
@@ -240,11 +258,16 @@ tvRoutes.get('/:id/ratingscombined', async (req, res, next) => {
       Number.isFinite(Number(req.query.year))
         ? Number(req.query.year)
         : undefined;
+    let releaseDate =
+      typeof req.query.releaseDate === 'string'
+        ? req.query.releaseDate
+        : undefined;
 
     if (!mdblistConfigured) {
       const tmdb = new TheMovieDb();
       const tv = await tmdb.getTvShow({ tvId: tmdbId });
       title = tv.name;
+      releaseDate = tv.first_air_date || undefined;
       year = tv.first_air_date
         ? Number(tv.first_air_date.slice(0, 4))
         : undefined;
@@ -255,6 +278,7 @@ tvRoutes.get('/:id/ratingscombined', async (req, res, next) => {
       tmdbId,
       title,
       year,
+      releaseDate,
     });
 
     if (!ratings) {

@@ -10,6 +10,7 @@ export interface WatchlistItem {
   tmdbId: number;
   mediaType: 'movie' | 'tv';
   title: string;
+  ratings?: RatingResponse | null;
 }
 
 export interface WatchlistResponse {
@@ -18,3 +19,4 @@ export interface WatchlistResponse {
   totalResults: number;
   results: WatchlistItem[];
 }
+import type { RatingResponse } from '@server/api/ratings';

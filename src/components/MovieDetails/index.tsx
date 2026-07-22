@@ -50,7 +50,6 @@ import {
   ChevronDoubleDownIcon,
   ChevronDoubleUpIcon,
 } from '@heroicons/react/24/solid';
-import { type RatingResponse } from '@server/api/ratings';
 import { IssueStatus } from '@server/constants/issue';
 import { MediaStatus, MediaType } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
@@ -150,9 +149,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     ),
   });
 
-  const { data: ratingData } = useSWR<RatingResponse>(
-    `/api/v1/movie/${router.query.movieId}/ratingscombined`
-  );
+  const ratingData = data?.ratings;
 
   const sortedCrew = useMemo(
     () => sortCrewPriority(data?.credits.crew ?? []),

@@ -1,5 +1,9 @@
 import type { ParsedMdblistRatings } from '@server/api/mdblist';
-import MdblistAPI from '@server/api/mdblist';
+import MdblistAPI, {
+  MDBLIST_COLD_RATINGS_TTL_SECONDS,
+  MDBLIST_HOT_RATINGS_TTL_SECONDS,
+  MDBLIST_WARM_RATINGS_TTL_SECONDS,
+} from '@server/api/mdblist';
 import IMDBRadarrProxy from '@server/api/rating/imdbRadarrProxy';
 import RottenTomatoes from '@server/api/rating/rottentomatoes';
 import type { RatingResponse } from '@server/api/ratings';
@@ -85,8 +89,33 @@ export interface FetchCombinedRatingsOptions {
   tmdbId: number;
   title: string;
   year?: number;
+  releaseDate?: string | null;
   imdbId?: string | null;
 }
+
+/** Recent titles change ratings frequently; older titles can be refreshed less often. */
+export const getRatingsCacheTtl = (releaseDate?: string | null): number => {
+  if (!releaseDate) {
+    return MDBLIST_HOT_RATINGS_TTL_SECONDS;
+  }
+
+  const releaseTime = Date.parse(releaseDate);
+  if (!Number.isFinite(releaseTime)) {
+    return MDBLIST_HOT_RATINGS_TTL_SECONDS;
+  }
+
+  const now = Date.now();
+  const threeMonthsAgo = now - 90 * 86400 * 1000;
+  const twoYearsAgo = now - 730 * 86400 * 1000;
+
+  if (releaseTime >= threeMonthsAgo) {
+    return MDBLIST_HOT_RATINGS_TTL_SECONDS;
+  }
+  if (releaseTime >= twoYearsAgo) {
+    return MDBLIST_WARM_RATINGS_TTL_SECONDS;
+  }
+  return MDBLIST_COLD_RATINGS_TTL_SECONDS;
+};
 
 /**
  * Prefer MDBList when configured; otherwise fall back to legacy RT (+ IMDB for movies).
@@ -96,6 +125,7 @@ export const fetchCombinedRatings = async ({
   tmdbId,
   title,
   year,
+  releaseDate,
   imdbId,
 }: FetchCombinedRatingsOptions): Promise<RatingResponse | null> => {
   const settings = getSettings();
@@ -103,7 +133,11 @@ export const fetchCombinedRatings = async ({
 
   if (mdblistConfigured) {
     const mdblist = MdblistAPI.getInstance();
-    const parsed = await mdblist.getRatings(mediaType, tmdbId);
+    const parsed = await mdblist.getRatings(
+      mediaType,
+      tmdbId,
+      getRatingsCacheTtl(releaseDate)
+    );
     if (parsed) {
       const mapped = mapMdblistToRatingResponse(parsed, { title, year });
       if (hasAnyRating(mapped)) {
@@ -143,6 +177,7 @@ export type RatingsBatchItem = {
   tmdbId: number;
   title?: string;
   year?: number;
+  releaseDate?: string | null;
 };
 
 export type RatingsBatchResult = RatingsBatchItem & {
@@ -155,6 +190,51 @@ export type RatingsBatchResult = RatingsBatchItem & {
 export const fetchBatchCombinedRatings = async (
   items: RatingsBatchItem[]
 ): Promise<RatingsBatchResult[]> => {
+  const settings = getSettings();
+  if (settings.mdblist?.apiKey?.trim()) {
+    const mdblist = MdblistAPI.getInstance();
+    const byMediaType = {
+      movie: items.filter((item) => item.mediaType === 'movie'),
+      tv: items.filter((item) => item.mediaType === 'tv'),
+    };
+    const parsedMaps = new Map<
+      'movie' | 'tv',
+      Map<number, ParsedMdblistRatings | null>
+    >();
+
+    await Promise.all(
+      (['movie', 'tv'] as const).map(async (mediaType) => {
+        const groupedItems = byMediaType[mediaType];
+        if (!groupedItems.length) return;
+        parsedMaps.set(
+          mediaType,
+          await mdblist.getBatchRatings(
+            mediaType,
+            groupedItems.map((item) => ({
+              tmdbId: item.tmdbId,
+              cacheTtlSeconds: getRatingsCacheTtl(item.releaseDate),
+            }))
+          )
+        );
+      })
+    );
+
+    return items.map((item) => {
+      const parsed = parsedMaps.get(item.mediaType)?.get(item.tmdbId);
+      const ratings = parsed
+        ? mapMdblistToRatingResponse(parsed, {
+            title:
+              item.title || (item.mediaType === 'movie' ? 'Movie' : 'Series'),
+            year: item.year,
+          })
+        : null;
+      return {
+        ...item,
+        ratings: ratings && hasAnyRating(ratings) ? ratings : null,
+      };
+    });
+  }
+
   return mapWithConcurrency(
     items,
     EXTERNAL_ENRICHMENT_CONCURRENCY,
@@ -163,12 +243,62 @@ export const fetchBatchCombinedRatings = async (
       tmdbId: item.tmdbId,
       title: item.title,
       year: item.year,
+      releaseDate: item.releaseDate,
       ratings: await fetchCombinedRatings({
         mediaType: item.mediaType,
         tmdbId: item.tmdbId,
         title: item.title || (item.mediaType === 'movie' ? 'Movie' : 'Series'),
         year: item.year,
+        releaseDate: item.releaseDate,
       }),
     })
+  );
+};
+
+type RatingResult = {
+  id: number;
+  mediaType?: string;
+  title?: string;
+  name?: string;
+  releaseDate?: string | null;
+  firstAirDate?: string | null;
+  ratings?: RatingResponse | null;
+};
+
+/** Merge external ratings into the same result objects that carry posters. */
+export const enrichResultsWithRatings = async <T extends RatingResult>(
+  results: T[]
+): Promise<T[]> => {
+  const candidates = results.filter(
+    (result) => result.mediaType === 'movie' || result.mediaType === 'tv'
+  );
+  if (!candidates.length || !getSettings().mdblist?.apiKey?.trim()) {
+    return results;
+  }
+
+  const batch = await fetchBatchCombinedRatings(
+    candidates.map((result) => {
+      const releaseDate =
+        result.mediaType === 'movie' ? result.releaseDate : result.firstAirDate;
+      return {
+        mediaType: result.mediaType as 'movie' | 'tv',
+        tmdbId: result.id,
+        title: result.title ?? result.name,
+        releaseDate,
+        year: releaseDate ? Number(String(releaseDate).slice(0, 4)) : undefined,
+      };
+    })
+  );
+  const ratingsByKey = new Map(
+    batch.map((item) => [`${item.mediaType}:${item.tmdbId}`, item.ratings])
+  );
+
+  return results.map((result) =>
+    result.mediaType === 'movie' || result.mediaType === 'tv'
+      ? {
+          ...result,
+          ratings: ratingsByKey.get(`${result.mediaType}:${result.id}`) ?? null,
+        }
+      : result
   );
 };

@@ -1,6 +1,7 @@
+import type { AxiosInstance, AxiosResponse } from 'axios';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { parseMdblistRatings } from './parse';
+import MdblistAPI, { parseMdblistRatings } from './index';
 import type { MdblistMediaPayload } from './types';
 
 /**
@@ -46,5 +47,94 @@ describe('parseMdblistRatings', () => {
     assert.equal(parsed.metacriticRating, undefined);
     assert.equal(parsed.traktRating, undefined);
     assert.equal(parsed.tmdbRating, undefined);
+  });
+});
+
+describe('MdblistAPI batch ratings', () => {
+  it('uses one batch call and fills the per-title cache', async () => {
+    const api = new MdblistAPI('test-api-key');
+    let batchCalls = 0;
+    const firstId = 9_900_001;
+    const secondId = 9_900_002;
+    const payload = (tmdbId: number, score: number): MdblistMediaPayload => ({
+      ids: { tmdb: tmdbId },
+      ratings: [{ source: 'imdb', score }],
+    });
+
+    (
+      api as unknown as {
+        post: () => Promise<MdblistMediaPayload[]>;
+      }
+    ).post = async () => {
+      batchCalls += 1;
+      return [payload(secondId, 72), payload(firstId, 81)];
+    };
+
+    const ratings = await api.getBatchRatings('movie', [
+      { tmdbId: firstId, cacheTtlSeconds: 60 },
+      { tmdbId: secondId, cacheTtlSeconds: 60 },
+    ]);
+
+    assert.equal(batchCalls, 1);
+    assert.equal(ratings.get(firstId)?.imdbRating, 8.1);
+    assert.equal(ratings.get(secondId)?.imdbRating, 7.2);
+
+    const cached = await api.getRatings('movie', firstId, 60);
+    assert.equal(cached?.imdbRating, 8.1);
+    assert.equal(batchCalls, 1);
+  });
+
+  it('honors quota headers and blocks later batches until reset', async () => {
+    const api = new MdblistAPI('test-api-key');
+    let batchCalls = 0;
+    (
+      api as unknown as {
+        post: () => Promise<MdblistMediaPayload[]>;
+      }
+    ).post = async () => {
+      batchCalls += 1;
+      throw Object.assign(new Error('quota exceeded'), {
+        response: {
+          status: 429,
+          headers: { 'retry-after': '120' },
+        },
+      });
+    };
+
+    const first = await api.getBatchRatings('movie', [{ tmdbId: 9_900_003 }]);
+    const blocked = await api.getBatchRatings('movie', [{ tmdbId: 9_900_004 }]);
+
+    assert.equal(first.get(9_900_003), null);
+    assert.equal(blocked.get(9_900_004), null);
+    assert.equal(batchCalls, 1);
+    assert.equal(
+      (api as unknown as { circuitOpenTimeoutMs: number }).circuitOpenTimeoutMs,
+      120_000
+    );
+  });
+
+  it('stops after a successful response reports no quota remaining', async () => {
+    const api = new MdblistAPI('test-api-key');
+    const client = (api as unknown as { axios: AxiosInstance }).axios;
+    let batchCalls = 0;
+    client.defaults.adapter = async (config) => {
+      batchCalls += 1;
+      return {
+        data: [{ ids: { tmdb: 9_900_005 }, ratings: [] }],
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-reset': String(Math.ceil(Date.now() / 1000) + 120),
+        },
+        config,
+      } as AxiosResponse<MdblistMediaPayload[]>;
+    };
+
+    await api.getBatchRatings('movie', [{ tmdbId: 9_900_005 }]);
+    const blocked = await api.getBatchRatings('movie', [{ tmdbId: 9_900_006 }]);
+
+    assert.equal(blocked.get(9_900_006), null);
+    assert.equal(batchCalls, 1);
   });
 });

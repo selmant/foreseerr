@@ -40,4 +40,51 @@ describe('OpenAPI MDBList ratings contract', () => {
     assert.ok(apiDocs.components.schemas.MdbListSettings);
     assert.ok(apiDocs.components.schemas.RatingBadgeSettings);
   });
+
+  for (const schemaName of ['MovieResult', 'TvResult']) {
+    it(`includes ratings in ${schemaName}`, () => {
+      const schema = apiDocs.components.schemas[schemaName] as {
+        properties?: Record<string, unknown>;
+      };
+      assert.ok(schema.properties?.ratings);
+    });
+  }
+
+  for (const path of [
+    '/movie/{movieId}/ratingscombined',
+    '/tv/{tvId}/ratingscombined',
+  ]) {
+    it(`allows releaseDate on ${path}`, () => {
+      const operation = apiDocs.paths[path].get as {
+        parameters?: { in?: string; name?: string }[];
+      };
+      assert.ok(
+        operation.parameters?.some(
+          (parameter) =>
+            parameter.in === 'query' && parameter.name === 'releaseDate'
+        ),
+        `missing releaseDate query parameter on ${path}`
+      );
+    });
+  }
+
+  it('allows releaseDate in ratings batch items', () => {
+    const operation = apiDocs.paths['/ratings/batch'].post as {
+      requestBody?: {
+        content?: {
+          'application/json'?: {
+            schema?: {
+              properties?: {
+                items?: { items?: { properties?: Record<string, unknown> } };
+              };
+            };
+          };
+        };
+      };
+    };
+    const properties =
+      operation.requestBody?.content?.['application/json']?.schema?.properties
+        ?.items?.items?.properties;
+    assert.ok(properties?.releaseDate);
+  });
 });

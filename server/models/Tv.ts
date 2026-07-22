@@ -1,3 +1,4 @@
+import type { RatingResponse } from '@server/api/ratings';
 import type {
   TmdbNetwork,
   TmdbSeasonWithEpisodes,
@@ -112,6 +113,7 @@ export interface TvDetails {
   mediaInfo?: Media;
   watchProviders?: WatchProviders[];
   onUserWatchlist?: boolean;
+  ratings?: RatingResponse | null;
 }
 
 const mapEpisodeResult = (episode: TmdbTvEpisodeResult): Episode => ({

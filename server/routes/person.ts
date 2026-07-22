@@ -1,5 +1,6 @@
 import TheMovieDb from '@server/api/themoviedb';
 import Media from '@server/entity/Media';
+import { enrichResultsWithRatings } from '@server/lib/ratings';
 import logger from '@server/logger';
 import {
   mapCastCredits,
@@ -61,29 +62,33 @@ personRoutes.get('/:id/combined_credits', async (req, res, next) => {
         }))
     );
 
+    const cast = combinedCredits.cast
+      .map((result) =>
+        mapCastCredits(
+          result,
+          castMedia.find(
+            (med) =>
+              med.tmdbId === result.id && med.mediaType === result.media_type
+          )
+        )
+      )
+      .filter((item) => !item.adult && item.character !== 'Thanks');
+    const crew = combinedCredits.crew
+      .map((result) =>
+        mapCrewCredits(
+          result,
+          crewMedia.find(
+            (med) =>
+              med.tmdbId === result.id && med.mediaType === result.media_type
+          )
+        )
+      )
+      .filter((item) => !item.adult && item.job !== 'Thanks');
+    const enriched = await enrichResultsWithRatings([...cast, ...crew]);
+
     return res.status(200).json({
-      cast: combinedCredits.cast
-        .map((result) =>
-          mapCastCredits(
-            result,
-            castMedia.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === result.media_type
-            )
-          )
-        )
-        .filter((item) => !item.adult && item.character !== 'Thanks'),
-      crew: combinedCredits.crew
-        .map((result) =>
-          mapCrewCredits(
-            result,
-            crewMedia.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === result.media_type
-            )
-          )
-        )
-        .filter((item) => !item.adult && item.job !== 'Thanks'),
+      cast: enriched.slice(0, cast.length),
+      crew: enriched.slice(cast.length),
       id: combinedCredits.id,
     });
   } catch (e) {

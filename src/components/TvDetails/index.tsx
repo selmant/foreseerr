@@ -50,7 +50,6 @@ import {
   PlayIcon,
   StarIcon,
 } from '@heroicons/react/24/solid';
-import type { RatingResponse } from '@server/api/ratings';
 import { IssueStatus } from '@server/constants/issue';
 import {
   MediaRequestStatus,
@@ -150,9 +149,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     ),
   });
 
-  const { data: ratingData } = useSWR<RatingResponse>(
-    `/api/v1/tv/${router.query.tvId}/ratingscombined`
-  );
+  const ratingData = data?.ratings;
 
   const sortedCrew = useMemo(
     () => sortCrewPriority(data?.credits.crew ?? []),

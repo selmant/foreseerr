@@ -1,5 +1,6 @@
 import TitleCard from '@app/components/TitleCard';
 import { Permission, useUser } from '@app/hooks/useUser';
+import type { RatingResponse } from '@server/api/ratings';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import { useInView } from 'react-intersection-observer';
@@ -13,6 +14,7 @@ export interface TmdbTitleCardProps {
   canExpand?: boolean;
   isAddedToWatchlist?: boolean;
   mutateParent?: () => void;
+  ratings?: RatingResponse | null;
 }
 
 const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
@@ -27,6 +29,7 @@ const TmdbTitleCard = ({
   canExpand,
   isAddedToWatchlist = false,
   mutateParent,
+  ratings,
 }: TmdbTitleCardProps) => {
   const { hasPermission } = useUser();
 
@@ -70,6 +73,7 @@ const TmdbTitleCard = ({
       summary={title.overview}
       title={title.title}
       userScore={title.voteAverage}
+      ratings={ratings ?? title.ratings}
       year={title.releaseDate}
       mediaType={'movie'}
       canExpand={canExpand}
@@ -87,6 +91,7 @@ const TmdbTitleCard = ({
       summary={title.overview}
       title={title.name}
       userScore={title.voteAverage}
+      ratings={ratings ?? title.ratings}
       year={title.firstAirDate}
       mediaType={'tv'}
       canExpand={canExpand}

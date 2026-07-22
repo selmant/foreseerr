@@ -76,6 +76,37 @@ class ExternalAPI {
     return response.data;
   }
 
+  protected getCached<T>(
+    endpoint: string,
+    config?: AxiosRequestConfig
+  ): T | undefined {
+    return this.cache?.get<T>(
+      this.serializeCacheKey(endpoint, {
+        ...config?.params,
+        headers: config?.headers,
+      })
+    );
+  }
+
+  protected setCached<T>(
+    endpoint: string,
+    value: T,
+    ttl?: number,
+    config?: AxiosRequestConfig
+  ): void {
+    if (!this.cache || ttl === 0) {
+      return;
+    }
+    this.cache.set(
+      this.serializeCacheKey(endpoint, {
+        ...config?.params,
+        headers: config?.headers,
+      }),
+      value,
+      ttl ?? DEFAULT_TTL
+    );
+  }
+
   protected async post<T>(
     endpoint: string,
     data?: Record<string, unknown>,
@@ -143,7 +174,7 @@ class ExternalAPI {
     this.cache?.del(cacheKey);
   }
 
-  private serializeCacheKey(
+  protected serializeCacheKey(
     endpoint: string,
     options?: Record<string, unknown>
   ) {

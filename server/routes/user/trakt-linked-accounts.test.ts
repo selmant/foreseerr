@@ -109,7 +109,7 @@ async function loginAsAdmin() {
   const res = await agent
     .post('/api/v1/auth/local')
     .send({ email: 'admin@seerr.dev', password: 'test1234' });
-  assert.equal(res.status, 200);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
   return agent;
 }
 
@@ -133,7 +133,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       'not found',
       'OpenAPI must register this path; got validator not-found'
     );
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 401, JSON.stringify(res.body));
   });
 
   it('GET returns connected=false before linking', async () => {

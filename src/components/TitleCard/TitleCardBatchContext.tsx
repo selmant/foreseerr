@@ -1,7 +1,6 @@
 import type { MediaActionStatusResponse } from '@app/components/TitleCard/MediaActionControls';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
-import type { RatingResponse } from '@server/api/ratings';
 import axios from 'axios';
 import {
   createContext,
@@ -20,23 +19,11 @@ export type TitleCardBatchRef = {
   year?: number;
 };
 
-type RatingsBatchResponse = {
-  results: {
-    mediaType: 'movie' | 'tv';
-    tmdbId: number;
-    ratings: RatingResponse | null;
-  }[];
-};
-
 type StatusBatchResponse = {
   results: MediaActionStatusResponse[];
 };
 
 type TitleCardBatchContextValue = {
-  getRatings: (
-    mediaType: 'movie' | 'tv',
-    tmdbId: number
-  ) => RatingResponse | null | undefined;
   getStatus: (
     mediaType: 'movie' | 'tv',
     tmdbId: number
@@ -67,7 +54,7 @@ type TitleCardBatchProviderProps = {
 };
 
 /**
- * One status-batch + one ratings-batch per ListView page of movie/tv cards.
+ * One status-batch per ListView page of movie/tv cards.
  */
 export function TitleCardBatchProvider({
   refs,
@@ -86,37 +73,12 @@ export function TitleCardBatchProvider({
       out.push(ref);
     }
     return out;
-  }, [refs, refsKey]);
+  }, [refs]);
 
-  const mdblistConfigured = Boolean(settings.currentSettings.mdblistConfigured);
   const mediaActionsLikely = Boolean(
     settings.currentSettings.traktConfigured &&
     settings.currentSettings.mediaActionsTraktEnabled !== false &&
     user
-  );
-
-  const ratingsKey =
-    mdblistConfigured && uniqueRefs.length
-      ? ['/api/v1/ratings/batch', refsKey]
-      : null;
-
-  const { data: ratingsData } = useSWR<RatingsBatchResponse>(
-    ratingsKey,
-    async () => {
-      const { data } = await axios.post<RatingsBatchResponse>(
-        '/api/v1/ratings/batch',
-        {
-          items: uniqueRefs.map((r) => ({
-            mediaType: r.mediaType,
-            tmdbId: r.tmdbId,
-            title: r.title,
-            year: r.year,
-          })),
-        }
-      );
-      return data;
-    },
-    { revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
   const traktLinkKey = mediaActionsLikely
@@ -163,14 +125,6 @@ export function TitleCardBatchProvider({
     }
   }, [statusData, refsKey]);
 
-  const ratingsMap = useMemo(() => {
-    const map = new Map<string, RatingResponse | null>();
-    for (const result of ratingsData?.results ?? []) {
-      map.set(itemKey(result.mediaType, result.tmdbId), result.ratings);
-    }
-    return map;
-  }, [ratingsData]);
-
   const statusMap = useMemo(() => {
     const map = new Map<string, MediaActionStatusResponse>();
     for (const result of statusData?.results ?? []) {
@@ -182,14 +136,10 @@ export function TitleCardBatchProvider({
   const value = useMemo<TitleCardBatchContextValue>(
     () => ({
       active: true,
-      getRatings: (mediaType, tmdbId) =>
-        ratingsMap.has(itemKey(mediaType, tmdbId))
-          ? ratingsMap.get(itemKey(mediaType, tmdbId))
-          : undefined,
       getStatus: (mediaType, tmdbId) =>
         statusMap.get(itemKey(mediaType, tmdbId)),
     }),
-    [ratingsMap, statusMap]
+    [statusMap]
   );
 
   return (

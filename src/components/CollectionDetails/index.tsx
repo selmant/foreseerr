@@ -501,6 +501,7 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
               summary={title.overview}
               title={title.title}
               userScore={title.voteAverage}
+              ratings={title.ratings}
               year={title.releaseDate}
               mediaType={title.mediaType}
               mutateParent={revalidate}
