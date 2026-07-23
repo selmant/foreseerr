@@ -3,7 +3,12 @@ import type { SortOptions } from '@server/api/themoviedb';
 import TheMovieDb from '@server/api/themoviedb';
 import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
 import TraktAPI, { TraktReconnectRequiredError } from '@server/api/trakt';
-import type { TraktMediaItem } from '@server/api/trakt/interfaces';
+import type {
+  TraktBrowseMediaType,
+  TraktFetchMediaType,
+  TraktListSortBy,
+  TraktMediaItem,
+} from '@server/api/trakt/interfaces';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
@@ -18,12 +23,14 @@ import {
   applyDiscoverFilterDefaultsToQuery,
   safeParseDiscoverFilterDefaults,
 } from '@server/lib/discover/filterDefaults';
-import { enrichResultsWithRatings } from '@server/lib/ratings';
+import { paginateTmdbDiscover } from '@server/lib/discover/filteredPagination';
 import {
-  filterDiscoverResults,
-  filterTraktDiscoverItems,
-  traktExtendedForBrowseQuery,
-} from '@server/lib/requestFilters';
+  fetchPaginatedTraktDiscoverWithPostFilters,
+  filterTraktDiscoverPageItems,
+  needsTraktDiscoverPostFilters,
+} from '@server/lib/discover/traktDiscoverPagination';
+import { enrichResultsWithRatings } from '@server/lib/ratings';
+import { traktExtendedForBrowseQuery } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import {
   TraktNotConfiguredError,
@@ -32,26 +39,17 @@ import {
   createTraktUserClient,
 } from '@server/lib/trakt';
 import {
+  excludeTraktAnimeItems,
   fetchPaginatedTraktAnimeItems,
   fetchPaginatedTraktNonAnimeItems,
+  filterTraktAnimeItems,
 } from '@server/lib/trakt/animeFilter';
-import {
-  filterWatchedMixedBrowseResults,
-  filterWatchedTraktItems,
-  loadWatchedIdSets,
-} from '@server/lib/trakt/hideWatched';
 import {
   TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE,
   getTraktRecommendationPage,
 } from '@server/lib/trakt/recommendations';
 import logger from '@server/logger';
 import { mapProductionCompany } from '@server/models/Movie';
-import type {
-  CollectionResult,
-  MovieResult,
-  PersonResult,
-  TvResult,
-} from '@server/models/Search';
 import {
   mapCollectionResult,
   mapMovieResult,
@@ -74,57 +72,12 @@ const mapTraktItems = (items: TraktMediaItem[]): WatchlistItem[] =>
     title: item.title,
   }));
 
-type BrowseResult = MovieResult | TvResult | PersonResult | CollectionResult;
-
-async function applyBrowseDiscoverFilters<T extends BrowseResult>(
-  results: T[],
-  user: User | undefined,
-  query: Request['query']
-): Promise<T[]> {
-  let filtered: T[];
-  try {
-    filtered = await filterDiscoverResults(results, query);
-  } catch (e) {
-    // Browse filtering/enrichment is optional. A failure in an external
-    // provider or concurrent enrichment must not turn a TMDB browse into 500.
-    logger.debug('Skipping Discover result filtering', {
-      label: 'API',
-      errorMessage: e instanceof Error ? e.message : 'unknown error',
-    });
-    filtered = results;
-  }
-  if (!user?.id) {
-    return enrichResultsWithRatings(filtered);
-  }
-
-  const ignoreWatched = parseTraktTruthyQuery(query.ignoreWatched);
-  if (!ignoreWatched) {
-    return enrichResultsWithRatings(filtered);
-  }
-
-  try {
-    const trakt = await createTraktUserClient(user.id);
-    const watchedSets = await loadWatchedIdSets(user.id, trakt);
-    return enrichResultsWithRatings(
-      filterWatchedMixedBrowseResults(filtered, watchedSets)
-    );
-  } catch (e) {
-    // Hiding watched titles is optional. The persisted default is enabled for
-    // existing users, so any unavailable Trakt account/API must not make
-    // ordinary TMDB browse requests fail.
-    logger.debug('Skipping watched-title filtering', {
-      label: 'API',
-      errorMessage: e instanceof Error ? e.message : 'unknown error',
-    });
-    return enrichResultsWithRatings(filtered);
-  }
-}
-
 interface MapFilteredTraktItemsOptions {
   user?: User;
   query?: Request['query'];
   tmdb?: TheMovieDb;
   skipWatchedFilter?: boolean;
+  skipPostFilters?: boolean;
 }
 
 const mapFilteredTraktItems = async (
@@ -132,30 +85,81 @@ const mapFilteredTraktItems = async (
   options: MapFilteredTraktItemsOptions = {}
 ): Promise<WatchlistItem[]> => {
   const tmdb = options.tmdb ?? new TheMovieDb();
-  let filtered = await filterTraktDiscoverItems(
-    items,
-    tmdb,
-    options.query ?? {}
-  );
+  const filtered = options.skipPostFilters
+    ? items
+    : await filterTraktDiscoverPageItems(items, {
+        user: options.user,
+        query: options.query,
+        tmdb,
+        skipWatchedFilter: options.skipWatchedFilter,
+      });
+
+  return enrichResultsWithRatings(mapTraktItems(filtered), {
+    query: options.query,
+    skipExisting: true,
+  });
+};
+
+async function resolveTraktDiscoverPage(options: {
+  page: number;
+  itemsPerPage: number;
+  mediaType: TraktBrowseMediaType;
+  user?: User;
+  query?: Request['query'];
+  tmdb: TheMovieDb;
+  skipWatchedFilter?: boolean;
+  listSort?: TraktListSortBy;
+  fetchRawPage: (
+    traktPage: number
+  ) => Promise<{ items: TraktMediaItem[]; hasMore: boolean }>;
+}): Promise<{ items: TraktMediaItem[]; hasMore: boolean }> {
+  const fetchUpstreamPage = async (traktPage: number) =>
+    loadTraktMediaTypeFilteredPage(
+      options.mediaType,
+      await options.fetchRawPage(traktPage),
+      options.tmdb
+    );
 
   if (
-    !options.skipWatchedFilter &&
-    options.user?.id &&
-    parseTraktTruthyQuery(options.query?.ignoreWatched)
+    needsTraktDiscoverPostFilters(
+      options.user,
+      options.query,
+      options.skipWatchedFilter
+    )
   ) {
-    try {
-      const trakt = await createTraktUserClient(options.user.id);
-      const watchedSets = await loadWatchedIdSets(options.user.id, trakt);
-      filtered = filterWatchedTraktItems(filtered, watchedSets);
-    } catch (e) {
-      if (!(e instanceof TraktNotLinkedError)) {
-        throw e;
-      }
-    }
+    return fetchPaginatedTraktDiscoverWithPostFilters(fetchUpstreamPage, {
+      page: options.page,
+      itemsPerPage: options.itemsPerPage,
+      user: options.user,
+      query: options.query,
+      tmdb: options.tmdb,
+      skipWatchedFilter: options.skipWatchedFilter,
+      sortBy: options.listSort,
+    });
   }
 
-  return enrichResultsWithRatings(mapTraktItems(filtered));
-};
+  if (options.mediaType === 'anime') {
+    return fetchPaginatedTraktAnimeItems(
+      (traktPage) => traktPageItems(fetchUpstreamPage(traktPage)),
+      options.page,
+      options.itemsPerPage,
+      options.tmdb,
+      options.listSort
+    );
+  }
+
+  if (options.mediaType === 'tv') {
+    return fetchPaginatedTraktNonAnimeItems(
+      (traktPage) => traktPageItems(fetchUpstreamPage(traktPage)),
+      options.page,
+      options.itemsPerPage,
+      options.tmdb,
+      options.listSort
+    );
+  }
+
+  return fetchUpstreamPage(options.page);
+}
 
 const handleTraktRouteError = (
   e: unknown,
@@ -178,33 +182,73 @@ const handleTraktRouteError = (
   return next({ status: 500, message: fallbackMessage });
 };
 
-function parseTraktMediaTypeQuery(
-  value: unknown
-): 'movie' | 'tv' | 'both' | 'anime' {
+function parseTraktMediaTypeQuery(value: unknown): TraktBrowseMediaType {
   if (value === 'movie' || value === 'tv' || value === 'anime') {
     return value;
   }
-  return 'both';
+  return 'all';
 }
 
-function parseTraktListSortQuery(
-  value: unknown
-): { sortBy: 'added' | 'released'; sortHow: 'desc' } | undefined {
+function parseTraktListSortQuery(value: unknown): TraktListSortBy | undefined {
   if (value === 'added' || value === 'released') {
-    return { sortBy: value, sortHow: 'desc' };
+    return value;
   }
   return undefined;
 }
 
 function toTraktFetchMediaType(
-  mediaType: 'movie' | 'tv' | 'both' | 'anime'
-): 'movie' | 'tv' | 'both' {
-  return mediaType === 'anime' ? 'tv' : mediaType;
+  mediaType: TraktBrowseMediaType
+): TraktFetchMediaType {
+  if (mediaType === 'anime') {
+    return 'all';
+  }
+  return mediaType;
+}
+
+/** Adapter for anime/non-anime page fillers that still expect a bare item array. */
+async function traktPageItems(
+  page: Promise<{ items: TraktMediaItem[]; hasMore: boolean }>
+): Promise<TraktMediaItem[]> {
+  return (await page).items;
+}
+
+async function loadTraktMediaTypeFilteredPage(
+  mediaType: TraktBrowseMediaType,
+  upstream: { items: TraktMediaItem[]; hasMore: boolean },
+  tmdb: TheMovieDb
+): Promise<{ items: TraktMediaItem[]; hasMore: boolean }> {
+  if (mediaType === 'anime') {
+    return {
+      items: await filterTraktAnimeItems(upstream.items, tmdb),
+      hasMore: upstream.hasMore,
+    };
+  }
+  if (mediaType === 'tv') {
+    return {
+      items: await excludeTraktAnimeItems(upstream.items, tmdb),
+      hasMore: upstream.hasMore,
+    };
+  }
+  return upstream;
 }
 
 function parseTraktTruthyQuery(value: unknown): boolean {
   // OpenAPI boolean query params arrive as real booleans after validation.
   return value === true || value === 'true' || value === '1';
+}
+
+function parseTraktListUrlOrThrow(url: string): {
+  username: string | null;
+  listRef: string;
+} {
+  try {
+    return TraktAPI.parseListUrl(url);
+  } catch (e) {
+    throw {
+      status: 400,
+      message: e instanceof Error ? e.message : 'Invalid Trakt list URL',
+    };
+  }
 }
 
 export const createTmdbWithRegionLanguage = (user?: User): TheMovieDb => {
@@ -295,43 +339,6 @@ discoverRoutes.get('/movies', async (req, res, next) => {
     const keywords = query.keywords;
     const excludeKeywords = query.excludeKeywords;
 
-    const data = await tmdb.getDiscoverMovies({
-      page: Number(query.page),
-      sortBy: query.sortBy as SortOptions,
-      language: req.locale ?? query.language,
-      originalLanguage: query.language,
-      genre: query.genre,
-      studio: query.studio,
-      primaryReleaseDateLte: query.primaryReleaseDateLte
-        ? new Date(query.primaryReleaseDateLte).toISOString().split('T')[0]
-        : undefined,
-      primaryReleaseDateGte: query.primaryReleaseDateGte
-        ? new Date(query.primaryReleaseDateGte).toISOString().split('T')[0]
-        : undefined,
-      keywords,
-      excludeKeywords,
-      withRuntimeGte: query.withRuntimeGte,
-      withRuntimeLte: query.withRuntimeLte,
-      voteAverageGte: query.voteAverageGte,
-      voteAverageLte: query.voteAverageLte,
-      voteCountGte: query.voteCountGte,
-      voteCountLte: query.voteCountLte,
-      watchProviders: query.watchProviders,
-      watchRegion: query.watchRegion,
-      certification: query.certification,
-      certificationGte: query.certificationGte,
-      certificationLte: query.certificationLte,
-      certificationCountry: query.certificationCountry,
-    });
-
-    const media = await Media.getRelatedMedia(
-      req.user,
-      data.results.map((result) => ({
-        tmdbId: result.id,
-        mediaType: MediaType.MOVIE,
-      }))
-    );
-
     let keywordData: TmdbKeyword[] = [];
     if (keywords) {
       const splitKeywords = keywords.split(',');
@@ -347,24 +354,68 @@ discoverRoutes.get('/movies', async (req, res, next) => {
       );
     }
 
-    return res.status(200).json({
-      page: data.page,
-      totalPages: data.total_pages,
-      totalResults: data.total_results,
-      keywords: keywordData,
-      results: await applyBrowseDiscoverFilters(
-        data.results.map((result) =>
-          mapMovieResult(
-            result,
-            media.find(
-              (req) =>
-                req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+    const page = Number(query.page) || 1;
+    const paginated = await paginateTmdbDiscover({
+      page,
+      user: req.user,
+      query: req.query,
+      fetchMappedPage: async (upstreamPage) => {
+        const data = await tmdb.getDiscoverMovies({
+          page: upstreamPage,
+          sortBy: query.sortBy as SortOptions,
+          language: req.locale ?? query.language,
+          originalLanguage: query.language,
+          genre: query.genre,
+          studio: query.studio,
+          primaryReleaseDateLte: query.primaryReleaseDateLte
+            ? new Date(query.primaryReleaseDateLte).toISOString().split('T')[0]
+            : undefined,
+          primaryReleaseDateGte: query.primaryReleaseDateGte
+            ? new Date(query.primaryReleaseDateGte).toISOString().split('T')[0]
+            : undefined,
+          keywords,
+          excludeKeywords,
+          withRuntimeGte: query.withRuntimeGte,
+          withRuntimeLte: query.withRuntimeLte,
+          voteAverageGte: query.voteAverageGte,
+          voteAverageLte: query.voteAverageLte,
+          voteCountGte: query.voteCountGte,
+          voteCountLte: query.voteCountLte,
+          watchProviders: query.watchProviders,
+          watchRegion: query.watchRegion,
+          certification: query.certification,
+          certificationGte: query.certificationGte,
+          certificationLte: query.certificationLte,
+          certificationCountry: query.certificationCountry,
+        });
+
+        const media = await Media.getRelatedMedia(
+          req.user,
+          data.results.map((result) => ({
+            tmdbId: result.id,
+            mediaType: MediaType.MOVIE,
+          }))
+        );
+
+        return {
+          items: data.results.map((result) =>
+            mapMovieResult(
+              result,
+              media.find(
+                (req) =>
+                  req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
+              )
             )
-          )
-        ),
-        req.user,
-        req.query
-      ),
+          ),
+          totalPages: data.total_pages,
+          totalResults: data.total_results,
+        };
+      },
+    });
+
+    return res.status(200).json({
+      ...paginated,
+      keywords: keywordData,
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving popular movies', {
@@ -394,38 +445,46 @@ discoverRoutes.get<{ language: string }>(
         return next({ status: 404, message: 'Language not found.' });
       }
 
-      const data = await tmdb.getDiscoverMovies({
-        page: Number(req.query.page),
-        language: (req.query.language as string) ?? req.locale,
-        originalLanguage: req.params.language,
+      const page = Number(req.query.page) || 1;
+      const paginated = await paginateTmdbDiscover({
+        page,
+        user: req.user,
+        query: req.query,
+        fetchMappedPage: async (upstreamPage) => {
+          const data = await tmdb.getDiscoverMovies({
+            page: upstreamPage,
+            language: (req.query.language as string) ?? req.locale,
+            originalLanguage: req.params.language,
+          });
+
+          const media = await Media.getRelatedMedia(
+            req.user,
+            data.results.map((result) => ({
+              tmdbId: result.id,
+              mediaType: MediaType.MOVIE,
+            }))
+          );
+
+          return {
+            items: data.results.map((result) =>
+              mapMovieResult(
+                result,
+                media.find(
+                  (req) =>
+                    req.tmdbId === result.id &&
+                    req.mediaType === MediaType.MOVIE
+                )
+              )
+            ),
+            totalPages: data.total_pages,
+            totalResults: data.total_results,
+          };
+        },
       });
 
-      const media = await Media.getRelatedMedia(
-        req.user,
-        data.results.map((result) => ({
-          tmdbId: result.id,
-          mediaType: MediaType.MOVIE,
-        }))
-      );
-
       return res.status(200).json({
-        page: data.page,
-        totalPages: data.total_pages,
-        totalResults: data.total_results,
+        ...paginated,
         language,
-        results: await applyBrowseDiscoverFilters(
-          data.results.map((result) =>
-            mapMovieResult(
-              result,
-              media.find(
-                (req) =>
-                  req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
-              )
-            )
-          ),
-          req.user,
-          req.query
-        ),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving movies by language', {
@@ -459,38 +518,46 @@ discoverRoutes.get<{ genreId: string }>(
         return next({ status: 404, message: 'Genre not found.' });
       }
 
-      const data = await tmdb.getDiscoverMovies({
-        page: Number(req.query.page),
-        language: (req.query.language as string) ?? req.locale,
-        genre: req.params.genreId as string,
+      const page = Number(req.query.page) || 1;
+      const paginated = await paginateTmdbDiscover({
+        page,
+        user: req.user,
+        query: req.query,
+        fetchMappedPage: async (upstreamPage) => {
+          const data = await tmdb.getDiscoverMovies({
+            page: upstreamPage,
+            language: (req.query.language as string) ?? req.locale,
+            genre: req.params.genreId as string,
+          });
+
+          const media = await Media.getRelatedMedia(
+            req.user,
+            data.results.map((result) => ({
+              tmdbId: result.id,
+              mediaType: MediaType.MOVIE,
+            }))
+          );
+
+          return {
+            items: data.results.map((result) =>
+              mapMovieResult(
+                result,
+                media.find(
+                  (req) =>
+                    req.tmdbId === result.id &&
+                    req.mediaType === MediaType.MOVIE
+                )
+              )
+            ),
+            totalPages: data.total_pages,
+            totalResults: data.total_results,
+          };
+        },
       });
 
-      const media = await Media.getRelatedMedia(
-        req.user,
-        data.results.map((result) => ({
-          tmdbId: result.id,
-          mediaType: MediaType.MOVIE,
-        }))
-      );
-
       return res.status(200).json({
-        page: data.page,
-        totalPages: data.total_pages,
-        totalResults: data.total_results,
+        ...paginated,
         genre,
-        results: await applyBrowseDiscoverFilters(
-          data.results.map((result) =>
-            mapMovieResult(
-              result,
-              media.find(
-                (req) =>
-                  req.tmdbId === result.id && req.mediaType === MediaType.MOVIE
-              )
-            )
-          ),
-          req.user,
-          req.query
-        ),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving movies by genre', {
@@ -514,38 +581,46 @@ discoverRoutes.get<{ studioId: string }>(
     try {
       const studio = await tmdb.getStudio(Number(req.params.studioId));
 
-      const data = await tmdb.getDiscoverMovies({
-        page: Number(req.query.page),
-        language: (req.query.language as string) ?? req.locale,
-        studio: req.params.studioId as string,
+      const page = Number(req.query.page) || 1;
+      const paginated = await paginateTmdbDiscover({
+        page,
+        user: req.user,
+        query: req.query,
+        fetchMappedPage: async (upstreamPage) => {
+          const data = await tmdb.getDiscoverMovies({
+            page: upstreamPage,
+            language: (req.query.language as string) ?? req.locale,
+            studio: req.params.studioId as string,
+          });
+
+          const media = await Media.getRelatedMedia(
+            req.user,
+            data.results.map((result) => ({
+              tmdbId: result.id,
+              mediaType: MediaType.MOVIE,
+            }))
+          );
+
+          return {
+            items: data.results.map((result) =>
+              mapMovieResult(
+                result,
+                media.find(
+                  (med) =>
+                    med.tmdbId === result.id &&
+                    med.mediaType === MediaType.MOVIE
+                )
+              )
+            ),
+            totalPages: data.total_pages,
+            totalResults: data.total_results,
+          };
+        },
       });
 
-      const media = await Media.getRelatedMedia(
-        req.user,
-        data.results.map((result) => ({
-          tmdbId: result.id,
-          mediaType: MediaType.MOVIE,
-        }))
-      );
-
       return res.status(200).json({
-        page: data.page,
-        totalPages: data.total_pages,
-        totalResults: data.total_results,
+        ...paginated,
         studio: mapProductionCompany(studio),
-        results: await applyBrowseDiscoverFilters(
-          data.results.map((result) =>
-            mapMovieResult(
-              result,
-              media.find(
-                (med) =>
-                  med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
-              )
-            )
-          ),
-          req.user,
-          req.query
-        ),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving movies by studio', {
@@ -571,38 +646,43 @@ discoverRoutes.get('/movies/upcoming', async (req, res, next) => {
     .split('T')[0];
 
   try {
-    const data = await tmdb.getDiscoverMovies({
-      page: Number(req.query.page),
-      language: (req.query.language as string) ?? req.locale,
-      primaryReleaseDateGte: date,
-    });
+    const page = Number(req.query.page) || 1;
+    const paginated = await paginateTmdbDiscover({
+      page,
+      user: req.user,
+      query: req.query,
+      fetchMappedPage: async (upstreamPage) => {
+        const data = await tmdb.getDiscoverMovies({
+          page: upstreamPage,
+          language: (req.query.language as string) ?? req.locale,
+          primaryReleaseDateGte: date,
+        });
 
-    const media = await Media.getRelatedMedia(
-      req.user,
-      data.results.map((result) => ({
-        tmdbId: result.id,
-        mediaType: MediaType.MOVIE,
-      }))
-    );
+        const media = await Media.getRelatedMedia(
+          req.user,
+          data.results.map((result) => ({
+            tmdbId: result.id,
+            mediaType: MediaType.MOVIE,
+          }))
+        );
 
-    return res.status(200).json({
-      page: data.page,
-      totalPages: data.total_pages,
-      totalResults: data.total_results,
-      results: await applyBrowseDiscoverFilters(
-        data.results.map((result) =>
-          mapMovieResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
+        return {
+          items: data.results.map((result) =>
+            mapMovieResult(
+              result,
+              media.find(
+                (med) =>
+                  med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
+              )
             )
-          )
-        ),
-        req.user,
-        req.query
-      ),
+          ),
+          totalPages: data.total_pages,
+          totalResults: data.total_results,
+        };
+      },
     });
+
+    return res.status(200).json(paginated);
   } catch (e) {
     logger.debug('Something went wrong retrieving upcoming movies', {
       label: 'API',
@@ -622,44 +702,6 @@ discoverRoutes.get('/tv', async (req, res, next) => {
     const query = ApiQuerySchema.parse(req.query);
     const keywords = query.keywords;
     const excludeKeywords = query.excludeKeywords;
-    const data = await tmdb.getDiscoverTv({
-      page: Number(query.page),
-      sortBy: query.sortBy as SortOptions,
-      language: req.locale ?? query.language,
-      genre: query.genre,
-      network: query.network ? Number(query.network) : undefined,
-      firstAirDateLte: query.firstAirDateLte
-        ? new Date(query.firstAirDateLte).toISOString().split('T')[0]
-        : undefined,
-      firstAirDateGte: query.firstAirDateGte
-        ? new Date(query.firstAirDateGte).toISOString().split('T')[0]
-        : undefined,
-      originalLanguage: query.language,
-      keywords,
-      excludeKeywords,
-      withRuntimeGte: query.withRuntimeGte,
-      withRuntimeLte: query.withRuntimeLte,
-      voteAverageGte: query.voteAverageGte,
-      voteAverageLte: query.voteAverageLte,
-      voteCountGte: query.voteCountGte,
-      voteCountLte: query.voteCountLte,
-      watchProviders: query.watchProviders,
-      watchRegion: query.watchRegion,
-      withStatus: query.status,
-      certification: query.certification,
-      certificationGte: query.certificationGte,
-      certificationLte: query.certificationLte,
-      certificationCountry: query.certificationCountry,
-    });
-
-    const media = await Media.getRelatedMedia(
-      req.user,
-      data.results.map((result) => ({
-        tmdbId: result.id,
-        mediaType: MediaType.TV,
-      }))
-    );
-
     let keywordData: TmdbKeyword[] = [];
     if (keywords) {
       const splitKeywords = keywords.split(',');
@@ -675,24 +717,69 @@ discoverRoutes.get('/tv', async (req, res, next) => {
       );
     }
 
-    return res.status(200).json({
-      page: data.page,
-      totalPages: data.total_pages,
-      totalResults: data.total_results,
-      keywords: keywordData,
-      results: await applyBrowseDiscoverFilters(
-        data.results.map((result) =>
-          mapTvResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.TV
+    const page = Number(query.page) || 1;
+    const paginated = await paginateTmdbDiscover({
+      page,
+      user: req.user,
+      query: req.query,
+      fetchMappedPage: async (upstreamPage) => {
+        const data = await tmdb.getDiscoverTv({
+          page: upstreamPage,
+          sortBy: query.sortBy as SortOptions,
+          language: req.locale ?? query.language,
+          genre: query.genre,
+          network: query.network ? Number(query.network) : undefined,
+          firstAirDateLte: query.firstAirDateLte
+            ? new Date(query.firstAirDateLte).toISOString().split('T')[0]
+            : undefined,
+          firstAirDateGte: query.firstAirDateGte
+            ? new Date(query.firstAirDateGte).toISOString().split('T')[0]
+            : undefined,
+          originalLanguage: query.language,
+          keywords,
+          excludeKeywords,
+          withRuntimeGte: query.withRuntimeGte,
+          withRuntimeLte: query.withRuntimeLte,
+          voteAverageGte: query.voteAverageGte,
+          voteAverageLte: query.voteAverageLte,
+          voteCountGte: query.voteCountGte,
+          voteCountLte: query.voteCountLte,
+          watchProviders: query.watchProviders,
+          watchRegion: query.watchRegion,
+          withStatus: query.status,
+          certification: query.certification,
+          certificationGte: query.certificationGte,
+          certificationLte: query.certificationLte,
+          certificationCountry: query.certificationCountry,
+        });
+
+        const media = await Media.getRelatedMedia(
+          req.user,
+          data.results.map((result) => ({
+            tmdbId: result.id,
+            mediaType: MediaType.TV,
+          }))
+        );
+
+        return {
+          items: data.results.map((result) =>
+            mapTvResult(
+              result,
+              media.find(
+                (med) =>
+                  med.tmdbId === result.id && med.mediaType === MediaType.TV
+              )
             )
-          )
-        ),
-        req.user,
-        req.query
-      ),
+          ),
+          totalPages: data.total_pages,
+          totalResults: data.total_results,
+        };
+      },
+    });
+
+    return res.status(200).json({
+      ...paginated,
+      keywords: keywordData,
     });
   } catch (e) {
     logger.debug('Something went wrong retrieving popular series', {
@@ -722,38 +809,45 @@ discoverRoutes.get<{ language: string }>(
         return next({ status: 404, message: 'Language not found.' });
       }
 
-      const data = await tmdb.getDiscoverTv({
-        page: Number(req.query.page),
-        language: (req.query.language as string) ?? req.locale,
-        originalLanguage: req.params.language,
+      const page = Number(req.query.page) || 1;
+      const paginated = await paginateTmdbDiscover({
+        page,
+        user: req.user,
+        query: req.query,
+        fetchMappedPage: async (upstreamPage) => {
+          const data = await tmdb.getDiscoverTv({
+            page: upstreamPage,
+            language: (req.query.language as string) ?? req.locale,
+            originalLanguage: req.params.language,
+          });
+
+          const media = await Media.getRelatedMedia(
+            req.user,
+            data.results.map((result) => ({
+              tmdbId: result.id,
+              mediaType: MediaType.TV,
+            }))
+          );
+
+          return {
+            items: data.results.map((result) =>
+              mapTvResult(
+                result,
+                media.find(
+                  (med) =>
+                    med.tmdbId === result.id && med.mediaType === MediaType.TV
+                )
+              )
+            ),
+            totalPages: data.total_pages,
+            totalResults: data.total_results,
+          };
+        },
       });
 
-      const media = await Media.getRelatedMedia(
-        req.user,
-        data.results.map((result) => ({
-          tmdbId: result.id,
-          mediaType: MediaType.TV,
-        }))
-      );
-
       return res.status(200).json({
-        page: data.page,
-        totalPages: data.total_pages,
-        totalResults: data.total_results,
+        ...paginated,
         language,
-        results: await applyBrowseDiscoverFilters(
-          data.results.map((result) =>
-            mapTvResult(
-              result,
-              media.find(
-                (med) =>
-                  med.tmdbId === result.id && med.mediaType === MediaType.TV
-              )
-            )
-          ),
-          req.user,
-          req.query
-        ),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving series by language', {
@@ -787,38 +881,45 @@ discoverRoutes.get<{ genreId: string }>(
         return next({ status: 404, message: 'Genre not found.' });
       }
 
-      const data = await tmdb.getDiscoverTv({
-        page: Number(req.query.page),
-        language: (req.query.language as string) ?? req.locale,
-        genre: req.params.genreId,
+      const page = Number(req.query.page) || 1;
+      const paginated = await paginateTmdbDiscover({
+        page,
+        user: req.user,
+        query: req.query,
+        fetchMappedPage: async (upstreamPage) => {
+          const data = await tmdb.getDiscoverTv({
+            page: upstreamPage,
+            language: (req.query.language as string) ?? req.locale,
+            genre: req.params.genreId,
+          });
+
+          const media = await Media.getRelatedMedia(
+            req.user,
+            data.results.map((result) => ({
+              tmdbId: result.id,
+              mediaType: MediaType.TV,
+            }))
+          );
+
+          return {
+            items: data.results.map((result) =>
+              mapTvResult(
+                result,
+                media.find(
+                  (med) =>
+                    med.tmdbId === result.id && med.mediaType === MediaType.TV
+                )
+              )
+            ),
+            totalPages: data.total_pages,
+            totalResults: data.total_results,
+          };
+        },
       });
 
-      const media = await Media.getRelatedMedia(
-        req.user,
-        data.results.map((result) => ({
-          tmdbId: result.id,
-          mediaType: MediaType.TV,
-        }))
-      );
-
       return res.status(200).json({
-        page: data.page,
-        totalPages: data.total_pages,
-        totalResults: data.total_results,
+        ...paginated,
         genre,
-        results: await applyBrowseDiscoverFilters(
-          data.results.map((result) =>
-            mapTvResult(
-              result,
-              media.find(
-                (med) =>
-                  med.tmdbId === result.id && med.mediaType === MediaType.TV
-              )
-            )
-          ),
-          req.user,
-          req.query
-        ),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving series by genre', {
@@ -842,38 +943,45 @@ discoverRoutes.get<{ networkId: string }>(
     try {
       const network = await tmdb.getNetwork(Number(req.params.networkId));
 
-      const data = await tmdb.getDiscoverTv({
-        page: Number(req.query.page),
-        language: (req.query.language as string) ?? req.locale,
-        network: Number(req.params.networkId),
+      const page = Number(req.query.page) || 1;
+      const paginated = await paginateTmdbDiscover({
+        page,
+        user: req.user,
+        query: req.query,
+        fetchMappedPage: async (upstreamPage) => {
+          const data = await tmdb.getDiscoverTv({
+            page: upstreamPage,
+            language: (req.query.language as string) ?? req.locale,
+            network: Number(req.params.networkId),
+          });
+
+          const media = await Media.getRelatedMedia(
+            req.user,
+            data.results.map((result) => ({
+              tmdbId: result.id,
+              mediaType: MediaType.TV,
+            }))
+          );
+
+          return {
+            items: data.results.map((result) =>
+              mapTvResult(
+                result,
+                media.find(
+                  (med) =>
+                    med.tmdbId === result.id && med.mediaType === MediaType.TV
+                )
+              )
+            ),
+            totalPages: data.total_pages,
+            totalResults: data.total_results,
+          };
+        },
       });
 
-      const media = await Media.getRelatedMedia(
-        req.user,
-        data.results.map((result) => ({
-          tmdbId: result.id,
-          mediaType: MediaType.TV,
-        }))
-      );
-
       return res.status(200).json({
-        page: data.page,
-        totalPages: data.total_pages,
-        totalResults: data.total_results,
+        ...paginated,
         network: mapNetwork(network),
-        results: await applyBrowseDiscoverFilters(
-          data.results.map((result) =>
-            mapTvResult(
-              result,
-              media.find(
-                (med) =>
-                  med.tmdbId === result.id && med.mediaType === MediaType.TV
-              )
-            )
-          ),
-          req.user,
-          req.query
-        ),
       });
     } catch (e) {
       logger.debug('Something went wrong retrieving series by network', {
@@ -899,38 +1007,43 @@ discoverRoutes.get('/tv/upcoming', async (req, res, next) => {
     .split('T')[0];
 
   try {
-    const data = await tmdb.getDiscoverTv({
-      page: Number(req.query.page),
-      language: (req.query.language as string) ?? req.locale,
-      firstAirDateGte: date,
-    });
+    const page = Number(req.query.page) || 1;
+    const paginated = await paginateTmdbDiscover({
+      page,
+      user: req.user,
+      query: req.query,
+      fetchMappedPage: async (upstreamPage) => {
+        const data = await tmdb.getDiscoverTv({
+          page: upstreamPage,
+          language: (req.query.language as string) ?? req.locale,
+          firstAirDateGte: date,
+        });
 
-    const media = await Media.getRelatedMedia(
-      req.user,
-      data.results.map((result) => ({
-        tmdbId: result.id,
-        mediaType: MediaType.TV,
-      }))
-    );
+        const media = await Media.getRelatedMedia(
+          req.user,
+          data.results.map((result) => ({
+            tmdbId: result.id,
+            mediaType: MediaType.TV,
+          }))
+        );
 
-    return res.status(200).json({
-      page: data.page,
-      totalPages: data.total_pages,
-      totalResults: data.total_results,
-      results: await applyBrowseDiscoverFilters(
-        data.results.map((result) =>
-          mapTvResult(
-            result,
-            media.find(
-              (med) =>
-                med.tmdbId === result.id && med.mediaType === MediaType.TV
+        return {
+          items: data.results.map((result) =>
+            mapTvResult(
+              result,
+              media.find(
+                (med) =>
+                  med.tmdbId === result.id && med.mediaType === MediaType.TV
+              )
             )
-          )
-        ),
-        req.user,
-        req.query
-      ),
+          ),
+          totalPages: data.total_pages,
+          totalResults: data.total_results,
+        };
+      },
     });
+
+    return res.status(200).json(paginated);
   } catch (e) {
     logger.debug('Something went wrong retrieving upcoming series', {
       label: 'API',
@@ -951,21 +1064,33 @@ discoverRoutes.get('/trending', async (req, res, next) => {
     const timeWindow =
       (req.query.timeWindow as 'day' | 'week') === 'week' ? 'week' : 'day';
     const language = (req.query.language as string) ?? req.locale;
-    const page = Number(req.query.page);
+    const requestedPage = Number(req.query.page) || 1;
 
     const trendingFetchers = {
-      movie: async () => ({
-        data: await tmdb.getMovieTrending({ page, language, timeWindow }),
+      movie: async (upstreamPage: number) => ({
+        data: await tmdb.getMovieTrending({
+          page: upstreamPage,
+          language,
+          timeWindow,
+        }),
         mapper: mapMovieResult,
         type: MediaType.MOVIE,
       }),
-      tv: async () => ({
-        data: await tmdb.getTvTrending({ page, language, timeWindow }),
+      tv: async (upstreamPage: number) => ({
+        data: await tmdb.getTvTrending({
+          page: upstreamPage,
+          language,
+          timeWindow,
+        }),
         mapper: mapTvResult,
         type: MediaType.TV,
       }),
-      all: async () => ({
-        data: await tmdb.getAllTrending({ page, language, timeWindow }),
+      all: async (upstreamPage: number) => ({
+        data: await tmdb.getAllTrending({
+          page: upstreamPage,
+          language,
+          timeWindow,
+        }),
         mapper: (result: any, media?: Media) => {
           if (isMovie(result)) {
             return mapMovieResult(result, media);
@@ -981,35 +1106,39 @@ discoverRoutes.get('/trending', async (req, res, next) => {
       }),
     } as const;
 
-    const { data, mapper, type } = await trendingFetchers[mediaType]();
+    const paginated = await paginateTmdbDiscover({
+      page: requestedPage,
+      user: req.user,
+      query: req.query,
+      fetchMappedPage: async (upstreamPage) => {
+        const { data, mapper, type } =
+          await trendingFetchers[mediaType](upstreamPage);
 
-    const media = await Media.getRelatedMedia(
-      req.user,
-      data.results.map((result) => ({
-        tmdbId: result.id,
-        mediaType: isMovie(result) ? MediaType.MOVIE : MediaType.TV,
-      }))
-    );
+        const media = await Media.getRelatedMedia(
+          req.user,
+          data.results.map((result) => ({
+            tmdbId: result.id,
+            mediaType: isMovie(result) ? MediaType.MOVIE : MediaType.TV,
+          }))
+        );
 
-    return res.status(200).json({
-      page: data.page,
-      totalPages: data.total_pages,
-      totalResults: data.total_results,
-      results: await applyBrowseDiscoverFilters(
-        data.results.map((result) => {
-          // - If "type" is set (case: "movie" or "tv"), the mediaType must also match.
-          // - If "type" is not set (case: "all"), only filter by tmdbId.
-          const selectedMedia = media.find(
-            (med) =>
-              med.tmdbId === result.id && (type ? med.mediaType === type : true)
-          );
+        return {
+          items: data.results.map((result) => {
+            const selectedMedia = media.find(
+              (med) =>
+                med.tmdbId === result.id &&
+                (type ? med.mediaType === type : true)
+            );
 
-          return mapper(result, selectedMedia);
-        }),
-        req.user,
-        req.query
-      ),
+            return mapper(result, selectedMedia);
+          }),
+          totalPages: data.total_pages,
+          totalResults: data.total_results,
+        };
+      },
     });
+
+    return res.status(200).json(paginated);
   } catch (e) {
     logger.debug('Something went wrong retrieving trending items', {
       label: 'API',
@@ -1028,38 +1157,44 @@ discoverRoutes.get<{ keywordId: string }>(
     const tmdb = new TheMovieDb();
 
     try {
-      const data = await tmdb.getMoviesByKeyword({
-        keywordId: Number(req.params.keywordId),
-        page: Number(req.query.page),
-        language: (req.query.language as string) ?? req.locale,
-      });
+      const page = Number(req.query.page) || 1;
+      const paginated = await paginateTmdbDiscover({
+        page,
+        user: req.user,
+        query: req.query,
+        fetchMappedPage: async (upstreamPage) => {
+          const data = await tmdb.getMoviesByKeyword({
+            keywordId: Number(req.params.keywordId),
+            page: upstreamPage,
+            language: (req.query.language as string) ?? req.locale,
+          });
 
-      const media = await Media.getRelatedMedia(
-        req.user,
-        data.results.map((result) => ({
-          tmdbId: result.id,
-          mediaType: MediaType.MOVIE,
-        }))
-      );
+          const media = await Media.getRelatedMedia(
+            req.user,
+            data.results.map((result) => ({
+              tmdbId: result.id,
+              mediaType: MediaType.MOVIE,
+            }))
+          );
 
-      return res.status(200).json({
-        page: data.page,
-        totalPages: data.total_pages,
-        totalResults: data.total_results,
-        results: await applyBrowseDiscoverFilters(
-          data.results.map((result) =>
-            mapMovieResult(
-              result,
-              media.find(
-                (med) =>
-                  med.tmdbId === result.id && med.mediaType === MediaType.MOVIE
+          return {
+            items: data.results.map((result) =>
+              mapMovieResult(
+                result,
+                media.find(
+                  (med) =>
+                    med.tmdbId === result.id &&
+                    med.mediaType === MediaType.MOVIE
+                )
               )
-            )
-          ),
-          req.user,
-          req.query
-        ),
+            ),
+            totalPages: data.total_pages,
+            totalResults: data.total_results,
+          };
+        },
       });
+
+      return res.status(200).json(paginated);
     } catch (e) {
       logger.debug('Something went wrong retrieving movies by keyword', {
         label: 'API',
@@ -1246,33 +1381,75 @@ discoverRoutes.get('/trakt/recommendations', async (req, res, next) => {
     const tmdb = createTmdbWithRegionLanguage(req.user);
 
     const extended = traktExtendedForBrowseQuery(req.query);
-    const { pageItems, totalPages, totalResults } =
-      await getTraktRecommendationPage(
-        req.user.id,
-        trakt,
-        tmdb,
-        {
-          mediaType,
-          ignoreCollected,
-          ignoreWatchlisted,
-          ignoreWatched,
-          extended,
-        },
-        page,
-        TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE
-      );
-
-    return res.status(200).json({
+    const recommendationPage = await getTraktRecommendationPage(
+      req.user.id,
+      trakt,
+      tmdb,
+      {
+        mediaType,
+        ignoreCollected,
+        ignoreWatchlisted,
+        ignoreWatched,
+        extended,
+      },
       page,
-      totalPages,
-      totalResults,
-      results: await mapFilteredTraktItems(pageItems, {
+      TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE
+    );
+
+    let items = recommendationPage.pageItems;
+    let hasMore = recommendationPage.hasMore;
+    if (needsTraktDiscoverPostFilters(req.user, req.query, true)) {
+      ({ items, hasMore } = await fetchPaginatedTraktDiscoverWithPostFilters(
+        async (upstreamPage) => {
+          const nextPage = await getTraktRecommendationPage(
+            req.user!.id,
+            trakt,
+            tmdb,
+            {
+              mediaType,
+              ignoreCollected,
+              ignoreWatchlisted,
+              ignoreWatched,
+              extended,
+            },
+            upstreamPage,
+            TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE
+          );
+          return {
+            items: nextPage.pageItems,
+            hasMore: nextPage.hasMore,
+          };
+        },
+        {
+          page,
+          itemsPerPage: TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE,
+          user: req.user,
+          query: req.query,
+          tmdb,
+          skipWatchedFilter: true,
+        }
+      ));
+    }
+
+    const response: WatchlistResponse = {
+      page,
+      hasMore,
+      results: await mapFilteredTraktItems(items, {
         user: req.user,
         query: req.query,
         tmdb,
         skipWatchedFilter: true,
+        skipPostFilters: true,
       }),
-    } satisfies WatchlistResponse);
+    };
+    if (recommendationPage.totalPages != null) {
+      response.totalPages = recommendationPage.totalPages;
+    }
+    if (recommendationPage.totalResults != null) {
+      response.totalResults = recommendationPage.totalResults;
+    }
+
+    return res.status(200).json(response);
   } catch (e) {
     return handleTraktRouteError(
       e,
@@ -1295,51 +1472,29 @@ discoverRoutes.get('/trakt/watchlist', async (req, res, next) => {
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
     const extended = traktExtendedForBrowseQuery(req.query);
-
-    let items: TraktMediaItem[];
-    let hasMore = false;
-    if (mediaType === 'anime') {
-      ({ items, hasMore } = await fetchPaginatedTraktAnimeItems(
-        (traktPage) =>
-          trakt.getWatchlistItems('me', traktFetchType, {
-            page: traktPage,
-            limit: itemsPerPage,
-            extended,
-          }),
-        page,
-        itemsPerPage,
-        tmdb
-      ));
-    } else if (mediaType === 'tv') {
-      ({ items, hasMore } = await fetchPaginatedTraktNonAnimeItems(
-        (traktPage) =>
-          trakt.getWatchlistItems('me', traktFetchType, {
-            page: traktPage,
-            limit: itemsPerPage,
-            extended,
-          }),
-        page,
-        itemsPerPage,
-        tmdb
-      ));
-    } else {
-      items = await trakt.getWatchlistItems('me', traktFetchType, {
-        page,
-        limit: itemsPerPage,
-        extended,
-      });
-      hasMore = items.length >= itemsPerPage;
-    }
+    const { items, hasMore } = await resolveTraktDiscoverPage({
+      page,
+      itemsPerPage,
+      mediaType,
+      user: req.user,
+      query: req.query,
+      tmdb,
+      fetchRawPage: (traktPage) =>
+        trakt.getWatchlistItems('me', traktFetchType, {
+          page: traktPage,
+          limit: itemsPerPage,
+          extended,
+        }),
+    });
 
     return res.status(200).json({
       page,
-      // Trakt does not return total counts for watchlist pages; estimate
-      totalPages: hasMore ? page + 1 : page,
-      totalResults: (page - 1) * itemsPerPage + items.length,
+      hasMore,
       results: await mapFilteredTraktItems(items, {
         user: req.user,
         query: req.query,
         tmdb,
+        skipPostFilters: true,
       }),
     } satisfies WatchlistResponse);
   } catch (e) {
@@ -1364,52 +1519,31 @@ discoverRoutes.get('/trakt/history', async (req, res, next) => {
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
     const extended = traktExtendedForBrowseQuery(req.query);
-
-    let items: TraktMediaItem[];
-    let hasMore = false;
-    if (mediaType === 'anime') {
-      ({ items, hasMore } = await fetchPaginatedTraktAnimeItems(
-        (traktPage) =>
-          trakt.getHistoryItems(traktFetchType, {
-            page: traktPage,
-            limit: itemsPerPage,
-            extended,
-          }),
-        page,
-        itemsPerPage,
-        tmdb
-      ));
-    } else if (mediaType === 'tv') {
-      ({ items, hasMore } = await fetchPaginatedTraktNonAnimeItems(
-        (traktPage) =>
-          trakt.getHistoryItems(traktFetchType, {
-            page: traktPage,
-            limit: itemsPerPage,
-            extended,
-          }),
-        page,
-        itemsPerPage,
-        tmdb
-      ));
-    } else {
-      items = await trakt.getHistoryItems(traktFetchType, {
-        page,
-        limit: itemsPerPage,
-        extended,
-      });
-      hasMore = items.length >= itemsPerPage;
-    }
+    const { items, hasMore } = await resolveTraktDiscoverPage({
+      page,
+      itemsPerPage,
+      mediaType,
+      user: req.user,
+      query: req.query,
+      tmdb,
+      skipWatchedFilter: true,
+      fetchRawPage: (traktPage) =>
+        trakt.getHistoryItems(traktFetchType, {
+          page: traktPage,
+          limit: itemsPerPage,
+          extended,
+        }),
+    });
 
     return res.status(200).json({
       page,
-      // Trakt does not return total counts for history pages; estimate
-      totalPages: hasMore ? page + 1 : page,
-      totalResults: (page - 1) * itemsPerPage + items.length,
+      hasMore,
       results: await mapFilteredTraktItems(items, {
         user: req.user,
         query: req.query,
         tmdb,
         skipWatchedFilter: true,
+        skipPostFilters: true,
       }),
     } satisfies WatchlistResponse);
   } catch (e) {
@@ -1477,10 +1611,15 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
     const listSort = parseTraktListSortQuery(req.query.sort);
     const extended = listSort ? 'full' : traktExtendedForBrowseQuery(req.query);
 
-    let items: TraktMediaItem[];
-    let hasMore = false;
-    if (mediaType === 'anime') {
-      const fetchPage = (traktPage: number) =>
+    const { items, hasMore } = await resolveTraktDiscoverPage({
+      page,
+      itemsPerPage,
+      mediaType,
+      user: req.user,
+      query: req.query,
+      tmdb,
+      listSort,
+      fetchRawPage: (traktPage) =>
         listId === 'watchlist'
           ? trakt.getWatchlistItems('me', traktFetchType, {
               page: traktPage,
@@ -1491,59 +1630,18 @@ discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
               page: traktPage,
               limit: itemsPerPage,
               extended,
-              ...listSort,
-            });
-      ({ items, hasMore } = await fetchPaginatedTraktAnimeItems(
-        fetchPage,
-        page,
-        itemsPerPage,
-        tmdb
-      ));
-    } else if (mediaType === 'tv') {
-      const fetchPage = (traktPage: number) =>
-        listId === 'watchlist'
-          ? trakt.getWatchlistItems('me', traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-            })
-          : trakt.getListItems('me', listId, traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-              ...listSort,
-            });
-      ({ items, hasMore } = await fetchPaginatedTraktNonAnimeItems(
-        fetchPage,
-        page,
-        itemsPerPage,
-        tmdb
-      ));
-    } else if (listId === 'watchlist') {
-      items = await trakt.getWatchlistItems('me', traktFetchType, {
-        page,
-        limit: itemsPerPage,
-        extended,
-      });
-      hasMore = items.length >= itemsPerPage;
-    } else {
-      items = await trakt.getListItems('me', listId, traktFetchType, {
-        page,
-        limit: itemsPerPage,
-        extended,
-        ...listSort,
-      });
-      hasMore = items.length >= itemsPerPage;
-    }
+              sortBy: listSort,
+            }),
+    });
 
     return res.status(200).json({
       page,
-      totalPages: hasMore ? page + 1 : page,
-      totalResults: (page - 1) * itemsPerPage + items.length,
+      hasMore,
       results: await mapFilteredTraktItems(items, {
         user: req.user,
         query: req.query,
         tmdb,
+        skipPostFilters: true,
       }),
     } satisfies WatchlistResponse);
   } catch (e) {
@@ -1565,7 +1663,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
       return next({ status: 400, message: 'url query parameter is required' });
     }
 
-    const { username, listRef } = TraktAPI.parseListUrl(url);
+    const { username, listRef } = parseTraktListUrlOrThrow(url);
     let trakt: TraktAPI;
     try {
       trakt = req.user?.id
@@ -1579,110 +1677,73 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
       }
     }
 
-    let items: TraktMediaItem[];
     let metadataName = listRef;
-    let hasMore = false;
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
     const listSort = parseTraktListSortQuery(req.query.sort);
     const extended = listSort ? 'full' : traktExtendedForBrowseQuery(req.query);
 
-    if (listRef === 'watchlist') {
-      if (!username) {
-        return next({
-          status: 400,
-          message: 'Watchlist URL must include a username',
-        });
-      }
-      if (mediaType === 'anime') {
-        ({ items, hasMore } = await fetchPaginatedTraktAnimeItems(
-          (traktPage) =>
-            trakt.getWatchlistItems(username, traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-            }),
-          page,
-          itemsPerPage,
-          tmdb
-        ));
-      } else if (mediaType === 'tv') {
-        ({ items, hasMore } = await fetchPaginatedTraktNonAnimeItems(
-          (traktPage) =>
-            trakt.getWatchlistItems(username, traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-            }),
-          page,
-          itemsPerPage,
-          tmdb
-        ));
-      } else {
-        items = await trakt.getWatchlistItems(username, traktFetchType, {
-          page,
-          limit: itemsPerPage,
-          extended,
-        });
-        hasMore = items.length >= itemsPerPage;
-      }
-      metadataName = `${username}'s Watchlist`;
-    } else {
+    if (listRef === 'watchlist' && !username) {
+      return next({
+        status: 400,
+        message: 'Watchlist URL must include a username',
+      });
+    }
+
+    if (listRef !== 'watchlist') {
       try {
         const metadata = await trakt.getListMetadata(username, listRef);
         metadataName = metadata.name || listRef;
       } catch {
         // Metadata is optional for browsing items
       }
-      if (mediaType === 'anime') {
-        ({ items, hasMore } = await fetchPaginatedTraktAnimeItems(
-          (traktPage) =>
-            trakt.getListItems(username, listRef, traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-              ...listSort,
-            }),
-          page,
-          itemsPerPage,
-          tmdb
-        ));
-      } else if (mediaType === 'tv') {
-        ({ items, hasMore } = await fetchPaginatedTraktNonAnimeItems(
-          (traktPage) =>
-            trakt.getListItems(username, listRef, traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-              ...listSort,
-            }),
-          page,
-          itemsPerPage,
-          tmdb
-        ));
-      } else {
-        items = await trakt.getListItems(username, listRef, traktFetchType, {
-          page,
-          limit: itemsPerPage,
-          extended,
-          ...listSort,
-        });
-        hasMore = items.length >= itemsPerPage;
-      }
+    } else {
+      metadataName = `${username}'s Watchlist`;
     }
+
+    const { items, hasMore } = await resolveTraktDiscoverPage({
+      page,
+      itemsPerPage,
+      mediaType,
+      user: req.user,
+      query: req.query,
+      tmdb,
+      listSort,
+      fetchRawPage: (traktPage) =>
+        listRef === 'watchlist'
+          ? trakt.getWatchlistItems(username!, traktFetchType, {
+              page: traktPage,
+              limit: itemsPerPage,
+              extended,
+            })
+          : trakt.getListItems(username, listRef, traktFetchType, {
+              page: traktPage,
+              limit: itemsPerPage,
+              extended,
+              sortBy: listSort,
+            }),
+    });
 
     return res.status(200).json({
       page,
-      totalPages: hasMore ? page + 1 : page,
-      totalResults: (page - 1) * itemsPerPage + items.length,
+      hasMore,
       results: await mapFilteredTraktItems(items, {
         user: req.user,
         query: req.query,
         tmdb,
+        skipPostFilters: true,
       }),
       title: metadataName,
     });
   } catch (e) {
+    if (
+      e &&
+      typeof e === 'object' &&
+      'status' in e &&
+      (e as { status?: number }).status === 400
+    ) {
+      return next(e);
+    }
     return handleTraktRouteError(
       e,
       next,
@@ -1698,7 +1759,7 @@ discoverRoutes.post('/trakt/lists/resolve', async (req, res, next) => {
       return next({ status: 400, message: 'url is required' });
     }
 
-    const { username, listRef } = TraktAPI.parseListUrl(url);
+    const { username, listRef } = parseTraktListUrlOrThrow(url);
     const trakt = createTraktAppClient();
 
     if (listRef === 'watchlist') {
@@ -1724,6 +1785,14 @@ discoverRoutes.post('/trakt/lists/resolve', async (req, res, next) => {
       listUrl: url,
     });
   } catch (e) {
+    if (
+      e &&
+      typeof e === 'object' &&
+      'status' in e &&
+      (e as { status?: number }).status === 400
+    ) {
+      return next(e);
+    }
     return handleTraktRouteError(e, next, 'Unable to resolve Trakt list URL.');
   }
 });

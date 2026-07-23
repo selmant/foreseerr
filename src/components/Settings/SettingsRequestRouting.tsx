@@ -6,16 +6,16 @@ import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import type {
-  RequestFiltersSettings,
   RequestProfileRouting,
+  RequestRoutingSettings,
 } from '@server/lib/requestFilters/types';
-import { DEFAULT_REQUEST_FILTERS } from '@server/lib/requestFilters/types';
+import { DEFAULT_REQUEST_ROUTING } from '@server/lib/requestFilters/types';
 import axios from 'axios';
 import { Formik } from 'formik';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
-const messages = defineMessages('components.Settings.SettingsRequestFilters', {
+const messages = defineMessages('components.Settings.SettingsRequestRouting', {
   requestRouting: 'Request Routing',
   requestRoutingDescription:
     'Optional Radarr/Sonarr server, quality profile, and root folder overrides for default and anime requests. Leave server empty to use the default instance for each quality tier.',
@@ -37,11 +37,11 @@ type SonarrServerSummary = {
 
 type RadarrServerSummary = SonarrServerSummary;
 
-const SettingsRequestFilters = () => {
+const SettingsRequestRouting = () => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const { data, error, mutate } = useSWR<RequestFiltersSettings>(
-    '/api/v1/settings/request-filters'
+  const { data, error, mutate } = useSWR<RequestRoutingSettings>(
+    '/api/v1/settings/request-routing'
   );
   const { data: sonarrServers } = useSWR<SonarrServerSummary[]>(
     '/api/v1/service/sonarr'
@@ -54,7 +54,7 @@ const SettingsRequestFilters = () => {
     return <LoadingSpinner />;
   }
 
-  const initial = { ...DEFAULT_REQUEST_FILTERS, ...data };
+  const initial = { ...DEFAULT_REQUEST_ROUTING, ...data };
 
   return (
     <>
@@ -79,25 +79,8 @@ const SettingsRequestFilters = () => {
         enableReinitialize
         onSubmit={async (values) => {
           try {
-            await axios.post('/api/v1/settings/request-filters', {
-              ...data,
+            await axios.post('/api/v1/settings/request-routing', {
               profileRouting: values.profileRouting,
-              animeSonarrServerId:
-                values.profileRouting.animeTv.serverId &&
-                (sonarrServers?.find(
-                  (server) =>
-                    server.id === values.profileRouting.animeTv.serverId
-                )?.is4k
-                  ? null
-                  : values.profileRouting.animeTv.serverId),
-              animeSonarrServerId4k:
-                values.profileRouting.animeTv.serverId &&
-                sonarrServers?.find(
-                  (server) =>
-                    server.id === values.profileRouting.animeTv.serverId
-                )?.is4k
-                  ? values.profileRouting.animeTv.serverId
-                  : null,
             });
             addToast(intl.formatMessage(messages.toastSettingsSuccess), {
               appearance: 'success',
@@ -200,4 +183,4 @@ const SettingsRequestFilters = () => {
   );
 };
 
-export default SettingsRequestFilters;
+export default SettingsRequestRouting;

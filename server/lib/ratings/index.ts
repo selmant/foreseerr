@@ -12,6 +12,14 @@ import {
   mapWithConcurrency,
 } from '@server/lib/concurrency';
 import { getSettings } from '@server/lib/settings';
+import type { EnrichRatingsOptions } from './enrichment';
+import { needsMdblistEnrichment } from './enrichment';
+
+export {
+  clearMdblistProviderState,
+  needsMdblistEnrichment,
+  type EnrichRatingsOptions,
+} from './enrichment';
 
 const criticsLabel = (
   score: number
@@ -267,10 +275,17 @@ type RatingResult = {
 
 /** Merge external ratings into the same result objects that carry posters. */
 export const enrichResultsWithRatings = async <T extends RatingResult>(
-  results: T[]
+  results: T[],
+  options?: EnrichRatingsOptions
 ): Promise<T[]> => {
+  if (!options?.force && !needsMdblistEnrichment(options?.query)) {
+    return results;
+  }
+
   const candidates = results.filter(
-    (result) => result.mediaType === 'movie' || result.mediaType === 'tv'
+    (result) =>
+      (result.mediaType === 'movie' || result.mediaType === 'tv') &&
+      (!options?.skipExisting || result.ratings === undefined)
   );
   if (!candidates.length || !getSettings().mdblist?.apiKey?.trim()) {
     return results;

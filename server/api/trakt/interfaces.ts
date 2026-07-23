@@ -28,6 +28,14 @@ export interface TraktListEntry {
   listed_at?: string;
 }
 
+/** Stable browse filter for Trakt discover routes. */
+export type TraktBrowseMediaType = 'movie' | 'tv' | 'anime' | 'all';
+
+/** Trakt API fetch scope (movies and/or shows). */
+export type TraktFetchMediaType = 'movie' | 'tv' | 'all';
+
+export type TraktListSortBy = 'added' | 'released';
+
 export interface TraktMediaItem {
   tmdbId: number;
   mediaType: 'movie' | 'tv';

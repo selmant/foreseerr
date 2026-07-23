@@ -1,11 +1,5 @@
 export { filterDiscoverResults, filterTraktDiscoverItems } from './browse';
 export {
-  RequestEligibilityError,
-  evaluateRequestEligibility,
-  isEligibleForDiscover,
-} from './eligibility';
-export type { EligibilityMediaInput } from './eligibility';
-export {
   hasBrowseQueryFilters,
   needsMdblistBrowseFilters,
   needsNonTraktMdblistBrowseFilters,
@@ -15,27 +9,28 @@ export {
   type BrowseQueryFilters,
 } from './query';
 export {
+  RequestRoutingError,
   applyResolvedRoutingToRequest,
   resolveAnimeSonarrRouting,
+  resolveAtomicRequestRouting,
   resolveRequestProfileRouting,
 } from './routing';
 export type {
   AnimeRoutingResult,
   RequestRouteKind,
+  RequestRoutingOverrides,
   ResolvedRequestRouting,
 } from './routing';
 export {
   DEFAULT_PROFILE_ROUTING,
-  DEFAULT_REQUEST_FILTERS,
+  DEFAULT_REQUEST_ROUTING,
   EMPTY_PROFILE_ROUTE,
-  hasAnyQualityGate,
   hasProfileRouteConfig,
-  needsMdblistRatings,
   normalizeProfileRoute,
   normalizeProfileRouting,
-  type RequestFiltersSettings,
   type RequestProfileRoute,
   type RequestProfileRouting,
+  type RequestRoutingSettings,
 } from './types';
 
 import type { Request } from 'express';

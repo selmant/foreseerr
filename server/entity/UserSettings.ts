@@ -99,6 +99,9 @@ export class UserSettings {
   @Column({ type: 'varchar', nullable: true })
   public traktUsername?: string;
 
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  public traktUserId?: string;
+
   @Column({
     type: 'text',
     nullable: true,

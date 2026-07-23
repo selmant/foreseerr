@@ -1,7 +1,22 @@
 import { MediaType } from '@server/constants/media';
 import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
-import type { RequestFiltersSettings, RequestProfileRoute } from './types';
+import type { RequestProfileRoute, RequestRoutingSettings } from './types';
 import { hasProfileRouteConfig, normalizeProfileRouting } from './types';
+
+export class RequestRoutingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RequestRoutingError';
+  }
+}
+
+export type RequestRoutingOverrides = {
+  serverId?: number | null;
+  profileId?: number | null;
+  rootFolder?: string | null;
+  languageProfileId?: number | null;
+  tags?: number[] | null;
+};
 
 export type RequestRouteKind =
   | 'defaultMovie'
@@ -31,38 +46,10 @@ const routeKindFor = (
   return isAnime ? 'animeTv' : 'defaultTv';
 };
 
-const legacyAnimeTvServerId = (
-  filters: RequestFiltersSettings,
-  is4k: boolean
-): number | null =>
-  is4k ? filters.animeSonarrServerId4k : filters.animeSonarrServerId;
-
-const effectiveAnimeTvRoute = (
-  filters: RequestFiltersSettings,
-  is4k: boolean
-): RequestProfileRoute => {
-  const route = normalizeProfileRouting(filters.profileRouting).animeTv;
-  if (route.serverId != null || hasProfileRouteConfig(route)) {
-    return route;
-  }
-  const legacyServerId = legacyAnimeTvServerId(filters, is4k);
-  if (legacyServerId != null) {
-    return { ...route, serverId: legacyServerId };
-  }
-  return route;
-};
-
 const routeForRequest = (
-  filters: RequestFiltersSettings,
-  kind: RequestRouteKind,
-  is4k: boolean
-): RequestProfileRoute => {
-  const routing = normalizeProfileRouting(filters.profileRouting);
-  if (kind === 'animeTv') {
-    return effectiveAnimeTvRoute(filters, is4k);
-  }
-  return routing[kind];
-};
+  routing: RequestRoutingSettings,
+  kind: RequestRouteKind
+): RequestProfileRoute => normalizeProfileRouting(routing.profileRouting)[kind];
 
 const findDefaultServer = <T extends { isDefault: boolean; is4k: boolean }>(
   servers: T[],
@@ -182,23 +169,351 @@ const resolveSonarrRouting = ({
   };
 };
 
+const isProvided = <T>(value: T | null | undefined): value is T =>
+  value !== null && value !== undefined;
+
+const routeAppliesToServer = (
+  route: RequestProfileRoute,
+  serverId: number
+): boolean => route.serverId == null || route.serverId === serverId;
+
+const collectKnownProfileIds = (
+  server: RadarrSettings | SonarrSettings,
+  routingSettings: RequestRoutingSettings
+): Set<number> => {
+  const ids = new Set<number>([server.activeProfileId]);
+
+  if ('activeAnimeProfileId' in server && server.activeAnimeProfileId != null) {
+    ids.add(server.activeAnimeProfileId);
+  }
+
+  const routing = normalizeProfileRouting(routingSettings.profileRouting);
+  for (const route of Object.values(routing) as RequestProfileRoute[]) {
+    if (route.profileId != null && routeAppliesToServer(route, server.id)) {
+      ids.add(route.profileId);
+    }
+  }
+
+  return ids;
+};
+
+const collectKnownRootFolders = (
+  server: RadarrSettings | SonarrSettings,
+  routingSettings: RequestRoutingSettings
+): Set<string> => {
+  const folders = new Set<string>([server.activeDirectory]);
+
+  if ('activeAnimeDirectory' in server && server.activeAnimeDirectory) {
+    folders.add(server.activeAnimeDirectory);
+  }
+
+  const routing = normalizeProfileRouting(routingSettings.profileRouting);
+  for (const route of Object.values(routing) as RequestProfileRoute[]) {
+    if (route.rootFolder && routeAppliesToServer(route, server.id)) {
+      folders.add(route.rootFolder);
+    }
+  }
+
+  return folders;
+};
+
+const collectKnownLanguageProfileIds = (
+  server: SonarrSettings
+): Set<number> => {
+  const ids = new Set<number>();
+
+  if (server.activeLanguageProfileId != null) {
+    ids.add(server.activeLanguageProfileId);
+  }
+  if (server.activeAnimeLanguageProfileId != null) {
+    ids.add(server.activeAnimeLanguageProfileId);
+  }
+
+  return ids;
+};
+
+const collectKnownTags = (
+  server: SonarrSettings | RadarrSettings,
+  useAnimeDefaults: boolean
+): Set<number> => {
+  if (useAnimeDefaults && 'animeTags' in server && server.animeTags?.length) {
+    return new Set(server.animeTags);
+  }
+
+  return new Set(server.tags ?? []);
+};
+
+const sonarrDefaults = (
+  server: SonarrSettings,
+  useAnimeDefaults: boolean
+): Pick<
+  ResolvedRequestRouting,
+  'profileId' | 'rootFolder' | 'languageProfileId' | 'tags' | 'seriesType'
+> => {
+  if (useAnimeDefaults) {
+    return {
+      profileId: server.activeAnimeProfileId ?? server.activeProfileId,
+      rootFolder: server.activeAnimeDirectory ?? server.activeDirectory,
+      languageProfileId:
+        server.activeAnimeLanguageProfileId ?? server.activeLanguageProfileId,
+      tags: server.animeTags?.length
+        ? [...server.animeTags]
+        : server.tags
+          ? [...server.tags]
+          : [],
+      seriesType: server.animeSeriesType ?? 'anime',
+    };
+  }
+
+  return {
+    profileId: server.activeProfileId,
+    rootFolder: server.activeDirectory,
+    languageProfileId: server.activeLanguageProfileId,
+    tags: server.tags ? [...server.tags] : [],
+    seriesType: server.seriesType,
+  };
+};
+
+const radarrDefaults = (
+  server: RadarrSettings
+): Pick<ResolvedRequestRouting, 'profileId' | 'rootFolder' | 'tags'> => ({
+  profileId: server.activeProfileId,
+  rootFolder: server.activeDirectory,
+  tags: server.tags ? [...server.tags] : [],
+});
+
+const validateResolvedRouting = ({
+  server,
+  mediaType,
+  useAnimeDefaults,
+  routing,
+  profileId,
+  rootFolder,
+  languageProfileId,
+  tags,
+  explicit,
+}: {
+  server: RadarrSettings | SonarrSettings;
+  mediaType: MediaType.MOVIE | MediaType.TV;
+  useAnimeDefaults: boolean;
+  routing: RequestRoutingSettings;
+  profileId: number | undefined;
+  rootFolder: string | undefined;
+  languageProfileId: number | undefined;
+  tags: number[] | undefined;
+  explicit: RequestRoutingOverrides;
+}): void => {
+  if (profileId != null) {
+    const knownProfiles = collectKnownProfileIds(server, routing);
+    if (!knownProfiles.has(profileId)) {
+      throw new RequestRoutingError(
+        'Selected quality profile is not valid for the chosen server.'
+      );
+    }
+  }
+
+  if (rootFolder) {
+    const knownFolders = collectKnownRootFolders(server, routing);
+    if (!knownFolders.has(rootFolder)) {
+      throw new RequestRoutingError(
+        'Selected root folder is not valid for the chosen server.'
+      );
+    }
+  }
+
+  if (mediaType === MediaType.TV && languageProfileId != null) {
+    const knownLanguageProfiles = collectKnownLanguageProfileIds(
+      server as SonarrSettings
+    );
+    if (!knownLanguageProfiles.has(languageProfileId)) {
+      throw new RequestRoutingError(
+        'Selected language profile is not valid for the chosen server.'
+      );
+    }
+  }
+
+  if (tags?.length) {
+    const knownTags = collectKnownTags(server, useAnimeDefaults);
+    if (tags.some((tag) => !knownTags.has(tag))) {
+      throw new RequestRoutingError(
+        'Selected tags are not valid for the chosen server.'
+      );
+    }
+  }
+
+  if (isProvided(explicit.serverId) && explicit.serverId !== server.id) {
+    throw new RequestRoutingError(
+      'Selected server is not available for this request.'
+    );
+  }
+};
+
+export const resolveAtomicRequestRouting = ({
+  mediaType,
+  isAnime,
+  is4k,
+  routing,
+  radarr,
+  sonarr,
+  overrides = {},
+}: {
+  mediaType: MediaType.MOVIE | MediaType.TV;
+  isAnime: boolean;
+  is4k: boolean;
+  routing: RequestRoutingSettings;
+  radarr: RadarrSettings[];
+  sonarr: SonarrSettings[];
+  overrides?: RequestRoutingOverrides;
+}): ResolvedRequestRouting => {
+  const kind = routeKindFor(mediaType, isAnime);
+  const route = routeForRequest(routing, kind);
+  const explicitServerId = overrides.serverId;
+
+  const server =
+    mediaType === MediaType.MOVIE
+      ? ((isProvided(explicitServerId)
+          ? findServerById(radarr, explicitServerId, is4k)
+          : undefined) ??
+        findServerById(radarr, route.serverId, is4k) ??
+        findDefaultServer(radarr, is4k))
+      : ((isProvided(explicitServerId)
+          ? findServerById(sonarr, explicitServerId, is4k)
+          : undefined) ??
+        findServerById(sonarr, route.serverId, is4k) ??
+        findDefaultServer(sonarr, is4k));
+
+  if (!server) {
+    throw new RequestRoutingError('No server configured for this request.');
+  }
+
+  if (isProvided(explicitServerId) && server.id !== explicitServerId) {
+    throw new RequestRoutingError(
+      'Selected server is not available for this request.'
+    );
+  }
+
+  const useAnimeDefaults =
+    mediaType === MediaType.TV && isAnime && kind === 'animeTv';
+  const useRouteConfig =
+    explicitServerId == null &&
+    hasProfileRouteConfig(route) &&
+    routeAppliesToServer(route, server.id);
+
+  if (mediaType === MediaType.MOVIE) {
+    const radarrServer = server as RadarrSettings;
+    const defaults = radarrDefaults(radarrServer);
+
+    let profileId = defaults.profileId;
+    let rootFolder = defaults.rootFolder;
+    let tags = defaults.tags;
+
+    if (useRouteConfig) {
+      profileId = route.profileId ?? profileId;
+      rootFolder = route.rootFolder ?? rootFolder;
+    }
+
+    if (isProvided(overrides.profileId)) {
+      profileId = overrides.profileId;
+    }
+    if (isProvided(overrides.rootFolder) && overrides.rootFolder !== '') {
+      rootFolder = overrides.rootFolder;
+    }
+    if (overrides.tags != null) {
+      tags = [...overrides.tags];
+    }
+
+    validateResolvedRouting({
+      server: radarrServer,
+      mediaType,
+      useAnimeDefaults: false,
+      routing,
+      profileId,
+      rootFolder,
+      languageProfileId: undefined,
+      tags,
+      explicit: overrides,
+    });
+
+    return {
+      kind,
+      serverId: radarrServer.id,
+      profileId,
+      rootFolder,
+      languageProfileId: undefined,
+      tags,
+      radarrServer,
+    };
+  }
+
+  const sonarrServer = server as SonarrSettings;
+  const defaults = sonarrDefaults(sonarrServer, useAnimeDefaults);
+
+  let profileId = defaults.profileId;
+  let rootFolder = defaults.rootFolder;
+  let languageProfileId = defaults.languageProfileId;
+  let tags = defaults.tags;
+  const seriesType = defaults.seriesType;
+
+  if (useRouteConfig) {
+    profileId = route.profileId ?? profileId;
+    rootFolder = route.rootFolder ?? rootFolder;
+    languageProfileId = route.languageProfileId ?? languageProfileId;
+  }
+
+  if (isProvided(overrides.profileId)) {
+    profileId = overrides.profileId;
+  }
+  if (isProvided(overrides.rootFolder) && overrides.rootFolder !== '') {
+    rootFolder = overrides.rootFolder;
+  }
+  if (isProvided(overrides.languageProfileId)) {
+    languageProfileId = overrides.languageProfileId;
+  }
+  if (overrides.tags != null) {
+    tags = [...overrides.tags];
+  }
+
+  validateResolvedRouting({
+    server: sonarrServer,
+    mediaType,
+    useAnimeDefaults,
+    routing,
+    profileId,
+    rootFolder,
+    languageProfileId,
+    tags,
+    explicit: overrides,
+  });
+
+  return {
+    kind,
+    serverId: sonarrServer.id,
+    profileId,
+    rootFolder,
+    languageProfileId,
+    tags,
+    seriesType,
+    sonarrServer,
+  };
+};
+
 export const resolveRequestProfileRouting = ({
   mediaType,
   isAnime,
   is4k,
-  filters,
+  routing,
   radarr,
   sonarr,
 }: {
   mediaType: MediaType.MOVIE | MediaType.TV;
   isAnime: boolean;
   is4k: boolean;
-  filters: RequestFiltersSettings;
+  routing: RequestRoutingSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
 }): ResolvedRequestRouting | null => {
   const kind = routeKindFor(mediaType, isAnime);
-  const route = routeForRequest(filters, kind, is4k);
+  const route = routeForRequest(routing, kind);
 
   if (mediaType === MediaType.MOVIE) {
     return resolveRadarrRouting({ route, kind, radarr, is4k });
@@ -227,12 +542,12 @@ export type AnimeRoutingResult = {
 /** @deprecated Use resolveRequestProfileRouting */
 export const resolveAnimeSonarrRouting = ({
   sonarr,
-  filters,
+  routing,
   is4k,
   isAnime,
 }: {
   sonarr: SonarrSettings[];
-  filters: RequestFiltersSettings;
+  routing: RequestRoutingSettings;
   is4k: boolean;
   isAnime: boolean;
 }): AnimeRoutingResult | null => {
@@ -240,7 +555,7 @@ export const resolveAnimeSonarrRouting = ({
     mediaType: MediaType.TV,
     isAnime,
     is4k,
-    filters,
+    routing,
     radarr: [],
     sonarr,
   });

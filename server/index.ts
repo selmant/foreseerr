@@ -6,6 +6,7 @@ import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
 import { initI18n } from '@server/i18n';
 import { startJobs } from '@server/job/schedule';
+import { assertSupportedDatabaseSchema } from '@server/lib/db/schemaGuard';
 import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
 import EmailAgent from '@server/lib/notifications/agents/email';
@@ -78,6 +79,12 @@ app
         await dbConnection.query('PRAGMA foreign_keys=ON');
       }
     }
+
+    // Refuse to start against a database migrated by a newer, unrecognized
+    // Foreseer version instead of silently running against an unknown
+    // schema. Checked unconditionally (not just in production) since a
+    // downgraded dev/synchronize install could still point at such a DB.
+    await assertSupportedDatabaseSchema(dbConnection);
 
     // Load Settings
     const settings = await getSettings().load();

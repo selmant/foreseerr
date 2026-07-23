@@ -1,7 +1,11 @@
 import type { AxiosInstance, AxiosResponse } from 'axios';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import MdblistAPI, { parseMdblistRatings } from './index';
+import MdblistAPI, {
+  getMdblistMetrics,
+  parseMdblistRatings,
+  resetMdblistMetrics,
+} from './index';
 import type { MdblistMediaPayload } from './types';
 
 /**
@@ -85,6 +89,7 @@ describe('MdblistAPI batch ratings', () => {
   });
 
   it('honors quota headers and blocks later batches until reset', async () => {
+    resetMdblistMetrics();
     const api = new MdblistAPI('test-api-key');
     let batchCalls = 0;
     (
@@ -107,6 +112,7 @@ describe('MdblistAPI batch ratings', () => {
     assert.equal(first.get(9_900_003), null);
     assert.equal(blocked.get(9_900_004), null);
     assert.equal(batchCalls, 1);
+    assert.equal(getMdblistMetrics().rateLimits, 1);
     assert.equal(
       (api as unknown as { circuitOpenTimeoutMs: number }).circuitOpenTimeoutMs,
       120_000

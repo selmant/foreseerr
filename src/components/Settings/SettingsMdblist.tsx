@@ -1,15 +1,19 @@
 import Badge from '@app/components/Common/Badge';
+import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
+import Modal from '@app/components/Common/Modal';
 import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { Transition } from '@headlessui/react';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import type { RatingBadgeSettings } from '@server/constants/ratingBadges';
 import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
+import { Fragment, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate as globalMutate } from 'swr';
 
@@ -35,8 +39,16 @@ const messages = defineMessages('components.Settings.SettingsMdblist', {
   showTraktCommunity: 'Trakt community',
   toastSettingsSuccess: 'MDBList settings saved successfully!',
   toastSettingsFailure: 'Something went wrong while saving MDBList settings.',
+  toastClearSuccess: 'MDBList API key removed.',
+  toastClearFailure: 'Something went wrong while removing the MDBList API key.',
   configured: 'Configured',
   notConfigured: 'Not Configured',
+  clearApiKey: 'Remove API key',
+  clearConfirmTitle: 'Remove MDBList API key?',
+  clearConfirmDescription:
+    'Rating badges that depend on MDBList will stop updating until you add a new key.',
+  apiKeyTip:
+    'The saved key is never shown. Leave blank to keep the current key, or paste a new key to replace it.',
 });
 
 type MdbListSettingsResponse = {
@@ -59,6 +71,44 @@ const SettingsMdblist = () => {
   const { data, error, mutate } = useSWR<MdbListSettingsResponse>(
     '/api/v1/settings/mdblist'
   );
+  const [clearModalOpen, setClearModalOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const clearApiKey = async () => {
+    setClearing(true);
+    try {
+      await axios.post('/api/v1/settings/mdblist', {
+        clearApiKey: true,
+        apiKey: '',
+        showTmdb: data?.showTmdb ?? true,
+        showImdb: data?.showImdb ?? true,
+        showRt: data?.showRt ?? true,
+        showRtUser: data?.showRtUser ?? true,
+        showMetacritic: data?.showMetacritic ?? true,
+        showTraktCommunity: data?.showTraktCommunity ?? true,
+        posterTmdb: data?.posterTmdb ?? true,
+        posterImdb: data?.posterImdb ?? true,
+        posterRt: data?.posterRt ?? true,
+        posterRtUser: data?.posterRtUser ?? false,
+        posterMetacritic: data?.posterMetacritic ?? false,
+        posterTraktCommunity: data?.posterTraktCommunity ?? false,
+      });
+      addToast(intl.formatMessage(messages.toastClearSuccess), {
+        autoDismiss: true,
+        appearance: 'success',
+      });
+    } catch {
+      addToast(intl.formatMessage(messages.toastClearFailure), {
+        autoDismiss: true,
+        appearance: 'error',
+      });
+    } finally {
+      setClearing(false);
+      setClearModalOpen(false);
+      mutate();
+      globalMutate('/api/v1/settings/public');
+    }
+  };
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -104,9 +154,11 @@ const SettingsMdblist = () => {
       </div>
       <Formik
         initialValues={{
-          apiKey: data?.apiKey ?? '',
           ...DEFAULT_RATING_BADGE_SETTINGS,
           ...data,
+          // Never seed the masked placeholder — reveal would only show asterisks.
+          // Empty field: leave blank to keep the current key (server preserves).
+          apiKey: '',
         }}
         enableReinitialize
         onSubmit={async (values) => {
@@ -141,11 +193,16 @@ const SettingsMdblist = () => {
           }
         }}
       >
-        {({ handleSubmit, isSubmitting, values }) => (
+        {({ handleSubmit, isSubmitting, isValid, values }) => (
           <form className="section" onSubmit={handleSubmit}>
             <div className="form-row">
               <label htmlFor="apiKey" className="text-label">
                 {intl.formatMessage(messages.apiKey)}
+                {data?.configured && (
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.apiKeyTip)}
+                  </span>
+                )}
               </label>
               <div className="form-input-area">
                 <div className="form-input-field">
@@ -156,6 +213,18 @@ const SettingsMdblist = () => {
                     autoComplete="off"
                   />
                 </div>
+                {data?.configured && (
+                  <div className="mt-3">
+                    <Button
+                      buttonType="danger"
+                      type="button"
+                      onClick={() => setClearModalOpen(true)}
+                      disabled={clearing}
+                    >
+                      {intl.formatMessage(messages.clearApiKey)}
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -218,10 +287,10 @@ const SettingsMdblist = () => {
             <div className="actions">
               <div className="flex justify-end">
                 <span className="ml-3 inline-flex rounded-md shadow-sm">
-                  <button
+                  <Button
+                    buttonType="primary"
                     type="submit"
-                    className="btn btn-primary"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !isValid}
                   >
                     <ArrowDownOnSquareIcon />
                     <span>
@@ -229,13 +298,33 @@ const SettingsMdblist = () => {
                         ? intl.formatMessage(globalMessages.saving)
                         : intl.formatMessage(globalMessages.save)}
                     </span>
-                  </button>
+                  </Button>
                 </span>
               </div>
             </div>
           </form>
         )}
       </Formik>
+      <Transition
+        as={Fragment}
+        show={clearModalOpen}
+        enter="transition-opacity ease-in-out duration-300"
+        enterFrom="opacity-0"
+        enterTo="opacity-100"
+        leave="transition-opacity ease-in-out duration-300"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+      >
+        <Modal
+          okText={intl.formatMessage(messages.clearApiKey)}
+          okButtonType="danger"
+          onOk={clearApiKey}
+          onCancel={() => setClearModalOpen(false)}
+          title={intl.formatMessage(messages.clearConfirmTitle)}
+        >
+          {intl.formatMessage(messages.clearConfirmDescription)}
+        </Modal>
+      </Transition>
     </>
   );
 };

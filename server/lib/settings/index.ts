@@ -3,10 +3,9 @@ import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
 import { Permission } from '@server/lib/permissions';
 import {
-  DEFAULT_REQUEST_FILTERS,
+  DEFAULT_REQUEST_ROUTING,
   normalizeProfileRouting,
-  type RequestFiltersSettings,
-  type RequestProfileRouting,
+  type RequestRoutingSettings,
 } from '@server/lib/requestFilters/types';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
@@ -16,8 +15,8 @@ import { mergeWith } from 'lodash';
 import path from 'path';
 import webpush from 'web-push';
 
-export { DEFAULT_RATING_BADGE_SETTINGS, DEFAULT_REQUEST_FILTERS };
-export type { RatingBadgeSettings, RequestFiltersSettings };
+export { DEFAULT_RATING_BADGE_SETTINGS, DEFAULT_REQUEST_ROUTING };
+export type { RatingBadgeSettings, RequestRoutingSettings };
 
 // Prevents stale array entries when incoming data has fewer elements
 const mergeSettings = <T>(current: T, incoming: Partial<T>): T =>
@@ -411,7 +410,7 @@ export interface AllSettings {
   trakt: TraktSettings;
   mediaActions: MediaActionsSettings;
   mdblist: MdbListSettings;
-  requestFilters: RequestFiltersSettings;
+  requestRouting: RequestRoutingSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
   public: PublicSettings;
@@ -497,7 +496,7 @@ class Settings {
         apiKey: '',
         ...DEFAULT_RATING_BADGE_SETTINGS,
       },
-      requestFilters: { ...DEFAULT_REQUEST_FILTERS },
+      requestRouting: { ...DEFAULT_REQUEST_ROUTING },
       metadataSettings: {
         tv: MetadataProviderType.TMDB,
         anime: MetadataProviderType.TMDB,
@@ -773,41 +772,23 @@ class Settings {
     );
   }
 
-  get requestFilters(): RequestFiltersSettings {
-    if (!this.data.requestFilters) {
-      this.data.requestFilters = { ...DEFAULT_REQUEST_FILTERS };
+  get requestRouting(): RequestRoutingSettings {
+    if (!this.data.requestRouting) {
+      this.data.requestRouting = { ...DEFAULT_REQUEST_ROUTING };
     } else {
-      const legacy = this.data.requestFilters as RequestFiltersSettings &
-        Record<string, unknown>;
-      this.data.requestFilters = {
-        ...DEFAULT_REQUEST_FILTERS,
-        enabled: Boolean(legacy.enabled),
-        tmdbThreshold: legacy.tmdbThreshold ?? null,
-        tmdbMinVotes: legacy.tmdbMinVotes ?? null,
-        imdbThreshold: legacy.imdbThreshold ?? null,
-        imdbMinVotes: legacy.imdbMinVotes ?? null,
-        rtCriticsThreshold: legacy.rtCriticsThreshold ?? null,
-        rtAudienceThreshold: legacy.rtAudienceThreshold ?? null,
-        metacriticThreshold: legacy.metacriticThreshold ?? null,
-        traktThreshold: legacy.traktThreshold ?? null,
-        includeNoRating: legacy.includeNoRating !== false,
-        minReleaseYear: legacy.minReleaseYear ?? null,
-        excludedGenreIds: Array.isArray(legacy.excludedGenreIds)
-          ? legacy.excludedGenreIds
-          : DEFAULT_REQUEST_FILTERS.excludedGenreIds,
-        animeSonarrServerId: legacy.animeSonarrServerId ?? null,
-        animeSonarrServerId4k: legacy.animeSonarrServerId4k ?? null,
+      this.data.requestRouting = {
+        ...DEFAULT_REQUEST_ROUTING,
         profileRouting: normalizeProfileRouting(
-          legacy.profileRouting as RequestProfileRouting | undefined
+          this.data.requestRouting.profileRouting
         ),
       };
     }
-    return this.data.requestFilters;
+    return this.data.requestRouting;
   }
 
-  set requestFilters(data: RequestFiltersSettings) {
-    this.data.requestFilters = mergeSettings(
-      this.data.requestFilters ?? { ...DEFAULT_REQUEST_FILTERS },
+  set requestRouting(data: RequestRoutingSettings) {
+    this.data.requestRouting = mergeSettings(
+      this.data.requestRouting ?? { ...DEFAULT_REQUEST_ROUTING },
       data
     );
   }

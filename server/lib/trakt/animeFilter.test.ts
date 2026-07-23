@@ -73,10 +73,7 @@ describe('Trakt anime filters', () => {
       await applyTraktMediaTypeFilter([tvAnime, tvSeries], 'tv', tmdb),
       [tvSeries]
     );
-    assert.deepEqual(await applyTraktMediaTypeFilter(pool, 'both', tmdb), [
-      tvSeries,
-      movie,
-    ]);
+    assert.deepEqual(await applyTraktMediaTypeFilter(pool, 'all', tmdb), pool);
     assert.deepEqual(
       await applyTraktMediaTypeFilter(pool, 'movie', tmdb),
       pool

@@ -11,6 +11,7 @@ export {
 } from './syncCache';
 export { TraktMediaActionProvider } from './trakt';
 export * from './types';
+export { classifyWriteOutcome, writeHttpStatus } from './writeOutcome';
 
 let defaultDispatcher: MediaActionDispatcher | null = null;
 

@@ -1,16 +1,16 @@
 import SettingsLayout from '@app/components/Settings/SettingsLayout';
-import SettingsRequestFilters from '@app/components/Settings/SettingsRequestFilters';
+import SettingsRequestRouting from '@app/components/Settings/SettingsRequestRouting';
 import useRouteGuard from '@app/hooks/useRouteGuard';
 import { Permission } from '@app/hooks/useUser';
 import type { NextPage } from 'next';
 
-const RequestFiltersSettingsPage: NextPage = () => {
+const RequestRoutingSettingsPage: NextPage = () => {
   useRouteGuard(Permission.ADMIN);
   return (
     <SettingsLayout>
-      <SettingsRequestFilters />
+      <SettingsRequestRouting />
     </SettingsLayout>
   );
 };
 
-export default RequestFiltersSettingsPage;
+export default RequestRoutingSettingsPage;

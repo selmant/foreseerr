@@ -77,6 +77,20 @@ describe('advanceRecsPoolClassification', () => {
     assert.equal(pool.kept.length, 2);
   });
 
+  it('skips TMDB classification for all media type', async () => {
+    const tmdb = createTmdbStub(new Set([9001]));
+    const pool: RecsPoolCache = {
+      raw: [makeItem(9001), makeItem(9002)],
+      kept: [makeItem(9001), makeItem(9002)],
+      cursor: 2,
+      complete: true,
+    };
+
+    await advanceRecsPoolClassification(pool, 'all', tmdb, 20);
+    assert.equal(tmdb.getCallCount(), 0);
+    assert.equal(pool.kept.length, 2);
+  });
+
   it('stops after filling needed kept items without scanning the whole pool', async () => {
     // Unique ids so anime-keyword NodeCache from other tests cannot collide.
     const base = 10_000;
@@ -93,7 +107,7 @@ describe('advanceRecsPoolClassification', () => {
     };
     const tmdb = createTmdbStub(new Set([base]));
 
-    await advanceRecsPoolClassification(pool, 'both', tmdb, 20);
+    await advanceRecsPoolClassification(pool, 'tv', tmdb, 20);
 
     assert.ok(pool.kept.length >= 20);
     assert.ok(
@@ -143,7 +157,7 @@ describe('advanceRecsPoolClassification', () => {
     };
     const tmdb = createTmdbStub(new Set([base]));
 
-    await advanceRecsPoolClassification(pool, 'both', tmdb, 100);
+    await advanceRecsPoolClassification(pool, 'tv', tmdb, 100);
 
     assert.equal(pool.complete, true);
     assert.equal(pool.cursor, 3);

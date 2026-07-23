@@ -1,0 +1,131 @@
+import {
+  getMediaActionDispatcher,
+  type MediaActionAggregate,
+} from '@server/lib/mediaActions';
+import { getSettings } from '@server/lib/settings';
+import { checkUser } from '@server/middleware/auth';
+import authRoutes from '@server/routes/auth';
+import mediaActionsRoutes, {
+  STATUS_BATCH_MAX_ITEMS,
+} from '@server/routes/mediaActions';
+import { setupTestDb } from '@server/test/db';
+import cookieParser from 'cookie-parser';
+import type { Express } from 'express';
+import express from 'express';
+import session from 'express-session';
+import assert from 'node:assert/strict';
+import { before, beforeEach, describe, it, mock } from 'node:test';
+import request from 'supertest';
+
+let app: Express;
+
+function createApp() {
+  const app = express();
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use(
+    session({
+      secret: 'test-secret',
+      resave: false,
+      saveUninitialized: false,
+    })
+  );
+  app.use(checkUser);
+  app.use('/api/v1/auth', authRoutes);
+  app.use('/api/v1/media-actions', mediaActionsRoutes);
+  app.use(
+    (
+      err: { status?: number; message?: string },
+      _req: express.Request,
+      res: express.Response,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _next: express.NextFunction
+    ) => {
+      res.status(err.status || 500).json({ message: err.message });
+    }
+  );
+  return app;
+}
+
+const getStatusesMock = mock.method(
+  getMediaActionDispatcher(),
+  'getStatuses',
+  async (_userId: number, items: { mediaType: string; tmdbId: number }[]) =>
+    items.map(
+      (item): MediaActionAggregate => ({
+        tmdbId: item.tmdbId,
+        mediaType: item.mediaType as 'movie',
+        watched: false,
+        rating: null,
+        ratingStars: null,
+        providers: [],
+      })
+    )
+);
+
+before(() => {
+  app = createApp();
+});
+
+setupTestDb();
+
+async function loginAsAdmin() {
+  const agent = request.agent(app);
+  const settings = getSettings();
+  settings.main.localLogin = true;
+  settings.main.applicationUrl = 'http://localhost:5055';
+
+  const res = await agent
+    .post('/api/v1/auth/local')
+    .send({ email: 'admin@seerr.dev', password: 'test1234' });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return agent;
+}
+
+describe('media-actions status-batch bounds', () => {
+  beforeEach(() => {
+    getStatusesMock.mock.resetCalls();
+  });
+
+  it('rejects batches larger than the configured cap', async () => {
+    const agent = await loginAsAdmin();
+    const items = Array.from(
+      { length: STATUS_BATCH_MAX_ITEMS + 1 },
+      (_, i) => ({
+        mediaType: 'movie',
+        tmdbId: i + 1,
+      })
+    );
+
+    const res = await agent
+      .post('/api/v1/media-actions/status-batch')
+      .send({ items });
+
+    assert.equal(res.status, 400);
+    assert.match(res.body.message ?? '', /at most 100/i);
+    assert.equal(getStatusesMock.mock.calls.length, 0);
+  });
+
+  it('deduplicates identical media references before provider work', async () => {
+    const agent = await loginAsAdmin();
+    const res = await agent.post('/api/v1/media-actions/status-batch').send({
+      items: [
+        { mediaType: 'movie', tmdbId: 42 },
+        { mediaType: 'movie', tmdbId: 42 },
+        { mediaType: 'tv', tmdbId: 7 },
+      ],
+    });
+
+    assert.equal(res.status, 200);
+    assert.equal(getStatusesMock.mock.calls.length, 1);
+    const passedItems = getStatusesMock.mock.calls[0]?.arguments[1] as {
+      mediaType: string;
+      tmdbId: number;
+    }[];
+    assert.deepEqual(passedItems, [
+      { mediaType: 'movie', tmdbId: 42 },
+      { mediaType: 'tv', tmdbId: 7 },
+    ]);
+    assert.equal(res.body.results.length, 2);
+  });
+});

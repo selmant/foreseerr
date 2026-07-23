@@ -1,7 +1,11 @@
 import type TheMovieDb from '@server/api/themoviedb';
 import type TraktAPI from '@server/api/trakt';
 import { TRAKT_RECOMMENDATIONS_LIMIT_MAX } from '@server/api/trakt';
-import type { TraktMediaItem } from '@server/api/trakt/interfaces';
+import type {
+  TraktBrowseMediaType,
+  TraktFetchMediaType,
+  TraktMediaItem,
+} from '@server/api/trakt/interfaces';
 import cacheManager from '@server/lib/cache';
 import { filterTraktMediaTypeChunk } from '@server/lib/trakt/animeFilter';
 import {
@@ -17,7 +21,7 @@ export const TRAKT_RECOMMENDATIONS_CACHE_TTL_SECONDS = 3600;
 export const TRAKT_RECS_CLASSIFY_CHUNK = 20;
 
 export interface TraktRecommendationQueryOptions {
-  mediaType: 'movie' | 'tv' | 'both' | 'anime';
+  mediaType: TraktBrowseMediaType;
   ignoreCollected: boolean;
   ignoreWatchlisted: boolean;
   ignoreWatched: boolean;
@@ -36,7 +40,7 @@ const inflightAdvance = new Map<string, Promise<void>>();
 
 async function fetchRawTraktRecommendations(
   trakt: TraktAPI,
-  mediaType: 'movie' | 'tv' | 'both',
+  mediaType: TraktFetchMediaType,
   options: Pick<
     TraktRecommendationQueryOptions,
     'ignoreCollected' | 'ignoreWatchlisted' | 'extended'
@@ -49,7 +53,7 @@ async function fetchRawTraktRecommendations(
     extended: options.extended ?? 'min',
   };
 
-  if (mediaType === 'both') {
+  if (mediaType === 'all') {
     const [movies, shows] = await Promise.all([
       trakt.getRecommendations('movie', recommendationOptions),
       trakt.getRecommendations('tv', recommendationOptions),
@@ -83,12 +87,9 @@ function recommendationsCacheKey(
 
 function fetchTypeForMediaType(
   mediaType: TraktRecommendationQueryOptions['mediaType']
-): 'movie' | 'tv' | 'both' {
+): TraktFetchMediaType {
   if (mediaType === 'anime') {
-    return 'tv';
-  }
-  if (mediaType === 'both') {
-    return 'both';
+    return 'all';
   }
   return mediaType;
 }
@@ -134,8 +135,8 @@ function getOrCreatePool(
     return existing;
   }
 
-  // movie: no anime keyword work — keep entire raw pool immediately
-  if (mediaType === 'movie') {
+  // movie/all: no anime keyword work — keep entire raw pool immediately
+  if (mediaType === 'movie' || mediaType === 'all') {
     const pool: RecsPoolCache = {
       raw,
       kept: [...raw],
@@ -167,7 +168,12 @@ export async function advanceRecsPoolClassification(
   needed: number,
   cacheKey?: string
 ): Promise<void> {
-  if (pool.complete || pool.kept.length >= needed || mediaType === 'movie') {
+  if (
+    pool.complete ||
+    pool.kept.length >= needed ||
+    mediaType === 'movie' ||
+    mediaType === 'all'
+  ) {
     return;
   }
 
@@ -236,8 +242,9 @@ export async function getTraktRecommendationPage(
   itemsPerPage = TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE
 ): Promise<{
   pageItems: TraktMediaItem[];
-  totalPages: number;
-  totalResults: number;
+  hasMore: boolean;
+  totalPages?: number;
+  totalResults?: number;
 }> {
   const safePage = Math.max(1, page);
   const pageSize = Math.max(1, itemsPerPage);
@@ -283,14 +290,22 @@ export async function getTraktRecommendationPage(
 
   const offset = (safePage - 1) * pageSize;
   const pageItems = visible.slice(offset, offset + pageSize);
+  const hasMore =
+    visible.length > offset + pageSize ||
+    (!pool.complete && pageItems.length > 0);
 
-  // Complete → exact visible count; otherwise optimistic upper bound from raw.
-  const totalResults = pool.complete ? visible.length : pool.raw.length;
+  if (!pool.complete) {
+    return {
+      pageItems,
+      hasMore,
+    };
+  }
 
   return {
     pageItems,
-    totalPages: Math.max(1, Math.ceil(totalResults / pageSize)),
-    totalResults,
+    hasMore,
+    totalPages: Math.max(1, Math.ceil(visible.length / pageSize)),
+    totalResults: visible.length,
   };
 }
 

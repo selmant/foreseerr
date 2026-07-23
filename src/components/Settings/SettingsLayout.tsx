@@ -15,7 +15,7 @@ const messages = defineMessages('components.Settings', {
   menuServices: 'Services',
   menuTrakt: 'Trakt',
   menuMdblist: 'MDBList',
-  menuRequestFilters: 'Request Routing',
+  menuRequestRouting: 'Request Routing',
   menuNetwork: 'Network',
   menuNotifications: 'Notifications',
   menuLogs: 'Logs',
@@ -69,9 +69,9 @@ const SettingsLayout = ({ children }: SettingsLayoutProps) => {
       regex: /^\/settings\/mdblist/,
     },
     {
-      text: intl.formatMessage(messages.menuRequestFilters),
-      route: '/settings/request-filters',
-      regex: /^\/settings\/request-filters/,
+      text: intl.formatMessage(messages.menuRequestRouting),
+      route: '/settings/request-routing',
+      regex: /^\/settings\/request-routing/,
     },
     {
       text: intl.formatMessage(messages.menuNetwork),

@@ -627,6 +627,14 @@ components:
           type: boolean
           description: Whether Trakt is enabled as a media-actions provider (watched/rate fan-out)
           example: true
+        linkedAccountCount:
+          type: integer
+          description: Number of Foreseer users with linked Trakt accounts
+          example: 0
+        confirmDisconnectLinkedAccounts:
+          type: boolean
+          description: Required on POST when changing credentials while users are linked
+          example: false
     MediaActionProviderResult:
       type: object
       properties:
@@ -663,6 +671,10 @@ components:
         ratingStars:
           type: number
           nullable: true
+        outcome:
+          type: string
+          enum: [success, partial, failure]
+          description: Present on write responses. Reads omit this field.
         providers:
           type: array
           items:
@@ -753,73 +765,14 @@ components:
         posterTraktCommunity:
           type: boolean
           example: false
-    RequestFiltersSettings:
-      type: object
-      description: Discover browse quality filters (empty thresholds are off). Does not block manual requests.
-      properties:
-        enabled:
+        clearApiKey:
           type: boolean
+          description: When true on POST, removes the stored API key instead of preserving the masked placeholder.
           example: false
-        tmdbThreshold:
-          type: number
-          nullable: true
-          example: null
-        tmdbMinVotes:
-          type: number
-          nullable: true
-          example: null
-        imdbThreshold:
-          type: number
-          nullable: true
-          example: null
-        imdbMinVotes:
-          type: number
-          nullable: true
-          example: null
-        rtCriticsThreshold:
-          type: number
-          nullable: true
-          description: Minimum Rotten Tomatoes critics score (0–100) via MDBList
-          example: null
-        rtAudienceThreshold:
-          type: number
-          nullable: true
-          description: Minimum Rotten Tomatoes audience score (0–100) via MDBList
-          example: null
-        metacriticThreshold:
-          type: number
-          nullable: true
-          description: Minimum Metacritic score (0–100) via MDBList
-          example: null
-        traktThreshold:
-          type: number
-          nullable: true
-          description: Minimum Trakt community rating (0–10) via MDBList
-          example: null
-        includeNoRating:
-          type: boolean
-          example: true
-        minReleaseYear:
-          type: number
-          nullable: true
-          example: null
-        excludedGenreIds:
-          type: array
-          items:
-            type: number
-          example: []
-        animeSonarrServerId:
-          type: number
-          nullable: true
-          deprecated: true
-          description: Deprecated. Use profileRouting.animeTv.serverId.
-          example: null
-        animeSonarrServerId4k:
-          type: number
-          nullable: true
-          deprecated: true
-          description: Deprecated. Use profileRouting.animeTv.serverId on a 4K Sonarr instance.
-          example: null
+    RequestRoutingSettings:
+      type: object
+      description: Optional Radarr/Sonarr server, quality profile, and root folder routing overrides for default and anime requests.
+      properties:
         profileRouting:
           $ref: '#/components/schemas/RequestProfileRouting'
     RequestProfileRoute:
@@ -3335,10 +3288,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MdbListSettings'
-  /settings/request-filters:
+  /settings/request-routing:
     get:
-      summary: Get Discover filter and anime routing settings
-      description: Retrieves Discover browse quality filters and optional dedicated anime Sonarr server routing. Empty thresholds are off; filters do not block manual requests.
+      summary: Get request routing settings
+      description: Retrieves optional Radarr/Sonarr server, quality profile, and root folder routing overrides for default and anime requests.
       tags:
         - settings
       responses:
@@ -3347,10 +3300,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RequestFiltersSettings'
+                $ref: '#/components/schemas/RequestRoutingSettings'
     post:
-      summary: Update Discover filter and anime routing settings
-      description: Updates Discover browse quality filters and anime Sonarr routing. Empty thresholds are off; filters do not block manual requests.
+      summary: Update request routing settings
+      description: Updates optional Radarr/Sonarr server, quality profile, and root folder routing overrides for default and anime requests.
       tags:
         - settings
       requestBody:
@@ -3358,14 +3311,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RequestFiltersSettings'
+              $ref: '#/components/schemas/RequestRoutingSettings'
       responses:
         '200':
           description: Values were successfully updated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RequestFiltersSettings'
+                $ref: '#/components/schemas/RequestRoutingSettings'
   /settings/radarr:
     get:
       summary: Get Radarr settings
@@ -7294,8 +7247,8 @@ paths:
           name: type
           schema:
             type: string
-            enum: [movie, tv, both, anime]
-            default: both
+            enum: [movie, tv, all, anime]
+            default: all
         - in: query
           name: ignoreCollected
           schema:
@@ -7352,8 +7305,8 @@ paths:
           name: type
           schema:
             type: string
-            enum: [movie, tv, both, anime]
-            default: both
+            enum: [movie, tv, all, anime]
+            default: all
         - $ref: '#/components/parameters/DiscoverGenre'
         - $ref: '#/components/parameters/DiscoverLanguage'
         - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateGte'
@@ -7381,7 +7334,22 @@ paths:
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
-          description: Trakt watchlist returned
+          description: Trakt watchlist returned. Exact totals are omitted; use hasMore for continuation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [page, hasMore, results]
+                properties:
+                  page:
+                    type: number
+                  hasMore:
+                    type: boolean
+                    description: Whether another page may exist after mixed-media merge/filters.
+                  results:
+                    type: array
+                    items:
+                      type: object
         '404':
           description: Trakt account not linked
   /discover/trakt/history:
@@ -7400,8 +7368,8 @@ paths:
           name: type
           schema:
             type: string
-            enum: [movie, tv, both, anime]
-            default: both
+            enum: [movie, tv, all, anime]
+            default: all
         - $ref: '#/components/parameters/DiscoverGenre'
         - $ref: '#/components/parameters/DiscoverLanguage'
         - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateGte'
@@ -7429,7 +7397,22 @@ paths:
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
-          description: Trakt history returned
+          description: Trakt history returned. Exact totals are omitted; use hasMore for continuation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [page, hasMore, results]
+                properties:
+                  page:
+                    type: number
+                  hasMore:
+                    type: boolean
+                    description: Whether another page may exist after mixed-media merge/filters.
+                  results:
+                    type: array
+                    items:
+                      type: object
         '404':
           description: Trakt account not linked
   /discover/trakt/lists:
@@ -7479,8 +7462,8 @@ paths:
           name: type
           schema:
             type: string
-            enum: [movie, tv, both, anime]
-            default: both
+            enum: [movie, tv, all, anime]
+            default: all
         - $ref: '#/components/parameters/DiscoverGenre'
         - $ref: '#/components/parameters/DiscoverLanguage'
         - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateGte'
@@ -7555,8 +7538,8 @@ paths:
           name: type
           schema:
             type: string
-            enum: [movie, tv, both, anime]
-            default: both
+            enum: [movie, tv, all, anime]
+            default: all
         - in: query
           name: sort
           description: Sort a Trakt list by date added or release date, newest first.
@@ -8482,6 +8465,7 @@ paths:
               properties:
                 items:
                   type: array
+                  maxItems: 100
                   items:
                     type: object
                     required:
@@ -8569,6 +8553,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MediaActionStatus'
+        '207':
+          description: Partial success across providers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
+        '502':
+          description: Every enabled provider rejected the write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
   /media-actions/{mediaType}/{tmdbId}/unwatched:
     post:
       summary: Mark media unwatched
@@ -8599,6 +8595,18 @@ paths:
       responses:
         '200':
           description: Marked unwatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
+        '207':
+          description: Partial success across providers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
+        '502':
+          description: Every enabled provider rejected the write
           content:
             application/json:
               schema:
@@ -8637,6 +8645,18 @@ paths:
       responses:
         '200':
           description: Rated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
+        '207':
+          description: Partial success across providers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionStatus'
+        '502':
+          description: Every enabled provider rejected the write
           content:
             application/json:
               schema:

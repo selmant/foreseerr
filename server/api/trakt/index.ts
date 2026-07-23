@@ -2,9 +2,11 @@ import ExternalAPI from '@server/api/externalapi';
 import type {
   TraktDeviceCodeResponse,
   TraktDevicePollResult,
+  TraktFetchMediaType,
   TraktLikedList,
   TraktListEntry,
   TraktListMetadata,
+  TraktListSortBy,
   TraktMediaItem,
   TraktMediaObject,
   TraktSearchListEntry,
@@ -14,6 +16,11 @@ import type {
   TraktUserSettingsResponse,
 } from '@server/api/trakt/interfaces';
 import cacheManager from '@server/lib/cache';
+import {
+  mergeAndPaginateTraktItems,
+  paginateSortedTraktItems,
+  type TraktPaginatedItems,
+} from '@server/lib/trakt/mixedPagination';
 import logger from '@server/logger';
 import { proxyRequestInterceptor } from '@server/utils/customProxyAgent';
 import axios, { type AxiosInstance } from 'axios';
@@ -227,6 +234,35 @@ class TraktAPI extends ExternalAPI {
           e instanceof Error ? e.message : 'unknown error'
         }`
       );
+    }
+  }
+
+  /**
+   * Verify application credentials against Trakt without user interaction.
+   * A valid client ID can request a device code; an invalid client secret is
+   * rejected when exercising the refresh-token grant with a dummy token.
+   */
+  public async validateApplicationCredentials(): Promise<void> {
+    try {
+      await this.requestDeviceCode();
+    } catch {
+      throw new Error('Invalid Trakt Client ID');
+    }
+
+    const response = await this.rawAxios.post(
+      '/oauth/token',
+      {
+        refresh_token: 'foreseer-credential-validation',
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
+        grant_type: 'refresh_token',
+      },
+      { validateStatus: () => true }
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Invalid Trakt Client Secret');
     }
   }
 
@@ -532,75 +568,90 @@ class TraktAPI extends ExternalAPI {
   public async getListItems(
     listUser: string | null,
     listRef: string,
-    mediaType: 'movie' | 'tv' | 'both' = 'both',
+    mediaType: TraktFetchMediaType = 'all',
     options: {
       limit?: number;
       page?: number;
       extended?: 'min' | 'full';
-      sortBy?: 'added' | 'released';
-      sortHow?: 'asc' | 'desc';
+      sortBy?: TraktListSortBy;
     } = {}
-  ): Promise<TraktMediaItem[]> {
+  ): Promise<TraktPaginatedItems> {
     const ref = String(listRef || '').trim();
     if (!ref) {
       throw new Error('listRef is required');
     }
 
     const itemTypes = this.listItemTypes(mediaType);
-    const params = {
-      limit: Math.max(1, Math.min(options.limit ?? 20, 100)),
-      page: Math.max(1, options.page ?? 1),
-      extended: options.extended ?? 'min',
-    };
+    const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
+    const page = Math.max(1, options.page ?? 1);
+    const extended = options.extended ?? 'min';
     const path = listUser
       ? `/users/${listUser}/lists/${ref}/items/${itemTypes}`
       : `/lists/${ref}/items/${itemTypes}`;
-    const config = { params };
 
-    const payload = this.accessToken
-      ? await this.getAuthenticatedOrPublic<TraktListEntry[]>(path, config)
-      : await this.get<TraktListEntry[]>(path, config, 300);
+    const fetchPage = async (traktPage: number): Promise<TraktListEntry[]> => {
+      const config = {
+        params: {
+          limit,
+          page: traktPage,
+          extended,
+        },
+      };
+      return this.accessToken
+        ? await this.getAuthenticatedOrPublic<TraktListEntry[]>(path, config)
+        : await this.get<TraktListEntry[]>(path, config, 300);
+    };
 
-    return this.normalizeListItems(payload, options.sortBy);
+    if (!options.sortBy) {
+      const payload = await fetchPage(page);
+      const items = this.normalizeListItems(payload);
+      return {
+        items,
+        hasMore: items.length >= limit,
+      };
+    }
+
+    return this.fetchSortedListItems(fetchPage, {
+      page,
+      limit,
+      sortBy: options.sortBy,
+    });
   }
 
   public async getWatchlistItems(
     listUser = 'me',
-    mediaType: 'movie' | 'tv' | 'both' = 'both',
+    mediaType: TraktFetchMediaType = 'all',
     options: { limit?: number; page?: number; extended?: 'min' | 'full' } = {}
-  ): Promise<TraktMediaItem[]> {
+  ): Promise<TraktPaginatedItems> {
     await this.ensureFreshToken();
     const user = (listUser || 'me').trim() || 'me';
-    const perTypeLimit = Math.max(1, Math.min(options.limit ?? 20, 100));
+    const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
     const page = Math.max(1, options.page ?? 1);
-    const mediaTypes: ('movie' | 'tv')[] =
-      mediaType === 'both' ? ['movie', 'tv'] : [mediaType];
     const extended = options.extended ?? 'min';
 
-    const items: TraktMediaItem[] = [];
-    const seen = new Set<string>();
-
-    for (const type of mediaTypes) {
-      const traktType = type === 'movie' ? 'movies' : 'shows';
-      const payload = await this.getAuthenticated<TraktListEntry[]>(
-        `/users/${user}/watchlist/${traktType}`,
-        {
-          params: {
-            limit: perTypeLimit,
-            page,
-            extended,
-          },
-        }
-      );
-      for (const item of this.normalizeListItems(payload)) {
-        const key = `${item.mediaType}:${item.tmdbId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        items.push(item);
-      }
+    if (mediaType !== 'all') {
+      const traktType = mediaType === 'movie' ? 'movies' : 'shows';
+      return this.fetchSingleTypePage(`/users/${user}/watchlist/${traktType}`, {
+        limit,
+        page,
+        extended,
+      });
     }
 
-    return items;
+    return this.fetchMergedMediaPages(
+      (type, streamPage, streamLimit) =>
+        this.getAuthenticated<TraktListEntry[]>(
+          `/users/${user}/watchlist/${type}`,
+          {
+            params: {
+              limit: streamLimit,
+              page: streamPage,
+              extended,
+            },
+          }
+        ),
+      { limit, page }
+    );
   }
 
   /**
@@ -608,40 +659,131 @@ class TraktAPI extends ExternalAPI {
    * the authenticated user's most recent plays first.
    */
   public async getHistoryItems(
-    mediaType: 'movie' | 'tv' | 'both' = 'both',
+    mediaType: TraktFetchMediaType = 'all',
     options: { limit?: number; page?: number; extended?: 'min' | 'full' } = {}
-  ): Promise<TraktMediaItem[]> {
+  ): Promise<TraktPaginatedItems> {
     await this.ensureFreshToken();
-    const perTypeLimit = Math.max(1, Math.min(options.limit ?? 20, 100));
+    const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
     const page = Math.max(1, options.page ?? 1);
-    const mediaTypes: ('movie' | 'tv')[] =
-      mediaType === 'both' ? ['movie', 'tv'] : [mediaType];
     const extended = options.extended ?? 'min';
 
-    const items: TraktMediaItem[] = [];
-    const seen = new Set<string>();
-
-    for (const type of mediaTypes) {
-      const traktType = type === 'movie' ? 'movies' : 'shows';
-      const payload = await this.getAuthenticated<TraktListEntry[]>(
-        `/sync/history/${traktType}`,
-        {
-          params: {
-            limit: perTypeLimit,
-            page,
-            extended,
-          },
-        }
-      );
-      for (const item of this.normalizeListItems(payload)) {
-        const key = `${item.mediaType}:${item.tmdbId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        items.push(item);
-      }
+    if (mediaType !== 'all') {
+      const traktType = mediaType === 'movie' ? 'movies' : 'shows';
+      return this.fetchSingleTypePage(`/sync/history/${traktType}`, {
+        limit,
+        page,
+        extended,
+      });
     }
 
-    return items;
+    return this.fetchMergedMediaPages(
+      (type, streamPage, streamLimit) =>
+        this.getAuthenticated<TraktListEntry[]>(`/sync/history/${type}`, {
+          params: {
+            limit: streamLimit,
+            page: streamPage,
+            extended,
+          },
+        }),
+      { limit, page }
+    );
+  }
+
+  private async fetchSingleTypePage(
+    path: string,
+    options: { limit: number; page: number; extended: 'min' | 'full' }
+  ): Promise<TraktPaginatedItems> {
+    const payload = await this.getAuthenticated<TraktListEntry[]>(path, {
+      params: {
+        limit: options.limit,
+        page: options.page,
+        extended: options.extended,
+      },
+    });
+    const items = this.normalizeListItems(payload);
+    return {
+      items,
+      hasMore: items.length >= options.limit,
+    };
+  }
+
+  /**
+   * Fetch up to `page * limit` from movies and shows, merge by listed_at /
+   * watched_at, dedupe, then return the requested page slice.
+   */
+  private async fetchMergedMediaPages(
+    fetchTypePage: (
+      type: 'movies' | 'shows',
+      page: number,
+      limit: number
+    ) => Promise<TraktListEntry[] | undefined>,
+    options: { limit: number; page: number }
+  ): Promise<TraktPaginatedItems> {
+    const needed = options.page * options.limit;
+    const [movies, shows] = await Promise.all([
+      this.collectTypePrefix(fetchTypePage, 'movies', needed, options.limit),
+      this.collectTypePrefix(fetchTypePage, 'shows', needed, options.limit),
+    ]);
+
+    return mergeAndPaginateTraktItems(movies.items, shows.items, {
+      page: options.page,
+      limit: options.limit,
+      movieHasMore: movies.hasMore,
+      tvHasMore: shows.hasMore,
+    });
+  }
+
+  private async collectTypePrefix(
+    fetchTypePage: (
+      type: 'movies' | 'shows',
+      page: number,
+      limit: number
+    ) => Promise<TraktListEntry[] | undefined>,
+    type: 'movies' | 'shows',
+    needed: number,
+    pageSize: number
+  ): Promise<TraktPaginatedItems> {
+    const items: TraktMediaItem[] = [];
+    const seen = new Set<string>();
+    let page = 1;
+    let hasMore = false;
+
+    while (items.length < needed) {
+      const payload = await fetchTypePage(type, page, pageSize);
+      const batch = this.normalizeListItems(payload);
+      if (!batch.length) {
+        hasMore = false;
+        break;
+      }
+
+      for (const entry of batch) {
+        const key = `${entry.mediaType}:${entry.tmdbId}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        items.push(entry);
+        if (items.length >= needed) {
+          break;
+        }
+      }
+
+      if (batch.length < pageSize) {
+        hasMore = false;
+        break;
+      }
+
+      hasMore = true;
+      if (items.length >= needed) {
+        break;
+      }
+      page++;
+    }
+
+    return {
+      items: items.slice(0, needed),
+      hasMore: hasMore && items.length >= needed,
+    };
   }
 
   private applyTokens(
@@ -826,11 +968,55 @@ class TraktAPI extends ExternalAPI {
     }
   }
 
-  private listItemTypes(mediaType: 'movie' | 'tv' | 'both'): string {
+  private listItemTypes(mediaType: TraktFetchMediaType): string {
     if (mediaType === 'movie') return 'movies';
     if (mediaType === 'tv') return 'shows';
-    if (mediaType === 'both') return 'movies,shows';
-    throw new Error("mediaType must be 'movie', 'tv', or 'both'");
+    if (mediaType === 'all') return 'movies,shows';
+    throw new Error("mediaType must be 'movie', 'tv', or 'all'");
+  }
+
+  private async fetchSortedListItems(
+    fetchPage: (page: number) => Promise<TraktListEntry[] | undefined>,
+    options: { page: number; limit: number; sortBy: TraktListSortBy }
+  ): Promise<TraktPaginatedItems> {
+    const collected: TraktMediaItem[] = [];
+    const seen = new Set<string>();
+    let traktPage = 1;
+    let hasMoreUpstream = false;
+    const maxPages = 10;
+
+    while (traktPage <= maxPages) {
+      const payload = await fetchPage(traktPage);
+      const batch = this.normalizeListItems(payload);
+      if (!batch.length) {
+        hasMoreUpstream = false;
+        break;
+      }
+
+      for (const entry of batch) {
+        const key = `${entry.mediaType}:${entry.tmdbId}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        collected.push(entry);
+      }
+
+      if (batch.length < options.limit) {
+        hasMoreUpstream = false;
+        break;
+      }
+
+      hasMoreUpstream = true;
+      traktPage++;
+    }
+
+    return paginateSortedTraktItems(collected, {
+      page: options.page,
+      limit: options.limit,
+      sortBy: options.sortBy,
+      hasMoreUpstream,
+    });
   }
 
   private normalizeMediaItem(
@@ -871,8 +1057,7 @@ class TraktAPI extends ExternalAPI {
   }
 
   private normalizeListItems(
-    payload: TraktListEntry[] | undefined,
-    sortBy?: 'added' | 'released'
+    payload: TraktListEntry[] | undefined
   ): TraktMediaItem[] {
     const items: TraktMediaItem[] = [];
     const seen = new Set<string>();
@@ -888,26 +1073,16 @@ class TraktAPI extends ExternalAPI {
       if (seen.has(key)) continue;
       seen.add(key);
       const media = entry.movie || entry.show;
+      const sortAt = entry.listed_at || entry.watched_at;
       items.push({
         ...normalized,
-        ...(entry.listed_at ? { traktAddedAt: entry.listed_at } : {}),
+        ...(sortAt ? { traktAddedAt: sortAt } : {}),
         ...(media?.released || media?.first_aired
           ? {
               traktReleaseDate: media.released || media.first_aired,
             }
           : {}),
       });
-    }
-
-    if (sortBy) {
-      const getSortValue = (item: TraktMediaItem): number => {
-        const value =
-          sortBy === 'added' ? item.traktAddedAt : item.traktReleaseDate;
-        const timestamp = value ? Date.parse(value) : Number.NaN;
-        return Number.isFinite(timestamp) ? timestamp : 0;
-      };
-
-      items.sort((a, b) => getSortValue(b) - getSortValue(a));
     }
 
     return items;

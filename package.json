@@ -21,6 +21,8 @@
     "format": "prettier --log-level warn --write --cache .",
     "format:check": "prettier --check --cache .",
     "typecheck": "pnpm typecheck:server && pnpm typecheck:client",
+    "check:versions": "node scripts/check-version-consistency.mjs",
+    "check:migrations": "ts-node -r tsconfig-paths/register --project server/tsconfig.json scripts/check-migrations.ts sqlite && DB_TYPE=postgres ts-node -r tsconfig-paths/register --project server/tsconfig.json scripts/check-migrations.ts postgres",
     "typecheck:server": "tsc --project server/tsconfig.json --noEmit",
     "typecheck:client": "tsc --noEmit",
     "prepare": "node bin/prepare.mjs",
@@ -200,21 +202,6 @@
     "extends": [
       "@commitlint/config-conventional"
     ]
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@swc/core",
-      "bcrypt",
-      "cypress",
-      "sharp",
-      "sqlite3"
-    ],
-    "overrides": {
-      "sqlite3>node-gyp": "8.4.1",
-      "@types/express-session": "1.18.2",
-      "@types/react": "19.2.14",
-      "@types/react-dom": "19.2.3"
-    }
   },
   "scarfSettings": {
     "enabled": false

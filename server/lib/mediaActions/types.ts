@@ -21,10 +21,14 @@ export interface MediaActionProviderResult extends MediaActionStatus {
   error?: string;
 }
 
+export type MediaActionWriteOutcome = 'success' | 'partial' | 'failure';
+
 export interface MediaActionAggregate extends MediaActionStatus {
   tmdbId: number;
   mediaType: MediaActionMediaType;
   providers: MediaActionProviderResult[];
+  /** Present on write responses only. */
+  outcome?: MediaActionWriteOutcome;
 }
 
 export interface MarkWatchedOptions {

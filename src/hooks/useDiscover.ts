@@ -9,8 +9,9 @@ import { Permission, useUser } from './useUser';
 
 export interface BaseSearchResult<T> {
   page: number;
-  totalResults: number;
-  totalPages: number;
+  totalResults?: number;
+  totalPages?: number;
+  hasMore?: boolean;
   results: T[];
 }
 
@@ -73,8 +74,17 @@ const useDiscover = <
         return null;
       }
 
-      if (previousPageData && pageIndex + 1 > previousPageData.totalPages) {
-        return null;
+      if (previousPageData) {
+        if (typeof previousPageData.hasMore === 'boolean') {
+          if (!previousPageData.hasMore) {
+            return null;
+          }
+        } else if (
+          previousPageData.totalPages != null &&
+          pageIndex + 1 > previousPageData.totalPages
+        ) {
+          return null;
+        }
       }
 
       const params: Record<string, unknown> = {
@@ -156,7 +166,12 @@ const useDiscover = <
   const isReachingEnd =
     isEmpty ||
     (!!lastPageData && lastPageData.results.length === 0) ||
-    (!!lastPageData && !!data && data.length >= lastPageData.totalPages);
+    (!!lastPageData &&
+      (typeof lastPageData.hasMore === 'boolean'
+        ? !lastPageData.hasMore
+        : !!data &&
+          lastPageData.totalPages != null &&
+          data.length >= lastPageData.totalPages));
 
   useEffect(() => {
     if (error) {

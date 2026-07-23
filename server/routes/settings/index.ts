@@ -2,12 +2,12 @@ import JellyfinAPI from '@server/api/jellyfin';
 import PlexAPI from '@server/api/plexapi';
 import PlexTvAPI from '@server/api/plextv';
 import TautulliAPI from '@server/api/tautulli';
+import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
-import { UserSettings } from '@server/entity/UserSettings';
 import type { PlexConnection } from '@server/interfaces/api/plexInterfaces';
 import type {
   LogMessage,
@@ -18,7 +18,9 @@ import { scheduledJobs } from '@server/job/schedule';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
+import { clearSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
+import { clearMdblistProviderState } from '@server/lib/ratings';
 import {
   normalizeProfileRoute,
   normalizeProfileRouting,
@@ -28,6 +30,10 @@ import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import { plexFullScanner } from '@server/lib/scanners/plex';
 import type { JobId, Library, MainSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
+import {
+  countLinkedTraktAccounts,
+  disconnectAllTraktLinks,
+} from '@server/lib/trakt';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import discoverSettingRoutes from '@server/routes/settings/discover';
@@ -475,8 +481,9 @@ settingsRoutes.post('/tautulli', async (req, res, next) => {
   return res.status(200).json(settings.tautulli);
 });
 
-settingsRoutes.get('/trakt', (_req, res) => {
+settingsRoutes.get('/trakt', async (_req, res) => {
   const settings = getSettings();
+  const linkedAccountCount = await countLinkedTraktAccounts();
 
   res.status(200).json({
     clientId: settings.trakt.clientId,
@@ -484,6 +491,7 @@ settingsRoutes.get('/trakt', (_req, res) => {
     clientSecret: settings.trakt.clientSecret ? '********' : '',
     configured: Boolean(settings.trakt.clientId && settings.trakt.clientSecret),
     actionsEnabled: settings.mediaActions?.providers?.trakt !== false,
+    linkedAccountCount,
   });
 });
 
@@ -501,20 +509,24 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
       clientSecret = settings.trakt.clientSecret;
     }
 
-    if (
-      previousClientId !== clientId ||
-      previousClientSecret !== clientSecret
-    ) {
-      await getRepository(UserSettings)
-        .createQueryBuilder()
-        .update(UserSettings)
-        .set({
-          traktAccessToken: () => 'NULL',
-          traktRefreshToken: () => 'NULL',
-          traktTokenExpiresAt: () => 'NULL',
-          traktUsername: () => 'NULL',
-        })
-        .execute();
+    const credentialsChanging =
+      previousClientId !== clientId || previousClientSecret !== clientSecret;
+
+    if (credentialsChanging) {
+      const linkedAccountCount = await countLinkedTraktAccounts();
+      if (
+        linkedAccountCount > 0 &&
+        req.body.confirmDisconnectLinkedAccounts !== true
+      ) {
+        return res.status(400).json({
+          message:
+            'Changing Trakt credentials will disconnect all linked user accounts. Set confirmDisconnectLinkedAccounts to true to proceed.',
+          linkedAccountCount,
+        });
+      }
+
+      const validationClient = new TraktAPI({ clientId, clientSecret });
+      await validationClient.validateApplicationCredentials();
     }
 
     settings.trakt = {
@@ -528,6 +540,15 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
     };
     await settings.save();
 
+    if (credentialsChanging) {
+      const disconnectedAccountCount = await disconnectAllTraktLinks();
+      clearSyncCache();
+      logger.info('Disconnected Trakt accounts after credential change', {
+        label: 'Settings',
+        disconnectedAccountCount,
+      });
+    }
+
     return res.status(200).json({
       clientId: settings.trakt.clientId,
       clientSecret: settings.trakt.clientSecret ? '********' : '',
@@ -535,6 +556,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
         settings.trakt.clientId && settings.trakt.clientSecret
       ),
       actionsEnabled: settings.mediaActions.providers.trakt !== false,
+      linkedAccountCount: await countLinkedTraktAccounts(),
     });
   } catch (e) {
     logger.error('Something went wrong saving Trakt settings', {
@@ -601,16 +623,16 @@ const parseProfileRoute = (value: unknown) =>
     ),
   });
 
-const requestFiltersResponse = () => {
+const requestRoutingResponse = () => {
   const settings = getSettings();
-  return { ...settings.requestFilters };
+  return { ...settings.requestRouting };
 };
 
-settingsRoutes.get('/request-filters', (_req, res) => {
-  res.status(200).json(requestFiltersResponse());
+settingsRoutes.get('/request-routing', (_req, res) => {
+  res.status(200).json(requestRoutingResponse());
 });
 
-settingsRoutes.post('/request-filters', async (req, res, next) => {
+settingsRoutes.post('/request-routing', async (req, res, next) => {
   const settings = getSettings();
 
   try {
@@ -621,26 +643,21 @@ settingsRoutes.post('/request-filters', async (req, res, next) => {
       animeTv: parseProfileRoute(req.body.profileRouting?.animeTv),
     });
 
-    settings.requestFilters = {
-      ...settings.requestFilters,
+    settings.requestRouting = {
+      ...settings.requestRouting,
       profileRouting,
-      animeSonarrServerId:
-        nullableNumber(req.body.animeSonarrServerId) ??
-        profileRouting.animeTv.serverId,
-      animeSonarrServerId4k:
-        nullableNumber(req.body.animeSonarrServerId4k) ?? null,
     };
     await settings.save();
 
-    return res.status(200).json(requestFiltersResponse());
+    return res.status(200).json(requestRoutingResponse());
   } catch (e) {
-    logger.error('Something went wrong saving discover filter settings', {
+    logger.error('Something went wrong saving request routing settings', {
       label: 'API',
       errorMessage: e.message,
     });
     return next({
       status: 500,
-      message: 'Unable to save discover filter settings.',
+      message: 'Unable to save request routing settings.',
     });
   }
 });
@@ -649,10 +666,14 @@ settingsRoutes.post('/mdblist', async (req, res, next) => {
   const settings = getSettings();
 
   try {
+    const clearingKey = req.body.clearApiKey === true;
+    const previousApiKey = settings.mdblist.apiKey;
     let apiKey = String(req.body.apiKey ?? '').trim();
 
-    // Preserve existing key when the masked placeholder is submitted
-    if (!apiKey || apiKey === '********') {
+    if (clearingKey) {
+      apiKey = '';
+    } else if (!apiKey || apiKey === '********') {
+      // Preserve existing key when the masked placeholder is submitted
       apiKey = settings.mdblist.apiKey;
     }
 
@@ -688,6 +709,14 @@ settingsRoutes.post('/mdblist', async (req, res, next) => {
       ),
     };
     await settings.save();
+
+    if (clearingKey || apiKey !== previousApiKey) {
+      clearMdblistProviderState();
+      logger.info('Reset MDBList provider state after credential change', {
+        label: 'Settings',
+        cleared: clearingKey,
+      });
+    }
 
     return res.status(200).json(mdblistSettingsResponse());
   } catch (e) {

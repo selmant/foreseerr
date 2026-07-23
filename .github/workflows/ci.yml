@@ -88,7 +88,7 @@ jobs:
           exit $check_failed
   test:
     name: Lint & Test Build
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     container: node:22.22.2-alpine3.23@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
     steps:
@@ -118,18 +118,24 @@ jobs:
           CI: true
         run: pnpm install
 
+      - name: Version consistency
+        run: pnpm check:versions
+
       - name: Lint
         run: pnpm lint
 
       - name: Formatting
         run: pnpm format:check
 
+      - name: Typecheck
+        run: pnpm typecheck
+
       - name: Build
         run: pnpm build
 
   unit-test:
     name: Unit Tests
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     container: node:22.22.2-alpine3.23@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
     permissions:
@@ -172,8 +178,97 @@ jobs:
         with:
           report_paths: 'report.xml'
 
+  migration-test:
+    name: Migration Tests
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    container: node:22.22.2-alpine3.23@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: foreseer
+          POSTGRES_PASSWORD: foreseer
+          POSTGRES_DB: foreseer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U foreseer"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: foreseer
+      DB_PASS: foreseer
+      DB_NAME: foreseer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Pnpm Setup
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+
+      - name: Get pnpm store directory
+        shell: sh
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        env:
+          CI: true
+        run: pnpm install
+
+      - name: Run migration checks
+        run: pnpm check:migrations
+
+      - name: Run upgrade-matrix tests (SQLite + PostgreSQL)
+        env:
+          CI: true
+        run: pnpm test server/migration/upgradeMatrix.sqlite.test.ts server/migration/upgradeMatrix.postgres.test.ts
+
+  helm-lint:
+    name: Helm Lint
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Version consistency
+        run: node scripts/check-version-consistency.mjs
+
+      - name: Set up Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
+
+      - name: Lint chart
+        run: helm lint charts/foreseer-chart
+
+      - name: Verify default image tag
+        run: |
+          expected_tag="ghcr.io/selmant/seerr:v$(node -p "require('./package.json').version")"
+          rendered_tag=$(helm template test charts/foreseer-chart | awk -F'"' '/image:/{print $2; exit}')
+          if [ "$rendered_tag" != "$expected_tag" ]; then
+            echo "Expected default image $expected_tag, got $rendered_tag"
+            exit 1
+          fi
+
   build:
     name: Build (per-arch, native runners)
+    needs: [test, unit-test, migration-test, helm-lint]
     if: github.ref == 'refs/heads/develop'
     strategy:
       matrix:

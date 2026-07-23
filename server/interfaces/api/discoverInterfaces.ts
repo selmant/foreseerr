@@ -15,8 +15,11 @@ export interface WatchlistItem {
 
 export interface WatchlistResponse {
   page: number;
-  totalPages: number;
-  totalResults: number;
+  /** Exact totals when known (e.g. Plex). Omit for filtered/mixed Trakt. */
+  totalPages?: number;
+  totalResults?: number;
+  /** Continuation signal when exact totals are unknown (Phase 0 contract). */
+  hasMore?: boolean;
   results: WatchlistItem[];
 }
 import type { RatingResponse } from '@server/api/ratings';

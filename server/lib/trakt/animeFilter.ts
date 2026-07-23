@@ -1,10 +1,15 @@
 import type TheMovieDb from '@server/api/themoviedb';
-import type { TraktMediaItem } from '@server/api/trakt/interfaces';
+import type {
+  TraktBrowseMediaType,
+  TraktListSortBy,
+  TraktMediaItem,
+} from '@server/api/trakt/interfaces';
 import cacheManager from '@server/lib/cache';
 import {
   EXTERNAL_ENRICHMENT_CONCURRENCY,
   mapWithConcurrency,
 } from '@server/lib/concurrency';
+import { paginateSortedTraktItems } from '@server/lib/trakt/mixedPagination';
 
 const MAX_TRAKT_PAGES = 10;
 const ANIME_CACHE_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
@@ -74,14 +79,15 @@ export async function fetchPaginatedTraktFilteredItems(
   fetchPage: (page: number) => Promise<TraktMediaItem[]>,
   page: number,
   itemsPerPage: number,
-  filterItems: (items: TraktMediaItem[]) => Promise<TraktMediaItem[]>
+  filterItems: (items: TraktMediaItem[]) => Promise<TraktMediaItem[]>,
+  sortBy?: TraktListSortBy
 ): Promise<{ items: TraktMediaItem[]; hasMore: boolean }> {
   const needed = page * itemsPerPage;
   const filtered: TraktMediaItem[] = [];
   let traktPage = 1;
   let lastBatchFull = false;
 
-  while (filtered.length < needed && traktPage <= MAX_TRAKT_PAGES) {
+  while (traktPage <= MAX_TRAKT_PAGES) {
     const batch = await fetchPage(traktPage);
     if (!batch.length) {
       lastBatchFull = false;
@@ -95,7 +101,20 @@ export async function fetchPaginatedTraktFilteredItems(
       break;
     }
 
+    if (!sortBy && filtered.length >= needed) {
+      break;
+    }
+
     traktPage++;
+  }
+
+  if (sortBy) {
+    return paginateSortedTraktItems(filtered, {
+      page,
+      limit: itemsPerPage,
+      sortBy,
+      hasMoreUpstream: lastBatchFull && traktPage <= MAX_TRAKT_PAGES,
+    });
   }
 
   const start = (page - 1) * itemsPerPage;
@@ -111,13 +130,15 @@ export async function fetchPaginatedTraktAnimeItems(
   fetchPage: (page: number) => Promise<TraktMediaItem[]>,
   page: number,
   itemsPerPage: number,
-  tmdb: TheMovieDb
+  tmdb: TheMovieDb,
+  sortBy?: TraktListSortBy
 ): Promise<{ items: TraktMediaItem[]; hasMore: boolean }> {
   return fetchPaginatedTraktFilteredItems(
     fetchPage,
     page,
     itemsPerPage,
-    (items) => filterTraktAnimeItems(items, tmdb)
+    (items) => filterTraktAnimeItems(items, tmdb),
+    sortBy
   );
 }
 
@@ -125,26 +146,28 @@ export async function fetchPaginatedTraktNonAnimeItems(
   fetchPage: (page: number) => Promise<TraktMediaItem[]>,
   page: number,
   itemsPerPage: number,
-  tmdb: TheMovieDb
+  tmdb: TheMovieDb,
+  sortBy?: TraktListSortBy
 ): Promise<{ items: TraktMediaItem[]; hasMore: boolean }> {
   return fetchPaginatedTraktFilteredItems(
     fetchPage,
     page,
     itemsPerPage,
-    (items) => excludeTraktAnimeItems(items, tmdb)
+    (items) => excludeTraktAnimeItems(items, tmdb),
+    sortBy
   );
 }
 
 export async function applyTraktMediaTypeFilter(
   items: TraktMediaItem[],
-  mediaType: 'movie' | 'tv' | 'both' | 'anime',
+  mediaType: TraktBrowseMediaType,
   tmdb: TheMovieDb
 ): Promise<TraktMediaItem[]> {
   if (mediaType === 'anime') {
     return filterTraktAnimeItems(items, tmdb);
   }
 
-  if (mediaType === 'tv' || mediaType === 'both') {
+  if (mediaType === 'tv') {
     return excludeTraktAnimeItems(items, tmdb);
   }
 
@@ -153,14 +176,14 @@ export async function applyTraktMediaTypeFilter(
 
 /**
  * Classify a chunk for progressive recommendation filtering.
- * movie → pass through; anime → keep anime; tv/both → drop anime.
+ * movie/all → pass through; anime → keep anime; tv → drop anime.
  */
 export async function filterTraktMediaTypeChunk(
   items: TraktMediaItem[],
-  mediaType: 'movie' | 'tv' | 'both' | 'anime',
+  mediaType: TraktBrowseMediaType,
   tmdb: TheMovieDb
 ): Promise<TraktMediaItem[]> {
-  if (!items.length || mediaType === 'movie') {
+  if (!items.length || mediaType === 'movie' || mediaType === 'all') {
     return items;
   }
 

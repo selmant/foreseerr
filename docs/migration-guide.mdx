@@ -53,7 +53,7 @@ For Docker Compose, the service can be changed from Seerr to Foreseer while keep
 ```yaml
 services:
   foreseer:
-    image: ghcr.io/selmant/seerr:v0.1.0-alpha.3
+    image: ghcr.io/selmant/seerr:v0.1.0-alpha.5
     container_name: foreseer
     init: true
     restart: unless-stopped
@@ -78,7 +78,7 @@ This is a different setup. Use a new config directory and, when using PostgreSQL
 ```yaml
 services:
   foreseer-test:
-    image: ghcr.io/selmant/seerr:v0.1.0-alpha.3
+    image: ghcr.io/selmant/seerr:v0.1.0-alpha.5
     container_name: foreseer-test
     init: true
     restart: unless-stopped
@@ -132,9 +132,9 @@ If you feel something is missing, please submit a feature request—your feedbac
 Our Docker images are available with the following tags:
 
 - `latest`: Always points to the most recent stable release.
-- Version tags (e.g., `v3.0.0`): For specific stable versions.
-- Major version aliases (e.g., `v3`): Alias for the latest stable release in the respective major version series.
-- Minor version aliases (e.g., `v3.0`): Alias for the latest stable release in the respective minor version series.
+- Version tags (e.g., `v0.1.0`): For specific stable versions.
+- Major version aliases (e.g., `v0`): Alias for the latest stable release in the respective major version series.
+- Minor version aliases (e.g., `v0.1`): Alias for the latest stable release in the respective minor version series.
 - `develop`: Rolling release/nightly builds for using the latest changes (use with caution).
 :::
 
@@ -166,7 +166,7 @@ Summary of changes :
   ---
   services:
     seerr:
-      image: ghcr.io/seerr-team/seerr:latest
+      image: ghcr.io/selmant/seerr:latest
       init: true
       container_name: seerr
       environment:
@@ -197,7 +197,7 @@ Summary of changes :
     -p 5055:5055 \
     -v /path/to/appdata/config:/app/config \
     --restart unless-stopped \
-    ghcr.io/seerr-team/seerr:latest
+    ghcr.io/selmant/seerr:latest
   ```
   </TabItem>
 </Tabs>
@@ -211,7 +211,7 @@ Summary of changes :
   ---
   services:
     seerr:
-      image: ghcr.io/seerr-team/seerr:latest
+      image: ghcr.io/selmant/seerr:latest
       init: true
       container_name: seerr
       environment:
@@ -245,7 +245,7 @@ Summary of changes :
     -p 5055:5055 `
     -v seerr-data:/app/config `
     --restart unless-stopped `
-    ghcr.io/seerr-team/seerr:latest
+    ghcr.io/selmant/seerr:latest
   ```
   </TabItem>
 
@@ -260,7 +260,7 @@ Summary of changes :
     -p 5055:5055 ^
     -v seerr-data:/app/config ^
     --restart unless-stopped ^
-    ghcr.io/seerr-team/seerr:latest
+    ghcr.io/selmant/seerr:latest
   ```
   </TabItem>
 </Tabs>
@@ -292,7 +292,7 @@ Summary of changes :
   <TabItem value="new" label="New values">
   ```yaml
   image:
-    repository: seerr-team/seerr
+    repository: selmant/seerr
   podSecurityContext:
     fsGroup: 1000
     fsGroupChangePolicy: OnRootMismatch

@@ -209,7 +209,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           mediaType: MediaType.MOVIE,
           isAnime: mediaIsAnime,
           is4k: entity.is4k,
-          filters: settings.requestFilters,
+          routing: settings.requestRouting,
           radarr: settings.radarr,
           sonarr: settings.sonarr,
         });
@@ -555,7 +555,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           mediaType: MediaType.TV,
           isAnime: mediaIsAnime,
           is4k: entity.is4k,
-          filters: settings.requestFilters,
+          routing: settings.requestRouting,
           radarr: settings.radarr,
           sonarr: settings.sonarr,
         });

@@ -1,11 +1,15 @@
 import {
+  classifyWriteOutcome,
   getMediaActionDispatcher,
+  writeHttpStatus,
   type MediaActionAggregate,
   type MediaActionMediaType,
   type MediaItemRef,
 } from '@server/lib/mediaActions';
 import logger from '@server/logger';
 import { Router } from 'express';
+
+export const STATUS_BATCH_MAX_ITEMS = 100;
 
 const mediaActionsRoutes = Router();
 
@@ -24,6 +28,20 @@ function parseTmdbId(value: string): number | null {
   return Math.trunc(id);
 }
 
+function dedupeMediaItems(items: MediaItemRef[]): MediaItemRef[] {
+  const seen = new Set<string>();
+  const deduped: MediaItemRef[] = [];
+  for (const item of items) {
+    const key = `${item.mediaType}:${item.tmdbId}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
 function parseItem(
   mediaTypeRaw: string,
   tmdbIdRaw: string
@@ -39,8 +57,8 @@ function parseItem(
   return { mediaType, tmdbId };
 }
 
-function toResponse(result: MediaActionAggregate) {
-  return {
+function toResponse(result: MediaActionAggregate, includeOutcome = false) {
+  const body: Record<string, unknown> = {
     tmdbId: result.tmdbId,
     mediaType: result.mediaType,
     watched: result.watched,
@@ -55,6 +73,21 @@ function toResponse(result: MediaActionAggregate) {
       error: p.error,
     })),
   };
+  if (includeOutcome) {
+    body.outcome = result.outcome ?? classifyWriteOutcome(result);
+  }
+  return body;
+}
+
+function respondWrite(
+  res: {
+    status: (code: number) => { json: (body: unknown) => unknown };
+  },
+  result: MediaActionAggregate
+) {
+  const outcome = classifyWriteOutcome(result);
+  const status = writeHttpStatus(outcome);
+  return res.status(status).json(toResponse({ ...result, outcome }, true));
 }
 
 function handleActionError(
@@ -106,6 +139,12 @@ mediaActionsRoutes.post('/status-batch', async (req, res, next) => {
     if (!rawItems) {
       return next({ status: 400, message: 'items array is required' });
     }
+    if (rawItems.length > STATUS_BATCH_MAX_ITEMS) {
+      return next({
+        status: 400,
+        message: `items array must contain at most ${STATUS_BATCH_MAX_ITEMS} entries`,
+      });
+    }
 
     const items: MediaItemRef[] = [];
     for (const entry of rawItems) {
@@ -122,10 +161,10 @@ mediaActionsRoutes.post('/status-batch', async (req, res, next) => {
 
     const results = await getMediaActionDispatcher().getStatuses(
       req.user.id,
-      items
+      dedupeMediaItems(items)
     );
     return res.status(200).json({
-      results: results.map(toResponse),
+      results: results.map((r) => toResponse(r)),
     });
   } catch (e) {
     return handleActionError(
@@ -162,7 +201,7 @@ mediaActionsRoutes.post(
         item,
         { watchedAt, ratingStars }
       );
-      return res.status(200).json(toResponse(result));
+      return respondWrite(res, result);
     } catch (e) {
       return handleActionError(e, next, 'Unable to mark media as watched.');
     }
@@ -186,7 +225,7 @@ mediaActionsRoutes.post(
         item,
         { removeRating: Boolean(req.body?.removeRating) }
       );
-      return res.status(200).json(toResponse(result));
+      return respondWrite(res, result);
     } catch (e) {
       return handleActionError(e, next, 'Unable to mark media as unwatched.');
     }
@@ -214,7 +253,7 @@ mediaActionsRoutes.post('/:mediaType/:tmdbId/rate', async (req, res, next) => {
     const result = await getMediaActionDispatcher().rate(req.user.id, item, {
       ratingStars,
     });
-    return res.status(200).json(toResponse(result));
+    return respondWrite(res, result);
   } catch (e) {
     return handleActionError(e, next, 'Unable to rate media.');
   }

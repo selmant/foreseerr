@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
 /**
- * Fast contract checks: OpenAPI must declare request-filters routes or
+ * Fast contract checks: OpenAPI must declare request-routing routes or
  * express-openapi-validator returns {"message":"not found"} in production.
  */
-describe('OpenAPI request filters contract', () => {
+describe('OpenAPI request routing contract', () => {
   const apiSpecPath = join(__dirname, '../../seerr-api.yml');
   const apiDocs = yaml.load(readFileSync(apiSpecPath, 'utf8')) as {
     paths: Record<
@@ -48,15 +48,15 @@ describe('OpenAPI request filters contract', () => {
     'includeNoRating',
   ];
 
-  it('declares /settings/request-filters (get, post)', () => {
-    const pathItem = apiDocs.paths['/settings/request-filters'];
-    assert.ok(pathItem, 'missing OpenAPI path /settings/request-filters');
-    assert.ok(pathItem.get, 'missing GET /settings/request-filters');
-    assert.ok(pathItem.post, 'missing POST /settings/request-filters');
+  it('declares /settings/request-routing (get, post)', () => {
+    const pathItem = apiDocs.paths['/settings/request-routing'];
+    assert.ok(pathItem, 'missing OpenAPI path /settings/request-routing');
+    assert.ok(pathItem.get, 'missing GET /settings/request-routing');
+    assert.ok(pathItem.post, 'missing POST /settings/request-routing');
   });
 
-  it('declares RequestFiltersSettings schema', () => {
-    assert.ok(apiDocs.components.schemas.RequestFiltersSettings);
+  it('declares RequestRoutingSettings schema', () => {
+    assert.ok(apiDocs.components.schemas.RequestRoutingSettings);
     assert.ok(apiDocs.components.schemas.RequestProfileRouting);
     assert.ok(apiDocs.components.schemas.RequestProfileRoute);
   });

@@ -42,6 +42,20 @@ export const DEFAULT_RATING_BADGE_SETTINGS: RatingBadgeSettings = {
   posterTraktCommunity: false,
 };
 
+/** MDBList-backed sources (TMDB user score comes from TMDB metadata). */
+const MDBLIST_BADGE_SOURCE_KEYS: (keyof RatingSourceToggles)[] = [
+  'showImdb',
+  'showRt',
+  'showRtUser',
+  'showMetacritic',
+  'showTraktCommunity',
+];
+
+/** True when any enabled badge would read ratings from MDBList. */
+export const needsVisibleMdblistBadges = (
+  settings: Partial<RatingBadgeSettings> = DEFAULT_RATING_BADGE_SETTINGS
+): boolean => MDBLIST_BADGE_SOURCE_KEYS.some((key) => settings[key] !== false);
+
 /** Resolve which sources render for idle vs focused poster / detail. */
 export function resolveRatingBadgeSettings(
   settings: RatingBadgeSettings,

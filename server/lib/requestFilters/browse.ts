@@ -1,3 +1,4 @@
+import type { RatingResponse } from '@server/api/ratings';
 import TheMovieDb from '@server/api/themoviedb';
 import type { TraktMediaItem } from '@server/api/trakt/interfaces';
 import {
@@ -5,9 +6,10 @@ import {
   mapWithConcurrency,
 } from '@server/lib/concurrency';
 import {
-  enrichResultsWithRatings,
+  fetchBatchCombinedRatings,
   fetchCombinedRatings,
 } from '@server/lib/ratings';
+import { getSettings } from '@server/lib/settings';
 import type {
   CollectionResult,
   MovieResult,
@@ -204,33 +206,16 @@ const matchesBrowseFilters = (
   return true;
 };
 
-const fetchExternalRatings = async (
-  mediaType: 'movie' | 'tv',
-  tmdbId: number,
-  title: string,
-  year?: number,
-  releaseDate?: string | null
-): Promise<ExternalRatings> => {
-  try {
-    const ratings = await fetchCombinedRatings({
-      mediaType,
-      tmdbId,
-      title,
-      year,
-      releaseDate,
-    });
-    return {
-      imdbRating: ratings?.imdb?.criticsScore ?? null,
-      imdbVotes: ratings?.imdb?.criticsScoreCount ?? null,
-      rtCriticsScore: ratings?.rt?.criticsScore ?? null,
-      rtAudienceScore: ratings?.rt?.audienceScore ?? null,
-      metacriticScore: ratings?.metacritic?.score ?? null,
-      traktRating: ratings?.trakt?.rating ?? null,
-    };
-  } catch {
-    return {};
-  }
-};
+const externalRatingsFromResponse = (
+  ratings?: RatingResponse | null
+): ExternalRatings => ({
+  imdbRating: ratings?.imdb?.criticsScore ?? null,
+  imdbVotes: ratings?.imdb?.criticsScoreCount ?? null,
+  rtCriticsScore: ratings?.rt?.criticsScore ?? null,
+  rtAudienceScore: ratings?.rt?.audienceScore ?? null,
+  metacriticScore: ratings?.metacritic?.score ?? null,
+  traktRating: ratings?.trakt?.rating ?? null,
+});
 
 /**
  * Whether MDBList is still required after using Trakt extended=full community rating.
@@ -254,6 +239,9 @@ const needsMdblistFetchForItem = (
 /**
  * Filter Discover title-card results by shared FilterSlideover query params.
  * Person/collection rows pass through unchanged.
+ *
+ * When MDBList rating filters are active, callers must pre-enrich results via
+ * `enrichResultsWithRatings` so this pass can read `item.ratings`.
  */
 export const filterDiscoverResults = async <T extends BrowseResult>(
   results: T[],
@@ -265,24 +253,14 @@ export const filterDiscoverResults = async <T extends BrowseResult>(
   }
 
   const needMdblist = needsMdblistBrowseFilters(filters);
-  const enrichedResults = needMdblist
-    ? await enrichResultsWithRatings(results)
-    : results;
 
-  const decisions = enrichedResults.map((item): T | null => {
+  const decisions = results.map((item): T | null => {
     if (!isMovieOrTv(item)) {
       return item;
     }
 
     const external: ExternalRatings = needMdblist
-      ? {
-          imdbRating: item.ratings?.imdb?.criticsScore ?? null,
-          imdbVotes: item.ratings?.imdb?.criticsScoreCount ?? null,
-          rtCriticsScore: item.ratings?.rt?.criticsScore ?? null,
-          rtAudienceScore: item.ratings?.rt?.audienceScore ?? null,
-          metacriticScore: item.ratings?.metacritic?.score ?? null,
-          traktRating: item.ratings?.trakt?.rating ?? null,
-        }
+      ? externalRatingsFromResponse(item.ratings)
       : {};
 
     if (
@@ -321,6 +299,25 @@ export const filterTraktDiscoverItems = async (
   }
 
   const needTmdb = needsTmdbBrowseFilters(filters);
+  const mdblistConfigured = Boolean(getSettings().mdblist?.apiKey?.trim());
+  const itemsNeedingMdblist = items.filter((item) =>
+    needsMdblistFetchForItem(filters, item.traktCommunityRating)
+  );
+
+  const ratingsByKey = new Map<string, RatingResponse | null>();
+  if (mdblistConfigured && itemsNeedingMdblist.length) {
+    const batch = await fetchBatchCombinedRatings(
+      itemsNeedingMdblist.map((item) => ({
+        mediaType: item.mediaType,
+        tmdbId: item.tmdbId,
+        title: item.title,
+        year: item.year,
+      }))
+    );
+    for (const row of batch) {
+      ratingsByKey.set(`${row.mediaType}:${row.tmdbId}`, row.ratings);
+    }
+  }
 
   const decisions = await mapWithConcurrency(
     items,
@@ -368,18 +365,37 @@ export const filterTraktDiscoverItems = async (
       }
 
       if (needsMdblistFetchForItem(filters, item.traktCommunityRating)) {
-        const fetched = await fetchExternalRatings(
-          item.mediaType,
-          item.tmdbId,
-          title,
-          releaseYearFromDate(releaseDate) ?? item.year ?? undefined,
-          releaseDate
-        );
-        external = {
-          ...fetched,
-          // Prefer payload Trakt community rating when present
-          traktRating: item.traktCommunityRating ?? fetched.traktRating ?? null,
-        };
+        const cached = ratingsByKey.get(`${item.mediaType}:${item.tmdbId}`);
+        if (cached !== undefined) {
+          external = {
+            ...externalRatingsFromResponse(cached),
+            traktRating:
+              item.traktCommunityRating ??
+              cached?.trakt?.rating ??
+              external.traktRating ??
+              null,
+          };
+        } else {
+          try {
+            const fetched = externalRatingsFromResponse(
+              await fetchCombinedRatings({
+                mediaType: item.mediaType,
+                tmdbId: item.tmdbId,
+                title,
+                year:
+                  releaseYearFromDate(releaseDate) ?? item.year ?? undefined,
+                releaseDate,
+              })
+            );
+            external = {
+              ...fetched,
+              traktRating:
+                item.traktCommunityRating ?? fetched.traktRating ?? null,
+            };
+          } catch {
+            // Optional enrichment — keep filtering with available metadata.
+          }
+        }
       }
 
       if (

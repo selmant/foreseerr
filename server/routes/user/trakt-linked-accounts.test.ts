@@ -7,6 +7,10 @@ import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { getSettings } from '@server/lib/settings';
 import { refreshUserTraktTokens } from '@server/lib/trakt';
+import {
+  TRAKT_DEVICE_CODE_MAX_PER_WINDOW,
+  resetTraktDeviceAuthThrottleState,
+} from '@server/lib/trakt/deviceAuthThrottle';
 import { checkUser } from '@server/middleware/auth';
 import authRoutes from '@server/routes/auth';
 import userRoutes from '@server/routes/user';
@@ -119,6 +123,7 @@ async function loginAsAdmin() {
 
 describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
   beforeEach(() => {
+    resetTraktDeviceAuthThrottleState();
     requestDeviceCodeMock.mock.resetCalls();
     pollForTokenMock.mock.resetCalls();
     getUserSettingsMock.mock.resetCalls();
@@ -145,6 +150,10 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     const user = await getRepository(User).findOneOrFail({
       where: { email: 'admin@seerr.dev' },
     });
+
+    await agent.post(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
+    );
 
     const res = await agent.get(
       `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
@@ -173,6 +182,61 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     assert.equal(requestDeviceCodeMock.mock.calls.length, 1);
   });
 
+  it('POST device/code is rate-limited per user', async () => {
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+
+    for (
+      let attempt = 0;
+      attempt < TRAKT_DEVICE_CODE_MAX_PER_WINDOW;
+      attempt++
+    ) {
+      const res = await agent.post(
+        `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
+      );
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+    }
+
+    const limited = await agent.post(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
+    );
+    assert.equal(limited.status, 429);
+  });
+
+  it('POST device/token enforces Trakt polling interval', async () => {
+    pollForTokenMock.mock.mockImplementation(async () => ({
+      status: 'pending' as const,
+    }));
+
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+
+    const codeRes = await agent.post(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
+    );
+    assert.equal(codeRes.status, 200);
+
+    const firstPoll = await agent
+      .post(
+        `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/token`
+      )
+      .send({ deviceCode: 'device-abc' });
+    assert.equal(firstPoll.status, 202);
+
+    const immediateSecondPoll = await agent
+      .post(
+        `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/token`
+      )
+      .send({ deviceCode: 'device-abc' });
+    assert.equal(immediateSecondPoll.status, 429);
+    assert.equal(immediateSecondPoll.body.retryAfterSeconds, 5);
+    assert.equal(pollForTokenMock.mock.calls.length, 1);
+  });
+
   it('POST device/token returns 202 while pending', async () => {
     pollForTokenMock.mock.mockImplementation(async () => ({
       status: 'pending' as const,
@@ -182,6 +246,10 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     const user = await getRepository(User).findOneOrFail({
       where: { email: 'admin@seerr.dev' },
     });
+
+    await agent.post(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
+    );
 
     const res = await agent
       .post(
@@ -202,6 +270,11 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     const user = await getRepository(User).findOneOrFail({
       where: { email: 'admin@seerr.dev' },
     });
+
+    await agent.post(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
+    );
+
     const res = await agent
       .post(
         `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/token`
@@ -253,6 +326,10 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       where: { email: 'admin@seerr.dev' },
     });
 
+    await agent.post(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
+    );
+
     const res = await agent
       .post(
         `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/token`
@@ -281,6 +358,122 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       .getOne();
     assert.equal(settings?.traktAccessToken, 'access-1');
     assert.equal(settings?.traktUsername, 'trakt-user');
+    assert.equal(settings?.traktUserId, 'trakt-user-1');
+  });
+
+  it('rejects linking the same Trakt account to another Foreseer user', async () => {
+    pollForTokenMock.mock.mockImplementation(async () => ({
+      status: 'authorized' as const,
+      tokens: {
+        access_token: 'access-2',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: 'refresh-2',
+        scope: 'public',
+        created_at: Math.floor(Date.now() / 1000),
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      },
+    }));
+
+    const agent = await loginAsAdmin();
+    const admin = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    const friend = await getRepository(User).findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+    });
+
+    const adminLink = await agent
+      .post(
+        `/api/v1/user/${admin.id}/settings/linked-accounts/trakt/device/token`
+      )
+      .send({ deviceCode: 'device-abc' });
+    assert.equal(adminLink.status, 200);
+
+    const friendAgent = request.agent(app);
+    await friendAgent
+      .post('/api/v1/auth/local')
+      .send({ email: 'friend@seerr.dev', password: 'test1234' });
+
+    const friendLink = await friendAgent
+      .post(
+        `/api/v1/user/${friend.id}/settings/linked-accounts/trakt/device/token`
+      )
+      .send({ deviceCode: 'device-abc' });
+
+    assert.equal(friendLink.status, 409);
+    assert.match(friendLink.body.message ?? '', /already linked/i);
+  });
+
+  it('enforces unique traktUserId in the database', async () => {
+    const admin = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+      relations: { settings: true },
+    });
+    const friend = await getRepository(User).findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+    });
+
+    const adminSettings = admin.settings ?? new UserSettings({ user: admin });
+    adminSettings.traktUserId = 'shared-trakt-id';
+    await getRepository(UserSettings).save(adminSettings);
+
+    const friendSettings = new UserSettings({ user: friend });
+    friendSettings.traktUserId = 'shared-trakt-id';
+
+    await assert.rejects(
+      getRepository(UserSettings).save(friendSettings),
+      /UNIQUE|unique/i
+    );
+  });
+
+  it('backfills traktUserId during token refresh when missing', async () => {
+    await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+      relations: { settings: true },
+    });
+    const settings = user.settings ?? new UserSettings({ user });
+    const callerTokens = {
+      accessToken: 'legacy-access',
+      refreshToken: 'legacy-refresh',
+      expiresAt: Math.floor(Date.now() / 1000),
+    };
+    settings.traktAccessToken = callerTokens.accessToken;
+    settings.traktRefreshToken = callerTokens.refreshToken;
+    settings.traktTokenExpiresAt = String(callerTokens.expiresAt);
+    settings.traktUsername = 'trakt-user';
+    settings.traktUserId = undefined;
+    await getRepository(UserSettings).save(settings);
+
+    const refreshMock = mock.method(
+      TraktAPI.prototype,
+      'refreshAccessToken',
+      async () => ({
+        accessToken: 'backfilled-access',
+        refreshToken: 'backfilled-refresh',
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      })
+    );
+    const profileMock = mock.method(
+      TraktAPI.prototype,
+      'getUserSettings',
+      async () => ({
+        username: 'trakt-user',
+        traktUserId: 'trakt-user-1',
+      })
+    );
+
+    try {
+      await refreshUserTraktTokens(user.id, callerTokens);
+      const persisted = await getRepository(UserSettings).findOneOrFail({
+        where: { id: settings.id },
+      });
+      assert.equal(persisted.traktUserId, 'trakt-user-1');
+    } finally {
+      refreshMock.mock.restore();
+      profileMock.mock.restore();
+    }
   });
 
   it('DELETE unlinks Trakt account', async () => {
@@ -289,7 +482,6 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       where: { email: 'admin@seerr.dev' },
     });
 
-    // Ensure linked from previous test or seed link
     let settings = await getRepository(UserSettings).findOne({
       where: { user: { id: user.id } },
       relations: { user: true },
@@ -301,6 +493,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     settings.traktRefreshToken = 'refresh-1';
     settings.traktTokenExpiresAt = String(Math.floor(Date.now() / 1000) + 3600);
     settings.traktUsername = 'trakt-user';
+    settings.traktUserId = 'trakt-user-1';
     await getRepository(UserSettings).save(settings);
 
     const res = await agent.delete(

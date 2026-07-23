@@ -1,14 +1,17 @@
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
+import Modal from '@app/components/Common/Modal';
 import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { Transition } from '@headlessui/react';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
-import { Field, Formik } from 'formik';
+import { Field, Formik, type FormikHelpers } from 'formik';
+import { Fragment, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 import * as Yup from 'yup';
@@ -31,12 +34,24 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
     'Create an API app at <TraktAppLink>trakt.tv/oauth/applications</TraktAppLink>. Set its redirect URI to urn:ietf:wg:oauth:2.0:oob so token refreshes match the application configuration.',
   configured: 'Configured',
   notConfigured: 'Not Configured',
+  disconnectConfirmTitle: 'Disconnect linked Trakt accounts?',
+  disconnectConfirmDescription:
+    'Changing application credentials will disconnect {count, plural, one {# linked user account} other {# linked user accounts}}. Users will need to link Trakt again after you save.',
+  clientSecretTip:
+    'The saved secret is never shown. Leave blank to keep the current secret, or paste a new secret to replace it.',
 });
 
 interface TraktSettingsResponse {
   clientId: string;
   clientSecret: string;
   configured: boolean;
+  actionsEnabled: boolean;
+  linkedAccountCount?: number;
+}
+
+interface TraktFormValues {
+  clientId: string;
+  clientSecret: string;
   actionsEnabled: boolean;
 }
 
@@ -46,6 +61,11 @@ const SettingsTrakt = () => {
   const { data, error, mutate } = useSWR<TraktSettingsResponse>(
     '/api/v1/settings/trakt'
   );
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [pendingSubmit, setPendingSubmit] = useState<{
+    values: TraktFormValues;
+    helpers: FormikHelpers<TraktFormValues>;
+  } | null>(null);
 
   const TraktSettingsSchema = Yup.object().shape({
     clientId: Yup.string()
@@ -53,8 +73,60 @@ const SettingsTrakt = () => {
       .required(intl.formatMessage(messages.validationClientId)),
     clientSecret: Yup.string()
       .trim()
-      .required(intl.formatMessage(messages.validationClientSecret)),
+      .test(
+        'clientSecret-required',
+        intl.formatMessage(messages.validationClientSecret),
+        (value) => {
+          if (data?.configured) {
+            return true;
+          }
+          return Boolean(value);
+        }
+      ),
   });
+
+  const credentialsChanging = (values: TraktFormValues) => {
+    if (!data) {
+      return false;
+    }
+    const secretUnchanged =
+      values.clientSecret.trim() === '' ||
+      values.clientSecret.trim() === '********';
+    return (
+      values.clientId.trim() !== (data.clientId ?? '').trim() ||
+      (!secretUnchanged &&
+        values.clientSecret.trim() !== (data.clientSecret ?? '').trim())
+    );
+  };
+
+  const saveSettings = async (
+    values: TraktFormValues,
+    helpers: FormikHelpers<TraktFormValues>,
+    confirmDisconnectLinkedAccounts = false
+  ) => {
+    try {
+      await axios.post('/api/v1/settings/trakt', {
+        clientId: values.clientId.trim(),
+        clientSecret: values.clientSecret.trim(),
+        actionsEnabled: values.actionsEnabled,
+        ...(confirmDisconnectLinkedAccounts
+          ? { confirmDisconnectLinkedAccounts: true }
+          : {}),
+      });
+      addToast(intl.formatMessage(messages.toastSettingsSuccess), {
+        autoDismiss: true,
+        appearance: 'success',
+      });
+    } catch {
+      addToast(intl.formatMessage(messages.toastSettingsFailure), {
+        autoDismiss: true,
+        appearance: 'error',
+      });
+    } finally {
+      helpers.setSubmitting(false);
+      mutate();
+    }
+  };
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -101,30 +173,22 @@ const SettingsTrakt = () => {
       <Formik
         initialValues={{
           clientId: data?.clientId ?? '',
-          clientSecret: data?.clientSecret ?? '',
+          // Never seed the masked placeholder — reveal would only show asterisks.
+          // Empty field: leave blank to keep the current secret (server preserves).
+          clientSecret: '',
           actionsEnabled: data?.actionsEnabled !== false,
         }}
         enableReinitialize
         validationSchema={TraktSettingsSchema}
-        onSubmit={async (values) => {
-          try {
-            await axios.post('/api/v1/settings/trakt', {
-              clientId: values.clientId.trim(),
-              clientSecret: values.clientSecret.trim(),
-              actionsEnabled: values.actionsEnabled,
-            });
-            addToast(intl.formatMessage(messages.toastSettingsSuccess), {
-              autoDismiss: true,
-              appearance: 'success',
-            });
-          } catch {
-            addToast(intl.formatMessage(messages.toastSettingsFailure), {
-              autoDismiss: true,
-              appearance: 'error',
-            });
-          } finally {
-            mutate();
+        onSubmit={async (values, helpers) => {
+          const linkedCount = data?.linkedAccountCount ?? 0;
+          if (credentialsChanging(values) && linkedCount > 0) {
+            setPendingSubmit({ values, helpers });
+            setConfirmModalOpen(true);
+            return;
           }
+
+          await saveSettings(values, helpers);
         }}
       >
         {({
@@ -161,7 +225,12 @@ const SettingsTrakt = () => {
             <div className="form-row">
               <label htmlFor="clientSecret" className="text-label">
                 {intl.formatMessage(messages.clientSecret)}
-                <span className="label-required">*</span>
+                {!data?.configured && <span className="label-required">*</span>}
+                {data?.configured && (
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.clientSecretTip)}
+                  </span>
+                )}
               </label>
               <div className="form-input-area">
                 <div className="form-input-field">
@@ -218,6 +287,44 @@ const SettingsTrakt = () => {
           </form>
         )}
       </Formik>
+      <Transition
+        as={Fragment}
+        show={confirmModalOpen}
+        enter="transition-opacity ease-in-out duration-300"
+        enterFrom="opacity-0"
+        enterTo="opacity-100"
+        leave="transition-opacity ease-in-out duration-300"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+      >
+        <Modal
+          okText={intl.formatMessage(globalMessages.save)}
+          okButtonType="danger"
+          onOk={async () => {
+            if (!pendingSubmit) {
+              setConfirmModalOpen(false);
+              return;
+            }
+            setConfirmModalOpen(false);
+            await saveSettings(
+              pendingSubmit.values,
+              pendingSubmit.helpers,
+              true
+            );
+            setPendingSubmit(null);
+          }}
+          onCancel={() => {
+            pendingSubmit?.helpers.setSubmitting(false);
+            setPendingSubmit(null);
+            setConfirmModalOpen(false);
+          }}
+          title={intl.formatMessage(messages.disconnectConfirmTitle)}
+        >
+          {intl.formatMessage(messages.disconnectConfirmDescription, {
+            count: data?.linkedAccountCount ?? 0,
+          })}
+        </Modal>
+      </Transition>
     </>
   );
 };

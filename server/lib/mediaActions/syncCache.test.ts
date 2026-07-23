@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import {
   clearSyncCache,
+  getPendingPatchCount,
   getUserSyncSnapshot,
+  invalidateUserSyncCache,
   lookupItemStatus,
   patchUserSyncItem,
   seedUserSyncCache,
@@ -196,5 +198,65 @@ describe('patchUserSyncItem', () => {
       watched: true,
       rating: 10,
     });
+  });
+});
+
+describe('invalidateUserSyncCache', () => {
+  beforeEach(() => {
+    clearSyncCache();
+  });
+
+  it('clears snapshot, pending patches, and blocks stale warm repopulation', async () => {
+    const { warmUserSyncCache } = await import('./syncCache');
+    let releaseFetch: () => void = () => undefined;
+    const fetchGate = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+
+    const client = {
+      getSyncWatched: async (mediaType: 'movie' | 'tv') => {
+        await fetchGate;
+        if (mediaType === 'movie') {
+          return [{ movie: { ids: { tmdb: 111 } } }];
+        }
+        return [];
+      },
+      getSyncRatings: async () => {
+        await fetchGate;
+        return [];
+      },
+    };
+
+    patchUserSyncItem(88, 'movie', 550, { watched: true });
+    assert.equal(getPendingPatchCount(88), 1);
+
+    const warmPromise = warmUserSyncCache(client as never, 88, 60);
+    await new Promise((r) => setTimeout(r, 10));
+
+    invalidateUserSyncCache(88);
+    assert.equal(getUserSyncSnapshot(88), undefined);
+    assert.equal(getPendingPatchCount(88), 0);
+
+    releaseFetch();
+    await warmPromise;
+
+    assert.equal(getUserSyncSnapshot(88), undefined);
+  });
+
+  it('drops cached data when switching linked Trakt accounts', async () => {
+    seedUserSyncCache(5, {
+      watchedMovies: [{ movie: { ids: { tmdb: 111 } } }],
+      watchedShows: [],
+      ratingsMovies: [],
+      ratingsShows: [],
+      fetchedAt: Date.now() / 1000,
+    });
+    patchUserSyncItem(5, 'movie', 222, { watched: true });
+    assert.equal(getPendingPatchCount(5), 1);
+
+    invalidateUserSyncCache(5);
+
+    assert.equal(getUserSyncSnapshot(5), undefined);
+    assert.equal(getPendingPatchCount(5), 0);
   });
 });

@@ -15,14 +15,27 @@ import {
   parseDiscoverFilterDefaults,
   type DiscoverFilterDefaults,
 } from '@server/lib/discover/filterDefaults';
+import { invalidateUserSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import {
+  TraktAccountAlreadyLinkedError,
   TraktNotConfiguredError,
+  assertTraktAccountAvailable,
+  clearUserTraktCredentials,
   createTraktAppClient,
   ensureUserSettings,
   getUserTraktSettings,
 } from '@server/lib/trakt';
+import {
+  TRAKT_DEVICE_SLOW_DOWN_SECONDS,
+  clearTraktDeviceAuthSession,
+  enforceTraktDevicePollInterval,
+  noteTraktDevicePollSlowDown,
+  rememberTraktDeviceAuthSession,
+  traktDeviceCodeCreationLimiter,
+  traktDevicePollLimiter,
+} from '@server/lib/trakt/deviceAuthThrottle';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { quickConnectSecret } from '@server/routes/auth';
@@ -675,10 +688,17 @@ userSettingsRoutes.post<
 userSettingsRoutes.post<{ id: string }>(
   '/linked-accounts/trakt/device/code',
   isOwnProfile(),
+  traktDeviceCodeCreationLimiter,
   async (req, res) => {
     try {
       const trakt = createTraktAppClient();
       const deviceCode = await trakt.requestDeviceCode();
+      rememberTraktDeviceAuthSession(
+        Number(req.params.id),
+        deviceCode.device_code,
+        deviceCode.interval,
+        deviceCode.expires_in
+      );
       return res.status(200).json(deviceCode);
     } catch (e) {
       if (e instanceof TraktNotConfiguredError) {
@@ -698,6 +718,8 @@ userSettingsRoutes.post<{ id: string }>(
 userSettingsRoutes.post<{ id: string }>(
   '/linked-accounts/trakt/device/token',
   isOwnProfile(),
+  traktDevicePollLimiter,
+  enforceTraktDevicePollInterval,
   async (req, res) => {
     try {
       const deviceCode = String(req.body.deviceCode ?? '').trim();
@@ -712,9 +734,10 @@ userSettingsRoutes.post<{ id: string }>(
         return res.status(202).json({ status: 'pending' });
       }
       if (result.status === 'slow_down') {
+        noteTraktDevicePollSlowDown(Number(req.params.id), deviceCode);
         return res.status(202).json({
           status: 'pending',
-          retryAfterSeconds: 10,
+          retryAfterSeconds: TRAKT_DEVICE_SLOW_DOWN_SECONDS,
         });
       }
       if (result.status === 'invalid') {
@@ -739,19 +762,28 @@ userSettingsRoutes.post<{ id: string }>(
         expiresAt: result.tokens.expiresAt,
       });
       const profile = await authenticated.getUserSettings();
+      const foreseerUserId = Number(req.params.id);
 
-      const userSettings = await ensureUserSettings(Number(req.params.id));
+      await assertTraktAccountAvailable(profile.traktUserId, foreseerUserId);
+
+      const userSettings = await ensureUserSettings(foreseerUserId);
       userSettings.traktAccessToken = result.tokens.access_token;
       userSettings.traktRefreshToken = result.tokens.refresh_token;
       userSettings.traktTokenExpiresAt = String(result.tokens.expiresAt);
       userSettings.traktUsername = profile.username;
+      userSettings.traktUserId = profile.traktUserId;
       await getRepository(UserSettings).save(userSettings);
+      invalidateUserSyncCache(foreseerUserId);
+      clearTraktDeviceAuthSession(foreseerUserId, deviceCode);
 
       return res.status(200).json({
         status: 'authorized',
         username: profile.username,
       });
     } catch (e) {
+      if (e instanceof TraktAccountAlreadyLinkedError) {
+        return res.status(409).json({ message: e.message });
+      }
       if (e instanceof TraktNotConfiguredError) {
         return res.status(400).json({ message: e.message });
       }
@@ -771,22 +803,13 @@ userSettingsRoutes.delete<{ id: string }>(
   isOwnProfileOrAdmin(),
   async (req, res, next) => {
     try {
-      const userSettings = await getUserTraktSettings(Number(req.params.id));
+      const foreseerUserId = Number(req.params.id);
+      const userSettings = await getUserTraktSettings(foreseerUserId);
       if (!userSettings) {
         return res.status(204).send();
       }
 
-      await getRepository(UserSettings)
-        .createQueryBuilder()
-        .update(UserSettings)
-        .set({
-          traktAccessToken: () => 'NULL',
-          traktRefreshToken: () => 'NULL',
-          traktTokenExpiresAt: () => 'NULL',
-          traktUsername: () => 'NULL',
-        })
-        .where('id = :id', { id: userSettings.id })
-        .execute();
+      await clearUserTraktCredentials(userSettings.id, foreseerUserId);
 
       return res.status(204).send();
     } catch (e) {

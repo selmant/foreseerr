@@ -30,4 +30,21 @@ describe('OpenAPI media-actions contract', () => {
       }
     });
   }
+
+  it('caps status-batch items with maxItems', () => {
+    const operation = apiDocs.paths['/media-actions/status-batch']?.post as {
+      requestBody?: {
+        content?: {
+          'application/json'?: {
+            schema?: { properties?: { items?: { maxItems?: number } } };
+          };
+        };
+      };
+    };
+    assert.equal(
+      operation.requestBody?.content?.['application/json']?.schema?.properties
+        ?.items?.maxItems,
+      100
+    );
+  });
 });

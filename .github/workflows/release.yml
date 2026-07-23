@@ -18,17 +18,110 @@ env:
   DOCKER_HUB: selmantr/foreseer
 
 jobs:
+  quality-gate:
+    name: Quality gate
+    runs-on: ubuntu-24.04
+    container: node:22.22.2-alpine3.23@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: foreseer
+          POSTGRES_PASSWORD: foreseer
+          POSTGRES_DB: foreseer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U foreseer"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: foreseer
+      DB_PASS: foreseer
+      DB_NAME: foreseer
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Pnpm Setup
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+
+      - name: Get pnpm store directory
+        shell: sh
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        env:
+          CI: true
+        run: pnpm install
+
+      - name: Version consistency
+        run: node scripts/check-version-consistency.mjs "${{ github.ref_name }}"
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Formatting
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        env:
+          CI: true
+        run: pnpm test
+
+      - name: Production build
+        run: pnpm build
+
+      - name: Migration checks
+        run: pnpm check:migrations
+
+      - name: Set up Helm
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
+
+      - name: Helm lint
+        run: helm lint charts/foreseer-chart
+
+      - name: Verify default image tag
+        run: |
+          expected_tag="ghcr.io/selmant/seerr:v$(node -p "require('./package.json').version")"
+          rendered_tag=$(helm template test charts/foreseer-chart | awk -F'"' '/image:/{print $2; exit}')
+          if [ "$rendered_tag" != "$expected_tag" ]; then
+            echo "Expected default image $expected_tag, got $rendered_tag"
+            exit 1
+          fi
+
   changelog:
     name: Generate changelog
+    needs: quality-gate
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
-      - name: Checkout
+      - name: Checkout tagged commit
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ github.ref }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -49,9 +142,10 @@ jobs:
       contents: write
     needs: changelog
     steps:
-      - name: Checkout
+      - name: Checkout tagged commit
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ github.ref }}
           persist-credentials: false
 
       - name: Draft Release
@@ -62,6 +156,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.arch }})
+    needs: quality-gate
     strategy:
       matrix:
         include:
@@ -75,9 +170,10 @@ jobs:
     env:
       VERSION: ${{ github.ref_name }}
     steps:
-      - name: Checkout
+      - name: Checkout tagged commit
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ github.ref }}
           persist-credentials: false
 
       - name: Commit timestamp
@@ -114,9 +210,10 @@ jobs:
     env:
       VERSION: ${{ github.ref_name }}
     steps:
-      - name: Checkout
+      - name: Checkout tagged commit
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ github.ref }}
           persist-credentials: false
 
       - name: Commit timestamp
@@ -202,9 +299,10 @@ jobs:
       VERSION: ${{ github.ref_name }}
       COSIGN_YES: 'true'
     steps:
-      - name: Checkout
+      - name: Checkout tagged commit
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ github.ref }}
           persist-credentials: false
 
       - name: Install Cosign

@@ -2,7 +2,7 @@
 id: verifying-signed-artifacts
 title: Verifying Signed Artifacts
 sidebar_label: Verify Signed Artifacts
-description: Learn how to verify Seerr's signed artifacts and SBOM attestations.
+description: Learn how to verify Foreseer's signed artifacts and SBOM attestations.
 ---
 
 import Tabs from '@theme/Tabs';
@@ -14,7 +14,7 @@ These artifacts are cryptographically signed using [Sigstore Cosign](https://doc
 - Container images
 - Helm charts
 
-This ensures that the images you pull are authentic, tamper-proof, and built by the official Seerr release pipeline.
+This ensures that the images you pull are authentic, tamper-proof, and built by the official Foreseer release pipeline.
 
 Additionally each container image also includes a CycloneDX SBOM (Software Bill of Materials) attestation, generated with [Trivy](https://aquasecurity.github.io/trivy/), providing transparency about all dependencies included in the image.
 
@@ -36,18 +36,18 @@ To verify images:
 
 ### Image Locations
 
-Official Seerr images are available from:
+Official Foreseer images are available from:
 
-- GitHub Container Registry (GHCR): `ghcr.io/seerr-team/seerr:<tag>`
-- Docker Hub: `seerr/seerr:<tag>`
+- GitHub Container Registry (GHCR): `ghcr.io/selmant/seerr:<tag>`
+- Docker Hub: `selmantr/foreseer:<tag>`
 
-You can view all available tags on the [Seerr Releases page](https://github.com/seerr-team/seerr/releases).
+You can view all available tags on the [Foreseer Releases page](https://github.com/selmant/seerr/releases).
 
 ---
 
 ### Verifying a Specific Release Tag
 
-Each tagged release (for example `v2.7.4`) is immutable and cryptographically signed.
+Each tagged release (for example `v0.1.0-alpha.5`) is immutable and cryptographically signed.
 Verification should always be performed using the image digest (SHA256).
 
 #### Retrieve the Image Digest
@@ -56,14 +56,14 @@ Verification should always be performed using the image digest (SHA256).
   <TabItem value="docker" label="Docker">
 
 ```bash
-docker buildx imagetools inspect ghcr.io/seerr-team/seerr:v2.7.4 --format '{{json .Manifest.Digest}}' | tr -d '"'
+docker buildx imagetools inspect ghcr.io/selmant/seerr:v0.1.0-alpha.5 --format '{{json .Manifest.Digest}}' | tr -d '"'
 ```
   </TabItem>
 
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-skopeo inspect docker://ghcr.io/seerr-team/seerr:v2.7.4 --format '{{.Digest}}'
+skopeo inspect docker://ghcr.io/selmant/seerr:v0.1.0-alpha.5 --format '{{.Digest}}'
 ```
   </TabItem>
 </Tabs>
@@ -82,8 +82,8 @@ sha256:abcd1234...
   <TabItem value="ghcr" label="GitHub Container Registry (GHCR)">
 
 ```bash
-cosign verify ghcr.io/seerr-team/seerr@sha256:abcd1234... \
-  --certificate-identity "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v2.7.4" \
+cosign verify ghcr.io/selmant/seerr@sha256:abcd1234... \
+  --certificate-identity "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.5" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -91,15 +91,15 @@ cosign verify ghcr.io/seerr-team/seerr@sha256:abcd1234... \
   <TabItem value="dockerhub" label="Docker Hub">
 
 ```bash
-cosign verify seerr/seerr@sha256:abcd1234... \
-  --certificate-identity "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v2.7.4" \
+cosign verify selmantr/foreseer@sha256:abcd1234... \
+  --certificate-identity "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.5" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
 </Tabs>
 
 :::info Successful Verification Example
-Verification for `ghcr.io/seerr-team/seerr@sha256:abcd1234...`
+Verification for `ghcr.io/selmant/seerr@sha256:abcd1234...`
 
 The following checks were performed:
 
@@ -123,14 +123,14 @@ Always verify the digest that `latest` currently points to.
   <TabItem value="docker" label="Docker">
 
 ```bash
-docker buildx imagetools inspect ghcr.io/seerr-team/seerr:latest --format '{{json .Manifest.Digest}}' | tr -d '"'
+docker buildx imagetools inspect ghcr.io/selmant/seerr:latest --format '{{json .Manifest.Digest}}' | tr -d '"'
 ```
   </TabItem>
 
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-skopeo inspect docker://ghcr.io/seerr-team/seerr:latest --format '{{.Digest}}'
+skopeo inspect docker://ghcr.io/selmant/seerr:latest --format '{{.Digest}}'
 ```
   </TabItem>
 </Tabs>
@@ -147,8 +147,8 @@ sha256:abcd1234...
   <TabItem value="ghcr" label="GHCR">
 
 ```bash
-cosign verify ghcr.io/seerr-team/seerr@sha256:abcd1234... \
-  --certificate-identity-regexp "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v.*" \
+cosign verify ghcr.io/selmant/seerr@sha256:abcd1234... \
+  --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -156,8 +156,8 @@ cosign verify ghcr.io/seerr-team/seerr@sha256:abcd1234... \
   <TabItem value="dockerhub" label="Docker Hub">
 
 ```bash
-cosign verify seerr/seerr@sha256:abcd1234... \
-  --certificate-identity-regexp "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v.*" \
+cosign verify selmantr/foreseer@sha256:abcd1234... \
+  --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -176,13 +176,13 @@ Each image includes a CycloneDX SBOM attestation.
 #### Verify the Attestation
 
 ```bash
-cosign verify-attestation ghcr.io/seerr-team/seerr@sha256:abcd1234... \
+cosign verify-attestation ghcr.io/selmant/seerr@sha256:abcd1234... \
   --type cyclonedx \
-  --certificate-identity "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v2.7.4" \
+  --certificate-identity "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.5" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
 :::info Successful Verification Example
-Verification for `ghcr.io/seerr-team/seerr@sha256:abcd1234...`
+Verification for `ghcr.io/selmant/seerr@sha256:abcd1234...`
 
 The following checks were performed:
 
@@ -194,9 +194,9 @@ The following checks were performed:
 #### Extract the SBOM for Inspection
 
 ```bash
-cosign verify-attestation ghcr.io/seerr-team/seerr@sha256:abcd1234... \
+cosign verify-attestation ghcr.io/selmant/seerr@sha256:abcd1234... \
   --type cyclonedx \
-  --certificate-identity "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v2.7.4" \
+  --certificate-identity "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.5" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" | jq -r '.payload | @base64d' > sbom.json
 ```
 
@@ -206,16 +206,16 @@ You can open `sbom.json` in a CycloneDX viewer or analyse it with [Trivy](https:
 
 ### Expected Certificate Identity
 
-The expected certificate identity for all signed Seerr images is:
+The expected certificate identity for all signed Foreseer images is:
 
 ```
-https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v*
+https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v*
 ```
 
 This confirms that the image was:
 
-- Built by the official Seerr Release workflow
-- Produced from the seerr-team/seerr repository
+- Built by the official Foreseer Release workflow
+- Produced from the selmant/seerr repository
 - Signed using GitHub’s OIDC identity via Sigstore Fulcio
 
 ---
@@ -226,15 +226,15 @@ This confirms that the image was:
   <TabItem value="docker" label="Docker">
 
 ```bash
-DIGEST=$(docker buildx imagetools inspect ghcr.io/seerr-team/seerr:latest --format '{{json .Manifest.Digest}}' | tr -d '"')
+DIGEST=$(docker buildx imagetools inspect ghcr.io/selmant/seerr:latest --format '{{json .Manifest.Digest}}' | tr -d '"')
 
-cosign verify ghcr.io/seerr-team/seerr@"$DIGEST" \
-  --certificate-identity-regexp "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v.*" \
+cosign verify ghcr.io/selmant/seerr@"$DIGEST" \
+  --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
-cosign verify-attestation ghcr.io/seerr-team/seerr@"$DIGEST" \
+cosign verify-attestation ghcr.io/selmant/seerr@"$DIGEST" \
   --type cyclonedx \
-  --certificate-identity-regexp "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v.*" \
+  --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -242,10 +242,10 @@ cosign verify-attestation ghcr.io/seerr-team/seerr@"$DIGEST" \
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-DIGEST=$(skopeo inspect docker://ghcr.io/seerr-team/seerr:latest --format '{{.Digest}}')
+DIGEST=$(skopeo inspect docker://ghcr.io/selmant/seerr:latest --format '{{.Digest}}')
 
-cosign verify ghcr.io/seerr-team/seerr@"$DIGEST" \
-  --certificate-identity-regexp "https://github.com/seerr-team/seerr/.github/workflows/release.yml@refs/tags/v.*" \
+cosign verify ghcr.io/selmant/seerr@"$DIGEST" \
+  --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -255,17 +255,17 @@ cosign verify ghcr.io/seerr-team/seerr@"$DIGEST" \
 
 ### Helm Chart Locations
 
-Official Seerr helm charts are available from:
+Official Foreseer helm charts are available from:
 
-- GitHub Container Registry (GHCR): `ghcr.io/seerr-team/seerr/seerr-chart/seerr-chart:<tag>`
+- GitHub Container Registry (GHCR): `ghcr.io/selmant/seerr/foreseer-chart:<tag>`
 
-You can view all available tags on the [Seerr Releases page](https://github.com/seerr-team/seerr/pkgs/container/seerr%2Fseerr-chart).
+You can view all available tags on the [Foreseer package page](https://github.com/selmant/seerr/pkgs/container/seerr%2Fforeseer-chart).
 
 ---
 
 ### Verifying a Specific Release Tag
 
-Each tagged release (for example `3.0.0`) is immutable and cryptographically signed.
+Each tagged release (for example `3.7.0`) is immutable and cryptographically signed.
 Verification should always be performed using the image digest (SHA256).
 
 #### Retrieve the Helm Chart Digest
@@ -274,14 +274,14 @@ Verification should always be performed using the image digest (SHA256).
   <TabItem value="docker" label="Docker">
 
 ```bash
-docker buildx imagetools inspect ghcr.io/seerr-team/seerr/seerr-chart:3.0.0 --format '{{json .Manifest.Digest}}' | tr -d '"'
+docker buildx imagetools inspect ghcr.io/selmant/seerr/foreseer-chart:3.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"'
 ```
   </TabItem>
 
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-skopeo inspect docker://ghcr.io/seerr-team/seerr/seerr-chart:3.0.0 --format '{{.Digest}}'
+skopeo inspect docker://ghcr.io/selmant/seerr/foreseer-chart:3.7.0 --format '{{.Digest}}'
 ```
   </TabItem>
 </Tabs>
@@ -297,13 +297,13 @@ sha256:abcd1234...
 #### Verify the Helm Chart Signature
 
 ```bash
-cosign verify ghcr.io/seerr-team/seerr/seerr-chart@sha256:abcd1234... \
-  --certificate-identity "https://github.com/seerr-team/seerr/.github/workflows/helm.yml@refs/heads/main" \
+cosign verify ghcr.io/selmant/seerr/foreseer-chart@sha256:abcd1234... \
+  --certificate-identity "https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
 
 :::info Successful Verification Example
-Verification for `ghcr.io/seerr-team/seerr/seerr-chart@sha256:abcd1234...`
+Verification for `ghcr.io/selmant/seerr/foreseer-chart@sha256:abcd1234...`
 
 The following checks were performed:
 
@@ -316,16 +316,16 @@ The following checks were performed:
 
 ### Expected Certificate Identity
 
-The expected certificate identity for all signed Seerr images is:
+The expected certificate identity for all signed Foreseer charts is:
 
 ```
-https://github.com/seerr-team/seerr/.github/workflows/helm.yml@refs/heads/main
+https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop
 ```
 
 This confirms that the image was:
 
-- Built by the official Seerr Release workflow
-- Produced from the seerr-team/seerr repository
+- Built by the official Foreseer Release workflow
+- Produced from the selmant/seerr repository
 - Signed using GitHub’s OIDC identity via Sigstore Fulcio
 
 ---
@@ -336,15 +336,15 @@ This confirms that the image was:
   <TabItem value="docker" label="Docker">
 
 ```bash
-DIGEST=$(docker buildx imagetools inspect ghcr.io/seerr-team/seerr/seerr-chart:3.0.0 --format '{{json .Manifest.Digest}}' | tr -d '"')
+DIGEST=$(docker buildx imagetools inspect ghcr.io/selmant/seerr/foreseer-chart:3.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"')
 
-cosign verify ghcr.io/seerr-team/seerr/seerr-chart@"$DIGEST" \
-  --certificate-identity-regexp "https://github.com/seerr-team/seerr/.github/workflows/helm.yml@refs/heads/main" \
+cosign verify ghcr.io/selmant/seerr/foreseer-chart@"$DIGEST" \
+  --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
-cosign verify-attestation ghcr.io/seerr-team/seerr/seerr-chart@"$DIGEST" \
+cosign verify-attestation ghcr.io/selmant/seerr/foreseer-chart@"$DIGEST" \
   --type cyclonedx \
-  --certificate-identity-regexp "https://github.com/seerr-team/seerr/.github/workflows/helm.yml@refs/heads/main" \
+  --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -352,10 +352,10 @@ cosign verify-attestation ghcr.io/seerr-team/seerr/seerr-chart@"$DIGEST" \
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-DIGEST=$(skopeo inspect docker://ghcr.io/seerr-team/seerr/seerr-chart:3.0.0 --format '{{.Digest}}')
+DIGEST=$(skopeo inspect docker://ghcr.io/selmant/seerr/foreseer-chart:3.7.0 --format '{{.Digest}}')
 
-cosign verify ghcr.io/seerr-team/seerr/seerr-chart@"$DIGEST" \
-  --certificate-identity-regexp "https://github.com/seerr-team/seerr/.github/workflows/helm.yml@refs/heads/main" \
+cosign verify ghcr.io/selmant/seerr/foreseer-chart@"$DIGEST" \
+  --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -383,4 +383,4 @@ cosign verify ghcr.io/seerr-team/seerr/seerr-chart@"$DIGEST" \
 - [Skopeo Documentation](https://github.com/containers/skopeo)
 - [Podman Documentation](https://podman.io/get-started/)
 - [Docker Documentation](https://docs.docker.com/)
-- [Seerr GitHub Repository](https://github.com/seerr-team/seerr)
+- [Foreseer GitHub Repository](https://github.com/selmant/seerr)

@@ -68,6 +68,42 @@ type CircuitState = 'closed' | 'open' | 'half-open';
 const CIRCUIT_FAILURE_THRESHOLD = 1;
 const CIRCUIT_OPEN_TIMEOUT_MS = 60_000;
 
+export type MdblistMetricsSnapshot = {
+  singleFetches: number;
+  batchFetches: number;
+  cacheHits: number;
+  rateLimits: number;
+  failures: number;
+};
+
+const mdblistMetrics: MdblistMetricsSnapshot = {
+  singleFetches: 0,
+  batchFetches: 0,
+  cacheHits: 0,
+  rateLimits: 0,
+  failures: 0,
+};
+
+export const getMdblistMetrics = (): MdblistMetricsSnapshot => ({
+  ...mdblistMetrics,
+});
+
+/** Test helper — reset in-process MDBList counters. */
+export const resetMdblistMetrics = (): void => {
+  mdblistMetrics.singleFetches = 0;
+  mdblistMetrics.batchFetches = 0;
+  mdblistMetrics.cacheHits = 0;
+  mdblistMetrics.rateLimits = 0;
+  mdblistMetrics.failures = 0;
+};
+
+const recordMdblistMetric = (
+  key: keyof MdblistMetricsSnapshot,
+  count = 1
+): void => {
+  mdblistMetrics[key] += count;
+};
+
 export const MDBLIST_HOT_RATINGS_TTL_SECONDS = 86400;
 export const MDBLIST_WARM_RATINGS_TTL_SECONDS = 86400 * 7;
 export const MDBLIST_COLD_RATINGS_TTL_SECONDS = 86400 * 30;
@@ -180,6 +216,7 @@ class MdblistAPI extends ExternalAPI {
     this.circuitOpenedAt = Date.now();
     this.circuitOpenTimeoutMs = cooldownMs;
     this.halfOpenProbeInFlight = false;
+    recordMdblistMetric('rateLimits');
     logger.warn('MDBList circuit opened after rate limit', {
       label: 'MDBList',
       cooldownMs,
@@ -235,12 +272,27 @@ class MdblistAPI extends ExternalAPI {
     }
 
     const providerType = mediaType === 'tv' ? 'show' : 'movie';
+    const endpoint = `/tmdb/${providerType}/${tmdbId}`;
+    const cached = this.getCached<MdblistMediaPayload>(endpoint);
+    if (cached) {
+      recordMdblistMetric('cacheHits');
+      logger.debug('MDBList ratings cache hit', {
+        label: 'MDBList',
+        mediaType,
+        tmdbId,
+        kind: 'single',
+      });
+      if (circuitSlot === 'probe') this.closeCircuit();
+      return parseMdblistRatings(cached);
+    }
+
     const maxAttempts = 3;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        recordMdblistMetric('singleFetches');
         const data = await this.get<MdblistMediaPayload>(
-          `/tmdb/${providerType}/${tmdbId}`,
+          endpoint,
           undefined,
           cacheTtlSeconds
         );
@@ -259,6 +311,7 @@ class MdblistAPI extends ExternalAPI {
         }
 
         if (isRateLimited(e) && attempt < maxAttempts) {
+          recordMdblistMetric('rateLimits');
           const backoffMs = 400 * attempt * attempt;
           logger.debug('MDBList rate limited; retrying', {
             label: 'MDBList',
@@ -275,6 +328,7 @@ class MdblistAPI extends ExternalAPI {
           this.openCircuit();
         }
 
+        recordMdblistMetric('failures');
         // 404 / network — degrade gracefully (callers fall back or hide badges)
         logger.debug('MDBList ratings unavailable', {
           label: 'MDBList',
@@ -316,13 +370,27 @@ class MdblistAPI extends ExternalAPI {
       if (!cached) {
         return true;
       }
+      recordMdblistMetric('cacheHits');
       results.set(item.tmdbId, parseMdblistRatings(cached));
       return false;
     });
 
     if (!missing.length) {
+      logger.debug('MDBList batch ratings cache hit', {
+        label: 'MDBList',
+        mediaType,
+        itemCount: uniqueItems.length,
+        cacheHits: uniqueItems.length,
+      });
       return results;
     }
+
+    logger.debug('MDBList batch ratings fetch', {
+      label: 'MDBList',
+      mediaType,
+      itemCount: missing.length,
+      cacheHits: uniqueItems.length - missing.length,
+    });
 
     const circuitSlot = this.acquireCircuitSlot();
     if (circuitSlot === 'blocked') {
@@ -331,6 +399,7 @@ class MdblistAPI extends ExternalAPI {
     }
 
     try {
+      recordMdblistMetric('batchFetches');
       const payloads = await this.post<MdblistMediaPayload[]>(
         `/tmdb/${providerType}/`,
         { ids: missing.map((item) => item.tmdbId) },
@@ -360,6 +429,7 @@ class MdblistAPI extends ExternalAPI {
         this.openCircuit(getRetryAfterMs(e));
       } else {
         if (circuitSlot === 'probe') this.openCircuit();
+        recordMdblistMetric('failures');
         logger.debug('MDBList batch ratings unavailable', {
           label: 'MDBList',
           mediaType,

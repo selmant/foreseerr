@@ -6,6 +6,7 @@ import type { TraktTokenState } from '@server/api/trakt/interfaces';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
+import { invalidateUserSyncCache } from '@server/lib/mediaActions/syncCache';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import AsyncLock from '@server/utils/asyncLock';
@@ -23,6 +24,15 @@ export class TraktNotLinkedError extends Error {
   constructor(message = 'User has not linked a Trakt account') {
     super(message);
     this.name = 'TraktNotLinkedError';
+  }
+}
+
+export class TraktAccountAlreadyLinkedError extends Error {
+  constructor(
+    message = 'This Trakt account is already linked to another Foreseer user'
+  ) {
+    super(message);
+    this.name = 'TraktAccountAlreadyLinkedError';
   }
 }
 
@@ -59,6 +69,30 @@ export async function getUserTraktSettings(
     .getOne();
 }
 
+export async function countLinkedTraktAccounts(): Promise<number> {
+  return getRepository(UserSettings)
+    .createQueryBuilder('settings')
+    .where('settings.traktAccessToken IS NOT NULL')
+    .andWhere('settings.traktRefreshToken IS NOT NULL')
+    .getCount();
+}
+
+export async function assertTraktAccountAvailable(
+  traktUserId: string,
+  foreseerUserId: number
+): Promise<void> {
+  const existing = await getRepository(UserSettings)
+    .createQueryBuilder('settings')
+    .leftJoin('settings.user', 'user')
+    .where('settings.traktUserId = :traktUserId', { traktUserId })
+    .andWhere('user.id != :userId', { userId: foreseerUserId })
+    .getOne();
+
+  if (existing) {
+    throw new TraktAccountAlreadyLinkedError();
+  }
+}
+
 function tokenStateFromSettings(
   settings: UserSettings
 ): TraktTokenState | null {
@@ -75,7 +109,10 @@ function tokenStateFromSettings(
   };
 }
 
-async function clearRejectedTraktTokens(settingsId: number): Promise<void> {
+export async function clearUserTraktCredentials(
+  settingsId: number,
+  userId?: number
+): Promise<void> {
   await getRepository(UserSettings)
     .createQueryBuilder()
     .update(UserSettings)
@@ -84,9 +121,50 @@ async function clearRejectedTraktTokens(settingsId: number): Promise<void> {
       traktRefreshToken: () => 'NULL',
       traktTokenExpiresAt: () => 'NULL',
       traktUsername: () => 'NULL',
+      traktUserId: () => 'NULL',
     })
     .where('id = :id', { id: settingsId })
     .execute();
+
+  if (userId != null) {
+    invalidateUserSyncCache(userId);
+  }
+}
+
+export async function disconnectAllTraktLinks(): Promise<number> {
+  const linked = await getRepository(UserSettings)
+    .createQueryBuilder('settings')
+    .leftJoinAndSelect('settings.user', 'user')
+    .addSelect('settings.traktAccessToken')
+    .where('settings.traktAccessToken IS NOT NULL')
+    .andWhere('settings.traktRefreshToken IS NOT NULL')
+    .getMany();
+
+  if (!linked.length) {
+    return 0;
+  }
+
+  await getRepository(UserSettings)
+    .createQueryBuilder()
+    .update(UserSettings)
+    .set({
+      traktAccessToken: () => 'NULL',
+      traktRefreshToken: () => 'NULL',
+      traktTokenExpiresAt: () => 'NULL',
+      traktUsername: () => 'NULL',
+      traktUserId: () => 'NULL',
+    })
+    .where('traktAccessToken IS NOT NULL')
+    .andWhere('traktRefreshToken IS NOT NULL')
+    .execute();
+
+  for (const settings of linked) {
+    if (settings.user?.id != null) {
+      invalidateUserSyncCache(settings.user.id);
+    }
+  }
+
+  return linked.length;
 }
 
 /**
@@ -133,7 +211,7 @@ export async function refreshUserTraktTokens(
           userId,
           status: e.status,
         });
-        await clearRejectedTraktTokens(latestSettings.id);
+        await clearUserTraktCredentials(latestSettings.id, userId);
         throw new TraktReconnectRequiredError();
       }
       throw e;
@@ -142,6 +220,21 @@ export async function refreshUserTraktTokens(
     latestSettings.traktAccessToken = refreshedTokens.accessToken;
     latestSettings.traktRefreshToken = refreshedTokens.refreshToken;
     latestSettings.traktTokenExpiresAt = String(refreshedTokens.expiresAt);
+
+    if (!latestSettings.traktUserId) {
+      try {
+        const profile = await refreshClient.getUserSettings();
+        latestSettings.traktUserId = profile.traktUserId;
+        latestSettings.traktUsername = profile.username;
+      } catch (e) {
+        logger.warn('Failed to backfill Trakt user identity during refresh', {
+          label: 'Trakt API',
+          userId,
+          errorMessage: e instanceof Error ? e.message : 'unknown error',
+        });
+      }
+    }
+
     await getRepository(UserSettings).save(latestSettings);
 
     return refreshedTokens;

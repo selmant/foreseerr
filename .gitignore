@@ -54,6 +54,9 @@ config/anime-list.xml
 # dist files
 dist
 
+# generated test report (pnpm test, CI=true)
+report.xml
+
 # sqlite journal
 config/db/db.sqlite3-journal
 

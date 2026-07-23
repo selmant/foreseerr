@@ -92,6 +92,47 @@ describe('MediaActionDispatcher', () => {
     assert.equal(result.watched, false);
   });
 
+  it('records unwatched failure without throwing', async () => {
+    const trakt = makeProvider('trakt', {
+      unmarkWatched: async () => {
+        throw new Error('trakt unwatched failed');
+      },
+    });
+    const dispatcher = new MediaActionDispatcher([trakt]);
+    const result = await dispatcher.unmarkWatched(1, item);
+
+    assert.equal(result.providers[0].ok, false);
+    assert.match(result.providers[0].error ?? '', /unwatched failed/);
+  });
+
+  it('records rate failure without throwing', async () => {
+    const trakt = makeProvider('trakt', {
+      rate: async () => {
+        throw new Error('trakt rate failed');
+      },
+    });
+    const dispatcher = new MediaActionDispatcher([trakt]);
+    const result = await dispatcher.rate(1, item, { ratingStars: 4 });
+
+    assert.equal(result.providers[0].ok, false);
+    assert.match(result.providers[0].error ?? '', /rate failed/);
+  });
+
+  it('records remove-rating (unwatched) failure without throwing', async () => {
+    const trakt = makeProvider('trakt', {
+      unmarkWatched: async () => {
+        throw new Error('trakt remove-rating failed');
+      },
+    });
+    const dispatcher = new MediaActionDispatcher([trakt]);
+    const result = await dispatcher.unmarkWatched(1, item, {
+      removeRating: true,
+    });
+
+    assert.equal(result.providers[0].ok, false);
+    assert.match(result.providers[0].error ?? '', /remove-rating failed/);
+  });
+
   it('aggregates batch status from providers', async () => {
     const trakt = makeProvider('trakt');
     const dispatcher = new MediaActionDispatcher([trakt]);

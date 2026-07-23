@@ -1,6 +1,7 @@
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
 import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchContext';
+import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
 import {
   CheckCircleIcon as CheckCircleOutline,
@@ -30,6 +31,7 @@ export interface MediaActionStatusResponse {
   watched: boolean;
   rating: number | null;
   ratingStars: number | null;
+  outcome?: 'success' | 'partial' | 'failure';
   providers: {
     provider: string;
     ok: boolean;
@@ -38,6 +40,17 @@ export interface MediaActionStatusResponse {
     ratingStars: number | null;
     error?: string;
   }[];
+}
+
+function writeSucceeded(next: MediaActionStatusResponse): boolean {
+  if (next.outcome === 'failure') {
+    return false;
+  }
+  if (next.providers.length === 0) {
+    return false;
+  }
+  // Apply when at least one provider succeeded (covers partial multi-provider).
+  return next.providers.some((p) => p.ok);
 }
 
 interface MediaActionControlsProps {
@@ -55,6 +68,7 @@ const messages = defineMessages('components.TitleCard.MediaActionControls', {
   ratingLabel: 'Your rating',
   ratingOutOf: '{score}/10',
   ratingHint: 'Click a star to save',
+  actionFailed: 'Could not update on Trakt. Try again.',
 });
 
 const STAR_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] as const;
@@ -142,6 +156,7 @@ const MediaActionControls = ({
   onStatusChange,
 }: MediaActionControlsProps) => {
   const intl = useIntl();
+  const { addToast } = useToasts();
   const batch = useTitleCardBatch();
   const [busy, setBusy] = useState(false);
   const [showRate, setShowRate] = useState(false);
@@ -255,6 +270,13 @@ const MediaActionControls = ({
     [batch?.active, mutate, onStatusChange, statusKey]
   );
 
+  const notifyFailure = useCallback(() => {
+    addToast(intl.formatMessage(messages.actionFailed), {
+      appearance: 'error',
+      autoDismiss: true,
+    });
+  }, [addToast, intl]);
+
   const toggleWatched = useCallback(
     async (e: React.MouseEvent) => {
       stop(e);
@@ -266,17 +288,33 @@ const MediaActionControls = ({
           `/api/v1/media-actions/${mediaType}/${tmdbId}/${action}`,
           {}
         );
+        if (!writeSucceeded(next)) {
+          notifyFailure();
+          return;
+        }
         await applyNext(next);
+      } catch {
+        notifyFailure();
       } finally {
         setBusy(false);
       }
     },
-    [applyNext, busy, data?.watched, enabled, mediaType, stop, tmdbId]
+    [
+      applyNext,
+      busy,
+      data?.watched,
+      enabled,
+      mediaType,
+      notifyFailure,
+      stop,
+      tmdbId,
+    ]
   );
 
   const submitRating = useCallback(
     async (stars: number) => {
       if (busy || !enabled) return;
+      const previousDraft = draftStars;
       const clamped = nearestStarStep(stars);
       setDraftStars(clamped);
       setBusy(true);
@@ -285,13 +323,21 @@ const MediaActionControls = ({
           `/api/v1/media-actions/${mediaType}/${tmdbId}/rate`,
           { ratingStars: clamped }
         );
+        if (!writeSucceeded(next)) {
+          setDraftStars(previousDraft);
+          notifyFailure();
+          return;
+        }
         await applyNext(next);
         setShowRate(false);
+      } catch {
+        setDraftStars(previousDraft);
+        notifyFailure();
       } finally {
         setBusy(false);
       }
     },
-    [applyNext, busy, enabled, mediaType, tmdbId]
+    [applyNext, busy, draftStars, enabled, mediaType, notifyFailure, tmdbId]
   );
 
   if (!enabled) {

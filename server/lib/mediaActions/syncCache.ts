@@ -27,9 +27,30 @@ const cache = new Map<string, UserSyncSnapshot>();
 const inflight = new Map<string, Promise<UserSyncSnapshot>>();
 /** Local mutations applied on top of Trakt fetches until Trakt reflects them. */
 const pendingPatches = new Map<string, PendingPatch[]>();
+let globalCacheGeneration = 0;
+const userCacheGenerations = new Map<string, number>();
 
 function cacheKey(userId: number): string {
   return String(userId);
+}
+
+function bumpUserCacheGeneration(userId: number): number {
+  const key = cacheKey(userId);
+  const next = (userCacheGenerations.get(key) ?? 0) + 1;
+  userCacheGenerations.set(key, next);
+  return next;
+}
+
+function isCacheGenerationStale(
+  userId: number,
+  userGenerationAtStart: number,
+  globalGenerationAtStart: number
+): boolean {
+  const key = cacheKey(userId);
+  return (
+    globalCacheGeneration !== globalGenerationAtStart ||
+    (userCacheGenerations.get(key) ?? 0) !== userGenerationAtStart
+  );
 }
 
 function emptySnapshot(): UserSyncSnapshot {
@@ -43,10 +64,15 @@ function emptySnapshot(): UserSyncSnapshot {
 }
 
 export function invalidateUserSyncCache(userId: number): void {
-  cache.delete(cacheKey(userId));
+  bumpUserCacheGeneration(userId);
+  const key = cacheKey(userId);
+  cache.delete(key);
+  inflight.delete(key);
+  pendingPatches.delete(key);
 }
 
 export function clearSyncCache(): void {
+  globalCacheGeneration += 1;
   cache.clear();
   inflight.clear();
   pendingPatches.clear();
@@ -64,6 +90,11 @@ export function getUserSyncSnapshot(
   userId: number
 ): UserSyncSnapshot | undefined {
   return cache.get(cacheKey(userId));
+}
+
+/** Test helper — inspect pending local patches for a user. */
+export function getPendingPatchCount(userId: number): number {
+  return pendingPatches.get(cacheKey(userId))?.length ?? 0;
 }
 
 function isExpired(snapshot: UserSyncSnapshot, ttlSeconds: number): boolean {
@@ -274,8 +305,19 @@ export async function warmUserSyncCache(
   ttlSeconds = DEFAULT_TTL_SECONDS
 ): Promise<UserSyncSnapshot> {
   const key = cacheKey(userId);
+  const userGenerationAtStart = userCacheGenerations.get(key) ?? 0;
+  const globalGenerationAtStart = globalCacheGeneration;
+
   const existing = cache.get(key);
-  if (existing && !isExpired(existing, ttlSeconds)) {
+  if (
+    existing &&
+    !isExpired(existing, ttlSeconds) &&
+    !isCacheGenerationStale(
+      userId,
+      userGenerationAtStart,
+      globalGenerationAtStart
+    )
+  ) {
     applyPendingPatches(key, existing);
     return existing;
   }
@@ -286,8 +328,19 @@ export async function warmUserSyncCache(
   }
 
   const load = (async (): Promise<UserSyncSnapshot> => {
+    const generationAtFetchStart = userCacheGenerations.get(key) ?? 0;
+    const globalAtFetchStart = globalCacheGeneration;
+
     const cached = cache.get(key);
-    if (cached && !isExpired(cached, ttlSeconds)) {
+    if (
+      cached &&
+      !isExpired(cached, ttlSeconds) &&
+      !isCacheGenerationStale(
+        userId,
+        generationAtFetchStart,
+        globalAtFetchStart
+      )
+    ) {
       applyPendingPatches(key, cached);
       return cached;
     }
@@ -307,6 +360,12 @@ export async function warmUserSyncCache(
       ratingsShows: ratingsShows || [],
       fetchedAt: Date.now() / 1000,
     };
+
+    if (
+      isCacheGenerationStale(userId, generationAtFetchStart, globalAtFetchStart)
+    ) {
+      return snapshot;
+    }
 
     // Re-apply local mark/unmark/rate that Trakt has not caught up with yet,
     // and avoid clobbering patches applied while this fetch was in flight.
