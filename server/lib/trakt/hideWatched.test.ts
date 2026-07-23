@@ -13,7 +13,6 @@ import {
   filterWatchedMixedBrowseResults,
   filterWatchedTraktItems,
   isWatchedInSets,
-  resolveIgnoreWatched,
 } from './hideWatched';
 
 describe('hideWatched', () => {
@@ -24,16 +23,6 @@ describe('hideWatched', () => {
     ratingsShows: [],
     fetchedAt: 1,
   };
-
-  it('resolves ignoreWatched from query then user setting', () => {
-    assert.equal(resolveIgnoreWatched(false, 'true'), true);
-    assert.equal(resolveIgnoreWatched(false, true), true);
-    assert.equal(resolveIgnoreWatched(true, 'false'), false);
-    assert.equal(resolveIgnoreWatched(true, false), false);
-    assert.equal(resolveIgnoreWatched(true, undefined), true);
-    assert.equal(resolveIgnoreWatched(false, undefined), false);
-    assert.equal(resolveIgnoreWatched(null, undefined), false);
-  });
 
   it('builds watched id sets from sync snapshot', () => {
     const sets = buildWatchedIdSets(snapshot);

@@ -32,9 +32,6 @@ const TraktRecommendationsSlider = () => {
   );
 
   const { data: items, error } = useSWR<{
-    page: number;
-    totalPages: number;
-    totalResults: number;
     results: WatchlistItem[];
   }>(traktStatus?.connected ? '/api/v1/discover/trakt/recommendations' : null, {
     revalidateOnMount: true,

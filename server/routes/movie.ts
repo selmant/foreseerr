@@ -8,7 +8,6 @@ import {
   enrichResultsWithRatings,
   fetchCombinedRatings,
 } from '@server/lib/ratings';
-import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { mapMovieDetails } from '@server/models/Movie';
 import { mapMovieResult } from '@server/models/Search';
@@ -186,73 +185,6 @@ movieRoutes.get('/:id/ratings', async (req, res, next) => {
     }
 
     return res.status(200).json(rtratings);
-  } catch (e) {
-    logger.debug('Something went wrong retrieving movie ratings', {
-      label: 'API',
-      errorMessage: e.message,
-      movieId: req.params.id,
-    });
-    return next({
-      status: 500,
-      message: 'Unable to retrieve movie ratings.',
-    });
-  }
-});
-
-/**
- * Combined multi-source ratings (MDBList when configured; else RT + IMDB).
- * When MDBList is configured, skip the heavy TMDB detail fetch — MDBList only needs tmdbId.
- */
-movieRoutes.get('/:id/ratingscombined', async (req, res, next) => {
-  try {
-    const tmdbId = Number(req.params.id);
-    if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
-      return next({ status: 400, message: 'Invalid movie id' });
-    }
-
-    const settings = getSettings();
-    const mdblistConfigured = Boolean(settings.mdblist?.apiKey?.trim());
-
-    let title = typeof req.query.title === 'string' ? req.query.title : 'Movie';
-    let year =
-      typeof req.query.year === 'string' &&
-      Number.isFinite(Number(req.query.year))
-        ? Number(req.query.year)
-        : undefined;
-    let releaseDate =
-      typeof req.query.releaseDate === 'string'
-        ? req.query.releaseDate
-        : undefined;
-    let imdbId: string | null | undefined;
-
-    if (!mdblistConfigured) {
-      const tmdb = new TheMovieDb();
-      const movie = await tmdb.getMovie({ movieId: tmdbId });
-      title = movie.title;
-      releaseDate = movie.release_date || undefined;
-      year = movie.release_date
-        ? Number(movie.release_date.slice(0, 4))
-        : undefined;
-      imdbId = movie.imdb_id;
-    }
-
-    const ratings = await fetchCombinedRatings({
-      mediaType: 'movie',
-      tmdbId,
-      title,
-      year,
-      releaseDate,
-      imdbId,
-    });
-
-    if (!ratings) {
-      return next({
-        status: 404,
-        message: 'No ratings found.',
-      });
-    }
-
-    return res.status(200).json(ratings);
   } catch (e) {
     logger.debug('Something went wrong retrieving movie ratings', {
       label: 'API',

@@ -8,8 +8,8 @@ const config: Config = {
   tagline: 'One Stop Solution for all your media request needs',
   favicon: 'img/favicon.ico',
 
-  url: 'https://docs.seerr.dev',
-  baseUrl: '/',
+  url: 'https://selmant.github.io',
+  baseUrl: '/seerr/',
   trailingSlash: true,
 
   future: {
@@ -167,11 +167,11 @@ const config: Config = {
           items: [
             {
               label: 'Seerr',
-              href: 'https://github.com/seerr-team/seerr',
+              href: 'https://github.com/selmant/seerr',
             },
             {
               label: 'Seerr Docs',
-              href: 'https://docs.seerr.dev',
+              href: 'https://selmant.github.io/seerr/',
             },
           ],
         },

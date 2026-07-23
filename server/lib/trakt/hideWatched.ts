@@ -1,5 +1,4 @@
 import type TraktAPI from '@server/api/trakt';
-import TraktAPIStatic from '@server/api/trakt';
 import type { TraktMediaItem } from '@server/api/trakt/interfaces';
 import {
   warmUserSyncCache,
@@ -9,24 +8,6 @@ import {
 export interface WatchedIdSets {
   movie: Set<number>;
   tv: Set<number>;
-}
-
-/**
- * @deprecated Prefer resolveIgnoreWatchedFromDefaults + discoverFilterDefaults.
- * Kept for call sites that still pass a bare boolean default.
- */
-export function resolveIgnoreWatched(
-  userHideWatched: boolean | null | undefined,
-  queryValue: unknown
-): boolean {
-  // OpenAPI coerces boolean query params to real booleans; browsers send strings.
-  if (queryValue === true || queryValue === 'true' || queryValue === '1') {
-    return true;
-  }
-  if (queryValue === false || queryValue === 'false' || queryValue === '0') {
-    return false;
-  }
-  return userHideWatched === true;
 }
 
 export function buildWatchedIdSets(snapshot: UserSyncSnapshot): WatchedIdSets {
@@ -87,16 +68,4 @@ export async function loadWatchedIdSets(
 ): Promise<WatchedIdSets> {
   const snapshot = await warmUserSyncCache(trakt, userId);
   return buildWatchedIdSets(snapshot);
-}
-
-/** Quick check without warming cache when snapshot already exists. */
-export function isTmdbWatchedInSnapshot(
-  snapshot: UserSyncSnapshot,
-  mediaType: 'movie' | 'tv',
-  tmdbId: number
-): boolean {
-  const itemKey = mediaType === 'movie' ? 'movie' : 'show';
-  const list =
-    mediaType === 'movie' ? snapshot.watchedMovies : snapshot.watchedShows;
-  return TraktAPIStatic.payloadContainsTmdb(list, itemKey, tmdbId);
 }

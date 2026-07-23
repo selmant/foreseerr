@@ -54,13 +54,17 @@ You can locate the required API keys in Radarr/Sonarr in **Settings &rarr; Gener
 
 #### URL Base
 
-If you have configured a URL base for your Radarr/Sonarr server, you _must_ enter it here in order for Jellyeerr to connect to those services!
+If you have configured a URL base for your Radarr/Sonarr server, you _must_ enter it here in order for Foreseer to connect to those services!
 
 You can verify whether or not you have a URL base configured in your Radarr/Sonarr server at **Settings &rarr; General &rarr; Host**. (Note that a restart of your Radarr/Sonarr server is required if you modify this setting!)
 
 #### Profiles, Root Folder, Minimum Availability
 
 Select the default settings you would like to use for all new requests. Note that all of these options are required, and that requests will fail if any of these are not configured!
+
+#### Enable Instant Requests
+
+When enabled, the request button submits using the server's configured defaults. When disabled, users can choose the profile, root folder, quality options, and seasons in the request window.
 
 #### External URL (optional)
 

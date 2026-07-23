@@ -43,9 +43,6 @@ const TraktHistorySlider = ({
   );
 
   const { data: historyItems, error: historyError } = useSWR<{
-    page: number;
-    totalPages: number;
-    totalResults: number;
     results: WatchlistItem[];
   }>(traktStatus?.connected ? '/api/v1/discover/trakt/history' : null, {
     revalidateOnMount: true,

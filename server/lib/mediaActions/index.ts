@@ -27,10 +27,3 @@ export function getMediaActionDispatcher(): MediaActionDispatcher {
   }
   return defaultDispatcher;
 }
-
-/** Test helper to inject providers. */
-export function createMediaActionDispatcher(
-  providers: MediaActionProvider[]
-): MediaActionDispatcher {
-  return new MediaActionDispatcher(providers);
-}

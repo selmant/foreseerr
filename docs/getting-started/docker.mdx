@@ -79,7 +79,7 @@ To run the container as a specific user/group, you may optionally add `--user=[ 
 
 Stop and remove the existing container:
 ```bash
-docker stop seerr && docker rm seerr
+docker stop foreseer && docker rm foreseer
 ```
 Pull the latest image:
 ```bash
@@ -101,14 +101,14 @@ You could also use [diun](https://github.com/crazy-max/diun) to receive notifica
 For details on how to use Docker Compose, please [review the official Compose documentation](https://docs.docker.com/compose/reference/).
 
 #### Installation:
-Define the `seerr` service in your `compose.yaml` as follows:
+Define the `foreseer` service in your `compose.yaml` as follows:
 ```yaml
 ---
 services:
-  seerr:
+  foreseer:
     image: ghcr.io/selmant/seerr:latest
     init: true
-    container_name: seerr
+    container_name: foreseer
     environment:
       - LOG_LEVEL=debug
       - TZ=Asia/Tashkent
@@ -295,4 +295,3 @@ Docker on Windows works differently than it does on Linux; it runs Docker inside
 
 Named volumes, like in the example commands above, are automatically mounted inside the VM. Therefore the warning on the setup about the `/app/config` folder being incorrectly mounted page should be ignored.
 :::
-

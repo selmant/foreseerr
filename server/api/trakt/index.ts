@@ -33,27 +33,6 @@ const TRAKT_RATE_LIMIT_FALLBACK_SECONDS = 1;
 /** Trakt currently caps sync collection pages at 250 items. */
 export const TRAKT_SYNC_PAGE_SIZE = 250;
 
-export class TraktDevicePendingError extends Error {
-  constructor(message = 'Trakt device authorization pending') {
-    super(message);
-    this.name = 'TraktDevicePendingError';
-  }
-}
-
-export class TraktDeviceExpiredError extends Error {
-  constructor(message = 'Trakt device code expired') {
-    super(message);
-    this.name = 'TraktDeviceExpiredError';
-  }
-}
-
-export class TraktDeviceDeniedError extends Error {
-  constructor(message = 'Trakt authorization was denied') {
-    super(message);
-    this.name = 'TraktDeviceDeniedError';
-  }
-}
-
 export class TraktRefreshRejectedError extends Error {
   public readonly status: number;
 

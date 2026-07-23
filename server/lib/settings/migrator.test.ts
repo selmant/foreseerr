@@ -99,7 +99,11 @@ function upstreamBaselineFixture(): AllSettings {
     migrations: [
       '0007_migrate_arr_tags',
       '0008_migrate_blacklist_to_blocklist',
+      '0009_migrate_request_routing_settings',
+      '0010_remove_request_routing_settings',
     ],
+    requestRouting: { enabled: true },
+    requestFilters: { movie: {} },
   } as unknown as AllSettings;
 }
 
@@ -123,13 +127,11 @@ describe('Settings migrator: upstream baseline compatibility', () => {
 
     const migrated = await runMigrations(fixture, settingsPath);
 
-    // Historical request-routing migrations run in order, then remove the
-    // retired setting from the current schema.
+    // Retired request-routing history and data are removed from the current schema.
     assert.ok(
-      migrated.migrations.includes('0009_migrate_request_routing_settings')
-    );
-    assert.ok(
-      migrated.migrations.includes('0010_remove_request_routing_settings')
+      !migrated.migrations.some(
+        (name) => name.startsWith('0009_') || name.startsWith('0010_')
+      )
     );
     assert.equal(
       (migrated as unknown as { requestRouting?: unknown }).requestRouting,
@@ -175,7 +177,6 @@ describe('Settings migrator: upstream baseline compatibility', () => {
       migrations: [
         '0007_migrate_arr_tags',
         '0008_migrate_blacklist_to_blocklist',
-        '0009_migrate_request_routing_settings',
         '0099_a_future_migration_from_a_newer_foreseer',
       ],
     };

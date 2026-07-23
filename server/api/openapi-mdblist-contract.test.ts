@@ -17,9 +17,6 @@ describe('OpenAPI MDBList ratings contract', () => {
 
   const requiredPaths: Record<string, string[]> = {
     '/settings/mdblist': ['get', 'post'],
-    '/movie/{movieId}/ratingscombined': ['get'],
-    '/tv/{tvId}/ratingscombined': ['get'],
-    '/ratings/batch': ['post'],
   };
 
   for (const [path, methods] of Object.entries(requiredPaths)) {
@@ -49,42 +46,4 @@ describe('OpenAPI MDBList ratings contract', () => {
       assert.ok(schema.properties?.ratings);
     });
   }
-
-  for (const path of [
-    '/movie/{movieId}/ratingscombined',
-    '/tv/{tvId}/ratingscombined',
-  ]) {
-    it(`allows releaseDate on ${path}`, () => {
-      const operation = apiDocs.paths[path].get as {
-        parameters?: { in?: string; name?: string }[];
-      };
-      assert.ok(
-        operation.parameters?.some(
-          (parameter) =>
-            parameter.in === 'query' && parameter.name === 'releaseDate'
-        ),
-        `missing releaseDate query parameter on ${path}`
-      );
-    });
-  }
-
-  it('allows releaseDate in ratings batch items', () => {
-    const operation = apiDocs.paths['/ratings/batch'].post as {
-      requestBody?: {
-        content?: {
-          'application/json'?: {
-            schema?: {
-              properties?: {
-                items?: { items?: { properties?: Record<string, unknown> } };
-              };
-            };
-          };
-        };
-      };
-    };
-    const properties =
-      operation.requestBody?.content?.['application/json']?.schema?.properties
-        ?.items?.items?.properties;
-    assert.ok(properties?.releaseDate);
-  });
 });

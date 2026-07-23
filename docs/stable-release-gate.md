@@ -3,7 +3,7 @@ title: Stable release gate (Phase 5)
 ---
 
 :::info Status
-This is a maintainer-facing tracking document, not published end-user documentation. It is the single checklist gating removal of the alpha label from Foreseer, per Phase 5 of the stabilization plan (`plan.md`). **Do not remove the alpha label until every item below is checked.** Automation results below were captured on 2026-07-23 against `0.1.0-alpha.5` on `develop`; re-run them before cutting the actual release, since this snapshot will go stale.
+This is a maintainer-facing tracking document. It is the single checklist gating removal of the alpha label from Foreseer, per Phase 5 of the stabilization plan. **Do not remove the alpha label until every item below is checked.** Automation results below were captured on 2026-07-23 against `0.1.0-alpha.5` on `develop`; re-run them before cutting the actual release, since this snapshot will go stale.
 :::
 
 ## How to use this document
@@ -23,7 +23,7 @@ This is a maintainer-facing tracking document, not published end-user documentat
 | 3 | Lint (`pnpm lint`) | ✅ Pass | 0 errors. 21 pre-existing warnings remain (`no-explicit-any` in provider proxies/settings migrations, one `no-console`, one `react-hooks/exhaustive-deps`) — none introduced by this pass; see [Known follow-ups](#known-follow-ups-not-blocking). |
 | 4 | Server typecheck (`pnpm typecheck:server`) | ✅ Pass | Clean. |
 | 5 | Client typecheck (`pnpm typecheck:client`) | ✅ Pass | Clean. |
-| 6 | Unit/integration tests (`pnpm test`, full suite) | ✅ Pass | **304 passed, 0 failed, 1 skipped**, 79 suites. Includes the OpenAPI contract tests (`server/api/openapi-{trakt,request-filters,media-actions,mdblist}-contract.test.ts`) and both upgrade-matrix tests. |
+| 6 | Unit/integration tests (`pnpm test`, full suite) | ✅ Pass | Snapshot from the previous stabilization pass; rerun after cleanup. Includes the OpenAPI contract tests and upgrade-matrix tests. |
 | 7 | Production build (`pnpm build`) | ✅ Pass | `next build` + `build:server` (tsc + asset copy) both succeeded. |
 | 8 | SQLite fresh-install migrations + schema invariants | ✅ Pass | `pnpm check:migrations` (sqlite leg). |
 | 9 | PostgreSQL fresh-install migrations + schema invariants | ✅ Pass | Ran against a throwaway `postgres:16-alpine` container (matches CI's service container). Skips gracefully with a clear message when `DB_HOST`/`DB_USER`/`DB_PASS` aren't set. |
@@ -32,7 +32,7 @@ This is a maintainer-facing tracking document, not published end-user documentat
 | 12 | Helm lint (`helm lint charts/foreseer-chart`) | ✅ Pass | Only an informational "icon is recommended" note. |
 | 13 | Helm renders the intended default image tag | ✅ Pass (after fix) | See [Fixes made during this pass](#fixes-made-during-this-pass) — the CI/release check for this was broken and would have failed on every run. |
 | 14 | Version consistency (`pnpm check:versions`) | ✅ Pass | `app 0.1.0-alpha.5, chart 3.7.0, image tag v0.1.0-alpha.5` — all agree. |
-| 15 | OpenAPI validation / generated-client contract checks | ✅ Pass | No separate generated TS client exists for this project; the closest equivalent — `express-openapi-validator` request/response validation exercised by the `openapi-*-contract.test.ts` suites — passed as part of item 6. |
+| 15 | OpenAPI validation / generated-client contract checks | ✅ Pass | No separate generated TS client exists. The contract suites validate the OpenAPI document and exercise request validation; response validation is not currently enabled globally. |
 
 ### Fixes made during this pass
 

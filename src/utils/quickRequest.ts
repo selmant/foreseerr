@@ -2,12 +2,6 @@ import type { MediaRequest } from '@server/entity/MediaRequest';
 import axios from 'axios';
 import { mutate } from 'swr';
 
-/**
- * TV request modes for the split request control.
- * `episodes` is reserved for a future single-episode request UI.
- */
-export type TvRequestMode = 'season1' | 'all' | 'episodes' | 'modal';
-
 export type QuickTvRequestOptions = {
   tmdbId: number;
   seasons: number[] | 'all';

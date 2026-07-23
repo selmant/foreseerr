@@ -2,7 +2,7 @@
 
 Seerr docs is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
 
-Seerr docs will be available at [docs.seerr.dev](https://docs.seerr.dev).
+Foreseer docs are published at [selmant.github.io/seerr](https://selmant.github.io/seerr/).
 
 ### Installation
 
@@ -41,4 +41,3 @@ pnpm clean-api-docs all
 ```
 
 See [docusaurus-openapi-docs](https://github.com/PaloAltoNetworks/docusaurus-openapi-docs/tree/main#cli-usage) for more information.
-

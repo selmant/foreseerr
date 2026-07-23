@@ -24,8 +24,6 @@ describe('OpenAPI Trakt contract', () => {
     '/discover/trakt/history': ['get'],
     '/discover/trakt/lists': ['get'],
     '/discover/trakt/lists/search': ['get'],
-    '/discover/trakt/lists/{id}': ['get'],
-    '/discover/trakt/lists/resolve': ['post'],
     '/discover/trakt/list': ['get'],
   };
 

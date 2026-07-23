@@ -51,7 +51,19 @@ export const runMigrations = async (
   settings: AllSettings,
   SETTINGS_PATH: string
 ): Promise<AllSettings> => {
-  let migrated = settings;
+  let migrated = structuredClone(settings);
+  const settingsBeforeCleanup = JSON.stringify(migrated);
+
+  // Request routing was removed from the schema. Drop its historical ledger
+  // entries and data so existing settings files remain bootable after the
+  // migration modules themselves are retired.
+  if (Array.isArray((migrated as { migrations?: unknown }).migrations)) {
+    migrated.migrations = migrated.migrations.filter(
+      (name) => !name.startsWith('0009_') && !name.startsWith('0010_')
+    );
+  }
+  delete (migrated as { requestRouting?: unknown }).requestRouting;
+  delete (migrated as { requestFilters?: unknown }).requestFilters;
 
   const migrations = (await fs.readdir(migrationsDir)).filter(
     (file) => file.endsWith('.js') || file.endsWith('.ts')
@@ -60,7 +72,7 @@ export const runMigrations = async (
     file.replace(/\.(js|ts)$/, '')
   );
 
-  assertNoUnsupportedMigrations(settings, knownMigrationNames);
+  assertNoUnsupportedMigrations(migrated, knownMigrationNames);
 
   try {
     // we read old backup and create a backup of currents settings
@@ -73,7 +85,7 @@ export const runMigrations = async (
     }
     await fs.writeFile(BACKUP_PATH, JSON.stringify(settings, undefined, ' '));
 
-    const settingsBefore = JSON.stringify(migrated);
+    const settingsBefore = settingsBeforeCleanup;
 
     for (const migration of migrations) {
       try {

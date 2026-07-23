@@ -7,7 +7,6 @@ import {
 } from '@server/lib/trakt';
 import { providerRatingToStars, ratingStarsToProvider } from './score';
 import {
-  clearSyncCache,
   getCachedItemStatus,
   lookupItemStatus,
   patchUserSyncItem,
@@ -178,6 +177,3 @@ export class TraktMediaActionProvider implements MediaActionProvider {
     return toStatus(current.watched, rating);
   }
 }
-
-/** Test helper — reset in-memory sync cache between suites. */
-export { clearSyncCache };

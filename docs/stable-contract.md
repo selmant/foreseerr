@@ -41,7 +41,7 @@ Decision: **anime is a subtype presented through an explicit fourth domain value
 ## Settings migrators
 
 - `settings.json` has an implicit schema version: the ordered list of migration filenames under `server/lib/settings/migrations/` (`000N_description.ts`), each exporting a single transform function.
-- Migrations are append-only and forward-only: a shipped migration is never edited or removed; a structural change ships as a new migration file.
+- After the first stable release, migrations are append-only and forward-only: a shipped migration is never edited or removed; a structural change ships as a new migration file.
 - The migrator (`server/lib/settings/migrator.ts`) records which migrations have been applied inside `settings.json` itself, backs up the pre-migration file to `settings.old.json`, and — critically — refuses to start (`assertNoUnsupportedMigrations`) if the file already records a migration this build doesn't recognize, rather than silently running against a newer schema it doesn't understand. The equivalent guard for the database schema is `assertSupportedDatabaseSchema` in `server/lib/db/schemaGuard.ts`.
 - Downgrading is never supported for settings or the database; the actionable recovery path is always "restore the backup taken before the upgrade" (see [Backups](/using-seerr/backups)).
 

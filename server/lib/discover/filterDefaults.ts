@@ -73,15 +73,6 @@ const STRING_KEYS = [
   'traktRatingLte',
 ] as const;
 
-export type DiscoverFilterDefaultKey =
-  | (typeof BOOLEAN_KEYS)[number]
-  | (typeof STRING_KEYS)[number];
-
-export const DISCOVER_FILTER_DEFAULT_KEYS: DiscoverFilterDefaultKey[] = [
-  ...BOOLEAN_KEYS,
-  ...STRING_KEYS,
-];
-
 export function parseDiscoverFilterDefaults(
   input: unknown
 ): DiscoverFilterDefaults {

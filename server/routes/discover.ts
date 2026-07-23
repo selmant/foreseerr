@@ -1595,64 +1595,6 @@ discoverRoutes.get('/trakt/lists/search', async (req, res, next) => {
   }
 });
 
-discoverRoutes.get('/trakt/lists/:id', async (req, res, next) => {
-  try {
-    if (!req.user?.id) {
-      return next({ status: 401, message: 'Unauthorized' });
-    }
-
-    const page = req.query.page ? Number(req.query.page) : 1;
-    const mediaType = parseTraktMediaTypeQuery(req.query.type);
-    const itemsPerPage = 20;
-    const listId = String(req.params.id);
-    const trakt = await createTraktUserClient(req.user.id);
-    const tmdb = createTmdbWithRegionLanguage(req.user);
-    const traktFetchType = toTraktFetchMediaType(mediaType);
-    const listSort = parseTraktListSortQuery(req.query.sort);
-    const extended = listSort ? 'full' : traktExtendedForBrowseQuery(req.query);
-
-    const { items, hasMore } = await resolveTraktDiscoverPage({
-      page,
-      itemsPerPage,
-      mediaType,
-      user: req.user,
-      query: req.query,
-      tmdb,
-      listSort,
-      fetchRawPage: (traktPage) =>
-        listId === 'watchlist'
-          ? trakt.getWatchlistItems('me', traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-            })
-          : trakt.getListItems('me', listId, traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-              sortBy: listSort,
-            }),
-    });
-
-    return res.status(200).json({
-      page,
-      hasMore,
-      results: await mapFilteredTraktItems(items, {
-        user: req.user,
-        query: req.query,
-        tmdb,
-        skipPostFilters: true,
-      }),
-    } satisfies WatchlistResponse);
-  } catch (e) {
-    return handleTraktRouteError(
-      e,
-      next,
-      'Unable to retrieve Trakt list items.'
-    );
-  }
-});
-
 discoverRoutes.get('/trakt/list', async (req, res, next) => {
   try {
     const page = req.query.page ? Number(req.query.page) : 1;
@@ -1749,51 +1691,6 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
       next,
       'Unable to retrieve Trakt public list.'
     );
-  }
-});
-
-discoverRoutes.post('/trakt/lists/resolve', async (req, res, next) => {
-  try {
-    const url = String(req.body.url ?? '').trim();
-    if (!url) {
-      return next({ status: 400, message: 'url is required' });
-    }
-
-    const { username, listRef } = parseTraktListUrlOrThrow(url);
-    const trakt = createTraktAppClient();
-
-    if (listRef === 'watchlist') {
-      if (!username) {
-        return next({
-          status: 400,
-          message: 'Watchlist URL must include a username',
-        });
-      }
-      return res.status(200).json({
-        id: 'watchlist',
-        slug: 'watchlist',
-        name: `${username}'s Watchlist`,
-        username,
-        isWatchlist: true,
-        listUrl: url,
-      });
-    }
-
-    const metadata = await trakt.getListMetadata(username, listRef);
-    return res.status(200).json({
-      ...metadata,
-      listUrl: url,
-    });
-  } catch (e) {
-    if (
-      e &&
-      typeof e === 'object' &&
-      'status' in e &&
-      (e as { status?: number }).status === 400
-    ) {
-      return next(e);
-    }
-    return handleTraktRouteError(e, next, 'Unable to resolve Trakt list URL.');
   }
 });
 

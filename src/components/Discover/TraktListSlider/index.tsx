@@ -33,9 +33,6 @@ const TraktListSlider = ({
   const settings = useSettings();
 
   const { data, error } = useSWR<{
-    page: number;
-    totalPages: number;
-    totalResults: number;
     results: WatchlistItem[];
   }>(
     settings.currentSettings.traktConfigured && url

@@ -29,9 +29,6 @@ const TraktWatchlistSlider = () => {
   );
 
   const { data: watchlistItems, error: watchlistError } = useSWR<{
-    page: number;
-    totalPages: number;
-    totalResults: number;
     results: WatchlistItem[];
   }>(traktStatus?.connected ? '/api/v1/discover/trakt/watchlist' : null, {
     revalidateOnMount: true,
