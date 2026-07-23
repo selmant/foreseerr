@@ -760,7 +760,8 @@ const TitleCard = ({
                   (!currentStatus ||
                     currentStatus === MediaStatus.UNKNOWN ||
                     currentStatus === MediaStatus.DELETED) &&
-                  (mediaType === 'tv' ? (
+                  (mediaType === 'tv' &&
+                  settings.currentSettings.seriesInstantRequestEnabled ? (
                     <div className="relative z-40 flex w-full">
                       <button
                         type="button"
@@ -843,6 +844,20 @@ const TitleCard = ({
                           document.body
                         )}
                     </div>
+                  ) : mediaType === 'tv' ? (
+                    <Button
+                      buttonType="primary"
+                      buttonSize="sm"
+                      className="z-40 w-full"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openTvRequestModal('none');
+                      }}
+                    >
+                      <ArrowDownTrayIcon />{' '}
+                      <span>{intl.formatMessage(messages.selectseasons)}</span>
+                    </Button>
                   ) : mediaType === 'movie' || mediaType === 'collection' ? (
                     <Button
                       buttonType="primary"
@@ -853,7 +868,13 @@ const TitleCard = ({
                         e.preventDefault();
                         e.stopPropagation();
                         if (mediaType === 'movie') {
-                          requestMovieInstant();
+                          if (
+                            settings.currentSettings.movieInstantRequestEnabled
+                          ) {
+                            void requestMovieInstant();
+                          } else {
+                            setShowRequestModal(true);
+                          }
                         } else {
                           setShowRequestModal(true);
                         }

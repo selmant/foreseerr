@@ -65,7 +65,11 @@ const SOURCE_FIELDS = [
   ['showTraktCommunity', 'posterTraktCommunity', messages.showTraktCommunity],
 ] as const;
 
-const SettingsMdblist = () => {
+type SettingsMdblistProps = {
+  onSave?: () => void;
+};
+
+const SettingsMdblist = ({ onSave }: SettingsMdblistProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
   const { data, error, mutate } = useSWR<MdbListSettingsResponse>(
@@ -182,6 +186,7 @@ const SettingsMdblist = () => {
               autoDismiss: true,
               appearance: 'success',
             });
+            onSave?.();
           } catch {
             addToast(intl.formatMessage(messages.toastSettingsFailure), {
               autoDismiss: true,

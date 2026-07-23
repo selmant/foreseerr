@@ -8,7 +8,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import LanguagePicker from '@app/components/Layout/LanguagePicker';
 import SettingsJellyfin from '@app/components/Settings/SettingsJellyfin';
 import SettingsPlex from '@app/components/Settings/SettingsPlex';
-import SettingsServices from '@app/components/Settings/SettingsServices';
+import SetupIntegrations from '@app/components/Setup/SetupIntegrations';
 import SetupSteps from '@app/components/Setup/SetupSteps';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
@@ -37,7 +37,7 @@ const messages = defineMessages('components.Setup', {
   servertype: 'Choose Server Type',
   signin: 'Sign In',
   configuremediaserver: 'Configure Media Server',
-  configureservices: 'Configure Services',
+  configureservices: 'Connect Integrations',
   librarieserror:
     'Validation failed. Please toggle the libraries again to continue.',
 });
@@ -288,7 +288,7 @@ const Setup = () => {
           )}
           {currentStep === 4 && (
             <div>
-              <SettingsServices />
+              <SetupIntegrations />
               <div className="actions">
                 <div className="flex justify-end">
                   <span className="ml-3 inline-flex rounded-md shadow-sm">

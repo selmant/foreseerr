@@ -93,6 +93,15 @@ const RequestButton = ({
   >('none');
   const [isQuickRequesting, setIsQuickRequesting] = useState(false);
 
+  const instantRequestsEnabled = (is4k: boolean) =>
+    mediaType === 'movie'
+      ? is4k
+        ? settings.currentSettings.movie4kInstantRequestEnabled
+        : settings.currentSettings.movieInstantRequestEnabled
+      : is4k
+        ? settings.currentSettings.series4kInstantRequestEnabled
+        : settings.currentSettings.seriesInstantRequestEnabled;
+
   // All pending requests
   const activeRequests = media?.requests.filter(
     (request) => request.status === MediaRequestStatus.PENDING && !request.is4k
@@ -405,38 +414,45 @@ const RequestButton = ({
     )
   ) {
     if (mediaType === 'tv') {
-      buttons.push(
-        {
-          id: 'request-season-1',
-          text: intl.formatMessage(messages.requestseason1),
-          action: () => {
-            requestSeason1(false);
+      if (instantRequestsEnabled(false)) {
+        buttons.push(
+          {
+            id: 'request-season-1',
+            text: intl.formatMessage(messages.requestseason1),
+            action: () => {
+              requestSeason1(false);
+            },
+            svg: <ArrowDownTrayIcon />,
           },
-          svg: <ArrowDownTrayIcon />,
+          {
+            id: 'request-all',
+            text: intl.formatMessage(messages.requestall),
+            action: () => {
+              void requestAllSeasons(false);
+            },
+            svg: <ArrowDownTrayIcon />,
+          }
+        );
+      }
+      buttons.push({
+        id: 'select-seasons',
+        text: intl.formatMessage(messages.selectseasons),
+        action: () => {
+          openTvModal(false, 'none');
         },
-        {
-          id: 'request-all',
-          text: intl.formatMessage(messages.requestall),
-          action: () => {
-            void requestAllSeasons(false);
-          },
-          svg: <ArrowDownTrayIcon />,
-        },
-        {
-          id: 'select-seasons',
-          text: intl.formatMessage(messages.selectseasons),
-          action: () => {
-            openTvModal(false, 'none');
-          },
-          svg: <ArrowDownTrayIcon />,
-        }
-      );
+        svg: <ArrowDownTrayIcon />,
+      });
     } else {
       buttons.push({
         id: 'request',
         text: intl.formatMessage(globalMessages.request),
         action: () => {
-          requestMovie(false);
+          if (instantRequestsEnabled(false)) {
+            void requestMovie(false);
+          } else {
+            setEditRequest(false);
+            setShowRequestModal(true);
+          }
         },
         svg: <ArrowDownTrayIcon />,
       });
@@ -479,38 +495,45 @@ const RequestButton = ({
       (settings.currentSettings.series4kEnabled && mediaType === 'tv'))
   ) {
     if (mediaType === 'tv') {
-      buttons.push(
-        {
-          id: 'request-season-1-4k',
-          text: intl.formatMessage(messages.requestseason14k),
-          action: () => {
-            requestSeason1(true);
+      if (instantRequestsEnabled(true)) {
+        buttons.push(
+          {
+            id: 'request-season-1-4k',
+            text: intl.formatMessage(messages.requestseason14k),
+            action: () => {
+              requestSeason1(true);
+            },
+            svg: <ArrowDownTrayIcon />,
           },
-          svg: <ArrowDownTrayIcon />,
+          {
+            id: 'request-all-4k',
+            text: intl.formatMessage(messages.requestall4k),
+            action: () => {
+              void requestAllSeasons(true);
+            },
+            svg: <ArrowDownTrayIcon />,
+          }
+        );
+      }
+      buttons.push({
+        id: 'select-seasons-4k',
+        text: intl.formatMessage(messages.selectseasons4k),
+        action: () => {
+          openTvModal(true, 'none');
         },
-        {
-          id: 'request-all-4k',
-          text: intl.formatMessage(messages.requestall4k),
-          action: () => {
-            void requestAllSeasons(true);
-          },
-          svg: <ArrowDownTrayIcon />,
-        },
-        {
-          id: 'select-seasons-4k',
-          text: intl.formatMessage(messages.selectseasons4k),
-          action: () => {
-            openTvModal(true, 'none');
-          },
-          svg: <ArrowDownTrayIcon />,
-        }
-      );
+        svg: <ArrowDownTrayIcon />,
+      });
     } else {
       buttons.push({
         id: 'request4k',
         text: intl.formatMessage(globalMessages.request4k),
         action: () => {
-          requestMovie(true);
+          if (instantRequestsEnabled(true)) {
+            void requestMovie(true);
+          } else {
+            setEditRequest(false);
+            setShowRequest4kModal(true);
+          }
         },
         svg: <ArrowDownTrayIcon />,
       });

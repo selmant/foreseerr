@@ -12,7 +12,6 @@ import type { MediaRequestBody } from '@server/interfaces/api/requestInterfaces'
 import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { Permission } from '@server/lib/permissions';
-import { resolveAtomicRequestRouting } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
@@ -362,29 +361,8 @@ export class MediaRequest {
       }
     }
 
-    let serverId = requestBody.serverId;
-    let languageProfileId = requestBody.languageProfileId;
-
-    const routing = resolveAtomicRequestRouting({
-      mediaType: requestBody.mediaType,
-      isAnime: mediaIsAnime,
-      is4k: Boolean(requestBody.is4k),
-      routing: settings.requestRouting,
-      radarr: settings.radarr,
-      sonarr: settings.sonarr,
-      overrides: {
-        serverId: serverId ?? null,
-        profileId: profileId ?? null,
-        rootFolder: rootFolder ?? null,
-        languageProfileId: languageProfileId ?? null,
-        tags: tags ?? null,
-      },
-    });
-    serverId = routing.serverId ?? undefined;
-    profileId = routing.profileId;
-    rootFolder = routing.rootFolder;
-    languageProfileId = routing.languageProfileId;
-    tags = routing.tags;
+    const serverId = requestBody.serverId;
+    const languageProfileId = requestBody.languageProfileId;
 
     if (requestBody.mediaType === MediaType.MOVIE) {
       await mediaRepository.save(media);

@@ -36,6 +36,10 @@ export interface PublicSettingsResponse {
   mediaServerLogin: boolean;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;
+  movieInstantRequestEnabled: boolean;
+  movie4kInstantRequestEnabled: boolean;
+  seriesInstantRequestEnabled: boolean;
+  series4kInstantRequestEnabled: boolean;
   discoverRegion: string;
   streamingRegion: string;
   originalLanguage: string;

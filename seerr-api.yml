@@ -769,45 +769,6 @@ components:
           type: boolean
           description: When true on POST, removes the stored API key instead of preserving the masked placeholder.
           example: false
-    RequestRoutingSettings:
-      type: object
-      description: Optional Radarr/Sonarr server, quality profile, and root folder routing overrides for default and anime requests.
-      properties:
-        profileRouting:
-          $ref: '#/components/schemas/RequestProfileRouting'
-    RequestProfileRoute:
-      type: object
-      description: Optional Radarr/Sonarr server, quality profile, and root folder override.
-      properties:
-        serverId:
-          type: number
-          nullable: true
-          example: null
-        profileId:
-          type: number
-          nullable: true
-          example: null
-        rootFolder:
-          type: string
-          nullable: true
-          example: null
-        languageProfileId:
-          type: number
-          nullable: true
-          description: Sonarr language profile (TV routes only).
-          example: null
-    RequestProfileRouting:
-      type: object
-      description: Per-kind request routing overrides for default and anime media.
-      properties:
-        defaultMovie:
-          $ref: '#/components/schemas/RequestProfileRoute'
-        defaultTv:
-          $ref: '#/components/schemas/RequestProfileRoute'
-        animeMovie:
-          $ref: '#/components/schemas/RequestProfileRoute'
-        animeTv:
-          $ref: '#/components/schemas/RequestProfileRoute'
     RatingResponse:
       type: object
       properties:
@@ -909,6 +870,10 @@ components:
         preventSearch:
           type: boolean
           example: false
+        enableInstantRequests:
+          type: boolean
+          description: Whether requests submit immediately using this server's defaults.
+          example: true
       required:
         - name
         - hostname
@@ -988,6 +953,10 @@ components:
         preventSearch:
           type: boolean
           example: false
+        enableInstantRequests:
+          type: boolean
+          description: Whether one-click season requests are enabled for this server.
+          example: true
       required:
         - name
         - hostname
@@ -1035,6 +1004,18 @@ components:
           type: boolean
           description: Whether an MDBList API key is configured
           example: false
+        movieInstantRequestEnabled:
+          type: boolean
+          example: true
+        movie4kInstantRequestEnabled:
+          type: boolean
+          example: true
+        seriesInstantRequestEnabled:
+          type: boolean
+          example: true
+        series4kInstantRequestEnabled:
+          type: boolean
+          example: true
         ratingBadges:
           $ref: '#/components/schemas/RatingBadgeSettings'
     MovieResult:
@@ -3288,37 +3269,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MdbListSettings'
-  /settings/request-routing:
-    get:
-      summary: Get request routing settings
-      description: Retrieves optional Radarr/Sonarr server, quality profile, and root folder routing overrides for default and anime requests.
-      tags:
-        - settings
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RequestRoutingSettings'
-    post:
-      summary: Update request routing settings
-      description: Updates optional Radarr/Sonarr server, quality profile, and root folder routing overrides for default and anime requests.
-      tags:
-        - settings
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RequestRoutingSettings'
-      responses:
-        '200':
-          description: Values were successfully updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RequestRoutingSettings'
   /settings/radarr:
     get:
       summary: Get Radarr settings

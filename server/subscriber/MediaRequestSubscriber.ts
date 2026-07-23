@@ -18,7 +18,6 @@ import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
-import { resolveRequestProfileRouting } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isEqual, truncate } from 'lodash';
@@ -204,26 +203,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
 
         const tmdb = new TheMovieDb();
         const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
-        const mediaIsAnime = isAnimeMedia(movie);
-        const profileRouting = resolveRequestProfileRouting({
-          mediaType: MediaType.MOVIE,
-          isAnime: mediaIsAnime,
-          is4k: entity.is4k,
-          routing: settings.requestRouting,
-          radarr: settings.radarr,
-          sonarr: settings.sonarr,
-        });
-
         let radarrSettings = settings.radarr.find(
           (radarr) => radarr.isDefault && radarr.is4k === entity.is4k
         );
-
-        if (
-          profileRouting?.radarrServer &&
-          (entity.serverId === null || entity.serverId === undefined)
-        ) {
-          radarrSettings = profileRouting.radarrServer;
-        }
 
         if (
           entity.serverId !== null &&
@@ -551,25 +533,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         }
 
         const mediaIsAnime = isAnimeMedia(series);
-        const profileRouting = resolveRequestProfileRouting({
-          mediaType: MediaType.TV,
-          isAnime: mediaIsAnime,
-          is4k: entity.is4k,
-          routing: settings.requestRouting,
-          radarr: settings.radarr,
-          sonarr: settings.sonarr,
-        });
-
         let sonarrSettings = settings.sonarr.find(
           (sonarr) => sonarr.isDefault && sonarr.is4k === entity.is4k
         );
-
-        if (
-          profileRouting?.sonarrServer &&
-          (entity.serverId === null || entity.serverId === undefined)
-        ) {
-          sonarrSettings = profileRouting.sonarrServer;
-        }
 
         if (
           entity.serverId !== null &&
@@ -614,10 +580,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         let seriesType: SonarrSeries['seriesType'] = 'standard';
 
         if (mediaIsAnime) {
-          seriesType =
-            profileRouting?.seriesType ??
-            sonarrSettings.animeSeriesType ??
-            'anime';
+          seriesType = sonarrSettings.animeSeriesType ?? 'anime';
         }
 
         let rootFolder =

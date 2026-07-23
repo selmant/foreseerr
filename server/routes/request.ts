@@ -22,7 +22,6 @@ import type {
   RequestResultsResponse,
 } from '@server/interfaces/api/requestInterfaces';
 import { Permission } from '@server/lib/permissions';
-import { RequestRoutingError } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -329,8 +328,6 @@ requestRoutes.post<never, MediaRequest, MediaRequestBody>(
           return next({ status: 202, message: error.message });
         case BlocklistedMediaError:
           return next({ status: 403, message: error.message });
-        case RequestRoutingError:
-          return next({ status: 400, message: error.message });
         default:
           return next({ status: 500, message: error.message });
       }

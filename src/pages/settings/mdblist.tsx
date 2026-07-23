@@ -1,16 +1,12 @@
-import SettingsLayout from '@app/components/Settings/SettingsLayout';
-import SettingsMdblist from '@app/components/Settings/SettingsMdblist';
-import useRouteGuard from '@app/hooks/useRouteGuard';
-import { Permission } from '@app/hooks/useUser';
-import type { NextPage } from 'next';
+import type { GetServerSideProps, NextPage } from 'next';
 
-const MdbListSettingsPage: NextPage = () => {
-  useRouteGuard(Permission.ADMIN);
-  return (
-    <SettingsLayout>
-      <SettingsMdblist />
-    </SettingsLayout>
-  );
-};
+const MdbListSettingsPage: NextPage = () => null;
+
+export const getServerSideProps: GetServerSideProps = async () => ({
+  redirect: {
+    destination: '/settings/integrations/mdblist',
+    permanent: false,
+  },
+});
 
 export default MdbListSettingsPage;

@@ -45,7 +45,7 @@ const countryCodes = (input: AnimeDetectionInput): Set<string> => {
 };
 
 /**
- * SuggestArr-compatible anime detection for request routing.
+ * SuggestArr-compatible anime detection for request handling.
  * True when TMDB anime keyword is present, keyword names match anime,
  * or Animation + (Japanese language or Japan origin).
  */

@@ -96,14 +96,12 @@ None of the items below can be completed by an agent — they need a human with 
 - [ ] Confirm MDBList response caching behaves as expected (repeat requests within the cache window don't re-hit the provider).
 - [ ] Simulate MDBList rate-limiting (or hit real limits) and confirm the app degrades gracefully instead of failing the whole page.
 
-### Request routing
+### Request options
 
-- [ ] Configure at least two Radarr servers and two Sonarr servers (including one anime-tagged route and one 4K route).
-- [ ] Submit a normal movie request and confirm it routes to the correct server/profile/root folder/tags.
-- [ ] Submit a normal TV request and confirm the same.
-- [ ] Submit an anime movie and an anime TV request and confirm they route to the anime-specific server/profile.
-- [ ] Submit a 4K movie and TV request and confirm they route to the 4K server/profile.
-- [ ] Confirm no request can end up with a profile/root-folder/tag combination that belongs to a *different* server than the one selected.
+- [ ] Enable instant requests on the default Radarr/Sonarr servers and confirm movie, Season 1, and All Seasons actions submit with server defaults.
+- [ ] Disable instant requests and confirm movie and TV actions open the existing request window for server/profile/root-folder and season selection.
+- [ ] Repeat both flows for default 4K servers.
+- [ ] Submit anime TV through both flows and confirm Sonarr's configured anime profile, folder, language profile, tags, and series type are honored.
 
 ### Upgrade validation with real data
 

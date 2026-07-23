@@ -1,12 +1,12 @@
 import type { GetServerSideProps, NextPage } from 'next';
 
-const TraktSettingsPage: NextPage = () => null;
+const MdbListIntegrationSettingsPage: NextPage = () => null;
 
 export const getServerSideProps: GetServerSideProps = async () => ({
   redirect: {
-    destination: '/settings/integrations/trakt',
+    destination: '/settings/integrations',
     permanent: false,
   },
 });
 
-export default TraktSettingsPage;
+export default MdbListIntegrationSettingsPage;

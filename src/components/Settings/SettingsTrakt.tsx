@@ -13,7 +13,7 @@ import axios from 'axios';
 import { Field, Formik, type FormikHelpers } from 'formik';
 import { Fragment, useState } from 'react';
 import { useIntl } from 'react-intl';
-import useSWR from 'swr';
+import useSWR, { mutate as globalMutate } from 'swr';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.Settings.SettingsTrakt', {
@@ -55,7 +55,11 @@ interface TraktFormValues {
   actionsEnabled: boolean;
 }
 
-const SettingsTrakt = () => {
+type SettingsTraktProps = {
+  onSave?: () => void;
+};
+
+const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
   const { data, error, mutate } = useSWR<TraktSettingsResponse>(
@@ -117,6 +121,7 @@ const SettingsTrakt = () => {
         autoDismiss: true,
         appearance: 'success',
       });
+      onSave?.();
     } catch {
       addToast(intl.formatMessage(messages.toastSettingsFailure), {
         autoDismiss: true,
@@ -125,6 +130,7 @@ const SettingsTrakt = () => {
     } finally {
       helpers.setSubmitting(false);
       mutate();
+      globalMutate('/api/v1/settings/public');
     }
   };
 

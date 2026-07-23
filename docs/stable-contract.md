@@ -36,7 +36,7 @@ Decision: **anime is a subtype presented through an explicit fourth domain value
 
 - The stable domain union is `'movie' | 'tv' | 'anime' | 'all'` (see `TraktBrowseMediaType` in `server/api/trakt/interfaces.ts`). The legacy overloaded `'both'` value has been removed from the backend contract.
 - `'all'` includes anime — it is not "everything except anime." Anime movies/shows are still tagged as anime (via TMDB keyword detection, see `server/lib/trakt/animeFilter.ts`) so callers can filter them in or out explicitly.
-- This applies consistently across Trakt recommendations, watchlist, history, and custom/public lists, and across the request-routing settings that pick a Radarr/Sonarr server per domain (`server/lib/requestFilters/routing.ts`, `RequestRoutingSettings`).
+- This applies consistently across Trakt recommendations, watchlist, history, and custom/public lists.
 
 ## Settings migrators
 

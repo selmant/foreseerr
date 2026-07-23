@@ -62,6 +62,9 @@ const messages = defineMessages('components.Settings.RadarrModal', {
   testFirstTags: 'Test connection to load tags',
   tags: 'Tags',
   enableSearch: 'Enable Automatic Search',
+  enableInstantRequests: 'Enable Instant Requests',
+  enableInstantRequestsHelp:
+    "Submit movie requests immediately using this server's defaults. When disabled, the request window opens so users can choose a server, quality profile, and root folder.",
   tagRequests: 'Tag Requests',
   tagRequestsInfo:
     "Automatically add an additional tag with the requester's user ID & display name",
@@ -241,6 +244,7 @@ const RadarrModal = ({ onClose, radarr, onSave }: RadarrModalProps) => {
           externalUrl: radarr?.externalUrl,
           syncEnabled: radarr?.syncEnabled ?? false,
           enableSearch: !radarr?.preventSearch,
+          enableInstantRequests: radarr?.enableInstantRequests !== false,
           tagRequests: radarr?.tagRequests ?? false,
         }}
         validationSchema={RadarrSettingsSchema}
@@ -267,6 +271,7 @@ const RadarrModal = ({ onClose, radarr, onSave }: RadarrModalProps) => {
               externalUrl: values.externalUrl,
               syncEnabled: values.syncEnabled,
               preventSearch: !values.enableSearch,
+              enableInstantRequests: values.enableInstantRequests,
               tagRequests: values.tagRequests,
             };
             if (!radarr) {
@@ -733,6 +738,24 @@ const RadarrModal = ({ onClose, radarr, onSave }: RadarrModalProps) => {
                       type="checkbox"
                       id="syncEnabled"
                       name="syncEnabled"
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label
+                    htmlFor="enableInstantRequests"
+                    className="checkbox-label"
+                  >
+                    {intl.formatMessage(messages.enableInstantRequests)}
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.enableInstantRequestsHelp)}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <Field
+                      type="checkbox"
+                      id="enableInstantRequests"
+                      name="enableInstantRequests"
                     />
                   </div>
                 </div>

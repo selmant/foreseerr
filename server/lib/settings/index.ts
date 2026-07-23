@@ -2,11 +2,6 @@ import type { RatingBadgeSettings } from '@server/constants/ratingBadges';
 import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
 import { Permission } from '@server/lib/permissions';
-import {
-  DEFAULT_REQUEST_ROUTING,
-  normalizeProfileRouting,
-  type RequestRoutingSettings,
-} from '@server/lib/requestFilters/types';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
 import { randomBytes, randomUUID } from 'crypto';
@@ -15,8 +10,8 @@ import { mergeWith } from 'lodash';
 import path from 'path';
 import webpush from 'web-push';
 
-export { DEFAULT_RATING_BADGE_SETTINGS, DEFAULT_REQUEST_ROUTING };
-export type { RatingBadgeSettings, RequestRoutingSettings };
+export { DEFAULT_RATING_BADGE_SETTINGS };
+export type { RatingBadgeSettings };
 
 // Prevents stale array entries when incoming data has fewer elements
 const mergeSettings = <T>(current: T, incoming: Partial<T>): T =>
@@ -107,6 +102,7 @@ export interface DVRSettings {
   externalUrl?: string;
   syncEnabled: boolean;
   preventSearch: boolean;
+  enableInstantRequests?: boolean;
   tagRequests: boolean;
   overrideRule: number[];
 }
@@ -222,6 +218,10 @@ interface FullPublicSettings extends PublicSettings {
   mediaServerLogin: boolean;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;
+  movieInstantRequestEnabled: boolean;
+  movie4kInstantRequestEnabled: boolean;
+  seriesInstantRequestEnabled: boolean;
+  series4kInstantRequestEnabled: boolean;
   discoverRegion: string;
   streamingRegion: string;
   originalLanguage: string;
@@ -410,7 +410,6 @@ export interface AllSettings {
   trakt: TraktSettings;
   mediaActions: MediaActionsSettings;
   mdblist: MdbListSettings;
-  requestRouting: RequestRoutingSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
   public: PublicSettings;
@@ -496,7 +495,6 @@ class Settings {
         apiKey: '',
         ...DEFAULT_RATING_BADGE_SETTINGS,
       },
-      requestRouting: { ...DEFAULT_REQUEST_ROUTING },
       metadataSettings: {
         tv: MetadataProviderType.TMDB,
         anime: MetadataProviderType.TMDB,
@@ -772,27 +770,6 @@ class Settings {
     );
   }
 
-  get requestRouting(): RequestRoutingSettings {
-    if (!this.data.requestRouting) {
-      this.data.requestRouting = { ...DEFAULT_REQUEST_ROUTING };
-    } else {
-      this.data.requestRouting = {
-        ...DEFAULT_REQUEST_ROUTING,
-        profileRouting: normalizeProfileRouting(
-          this.data.requestRouting.profileRouting
-        ),
-      };
-    }
-    return this.data.requestRouting;
-  }
-
-  set requestRouting(data: RequestRoutingSettings) {
-    this.data.requestRouting = mergeSettings(
-      this.data.requestRouting ?? { ...DEFAULT_REQUEST_ROUTING },
-      data
-    );
-  }
-
   get metadataSettings(): MetadataSettings {
     return this.data.metadataSettings;
   }
@@ -845,6 +822,18 @@ class Settings {
       series4kEnabled: this.data.sonarr.some(
         (sonarr) => sonarr.is4k && sonarr.isDefault
       ),
+      movieInstantRequestEnabled:
+        this.data.radarr.find((radarr) => !radarr.is4k && radarr.isDefault)
+          ?.enableInstantRequests !== false,
+      movie4kInstantRequestEnabled:
+        this.data.radarr.find((radarr) => radarr.is4k && radarr.isDefault)
+          ?.enableInstantRequests !== false,
+      seriesInstantRequestEnabled:
+        this.data.sonarr.find((sonarr) => !sonarr.is4k && sonarr.isDefault)
+          ?.enableInstantRequests !== false,
+      series4kInstantRequestEnabled:
+        this.data.sonarr.find((sonarr) => sonarr.is4k && sonarr.isDefault)
+          ?.enableInstantRequests !== false,
       discoverRegion: this.data.main.discoverRegion,
       streamingRegion: this.data.main.streamingRegion,
       originalLanguage: this.data.main.originalLanguage,

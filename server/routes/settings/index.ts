@@ -21,11 +21,6 @@ import ImageProxy from '@server/lib/imageproxy';
 import { clearSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
 import { clearMdblistProviderState } from '@server/lib/ratings';
-import {
-  normalizeProfileRoute,
-  normalizeProfileRouting,
-  type RequestProfileRoute,
-} from '@server/lib/requestFilters/types';
 import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import { plexFullScanner } from '@server/lib/scanners/plex';
 import type { JobId, Library, MainSettings } from '@server/lib/settings';
@@ -600,66 +595,6 @@ const mdblistSettingsResponse = () => {
 
 settingsRoutes.get('/mdblist', (_req, res) => {
   res.status(200).json(mdblistSettingsResponse());
-});
-
-const nullableNumber = (value: unknown): number | null => {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-};
-
-const parseProfileRoute = (value: unknown) =>
-  normalizeProfileRoute({
-    serverId: nullableNumber((value as RequestProfileRoute)?.serverId),
-    profileId: nullableNumber((value as RequestProfileRoute)?.profileId),
-    rootFolder:
-      typeof (value as RequestProfileRoute)?.rootFolder === 'string'
-        ? (value as RequestProfileRoute).rootFolder
-        : null,
-    languageProfileId: nullableNumber(
-      (value as RequestProfileRoute)?.languageProfileId
-    ),
-  });
-
-const requestRoutingResponse = () => {
-  const settings = getSettings();
-  return { ...settings.requestRouting };
-};
-
-settingsRoutes.get('/request-routing', (_req, res) => {
-  res.status(200).json(requestRoutingResponse());
-});
-
-settingsRoutes.post('/request-routing', async (req, res, next) => {
-  const settings = getSettings();
-
-  try {
-    const profileRouting = normalizeProfileRouting({
-      defaultMovie: parseProfileRoute(req.body.profileRouting?.defaultMovie),
-      defaultTv: parseProfileRoute(req.body.profileRouting?.defaultTv),
-      animeMovie: parseProfileRoute(req.body.profileRouting?.animeMovie),
-      animeTv: parseProfileRoute(req.body.profileRouting?.animeTv),
-    });
-
-    settings.requestRouting = {
-      ...settings.requestRouting,
-      profileRouting,
-    };
-    await settings.save();
-
-    return res.status(200).json(requestRoutingResponse());
-  } catch (e) {
-    logger.error('Something went wrong saving request routing settings', {
-      label: 'API',
-      errorMessage: e.message,
-    });
-    return next({
-      status: 500,
-      message: 'Unable to save request routing settings.',
-    });
-  }
 });
 
 settingsRoutes.post('/mdblist', async (req, res, next) => {

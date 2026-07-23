@@ -1,7 +1,7 @@
 /**
  * Covers the settings migrator (Phase 4 persisted-settings compatibility):
  * - Loading a realistic upstream Seerr `settings.json` (no `trakt`,
- *   `mediaActions`, `mdblist`, `requestRouting`, or `metadataSettings` keys —
+ *   `mediaActions`, `mdblist`, or `metadataSettings` keys —
  *   none of those exist upstream) migrates cleanly and preserves existing
  *   user data.
  * - A `settings.json` backup is taken before migrating.
@@ -9,7 +9,6 @@
  *   (i.e. written by a newer Foreseer version) is rejected with an
  *   actionable error instead of silently downgrading.
  */
-import { DEFAULT_REQUEST_ROUTING } from '@server/lib/requestFilters/types';
 import type { AllSettings } from '@server/lib/settings';
 import Settings from '@server/lib/settings';
 import { runMigrations } from '@server/lib/settings/migrator';
@@ -96,7 +95,7 @@ function upstreamBaselineFixture(): AllSettings {
       apiRequestTimeout: 10000,
     },
     // Upstream's own migrations already ran; Foreseer-only migrations (like
-    // the request-routing rename) have not.
+    // Foreseer-specific migrations have not.
     migrations: [
       '0007_migrate_arr_tags',
       '0008_migrate_blacklist_to_blocklist',
@@ -124,13 +123,17 @@ describe('Settings migrator: upstream baseline compatibility', () => {
 
     const migrated = await runMigrations(fixture, settingsPath);
 
-    // Foreseer-only rename migration ran and recorded itself.
+    // Historical request-routing migrations run in order, then remove the
+    // retired setting from the current schema.
     assert.ok(
       migrated.migrations.includes('0009_migrate_request_routing_settings')
     );
-    assert.deepEqual(
-      (migrated as unknown as { requestRouting: unknown }).requestRouting,
-      DEFAULT_REQUEST_ROUTING
+    assert.ok(
+      migrated.migrations.includes('0010_remove_request_routing_settings')
+    );
+    assert.equal(
+      (migrated as unknown as { requestRouting?: unknown }).requestRouting,
+      undefined
     );
     assert.equal(
       (migrated as unknown as { requestFilters?: unknown }).requestFilters,
