@@ -1,8 +1,16 @@
-import TraktAPI from '@server/api/trakt';
+import TraktAPI, {
+  TraktReconnectRequiredError,
+  TraktRefreshRejectedError,
+} from '@server/api/trakt';
+import type { TraktTokenState } from '@server/api/trakt/interfaces';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { getSettings } from '@server/lib/settings';
+import logger from '@server/logger';
+import AsyncLock from '@server/utils/asyncLock';
+
+const traktRefreshLock = new AsyncLock();
 
 export class TraktNotConfiguredError extends Error {
   constructor(message = 'Trakt application credentials are not configured') {
@@ -51,6 +59,95 @@ export async function getUserTraktSettings(
     .getOne();
 }
 
+function tokenStateFromSettings(
+  settings: UserSettings
+): TraktTokenState | null {
+  if (!settings.traktAccessToken || !settings.traktRefreshToken) {
+    return null;
+  }
+
+  return {
+    accessToken: settings.traktAccessToken,
+    refreshToken: settings.traktRefreshToken,
+    expiresAt: settings.traktTokenExpiresAt
+      ? Number(settings.traktTokenExpiresAt)
+      : 0,
+  };
+}
+
+async function clearRejectedTraktTokens(settingsId: number): Promise<void> {
+  await getRepository(UserSettings)
+    .createQueryBuilder()
+    .update(UserSettings)
+    .set({
+      traktAccessToken: () => 'NULL',
+      traktRefreshToken: () => 'NULL',
+      traktTokenExpiresAt: () => 'NULL',
+      traktUsername: () => 'NULL',
+    })
+    .where('id = :id', { id: settingsId })
+    .execute();
+}
+
+/**
+ * Refresh one user's rotating Trakt credentials exactly once. Callers that
+ * queued behind a successful refresh reuse the newly persisted token pair.
+ */
+export async function refreshUserTraktTokens(
+  userId: number,
+  callerTokens: TraktTokenState
+): Promise<TraktTokenState> {
+  return traktRefreshLock.dispatch(userId, async () => {
+    const latestSettings = await getUserTraktSettings(userId);
+    const latestTokens = latestSettings
+      ? tokenStateFromSettings(latestSettings)
+      : null;
+
+    if (!latestSettings || !latestTokens) {
+      throw new TraktReconnectRequiredError();
+    }
+
+    if (
+      latestTokens.accessToken !== callerTokens.accessToken ||
+      latestTokens.refreshToken !== callerTokens.refreshToken
+    ) {
+      return latestTokens;
+    }
+
+    const { clientId, clientSecret } = getTraktAppCredentials();
+    const refreshClient = new TraktAPI({
+      clientId,
+      clientSecret,
+      accessToken: latestTokens.accessToken,
+      refreshToken: latestTokens.refreshToken,
+      expiresAt: latestTokens.expiresAt,
+    });
+
+    let refreshedTokens: TraktTokenState;
+    try {
+      refreshedTokens = await refreshClient.refreshAccessToken();
+    } catch (e) {
+      if (e instanceof TraktRefreshRejectedError) {
+        logger.warn('Trakt refresh token rejected; account must reconnect', {
+          label: 'Trakt API',
+          userId,
+          status: e.status,
+        });
+        await clearRejectedTraktTokens(latestSettings.id);
+        throw new TraktReconnectRequiredError();
+      }
+      throw e;
+    }
+
+    latestSettings.traktAccessToken = refreshedTokens.accessToken;
+    latestSettings.traktRefreshToken = refreshedTokens.refreshToken;
+    latestSettings.traktTokenExpiresAt = String(refreshedTokens.expiresAt);
+    await getRepository(UserSettings).save(latestSettings);
+
+    return refreshedTokens;
+  });
+}
+
 export async function createTraktUserClient(userId: number): Promise<TraktAPI> {
   const { clientId, clientSecret } = getTraktAppCredentials();
   const settings = await getUserTraktSettings(userId);
@@ -58,8 +155,6 @@ export async function createTraktUserClient(userId: number): Promise<TraktAPI> {
   if (!settings?.traktAccessToken || !settings.traktRefreshToken) {
     throw new TraktNotLinkedError();
   }
-
-  const settingsRepository = getRepository(UserSettings);
 
   return new TraktAPI({
     clientId,
@@ -69,12 +164,7 @@ export async function createTraktUserClient(userId: number): Promise<TraktAPI> {
     expiresAt: settings.traktTokenExpiresAt
       ? Number(settings.traktTokenExpiresAt)
       : undefined,
-    onTokenRefresh: async ({ accessToken, refreshToken, expiresAt }) => {
-      settings.traktAccessToken = accessToken;
-      settings.traktRefreshToken = refreshToken;
-      settings.traktTokenExpiresAt = String(expiresAt);
-      await settingsRepository.save(settings);
-    },
+    refreshTokens: (tokens) => refreshUserTraktTokens(userId, tokens),
   });
 }
 

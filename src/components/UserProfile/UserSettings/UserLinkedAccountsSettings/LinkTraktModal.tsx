@@ -19,6 +19,9 @@ const messages = defineMessages(
     success: 'Trakt account linked as {username}.',
     expired: 'The code expired. Close this dialog and try again.',
     denied: 'Authorization was denied.',
+    invalid: 'The device code is invalid. Close this dialog and try again.',
+    alreadyUsed:
+      'This device code was already used. Close this dialog and try again.',
     error: 'Unable to link Trakt account.',
     notConfigured: 'Trakt is not configured by an administrator.',
     yourCode: 'Your code',
@@ -60,6 +63,12 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
   const [username, setUsername] = useState<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deadline = useRef<number>(0);
+  const pollGeneration = useRef(0);
+  const onSaveRef = useRef(onSave);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
 
   const clearPoll = () => {
     if (pollTimer.current) {
@@ -69,8 +78,9 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
   };
 
   const poll = useCallback(
-    async (deviceCode: string, intervalSeconds: number) => {
+    async (deviceCode: string, intervalSeconds: number, generation: number) => {
       if (!user?.id) return;
+      if (generation !== pollGeneration.current) return;
       if (Date.now() > deadline.current) {
         setStatus('error');
         setError(intl.formatMessage(messages.expired));
@@ -84,16 +94,21 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
           { validateStatus: (s) => s < 500 }
         );
 
+        if (generation !== pollGeneration.current) return;
+
         if (response.status === 200) {
           setUsername(response.data.username ?? null);
           setStatus('success');
-          onSave();
+          onSaveRef.current();
           return;
         }
         if (response.status === 202) {
+          const retryAfterSeconds = Number(
+            response.data?.retryAfterSeconds ?? intervalSeconds
+          );
           pollTimer.current = setTimeout(
-            () => poll(deviceCode, intervalSeconds),
-            Math.max(intervalSeconds, 5) * 1000
+            () => poll(deviceCode, intervalSeconds, generation),
+            Math.max(retryAfterSeconds, intervalSeconds, 5) * 1000
           );
           return;
         }
@@ -104,7 +119,18 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
         }
         if (response.status === 409) {
           setStatus('error');
-          setError(intl.formatMessage(messages.denied));
+          setError(
+            intl.formatMessage(
+              response.data?.status === 'already_used'
+                ? messages.alreadyUsed
+                : messages.denied
+            )
+          );
+          return;
+        }
+        if (response.status === 400 && response.data?.status === 'invalid') {
+          setStatus('error');
+          setError(intl.formatMessage(messages.invalid));
           return;
         }
         const apiMessage = response.data?.message;
@@ -119,7 +145,7 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
         setError(intl.formatMessage(messages.error));
       }
     },
-    [intl, onSave, user?.id]
+    [intl, user?.id]
   );
 
   useEffect(() => {
@@ -128,6 +154,7 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
     }
 
     let cancelled = false;
+    const generation = ++pollGeneration.current;
     clearPoll();
     setDevice(null);
     setError(null);
@@ -144,7 +171,7 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
         setStatus('polling');
         deadline.current = Date.now() + data.expires_in * 1000;
         pollTimer.current = setTimeout(
-          () => poll(data.device_code, data.interval),
+          () => poll(data.device_code, data.interval, generation),
           Math.max(data.interval, 5) * 1000
         );
       } catch (e) {
@@ -170,6 +197,7 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
 
     return () => {
       cancelled = true;
+      pollGeneration.current += 1;
       clearPoll();
     };
   }, [show, user?.id, intl, poll, settings.currentSettings.traktConfigured]);

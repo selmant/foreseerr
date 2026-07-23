@@ -9,6 +9,7 @@ import type {
   TraktMediaObject,
   TraktSearchListEntry,
   TraktTokenResponse,
+  TraktTokenState,
   TraktUserList,
   TraktUserSettingsResponse,
 } from '@server/api/trakt/interfaces';
@@ -46,17 +47,30 @@ export class TraktDeviceDeniedError extends Error {
   }
 }
 
+export class TraktRefreshRejectedError extends Error {
+  public readonly status: number;
+
+  constructor(status: number) {
+    super('Trakt rejected the refresh token');
+    this.name = 'TraktRefreshRejectedError';
+    this.status = status;
+  }
+}
+
+export class TraktReconnectRequiredError extends Error {
+  constructor(message = 'Trakt authorization expired; reconnect your account') {
+    super(message);
+    this.name = 'TraktReconnectRequiredError';
+  }
+}
+
 interface TraktAPIOptions {
   clientId: string;
   clientSecret: string;
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: number;
-  onTokenRefresh?: (tokens: {
-    accessToken: string;
-    refreshToken: string;
-    expiresAt: number;
-  }) => Promise<void> | void;
+  refreshTokens?: (currentTokens: TraktTokenState) => Promise<TraktTokenState>;
 }
 
 class TraktAPI extends ExternalAPI {
@@ -65,7 +79,7 @@ class TraktAPI extends ExternalAPI {
   private accessToken?: string;
   private refreshToken?: string;
   private expiresAt: number;
-  private onTokenRefresh?: TraktAPIOptions['onTokenRefresh'];
+  private refreshTokens?: TraktAPIOptions['refreshTokens'];
   private rawAxios: AxiosInstance;
 
   constructor(options: TraktAPIOptions) {
@@ -98,7 +112,7 @@ class TraktAPI extends ExternalAPI {
     this.accessToken = options.accessToken;
     this.refreshToken = options.refreshToken;
     this.expiresAt = options.expiresAt ?? 0;
-    this.onTokenRefresh = options.onTokenRefresh;
+    this.refreshTokens = options.refreshTokens;
 
     this.rawAxios = axios.create({
       baseURL: TRAKT_BASE_URL,
@@ -179,12 +193,17 @@ class TraktAPI extends ExternalAPI {
         const tokens = this.applyTokens(response.data);
         return { status: 'authorized', tokens };
       }
-      if (
-        response.status === 400 ||
-        response.status === 429 ||
-        response.status === 409
-      ) {
+      if (response.status === 400) {
         return { status: 'pending' };
+      }
+      if (response.status === 429) {
+        return { status: 'slow_down' };
+      }
+      if (response.status === 409) {
+        return { status: 'already_used' };
+      }
+      if (response.status === 404) {
+        return { status: 'invalid' };
       }
       if (response.status === 410) {
         return { status: 'expired' };
@@ -211,11 +230,19 @@ class TraktAPI extends ExternalAPI {
     }
   }
 
-  public async refreshAccessToken(): Promise<
-    TraktTokenResponse & { expiresAt: number }
-  > {
+  public async refreshAccessToken(): Promise<TraktTokenState> {
     if (!this.refreshToken) {
       throw new Error('Cannot refresh Trakt token without a refresh token');
+    }
+
+    if (this.refreshTokens && this.accessToken) {
+      const tokens = await this.refreshTokens({
+        accessToken: this.accessToken,
+        refreshToken: this.refreshToken,
+        expiresAt: this.expiresAt,
+      });
+      this.applyTokenState(tokens);
+      return tokens;
     }
 
     const response = await this.rawAxios.post<TraktTokenResponse>(
@@ -226,10 +253,25 @@ class TraktAPI extends ExternalAPI {
         client_secret: this.clientSecret,
         redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
         grant_type: 'refresh_token',
-      }
+      },
+      { validateStatus: () => true }
     );
 
-    return this.applyTokens(response.data);
+    if (response.status === 400 || response.status === 401) {
+      throw new TraktRefreshRejectedError(response.status);
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(
+        `Trakt token refresh failed with status ${response.status}`
+      );
+    }
+
+    const applied = this.applyTokens(response.data);
+    return {
+      accessToken: applied.access_token,
+      refreshToken: applied.refresh_token,
+      expiresAt: applied.expiresAt,
+    };
   }
 
   public async getUserSettings(): Promise<{
@@ -609,35 +651,33 @@ class TraktAPI extends ExternalAPI {
     this.refreshToken = payload.refresh_token || this.refreshToken;
     const expiresIn = Number(payload.expires_in || 0);
     if (expiresIn) {
-      this.expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+      const createdAt = Number(payload.created_at || 0);
+      this.expiresAt =
+        (Number.isFinite(createdAt) && createdAt > 0
+          ? createdAt
+          : Math.floor(Date.now() / 1000)) + expiresIn;
     }
 
-    // Keep ExternalAPI Authorization header in sync for subsequent calls
-    (this as unknown as { axios: AxiosInstance }).axios.defaults.headers.common[
-      'Authorization'
-    ] = `Bearer ${this.accessToken}`;
+    this.syncAuthorizationHeaders();
 
-    const result = {
+    return {
       ...payload,
       expiresAt: this.expiresAt,
     };
+  }
 
-    if (this.onTokenRefresh && this.accessToken && this.refreshToken) {
-      void Promise.resolve(
-        this.onTokenRefresh({
-          accessToken: this.accessToken,
-          refreshToken: this.refreshToken,
-          expiresAt: this.expiresAt,
-        })
-      ).catch((e) => {
-        logger.error('Failed to persist refreshed Trakt tokens', {
-          label: 'Trakt API',
-          errorMessage: e instanceof Error ? e.message : 'unknown error',
-        });
-      });
-    }
+  private applyTokenState(tokens: TraktTokenState): void {
+    this.accessToken = tokens.accessToken;
+    this.refreshToken = tokens.refreshToken;
+    this.expiresAt = tokens.expiresAt;
+    this.syncAuthorizationHeaders();
+  }
 
-    return result;
+  private syncAuthorizationHeaders(): void {
+    // Keep the cached/public client in sync for authenticated public-list calls.
+    (this as unknown as { axios: AxiosInstance }).axios.defaults.headers.common[
+      'Authorization'
+    ] = `Bearer ${this.accessToken}`;
   }
 
   private async ensureFreshToken(): Promise<void> {
@@ -763,7 +803,11 @@ class TraktAPI extends ExternalAPI {
         `Trakt API request failed: ${method} ${endpoint} returned ${response.status}`
       );
     } catch (e) {
-      if (e instanceof Error && e.message.startsWith('Trakt API')) {
+      if (
+        e instanceof TraktReconnectRequiredError ||
+        e instanceof TraktRefreshRejectedError ||
+        (e instanceof Error && e.message.startsWith('Trakt API'))
+      ) {
         throw e;
       }
       throw new Error(

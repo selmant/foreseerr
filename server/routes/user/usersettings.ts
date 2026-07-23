@@ -604,9 +604,12 @@ userSettingsRoutes.get<{ id: string }>(
   async (req, res, next) => {
     try {
       const settings = await getUserTraktSettings(Number(req.params.id));
+      const connected = Boolean(
+        settings?.traktAccessToken && settings.traktRefreshToken
+      );
       return res.status(200).json({
-        connected: Boolean(settings?.traktAccessToken),
-        username: settings?.traktUsername ?? null,
+        connected,
+        username: connected ? (settings?.traktUsername ?? null) : null,
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -707,6 +710,18 @@ userSettingsRoutes.post<{ id: string }>(
 
       if (result.status === 'pending') {
         return res.status(202).json({ status: 'pending' });
+      }
+      if (result.status === 'slow_down') {
+        return res.status(202).json({
+          status: 'pending',
+          retryAfterSeconds: 10,
+        });
+      }
+      if (result.status === 'invalid') {
+        return res.status(400).json({ status: 'invalid' });
+      }
+      if (result.status === 'already_used') {
+        return res.status(409).json({ status: 'already_used' });
       }
       if (result.status === 'expired') {
         return res.status(410).json({ status: 'expired' });

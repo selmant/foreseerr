@@ -6123,12 +6123,15 @@ paths:
                   status:
                     type: string
                     example: pending
+                  retryAfterSeconds:
+                    type: number
+                    example: 10
         '400':
           description: Invalid request or Trakt not configured
         '401':
           description: Unauthorized
         '409':
-          description: Authorization denied
+          description: Authorization denied or device code already used
         '410':
           description: Device code expired
         '500':

@@ -28,7 +28,7 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
   toastSettingsSuccess: 'Trakt settings saved successfully!',
   toastSettingsFailure: 'Something went wrong while saving Trakt settings.',
   createAppTip:
-    'Create an API app at <TraktAppLink>trakt.tv/oauth/applications</TraktAppLink>. Use the device authentication flow (no redirect URI required).',
+    'Create an API app at <TraktAppLink>trakt.tv/oauth/applications</TraktAppLink>. Set its redirect URI to urn:ietf:wg:oauth:2.0:oob so token refreshes match the application configuration.',
   configured: 'Configured',
   notConfigured: 'Not Configured',
 });

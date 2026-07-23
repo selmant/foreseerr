@@ -7,6 +7,7 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
+import { UserSettings } from '@server/entity/UserSettings';
 import type { PlexConnection } from '@server/interfaces/api/plexInterfaces';
 import type {
   LogMessage,
@@ -490,12 +491,30 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
   const settings = getSettings();
 
   try {
+    const previousClientId = settings.trakt.clientId;
+    const previousClientSecret = settings.trakt.clientSecret;
     const clientId = String(req.body.clientId ?? '').trim();
     let clientSecret = String(req.body.clientSecret ?? '').trim();
 
     // Preserve existing secret when the masked placeholder is submitted
     if (!clientSecret || clientSecret === '********') {
       clientSecret = settings.trakt.clientSecret;
+    }
+
+    if (
+      previousClientId !== clientId ||
+      previousClientSecret !== clientSecret
+    ) {
+      await getRepository(UserSettings)
+        .createQueryBuilder()
+        .update(UserSettings)
+        .set({
+          traktAccessToken: () => 'NULL',
+          traktRefreshToken: () => 'NULL',
+          traktTokenExpiresAt: () => 'NULL',
+          traktUsername: () => 'NULL',
+        })
+        .execute();
     }
 
     settings.trakt = {

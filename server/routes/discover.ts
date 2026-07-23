@@ -2,7 +2,7 @@ import PlexTvAPI from '@server/api/plextv';
 import type { SortOptions } from '@server/api/themoviedb';
 import TheMovieDb from '@server/api/themoviedb';
 import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
-import TraktAPI from '@server/api/trakt';
+import TraktAPI, { TraktReconnectRequiredError } from '@server/api/trakt';
 import type { TraktMediaItem } from '@server/api/trakt/interfaces';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
@@ -167,6 +167,9 @@ const handleTraktRouteError = (
   }
   if (e instanceof TraktNotLinkedError) {
     return next({ status: 404, message: e.message });
+  }
+  if (e instanceof TraktReconnectRequiredError) {
+    return next({ status: 401, message: e.message });
   }
   logger.error(fallbackMessage, {
     label: 'API',

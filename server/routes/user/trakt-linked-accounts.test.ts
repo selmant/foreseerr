@@ -1,8 +1,12 @@
-import TraktAPI from '@server/api/trakt';
+import TraktAPI, {
+  TraktReconnectRequiredError,
+  TraktRefreshRejectedError,
+} from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { getSettings } from '@server/lib/settings';
+import { refreshUserTraktTokens } from '@server/lib/trakt';
 import { checkUser } from '@server/middleware/auth';
 import authRoutes from '@server/routes/auth';
 import userRoutes from '@server/routes/user';
@@ -189,6 +193,47 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     assert.deepEqual(res.body, { status: 'pending' });
   });
 
+  it('POST device/token backs off when Trakt requests slower polling', async () => {
+    pollForTokenMock.mock.mockImplementation(async () => ({
+      status: 'slow_down' as const,
+    }));
+
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    const res = await agent
+      .post(
+        `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/token`
+      )
+      .send({ deviceCode: 'device-abc' });
+
+    assert.equal(res.status, 202);
+    assert.deepEqual(res.body, {
+      status: 'pending',
+      retryAfterSeconds: 10,
+    });
+  });
+
+  it('POST device/token treats an already-used code as terminal', async () => {
+    pollForTokenMock.mock.mockImplementation(async () => ({
+      status: 'already_used' as const,
+    }));
+
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    const res = await agent
+      .post(
+        `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/token`
+      )
+      .send({ deviceCode: 'device-abc' });
+
+    assert.equal(res.status, 409);
+    assert.deepEqual(res.body, { status: 'already_used' });
+  });
+
   it('POST device/token stores tokens on authorize', async () => {
     pollForTokenMock.mock.mockImplementation(async () => ({
       status: 'authorized' as const,
@@ -199,7 +244,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
         refresh_token: 'refresh-1',
         scope: 'public',
         created_at: Math.floor(Date.now() / 1000),
-        expiresAt: Date.now() + 3600_000,
+        expiresAt: Math.floor(Date.now() / 1000) + 3600,
       },
     }));
 
@@ -254,7 +299,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     }
     settings.traktAccessToken = 'access-1';
     settings.traktRefreshToken = 'refresh-1';
-    settings.traktTokenExpiresAt = String(Date.now() + 3600_000);
+    settings.traktTokenExpiresAt = String(Math.floor(Date.now() / 1000) + 3600);
     settings.traktUsername = 'trakt-user';
     await getRepository(UserSettings).save(settings);
 
@@ -270,6 +315,116 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       connected: false,
       username: null,
     });
+  });
+
+  it('serializes concurrent refreshes and reuses the persisted token pair', async () => {
+    await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+      relations: { settings: true },
+    });
+    const settings = user.settings ?? new UserSettings({ user });
+    const callerTokens = {
+      accessToken: 'expiring-access',
+      refreshToken: 'rotating-refresh',
+      expiresAt: Math.floor(Date.now() / 1000),
+    };
+    settings.traktAccessToken = callerTokens.accessToken;
+    settings.traktRefreshToken = callerTokens.refreshToken;
+    settings.traktTokenExpiresAt = String(callerTokens.expiresAt);
+    settings.traktUsername = 'trakt-user';
+    await getRepository(UserSettings).save(settings);
+
+    let refreshCalls = 0;
+    let releaseRefresh: (() => void) | undefined;
+    let signalRefreshStarted: (() => void) | undefined;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const refreshStarted = new Promise<void>((resolve) => {
+      signalRefreshStarted = resolve;
+    });
+    const refreshMock = mock.method(
+      TraktAPI.prototype,
+      'refreshAccessToken',
+      async () => {
+        refreshCalls += 1;
+        signalRefreshStarted?.();
+        await refreshGate;
+        return {
+          accessToken: 'rotated-access',
+          refreshToken: 'rotated-refresh',
+          expiresAt: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
+        };
+      }
+    );
+
+    try {
+      const first = refreshUserTraktTokens(user.id, callerTokens);
+      const second = refreshUserTraktTokens(user.id, callerTokens);
+      await refreshStarted;
+      assert.equal(refreshCalls, 1);
+      releaseRefresh?.();
+
+      const [firstTokens, secondTokens] = await Promise.all([first, second]);
+      assert.deepEqual(firstTokens, secondTokens);
+      assert.equal(refreshCalls, 1);
+
+      const persisted = await getRepository(UserSettings)
+        .createQueryBuilder('settings')
+        .addSelect('settings.traktAccessToken')
+        .addSelect('settings.traktRefreshToken')
+        .leftJoin('settings.user', 'user')
+        .where('user.id = :userId', { userId: user.id })
+        .getOneOrFail();
+      assert.equal(persisted.traktAccessToken, 'rotated-access');
+      assert.equal(persisted.traktRefreshToken, 'rotated-refresh');
+    } finally {
+      releaseRefresh?.();
+      refreshMock.mock.restore();
+    }
+  });
+
+  it('clears rejected refresh credentials and requires reconnection', async () => {
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+      relations: { settings: true },
+    });
+    const settings = user.settings ?? new UserSettings({ user });
+    const callerTokens = {
+      accessToken: 'rejected-access',
+      refreshToken: 'rejected-refresh',
+      expiresAt: Math.floor(Date.now() / 1000),
+    };
+    settings.traktAccessToken = callerTokens.accessToken;
+    settings.traktRefreshToken = callerTokens.refreshToken;
+    settings.traktTokenExpiresAt = String(callerTokens.expiresAt);
+    settings.traktUsername = 'trakt-user';
+    await getRepository(UserSettings).save(settings);
+
+    const refreshMock = mock.method(
+      TraktAPI.prototype,
+      'refreshAccessToken',
+      async () => {
+        throw new TraktRefreshRejectedError(400);
+      }
+    );
+
+    try {
+      await assert.rejects(
+        refreshUserTraktTokens(user.id, callerTokens),
+        TraktReconnectRequiredError
+      );
+    } finally {
+      refreshMock.mock.restore();
+    }
+
+    const status = await agent.get(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
+    );
+    assert.equal(status.status, 200);
+    assert.deepEqual(status.body, { connected: false, username: null });
   });
 
   it('POST device/code returns 400 when Trakt is not configured', async () => {

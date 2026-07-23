@@ -77,6 +77,12 @@ export interface TraktTokenResponse {
   scope?: string;
 }
 
+export interface TraktTokenState {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
 export interface TraktUserSettingsResponse {
   user?: {
     username?: string;
@@ -109,5 +115,8 @@ export interface TraktSearchListEntry {
 export type TraktDevicePollResult =
   | { status: 'authorized'; tokens: TraktTokenResponse & { expiresAt: number } }
   | { status: 'pending' }
+  | { status: 'slow_down' }
+  | { status: 'already_used' }
+  | { status: 'invalid' }
   | { status: 'expired' }
   | { status: 'denied' };
