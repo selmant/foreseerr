@@ -1,14 +1,14 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "foreseer.fullname" . }}
+  name: {{ include "foreseerr.fullname" . }}
   labels:
-    {{- include "foreseer.labels" . | nindent 4 }}
+    {{- include "foreseerr.labels" . | nindent 4 }}
 spec:
-  serviceName: {{ include "foreseer.fullname" . }}
+  serviceName: {{ include "foreseerr.fullname" . }}
   selector:
     matchLabels:
-      {{- include "foreseer.selectorLabels" . | nindent 6 }}
+      {{- include "foreseerr.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -16,7 +16,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "foreseer.labels" . | nindent 8 }}
+        {{- include "foreseerr.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -25,7 +25,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "foreseer.serviceAccountName" . }}
+      serviceAccountName: {{ include "foreseerr.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -104,7 +104,7 @@ spec:
       volumes:
         - name: config
           persistentVolumeClaim:
-            claimName: {{ if .Values.config.persistence.existingClaim }}{{ .Values.config.persistence.existingClaim }}{{- else }}{{ include "foreseer.configPersistenceName" . }}{{- end }}
+            claimName: {{ if .Values.config.persistence.existingClaim }}{{ .Values.config.persistence.existingClaim }}{{- else }}{{ include "foreseerr.configPersistenceName" . }}{{- end }}
       {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}

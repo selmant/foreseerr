@@ -31,9 +31,9 @@ probes:
   #  tcpSocket:
   #    port: http
 
-# -- Environment variables to add to the foreseer pods
+# -- Environment variables to add to the foreseerr pods
 extraEnv: []
-# -- Environment variables from secrets or configmaps to add to the foreseer pods
+# -- Environment variables from secrets or configmaps to add to the foreseerr pods
 extraEnvFrom: []
 
 serviceAccount:

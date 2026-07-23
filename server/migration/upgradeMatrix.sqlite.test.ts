@@ -14,7 +14,7 @@ import { DataSource } from 'typeorm';
 
 describe('Upgrade matrix: upstream Seerr baseline -> current schema (SQLite)', () => {
   it('preserves users, settings, requests, media, and service config across the upgrade', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'foreseer-upgrade-sqlite-'));
+    const dir = mkdtempSync(join(tmpdir(), 'foreseerr-upgrade-sqlite-'));
     const database = join(dir, 'upgrade-test.sqlite3');
     const migrationsDir = join(process.cwd(), 'server/migration/sqlite');
 
@@ -45,11 +45,11 @@ describe('Upgrade matrix: upstream Seerr baseline -> current schema (SQLite)', (
     }
 
     // --- Phase 2: upgrade the same physical file in place to the current
-    // schema by replaying the remaining (Foreseer-only) migrations. ---
+    // schema by replaying the remaining (Foreseerr-only) migrations. ---
     const allMigrations = await loadMigrationClasses(migrationsDir);
     assert.ok(
       allMigrations.length > baselineMigrations.length,
-      'expected Foreseer-only migrations on top of the baseline set'
+      'expected Foreseerr-only migrations on top of the baseline set'
     );
 
     const upgradedDataSource = new DataSource({

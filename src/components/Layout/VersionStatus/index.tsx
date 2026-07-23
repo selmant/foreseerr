@@ -11,8 +11,8 @@ import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Layout.VersionStatus', {
-  streamdevelop: 'Foreseer Develop',
-  streamstable: 'Foreseer Stable',
+  streamdevelop: 'Foreseerr Develop',
+  streamstable: 'Foreseerr Stable',
   outofdate: 'Out of Date',
   commitsbehind:
     '{commitsBehind} {commitsBehind, plural, one {commit} other {commits}} behind',

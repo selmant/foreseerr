@@ -44,14 +44,14 @@ class PlexOAuth {
     const browser = Bowser.getParser(window.navigator.userAgent);
     this.plexHeaders = {
       Accept: 'application/json',
-      'X-Plex-Product': 'Foreseer',
+      'X-Plex-Product': 'Foreseerr',
       'X-Plex-Version': 'Plex OAuth',
       'X-Plex-Client-Identifier': plexClientIdentifier,
       'X-Plex-Model': 'Plex OAuth',
       'X-Plex-Platform': browser.getBrowserName(),
       'X-Plex-Platform-Version': browser.getBrowserVersion() || 'Unknown',
       'X-Plex-Device': browser.getOSName(),
-      'X-Plex-Device-Name': `${browser.getBrowserName()} (Foreseer)`,
+      'X-Plex-Device-Name': `${browser.getBrowserName()} (Foreseerr)`,
       'X-Plex-Device-Screen-Resolution':
         window.screen.width + 'x' + window.screen.height,
       'X-Plex-Language': 'en',

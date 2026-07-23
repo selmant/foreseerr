@@ -81,7 +81,7 @@ app
     }
 
     // Refuse to start against a database migrated by a newer, unrecognized
-    // Foreseer version instead of silently running against an unknown
+    // Foreseerr version instead of silently running against an unknown
     // schema. Checked unconditionally (not just in production) since a
     // downgraded dev/synchronize install could still point at such a DB.
     await assertSupportedDatabaseSchema(dbConnection);

@@ -231,7 +231,7 @@ class TraktAPI extends ExternalAPI {
     const response = await this.rawAxios.post(
       '/oauth/token',
       {
-        refresh_token: 'foreseer-credential-validation',
+        refresh_token: 'foreseerr-credential-validation',
         client_id: this.clientId,
         client_secret: this.clientSecret,
         redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',

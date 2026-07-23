@@ -6,7 +6,7 @@ import { useIntl } from 'react-intl';
 const messages = defineMessages('components.Settings.SettingsIntegrations', {
   integrations: 'Integrations',
   description:
-    'Connect the external services Foreseer uses for requests, personalized discovery, and enriched ratings.',
+    'Connect the external services Foreseerr uses for requests, personalized discovery, and enriched ratings.',
   discoveryAndRatings: 'Discovery & Ratings',
   discoveryAndRatingsDescription:
     'Configure optional services that enrich discovery and title information.',

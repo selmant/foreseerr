@@ -1,12 +1,12 @@
 ---
 title: Overview
-description: Learn about Foreseer's Plex integration features
+description: Learn about Foreseerr's Plex integration features
 sidebar_position: 1
 ---
 
 # Plex Features Overview
 
-Foreseer provides integration features that connect with your Plex media server to automate media management tasks.
+Foreseerr provides integration features that connect with your Plex media server to automate media management tasks.
 
 ## Available Features
 
@@ -16,12 +16,12 @@ Foreseer provides integration features that connect with your Plex media server 
 ## Prerequisites
 
 :::info Authentication Required
-To use any Plex integration features, you must have logged into Foreseer at least once with your Plex account.
+To use any Plex integration features, you must have logged into Foreseerr at least once with your Plex account.
 :::
 
 **Requirements:**
 - Plex account with access to the configured Plex server
-- Foreseer configured with Plex as the media server
+- Foreseerr configured with Plex as the media server
 - User authentication via Plex login
 - Appropriate user permissions for specific features
 

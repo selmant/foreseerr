@@ -1,11 +1,11 @@
 ---
 title: Configuring the Database (Advanced)
-description: Configure the database for Foreseer
+description: Configure the database for Foreseerr
 sidebar_position: 2
 ---
 # Configuring the Database
 
-Foreseer supports SQLite and PostgreSQL. The database connection can be configured using the following environment variables:
+Foreseerr supports SQLite and PostgreSQL. The database connection can be configured using the following environment variables:
 
 ## SQLite Options
 
@@ -93,9 +93,9 @@ DB_SSL_CERT_FILE= # (optional) Path to certificate chain in pem format for the p
 
 ### Migrating from SQLite to PostgreSQL
 
-1. Set up your PostgreSQL database and configure Foreseer to use it
-2. Run Foreseer to create the tables in the PostgreSQL database
-3. Stop Foreseer
+1. Set up your PostgreSQL database and configure Foreseerr to use it
+2. Run Foreseerr to create the tables in the PostgreSQL database
+3. Stop Foreseerr
 4. Run the following command to export the data from the SQLite database and import it into the PostgreSQL database:
 
 :::info
@@ -114,7 +114,7 @@ import TabItem from '@theme/TabItem';
 <Tabs>
 <TabItem value="docker" label="Using pgloader Container (Recommended)" default>
 
-**Recommended method**: Use the pgloader container even for standalone Foreseer installations. This avoids building from source and ensures compatibility.
+**Recommended method**: Use the pgloader container even for standalone Foreseerr installations. This avoids building from source and ensures compatibility.
 
 ```bash
 # For standalone installations (no Docker network needed)
@@ -169,4 +169,4 @@ Once pgloader is built, run the migration:
 </TabItem>
 </Tabs>
 
-5. Start Foreseer
+5. Start Foreseerr

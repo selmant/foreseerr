@@ -6,7 +6,7 @@ import path from 'path';
 const migrationsDir = path.join(__dirname, 'migrations');
 
 /**
- * Detects a settings.json produced by a newer Foreseer version than this
+ * Detects a settings.json produced by a newer Foreseerr version than this
  * one recognizes (i.e. it records a migration name this build has no
  * migration file for) and refuses to continue rather than silently running
  * this version's migrations against a schema it doesn't fully understand.
@@ -35,13 +35,13 @@ const assertNoUnsupportedMigrations = (
   }
 
   logger.error(
-    `This settings.json was migrated by a newer version of Foreseer and includes migrations this version does not recognize: ${unknownMigrations.join(
+    `This settings.json was migrated by a newer version of Foreseerr and includes migrations this version does not recognize: ${unknownMigrations.join(
       ', '
     )}.`,
     { label: 'Settings Migrator' }
   );
   logger.error(
-    'Downgrading to an older Foreseer version with a newer settings.json is not supported. Restore a settings.json backup that matches this version (see settings.old.json in your config directory), or upgrade to a Foreseer release that recognizes these migrations.',
+    'Downgrading to an older Foreseerr version with a newer settings.json is not supported. Restore a settings.json backup that matches this version (see settings.old.json in your config directory), or upgrade to a Foreseerr release that recognizes these migrations.',
     { label: 'Settings Migrator' }
   );
   process.exit(1);
@@ -103,7 +103,7 @@ export const runMigrations = async (
         }
         migrated = newSettings;
       } catch (e) {
-        // we stop Foreseer if the migration failed
+        // we stop Foreseerr if the migration failed
         logger.error(
           `Error while running migration '${migration}': ${e.message}\n${e.stack}`,
           {
@@ -140,7 +140,7 @@ export const runMigrations = async (
       await fs.writeFile(BACKUP_PATH, oldBackup.toString());
     }
   } catch (e) {
-    // we stop Foreseer if the migration failed
+    // we stop Foreseerr if the migration failed
     logger.error(
       `Something went wrong while running settings migrations: ${e.message}`,
       {

@@ -2,7 +2,7 @@
 id: verifying-signed-artifacts
 title: Verifying Signed Artifacts
 sidebar_label: Verify Signed Artifacts
-description: Learn how to verify Foreseer's signed artifacts and SBOM attestations.
+description: Learn how to verify Foreseerr's signed artifacts and SBOM attestations.
 ---
 
 import Tabs from '@theme/Tabs';
@@ -14,7 +14,7 @@ These artifacts are cryptographically signed using [Sigstore Cosign](https://doc
 - Container images
 - Helm charts
 
-This ensures that the images you pull are authentic, tamper-proof, and built by the official Foreseer release pipeline.
+This ensures that the images you pull are authentic, tamper-proof, and built by the official Foreseerr release pipeline.
 
 Additionally each container image also includes a CycloneDX SBOM (Software Bill of Materials) attestation, generated with [Trivy](https://aquasecurity.github.io/trivy/), providing transparency about all dependencies included in the image.
 
@@ -36,12 +36,12 @@ To verify images:
 
 ### Image Locations
 
-Official Foreseer images are available from:
+Official Foreseerr images are available from:
 
 - GitHub Container Registry (GHCR): `ghcr.io/selmant/seerr:<tag>`
-- Docker Hub: `selmantr/foreseer:<tag>`
+- Docker Hub: `selmantr/foreseerr:<tag>`
 
-You can view all available tags on the [Foreseer Releases page](https://github.com/selmant/seerr/releases).
+You can view all available tags on the [Foreseerr Releases page](https://github.com/selmant/seerr/releases).
 
 ---
 
@@ -91,7 +91,7 @@ cosign verify ghcr.io/selmant/seerr@sha256:abcd1234... \
   <TabItem value="dockerhub" label="Docker Hub">
 
 ```bash
-cosign verify selmantr/foreseer@sha256:abcd1234... \
+cosign verify selmantr/foreseerr@sha256:abcd1234... \
   --certificate-identity "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v0.1.0-alpha.5" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
@@ -156,7 +156,7 @@ cosign verify ghcr.io/selmant/seerr@sha256:abcd1234... \
   <TabItem value="dockerhub" label="Docker Hub">
 
 ```bash
-cosign verify selmantr/foreseer@sha256:abcd1234... \
+cosign verify selmantr/foreseerr@sha256:abcd1234... \
   --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
@@ -206,7 +206,7 @@ You can open `sbom.json` in a CycloneDX viewer or analyse it with [Trivy](https:
 
 ### Expected Certificate Identity
 
-The expected certificate identity for all signed Foreseer images is:
+The expected certificate identity for all signed Foreseerr images is:
 
 ```
 https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v*
@@ -214,7 +214,7 @@ https://github.com/selmant/seerr/.github/workflows/release.yml@refs/tags/v*
 
 This confirms that the image was:
 
-- Built by the official Foreseer Release workflow
+- Built by the official Foreseerr Release workflow
 - Produced from the selmant/seerr repository
 - Signed using GitHub’s OIDC identity via Sigstore Fulcio
 
@@ -255,11 +255,11 @@ cosign verify ghcr.io/selmant/seerr@"$DIGEST" \
 
 ### Helm Chart Locations
 
-Official Foreseer helm charts are available from:
+Official Foreseerr helm charts are available from:
 
-- GitHub Container Registry (GHCR): `ghcr.io/selmant/seerr/foreseer-chart:<tag>`
+- GitHub Container Registry (GHCR): `ghcr.io/selmant/seerr/foreseerr-chart:<tag>`
 
-You can view all available tags on the [Foreseer package page](https://github.com/selmant/seerr/pkgs/container/seerr%2Fforeseer-chart).
+You can view all available tags on the [Foreseerr package page](https://github.com/selmant/seerr/pkgs/container/seerr%2Fforeseerr-chart).
 
 ---
 
@@ -274,14 +274,14 @@ Verification should always be performed using the image digest (SHA256).
   <TabItem value="docker" label="Docker">
 
 ```bash
-docker buildx imagetools inspect ghcr.io/selmant/seerr/foreseer-chart:3.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"'
+docker buildx imagetools inspect ghcr.io/selmant/seerr/foreseerr-chart:3.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"'
 ```
   </TabItem>
 
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-skopeo inspect docker://ghcr.io/selmant/seerr/foreseer-chart:3.7.0 --format '{{.Digest}}'
+skopeo inspect docker://ghcr.io/selmant/seerr/foreseerr-chart:3.7.0 --format '{{.Digest}}'
 ```
   </TabItem>
 </Tabs>
@@ -297,13 +297,13 @@ sha256:abcd1234...
 #### Verify the Helm Chart Signature
 
 ```bash
-cosign verify ghcr.io/selmant/seerr/foreseer-chart@sha256:abcd1234... \
+cosign verify ghcr.io/selmant/seerr/foreseerr-chart@sha256:abcd1234... \
   --certificate-identity "https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
 
 :::info Successful Verification Example
-Verification for `ghcr.io/selmant/seerr/foreseer-chart@sha256:abcd1234...`
+Verification for `ghcr.io/selmant/seerr/foreseerr-chart@sha256:abcd1234...`
 
 The following checks were performed:
 
@@ -316,7 +316,7 @@ The following checks were performed:
 
 ### Expected Certificate Identity
 
-The expected certificate identity for all signed Foreseer charts is:
+The expected certificate identity for all signed Foreseerr charts is:
 
 ```
 https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop
@@ -324,7 +324,7 @@ https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop
 
 This confirms that the image was:
 
-- Built by the official Foreseer Release workflow
+- Built by the official Foreseerr Release workflow
 - Produced from the selmant/seerr repository
 - Signed using GitHub’s OIDC identity via Sigstore Fulcio
 
@@ -336,13 +336,13 @@ This confirms that the image was:
   <TabItem value="docker" label="Docker">
 
 ```bash
-DIGEST=$(docker buildx imagetools inspect ghcr.io/selmant/seerr/foreseer-chart:3.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"')
+DIGEST=$(docker buildx imagetools inspect ghcr.io/selmant/seerr/foreseerr-chart:3.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"')
 
-cosign verify ghcr.io/selmant/seerr/foreseer-chart@"$DIGEST" \
+cosign verify ghcr.io/selmant/seerr/foreseerr-chart@"$DIGEST" \
   --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
-cosign verify-attestation ghcr.io/selmant/seerr/foreseer-chart@"$DIGEST" \
+cosign verify-attestation ghcr.io/selmant/seerr/foreseerr-chart@"$DIGEST" \
   --type cyclonedx \
   --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
@@ -352,9 +352,9 @@ cosign verify-attestation ghcr.io/selmant/seerr/foreseer-chart@"$DIGEST" \
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-DIGEST=$(skopeo inspect docker://ghcr.io/selmant/seerr/foreseer-chart:3.7.0 --format '{{.Digest}}')
+DIGEST=$(skopeo inspect docker://ghcr.io/selmant/seerr/foreseerr-chart:3.7.0 --format '{{.Digest}}')
 
-cosign verify ghcr.io/selmant/seerr/foreseer-chart@"$DIGEST" \
+cosign verify ghcr.io/selmant/seerr/foreseerr-chart@"$DIGEST" \
   --certificate-identity-regexp "https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
@@ -383,4 +383,4 @@ cosign verify ghcr.io/selmant/seerr/foreseer-chart@"$DIGEST" \
 - [Skopeo Documentation](https://github.com/containers/skopeo)
 - [Podman Documentation](https://podman.io/get-started/)
 - [Docker Documentation](https://docs.docker.com/)
-- [Foreseer GitHub Repository](https://github.com/selmant/seerr)
+- [Foreseerr GitHub Repository](https://github.com/selmant/seerr)

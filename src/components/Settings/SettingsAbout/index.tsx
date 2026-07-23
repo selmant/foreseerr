@@ -16,7 +16,7 @@ import useSWR from 'swr';
 
 const messages = defineMessages('components.Settings.SettingsAbout', {
   about: 'About',
-  aboutseerr: 'About Foreseer',
+  aboutseerr: 'About Foreseerr',
   version: 'Version',
   totalmedia: 'Total Media',
   totalrequests: 'Total Requests',
@@ -24,13 +24,13 @@ const messages = defineMessages('components.Settings.SettingsAbout', {
   githubdiscussions: 'GitHub Discussions',
   timezone: 'Time Zone',
   appDataPath: 'Data Directory',
-  supportseerr: 'Support Foreseer',
+  supportseerr: 'Support Foreseerr',
   contribute: 'Make a Contribution',
   documentation: 'Documentation',
   outofdate: 'Out of Date',
   uptodate: 'Up to Date',
   runningDevelop:
-    'You are running the <code>develop</code> branch of Foreseer, which is only recommended for those contributing to development or assisting with bleeding-edge testing.',
+    'You are running the <code>develop</code> branch of Foreseerr, which is only recommended for those contributing to development or assisting with bleeding-edge testing.',
 });
 
 const SettingsAbout = () => {

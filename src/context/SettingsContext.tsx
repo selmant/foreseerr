@@ -11,7 +11,7 @@ export interface SettingsContextProps {
 
 const defaultSettings = {
   initialized: false,
-  applicationTitle: 'Foreseer',
+  applicationTitle: 'Foreseerr',
   applicationUrl: '',
   hideAvailable: false,
   hideBlocklisted: false,

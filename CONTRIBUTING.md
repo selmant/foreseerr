@@ -1,4 +1,4 @@
-# Contributing to Foreseer
+# Contributing to Foreseerr
 
 All help is welcome and greatly appreciated! If you would like to contribute to the project, the following instructions should get you started...
 
@@ -182,7 +182,7 @@ Steps:
 
 1. Make the necessary changes.
 2. Test your changes.
-3. Update the `version` in `charts/foreseer-chart/Chart.yaml` following [Semantic Versioning (SemVer)](https://semver.org/).
+3. Update the `version` in `charts/foreseerr-chart/Chart.yaml` following [Semantic Versioning (SemVer)](https://semver.org/).
 4. Run the `helm-docs` command to regenerate the chart's README.
 
 ### Contributing Code

@@ -1,6 +1,6 @@
 ---
 title: General
-description: Configure global and default settings for Foreseer.
+description: Configure global and default settings for Foreseerr.
 sidebar_position: 1
 ---
 
@@ -8,7 +8,7 @@ sidebar_position: 1
 
 ## API Key
 
-This is your Foreseer API key, which can be used to integrate Foreseer with third-party applications. Do **not** share this key publicly, as it can be used to gain administrator access!
+This is your Foreseerr API key, which can be used to integrate Foreseerr with third-party applications. Do **not** share this key publicly, as it can be used to gain administrator access!
 
 If you need to generate a new API key for any reason, simply click the button to the right of the text box.
 
@@ -16,11 +16,11 @@ If you want to set the API key, rather than letting it be randomly generated, yo
 
 ## Application Title
 
-If you aren't a huge fan of the name "Foreseer" and would like to display something different to your users, you can customize the application title!
+If you aren't a huge fan of the name "Foreseerr" and would like to display something different to your users, you can customize the application title!
 
 ## Application URL
 
-Set this to the externally-accessible URL of your Foreseer instance.
+Set this to the externally-accessible URL of your Foreseerr instance.
 
 You must configure this setting in order to enable password reset and generation emails.
 
@@ -34,7 +34,7 @@ You should enable this if you are having issues with loading images directly fro
 
 ## Display Language
 
-Set the default display language for Foreseer. Users can override this setting in their user settings.
+Set the default display language for Foreseerr. Users can override this setting in their user settings.
 
 ## Discover Region, Discover Language & Streaming Region
 

@@ -1,12 +1,12 @@
 ---
 title: Owner Account
-description: Your owner account is the primary account for managing Foreseer.
+description: Your owner account is the primary account for managing Foreseerr.
 sidebar_position: 1
 ---
 
 # Owner Account
 
-The user account created during Foreseer setup is the "Owner" account, which cannot be deleted or modified by other users. This account's credentials are used to authenticate with your media server and configure Foreseer settings.
+The user account created during Foreseerr setup is the "Owner" account, which cannot be deleted or modified by other users. This account's credentials are used to authenticate with your media server and configure Foreseerr settings.
 
 :::note
 In case of Jellyfin/Emby, the owner account is also used for API access to your media server. This account should have a valid authentication token for your media server.

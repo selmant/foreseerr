@@ -35,7 +35,7 @@ You cannot configure both the **Authorization Header** field and a custom `Autho
 
 ### JSON Payload
 
-Customize the JSON payload to suit your needs. Foreseer provides several [template variables](#template-variables) for use in the payload, which will be replaced with the relevant data when the notifications are triggered.
+Customize the JSON payload to suit your needs. Foreseerr provides several [template variables](#template-variables) for use in the payload, which will be replaced with the relevant data when the notifications are triggered.
 
 ## Template Variables
 

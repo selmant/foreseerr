@@ -2,7 +2,7 @@ import logger from '@server/logger';
 import type { DataSource } from 'typeorm';
 
 /**
- * Detects a database that was migrated by a newer version of Foreseer than
+ * Detects a database that was migrated by a newer version of Foreseerr than
  * this one recognizes, and refuses to continue rather than running against
  * a schema this build doesn't fully understand. Downgrading a database is
  * not supported; the actionable fix is to restore a backup taken before the
@@ -37,13 +37,13 @@ export async function assertSupportedDatabaseSchema(
   }
 
   logger.error(
-    `This database was migrated by a newer version of Foreseer and includes migrations this version does not recognize: ${unknownMigrations.join(
+    `This database was migrated by a newer version of Foreseerr and includes migrations this version does not recognize: ${unknownMigrations.join(
       ', '
     )}.`,
     { label: 'Database' }
   );
   logger.error(
-    'Downgrading a database to an older Foreseer version is not supported. Restore a backup taken before the upgrade, or upgrade to a Foreseer release that recognizes these migrations. See the Backups documentation for restore procedures.',
+    'Downgrading a database to an older Foreseerr version is not supported. Restore a backup taken before the upgrade, or upgrade to a Foreseerr release that recognizes these migrations. See the Backups documentation for restore procedures.',
     { label: 'Database' }
   );
   throw new Error(

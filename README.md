@@ -1,13 +1,13 @@
 <p align="center">
-<img src="./public/logo_full.svg" alt="Foreseer" style="margin: 20px 0;">
+<img src="./public/logo_full.svg" alt="Foreseerr" style="margin: 20px 0;">
 </p>
 
-**Foreseer** is a personal fork of [Seerr](https://github.com/seerr-team/seerr) that folds SuggestArr-style discovery and media workflows into the app itself — Trakt browse, richer ratings, and more — without running a separate suggestion sidecar.
+**Foreseerr** is a personal fork of [Seerr](https://github.com/seerr-team/seerr) that folds SuggestArr-style discovery and media workflows into the app itself — Trakt browse, richer ratings, and more — without running a separate suggestion sidecar.
 
 It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex / Emby), and Radarr/Sonarr support. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 
 > [!WARNING]
-> Foreseer is currently in **alpha** (`v0.1.0-alpha.5`). Expect rough edges, breaking changes, and incomplete features. Back up your configuration before upgrading, and avoid using alpha builds as your only production instance.
+> Foreseerr is currently in **alpha** (`v0.1.0-alpha.5`). Expect rough edges, breaking changes, and incomplete features. Back up your configuration before upgrading, and avoid using alpha builds as your only production instance.
 
 ## Current Features (from Seerr)
 
@@ -18,9 +18,9 @@ It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex 
 - Library scans, granular permissions, notification agents, watchlist & blocklist.
 - Mobile-friendly UI.
 
-## Foreseer roadmap
+## Foreseerr roadmap
 
-Near-term additions on top of Seerr (see the Foreseer master plan):
+Near-term additions on top of Seerr (see the Foreseerr master plan):
 
 - Trakt browse (recommendations, lists, watchlist) with manual requests
 - Multi-source rating badges
@@ -31,32 +31,32 @@ AI / LLM recommendation features are explicitly out of scope unless reopened.
 
 ## Installation
 
-Foreseer is currently distributed as a Docker image. Docker and Docker Compose must be installed on the host; see the [Docker installation guide](https://docs.docker.com/get-docker/) if needed.
+Foreseerr is currently distributed as a Docker image. Docker and Docker Compose must be installed on the host; see the [Docker installation guide](https://docs.docker.com/get-docker/) if needed.
 
 ### Docker CLI
 
-Create a persistent directory for Foreseer’s configuration. The container runs as UID/GID `1000`, so make sure it can write to this directory:
+Create a persistent directory for Foreseerr’s configuration. The container runs as UID/GID `1000`, so make sure it can write to this directory:
 
 ```bash
-mkdir -p ./foreseer-config
-sudo chown -R 1000:1000 ./foreseer-config
+mkdir -p ./foreseerr-config
+sudo chown -R 1000:1000 ./foreseerr-config
 ```
 
 Start the released alpha image:
 
 ```bash
 docker run -d \
-  --name foreseer \
+  --name foreseerr \
   --init \
   --restart unless-stopped \
   -p 5055:5055 \
-  -v "$(pwd)/foreseer-config:/app/config" \
+  -v "$(pwd)/foreseerr-config:/app/config" \
   ghcr.io/selmant/seerr:v0.1.0-alpha.5
 ```
 
 Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
 
-To update, replace the image tag with the version you want, then recreate the container with the same volume mount. Because this is an alpha release, back up `foreseer-config` before updating.
+To update, replace the image tag with the version you want, then recreate the container with the same volume mount. Because this is an alpha release, back up `foreseerr-config` before updating.
 
 ### Docker Compose
 
@@ -64,22 +64,22 @@ The equivalent production-style Compose service is:
 
 ```yaml
 services:
-  foreseer:
+  foreseerr:
     image: ghcr.io/selmant/seerr:v0.1.0-alpha.5
-    container_name: foreseer
+    container_name: foreseerr
     init: true
     restart: unless-stopped
     ports:
       - "5055:5055"
     volumes:
-      - ./foreseer-config:/app/config
+      - ./foreseerr-config:/app/config
 ```
 
 Start it with:
 
 ```bash
-mkdir -p foreseer-config
-sudo chown -R 1000:1000 foreseer-config
+mkdir -p foreseerr-config
+sudo chown -R 1000:1000 foreseerr-config
 docker compose up -d
 ```
 
@@ -87,9 +87,9 @@ The image is published at `ghcr.io/selmant/seerr`. Use an explicit version tag f
 
 ## Migrating from Seerr / Overseerr / Jellyseerr
 
-Foreseer uses Seerr-compatible config paths and database settings, so an existing Seerr configuration can be reused when replacing Seerr. Stop the existing instance first, back up its config/database, and do not run both instances against the same config directory or database.
+Foreseerr uses Seerr-compatible config paths and database settings, so an existing Seerr configuration can be reused when replacing Seerr. Stop the existing instance first, back up its config/database, and do not run both instances against the same config directory or database.
 
-See the [migration guide](docs/migration-guide.mdx) for the replacement procedure and for running Foreseer alongside Seerr with isolated storage.
+See the [migration guide](docs/migration-guide.mdx) for the replacement procedure and for running Foreseerr alongside Seerr with isolated storage.
 
 Upstream Seerr migration notes: [docs.seerr.dev/migration-guide](https://docs.seerr.dev/migration-guide).
 
@@ -99,7 +99,7 @@ With a running instance: http://localhost:5055/api-docs
 
 ## Upstream
 
-Foreseer tracks [seerr-team/seerr](https://github.com/seerr-team/seerr). This fork’s remote is [selmant/seerr](https://github.com/selmant/seerr).
+Foreseerr tracks [seerr-team/seerr](https://github.com/seerr-team/seerr). This fork’s remote is [selmant/seerr](https://github.com/selmant/seerr).
 
 ## License
 

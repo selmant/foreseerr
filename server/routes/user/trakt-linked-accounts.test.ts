@@ -361,7 +361,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     assert.equal(settings?.traktUserId, 'trakt-user-1');
   });
 
-  it('rejects linking the same Trakt account to another Foreseer user', async () => {
+  it('rejects linking the same Trakt account to another Foreseerr user', async () => {
     pollForTokenMock.mock.mockImplementation(async () => ({
       status: 'authorized' as const,
       tokens: {

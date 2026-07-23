@@ -6,7 +6,7 @@
  *   user data.
  * - A `settings.json` backup is taken before migrating.
  * - A settings.json recording a migration this build doesn't recognize
- *   (i.e. written by a newer Foreseer version) is rejected with an
+ *   (i.e. written by a newer Foreseerr version) is rejected with an
  *   actionable error instead of silently downgrading.
  */
 import type { AllSettings } from '@server/lib/settings';
@@ -21,7 +21,7 @@ import { after, describe, it, mock } from 'node:test';
 
 /**
  * A settings.json shaped like what upstream Seerr (the Phase 0 baseline
- * commit) would have written: no Foreseer-only top-level keys at all, and
+ * commit) would have written: no Foreseerr-only top-level keys at all, and
  * already migrated up through upstream's own last migration.
  */
 function upstreamBaselineFixture(): AllSettings {
@@ -94,8 +94,8 @@ function upstreamBaselineFixture(): AllSettings {
       dnsCache: { enabled: false },
       apiRequestTimeout: 10000,
     },
-    // Upstream's own migrations already ran; Foreseer-only migrations (like
-    // Foreseer-specific migrations have not.
+    // Upstream's own migrations already ran; Foreseerr-only migrations (like
+    // Foreseerr-specific migrations have not.
     migrations: [
       '0007_migrate_arr_tags',
       '0008_migrate_blacklist_to_blocklist',
@@ -116,7 +116,7 @@ describe('Settings migrator: upstream baseline compatibility', () => {
   });
 
   function tempSettingsPath(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'foreseer-settings-migrator-'));
+    const dir = mkdtempSync(join(tmpdir(), 'foreseerr-settings-migrator-'));
     tmpDirs.push(dir);
     return join(dir, 'settings.json');
   }
@@ -158,9 +158,9 @@ describe('Settings migrator: upstream baseline compatibility', () => {
     const savedContents = JSON.parse(await fs.readFile(settingsPath, 'utf-8'));
     assert.deepEqual(savedContents, migrated);
 
-    // End-to-end: feeding the migrated (still Foreseer-key-less at the
+    // End-to-end: feeding the migrated (still Foreseerr-key-less at the
     // migrator level) result through the real Settings class backfills
-    // Foreseer-only fields (trakt/mediaActions/mdblist) with safe defaults
+    // Foreseerr-only fields (trakt/mediaActions/mdblist) with safe defaults
     // via constructor merge + getters, without clobbering existing data.
     const settings = new Settings(migrated);
     assert.deepEqual(settings.trakt, { clientId: '', clientSecret: '' });
@@ -170,14 +170,14 @@ describe('Settings migrator: upstream baseline compatibility', () => {
     assert.equal(settings.plex.ip, '10.0.0.5');
   });
 
-  it('rejects a settings.json written by a newer, unrecognized Foreseer version', async () => {
+  it('rejects a settings.json written by a newer, unrecognized Foreseerr version', async () => {
     const settingsPath = tempSettingsPath();
     const fixture = {
       ...upstreamBaselineFixture(),
       migrations: [
         '0007_migrate_arr_tags',
         '0008_migrate_blacklist_to_blocklist',
-        '0099_a_future_migration_from_a_newer_foreseer',
+        '0099_a_future_migration_from_a_newer_foreseerr',
       ],
     };
 

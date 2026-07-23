@@ -7,9 +7,9 @@ sidebar_position: 4
 # Services
 
 :::info
-**If you keep separate copies of non-4K and 4K content in your media libraries, you will need to set up multiple Radarr/Sonarr instances and link each of them to Foreseer.**
+**If you keep separate copies of non-4K and 4K content in your media libraries, you will need to set up multiple Radarr/Sonarr instances and link each of them to Foreseerr.**
 
-Foreseer checks these linked servers to determine whether or not media has already been requested or is available, so two servers of each type are required _if you keep separate non-4K and 4K copies of media._
+Foreseerr checks these linked servers to determine whether or not media has already been requested or is available, so two servers of each type are required _if you keep separate non-4K and 4K copies of media._
 
 **If you only maintain one copy of media, you can instead simply set up one server and set the "Quality Profile" setting on a per-request basis.**
 :::
@@ -17,7 +17,7 @@ Foreseer checks these linked servers to determine whether or not media has alrea
 ### Radarr/Sonarr Settings
 
 :::warning
-**Only v3 & V4 Radarr/Sonarr servers are supported!** If your Radarr/Sonarr server is still running v2, you will need to upgrade in order to add it to Foreseer.
+**Only v3 & V4 Radarr/Sonarr servers are supported!** If your Radarr/Sonarr server is still running v2, you will need to upgrade in order to add it to Foreseerr.
 ::::
 
 #### Default Server
@@ -36,7 +36,7 @@ Enter a friendly name for the Radarr/Sonarr server.
 
 #### Hostname or IP Address
 
-If you have Foreseer installed on the same network as Radarr/Sonarr, you can set this to the local IP address of your Radarr/Sonarr server. Otherwise, this should be set to a valid hostname (e.g., `radarr.myawesomeserver.com`).
+If you have Foreseerr installed on the same network as Radarr/Sonarr, you can set this to the local IP address of your Radarr/Sonarr server. Otherwise, this should be set to a valid hostname (e.g., `radarr.myawesomeserver.com`).
 
 #### Port
 
@@ -44,7 +44,7 @@ This value should be set to the port that your Radarr/Sonarr server listens on. 
 
 #### Use SSL
 
-Enable this setting to connect to Radarr/Sonarr via HTTPS rather than HTTP. Self-signed certificates are not trusted by default, but you can configure Foreseer to accept them. See [Self-Signed Certificates](/using-seerr/advanced/self-signed-certificates) for details.
+Enable this setting to connect to Radarr/Sonarr via HTTPS rather than HTTP. Self-signed certificates are not trusted by default, but you can configure Foreseerr to accept them. See [Self-Signed Certificates](/using-seerr/advanced/self-signed-certificates) for details.
 
 #### API Key
 
@@ -54,7 +54,7 @@ You can locate the required API keys in Radarr/Sonarr in **Settings &rarr; Gener
 
 #### URL Base
 
-If you have configured a URL base for your Radarr/Sonarr server, you _must_ enter it here in order for Foreseer to connect to those services!
+If you have configured a URL base for your Radarr/Sonarr server, you _must_ enter it here in order for Foreseerr to connect to those services!
 
 You can verify whether or not you have a URL base configured in your Radarr/Sonarr server at **Settings &rarr; General &rarr; Host**. (Note that a restart of your Radarr/Sonarr server is required if you modify this setting!)
 

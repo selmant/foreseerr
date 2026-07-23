@@ -5,7 +5,7 @@ name: Trivy Container Vulnerability Scan
 on:
   workflow_run:
     workflows:
-      - Foreseer Release
+      - Foreseerr Release
     types:
       - completed
   schedule:

@@ -4,7 +4,7 @@ import type * as OpenApiPlugin from 'docusaurus-plugin-openapi-docs';
 import { themes as prismThemes } from 'prism-react-renderer';
 
 const config: Config = {
-  title: 'Foreseer',
+  title: 'Foreseerr',
   tagline: 'One Stop Solution for all your media request needs',
   favicon: 'img/favicon.ico',
 
@@ -112,7 +112,7 @@ const config: Config = {
     },
     navbar: {
       logo: {
-        alt: 'Foreseer',
+        alt: 'Foreseerr',
         src: 'img/logo_full.svg',
       },
       items: [
@@ -176,7 +176,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Foreseer (Seerr fork). Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Foreseerr (Seerr fork). Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.shadesOfPurple,

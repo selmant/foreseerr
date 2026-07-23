@@ -1,15 +1,15 @@
 <svg width="220" height="180" viewBox="0 0 220 180" fill="none" xmlns="http://www.w3.org/2000/svg">
   <circle cx="110" cy="52" r="28" fill="#131928"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M106 96C132.51 96 154 74.5097 154 48C154 21.4903 132.51 0 106 0C79.4903 0 58 21.4903 58 48C58 74.5097 79.4903 96 106 96ZM138 52C138 67.464 125.464 80 110 80C94.5361 80 82.0001 67.464 82.0001 52C82.0001 49.1303 82.4318 46.3615 83.2338 43.7548C85.4288 48.6165 90.3194 52 96.0001 52C103.732 52 110 45.732 110 38C110 32.3192 106.617 27.4287 101.755 25.2337C104.362 24.4317 107.13 24 110 24C125.464 24 138 36.536 138 52Z" fill="url(#foreseer_stacked_grad0)"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M106 96C132.51 96 154 74.5097 154 48C154 21.4903 132.51 0 106 0C79.4903 0 58 21.4903 58 48C58 74.5097 79.4903 96 106 96ZM138 52C138 67.464 125.464 80 110 80C94.5361 80 82.0001 67.464 82.0001 52C82.0001 49.1303 82.4318 46.3615 83.2338 43.7548C85.4288 48.6165 90.3194 52 96.0001 52C103.732 52 110 45.732 110 38C110 32.3192 106.617 27.4287 101.755 25.2337C104.362 24.4317 107.13 24 110 24C125.464 24 138 36.536 138 52Z" fill="url(#foreseerr_stacked_grad0)"/>
   <path opacity="0.2" fill-rule="evenodd" clip-rule="evenodd" d="M138 52C138 67.464 125.464 80 110 80C94.864 80 82.5329 67.9897 82.017 52.9791C82.0057 53.318 82 53.6584 82 54C82 70.5686 95.4315 84 112 84C128.569 84 142 70.5686 142 54C142 37.4315 128.569 24 112 24C111.66 24 111.321 24.0057 110.983 24.0169C125.992 24.5347 138 36.865 138 52Z" fill="#131928"/>
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M106 12C86.1177 12 70 28.1177 70 48C70 50.2091 68.2091 52 66 52C63.7909 52 62 50.2091 62 48C62 23.6995 81.6995 4 106 4C108.209 4 110 5.79086 110 8C110 10.2091 108.209 12 106 12Z" fill="url(#foreseer_stacked_grad1)"/>
-  <text x="110" y="152" fill="white" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="36" font-weight="700" letter-spacing="-0.02em" text-anchor="middle">Foreseer</text>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M106 12C86.1177 12 70 28.1177 70 48C70 50.2091 68.2091 52 66 52C63.7909 52 62 50.2091 62 48C62 23.6995 81.6995 4 106 4C108.209 4 110 5.79086 110 8C110 10.2091 108.209 12 106 12Z" fill="url(#foreseerr_stacked_grad1)"/>
+  <text x="110" y="152" fill="white" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif" font-size="36" font-weight="700" letter-spacing="-0.02em" text-anchor="middle">Foreseerr</text>
   <defs>
-    <linearGradient id="foreseer_stacked_grad0" x1="106" y1="-2.07126e-06" x2="175.5" y2="69.5" gradientUnits="userSpaceOnUse">
+    <linearGradient id="foreseerr_stacked_grad0" x1="106" y1="-2.07126e-06" x2="175.5" y2="69.5" gradientUnits="userSpaceOnUse">
       <stop stop-color="#C395FC"/>
       <stop offset="1" stop-color="#4F65F5"/>
     </linearGradient>
-    <linearGradient id="foreseer_stacked_grad1" x1="86" y1="8" x2="86" y2="48" gradientUnits="userSpaceOnUse">
+    <linearGradient id="foreseerr_stacked_grad1" x1="86" y1="8" x2="86" y2="48" gradientUnits="userSpaceOnUse">
       <stop stop-color="white" stop-opacity="0.4"/>
       <stop offset="1" stop-color="white" stop-opacity="0"/>
     </linearGradient>

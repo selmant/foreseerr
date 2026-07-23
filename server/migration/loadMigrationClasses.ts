@@ -11,7 +11,7 @@ export type MigrationClass = new () => MigrationInterface;
  *
  * Used by upgrade-matrix tests to run "only the migrations upstream Seerr
  * shipped as of the baseline commit" against a fresh database, then replay
- * the remaining Foreseer-only migrations to simulate an in-place upgrade.
+ * the remaining Foreseerr-only migrations to simulate an in-place upgrade.
  */
 export async function loadMigrationClasses(
   migrationsDir: string,

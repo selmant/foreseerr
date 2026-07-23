@@ -78,7 +78,7 @@ async function assertSchemaInvariants(
 }
 
 async function checkSqliteMigrations(): Promise<void> {
-  const dir = mkdtempSync(join(tmpdir(), 'foreseer-sqlite-migration-'));
+  const dir = mkdtempSync(join(tmpdir(), 'foreseerr-sqlite-migration-'));
   const database = join(dir, 'migration-test.sqlite3');
 
   const dataSource = await runMigrations('SQLite', {
@@ -101,7 +101,7 @@ async function checkPostgresMigrations(): Promise<void> {
   const host = process.env.DB_HOST;
   const username = process.env.DB_USER;
   const password = process.env.DB_PASS;
-  const database = process.env.DB_NAME ?? 'foreseer';
+  const database = process.env.DB_NAME ?? 'foreseerr';
 
   if (!host || !username || !password) {
     console.log('PostgreSQL migration check skipped (DB env vars not set)');

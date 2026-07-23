@@ -136,12 +136,12 @@ const checkOverseerrMerge = async (): Promise<boolean> => {
   // Set media server type to Plex (default for Overseerr)
   settings.main.mediaServerType = MediaServerType.PLEX;
 
-  // Replace default Overseerr values with Foreseer values
+  // Replace default Overseerr values with Foreseerr values
   if (settings.main.applicationTitle === 'Overseerr') {
-    settings.main.applicationTitle = 'Foreseer';
+    settings.main.applicationTitle = 'Foreseerr';
   }
   if (settings.notifications.agents.email.options.senderName === 'Overseerr') {
-    settings.notifications.agents.email.options.senderName = 'Foreseer';
+    settings.notifications.agents.email.options.senderName = 'Foreseerr';
   }
 
   // Save the updated settings

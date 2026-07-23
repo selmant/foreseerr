@@ -4,12 +4,12 @@ description: Understand which data you should back up.
 sidebar_position: 4
 ---
 
-# Which data does Foreseer save and where?
+# Which data does Foreseerr save and where?
 
 ## Settings  
 
-All configurations from the **Settings** panel in the Foreseer web UI are saved, including integrations with Radarr, Sonarr, Jellyfin, Plex, and notification settings.  
-These settings are stored in the `settings.json` file located in the Foreseer data folder.
+All configurations from the **Settings** panel in the Foreseerr web UI are saved, including integrations with Radarr, Sonarr, Jellyfin, Plex, and notification settings.  
+These settings are stored in the `settings.json` file located in the Foreseerr data folder.
 
 ## User Data  
 
@@ -19,8 +19,8 @@ Apart from the settings, all other data—including user accounts, media request
 
 ### SQLite
 
-If your backup system uses filesystem snapshots (such as Kubernetes with Volsync), you can directly back up the Foreseer data folder.  
-Otherwise, you need to stop the Foreseer application and back up the `config` folder.
+If your backup system uses filesystem snapshots (such as Kubernetes with Volsync), you can directly back up the Foreseerr data folder.  
+Otherwise, you need to stop the Foreseerr application and back up the `config` folder.
 
 For advanced users, it's possible to back up the database without stopping the application by using the [SQLite CLI](https://www.sqlite.org/download.html). Run the following command to create a backup:  
 
@@ -32,7 +32,7 @@ Then, copy the `/tmp/seerr_dump.sqlite3.bak` file to your desired backup locatio
 
 ### PostgreSQL
 
-You can back up the `config` folder and dump the PostgreSQL database without stopping the Foreseer application.
+You can back up the `config` folder and dump the PostgreSQL database without stopping the Foreseerr application.
 
 Install [postgresql-client](https://www.postgresql.org/download/) and run the following command to create a backup (just replace the placeholders):
 
@@ -53,28 +53,28 @@ pg_dump -U <database_user> -d <database_name> -f /tmp/seerr_db.sql
 For Docker, the config directory (mounted at `/app/config`) contains the `settings.json` file and, when using SQLite, the database itself. Back up the whole mounted host directory rather than files inside the container:
 
 ```bash
-docker stop foreseer
-tar -czf foreseer-backup-$(date +%Y%m%d).tar.gz -C /path/to/foreseer-config .
-docker start foreseer
+docker stop foreseerr
+tar -czf foreseerr-backup-$(date +%Y%m%d).tar.gz -C /path/to/foreseerr-config .
+docker start foreseerr
 ```
 
-If you use PostgreSQL with Docker, back up the config directory as above (for `settings.json`) and separately dump the database from the PostgreSQL container or host, as described above. Stopping the Foreseer container is optional in that case, but stopping it avoids concurrent writes while `settings.json` is copied.
+If you use PostgreSQL with Docker, back up the config directory as above (for `settings.json`) and separately dump the database from the PostgreSQL container or host, as described above. Stopping the Foreseerr container is optional in that case, but stopping it avoids concurrent writes while `settings.json` is copied.
 
 ### Kubernetes
 
-If your backup system supports filesystem/volume snapshots (for example [Volsync](https://volsync.readthedocs.io/) or your CSI driver's native snapshot support), snapshot the PersistentVolumeClaim backing the Foreseer config directory directly. This is the recommended approach for SQLite deployments, since it captures a consistent copy of both `settings.json` and the database file together.
+If your backup system supports filesystem/volume snapshots (for example [Volsync](https://volsync.readthedocs.io/) or your CSI driver's native snapshot support), snapshot the PersistentVolumeClaim backing the Foreseerr config directory directly. This is the recommended approach for SQLite deployments, since it captures a consistent copy of both `settings.json` and the database file together.
 
 Without snapshot support, copy the config directory out of a running pod:
 
 ```bash
-kubectl cp <namespace>/<foreseer-pod>:/app/config ./foreseer-backup
+kubectl cp <namespace>/<foreseerr-pod>:/app/config ./foreseerr-backup
 ```
 
 For PostgreSQL on Kubernetes, dump the database using `pg_dump` from a pod/job with network access to the database (either the in-cluster PostgreSQL service or an external instance), in addition to backing up the config directory for `settings.json`:
 
 ```bash
 kubectl run pg-dump --rm -i --restart=Never --image=postgres:16-alpine -- \
-  pg_dump -h <postgres-host> -U <database_user> -d <database_name> > foreseer-backup.sql
+  pg_dump -h <postgres-host> -U <database_user> -d <database_name> > foreseerr-backup.sql
 ```
 
 # Restore
@@ -89,10 +89,10 @@ After restoring your `db/db.sqlite3` file and, optionally, the `settings.json` f
 ├── db
 │   └── db.sqlite3
 ├── logs             <-- Optional
-└── settings.json    <-- Optional (required if you want to avoid reconfiguring Foreseer)
+└── settings.json    <-- Optional (required if you want to avoid reconfiguring Foreseerr)
 ```
 
-Once the files are restored, start the Foreseer application.
+Once the files are restored, start the Foreseerr application.
 
 ### PostgreSQL
 
@@ -116,19 +116,19 @@ Optionally, restore the `settings.json` file. The `config` folder structure shou
 .
 ├── cache            <-- Optional
 ├── logs             <-- Optional
-└── settings.json    <-- Optional (required if you want to avoid reconfiguring Foreseer)
+└── settings.json    <-- Optional (required if you want to avoid reconfiguring Foreseerr)
 ```
 
-Once the database and files are restored, start the Foreseer application.
+Once the database and files are restored, start the Foreseerr application.
 
 # Upgrading and downgrading
 
-Foreseer upgrades its database schema and `settings.json` automatically on startup, appending new migrations without altering ones that already shipped. Take a backup (see above) before every upgrade, especially across major/minor version boundaries.
+Foreseerr upgrades its database schema and `settings.json` automatically on startup, appending new migrations without altering ones that already shipped. Take a backup (see above) before every upgrade, especially across major/minor version boundaries.
 
-Downgrading (running an older Foreseer version against a database or `settings.json` produced by a newer one) is **not supported**. Foreseer detects this at startup — a database or settings file with migrations the running version doesn't recognize causes it to log an actionable error and refuse to start, rather than running against a schema it doesn't fully understand. To recover from an attempted downgrade, restore the backup taken before the upgrade (or the automatic `settings.old.json` written just before the last settings migration ran), or upgrade back to a version that recognizes the newer schema.
+Downgrading (running an older Foreseerr version against a database or `settings.json` produced by a newer one) is **not supported**. Foreseerr detects this at startup — a database or settings file with migrations the running version doesn't recognize causes it to log an actionable error and refuse to start, rather than running against a schema it doesn't fully understand. To recover from an attempted downgrade, restore the backup taken before the upgrade (or the automatic `settings.old.json` written just before the last settings migration ran), or upgrade back to a version that recognizes the newer schema.
 
 :::warning Alpha-to-stable migration policy
-Foreseer is currently alpha software (`0.1.0-alpha.x`). Until the first stable release:
+Foreseerr is currently alpha software (`0.1.0-alpha.x`). Until the first stable release:
 
 - Database and settings migrations may still be reordered or squashed between alpha releases; they are **not** guaranteed to remain compatible with every prior alpha in the way stable releases will be.
 - After the first stable release, all database migrations and persisted `settings.json` changes will be backward compatible: upgrades will always be able to run in place, and this policy note will be updated to reflect that guarantee going forward.
@@ -137,4 +137,4 @@ Foreseer is currently alpha software (`0.1.0-alpha.x`). Until the first stable r
 Once alpha ends, this section will document the exact stable version boundary and confirm the backward-compatibility guarantee is in effect.
 :::
 
-Foreseer's schema/migration history continues directly from upstream Seerr's. The supported upgrade sources are: a fresh Foreseer install, an upstream Seerr SQLite/PostgreSQL database (validated against the Seerr commit `759e35933860594282bd929587576b003a3efb2d`), and — once a stable Foreseer release exists — a previous stable Foreseer database/settings file. Automated upgrade tests covering these sources live under `server/migration/upgradeMatrix.*.test.ts`.
+Foreseerr's schema/migration history continues directly from upstream Seerr's. The supported upgrade sources are: a fresh Foreseerr install, an upstream Seerr SQLite/PostgreSQL database (validated against the Seerr commit `759e35933860594282bd929587576b003a3efb2d`), and — once a stable Foreseerr release exists — a previous stable Foreseerr database/settings file. Automated upgrade tests covering these sources live under `server/migration/upgradeMatrix.*.test.ts`.

@@ -3,16 +3,16 @@ title: Stable contract (Phase 0 decisions)
 ---
 
 :::info Status
-This is a maintainer-facing reference, not published end-user documentation. It records the Phase 0 ("Freeze the Stable Contract") decisions from the Foreseer stabilization plan so later phases have a fixed target instead of re-deciding these questions per PR. Fold the relevant parts into real user-facing docs (API docs, [migration guide](/migration-guide), [backups](/using-seerr/backups)) as they stabilize; this file itself can be retired once its content is fully absorbed there.
+This is a maintainer-facing reference, not published end-user documentation. It records the Phase 0 ("Freeze the Stable Contract") decisions from the Foreseerr stabilization plan so later phases have a fixed target instead of re-deciding these questions per PR. Fold the relevant parts into real user-facing docs (API docs, [migration guide](/migration-guide), [backups](/using-seerr/backups)) as they stabilize; this file itself can be retired once its content is fully absorbed there.
 :::
 
 ## Supported upgrade sources
 
-At the first stable release, Foreseer supports upgrading in place from:
+At the first stable release, Foreseerr supports upgrading in place from:
 
-1. **A fresh Foreseer installation.** No prior data; migrations run from an empty database.
-2. **An upstream Seerr database (SQLite or PostgreSQL)**, validated against the Seerr merge-base commit `759e35933860594282bd929587576b003a3efb2d`. Foreseer's migration history continues directly from this commit's schema.
-3. **A previous stable Foreseer release**, once one exists. No stable release has shipped yet, so this source has no fixture/upgrade test yet — see the note in [`docs/release-notes-draft.md`](/release-notes-draft).
+1. **A fresh Foreseerr installation.** No prior data; migrations run from an empty database.
+2. **An upstream Seerr database (SQLite or PostgreSQL)**, validated against the Seerr merge-base commit `759e35933860594282bd929587576b003a3efb2d`. Foreseerr's migration history continues directly from this commit's schema.
+3. **A previous stable Foreseerr release**, once one exists. No stable release has shipped yet, so this source has no fixture/upgrade test yet — see the note in [`docs/release-notes-draft.md`](/release-notes-draft).
 
 Automated coverage:
 

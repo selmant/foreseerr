@@ -1,6 +1,6 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Foreseer Release
+name: Foreseerr Release
 
 on:
   push:
@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DOCKER_HUB: selmantr/foreseer
+  DOCKER_HUB: selmantr/foreseerr
 
 jobs:
   quality-gate:
@@ -26,22 +26,22 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: foreseer
-          POSTGRES_PASSWORD: foreseer
-          POSTGRES_DB: foreseer
+          POSTGRES_USER: foreseerr
+          POSTGRES_PASSWORD: foreseerr
+          POSTGRES_DB: foreseerr
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U foreseer"
+          --health-cmd "pg_isready -U foreseerr"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: foreseer
-      DB_PASS: foreseer
-      DB_NAME: foreseer
+      DB_USER: foreseerr
+      DB_PASS: foreseerr
+      DB_NAME: foreseerr
       VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout tagged commit
@@ -98,12 +98,12 @@ jobs:
         uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5
 
       - name: Helm lint
-        run: helm lint charts/foreseer-chart
+        run: helm lint charts/foreseerr-chart
 
       - name: Verify default image tag
         run: |
           expected_tag="ghcr.io/selmant/seerr:v$(node -p "require('./package.json').version")"
-          rendered_tag=$(helm template test charts/foreseer-chart | awk -F'"' '/image:/{print $2; exit}')
+          rendered_tag=$(helm template test charts/foreseerr-chart | awk -F'"' '/image:/{print $2; exit}')
           if [ "$rendered_tag" != "$expected_tag" ]; then
             echo "Expected default image $expected_tag, got $rendered_tag"
             exit 1

@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { FormattedMessage } from 'react-intl';
 
 const messages = defineMessages('components.Setup', {
-  welcome: 'Welcome to Foreseer',
+  welcome: 'Welcome to Foreseerr',
   signinMessage: 'Get started by signing in',
   signin: 'Sign in to your account',
   signinWithJellyfin: 'Enter your Jellyfin details',

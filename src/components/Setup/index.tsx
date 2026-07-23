@@ -25,7 +25,7 @@ import useSWR, { mutate } from 'swr';
 import SetupLogin from './SetupLogin';
 
 const messages = defineMessages('components.Setup', {
-  welcome: 'Welcome to Foreseer',
+  welcome: 'Welcome to Foreseerr',
   subtitle: 'Get started by choosing your media server',
   configjellyfin: 'Configure Jellyfin',
   configplex: 'Configure Plex',

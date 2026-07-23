@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "foreseer.configPersistenceName" . }}
+  name: {{ include "foreseerr.configPersistenceName" . }}
   labels:
-    {{- include "foreseer.labels" . | nindent 4 }}
+    {{- include "foreseerr.labels" . | nindent 4 }}
   {{- with .Values.config.persistence.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

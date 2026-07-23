@@ -29,7 +29,7 @@ export class TraktNotLinkedError extends Error {
 
 export class TraktAccountAlreadyLinkedError extends Error {
   constructor(
-    message = 'This Trakt account is already linked to another Foreseer user'
+    message = 'This Trakt account is already linked to another Foreseerr user'
   ) {
     super(message);
     this.name = 'TraktAccountAlreadyLinkedError';
@@ -79,13 +79,13 @@ export async function countLinkedTraktAccounts(): Promise<number> {
 
 export async function assertTraktAccountAvailable(
   traktUserId: string,
-  foreseerUserId: number
+  foreseerrUserId: number
 ): Promise<void> {
   const existing = await getRepository(UserSettings)
     .createQueryBuilder('settings')
     .leftJoin('settings.user', 'user')
     .where('settings.traktUserId = :traktUserId', { traktUserId })
-    .andWhere('user.id != :userId', { userId: foreseerUserId })
+    .andWhere('user.id != :userId', { userId: foreseerrUserId })
     .getOne();
 
   if (existing) {

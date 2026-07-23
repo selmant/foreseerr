@@ -4,9 +4,9 @@
 apiVersion: {{ $route.apiVersion | default "gateway.networking.k8s.io/v1" }}
 kind: {{ $route.kind | default "HTTPRoute" }}
 metadata:
-  name: {{ template "foreseer.fullname" $ }}{{ if ne $name "main" }}-{{ $name }}{{ end }}
+  name: {{ template "foreseerr.fullname" $ }}{{ if ne $name "main" }}-{{ $name }}{{ end }}
   labels:
-    {{- include "foreseer.labels" $ | nindent 4 }}
+    {{- include "foreseerr.labels" $ | nindent 4 }}
     {{- with $route.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -35,7 +35,7 @@ spec:
             statusCode: 301
     {{- else }}
     - backendRefs:
-        - name: {{ include "foreseer.fullname" $ }}
+        - name: {{ include "foreseerr.fullname" $ }}
           port: {{ $.Values.service.port }}
       {{- with $route.filters }}
       filters:

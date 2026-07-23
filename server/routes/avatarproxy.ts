@@ -27,7 +27,7 @@ async function initAvatarImageProxy() {
     const authToken = getSettings().jellyfin.apiKey;
     _avatarImageProxy = new ImageProxy('avatar', '', {
       headers: {
-        'X-Emby-Authorization': `MediaBrowser Client="Foreseer", Device="Foreseer", DeviceId="${deviceId}", Version="${
+        'X-Emby-Authorization': `MediaBrowser Client="Foreseerr", Device="Foreseerr", DeviceId="${deviceId}", Version="${
           getSettings().main.mediaServerType === MediaServerType.EMBY
             ? '1.0.0'
             : getAppVersion()

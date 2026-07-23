@@ -1,6 +1,6 @@
 ---
 title: Deleting Users
-description: Delete users from Foreseer.
+description: Delete users from Foreseerr.
 sidebar_position: 4
 ---
 

@@ -31,7 +31,7 @@ You cannot leave this field blank.
 
 ### Display Language
 
-Users can override the [global display language](/using-seerr/settings/general#display-language) to use Foreseer in their preferred language.
+Users can override the [global display language](/using-seerr/settings/general#display-language) to use Foreseerr in their preferred language.
 
 ### Discover Region & Discover Language
 

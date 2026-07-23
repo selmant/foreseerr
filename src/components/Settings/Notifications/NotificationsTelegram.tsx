@@ -21,7 +21,7 @@ const messages = defineMessages('components.Settings.Notifications', {
     'Allow users to also start a chat with your bot and configure their own notifications',
   botAPI: 'Bot Authorization Token',
   botApiTip:
-    '<CreateBotLink>Create a bot</CreateBotLink> for use with Foreseer',
+    '<CreateBotLink>Create a bot</CreateBotLink> for use with Foreseerr',
   chatId: 'Chat ID',
   chatIdTip:
     'Start a chat with your bot, add <GetIdBotLink>@get_id_bot</GetIdBotLink>, and issue the <code>/my_id</code> command',

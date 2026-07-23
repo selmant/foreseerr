@@ -2,7 +2,7 @@
 
 Seerr docs is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
 
-Foreseer docs are published at [selmant.github.io/seerr](https://selmant.github.io/seerr/).
+Foreseerr docs are published at [selmant.github.io/seerr](https://selmant.github.io/seerr/).
 
 ### Installation
 

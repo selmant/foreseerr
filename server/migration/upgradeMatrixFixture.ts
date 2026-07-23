@@ -16,7 +16,7 @@
  * engines cannot share a process without one of them getting the wrong
  * column types.
  *
- * A previous-Foreseer-stable fixture should be added here once a stable
+ * A previous-Foreseerr-stable fixture should be added here once a stable
  * release exists (see docs/using-seerr/backups.md "Alpha-to-stable" note).
  */
 import {
@@ -49,7 +49,7 @@ export interface SeededIds {
  * `discover_slider`): both build their INSERT from the *current* entity
  * metadata (including columns the baseline schema doesn't have yet, like
  * `ignoreQuota`), which fails against the pre-upgrade table shape. `User`
- * and `Media` are untouched by the Foreseer-only migrations, so the ORM is
+ * and `Media` are untouched by the Foreseerr-only migrations, so the ORM is
  * safe to use for them.
  */
 export async function seedBaselineFixture(

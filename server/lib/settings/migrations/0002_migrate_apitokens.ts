@@ -28,7 +28,7 @@ const migrateApiTokens = async (settings: any): Promise<AllSettings> => {
     );
     jellyfinClient.setUserId(admin.jellyfinUserId ?? '');
     try {
-      const apiKey = await jellyfinClient.createApiToken('Foreseer');
+      const apiKey = await jellyfinClient.createApiToken('Foreseerr');
       settings.jellyfin.apiKey = apiKey;
     } catch {
       throw new Error(

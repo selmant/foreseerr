@@ -436,7 +436,7 @@ class Settings {
       vapidPublic: '',
       main: {
         apiKey: '',
-        applicationTitle: 'Foreseer',
+        applicationTitle: 'Foreseerr',
         applicationUrl: '',
         cacheImages: false,
         defaultPermissions: Permission.REQUEST,
@@ -518,7 +518,7 @@ class Settings {
               ignoreTls: false,
               requireTls: false,
               allowSelfSigned: false,
-              senderName: 'Foreseer',
+              senderName: 'Foreseerr',
               usePublicLogo: false,
             },
           },

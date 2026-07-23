@@ -1,6 +1,6 @@
 ---
 title: Docker (Recommended)
-description: Install Foreseer using Docker
+description: Install Foreseerr using Docker
 sidebar_position: 1
 ---
 # Docker
@@ -12,7 +12,7 @@ Refer to [Configuring Databases](/extending-seerr/database-config#postgresql-opt
 :::
 
 :::info
-An alternative Docker image is available on Docker Hub for this project. You can find it at [Docker Hub Repository Link](https://hub.docker.com/r/selmantr/foreseer)
+An alternative Docker image is available on Docker Hub for this project. You can find it at [Docker Hub Repository Link](https://hub.docker.com/r/selmantr/foreseerr)
 
 Our Docker images are available with the following tags:
 
@@ -24,14 +24,14 @@ Our Docker images are available with the following tags:
 :::
 
 :::info
-All Foreseer images are cryptographically signed and include a verified [Software Bill of Materials (SBOM)](https://cyclonedx.org/).
+All Foreseerr images are cryptographically signed and include a verified [Software Bill of Materials (SBOM)](https://cyclonedx.org/).
 
 To confirm that the container image you are using is authentic and unmodified, please refer to the [Verifying Signed Artifacts](/using-seerr/advanced/verifying-signed-artifacts#verifying-signed-images) guide.
 :::
 
 ## Unix (Linux, macOS)
 :::warning
-Be sure to replace `/path/to/appdata/config` in the below examples with a valid host directory path. If this volume mount is not configured correctly, your Foreseer settings/data will not be persisted when the container is recreated (e.g., when updating the image or rebooting your machine).
+Be sure to replace `/path/to/appdata/config` in the below examples with a valid host directory path. If this volume mount is not configured correctly, your Foreseerr settings/data will not be persisted when the container is recreated (e.g., when updating the image or rebooting your machine).
 
     The `TZ` environment variable value should also be set to the [TZ database name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) of your time zone!
 
@@ -55,7 +55,7 @@ chown -R 1000:1000 /path/to/appdata/config
 
 ```bash
 docker run -d \
-  --name foreseer \
+  --name foreseerr \
   --init \
   -e LOG_LEVEL=debug \
   -e TZ=Asia/Tashkent \
@@ -79,7 +79,7 @@ To run the container as a specific user/group, you may optionally add `--user=[ 
 
 Stop and remove the existing container:
 ```bash
-docker stop foreseer && docker rm foreseer
+docker stop foreseerr && docker rm foreseerr
 ```
 Pull the latest image:
 ```bash
@@ -91,7 +91,7 @@ docker run -d ...
 ```
 
 :::tip
-You may alternatively use a third-party updating mechanism, such as [Watchtower](https://github.com/containrrr/watchtower) or [Ouroboros](https://github.com/pyouroboros/ouroboros), to keep Foreseer up-to-date automatically.
+You may alternatively use a third-party updating mechanism, such as [Watchtower](https://github.com/containrrr/watchtower) or [Ouroboros](https://github.com/pyouroboros/ouroboros), to keep Foreseerr up-to-date automatically.
 
 You could also use [diun](https://github.com/crazy-max/diun) to receive notifications when a new image is available.
 :::
@@ -101,14 +101,14 @@ You could also use [diun](https://github.com/crazy-max/diun) to receive notifica
 For details on how to use Docker Compose, please [review the official Compose documentation](https://docs.docker.com/compose/reference/).
 
 #### Installation:
-Define the `foreseer` service in your `compose.yaml` as follows:
+Define the `foreseerr` service in your `compose.yaml` as follows:
 ```yaml
 ---
 services:
-  foreseer:
+  foreseerr:
     image: ghcr.io/selmant/seerr:latest
     init: true
-    container_name: foreseer
+    container_name: foreseerr
     environment:
       - LOG_LEVEL=debug
       - TZ=Asia/Tashkent
@@ -157,7 +157,7 @@ Please refer to the [Docker Desktop for Windows user manual](https://docs.docker
 **WSL2 will need to be installed to prevent DB corruption!** Please see the [Docker Desktop WSL 2 backend documentation](https://docs.docker.com/docker-for-windows/wsl/) for instructions on how to enable WSL2. The commands below will only work with WSL2 installed!
 :::
 
-First, create a volume to store the configuration data for Foreseer using using either the Docker CLI:
+First, create a volume to store the configuration data for Foreseerr using using either the Docker CLI:
 ```bash
 docker volume create seerr-data
 ```
@@ -168,18 +168,18 @@ or the Docker Desktop app:
 3. Click on the "Create a volume" in the center of the page. Or if you have other volumes already, click on the "Create" button on the top right of the page.
 4. Enter a name for the volume (example: `seerr-data`) and hit "Create"
 
-Then, create and start the Foreseer container:
+Then, create and start the Foreseerr container:
 <Tabs groupId="docker-methods" queryString>
   <TabItem value="docker-cli" label="Docker CLI (PowerShell)">
 ```powershell
 docker run -d `
-  --name foreseer `
+  --name foreseerr `
   --init `
   -e LOG_LEVEL=debug `
   -e TZ=Asia/Tashkent `
   -e PORT=5055 `
   -p 5055:5055 `
-  -v foreseer-data:/app/config `
+  -v foreseerr-data:/app/config `
   --restart unless-stopped `
   --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1" `
   --health-start-period 20s `
@@ -211,13 +211,13 @@ docker run -d ...
   <TabItem value="docker-cli-cmd" label="Docker CLI (CMD)">
 ```batch
 docker run -d ^
-  --name foreseer ^
+  --name foreseerr ^
   --init ^
   -e LOG_LEVEL=debug ^
   -e TZ=Asia/Tashkent ^
   -e PORT=5055 ^
   -p 5055:5055 ^
-  -v foreseer-data:/app/config ^
+  -v foreseerr-data:/app/config ^
   --restart unless-stopped ^
   --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1" ^
   --health-start-period 20s ^
@@ -260,7 +260,7 @@ services:
     ports:
       - 5055:5055
     volumes:
-      - foreseer-data:/app/config
+      - foreseerr-data:/app/config
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
       start_period: 20s
@@ -270,7 +270,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  foreseer-data:
+  foreseerr-data:
     external: true
 ```
 

@@ -762,19 +762,19 @@ userSettingsRoutes.post<{ id: string }>(
         expiresAt: result.tokens.expiresAt,
       });
       const profile = await authenticated.getUserSettings();
-      const foreseerUserId = Number(req.params.id);
+      const foreseerrUserId = Number(req.params.id);
 
-      await assertTraktAccountAvailable(profile.traktUserId, foreseerUserId);
+      await assertTraktAccountAvailable(profile.traktUserId, foreseerrUserId);
 
-      const userSettings = await ensureUserSettings(foreseerUserId);
+      const userSettings = await ensureUserSettings(foreseerrUserId);
       userSettings.traktAccessToken = result.tokens.access_token;
       userSettings.traktRefreshToken = result.tokens.refresh_token;
       userSettings.traktTokenExpiresAt = String(result.tokens.expiresAt);
       userSettings.traktUsername = profile.username;
       userSettings.traktUserId = profile.traktUserId;
       await getRepository(UserSettings).save(userSettings);
-      invalidateUserSyncCache(foreseerUserId);
-      clearTraktDeviceAuthSession(foreseerUserId, deviceCode);
+      invalidateUserSyncCache(foreseerrUserId);
+      clearTraktDeviceAuthSession(foreseerrUserId, deviceCode);
 
       return res.status(200).json({
         status: 'authorized',
@@ -803,13 +803,13 @@ userSettingsRoutes.delete<{ id: string }>(
   isOwnProfileOrAdmin(),
   async (req, res, next) => {
     try {
-      const foreseerUserId = Number(req.params.id);
-      const userSettings = await getUserTraktSettings(foreseerUserId);
+      const foreseerrUserId = Number(req.params.id);
+      const userSettings = await getUserTraktSettings(foreseerrUserId);
       if (!userSettings) {
         return res.status(204).send();
       }
 
-      await clearUserTraktCredentials(userSettings.id, foreseerUserId);
+      await clearUserTraktCredentials(userSettings.id, foreseerrUserId);
 
       return res.status(204).send();
     } catch (e) {

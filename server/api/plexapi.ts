@@ -115,9 +115,9 @@ class PlexAPI extends ExternalAPI {
         headers: {
           'X-Plex-Token': plexToken ?? '',
           'X-Plex-Client-Identifier': settings.clientId,
-          'X-Plex-Product': 'Foreseer',
-          'X-Plex-Device-Name': 'Foreseer',
-          'X-Plex-Platform': 'Foreseer',
+          'X-Plex-Product': 'Foreseerr',
+          'X-Plex-Device-Name': 'Foreseerr',
+          'X-Plex-Platform': 'Foreseerr',
         },
       }
     );

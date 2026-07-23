@@ -23,7 +23,7 @@ describe('Upgrade matrix: upstream Seerr baseline -> current schema (PostgreSQL)
   const host = process.env.DB_HOST;
   const username = process.env.DB_USER;
   const password = process.env.DB_PASS;
-  const database = process.env.DB_NAME ?? 'foreseer';
+  const database = process.env.DB_NAME ?? 'foreseerr';
   const port = parseInt(process.env.DB_PORT ?? '5432', 10);
 
   it('preserves users, settings, requests, media, and service config across the upgrade', async (t) => {
@@ -71,7 +71,7 @@ describe('Upgrade matrix: upstream Seerr baseline -> current schema (PostgreSQL)
     }
 
     // --- Phase 2: upgrade the same database in place to the current schema
-    // by replaying the remaining (Foreseer-only) migrations. ---
+    // by replaying the remaining (Foreseerr-only) migrations. ---
     const allMigrations = await loadMigrationClasses(migrationsDir);
     const upgradedDataSource = new DataSource({
       ...baseOptions,

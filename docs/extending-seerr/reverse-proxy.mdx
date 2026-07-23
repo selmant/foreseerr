@@ -1,13 +1,13 @@
 ---
 title: Reverse Proxy
-description: Configure a reverse proxy for Foreseer.
+description: Configure a reverse proxy for Foreseerr.
 sidebar_position: 1
 ---
 
 # Reverse Proxy
 
 :::warning
-Base URLs cannot be configured in Foreseer. With this limitation, only subdomain configurations are supported.
+Base URLs cannot be configured in Foreseerr. With this limitation, only subdomain configurations are supported.
 
 A Nginx subfolder workaround configuration is provided below, but it is not officially supported.
 :::
@@ -63,9 +63,9 @@ sudo ln -s /etc/nginx/sites-available/seerr.example.com.conf /etc/nginx/sites-en
     <TabItem value="subfolder" label="Subfolder">
 
 :::warning
-This Nginx subfolder reverse proxy is an unsupported workaround, and only provided as an example. The filters may stop working when Foreseer is updated.
+This Nginx subfolder reverse proxy is an unsupported workaround, and only provided as an example. The filters may stop working when Foreseerr is updated.
 
-If you encounter any issues with Foreseer while using this workaround, we may ask you to try to reproduce the problem without the Nginx proxy.
+If you encounter any issues with Foreseerr while using this workaround, we may ask you to try to reproduce the problem without the Nginx proxy.
 :::
 
 Add the following location block to your existing `nginx.conf` file.
@@ -148,9 +148,9 @@ Add a new proxy host with the following settings:
 
 ### Details
 
-- **Domain Names:** Your desired external Foreseer hostname; e.g., `seerr.example.com`
+- **Domain Names:** Your desired external Foreseerr hostname; e.g., `seerr.example.com`
 - **Scheme:** `http`
-- **Forward Hostname / IP:** Internal Foreseer hostname or IP
+- **Forward Hostname / IP:** Internal Foreseerr hostname or IP
 - **Forward Port:** `5055`
 - **Cache Assets:** yes
 - **Block Common Exploits:** yes
@@ -192,7 +192,7 @@ Caddy will automatically obtain and renew SSL certificates for your domain.
 
 ## Traefik (v2)
 
-Add the following labels to the Foreseer service in your `compose.yaml` file:
+Add the following labels to the Foreseerr service in your `compose.yaml` file:
 
 ```yaml
 labels:
@@ -216,7 +216,7 @@ For more information, please refer to the [Traefik documentation](https://doc.tr
 Add the following Location block to your existing Server configuration.
 
 ```apache
-# Foreseer
+# Foreseerr
 		ProxyPreserveHost On
 		ProxyPass / http://localhost:5055 retry=0 connectiontimeout=5 timeout=30 keepalive=on
 		ProxyPassReverse http://localhost:5055 /
@@ -228,15 +228,15 @@ Add the following Location block to your existing Server configuration.
 <TabItem value="subfolder" label="Subfolder">
 
 :::warning
-This Apache2 subfolder reverse proxy is an unsupported workaround, and only provided as an example. The filters may stop working when Foreseer is updated.
+This Apache2 subfolder reverse proxy is an unsupported workaround, and only provided as an example. The filters may stop working when Foreseerr is updated.
 
-If you encounter any issues with Foreseer while using this workaround, we may ask you to try to reproduce the problem without the Apache2 proxy.
+If you encounter any issues with Foreseerr while using this workaround, we may ask you to try to reproduce the problem without the Apache2 proxy.
 :::
 
 Add the following Location block to your existing Server configuration.
 
 ```apache
-# Foreseer
+# Foreseerr
 # We will use "/seerr" as subfolder
 # You can replace it with any that you like
 	<Location /seerr>

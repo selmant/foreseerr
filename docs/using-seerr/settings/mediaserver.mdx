@@ -20,13 +20,13 @@ It is **not** tied to your Jellyfin account.
 
 ### Jellyfin Libraries
 
-In this section, simply select the libraries you would like Foreseer to scan. Foreseer will periodically check the selected libraries for available content to update the media status that is displayed to users.
+In this section, simply select the libraries you would like Foreseerr to scan. Foreseerr will periodically check the selected libraries for available content to update the media status that is displayed to users.
 
 If you do not see your Jellyfin library listed, verify your Jellyfin settings are correct and click the Sync Libraries button.
 
 ### Manual Library Scan
 
-Foreseer will perform a full scan of your Jellyfin libraries once every 24 hours (recently added items are fetched more frequently). If this is your first time configuring Jellyfin, a one-time full manual library scan is recommended!
+Foreseerr will perform a full scan of your Jellyfin libraries once every 24 hours (recently added items are fetched more frequently). If this is your first time configuring Jellyfin, a one-time full manual library scan is recommended!
 
 ### Jellyfin Settings
 
@@ -37,15 +37,15 @@ This section is where you configure the connection to your Jellyfin server.
 
 #### Internal URL
 
-The internal URL is the URL that Foreseer will use to communicate with your Jellyfin server. This URL should be accessible from the machine running Foreseer.
+The internal URL is the URL that Foreseerr will use to communicate with your Jellyfin server. This URL should be accessible from the machine running Foreseerr.
 
 In most cases, this will be the hostname or IP address of the machine running Jellyfin, followed by the port number Jellyfin is running on (usually 8096).
 
 :::note
-When running Foreseer in a docker container with a bridged network (default), the container's network will be separate from the host network. Therefore, you cannot use `localhost` or `127.0.0.1` as the internal URL as it will resolve to the container itself.
+When running Foreseerr in a docker container with a bridged network (default), the container's network will be separate from the host network. Therefore, you cannot use `localhost` or `127.0.0.1` as the internal URL as it will resolve to the container itself.
 :::
 :::tip
-If you are running Jellyfin in a docker container, you can put both Foreseer and Jellyfin on the same docker network by using a custom [docker network](https://docs.docker.com/reference/cli/docker/network/). This will allow you to use the container name as the internal URL.
+If you are running Jellyfin in a docker container, you can put both Foreseerr and Jellyfin on the same docker network by using a custom [docker network](https://docs.docker.com/reference/cli/docker/network/). This will allow you to use the container name as the internal URL.
 :::
 
 #### External URL
@@ -56,7 +56,7 @@ In most cases, the external URL will be different from the internal URL. This is
 
 #### Forgot Password URL
 
-The forgot password URL is the URL that users will be directed to when they click the "Forgot Password" button on the login page. This URL should be accessible from the machine running Foreseer.
+The forgot password URL is the URL that users will be directed to when they click the "Forgot Password" button on the login page. This URL should be accessible from the machine running Foreseerr.
 
 By default, this field is empty and the "Forgot Password" button on the login page will redirect to the Jellyfin internal URL with the path `/web/index.html#!/forgotpassword`.
 
@@ -67,15 +67,15 @@ You can customize this URL to point to a custom password reset page if you have 
 
 #### Hostname or IP Address
 
-If you have Foreseer installed on the same network as Jellyfin, you can set this to the local IP address of your Jellyfin server. Otherwise, this should be set to a valid hostname (e.g., jellyfin.myawesomeserver.com).
+If you have Foreseerr installed on the same network as Jellyfin, you can set this to the local IP address of your Jellyfin server. Otherwise, this should be set to a valid hostname (e.g., jellyfin.myawesomeserver.com).
 
 In most cases, this will be the hostname or IP address of the machine running Jellyfin.
 
 :::note
-When running Foreseer in a docker container with a bridged network (default), the container's network will be separate from the host network. Therefore, you cannot use `localhost` or `127.0.0.1` as the internal URL as it will resolve to the container itself.
+When running Foreseerr in a docker container with a bridged network (default), the container's network will be separate from the host network. Therefore, you cannot use `localhost` or `127.0.0.1` as the internal URL as it will resolve to the container itself.
 :::
 :::tip
-If you are running Jellyfin in a docker container, you can put both Foreseer and Jellyfin on the same docker network by using a custom [docker network](https://docs.docker.com/reference/cli/docker/network/). This will allow you to use the container name as the internal URL.
+If you are running Jellyfin in a docker container, you can put both Foreseerr and Jellyfin on the same docker network by using a custom [docker network](https://docs.docker.com/reference/cli/docker/network/). This will allow you to use the container name as the internal URL.
 :::
 
 #### Port
@@ -84,7 +84,7 @@ This value should be set to the port that your Jellyfin server listens on. The d
 
 #### Use SSL
 
-Enable this setting to connect to Jellyfin via HTTPS rather than HTTP. Self-signed certificates are not trusted by default, but you can configure Foreseer to accept them. See [Self-Signed Certificates](/using-seerr/advanced/self-signed-certificates) for details.
+Enable this setting to connect to Jellyfin via HTTPS rather than HTTP. Self-signed certificates are not trusted by default, but you can configure Foreseerr to accept them. See [Self-Signed Certificates](/using-seerr/advanced/self-signed-certificates) for details.
 
 #### External URL
 
@@ -94,7 +94,7 @@ In most cases, the external URL will be different from the internal URL. This is
 
 #### Forgot Password URL
 
-The forgot password URL is the URL that users will be directed to when they click the "Forgot Password" button on the login page. This URL should be accessible from the machine running Foreseer.
+The forgot password URL is the URL that users will be directed to when they click the "Forgot Password" button on the login page. This URL should be accessible from the machine running Foreseerr.
 
 By default, this field is empty and the "Forgot Password" button on the login page will redirect to the Jellyfin internal URL with the path `/web/index.html#!/forgotpassword`.
 
@@ -114,13 +114,13 @@ It is **not** tied to your Emby account.
 
 ### Emby Libraries
 
-In this section, simply select the libraries you would like Foreseer to scan. Foreseer will periodically check the selected libraries for available content to update the media status that is displayed to users.
+In this section, simply select the libraries you would like Foreseerr to scan. Foreseerr will periodically check the selected libraries for available content to update the media status that is displayed to users.
 
 If you do not see your Emby library listed, verify your Emby settings are correct and click the Sync Libraries button.
 
 ### Manual Library Scan
 
-Foreseer will perform a full scan of your Emby libraries once every 24 hours (recently added items are fetched more frequently). If this is your first time configuring Emby, a one-time full manual library scan is recommended!
+Foreseerr will perform a full scan of your Emby libraries once every 24 hours (recently added items are fetched more frequently). If this is your first time configuring Emby, a one-time full manual library scan is recommended!
 
 ### Emby Settings
 
@@ -131,15 +131,15 @@ This section is where you configure the connection to your Emby server.
 
 #### Internal URL
 
-The internal URL is the URL that Foreseer will use to communicate with your Emby server. This URL should be accessible from the machine running Foreseer.
+The internal URL is the URL that Foreseerr will use to communicate with your Emby server. This URL should be accessible from the machine running Foreseerr.
 
 In most cases, this will be the hostname or IP address of the machine running Emby, followed by the port number Emby is running on (usually 8096).
 
 :::note
-When running Foreseer in a docker container with a bridged network (default), the container's network will be separate from the host network. Therefore, you cannot use `localhost` or `127.0.0.1` as the internal URL as it will resolve to the container itself.
+When running Foreseerr in a docker container with a bridged network (default), the container's network will be separate from the host network. Therefore, you cannot use `localhost` or `127.0.0.1` as the internal URL as it will resolve to the container itself.
 :::
 :::tip
-If you are running Emby in a docker container, you can put both Foreseer and Emby on the same docker network by using a custom [docker network](https://docs.docker.com/reference/cli/docker/network/). This will allow you to use the container name as the internal URL.
+If you are running Emby in a docker container, you can put both Foreseerr and Emby on the same docker network by using a custom [docker network](https://docs.docker.com/reference/cli/docker/network/). This will allow you to use the container name as the internal URL.
 :::
 
 #### External URL
@@ -150,7 +150,7 @@ In most cases, the external URL will be different from the internal URL. This is
 
 #### Forgot Password URL
 
-The forgot password URL is the URL that users will be directed to when they click the "Forgot Password" button on the login page. This URL should be accessible from the machine running Foreseer.
+The forgot password URL is the URL that users will be directed to when they click the "Forgot Password" button on the login page. This URL should be accessible from the machine running Foreseerr.
 
 By default, this field is empty and the "Forgot Password" button on the login page will redirect to the Emby internal URL with the path `/web/index.html#!/forgotpassword.html`.
 
@@ -161,15 +161,15 @@ You can customize this URL to point to a custom password reset page if you have 
 
 #### Hostname or IP Address
 
-If you have Foreseer installed on the same network as Emby, you can set this to the local IP address of your Emby server. Otherwise, this should be set to a valid hostname (e.g., jellyfin.myawesomeserver.com).
+If you have Foreseerr installed on the same network as Emby, you can set this to the local IP address of your Emby server. Otherwise, this should be set to a valid hostname (e.g., jellyfin.myawesomeserver.com).
 
 In most cases, this will be the hostname or IP address of the machine running Emby.
 
 :::note
-When running Foreseer in a docker container with a bridged network (default), the container's network will be separate from the host network. Therefore, you cannot use `localhost` or `127.0.0.1` as the internal URL as it will resolve to the container itself.
+When running Foreseerr in a docker container with a bridged network (default), the container's network will be separate from the host network. Therefore, you cannot use `localhost` or `127.0.0.1` as the internal URL as it will resolve to the container itself.
 :::
 :::tip
-If you are running Emby in a docker container, you can put both Foreseer and Emby on the same docker network by using a custom [docker network](https://docs.docker.com/reference/cli/docker/network/). This will allow you to use the container name as the internal URL.
+If you are running Emby in a docker container, you can put both Foreseerr and Emby on the same docker network by using a custom [docker network](https://docs.docker.com/reference/cli/docker/network/). This will allow you to use the container name as the internal URL.
 :::
 
 #### Port
@@ -178,7 +178,7 @@ This value should be set to the port that your Emby server listens on. The defau
 
 #### Use SSL
 
-Enable this setting to connect to Emby via HTTPS rather than HTTP. Self-signed certificates are not trusted by default, but you can configure Foreseer to accept them. See [Self-Signed Certificates](/using-seerr/advanced/self-signed-certificates) for details.
+Enable this setting to connect to Emby via HTTPS rather than HTTP. Self-signed certificates are not trusted by default, but you can configure Foreseerr to accept them. See [Self-Signed Certificates](/using-seerr/advanced/self-signed-certificates) for details.
 
 #### External URL
 
@@ -188,7 +188,7 @@ In most cases, the external URL will be different from the internal URL. This is
 
 #### Forgot Password URL
 
-The forgot password URL is the URL that users will be directed to when they click the "Forgot Password" button on the login page. This URL should be accessible from the machine running Foreseer.
+The forgot password URL is the URL that users will be directed to when they click the "Forgot Password" button on the login page. This URL should be accessible from the machine running Foreseerr.
 
 By default, this field is empty and the "Forgot Password" button on the login page will redirect to the Emby internal URL with the path `/web/index.html#!/startup/forgotpassword.html`.
 
@@ -205,12 +205,12 @@ You can customize this URL to point to a custom password reset page if you have 
 :::info
 To set up Plex, you can either enter your details manually or select a server retrieved from [plex.tv](https://plex.tv/). Press the button to the right of the "Server" dropdown to retrieve available servers.
 
-Depending on your setup/configuration, you may need to enter your Plex server details manually in order to establish a connection from Foreseer.
+Depending on your setup/configuration, you may need to enter your Plex server details manually in order to establish a connection from Foreseerr.
 :::
 
 #### Hostname or IP Address
 
-If you have Foreseer installed on the same network as Plex, you can set this to the local IP address of your Plex server. Otherwise, this should be set to a valid hostname (e.g., `plex.myawesomeserver.com`).
+If you have Foreseerr installed on the same network as Plex, you can set this to the local IP address of your Plex server. Otherwise, this should be set to a valid hostname (e.g., `plex.myawesomeserver.com`).
 
 #### Port
 
@@ -218,7 +218,7 @@ This value should be set to the port that your Plex server listens on. The defau
 
 #### Use SSL
 
-Enable this setting to connect to Plex via HTTPS rather than HTTP. Self-signed certificates are not trusted by default, but you can configure Foreseer to accept them. See [Self-Signed Certificates](/using-seerr/advanced/self-signed-certificates) for details.
+Enable this setting to connect to Plex via HTTPS rather than HTTP. Self-signed certificates are not trusted by default, but you can configure Foreseerr to accept them. See [Self-Signed Certificates](/using-seerr/advanced/self-signed-certificates) for details.
 
 #### Web App URL (optional)
 
@@ -228,13 +228,13 @@ Note that you will need to enter the full path to the web app (e.g., `https://pl
 
 ### Plex Libraries
 
-In this section, simply select the libraries you would like Foreseer to scan. Foreseer will periodically check the selected libraries for available content to update the media status that is displayed to users.
+In this section, simply select the libraries you would like Foreseerr to scan. Foreseerr will periodically check the selected libraries for available content to update the media status that is displayed to users.
 
 If you do not see your Plex libraries listed, verify your Plex settings are correct and click the **Sync Libraries** button.
 
 ### Manual Library Scan
 
-Foreseer will perform a full scan of your Plex libraries once every 24 hours (recently added items are fetched more frequently). If this is your first time configuring Plex, a one-time full manual library scan is recommended!
+Foreseerr will perform a full scan of your Plex libraries once every 24 hours (recently added items are fetched more frequently). If this is your first time configuring Plex, a one-time full manual library scan is recommended!
 
 </TabItem>
 
