@@ -7,7 +7,7 @@
 It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex / Emby), and Radarr/Sonarr support. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 
 > [!WARNING]
-> Foreseer is currently in **alpha** (`v0.1.0-alpha.4`). Expect rough edges, breaking changes, and incomplete features. Back up your configuration before upgrading, and avoid using alpha builds as your only production instance.
+> Foreseer is currently in **alpha** (`v0.1.0-alpha.5`). Expect rough edges, breaking changes, and incomplete features. Back up your configuration before upgrading, and avoid using alpha builds as your only production instance.
 
 ## Current Features (from Seerr)
 
@@ -51,7 +51,7 @@ docker run -d \
   --restart unless-stopped \
   -p 5055:5055 \
   -v "$(pwd)/foreseer-config:/app/config" \
-  ghcr.io/selmant/seerr:v0.1.0-alpha.4
+  ghcr.io/selmant/seerr:v0.1.0-alpha.5
 ```
 
 Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
@@ -65,7 +65,7 @@ The equivalent production-style Compose service is:
 ```yaml
 services:
   foreseer:
-    image: ghcr.io/selmant/seerr:v0.1.0-alpha.4
+    image: ghcr.io/selmant/seerr:v0.1.0-alpha.5
     container_name: foreseer
     init: true
     restart: unless-stopped

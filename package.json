@@ -1,6 +1,6 @@
 {
   "name": "foreseer",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "private": true,
   "packageManager": "pnpm@10.24.0",
   "scripts": {
