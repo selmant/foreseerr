@@ -29,6 +29,7 @@ import type {
   TmdbWatchProviderDetails,
   TmdbWatchProviderRegion,
 } from './interfaces';
+import { extractKeywordList } from './keywords';
 
 interface SearchOptions {
   query: string;
@@ -1330,15 +1331,22 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         mediaType === 'movie'
           ? `/movie/${tmdbId}/keywords`
           : `/tv/${tmdbId}/keywords`;
-      const data = await this.get<{ results: TmdbKeyword[] }>(
-        path,
-        undefined,
-        604800
-      );
+      // Movies: { keywords: [...] }; TV: { results: [...] }
+      const data = await this.get<{
+        keywords?: TmdbKeyword[];
+        results?: TmdbKeyword[];
+      }>(path, undefined, 604800);
 
-      return data.results?.some((keyword) => keyword.id === keywordId) ?? false;
-    } catch {
-      return false;
+      return extractKeywordList(data).some(
+        (keyword) => keyword.id === keywordId
+      );
+    } catch (e) {
+      throw new Error(
+        `[TMDB] Failed to fetch keywords for ${mediaType}/${tmdbId}: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+        { cause: e }
+      );
     }
   }
 

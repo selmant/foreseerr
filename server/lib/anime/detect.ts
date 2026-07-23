@@ -1,5 +1,8 @@
 import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
-import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
+import {
+  extractKeywordList,
+  type TmdbKeywordListInput,
+} from '@server/api/themoviedb/keywords';
 
 export const ANIMATION_GENRE_ID = 16;
 export const ANIME_KEYWORD_NAMES = new Set(['anime', 'japanese animation']);
@@ -11,29 +14,10 @@ export type AnimeDetectionInput = {
   original_language?: string | null;
   origin_country?: string[] | null;
   production_countries?: { iso_3166_1: string }[] | null;
-  keywords?:
-    | TmdbKeyword[]
-    | { keywords?: TmdbKeyword[]; results?: TmdbKeyword[] }
-    | null;
+  keywords?: TmdbKeywordListInput;
 };
 
-export const extractKeywordList = (
-  keywords: AnimeDetectionInput['keywords']
-): TmdbKeyword[] => {
-  if (!keywords) {
-    return [];
-  }
-  if (Array.isArray(keywords)) {
-    return keywords;
-  }
-  if ('keywords' in keywords && Array.isArray(keywords.keywords)) {
-    return keywords.keywords;
-  }
-  if ('results' in keywords && Array.isArray(keywords.results)) {
-    return keywords.results;
-  }
-  return [];
-};
+export { extractKeywordList };
 
 const genreIds = (genres: AnimeDetectionInput['genres']): Set<number> => {
   if (!genres?.length) {

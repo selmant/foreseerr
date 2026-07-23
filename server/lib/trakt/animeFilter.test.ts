@@ -1,4 +1,6 @@
-import type TheMovieDb from '@server/api/themoviedb';
+import TheMovieDb from '@server/api/themoviedb';
+import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
+import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
 import type { TraktMediaItem } from '@server/api/trakt/interfaces';
 import {
   applyTraktMediaTypeFilter,
@@ -78,6 +80,80 @@ describe('Trakt anime filters', () => {
     assert.deepEqual(
       await applyTraktMediaTypeFilter(pool, 'movie', tmdb),
       pool
+    );
+  });
+
+  it('classifies anime via real TMDB movie {keywords} and TV {results} fixtures', async () => {
+    const animeMovie: TraktMediaItem = {
+      mediaType: 'movie',
+      tmdbId: 129,
+      title: 'Spirited Away',
+    };
+    const animeShow: TraktMediaItem = {
+      mediaType: 'tv',
+      tmdbId: 1429,
+      title: 'Attack on Titan',
+    };
+    const drama: TraktMediaItem = {
+      mediaType: 'tv',
+      tmdbId: 1396,
+      title: 'Breaking Bad',
+    };
+
+    const tmdb = new TheMovieDb();
+    (
+      tmdb as unknown as {
+        get: (path: string) => Promise<unknown>;
+      }
+    ).get = async (path: string) => {
+      if (path === '/movie/129/keywords') {
+        return {
+          id: 129,
+          keywords: [{ id: ANIME_KEYWORD_ID, name: 'anime' } as TmdbKeyword],
+        };
+      }
+      if (path === '/tv/1429/keywords') {
+        return {
+          id: 1429,
+          results: [{ id: ANIME_KEYWORD_ID, name: 'anime' } as TmdbKeyword],
+        };
+      }
+      if (path === '/tv/1396/keywords') {
+        return {
+          id: 1396,
+          results: [{ id: 12345, name: 'crime' } as TmdbKeyword],
+        };
+      }
+      throw new Error(`Unexpected path ${path}`);
+    };
+
+    const filtered = await filterTraktAnimeItems(
+      [animeMovie, animeShow, drama],
+      tmdb
+    );
+    assert.deepEqual(filtered, [animeMovie, animeShow]);
+  });
+
+  it('propagates TMDB keyword provider failures instead of treating items as non-anime', async () => {
+    // Use an uncached tmdbId — anime-keyword results are memoized on the shared TMDB cache.
+    const uncached: TraktMediaItem = {
+      mediaType: 'tv',
+      tmdbId: 9_900_001,
+      title: 'Uncached Show',
+    };
+    const failing = {
+      mediaHasAnimeKeyword: async () => {
+        throw new Error('[TMDB] Failed to fetch keywords: upstream down');
+      },
+    } as unknown as TheMovieDb;
+
+    await assert.rejects(
+      () => filterTraktAnimeItems([uncached], failing),
+      /Failed to fetch keywords/
+    );
+    await assert.rejects(
+      () => excludeTraktAnimeItems([uncached], failing),
+      /Failed to fetch keywords/
     );
   });
 });
