@@ -2,7 +2,10 @@ import PlexTvAPI from '@server/api/plextv';
 import type { SortOptions } from '@server/api/themoviedb';
 import TheMovieDb from '@server/api/themoviedb';
 import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
-import TraktAPI, { TraktReconnectRequiredError } from '@server/api/trakt';
+import TraktAPI, {
+  TraktRateLimitedError,
+  TraktReconnectRequiredError,
+} from '@server/api/trakt';
 import type {
   TraktBrowseMediaType,
   TraktFetchMediaType,
@@ -174,6 +177,13 @@ const handleTraktRouteError = (
   }
   if (e instanceof TraktReconnectRequiredError) {
     return next({ status: 401, message: e.message });
+  }
+  if (e instanceof TraktRateLimitedError) {
+    return next({
+      status: 429,
+      message: e.message,
+      retryAfter: e.retryAfterSeconds,
+    });
   }
   logger.error(fallbackMessage, {
     label: 'API',
@@ -1623,7 +1633,18 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
     const listSort = parseTraktListSortQuery(req.query.sort);
-    const extended = listSort ? 'full' : traktExtendedForBrowseQuery(req.query);
+    const usePostFilters = needsTraktDiscoverPostFilters(
+      req.user,
+      req.query,
+      false
+    );
+    // Post-filters already collect + sort locally. Passing sortBy into
+    // getListItems here would re-fetch up to 10 Trakt pages per upstream page.
+    const sortInsideTraktClient = Boolean(listSort) && !usePostFilters;
+    const extended =
+      listSort || usePostFilters
+        ? 'full'
+        : traktExtendedForBrowseQuery(req.query);
 
     if (listRef === 'watchlist' && !username) {
       return next({
@@ -1636,7 +1657,10 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
       try {
         const metadata = await trakt.getListMetadata(username, listRef);
         metadataName = metadata.name || listRef;
-      } catch {
+      } catch (e) {
+        if (e instanceof TraktRateLimitedError) {
+          throw e;
+        }
         // Metadata is optional for browsing items
       }
     } else {
@@ -1662,7 +1686,7 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
               page: traktPage,
               limit: itemsPerPage,
               extended,
-              sortBy: listSort,
+              sortBy: sortInsideTraktClient ? listSort : undefined,
             }),
     });
 

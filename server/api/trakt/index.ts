@@ -30,8 +30,24 @@ export const TRAKT_RECOMMENDATIONS_LIMIT_MAX = 500;
 const TRAKT_REFRESH_WINDOW_SECONDS = 300;
 const TRAKT_RETRY_AFTER_MAX_SECONDS = 5;
 const TRAKT_RATE_LIMIT_FALLBACK_SECONDS = 1;
+const TRAKT_GET_CACHE_TTL_SECONDS = 300;
+const TRAKT_CIRCUIT_FALLBACK_SECONDS = 60;
 /** Trakt currently caps sync collection pages at 250 items. */
 export const TRAKT_SYNC_PAGE_SIZE = 250;
+
+/** Shared across TraktAPI instances so one 429 cools down the whole process. */
+let traktCircuitOpenUntilMs = 0;
+
+export class TraktRateLimitedError extends Error {
+  public readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    const seconds = Math.max(1, Math.ceil(retryAfterSeconds));
+    super(`Trakt API rate limited; retry after ${seconds}s`);
+    this.name = 'TraktRateLimitedError';
+    this.retryAfterSeconds = seconds;
+  }
+}
 
 export class TraktRefreshRejectedError extends Error {
   public readonly status: number;
@@ -49,6 +65,37 @@ export class TraktReconnectRequiredError extends Error {
     this.name = 'TraktReconnectRequiredError';
   }
 }
+
+/** Test helper — clear process-wide Trakt rate-limit circuit. */
+export const resetTraktRateLimitState = (): void => {
+  traktCircuitOpenUntilMs = 0;
+};
+
+const remainingCircuitSeconds = (): number =>
+  Math.max(0, Math.ceil((traktCircuitOpenUntilMs - Date.now()) / 1000));
+
+const assertTraktCircuitClosed = (): void => {
+  const remaining = remainingCircuitSeconds();
+  if (remaining > 0) {
+    throw new TraktRateLimitedError(remaining);
+  }
+};
+
+const openTraktCircuit = (retryAfterSeconds: number): void => {
+  const seconds = Math.max(
+    TRAKT_CIRCUIT_FALLBACK_SECONDS,
+    Math.ceil(retryAfterSeconds || TRAKT_CIRCUIT_FALLBACK_SECONDS)
+  );
+  const openUntil = Date.now() + seconds * 1000;
+  if (openUntil > traktCircuitOpenUntilMs) {
+    traktCircuitOpenUntilMs = openUntil;
+    logger.warn('Trakt circuit opened after rate limit', {
+      label: 'Trakt API',
+      retryAfterSeconds: seconds,
+      nextProbeAt: new Date(openUntil).toISOString(),
+    });
+  }
+};
 
 interface TraktAPIOptions {
   clientId: string;
@@ -86,10 +133,6 @@ class TraktAPI extends ExternalAPI {
       {
         headers,
         nodeCache: cacheManager.getCache('trakt').data,
-        rateLimit: {
-          maxRPS: 4,
-          maxRequests: 40,
-        },
       }
     );
 
@@ -111,6 +154,37 @@ class TraktAPI extends ExternalAPI {
       },
     });
     this.rawAxios.interceptors.request.use(proxyRequestInterceptor);
+  }
+
+  protected async get<T>(
+    endpoint: string,
+    config?: {
+      params?: Record<string, string | number>;
+      headers?: Record<string, string>;
+    },
+    ttl?: number
+  ): Promise<T> {
+    assertTraktCircuitClosed();
+    try {
+      return await super.get<T>(endpoint, config, ttl);
+    } catch (e) {
+      const status = (e as { response?: { status?: number } })?.response
+        ?.status;
+      if (status === 429) {
+        const headers = (e as { response?: { headers?: unknown } })?.response
+          ?.headers;
+        const retryAfter = this.parseRetryAfter(
+          this.headerValue(headers, 'retry-after')
+        );
+        openTraktCircuit(retryAfter || TRAKT_CIRCUIT_FALLBACK_SECONDS);
+        throw new TraktRateLimitedError(
+          retryAfter ||
+            remainingCircuitSeconds() ||
+            TRAKT_CIRCUIT_FALLBACK_SECONDS
+        );
+      }
+      throw e;
+    }
   }
 
   public static parseListUrl(value: string): {
@@ -594,6 +668,7 @@ class TraktAPI extends ExternalAPI {
       page,
       limit,
       sortBy: options.sortBy,
+      cacheKey: `${path}:sorted`,
     });
   }
 
@@ -850,14 +925,38 @@ class TraktAPI extends ExternalAPI {
     try {
       return await this.getAuthenticated<T>(endpoint, config);
     } catch (e) {
+      if (e instanceof TraktRateLimitedError) {
+        throw e;
+      }
       // Fall back to app-key-only for public lists if user token fails
       logger.debug('Authenticated Trakt request failed; retrying publicly', {
         label: 'Trakt API',
         endpoint,
         errorMessage: e instanceof Error ? e.message : 'unknown error',
       });
-      return this.get<T>(endpoint, config, 300);
+      assertTraktCircuitClosed();
+      return this.get<T>(endpoint, config, TRAKT_GET_CACHE_TTL_SECONDS);
     }
+  }
+
+  private authCacheConfig(config?: {
+    params?: Record<string, string | number>;
+    headers?: Record<string, string>;
+  }): {
+    params?: Record<string, string | number>;
+    headers?: Record<string, string>;
+  } {
+    return {
+      ...config,
+      headers: {
+        ...config?.headers,
+        // Namespace authenticated cache entries per token so private lists
+        // never leak across linked accounts.
+        'x-trakt-cache-scope': this.accessToken
+          ? `auth:${this.accessToken.slice(-16)}`
+          : 'public',
+      },
+    };
   }
 
   private async requestWithRetry<T>(
@@ -868,6 +967,16 @@ class TraktAPI extends ExternalAPI {
     retryRateLimit = true
   ): Promise<T> {
     await this.ensureFreshToken();
+    assertTraktCircuitClosed();
+
+    const cacheConfig =
+      method === 'GET' ? this.authCacheConfig(config) : undefined;
+    if (cacheConfig) {
+      const cached = this.getCached<T>(endpoint, cacheConfig);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
 
     try {
       const response = await this.rawAxios.request<T>({
@@ -882,30 +991,41 @@ class TraktAPI extends ExternalAPI {
       });
 
       if (response.status >= 200 && response.status < 300) {
+        if (cacheConfig) {
+          this.setCached(
+            endpoint,
+            response.data,
+            TRAKT_GET_CACHE_TTL_SECONDS,
+            cacheConfig
+          );
+        }
         return response.data;
       }
 
-      if (response.status === 429 && retryRateLimit) {
+      if (response.status === 429) {
         const retryAfter = this.parseRetryAfter(
           response.headers['retry-after'] as string | undefined
         );
-        if (retryAfter > TRAKT_RETRY_AFTER_MAX_SECONDS) {
-          throw new Error(
-            `Trakt API rate limited ${method} ${endpoint}; retry after ${retryAfter}s`
+        if (retryRateLimit && retryAfter <= TRAKT_RETRY_AFTER_MAX_SECONDS) {
+          await new Promise((resolve) =>
+            setTimeout(
+              resolve,
+              (retryAfter || TRAKT_RATE_LIMIT_FALLBACK_SECONDS) * 1000
+            )
+          );
+          return this.requestWithRetry<T>(
+            method,
+            endpoint,
+            config,
+            retryAuth,
+            false
           );
         }
-        await new Promise((resolve) =>
-          setTimeout(
-            resolve,
-            (retryAfter || TRAKT_RATE_LIMIT_FALLBACK_SECONDS) * 1000
-          )
-        );
-        return this.requestWithRetry<T>(
-          method,
-          endpoint,
-          config,
-          retryAuth,
-          false
+        openTraktCircuit(retryAfter || TRAKT_CIRCUIT_FALLBACK_SECONDS);
+        throw new TraktRateLimitedError(
+          retryAfter ||
+            remainingCircuitSeconds() ||
+            TRAKT_CIRCUIT_FALLBACK_SECONDS
         );
       }
 
@@ -925,6 +1045,7 @@ class TraktAPI extends ExternalAPI {
       );
     } catch (e) {
       if (
+        e instanceof TraktRateLimitedError ||
         e instanceof TraktReconnectRequiredError ||
         e instanceof TraktRefreshRejectedError ||
         (e instanceof Error && e.message.startsWith('Trakt API'))
@@ -947,6 +1068,21 @@ class TraktAPI extends ExternalAPI {
     }
   }
 
+  private headerValue(headers: unknown, name: string): string | undefined {
+    if (!headers || typeof headers !== 'object') {
+      return undefined;
+    }
+    const map = headers as {
+      get?: (headerName: string) => unknown;
+      [key: string]: unknown;
+    };
+    const raw = map.get?.(name) ?? map[name] ?? map[name.toLowerCase()];
+    if (Array.isArray(raw)) {
+      return String(raw[0] ?? '');
+    }
+    return raw == null ? undefined : String(raw);
+  }
+
   private listItemTypes(mediaType: TraktFetchMediaType): string {
     if (mediaType === 'movie') return 'movies';
     if (mediaType === 'tv') return 'shows';
@@ -956,8 +1092,34 @@ class TraktAPI extends ExternalAPI {
 
   private async fetchSortedListItems(
     fetchPage: (page: number) => Promise<TraktListEntry[] | undefined>,
-    options: { page: number; limit: number; sortBy: TraktListSortBy }
+    options: {
+      page: number;
+      limit: number;
+      sortBy: TraktListSortBy;
+      cacheKey: string;
+    }
   ): Promise<TraktPaginatedItems> {
+    type SortedPool = { items: TraktMediaItem[]; hasMoreUpstream: boolean };
+    const cacheConfig = this.authCacheConfig({
+      params: {
+        sortBy: options.sortBy,
+        limit: options.limit,
+        pool: 'sorted-list',
+      },
+    });
+    const cachedPool = this.getCached<SortedPool>(
+      options.cacheKey,
+      cacheConfig
+    );
+    if (cachedPool) {
+      return paginateSortedTraktItems(cachedPool.items, {
+        page: options.page,
+        limit: options.limit,
+        sortBy: options.sortBy,
+        hasMoreUpstream: cachedPool.hasMoreUpstream,
+      });
+    }
+
     const collected: TraktMediaItem[] = [];
     const seen = new Set<string>();
     let traktPage = 1;
@@ -989,6 +1151,13 @@ class TraktAPI extends ExternalAPI {
       hasMoreUpstream = true;
       traktPage++;
     }
+
+    this.setCached(
+      options.cacheKey,
+      { items: collected, hasMoreUpstream } satisfies SortedPool,
+      TRAKT_GET_CACHE_TTL_SECONDS,
+      cacheConfig
+    );
 
     return paginateSortedTraktItems(collected, {
       page: options.page,

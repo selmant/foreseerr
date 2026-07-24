@@ -257,7 +257,12 @@ app
     server.get('*path', (req, res) => handle(req, res));
     server.use(
       (
-        err: { status: number; message: string; errors: string[] },
+        err: {
+          status: number;
+          message: string;
+          errors: string[];
+          retryAfter?: number;
+        },
         _req: Request,
         res: Response,
         // We must provide a next function for the function signature here even though its not used
@@ -265,6 +270,13 @@ app
         _next: NextFunction
       ) => {
         // format error
+        if (
+          err.status === 429 &&
+          typeof err.retryAfter === 'number' &&
+          Number.isFinite(err.retryAfter)
+        ) {
+          res.setHeader('Retry-After', String(Math.ceil(err.retryAfter)));
+        }
         res.status(err.status || 500).json({
           message: err.message,
           errors: err.errors,

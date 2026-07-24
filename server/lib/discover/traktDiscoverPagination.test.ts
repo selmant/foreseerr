@@ -105,3 +105,29 @@ describe('needsTraktDiscoverPostFilters', () => {
     );
   });
 });
+
+describe('fetchPaginatedTraktDiscoverWithPostFilters + sort', () => {
+  it('requests each upstream page once while sorting locally', async () => {
+    const requestedPages: number[] = [];
+    const page = await fetchPaginatedTraktDiscoverWithPostFilters(
+      async (upstreamPage) => {
+        requestedPages.push(upstreamPage);
+        return {
+          items: [item(upstreamPage), item(upstreamPage + 10)],
+          hasMore: upstreamPage < 3,
+        };
+      },
+      {
+        page: 1,
+        itemsPerPage: 2,
+        tmdb: {} as never,
+        query: { traktRatingGte: '0' },
+        user: undefined,
+        sortBy: 'added',
+      }
+    );
+
+    assert.deepEqual(requestedPages, [1, 2, 3]);
+    assert.equal(page.items.length, 2);
+  });
+});
