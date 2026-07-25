@@ -120,7 +120,7 @@ None of the items below can be completed by an agent — they need a human with 
 
 | Item | Status |
 |------|--------|
-| Supported upgrade sources + minimum platform/database versions published | ✅ In [`docs/stable-contract.md`](/stable-contract) and [`docs/release-notes-draft.md`](/release-notes-draft). Minimum versions: Node `^22.19.0`, pnpm `^10.0.0` (`package.json#engines`), PostgreSQL `16` (CI/local validation target; earlier 1x versions are not tested), SQLite bundled via `sqlite3`. |
+| Supported upgrade sources + minimum platform/database versions published | ✅ In [`docs/stable-contract.md`](/stable-contract) and [`docs/release-notes-0.1.0.md`](/release-notes-0.1.0). Minimum versions: Node `^22.19.0`, pnpm `^10.0.0` (`package.json#engines`), PostgreSQL `16` (CI/local validation target; earlier 1x versions are not tested), SQLite bundled via `sqlite3`. |
 | Intentional alpha-breaking changes documented | ✅ Captured across Phase 1–4 commits/tests; the stabilization plan (`plan.md`) is the authoritative list of what changed and why. Consider folding a condensed "breaking changes" bullet list into the real release notes when cutting stable — the raw plan is maintainer-facing, not release-note prose. |
 | Backup and rollback instructions published | ✅ [`docs/using-seerr/backups.md`](/using-seerr/backups) (SQLite/PostgreSQL/Docker/Kubernetes backup + restore + upgrade/downgrade policy). |
 | Stale hard-coded alpha/Seerr v3 tags replaced | ✅ See [Stale version/registry references fixed](#stale-version-registry-references-fixed-in-documentation) above. |
@@ -150,9 +150,9 @@ Once stable, Foreseerr follows SemVer for the application version (`package.json
 5. Decide whether to bump `charts/foreseerr-chart/Chart.yaml#version` (the chart's own independent SemVer) at the same time — it is not required to match the app version, but a stable app release is a reasonable point to bump it if chart changes have accumulated.
 6. **Update alpha-specific documentation** so it no longer describes alpha-only caveats as current:
    - [`docs/using-seerr/backups.md`](/using-seerr/backups) → replace the "Alpha-to-stable migration policy" warning with a plain statement that all migrations from the stable release onward are backward compatible.
-   - [`docs/release-notes-draft.md`](/release-notes-draft) → fold its content into the real release announcement/changelog for this version, then delete or archive the draft file.
+   - [`docs/release-notes-draft.md`](/release-notes-draft) → folded into [`docs/release-notes-0.1.0.md`](/release-notes-0.1.0); draft deleted as part of the `v0.1.0` prepare commit.
    - `README.md` → replace the `> [!WARNING] Foreseerr is currently in alpha (...)` banner with stable-release messaging (or remove it).
    - `docs/migration-guide.mdx` → the `:::danger Foreseerr is currently alpha software...` block should be softened or removed once the upgrade paths in this document have real-world validation (i.e. once [Required manual validation](#required-manual-validation) is fully checked).
 7. **Run `pnpm check:versions`** and confirm it reports the new version with no errors.
 8. **Tag the release** (`vX.Y.Z`, matching the new `package.json#version` with a leading `v`) — this triggers `.github/workflows/release.yml`, which re-runs the full quality gate against the tagged commit before publishing.
-9. **Add the previous-Foreseerr-stable upgrade fixture** described in `docs/release-notes-draft.md` (upgrade-from-this-stable-release test) so the *next* release has real upgrade coverage from this one, not just from the upstream Seerr baseline.
+9. **Add the previous-Foreseerr-stable upgrade fixture** — done for `v0.1.0` via `server/migration/foreseerrStableBaseline.ts` and `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts` so later stables have Foreseerr→Foreseerr coverage, not just the upstream Seerr baseline.

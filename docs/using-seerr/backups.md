@@ -127,14 +127,10 @@ Foreseerr upgrades its database schema and `settings.json` automatically on star
 
 Downgrading (running an older Foreseerr version against a database or `settings.json` produced by a newer one) is **not supported**. Foreseerr detects this at startup — a database or settings file with migrations the running version doesn't recognize causes it to log an actionable error and refuse to start, rather than running against a schema it doesn't fully understand. To recover from an attempted downgrade, restore the backup taken before the upgrade (or the automatic `settings.old.json` written just before the last settings migration ran), or upgrade back to a version that recognizes the newer schema.
 
-:::warning Alpha-to-stable migration policy
-Foreseerr is currently alpha software (`0.1.0-alpha.x`). Until the first stable release:
+:::info Stable upgrade policy
+From Foreseerr `v0.1.0` onward, database migrations and persisted `settings.json` changes are append-only and forward-compatible: upgrades to a newer stable release are expected to apply cleanly in place. Take a backup before every upgrade.
 
-- Database and settings migrations may still be reordered or squashed between alpha releases; they are **not** guaranteed to remain compatible with every prior alpha in the way stable releases will be.
-- After the first stable release, all database migrations and persisted `settings.json` changes will be backward compatible: upgrades will always be able to run in place, and this policy note will be updated to reflect that guarantee going forward.
-- If an alpha-to-alpha upgrade doesn't apply cleanly, the supported recovery path is to restore your pre-upgrade backup, or to reset (fresh install) and reconfigure. There is no guaranteed automated migration between arbitrary alpha builds.
-
-Once alpha ends, this section will document the exact stable version boundary and confirm the backward-compatibility guarantee is in effect.
+Alpha builds (`0.1.0-alpha.x`) are **not** a supported upgrade source. Do not upgrade an alpha database/settings file to stable; use a fresh install or migrate from Seerr instead (see the [migration guide](/migration-guide)).
 :::
 
-Foreseerr's schema/migration history continues directly from upstream Seerr's. The supported upgrade sources are: a fresh Foreseerr install, an upstream Seerr SQLite/PostgreSQL database (validated against the Seerr commit `759e35933860594282bd929587576b003a3efb2d`), and — once a stable Foreseerr release exists — a previous stable Foreseerr database/settings file. Automated upgrade tests covering these sources live under `server/migration/upgradeMatrix.*.test.ts`.
+Foreseerr's schema/migration history continues directly from upstream Seerr's. The supported upgrade sources are: a fresh Foreseerr install, an upstream Seerr SQLite/PostgreSQL database (validated against the Seerr commit `759e35933860594282bd929587576b003a3efb2d`), and a previous stable Foreseerr database/settings file (from `v0.1.0` onward). Automated upgrade tests covering these sources live under `server/migration/upgradeMatrix.*.test.ts`.

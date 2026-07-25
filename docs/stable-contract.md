@@ -12,14 +12,15 @@ At the first stable release, Foreseerr supports upgrading in place from:
 
 1. **A fresh Foreseerr installation.** No prior data; migrations run from an empty database.
 2. **An upstream Seerr database (SQLite or PostgreSQL)**, validated against the Seerr merge-base commit `759e35933860594282bd929587576b003a3efb2d`. Foreseerr's migration history continues directly from this commit's schema.
-3. **A previous stable Foreseerr release**, once one exists. No stable release has shipped yet, so this source has no fixture/upgrade test yet — see the note in [`docs/release-notes-draft.md`](/release-notes-draft).
+3. **A previous stable Foreseerr release**, starting with `v0.1.0`. The frozen migration cutoff is `FORESEERR_V0_1_0_LAST_MIGRATION_TIMESTAMP` in `server/migration/foreseerrStableBaseline.ts`; coverage is in `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts`.
 
 Automated coverage:
 
 - `pnpm check:migrations` — fresh-install matrix for both engines (`server/migration/*` + `scripts/check-migrations.ts`), asserting key indexes/foreign keys exist, not just that the migration runner exits 0.
-- `server/migration/upgradeMatrix.sqlite.test.ts` / `.postgres.test.ts` — upgrade-from-baseline matrix, asserting users/settings/requests/media/service config survive the upgrade, not just that migrations run.
+- `server/migration/upgradeMatrix.sqlite.test.ts` / `.postgres.test.ts` — upgrade-from-Seerr-baseline matrix, asserting users/settings/requests/media/service config survive the upgrade, not just that migrations run.
+- `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts` — upgrade-from-Foreseerr-`v0.1.0` matrix (identity while HEAD is still `v0.1.0`; meaningful once later releases add migrations).
 
-Alpha builds are explicitly **not** part of the supported-upgrade guarantee above; see the alpha-to-stable policy in [`docs/release-notes-draft.md`](/release-notes-draft) and the warning in [Backups → Upgrading and downgrading](/using-seerr/backups).
+Alpha builds (`0.1.0-alpha.x`) are explicitly **not** part of the supported-upgrade guarantee above; see [Backups → Upgrading and downgrading](/using-seerr/backups) and [`docs/release-notes-0.1.0.md`](/release-notes-0.1.0).
 
 ## When re-syncing upstream Seerr
 

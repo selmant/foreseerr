@@ -8,8 +8,8 @@ It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex 
 
 **Docs:** [selmant.github.io/foreseerr](https://selmant.github.io/foreseerr/)
 
-> [!WARNING]
-> Foreseerr is currently in **alpha** (`v0.1.0-alpha.6`). Expect rough edges, breaking changes, and incomplete features. Back up your configuration before upgrading, and avoid using alpha builds as your only production instance.
+> [!NOTE]
+> Foreseerr `v0.1.0` is the first stable release. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
 
 ## Current Features (from Seerr)
 
@@ -44,7 +44,7 @@ mkdir -p ./foreseerr-config
 sudo chown -R 1000:1000 ./foreseerr-config
 ```
 
-Start the released alpha image:
+Start the released image:
 
 ```bash
 docker run -d \
@@ -53,12 +53,12 @@ docker run -d \
   --restart unless-stopped \
   -p 5055:5055 \
   -v "$(pwd)/foreseerr-config:/app/config" \
-  ghcr.io/selmant/foreseerr:v0.1.0-alpha.6
+  ghcr.io/selmant/foreseerr:v0.1.0
 ```
 
 Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
 
-To update, replace the image tag with the version you want, then recreate the container with the same volume mount. Because this is an alpha release, back up `foreseerr-config` before updating.
+To update, replace the image tag with the version you want, then recreate the container with the same volume mount. Back up `foreseerr-config` before updating.
 
 ### Docker Compose
 
@@ -67,7 +67,7 @@ The equivalent production-style Compose service is:
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/foreseerr:v0.1.0-alpha.6
+    image: ghcr.io/selmant/foreseerr:v0.1.0
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -85,9 +85,9 @@ sudo chown -R 1000:1000 foreseerr-config
 docker compose up -d
 ```
 
-The image is published at `ghcr.io/selmant/foreseerr`. Use an explicit version tag for alpha deployments rather than relying on `latest`.
+The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.1.0`) or a stable alias (`latest`, `v0`, `v0.1`) rather than `develop`.
 
-> Older alpha pulls used `ghcr.io/selmant/seerr`. Point compose/CLI at `ghcr.io/selmant/foreseerr` going forward.
+> Older pulls used `ghcr.io/selmant/seerr`. Point compose/CLI at `ghcr.io/selmant/foreseerr` going forward.
 
 ## Migrating from Seerr
 

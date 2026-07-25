@@ -13,9 +13,9 @@ Foreseerr can use an existing Seerr configuration because it uses the same confi
 The procedure does not change for each Seerr release: stop Seerr, back up, then point Foreseerr at the same config volume. Compatibility is maintained by Foreseerr’s migration history and upgrade tests against a pinned Seerr merge-base, not by a published Seerr-version matrix.
 
 :::danger
-Foreseerr is currently alpha software. Do not use your only production Seerr config or database for initial testing.
+Back up the complete Seerr config directory and database before migrating. Do not use your only production Seerr config or database for initial testing. Keep the original instance and backup until you have confirmed that Foreseerr is working correctly.
 
-Back up the complete Seerr config directory and database before migrating. Keep the original instance and backup until you have confirmed that Foreseerr is working correctly.
+Alpha Foreseerr builds (`0.1.0-alpha.x`) are **not** a supported upgrade source. Migrate from Seerr, or start from a fresh Foreseerr `v0.1.0` (or later stable) install.
 :::
 
 :::warning
@@ -28,7 +28,7 @@ Foreseerr supports migrating in place from:
 
 1. **A Seerr configuration and database** whose schema is at or behind the Seerr merge-base this Foreseerr release was last synced from. Upgrade coverage is validated in CI against that baseline (see maintainer notes in the repository’s stable contract).
 2. **A fresh Foreseerr installation**, with no prior data.
-3. **A previous stable Foreseerr release**, once stable releases exist.
+3. **A previous stable Foreseerr release** (`v0.1.0` or later). Alpha builds are not included.
 
 If your Seerr instance is **newer than Foreseerr’s last upstream sync**, migration is **not guaranteed**. Prefer waiting for a Foreseerr release that includes that Seerr sync, or clone-test at your own risk and keep the original Seerr instance and backup.
 
@@ -63,7 +63,7 @@ For Docker Compose, the service can be changed from Seerr to Foreseerr while kee
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/foreseerr:v0.1.0-alpha.6
+    image: ghcr.io/selmant/foreseerr:v0.1.0
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -88,7 +88,7 @@ This is a different setup. Use a new config directory and, when using PostgreSQL
 ```yaml
 services:
   foreseerr-test:
-    image: ghcr.io/selmant/foreseerr:v0.1.0-alpha.6
+    image: ghcr.io/selmant/foreseerr:v0.1.0
     container_name: foreseerr-test
     init: true
     restart: unless-stopped
