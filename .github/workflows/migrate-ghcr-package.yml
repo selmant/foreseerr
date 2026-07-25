@@ -10,7 +10,7 @@ on:
       tags:
         description: Comma-separated tags to copy from ghcr.io/selmant/seerr
         required: true
-        default: 'v0.1.0-alpha.6,v0.1.0-alpha.5,v0.1.0-alpha.4,v0.1.0-alpha.3,latest'
+        default: 'v0.1.0-alpha.6,v0.1.0-alpha.5,v0.1.0-alpha.4,v0.1.0-alpha.3'
 
 permissions:
   contents: read
@@ -45,5 +45,7 @@ jobs:
             tag="$(echo "$tag" | xargs)"
             [ -n "$tag" ] || continue
             echo "Copying ghcr.io/selmant/seerr:$tag -> ghcr.io/selmant/foreseerr:$tag"
-            crane copy "ghcr.io/selmant/seerr:$tag" "ghcr.io/selmant/foreseerr:$tag"
+            if ! crane copy "ghcr.io/selmant/seerr:$tag" "ghcr.io/selmant/foreseerr:$tag"; then
+              echo "Skipping missing or failed tag: $tag" >&2
+            fi
           done
