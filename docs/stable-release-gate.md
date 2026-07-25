@@ -120,7 +120,7 @@ None of the items below can be completed by an agent — they need a human with 
 
 | Item | Status |
 |------|--------|
-| Supported upgrade sources + minimum platform/database versions published | ✅ In [`docs/stable-contract.md`](/stable-contract) and [`docs/release-notes-0.1.0.md`](/release-notes-0.1.0). Minimum versions: Node `^22.19.0`, pnpm `^10.0.0` (`package.json#engines`), PostgreSQL `16` (CI/local validation target; earlier 1x versions are not tested), SQLite bundled via `sqlite3`. |
+| Supported upgrade sources + minimum platform/database versions published | ✅ In [`docs/stable-contract.md`](/stable-contract) and [`docs/release-notes-0.1.0.md`](/release-notes-0.1.0). Minimum versions: Node `^22.19.0 || ^24.0.0`, pnpm `^10.0.0` (`package.json#engines`; CI pinned via `.node-version`), PostgreSQL `16` (CI/local validation target; earlier 1x versions are not tested), SQLite bundled via `sqlite3`. |
 | Intentional alpha-breaking changes documented | ✅ Captured across Phase 1–4 commits/tests; the stabilization plan (`plan.md`) is the authoritative list of what changed and why. Consider folding a condensed "breaking changes" bullet list into the real release notes when cutting stable — the raw plan is maintainer-facing, not release-note prose. |
 | Backup and rollback instructions published | ✅ [`docs/using-seerr/backups.md`](/using-seerr/backups) (SQLite/PostgreSQL/Docker/Kubernetes backup + restore + upgrade/downgrade policy). |
 | Stale hard-coded alpha/Seerr v3 tags replaced | ✅ See [Stale version/registry references fixed](#stale-version-registry-references-fixed-in-documentation) above. |
