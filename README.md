@@ -6,6 +6,8 @@
 
 It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex / Emby), and Radarr/Sonarr support. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 
+**Docs:** [selmant.github.io/seerr](https://selmant.github.io/seerr/)
+
 > [!WARNING]
 > Foreseerr is currently in **alpha** (`v0.1.0-alpha.6`). Expect rough edges, breaking changes, and incomplete features. Back up your configuration before upgrading, and avoid using alpha builds as your only production instance.
 

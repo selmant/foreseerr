@@ -162,21 +162,8 @@ const config: Config = {
             },
           ],
         },
-        {
-          title: 'Upstream',
-          items: [
-            {
-              label: 'Seerr',
-              href: 'https://github.com/selmant/seerr',
-            },
-            {
-              label: 'Seerr Docs',
-              href: 'https://selmant.github.io/seerr/',
-            },
-          ],
-        },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Foreseerr (Seerr fork). Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Foreseerr. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.shadesOfPurple,
