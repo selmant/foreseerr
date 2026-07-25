@@ -117,7 +117,7 @@ const config: Config = {
       },
       items: [
         {
-          to: '/api/seerr-api',
+          to: '/api/foreseerr-api',
           label: 'REST API',
           position: 'right',
         },
@@ -145,7 +145,7 @@ const config: Config = {
             },
             {
               label: 'REST API',
-              to: '/api/seerr-api',
+              to: '/api/foreseerr-api',
             },
           ],
         },
