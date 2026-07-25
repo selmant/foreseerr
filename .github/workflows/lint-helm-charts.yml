@@ -53,4 +53,14 @@ jobs:
 
       - name: Run chart-testing
         if: steps.list-changed.outputs.changed == 'true'
-        run: ct lint --target-branch ${{ github.event.repository.default_branch }} --validate-maintainers=false
+        run: |
+          # On push to the default branch, the checkout and target tip are the
+          # same commit, so --check-version-increment always fails (old==new).
+          # Keep the increment check on pull_request, where the base is meaningful.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ct lint --target-branch ${{ github.event.repository.default_branch }} \
+              --validate-maintainers=false --check-version-increment=false
+          else
+            ct lint --target-branch ${{ github.event.repository.default_branch }} \
+              --validate-maintainers=false
+          fi

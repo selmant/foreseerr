@@ -52,4 +52,17 @@ describe('assertSupportedDatabaseSchema', () => {
       /Unsupported database schema/
     );
   });
+
+  it('recognizes migrations that only expose their name via constructor.name', async () => {
+    class DropImdbIdConstraint1607928251245 {
+      // Intentionally no `name` field — matches older upstream migrations.
+    }
+
+    const dataSource = {
+      migrations: [new DropImdbIdConstraint1607928251245()],
+      query: async () => [{ name: 'DropImdbIdConstraint1607928251245' }],
+    } as unknown as DataSource;
+
+    await assert.doesNotReject(() => assertSupportedDatabaseSchema(dataSource));
+  });
 });

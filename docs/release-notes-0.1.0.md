@@ -11,7 +11,7 @@ First stable Foreseerr release. Maintainer tracking for the cut lives in [`docs/
 - First stable Foreseerr release (`v0.1.0`), built on Seerr with in-app Trakt browse, multi-source ratings, and related discovery workflows.
 - Config paths remain Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 - Image: `ghcr.io/selmant/foreseerr:v0.1.0` (also published to Docker Hub as `selmantr/foreseerr`).
-- Helm chart: `oci://ghcr.io/selmant/foreseerr/foreseerr-chart` (`appVersion` `v0.1.0`).
+- Helm chart: `oci://ghcr.io/selmant/foreseerr/foreseerr-chart` (`version` / `appVersion` `0.1.0` / `v0.1.0`). Chart SemVer was reset from the inherited Seerr `3.x` line to match the first Foreseerr stable.
 
 ## Supported upgrade sources
 

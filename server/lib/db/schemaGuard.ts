@@ -15,8 +15,20 @@ import type { DataSource } from 'typeorm';
 export async function assertSupportedDatabaseSchema(
   dataSource: DataSource
 ): Promise<void> {
+  // Match TypeORM MigrationExecutor: prefer an explicit `name` field, else
+  // fall back to the class name. Older upstream migrations omit `name`, and
+  // using only `.name` falsely treats them as unrecognized (Cypress/prod).
   const knownMigrationNames = new Set(
-    dataSource.migrations.map((migration) => migration.name)
+    dataSource.migrations.flatMap((migration) => {
+      if (migration.name) {
+        return [migration.name];
+      }
+      const ctorName = migration.constructor?.name;
+      if (ctorName && ctorName !== 'Object' && ctorName !== 'Function') {
+        return [ctorName];
+      }
+      return [];
+    })
   );
 
   let executedMigrations: { name: string }[];

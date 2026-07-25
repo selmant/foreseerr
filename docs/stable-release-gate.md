@@ -150,7 +150,7 @@ Once stable, Foreseerr follows SemVer for the application version (`package.json
 5. Decide whether to bump `charts/foreseerr-chart/Chart.yaml#version` (the chart's own independent SemVer) at the same time — it is not required to match the app version, but a stable app release is a reasonable point to bump it if chart changes have accumulated.
 6. **Update alpha-specific documentation** so it no longer describes alpha-only caveats as current:
    - [`docs/using-seerr/backups.md`](/using-seerr/backups) → replace the "Alpha-to-stable migration policy" warning with a plain statement that all migrations from the stable release onward are backward compatible.
-   - [`docs/release-notes-draft.md`](/release-notes-draft) → folded into [`docs/release-notes-0.1.0.md`](/release-notes-0.1.0); draft deleted as part of the `v0.1.0` prepare commit.
+   - `docs/release-notes-draft.md` → folded into [`docs/release-notes-0.1.0.md`](/release-notes-0.1.0); draft deleted as part of the `v0.1.0` prepare commit.
    - `README.md` → replace the `> [!WARNING] Foreseerr is currently in alpha (...)` banner with stable-release messaging (or remove it).
    - `docs/migration-guide.mdx` → the `:::danger Foreseerr is currently alpha software...` block should be softened or removed once the upgrade paths in this document have real-world validation (i.e. once [Required manual validation](#required-manual-validation) is fully checked).
 7. **Run `pnpm check:versions`** and confirm it reports the new version with no errors.
