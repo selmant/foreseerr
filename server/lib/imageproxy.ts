@@ -24,6 +24,20 @@ const baseCacheDirectory = process.env.CONFIG_DIRECTORY
   ? `${process.env.CONFIG_DIRECTORY}/cache/images`
   : path.join(__dirname, '../../config/cache/images');
 
+/** Coerce Axios 1.18+ header values (string | number | boolean | string[]) to string. */
+const headerToString = (value: unknown, fallback = ''): string => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0] : fallback;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return fallback;
+};
+
 class ImageProxy {
   public static async clearCache(key: string) {
     let deletedImages = 0;
@@ -269,16 +283,16 @@ class ImageProxy {
 
       const buffer = Buffer.from(response.data, 'binary');
 
-      const contentType = response.headers['content-type'] || '';
+      const contentType = headerToString(response.headers['content-type']);
       const extension = mime.getExtension(contentType) || '';
 
       let maxAge = Number(
-        (response.headers['cache-control'] ?? '0').split('=')[1]
+        headerToString(response.headers['cache-control'], '0').split('=')[1]
       );
 
       if (!maxAge) maxAge = 86400;
       const expireAt = Date.now() + maxAge * 1000;
-      const etag = (response.headers.etag ?? '').replace(/"/g, '');
+      const etag = headerToString(response.headers.etag).replace(/"/g, '');
 
       await this.writeToCacheDir(
         directory,
