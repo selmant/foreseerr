@@ -89,13 +89,11 @@ The image is published at `ghcr.io/selmant/foreseerr`. Use an explicit version t
 
 > Older alpha pulls used `ghcr.io/selmant/seerr`. Point compose/CLI at `ghcr.io/selmant/foreseerr` going forward.
 
-## Migrating from Seerr / Overseerr / Jellyseerr
+## Migrating from Seerr
 
 Foreseerr uses Seerr-compatible config paths and database settings, so an existing Seerr configuration can be reused when replacing Seerr. Stop the existing instance first, back up its config/database, and do not run both instances against the same config directory or database.
 
-See the [migration guide](docs/migration-guide.mdx) for the replacement procedure and for running Foreseerr alongside Seerr with isolated storage.
-
-Upstream Seerr migration notes: [docs.seerr.dev/migration-guide](https://docs.seerr.dev/migration-guide).
+See the [migration guide](docs/migration-guide.mdx) for the evergreen replacement procedure (clone-test, then same `/app/config` volume), supported upgrade sources, and what to do if your Seerr is newer than Foreseerr’s last upstream sync.
 
 ## API Documentation
 

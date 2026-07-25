@@ -21,6 +21,19 @@ Automated coverage:
 
 Alpha builds are explicitly **not** part of the supported-upgrade guarantee above; see the alpha-to-stable policy in [`docs/release-notes-draft.md`](/release-notes-draft) and the warning in [Backups → Upgrading and downgrading](/using-seerr/backups).
 
+## When re-syncing upstream Seerr
+
+User-facing migration docs are evergreen: they describe “same config volume / startup migrations,” not a Seerr-version matrix. Do **not** rewrite [migration-guide](/migration-guide) for routine Seerr releases. Only edit that guide when the procedure itself changes (config paths, image name, safety rules).
+
+When pulling a newer Seerr merge-base into this fork:
+
+1. Update `UPSTREAM_BASELINE_COMMIT` and `UPSTREAM_BASELINE_LAST_SHARED_MIGRATION_TIMESTAMP` in `server/migration/upstreamBaseline.ts` so the cutoff matches the last migration still byte-identical with upstream.
+2. Refresh or extend `server/migration/upgradeMatrix.sqlite.test.ts` / `.postgres.test.ts` (and fixtures) so upgrade-from-baseline still asserts users/settings/requests/media/service config survive.
+3. Run `pnpm check:migrations` and the upgrade-matrix tests; keep them green before shipping the sync.
+4. Leave the user migration guide unchanged unless the operational steps above actually changed.
+
+Seerr instances newer than the published baseline remain unsupported until the next sync that advances that baseline.
+
 ## Pagination contract
 
 Decision: **cursor/page plus `hasMore`**, not exact totals produced by a complete scan.
