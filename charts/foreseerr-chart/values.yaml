@@ -1,6 +1,6 @@
 image:
   registry: ghcr.io
-  repository: selmant/seerr
+  repository: selmant/foreseerr
   pullPolicy: IfNotPresent
   # -- Overrides the image tag whose default is the chart appVersion.
   tag: ''

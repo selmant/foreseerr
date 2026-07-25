@@ -53,7 +53,7 @@ For Docker Compose, the service can be changed from Seerr to Foreseerr while kee
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/seerr:v0.1.0-alpha.6
+    image: ghcr.io/selmant/foreseerr:v0.1.0-alpha.6
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -78,7 +78,7 @@ This is a different setup. Use a new config directory and, when using PostgreSQL
 ```yaml
 services:
   foreseerr-test:
-    image: ghcr.io/selmant/seerr:v0.1.0-alpha.6
+    image: ghcr.io/selmant/foreseerr:v0.1.0-alpha.6
     container_name: foreseerr-test
     init: true
     restart: unless-stopped
@@ -166,9 +166,9 @@ Summary of changes :
   ---
   services:
     seerr:
-      image: ghcr.io/selmant/seerr:latest
+      image: ghcr.io/selmant/foreseerr:latest
       init: true
-      container_name: seerr
+      container_name: foreseerr
       environment:
         - LOG_LEVEL=debug
         - TZ=Asia/Tashkent
@@ -197,7 +197,7 @@ Summary of changes :
     -p 5055:5055 \
     -v /path/to/appdata/config:/app/config \
     --restart unless-stopped \
-    ghcr.io/selmant/seerr:latest
+    ghcr.io/selmant/foreseerr:latest
   ```
   </TabItem>
 </Tabs>
@@ -211,9 +211,9 @@ Summary of changes :
   ---
   services:
     seerr:
-      image: ghcr.io/selmant/seerr:latest
+      image: ghcr.io/selmant/foreseerr:latest
       init: true
-      container_name: seerr
+      container_name: foreseerr
       environment:
         - LOG_LEVEL=debug
         - TZ=Asia/Tashkent
@@ -245,7 +245,7 @@ Summary of changes :
     -p 5055:5055 `
     -v seerr-data:/app/config `
     --restart unless-stopped `
-    ghcr.io/selmant/seerr:latest
+    ghcr.io/selmant/foreseerr:latest
   ```
   </TabItem>
 
@@ -260,7 +260,7 @@ Summary of changes :
     -p 5055:5055 ^
     -v seerr-data:/app/config ^
     --restart unless-stopped ^
-    ghcr.io/selmant/seerr:latest
+    ghcr.io/selmant/foreseerr:latest
   ```
   </TabItem>
 </Tabs>
@@ -292,7 +292,7 @@ Summary of changes :
   <TabItem value="new" label="New values">
   ```yaml
   image:
-    repository: selmant/seerr
+    repository: selmant/foreseerr
   podSecurityContext:
     fsGroup: 1000
     fsGroupChangePolicy: OnRootMismatch

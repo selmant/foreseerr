@@ -15,8 +15,8 @@ body:
     id: doc-location
     attributes:
       label: Page / Location
-      description: Link to the docs page or the file/path (e.g. https://selmant.github.io/seerr/... or README.md)
-      placeholder: "https://selmant.github.io/seerr/..."
+      description: Link to the docs page or the file/path (e.g. https://selmant.github.io/foreseerr/... or README.md)
+      placeholder: "https://selmant.github.io/foreseerr/..."
     validations:
       required: true
   - type: dropdown
@@ -59,5 +59,5 @@ body:
       label: Code of Conduct
       description: By submitting this issue, you agree to follow our Code of Conduct.
       options:
-        - label: I agree to follow Foreseerr's [Code of Conduct](https://github.com/selmant/seerr/blob/develop/CODE_OF_CONDUCT.md).
+        - label: I agree to follow Foreseerr's [Code of Conduct](https://github.com/selmant/foreseerr/blob/develop/CODE_OF_CONDUCT.md).
           required: true

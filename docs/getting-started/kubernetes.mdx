@@ -16,11 +16,11 @@ To confirm that the chart you are using is authentic and unmodified, please refe
 
 ## Installation
 ```console
-helm install foreseerr oci://ghcr.io/selmant/seerr/foreseerr-chart
+helm install foreseerr oci://ghcr.io/selmant/foreseerr/foreseerr-chart
 ```
-Helm values can be found in the Foreseerr repository under [charts/foreseerr-chart/README.md](https://github.com/selmant/seerr/tree/develop/charts/foreseerr-chart).
+Helm values can be found in the Foreseerr repository under [charts/foreseerr-chart/README.md](https://github.com/selmant/foreseerr/tree/develop/charts/foreseerr-chart).
 
 Verify the signature with [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) (replace [tag], with the TAG you want to verify) :
 ```console
-cosign verify ghcr.io/selmant/seerr/foreseerr-chart:[tag] --certificate-identity=https://github.com/selmant/seerr/.github/workflows/helm.yml@refs/heads/develop --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+cosign verify ghcr.io/selmant/foreseerr/foreseerr-chart:[tag] --certificate-identity=https://github.com/selmant/foreseerr/.github/workflows/helm.yml@refs/heads/develop --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```

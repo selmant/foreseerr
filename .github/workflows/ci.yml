@@ -259,7 +259,7 @@ jobs:
 
       - name: Verify default image tag
         run: |
-          expected_tag="ghcr.io/selmant/seerr:v$(node -p "require('./package.json').version")"
+          expected_tag="ghcr.io/selmant/foreseerr:v$(node -p "require('./package.json').version")"
           rendered_tag=$(helm template test charts/foreseerr-chart | awk -F'"' '/image:/{print $2; exit}')
           if [ "$rendered_tag" != "$expected_tag" ]; then
             echo "Expected default image $expected_tag, got $rendered_tag"

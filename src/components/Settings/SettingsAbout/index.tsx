@@ -80,8 +80,8 @@ const SettingsAbout = () => {
                 <a
                   href={
                     data.version.startsWith('develop-')
-                      ? `https://github.com/selmant/seerr/compare/${status.commitTag}...develop`
-                      : 'https://github.com/selmant/seerr/releases'
+                      ? `https://github.com/selmant/foreseerr/compare/${status.commitTag}...develop`
+                      : 'https://github.com/selmant/foreseerr/releases'
                   }
                   target="_blank"
                   rel="noopener noreferrer"
@@ -97,8 +97,8 @@ const SettingsAbout = () => {
                 <a
                   href={
                     data.version.startsWith('develop-')
-                      ? 'https://github.com/selmant/seerr/commits/develop'
-                      : 'https://github.com/selmant/seerr/releases'
+                      ? 'https://github.com/selmant/foreseerr/commits/develop'
+                      : 'https://github.com/selmant/foreseerr/releases'
                   }
                   target="_blank"
                   rel="noopener noreferrer"
@@ -132,22 +132,22 @@ const SettingsAbout = () => {
         <List title={intl.formatMessage(messages.gettingsupport)}>
           <List.Item title={intl.formatMessage(messages.documentation)}>
             <a
-              href="https://selmant.github.io/seerr/"
+              href="https://selmant.github.io/foreseerr/"
               target="_blank"
               rel="noreferrer"
               className="text-indigo-500 transition duration-300 hover:underline"
             >
-              https://selmant.github.io/seerr/
+              https://selmant.github.io/foreseerr/
             </a>
           </List.Item>
           <List.Item title={intl.formatMessage(messages.githubdiscussions)}>
             <a
-              href="https://github.com/selmant/seerr/discussions"
+              href="https://github.com/selmant/foreseerr/discussions"
               target="_blank"
               rel="noreferrer"
               className="text-indigo-500 transition duration-300 hover:underline"
             >
-              https://github.com/selmant/seerr/discussions
+              https://github.com/selmant/foreseerr/discussions
             </a>
           </List.Item>
           <List.Item title="Discord">

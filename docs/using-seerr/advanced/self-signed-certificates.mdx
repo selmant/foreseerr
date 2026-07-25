@@ -31,7 +31,7 @@ docker run -d \
   -e NODE_EXTRA_CA_CERTS=/certs/my-ca.pem \
   -v /path/to/my-ca.pem:/certs/my-ca.pem:ro \
   -p 5055:5055 \
-  ghcr.io/selmant/seerr:latest
+  ghcr.io/selmant/foreseerr:latest
 ```
 
 </TabItem>
@@ -40,7 +40,7 @@ docker run -d \
 ```yaml
 services:
   seerr:
-    image: ghcr.io/selmant/seerr:latest
+    image: ghcr.io/selmant/foreseerr:latest
     environment:
       - NODE_EXTRA_CA_CERTS=/certs/my-ca.pem
     volumes:

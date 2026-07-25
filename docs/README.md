@@ -28,8 +28,8 @@ Welcome to the Foreseerr Documentation.
 
 ## We need your help!
 
-[Foreseerr](https://github.com/selmant/seerr) is an ambitious project developers/contributors poured a lot of work into, and we still have a lot more to do. Foreseerr is the result of a collaborative effort between the original Overseerr project and the Jellyseerr fork, created to deliver an excellent request management solution for Plex, Jellyfin and Emby users.
+[Foreseerr](https://github.com/selmant/foreseerr) is an ambitious project developers/contributors poured a lot of work into, and we still have a lot more to do. Foreseerr is the result of a collaborative effort between the original Overseerr project and the Jellyseerr fork, created to deliver an excellent request management solution for Plex, Jellyfin and Emby users.
 
 We value your feedback and support in identifying and fixing bugs to make Foreseerr even better. As an open-source project, we welcome contributions from everyone. Contribution includes building new features, patching bugs, translating the application, or even just writing documentation.
 
-If you would like to contribute, please be sure to review our [contribution guidelines](https://github.com/selmant/seerr/blob/develop/CONTRIBUTING.md).
+If you would like to contribute, please be sure to review our [contribution guidelines](https://github.com/selmant/foreseerr/blob/develop/CONTRIBUTING.md).

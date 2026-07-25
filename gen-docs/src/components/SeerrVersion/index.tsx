@@ -7,7 +7,7 @@ export const SeerrVersion = () => {
     async function fetchVersion() {
       try {
         const response = await fetch(
-          'https://raw.githubusercontent.com/selmant/seerr/main/package.json'
+          'https://raw.githubusercontent.com/selmant/foreseerr/main/package.json'
         );
 
         const data = await response.json();

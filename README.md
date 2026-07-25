@@ -6,7 +6,7 @@
 
 It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex / Emby), and Radarr/Sonarr support. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 
-**Docs:** [selmant.github.io/seerr](https://selmant.github.io/seerr/)
+**Docs:** [selmant.github.io/foreseerr](https://selmant.github.io/foreseerr/)
 
 > [!WARNING]
 > Foreseerr is currently in **alpha** (`v0.1.0-alpha.6`). Expect rough edges, breaking changes, and incomplete features. Back up your configuration before upgrading, and avoid using alpha builds as your only production instance.
@@ -53,7 +53,7 @@ docker run -d \
   --restart unless-stopped \
   -p 5055:5055 \
   -v "$(pwd)/foreseerr-config:/app/config" \
-  ghcr.io/selmant/seerr:v0.1.0-alpha.6
+  ghcr.io/selmant/foreseerr:v0.1.0-alpha.6
 ```
 
 Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
@@ -67,7 +67,7 @@ The equivalent production-style Compose service is:
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/seerr:v0.1.0-alpha.6
+    image: ghcr.io/selmant/foreseerr:v0.1.0-alpha.6
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -85,7 +85,9 @@ sudo chown -R 1000:1000 foreseerr-config
 docker compose up -d
 ```
 
-The image is published at `ghcr.io/selmant/seerr`. Use an explicit version tag for alpha deployments rather than relying on `latest`.
+The image is published at `ghcr.io/selmant/foreseerr`. Use an explicit version tag for alpha deployments rather than relying on `latest`.
+
+> Older alpha pulls used `ghcr.io/selmant/seerr`. Point compose/CLI at `ghcr.io/selmant/foreseerr` going forward.
 
 ## Migrating from Seerr / Overseerr / Jellyseerr
 
@@ -101,7 +103,7 @@ With a running instance: http://localhost:5055/api-docs
 
 ## Upstream
 
-Foreseerr tracks [seerr-team/seerr](https://github.com/seerr-team/seerr). This fork’s remote is [selmant/seerr](https://github.com/selmant/seerr).
+Foreseerr tracks [seerr-team/seerr](https://github.com/seerr-team/seerr). This fork’s remote is [selmant/foreseerr](https://github.com/selmant/foreseerr).
 
 ## License
 

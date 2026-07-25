@@ -68,7 +68,7 @@ docker run -d \
   --health-timeout 3s \
   --health-interval 15s \
   --health-retries 3 \
-  ghcr.io/selmant/seerr:latest
+  ghcr.io/selmant/foreseerr:latest
 ```
 
 The argument `-e PORT=5055` is optional.
@@ -83,7 +83,7 @@ docker stop foreseerr && docker rm foreseerr
 ```
 Pull the latest image:
 ```bash
-docker pull ghcr.io/selmant/seerr:latest
+docker pull ghcr.io/selmant/foreseerr:latest
 ```
 Finally, run the container with the same parameters originally used to create the container:
 ```bash
@@ -106,7 +106,7 @@ Define the `foreseerr` service in your `compose.yaml` as follows:
 ---
 services:
   foreseerr:
-    image: ghcr.io/selmant/seerr:latest
+    image: ghcr.io/selmant/foreseerr:latest
     init: true
     container_name: foreseerr
     environment:
@@ -186,7 +186,7 @@ docker run -d `
   --health-timeout 3s `
   --health-interval 15s `
   --health-retries 3 `
-  ghcr.io/selmant/seerr:latest
+  ghcr.io/selmant/foreseerr:latest
 ```
 
 The argument `-e PORT=5055` is optional.
@@ -199,7 +199,7 @@ docker stop seerr; docker rm seerr
 ```
 Pull the latest image:
 ```powershell
-docker pull ghcr.io/selmant/seerr:latest
+docker pull ghcr.io/selmant/foreseerr:latest
 ```
 Finally, run the container with the same parameters originally used to create the container:
 ```powershell
@@ -224,7 +224,7 @@ docker run -d ^
   --health-timeout 3s ^
   --health-interval 15s ^
   --health-retries 3 ^
-  ghcr.io/selmant/seerr:latest
+  ghcr.io/selmant/foreseerr:latest
 ```
 
 The argument `-e PORT=5055` is optional.
@@ -237,7 +237,7 @@ docker stop seerr && docker rm seerr
 ```
 Pull the latest image:
 ```batch
-docker pull ghcr.io/selmant/seerr:latest
+docker pull ghcr.io/selmant/foreseerr:latest
 ```
 Finally, run the container with the same parameters originally used to create the container:
 ```batch
@@ -251,9 +251,9 @@ docker run -d ...
 ---
 services:
   seerr:
-    image: ghcr.io/selmant/seerr:latest
+    image: ghcr.io/selmant/foreseerr:latest
     init: true
-    container_name: seerr
+    container_name: foreseerr
     environment:
       - LOG_LEVEL=debug
       - TZ=Asia/Tashkent

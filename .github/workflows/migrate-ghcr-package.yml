@@ -1,0 +1,45 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Migrate GHCR package name
+
+# One-shot helper after renaming selmant/seerr -> selmant/foreseerr.
+# Copies existing image tags to the new package path, then can be deleted.
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: Comma-separated tags to copy from ghcr.io/selmant/seerr
+        required: true
+        default: 'v0.1.0-alpha.6,v0.1.0-alpha.5,v0.1.0-alpha.4,v0.1.0-alpha.3,latest'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  copy-tags:
+    name: Copy GHCR tags to foreseerr
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@5e57cd118135c172aa00b4c6aa4aaad6f2b7b13e # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@31b88efe9df076ae189b5d175fc013464fdc6a6a # v0.4
+
+      - name: Copy tags
+        env:
+          TAGS: ${{ inputs.tags }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra TAG_LIST <<< "$TAGS"
+          for tag in "${TAG_LIST[@]}"; do
+            tag="$(echo "$tag" | xargs)"
+            [ -n "$tag" ] || continue
+            echo "Copying ghcr.io/selmant/seerr:$tag -> ghcr.io/selmant/foreseerr:$tag"
+            crane copy "ghcr.io/selmant/seerr:$tag" "ghcr.io/selmant/foreseerr:$tag"
+          done

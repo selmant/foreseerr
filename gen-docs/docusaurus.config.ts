@@ -9,7 +9,7 @@ const config: Config = {
   favicon: 'img/favicon.ico',
 
   url: 'https://selmant.github.io',
-  baseUrl: '/seerr/',
+  baseUrl: '/foreseerr/',
   trailingSlash: true,
 
   future: {
@@ -19,7 +19,7 @@ const config: Config = {
   },
 
   organizationName: 'selmant',
-  projectName: 'seerr',
+  projectName: 'foreseerr',
   deploymentBranch: 'gh-pages',
 
   onBrokenLinks: 'throw',
@@ -43,7 +43,7 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           routeBasePath: '/',
           path: '../docs',
-          editUrl: 'https://github.com/selmant/seerr/edit/develop/docs/',
+          editUrl: 'https://github.com/selmant/foreseerr/edit/develop/docs/',
           docItemComponent: '@theme/ApiItem',
           async sidebarItemsGenerator({
             defaultSidebarItemsGenerator,
@@ -81,7 +81,7 @@ const config: Config = {
               groupPathsBy: 'tag',
             },
             downloadUrl:
-              'https://raw.githubusercontent.com/selmant/seerr/refs/heads/develop/seerr-api.yml',
+              'https://raw.githubusercontent.com/selmant/foreseerr/refs/heads/develop/seerr-api.yml',
             hideSendButton: true,
           } satisfies OpenApiPlugin.Options,
         },
@@ -127,7 +127,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://github.com/selmant/seerr',
+          href: 'https://github.com/selmant/foreseerr',
           label: 'GitHub',
           position: 'right',
         },
@@ -158,7 +158,7 @@ const config: Config = {
             },
             {
               label: 'GitHub',
-              href: 'https://github.com/selmant/seerr',
+              href: 'https://github.com/selmant/foreseerr',
             },
           ],
         },

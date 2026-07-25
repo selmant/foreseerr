@@ -47,7 +47,7 @@ These were found while running the automation above and fixed as part of closing
 
 Found while checking "replace stale hard-coded alpha/Seerr v3 tags":
 
-- `docs/using-seerr/advanced/verifying-signed-artifacts.mdx` was an unedited copy of upstream Seerr's own guide: it referenced `ghcr.io/seerr-team/seerr`, Docker Hub `seerr/seerr`, and `seerr-team/seerr` workflow/certificate identities throughout — none of which are Foreseerr's actual registries (`ghcr.io/selmant/seerr`, `selmantr/foreseerr`) or repo (`selmant/seerr`). Rewrote it end-to-end to match Foreseerr's actual `release.yml`/`helm.yml` publishing pipeline (including the chart's real OCI path `ghcr.io/selmant/seerr/foreseerr-chart` and the helm workflow's real trigger ref `refs/heads/develop`, not `main`).
+- `docs/using-seerr/advanced/verifying-signed-artifacts.mdx` was an unedited copy of upstream Seerr's own guide: it referenced `ghcr.io/seerr-team/seerr`, Docker Hub `seerr/seerr`, and `seerr-team/seerr` workflow/certificate identities throughout — none of which are Foreseerr's actual registries (`ghcr.io/selmant/foreseerr`, `selmantr/foreseerr`) or repo (`selmant/foreseerr`). Rewrote it end-to-end to match Foreseerr's actual `release.yml`/`helm.yml` publishing pipeline (including the chart's real OCI path `ghcr.io/selmant/foreseerr/foreseerr-chart` and the helm workflow's real trigger ref `refs/heads/develop`, not `main`).
 - Swept the rest of `docs/**` for the same `seerr-team/seerr` mistake (wrong GitHub org for a Foreseerr-authored doc) — fixed in `docs/migration-guide.mdx`, `docs/getting-started/kubernetes.mdx`, `docs/getting-started/buildfromsource.mdx`, `docs/getting-started/third-parties/unraid.mdx`, `docs/using-seerr/advanced/self-signed-certificates.mdx`, `docs/using-seerr/notifications/index.mdx`, `docs/using-seerr/notifications/pushover.md`, and `docs/README.md`. (Left `gen-docs/**` alone — that's the vendored upstream Docusaurus site/blog, which is legitimately about upstream Seerr's own release history.)
 - `docs/migration-guide.mdx` pinned Docker Compose examples to the stale `v0.1.0-alpha.3` tag; bumped to `v0.1.0-alpha.5`.
 - `docs/migration-guide.mdx` and `docs/getting-started/docker.mdx` both described Docker tag conventions using Seerr's own `v3.0.0`/`v3`/`v3.0` version-series examples, which will never be accurate for Foreseerr (Foreseerr is not on Seerr's major-version track). Changed the examples to Foreseerr's own `v0.1.0`/`v0`/`v0.1`.
@@ -112,7 +112,7 @@ None of the items below can be completed by an agent — they need a human with 
 ### Default installs
 
 - [ ] Install via Docker Compose using only the documented example (`docs/getting-started/docker.mdx`) and confirm it comes up healthy with no undocumented steps.
-- [ ] Install via Helm using only chart defaults (`helm install foreseerr oci://ghcr.io/selmant/seerr/foreseerr-chart`) and confirm it comes up healthy with no undocumented values overrides.
+- [ ] Install via Helm using only chart defaults (`helm install foreseerr oci://ghcr.io/selmant/foreseerr/foreseerr-chart`) and confirm it comes up healthy with no undocumented values overrides.
 
 ---
 
