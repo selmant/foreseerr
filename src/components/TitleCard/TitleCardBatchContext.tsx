@@ -28,8 +28,13 @@ type TitleCardBatchContextValue = {
     mediaType: 'movie' | 'tv',
     tmdbId: number
   ) => MediaActionStatusResponse | undefined;
-  /** True while this grid owns batching (skip per-card GETs). */
+  /**
+   * True only when this grid is actually owning status fetches.
+   * Cards should fall back to per-item GETs when false.
+   */
   active: boolean;
+  /** Batch request in flight (unknown ≠ unwatched). */
+  isLoading: boolean;
 };
 
 const TitleCardBatchContext = createContext<TitleCardBatchContextValue | null>(
@@ -84,7 +89,9 @@ export function TitleCardBatchProvider({
   const traktLinkKey = mediaActionsLikely
     ? `/api/v1/user/${user?.id}/settings/linked-accounts/trakt`
     : null;
-  const { data: traktLink } = useSWR<{ connected: boolean }>(traktLinkKey, {
+  const { data: traktLink, isLoading: traktLinkLoading } = useSWR<{
+    connected: boolean;
+  }>(traktLinkKey, {
     revalidateOnFocus: false,
   });
 
@@ -93,22 +100,23 @@ export function TitleCardBatchProvider({
       ? ['/api/v1/media-actions/status-batch', refsKey]
       : null;
 
-  const { data: statusData } = useSWR<StatusBatchResponse>(
-    statusKey,
-    async () => {
-      const { data } = await axios.post<StatusBatchResponse>(
-        '/api/v1/media-actions/status-batch',
-        {
-          items: uniqueRefs.map((r) => ({
-            mediaType: r.mediaType,
-            tmdbId: r.tmdbId,
-          })),
-        }
-      );
-      return data;
-    },
-    { revalidateOnFocus: false, shouldRetryOnError: false }
-  );
+  const { data: statusData, isLoading: statusLoading } =
+    useSWR<StatusBatchResponse>(
+      statusKey,
+      async () => {
+        const { data } = await axios.post<StatusBatchResponse>(
+          '/api/v1/media-actions/status-batch',
+          {
+            items: uniqueRefs.map((r) => ({
+              mediaType: r.mediaType,
+              tmdbId: r.tmdbId,
+            })),
+          }
+        );
+        return data;
+      },
+      { revalidateOnFocus: false, shouldRetryOnError: false }
+    );
 
   const seededStatusRef = useRef<string | null>(null);
   useEffect(() => {
@@ -135,11 +143,23 @@ export function TitleCardBatchProvider({
 
   const value = useMemo<TitleCardBatchContextValue>(
     () => ({
-      active: true,
+      // Only claim ownership once we know Trakt is linked and a batch is wired.
+      active: Boolean(statusKey),
+      isLoading: Boolean(
+        traktLinkKey &&
+        (traktLinkLoading || (statusKey && statusLoading && !statusData))
+      ),
       getStatus: (mediaType, tmdbId) =>
         statusMap.get(itemKey(mediaType, tmdbId)),
     }),
-    [statusMap]
+    [
+      statusKey,
+      statusLoading,
+      statusData,
+      statusMap,
+      traktLinkKey,
+      traktLinkLoading,
+    ]
   );
 
   return (

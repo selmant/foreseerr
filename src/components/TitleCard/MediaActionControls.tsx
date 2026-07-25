@@ -4,13 +4,11 @@ import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchConte
 import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
 import {
-  CheckCircleIcon as CheckCircleOutline,
-  HandThumbUpIcon as HandThumbUpOutline,
+  CheckBadgeIcon as CheckBadgeOutline,
   StarIcon as StarOutline,
 } from '@heroicons/react/24/outline';
 import {
-  CheckCircleIcon as CheckCircleSolid,
-  HandThumbUpIcon as HandThumbUpSolid,
+  CheckBadgeIcon as CheckBadgeSolid,
   StarIcon as StarSolid,
 } from '@heroicons/react/24/solid';
 import axios from 'axios';
@@ -62,8 +60,9 @@ interface MediaActionControlsProps {
 }
 
 const messages = defineMessages('components.TitleCard.MediaActionControls', {
-  markWatched: 'Mark watched',
-  markUnwatched: 'Mark unwatched',
+  markWatched: 'Not watched · mark watched',
+  markUnwatched: 'Watched · mark unwatched',
+  statusLoading: 'Loading watch status…',
   rate: 'Rate',
   ratingLabel: 'Your rating',
   ratingOutOf: '{score}/10',
@@ -176,14 +175,23 @@ const MediaActionControls = ({
       ? `/api/v1/media-actions/${mediaType}/${tmdbId}/status`
       : null;
 
-  // Inside a grid batch provider: rely on status-batch (and SWR cache seed).
-  const { data: swrData, mutate } = useSWR<MediaActionStatusResponse>(
-    batch?.active ? null : statusKey,
-    {
-      revalidateOnFocus: false,
-    }
+  const batchStatus = batch?.getStatus(mediaType, tmdbId);
+  // Own the GET only when the grid is not actively batching, or this card
+  // was somehow missing from the batch payload after load finished.
+  const deferToBatch = Boolean(
+    batch?.active && (batchStatus != null || batch.isLoading)
   );
-  const data = localOverride ?? batch?.getStatus(mediaType, tmdbId) ?? swrData;
+
+  const {
+    data: swrData,
+    isLoading: swrLoading,
+    mutate,
+  } = useSWR<MediaActionStatusResponse>(deferToBatch ? null : statusKey, {
+    revalidateOnFocus: false,
+  });
+  const data = localOverride ?? batchStatus ?? swrData;
+  const statusPending =
+    !data && (Boolean(batch?.isLoading) || (!deferToBatch && swrLoading));
 
   useEffect(() => {
     setLocalOverride(null);
@@ -262,12 +270,12 @@ const MediaActionControls = ({
       if (statusKey) {
         await globalMutate(statusKey, next, { revalidate: false });
       }
-      if (!batch?.active) {
+      if (!deferToBatch) {
         await mutate(next, false);
       }
       onStatusChange?.();
     },
-    [batch?.active, mutate, onStatusChange, statusKey]
+    [deferToBatch, mutate, onStatusChange, statusKey]
   );
 
   const notifyFailure = useCallback(() => {
@@ -280,10 +288,10 @@ const MediaActionControls = ({
   const toggleWatched = useCallback(
     async (e: React.MouseEvent) => {
       stop(e);
-      if (busy || !enabled) return;
+      if (busy || !enabled || statusPending || !data) return;
       setBusy(true);
       try {
-        const action = data?.watched ? 'unwatched' : 'watched';
+        const action = data.watched ? 'unwatched' : 'watched';
         const { data: next } = await axios.post<MediaActionStatusResponse>(
           `/api/v1/media-actions/${mediaType}/${tmdbId}/${action}`,
           {}
@@ -302,10 +310,11 @@ const MediaActionControls = ({
     [
       applyNext,
       busy,
-      data?.watched,
+      data,
       enabled,
       mediaType,
       notifyFailure,
+      statusPending,
       stop,
       tmdbId,
     ]
@@ -345,29 +354,46 @@ const MediaActionControls = ({
   }
 
   const watched = Boolean(data?.watched);
-  const WatchIcon = watched ? CheckCircleSolid : CheckCircleOutline;
   const displayStars = hoverStars ?? draftStars;
   const displayScore = starsToTrakt(displayStars);
   const savedStars = data?.ratingStars ?? null;
   const hasRating = savedStars != null;
 
+  const watchedTooltip = statusPending
+    ? intl.formatMessage(messages.statusLoading)
+    : intl.formatMessage(
+        watched ? messages.markUnwatched : messages.markWatched
+      );
+
   return (
     <div className="relative flex flex-col items-end gap-1">
-      <Tooltip
-        content={intl.formatMessage(
-          watched ? messages.markUnwatched : messages.markWatched
-        )}
-      >
+      <Tooltip content={watchedTooltip}>
         <Button
           buttonType="ghost"
           className="z-40"
           buttonSize="sm"
-          disabled={busy}
+          disabled={busy || statusPending}
+          aria-pressed={statusPending ? undefined : watched}
+          aria-busy={statusPending || busy}
+          aria-label={watchedTooltip}
           onClick={toggleWatched}
         >
-          <WatchIcon
-            className={`h-3 ${watched ? 'text-green-400' : 'text-white'}`}
-          />
+          {statusPending ? (
+            <span
+              className="inline-block h-3.5 w-3.5 animate-pulse rounded-full border border-white/40 bg-white/10"
+              aria-hidden
+            />
+          ) : watched ? (
+            <CheckBadgeSolid
+              className="h-3.5 w-3.5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.55)]"
+              aria-hidden
+            />
+          ) : (
+            <CheckBadgeOutline
+              className="h-3.5 w-3.5 text-white/75"
+              aria-hidden
+            />
+          )}
         </Button>
       </Tooltip>
       <div className="relative" ref={rateAnchorRef}>
@@ -384,7 +410,7 @@ const MediaActionControls = ({
             buttonType="ghost"
             className="z-40"
             buttonSize="sm"
-            disabled={busy}
+            disabled={busy || statusPending}
             onClick={(e) => {
               stop(e);
               setShowRate((v) => !v);
@@ -392,11 +418,11 @@ const MediaActionControls = ({
           >
             {hasRating ? (
               <span className="flex items-center gap-0.5 text-[10px] font-semibold tabular-nums text-amber-300">
-                <HandThumbUpSolid className="h-3" />
+                <StarSolid className="h-3.5 w-3.5" aria-hidden />
                 {starsToTrakt(savedStars)}
               </span>
             ) : (
-              <HandThumbUpOutline className="h-3 text-white" />
+              <StarOutline className="h-3.5 w-3.5 text-white/75" aria-hidden />
             )}
           </Button>
         </Tooltip>
