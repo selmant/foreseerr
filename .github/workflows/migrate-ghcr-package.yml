@@ -22,14 +22,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Log in to GHCR
-        uses: docker/login-action@5e57cd118135c172aa00b4c6aa4aaad6f2b7b13e # v3.6.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install crane
-        uses: imjasonh/setup-crane@31b88efe9df076ae189b5d175fc013464fdc6a6a # v0.4
+        run: |
+          set -euo pipefail
+          curl -sL "https://github.com/google/go-containerregistry/releases/download/v0.20.6/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xz -C /usr/local/bin crane
+          crane version
 
       - name: Copy tags
         env:
