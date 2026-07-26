@@ -707,9 +707,13 @@ const TitleCard = ({
                     'linear-gradient(180deg, rgba(45, 55, 72, 0.4) 0%, rgba(45, 55, 72, 0.9) 100%)',
                 }}
               >
-                <div className="flex h-full w-full items-end">
+                <div
+                  className={`flex h-full w-full flex-col ${
+                    showDetail ? 'pt-28' : 'pt-14'
+                  }`}
+                >
                   <div
-                    className={`px-2 text-white ${
+                    className={`flex min-h-0 flex-1 flex-col justify-end overflow-hidden px-2 text-white ${
                       !showRequestButton ||
                       (currentStatus &&
                         currentStatus !== MediaStatus.UNKNOWN &&
@@ -718,12 +722,14 @@ const TitleCard = ({
                         : 'pb-11'
                     }`}
                   >
-                    {year && <div className="text-sm font-medium">{year}</div>}
+                    {year && (
+                      <div className="shrink-0 text-sm font-medium">{year}</div>
+                    )}
 
                     <h1
-                      className="whitespace-normal text-xl font-bold leading-tight"
+                      className="shrink-0 whitespace-normal text-xl font-bold leading-tight"
                       style={{
-                        WebkitLineClamp: 3,
+                        WebkitLineClamp: 2,
                         display: '-webkit-box',
                         overflow: 'hidden',
                         WebkitBoxOrient: 'vertical',
@@ -733,24 +739,28 @@ const TitleCard = ({
                     >
                       {title}
                     </h1>
-                    <div
-                      className="whitespace-normal text-xs"
-                      style={{
-                        WebkitLineClamp:
-                          !showRequestButton ||
-                          (currentStatus &&
-                            currentStatus !== MediaStatus.UNKNOWN &&
-                            currentStatus !== MediaStatus.DELETED)
-                            ? 5
-                            : 3,
-                        display: '-webkit-box',
-                        overflow: 'hidden',
-                        WebkitBoxOrient: 'vertical',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {summary}
-                    </div>
+                    {summary && (
+                      <div className="min-h-0 shrink overflow-hidden">
+                        <div
+                          className="whitespace-normal text-xs"
+                          style={{
+                            WebkitLineClamp:
+                              !showRequestButton ||
+                              (currentStatus &&
+                                currentStatus !== MediaStatus.UNKNOWN &&
+                                currentStatus !== MediaStatus.DELETED)
+                                ? 5
+                                : 3,
+                            display: '-webkit-box',
+                            overflow: 'hidden',
+                            WebkitBoxOrient: 'vertical',
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {summary}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Link>
