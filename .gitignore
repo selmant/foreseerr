@@ -93,3 +93,6 @@ devenv.local.yaml
 
 # pre-commit
 .pre-commit-config.yaml
+
+# Personal exports (never publish)
+/criticker-import-from-trakt.csv
