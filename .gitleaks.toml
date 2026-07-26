@@ -1,0 +1,17 @@
+[extend]
+useDefault = true
+
+# Reviewed upstream fixtures, public client identifiers, and UI examples. These
+# are inherited from Seerr and are not homelab credentials.
+[[allowlists]]
+description = "Seerr test fixtures and public client constants"
+paths = [
+  '''cypress/config/settings\.cypress\.json''',
+  '''cypress/fixtures/watchlist\.json''',
+  '''server/api/(themoviedb|tvdb)/index\.ts''',
+  '''server/api/rottentomatoes\.ts''',
+  '''server/lib/availabilitySync\.test\.ts''',
+  '''server/routes/auth\.test\.ts''',
+  '''src/components/Settings/Notifications/NotificationsPushover/index\.tsx''',
+  '''src/i18n/locale/en\.json''',
+]
