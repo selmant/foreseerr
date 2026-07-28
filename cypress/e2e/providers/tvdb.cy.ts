@@ -148,6 +148,7 @@ describe('TVDB Integration', () => {
 
   it('submits an inclusive cross-season TVDB episode range', () => {
     cy.intercept('GET', '/api/v1/tv/225634', (req) => {
+      delete req.headers['if-none-match'];
       req.continue((res) => {
         res.body.externalIds.tvdbId = 999;
       });
@@ -202,7 +203,7 @@ describe('TVDB Integration', () => {
     );
     cy.get('[data-testid="episode-selection-boundary-end"]')
       .should('have.attr', 'aria-pressed', 'true')
-      .and('contain', 'Optional');
+      .and('contain', 'This episode only');
     cy.contains('1 episode selected').should('be.visible');
     cy.contains('button', 'Request 1 Episode').should('be.enabled');
     cy.get('[data-testid="episode-selection-season-2"]').click();
@@ -224,6 +225,70 @@ describe('TVDB Integration', () => {
     cy.contains('2 episodes selected across 2 seasons').should('be.visible');
     cy.contains('button', 'Request 2 Episodes').click();
     cy.wait('@episodeRequest');
+  });
+
+  it('submits an open-ended TVDB episode request', () => {
+    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
+      delete req.headers['if-none-match'];
+      req.continue((res) => {
+        res.body.externalIds.tvdbId = 999;
+      });
+    });
+    cy.intercept('GET', '/api/v1/tv/225634/episodes', {
+      statusCode: 200,
+      body: {
+        tvdbSeriesId: 999,
+        episodes: [
+          {
+            tvdbId: 101,
+            seasonNumber: 1,
+            episodeNumber: 1,
+            title: 'Pilot',
+          },
+          {
+            tvdbId: 102,
+            seasonNumber: 1,
+            episodeNumber: 2,
+            title: 'Second',
+          },
+          {
+            tvdbId: 201,
+            seasonNumber: 2,
+            episodeNumber: 1,
+            title: 'Return',
+          },
+        ],
+      },
+    }).as('episodeCatalog');
+    cy.intercept('POST', '/api/v1/request', (req) => {
+      expect(req.body.episodeSelection).to.deep.equal({
+        type: 'after',
+        startEpisodeTvdbId: 102,
+      });
+      expect(req.body.seasons).to.equal(undefined);
+      req.reply({
+        statusCode: 201,
+        body: { media: { status: 2 } },
+      });
+    }).as('ongoingEpisodeRequest');
+
+    cy.visit(ROUTES.monsterTvShow);
+    cy.get('button[aria-label="Expand"]').click();
+    cy.contains('Request Episodes…').click();
+    cy.wait('@episodeCatalog');
+    cy.get('[data-testid="episode-selection-episode-102"]').click();
+    cy.get('[data-testid="episode-selection-ongoing"]')
+      .should('be.visible')
+      .click()
+      .should('have.attr', 'aria-pressed', 'true');
+    cy.get('[data-testid="episode-selection-boundary-end"]')
+      .should('contain', 'No end')
+      .and('contain', 'New episodes included');
+    cy.contains(
+      '2 available now across 2 seasons · new episodes included'
+    ).should('be.visible');
+    cy.contains('button', 'Request This & Future Episodes').click();
+    cy.wait('@ongoingEpisodeRequest');
   });
 
   it('offers episode requests from discover cards', () => {

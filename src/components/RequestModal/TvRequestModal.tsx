@@ -58,6 +58,8 @@ const messages = defineMessages('components.RequestModal', {
     'Request {episodeCount} {episodeCount, plural, one {Episode} other {Episodes}}',
   requestepisodes4k:
     'Request {episodeCount} {episodeCount, plural, one {Episode} other {Episodes}} in 4K',
+  requestongoing: 'Request This & Future Episodes',
+  requestongoing4k: 'Request This & Future Episodes in 4K',
 });
 
 interface RequestModalProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -537,10 +539,16 @@ const TvRequestModal = ({
           : requestScope === 'episodes'
             ? !episodeSelection
               ? intl.formatMessage(messages.selectseason)
-              : intl.formatMessage(
-                  is4k ? messages.requestepisodes4k : messages.requestepisodes,
-                  { episodeCount }
-                )
+              : episodeSelection.type === 'after'
+                ? intl.formatMessage(
+                    is4k ? messages.requestongoing4k : messages.requestongoing
+                  )
+                : intl.formatMessage(
+                    is4k
+                      ? messages.requestepisodes4k
+                      : messages.requestepisodes,
+                    { episodeCount }
+                  )
             : allSeasonsRequested
               ? intl.formatMessage(messages.alreadyrequested)
               : !settings.currentSettings.partialRequestsEnabled

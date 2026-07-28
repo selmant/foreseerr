@@ -24,9 +24,9 @@ interface EpisodeCatalog {
 }
 
 const messages = defineMessages('components.RequestModal.EpisodeSelector', {
-  title: 'Pick an episode or a range',
+  title: 'Choose episodes',
   instruction:
-    'Choose the first episode. To request a range, choose a last episode too.',
+    'Choose where the request starts. It can stop at one episode, end later, or stay open for new episodes.',
   loading: 'Loading the TVDB episode timeline…',
   unavailable: 'The TVDB episode catalog could not be loaded.',
   empty: 'No requestable episodes were found.',
@@ -35,12 +35,12 @@ const messages = defineMessages('components.RequestModal.EpisodeSelector', {
   season: 'Season {seasonNumber}',
   episode: 'Episode {episodeNumber}',
   first: 'First episode',
-  last: 'Last episode',
+  last: 'Through',
   selected: 'Selected',
   chooseFirst: 'Choose an episode',
-  chooseLast: 'Optional',
+  chooseLast: 'This episode only',
   editFirst: 'Change the first episode',
-  editLast: 'Change or add the last episode',
+  editLast: 'Choose an ending',
   clear: 'Clear selection',
   removeLast: 'Request only {episodeCode}',
   singleSummary: '1 episode selected',
@@ -49,6 +49,15 @@ const messages = defineMessages('components.RequestModal.EpisodeSelector', {
   selectedInSeason: '{selectedCount} selected',
   specialsSingle: 'Specials can be requested one at a time.',
   episodeLabel: '{episodeCode}: {title}',
+  ongoing: 'No end',
+  chooseOngoing: 'Choose',
+  ongoingDetail: 'New episodes included',
+  ongoingOption: 'Keep this request open',
+  ongoingDescription:
+    'Include every episode from {episodeCode} and add new episodes automatically.',
+  ongoingQuota: 'Episodes added later do not use more quota.',
+  ongoingSummary:
+    '{episodeCount} available now across {seasonCount, plural, one {# season} other {# seasons}} · new episodes included',
 });
 
 const episodeCode = (episode: EpisodeCatalogItem) =>
@@ -92,6 +101,9 @@ const EpisodeSelector = ({
   );
   const [activeSeason, setActiveSeason] = useState<number | undefined>();
   const [activeBoundary, setActiveBoundary] = useState<ActiveBoundary>('start');
+  const [isOngoing, setIsOngoing] = useState(
+    initialSelection?.type === 'after'
+  );
 
   const selectionEpisodes = useMemo(
     () =>
@@ -125,7 +137,8 @@ const EpisodeSelector = ({
   const selectedStart = selectionEpisodes[startIndex];
   const selectedEnd = selectionEpisodes[endIndex];
   const hasSelection = startIndex >= 0 && endIndex >= startIndex;
-  const isRange = hasSelection && startIndex !== endIndex;
+  const isRange = !isOngoing && hasSelection && startIndex !== endIndex;
+  const spansEpisodes = hasSelection && (isRange || isOngoing);
   const resolved = useMemo(
     () =>
       hasSelection ? selectionEpisodes.slice(startIndex, endIndex + 1) : [],
@@ -175,19 +188,29 @@ const EpisodeSelector = ({
       return;
     }
 
-    const selection: EpisodeSelection = isRange
-      ? {
-          type: 'range',
-          startEpisodeTvdbId: selectedStart.tvdbId,
-          endEpisodeTvdbId: selectedEnd.tvdbId,
-        }
-      : { type: 'single', episodeTvdbId: selectedStart.tvdbId };
+    const selection: EpisodeSelection = isOngoing
+      ? { type: 'after', startEpisodeTvdbId: selectedStart.tvdbId }
+      : isRange
+        ? {
+            type: 'range',
+            startEpisodeTvdbId: selectedStart.tvdbId,
+            endEpisodeTvdbId: selectedEnd.tvdbId,
+          }
+        : { type: 'single', episodeTvdbId: selectedStart.tvdbId };
     onChange(
       selection,
       resolved.length,
       new Set(resolved.map((episode) => episode.seasonNumber)).size
     );
-  }, [hasSelection, isRange, onChange, resolved, selectedEnd, selectedStart]);
+  }, [
+    hasSelection,
+    isOngoing,
+    isRange,
+    onChange,
+    resolved,
+    selectedEnd,
+    selectedStart,
+  ]);
 
   const selectEpisode = (episode: EpisodeCatalogItem) => {
     const clickedIndex = selectionEpisodes.findIndex(
@@ -201,11 +224,16 @@ const EpisodeSelector = ({
     ) {
       setStartId(episode.tvdbId);
       setEndId(episode.tvdbId);
+      setIsOngoing(false);
       setActiveBoundary(episode.seasonNumber === 0 ? 'start' : 'end');
       return;
     }
 
     if (activeBoundary === 'start') {
+      if (isOngoing) {
+        setStartId(episode.tvdbId);
+        return;
+      }
       if (clickedIndex <= endIndex) {
         setStartId(episode.tvdbId);
       } else {
@@ -216,6 +244,7 @@ const EpisodeSelector = ({
       return;
     }
 
+    setIsOngoing(false);
     if (clickedIndex >= startIndex) {
       setEndId(episode.tvdbId);
     } else {
@@ -235,6 +264,7 @@ const EpisodeSelector = ({
   const clearSelection = () => {
     setStartId(undefined);
     setEndId(undefined);
+    setIsOngoing(false);
     setActiveBoundary('start');
   };
 
@@ -243,8 +273,24 @@ const EpisodeSelector = ({
       return;
     }
     setEndId(selectedStart.tvdbId);
+    setIsOngoing(false);
     setActiveBoundary('end');
     setActiveSeason(selectedStart.seasonNumber);
+  };
+
+  const selectOngoing = () => {
+    if (!selectedStart || selectedStart.seasonNumber === 0) {
+      return;
+    }
+    const lastRegularEpisode = selectionEpisodes.findLast(
+      (episode) => episode.seasonNumber > 0
+    );
+    if (!lastRegularEpisode) {
+      return;
+    }
+    setEndId(lastRegularEpisode.tvdbId);
+    setIsOngoing(true);
+    setActiveBoundary('end');
   };
 
   if (error) {
@@ -340,14 +386,18 @@ const EpisodeSelector = ({
               {intl.formatMessage(messages.last)}
             </span>
             <span className="mt-0.5 block truncate text-sm font-semibold text-white">
-              {isRange && selectedEnd
-                ? episodeCode(selectedEnd)
-                : intl.formatMessage(messages.chooseLast)}
+              {isOngoing
+                ? intl.formatMessage(messages.ongoing)
+                : isRange && selectedEnd
+                  ? episodeCode(selectedEnd)
+                  : intl.formatMessage(messages.chooseLast)}
             </span>
             <span className="mt-0.5 hidden truncate text-xs text-gray-400 sm:block">
-              {isRange && selectedEnd
-                ? selectedEnd.title
-                : intl.formatMessage(messages.editLast)}
+              {isOngoing
+                ? intl.formatMessage(messages.ongoingDetail)
+                : isRange && selectedEnd
+                  ? selectedEnd.title
+                  : intl.formatMessage(messages.editLast)}
             </span>
           </button>
         </div>
@@ -359,7 +409,11 @@ const EpisodeSelector = ({
           <span className="font-medium text-gray-200">
             {hasSelection
               ? intl.formatMessage(
-                  isRange ? messages.rangeSummary : messages.singleSummary,
+                  isOngoing
+                    ? messages.ongoingSummary
+                    : isRange
+                      ? messages.rangeSummary
+                      : messages.singleSummary,
                   {
                     episodeCount: resolved.length,
                     seasonCount: new Set(
@@ -369,7 +423,7 @@ const EpisodeSelector = ({
                 )
               : intl.formatMessage(messages.chooseFirst)}
           </span>
-          {isRange && selectedStart && (
+          {(isRange || isOngoing) && selectedStart && (
             <button
               type="button"
               onClick={collapseToSingle}
@@ -439,6 +493,52 @@ const EpisodeSelector = ({
       </div>
 
       <div className="max-h-[22rem] overflow-y-auto p-2 sm:p-3">
+        {hasSelection && selectedStart.seasonNumber > 0 && (
+          <button
+            type="button"
+            data-testid="episode-selection-ongoing"
+            aria-pressed={isOngoing}
+            onClick={selectOngoing}
+            className={`mb-2 flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 focus:ring-offset-gray-900 ${
+              isOngoing
+                ? 'border-indigo-400 bg-indigo-500/15 text-white'
+                : 'border-gray-700 bg-gray-800/60 text-gray-200 hover:border-gray-500 hover:bg-gray-800'
+            }`}
+          >
+            <span
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl leading-none ${
+                isOngoing
+                  ? 'bg-indigo-500 text-white'
+                  : 'bg-gray-700 text-indigo-300'
+              }`}
+              aria-hidden="true"
+            >
+              ∞
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">
+                {intl.formatMessage(messages.ongoingOption)}
+              </span>
+              <span className="mt-0.5 block text-xs leading-5 text-gray-400">
+                {intl.formatMessage(messages.ongoingDescription, {
+                  episodeCode: episodeCode(selectedStart),
+                })}{' '}
+                {intl.formatMessage(messages.ongoingQuota)}
+              </span>
+            </span>
+            <span
+              className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                isOngoing
+                  ? 'bg-indigo-400/20 text-indigo-100'
+                  : 'bg-gray-700 text-gray-400'
+              }`}
+            >
+              {intl.formatMessage(
+                isOngoing ? messages.ongoing : messages.chooseOngoing
+              )}
+            </span>
+          </button>
+        )}
         <div
           className="space-y-1"
           role="group"
@@ -450,14 +550,15 @@ const EpisodeSelector = ({
             );
             const isStart = episode.tvdbId === startId;
             const isEnd = isRange && episode.tvdbId === endId;
-            const inRange = isRange && index >= startIndex && index <= endIndex;
+            const inRange =
+              spansEpisodes && index >= startIndex && index <= endIndex;
             const selected = isStart || isEnd || inRange;
             const title =
               episode.title ||
               intl.formatMessage(messages.episode, {
                 episodeNumber: episode.episodeNumber,
               });
-            const selectionLabel = !isRange
+            const selectionLabel = !spansEpisodes
               ? isStart
                 ? messages.selected
                 : undefined
