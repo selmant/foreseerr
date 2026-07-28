@@ -13,6 +13,7 @@ interface RequestModalProps {
   is4k?: boolean;
   /** Pre-select seasons when opening the TV modal (e.g. request-all from split button). */
   initialSeasonSelection?: 'none' | 'all';
+  initialRequestScope?: 'seasons' | 'episodes';
   editRequest?: NonFunctionProperties<MediaRequest>;
   onComplete?: (newStatus: MediaStatus) => void;
   onCancel?: () => void;
@@ -25,6 +26,7 @@ const RequestModal = ({
   tmdbId,
   is4k,
   initialSeasonSelection = 'none',
+  initialRequestScope = 'seasons',
   editRequest,
   onComplete,
   onUpdating,
@@ -52,13 +54,14 @@ const RequestModal = ({
         />
       ) : type === 'tv' ? (
         <TvRequestModal
-          key={`${tmdbId}-${is4k ? '4k' : 'hd'}-${initialSeasonSelection}`}
+          key={`${tmdbId}-${is4k ? '4k' : 'hd'}-${initialSeasonSelection}-${initialRequestScope}`}
           onComplete={onComplete}
           onCancel={onCancel}
           tmdbId={tmdbId}
           onUpdating={onUpdating}
           is4k={is4k}
           initialSeasonSelection={initialSeasonSelection}
+          initialRequestScope={initialRequestScope}
           editRequest={editRequest}
         />
       ) : (

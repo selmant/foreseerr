@@ -6,10 +6,13 @@ import {
   MediaType,
 } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
+import EpisodeRequest from '@server/entity/EpisodeRequest';
 import Media from '@server/entity/Media';
 import {
   BlocklistedMediaError,
   DuplicateMediaRequestError,
+  EpisodeRequestsUnavailableError,
+  InvalidEpisodeSelectionError,
   MediaRequest,
   NoSeasonsAvailableError,
   QuotaRestrictedError,
@@ -21,6 +24,10 @@ import type {
   MediaRequestBody,
   RequestResultsResponse,
 } from '@server/interfaces/api/requestInterfaces';
+import {
+  getResolvedTvdbEpisodeSelection,
+  parseEpisodeSelection,
+} from '@server/lib/episodeRequests';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -126,6 +133,7 @@ requestRoutes.get<Record<string, unknown>, RequestResultsResponse>(
         .createQueryBuilder('request')
         .leftJoinAndSelect('request.media', 'media')
         .leftJoinAndSelect('request.seasons', 'seasons')
+        .leftJoinAndSelect('request.episodes', 'episodes')
         .leftJoinAndSelect('request.modifiedBy', 'modifiedBy')
         .leftJoinAndSelect('request.requestedBy', 'requestedBy')
         .where('request.status IN (:...requestStatus)', {
@@ -324,6 +332,10 @@ requestRoutes.post<never, MediaRequest, MediaRequestBody>(
           return next({ status: 403, message: error.message });
         case DuplicateMediaRequestError:
           return next({ status: 409, message: error.message });
+        case EpisodeRequestsUnavailableError:
+          return next({ status: 409, message: error.message });
+        case InvalidEpisodeSelectionError:
+          return next({ status: 400, message: error.message });
         case NoSeasonsAvailableError:
           return next({ status: 202, message: error.message });
         case BlocklistedMediaError:
@@ -522,6 +534,64 @@ requestRoutes.put<{ requestId: string }>(
         request.tags = req.body.tags;
         request.requestedBy = requestUser as User;
 
+        if (request.episodeSelectionType || req.body.episodeSelection) {
+          if (!req.body.episodeSelection || req.body.seasons !== undefined) {
+            return next({
+              status: 400,
+              message:
+                'Episode requests require an episode selection and cannot include seasons.',
+            });
+          }
+          let resolved;
+          try {
+            const selection = parseEpisodeSelection(req.body.episodeSelection);
+            resolved = await getResolvedTvdbEpisodeSelection({
+              tvId: request.media.tmdbId,
+              selection,
+              allowSpecials: getSettings().main.enableSpecialEpisodes,
+            });
+          } catch (error) {
+            return next({
+              status: 400,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : 'Invalid episode selection.',
+            });
+          }
+          const quota = await requestUser.getQuota();
+          if (
+            !request.ignoreQuota &&
+            quota.tv.limit &&
+            resolved.quotaUnits >
+              (quota.tv.remaining ?? 0) + request.tvQuotaUnits
+          ) {
+            return next({ status: 403, message: 'Series Quota exceeded.' });
+          }
+
+          await getRepository(EpisodeRequest).delete({
+            request: { id: request.id },
+          });
+          request.episodes = resolved.episodes.map(
+            (episode) =>
+              new EpisodeRequest({
+                tvdbId: episode.tvdbId,
+                seasonNumber: episode.seasonNumber,
+                episodeNumber: episode.episodeNumber,
+                title: episode.title,
+                airDate: episode.airDate,
+                status: MediaRequestStatus.PENDING,
+              })
+          );
+          request.seasons = [];
+          request.episodeSelectionType = resolved.type;
+          request.episodeStartTvdbId = resolved.startTvdbId;
+          request.episodeEndTvdbId = resolved.endTvdbId;
+          request.tvQuotaUnits = resolved.quotaUnits;
+          await requestRepository.save(request);
+          return res.status(200).json(request);
+        }
+
         const requestedSeasons = req.body.seasons as number[] | undefined;
 
         if (!requestedSeasons || requestedSeasons.length === 0) {
@@ -587,6 +657,8 @@ requestRoutes.put<{ requestId: string }>(
             )
           );
         }
+
+        request.tvQuotaUnits = filteredSeasons.length;
 
         await requestRepository.save(request);
       }

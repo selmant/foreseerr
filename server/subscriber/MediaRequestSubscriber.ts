@@ -12,6 +12,7 @@ import {
   MediaType,
 } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
+import EpisodeRequest from '@server/entity/EpisodeRequest';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import Season from '@server/entity/Season';
@@ -133,9 +134,13 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         season[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE &&
         requestedSeasons.includes(season.seasonNumber)
     );
-    const isMediaAvailable =
-      availableSeasons.length > 0 &&
-      availableSeasons.length === requestedSeasons.length;
+    const episodeRequest = (entity.episodes?.length ?? 0) > 0;
+    const isMediaAvailable = episodeRequest
+      ? entity.episodes.every(
+          (episode) => episode.status === MediaRequestStatus.COMPLETED
+        )
+      : availableSeasons.length > 0 &&
+        availableSeasons.length === requestedSeasons.length;
 
     if (!isMediaAvailable) {
       return;
@@ -162,12 +167,25 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         image: `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tv.poster_path}`,
         media: latestMedia,
         extra: [
-          {
-            name: 'Requested Seasons',
-            value: entity.seasons
-              .map((season) => season.seasonNumber)
-              .join(', '),
-          },
+          episodeRequest
+            ? {
+                name: 'Requested Episodes',
+                value:
+                  entity.episodeSelectionType === 'after'
+                    ? `S${String(entity.episodes[0].seasonNumber).padStart(2, '0')}E${String(entity.episodes[0].episodeNumber).padStart(2, '0')} onward`
+                    : entity.episodes
+                        .map(
+                          (episode) =>
+                            `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`
+                        )
+                        .join(', '),
+              }
+            : {
+                name: 'Requested Seasons',
+                value: entity.seasons
+                  .map((season) => season.seasonNumber)
+                  .join(', '),
+              },
         ],
         request: entity,
       });
@@ -517,6 +535,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           entity.seasons.forEach((season) => {
             season.status = MediaRequestStatus.COMPLETED;
           });
+          entity.episodes?.forEach((episode) => {
+            episode.status = MediaRequestStatus.COMPLETED;
+          });
           await requestRepository.save(entity);
           return;
         }
@@ -705,12 +726,19 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           rootFolderPath: rootFolder,
           title: series.name,
           tvdbid: tvdbId,
-          seasons: entity.seasons.map((season) => season.seasonNumber),
+          seasons: entity.episodes?.length
+            ? []
+            : entity.seasons.map((season) => season.seasonNumber),
+          episodeTvdbIds: entity.episodes?.length
+            ? entity.episodes.map((episode) => episode.tvdbId)
+            : undefined,
           seasonFolder: sonarrSettings.enableSeasonFolders,
           seriesType,
           tags,
           monitored: true,
-          monitorNewItems: sonarrSettings.monitorNewItems,
+          monitorNewItems: entity.episodes?.length
+            ? 'none'
+            : sonarrSettings.monitorNewItems,
           searchNow: !sonarrSettings.preventSearch,
         };
 
@@ -735,6 +763,45 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
             media[entity.is4k ? 'serviceId4k' : 'serviceId'] =
               sonarrSettings?.id;
             await mediaRepository.save(media);
+
+            if (entity.episodes?.length && sonarrSeries.id) {
+              const episodeRepository = getRepository(EpisodeRequest);
+              const requestRepository = getRepository(MediaRequest);
+              const sonarrEpisodes = await sonarr.getEpisodes(sonarrSeries.id);
+              const byTvdbId = new Map(
+                sonarrEpisodes.map((episode) => [episode.tvdbId, episode])
+              );
+              const searchedAt = new Date();
+              for (const child of entity.episodes) {
+                const episode = byTvdbId.get(child.tvdbId);
+                if (!episode) {
+                  continue;
+                }
+                child.status = episode.hasFile
+                  ? MediaRequestStatus.COMPLETED
+                  : MediaRequestStatus.APPROVED;
+                if (
+                  !sonarrSettings?.preventSearch &&
+                  !episode.hasFile &&
+                  (!episode.airDateUtc ||
+                    new Date(episode.airDateUtc).getTime() <= Date.now())
+                ) {
+                  child.searchTriggeredAt = searchedAt;
+                }
+              }
+              await episodeRepository.save(entity.episodes);
+
+              const allComplete = entity.episodes.every(
+                (episode) => episode.status === MediaRequestStatus.COMPLETED
+              );
+              const mayComplete =
+                entity.episodeSelectionType !== 'after' ||
+                sonarrSeries.status.toLowerCase() === 'ended';
+              if (allComplete && mayComplete) {
+                entity.status = MediaRequestStatus.COMPLETED;
+                await requestRepository.save(entity);
+              }
+            }
           })
           .catch(async () => {
             try {
@@ -832,6 +899,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
 
     const statusKey = entity.is4k ? 'status4k' : 'status';
     const seasonRequestRepository = getRepository(SeasonRequest);
+    const episodeRequestRepository = getRepository(EpisodeRequest);
     const requestRepository = getRepository(MediaRequest);
 
     if (
@@ -928,6 +996,11 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           }
         }
       }
+
+      for (const episode of entity.episodes ?? []) {
+        episode.status = MediaRequestStatus.DECLINED;
+        await episodeRequestRepository.save(episode);
+      }
     }
 
     // Approve child seasons if parent is approved
@@ -938,6 +1011,10 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       for (const season of entity.seasons) {
         season.status = MediaRequestStatus.APPROVED;
         await seasonRequestRepository.save(season);
+      }
+      for (const episode of entity.episodes ?? []) {
+        episode.status = MediaRequestStatus.APPROVED;
+        await episodeRequestRepository.save(episode);
       }
     }
   }

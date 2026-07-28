@@ -7,6 +7,7 @@ import useRequestOverride from '@app/hooks/useRequestOverride';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { episodeRequestSummary } from '@app/utils/episodeRequests';
 import {
   CalendarIcon,
   CheckIcon,
@@ -26,6 +27,7 @@ import { mutate } from 'swr';
 
 const messages = defineMessages('components.RequestBlock', {
   seasons: '{seasonCount, plural, one {Season} other {Seasons}}',
+  episodes: '{episodeCount, plural, one {Episode} other {Episodes}}',
   requestoverrides: 'Request Overrides',
   server: 'Destination Server',
   profilechanged: 'Quality Profile',
@@ -281,6 +283,21 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
                 </span>
               ))}
             </div>
+          </div>
+        )}
+        {(request.episodes ?? []).length > 0 && (
+          <div className="card-field">
+            <span className="card-field-name">
+              {intl.formatMessage(messages.episodes, {
+                episodeCount: request.episodes.length,
+              })}
+            </span>
+            <Badge>
+              {episodeRequestSummary({
+                episodes: request.episodes,
+                type: request.episodeSelectionType,
+              })}
+            </Badge>
           </div>
         )}
         {(server || profile || rootFolder || languageProfile) && (

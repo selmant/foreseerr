@@ -2,6 +2,15 @@ import type { MediaType } from '@server/constants/media';
 import type { MediaRequest } from '@server/entity/MediaRequest';
 import type { NonFunctionProperties, PaginatedResponse } from './common';
 
+export type EpisodeSelection =
+  | { type: 'single'; episodeTvdbId: number }
+  | {
+      type: 'range';
+      startEpisodeTvdbId: number;
+      endEpisodeTvdbId: number;
+    }
+  | { type: 'after'; startEpisodeTvdbId: number };
+
 export interface RequestResultsResponse extends PaginatedResponse {
   results: (NonFunctionProperties<MediaRequest> & {
     profileName?: string;
@@ -18,6 +27,7 @@ export type MediaRequestBody = {
   mediaId: number;
   tvdbId?: number;
   seasons?: number[] | 'all';
+  episodeSelection?: EpisodeSelection;
   is4k?: boolean;
   serverId?: number;
   profileId?: number;

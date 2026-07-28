@@ -26,6 +26,7 @@ import {
 } from '@server/constants/media';
 import { UserType } from '@server/constants/user';
 import DiscoverSlider from '@server/entity/DiscoverSlider';
+import EpisodeRequest from '@server/entity/EpisodeRequest';
 import Media from '@server/entity/Media';
 import MediaRequest from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
@@ -143,6 +144,8 @@ export async function assertUpgradeIsIntact(
     false,
     'new ignoreQuota column should default to false for pre-existing rows'
   );
+  assert.equal(upgradedRequest.tvQuotaUnits, 0);
+  assert.equal(await dataSource.getRepository(EpisodeRequest).count(), 0);
 
   const upgradedSettings = await dataSource
     .getRepository(UserSettings)

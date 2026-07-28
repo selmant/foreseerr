@@ -11,6 +11,7 @@ import {
   convertTmdbLanguageToTvdbWithFallback,
   type TvdbBaseResponse,
   type TvdbEpisode,
+  type TvdbEpisodeCatalog,
   type TvdbLoginResponse,
   type TvdbSeasonDetails,
   type TvdbTvDetails,
@@ -232,6 +233,70 @@ class Tvdb extends ExternalAPI implements TvShowProvider {
       );
       throw error;
     }
+  }
+
+  public async getEpisodeCatalog({
+    tvId,
+    language = Tvdb.DEFAULT_LANGUAGE,
+  }: {
+    tvId: number;
+    language?: string;
+  }): Promise<TvdbEpisodeCatalog> {
+    const tmdbTvShow = await this.tmdb.getTvShow({ tvId, language });
+    const tvdbId = this.getTvdbIdFromTmdb(tmdbTvShow);
+
+    if (!this.isValidTvdbId(tvdbId)) {
+      throw new Error('[TVDB] TVDB ID not found for series');
+    }
+
+    await this.refreshToken();
+    const show = await this.fetchTvdbShowData(tvdbId);
+    const officialSeasons = new Set(
+      show.seasons
+        .filter((season) => season.type?.type === 'official')
+        .map((season) => season.number)
+    );
+    const wantedLanguage = convertTmdbLanguageToTvdbWithFallback(
+      language,
+      Tvdb.DEFAULT_LANGUAGE
+    );
+    const episodes: TvdbEpisode[] = [];
+    let page = 0;
+
+    while (page < 50) {
+      const response = await this.get<TvdbBaseResponse<TvdbSeasonDetails>>(
+        `/series/${tvdbId}/episodes/default/${wantedLanguage}`,
+        {
+          headers: { Authorization: `Bearer ${this.token}` },
+          params: { page },
+        },
+        Tvdb.DEFAULT_CACHE_TTL
+      );
+      const pageEpisodes = response.data?.episodes ?? [];
+      episodes.push(...pageEpisodes);
+
+      if (!response.links?.next || pageEpisodes.length === 0) {
+        break;
+      }
+      page++;
+    }
+
+    return {
+      tvdbSeriesId: tvdbId,
+      episodes: episodes
+        .filter((episode) => officialSeasons.has(episode.seasonNumber))
+        .map((episode) => ({
+          tvdbId: episode.id,
+          seasonNumber: episode.seasonNumber,
+          episodeNumber: episode.number,
+          title: episode.name || `Episode ${episode.number}`,
+          airDate: episode.aired || undefined,
+        }))
+        .sort(
+          (a, b) =>
+            a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber
+        ),
+    };
   }
 
   private async enrichTmdbShowWithTvdbData(

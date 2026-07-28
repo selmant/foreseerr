@@ -74,6 +74,20 @@ async function assertSchemaInvariants(
     );
   }
 
+  const episodeRequestTable = await dataSource.query(
+    isPostgres
+      ? `SELECT to_regclass('public.episode_request') AS name`
+      : `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'episode_request'`
+  );
+  if (
+    episodeRequestTable.length !== 1 ||
+    (isPostgres && episodeRequestTable[0].name == null)
+  ) {
+    throw new Error(
+      `${label}: expected episode_request table after a fresh install`
+    );
+  }
+
   console.log(`${label} schema invariants OK`);
 }
 

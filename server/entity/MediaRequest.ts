@@ -10,9 +10,14 @@ import { getRepository } from '@server/datasource';
 import OverrideRule from '@server/entity/OverrideRule';
 import type { MediaRequestBody } from '@server/interfaces/api/requestInterfaces';
 import { isAnimeMedia } from '@server/lib/anime/detect';
+import {
+  getResolvedTvdbEpisodeSelection,
+  parseEpisodeSelection,
+  type ResolvedEpisodeSelection,
+} from '@server/lib/episodeRequests';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { Permission } from '@server/lib/permissions';
-import { getSettings } from '@server/lib/settings';
+import { MetadataProviderType, getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
 import { truncate } from 'lodash';
@@ -29,6 +34,7 @@ import {
   RelationCount,
   UpdateDateColumn,
 } from 'typeorm';
+import EpisodeRequest from './EpisodeRequest';
 import Media from './Media';
 import SeasonRequest from './SeasonRequest';
 import { User } from './User';
@@ -38,6 +44,8 @@ export class QuotaRestrictedError extends Error {}
 export class DuplicateMediaRequestError extends Error {}
 export class NoSeasonsAvailableError extends Error {}
 export class BlocklistedMediaError extends Error {}
+export class InvalidEpisodeSelectionError extends Error {}
+export class EpisodeRequestsUnavailableError extends Error {}
 
 type MediaRequestOptions = {
   isAutoRequest?: boolean;
@@ -147,6 +155,43 @@ export class MediaRequest {
 
     const isAutoRequest = options.isAutoRequest ?? false;
     const mediaIsAnime = isAnimeMedia(tmdbMedia);
+    let resolvedEpisodeSelection: ResolvedEpisodeSelection | undefined;
+
+    if (requestBody.episodeSelection !== undefined) {
+      if (
+        requestBody.mediaType !== MediaType.TV ||
+        requestBody.seasons !== undefined
+      ) {
+        throw new InvalidEpisodeSelectionError(
+          'Episode selections are only valid for TV requests and cannot be combined with seasons.'
+        );
+      }
+
+      const configuredProvider = mediaIsAnime
+        ? settings.metadataSettings.anime
+        : settings.metadataSettings.tv;
+      if (
+        !settings.main.partialRequestsEnabled ||
+        configuredProvider !== MetadataProviderType.TVDB
+      ) {
+        throw new EpisodeRequestsUnavailableError(
+          'Episode requests require partial requests and the TVDB metadata provider.'
+        );
+      }
+
+      try {
+        const selection = parseEpisodeSelection(requestBody.episodeSelection);
+        resolvedEpisodeSelection = await getResolvedTvdbEpisodeSelection({
+          tvId: requestBody.mediaId,
+          selection,
+          allowSpecials: settings.main.enableSpecialEpisodes,
+        });
+      } catch (error) {
+        throw new InvalidEpisodeSelectionError(
+          error instanceof Error ? error.message : 'Invalid episode selection.'
+        );
+      }
+    }
 
     let media = await mediaRepository.findOne({
       where: {
@@ -411,6 +456,115 @@ export class MediaRequest {
 
       await requestRepository.save(request);
       return request;
+    } else if (resolvedEpisodeSelection) {
+      const activeRequests = (media.requests ?? []).filter(
+        (request) =>
+          request.is4k === requestBody.is4k &&
+          request.status !== MediaRequestStatus.DECLINED &&
+          request.status !== MediaRequestStatus.COMPLETED
+      );
+
+      if (
+        resolvedEpisodeSelection.type === 'after' &&
+        activeRequests.some(
+          (request) => request.episodeSelectionType === 'after'
+        )
+      ) {
+        throw new DuplicateMediaRequestError(
+          'An ongoing episode request already exists for this series.'
+        );
+      }
+
+      const coveredSeasons = new Set(
+        activeRequests.flatMap((request) =>
+          (request.seasons ?? []).map((season) => season.seasonNumber)
+        )
+      );
+      const coveredEpisodes = new Set(
+        activeRequests.flatMap((request) =>
+          (request.episodes ?? []).map((episode) => episode.tvdbId)
+        )
+      );
+      const finalEpisodes =
+        resolvedEpisodeSelection.type === 'after'
+          ? resolvedEpisodeSelection.episodes
+          : resolvedEpisodeSelection.episodes.filter(
+              (episode) =>
+                !coveredSeasons.has(episode.seasonNumber) &&
+                !coveredEpisodes.has(episode.tvdbId) &&
+                !media.seasons?.some(
+                  (season) =>
+                    season.seasonNumber === episode.seasonNumber &&
+                    season[requestBody.is4k ? 'status4k' : 'status'] ===
+                      MediaStatus.AVAILABLE
+                )
+            );
+
+      if (finalEpisodes.length === 0) {
+        throw new NoSeasonsAvailableError('No episodes available to request');
+      }
+
+      const quotaUnits = new Set(
+        finalEpisodes.map((episode) => episode.seasonNumber)
+      ).size;
+      if (
+        !ignoreQuota &&
+        quotas.tv.limit &&
+        quotaUnits > (quotas.tv.remaining ?? 0)
+      ) {
+        throw new QuotaRestrictedError('Series Quota exceeded.');
+      }
+
+      await mediaRepository.save(media);
+      const autoApproved = user.hasPermission(
+        [
+          requestBody.is4k
+            ? Permission.AUTO_APPROVE_4K
+            : Permission.AUTO_APPROVE,
+          requestBody.is4k
+            ? Permission.AUTO_APPROVE_4K_TV
+            : Permission.AUTO_APPROVE_TV,
+          Permission.MANAGE_REQUESTS,
+        ],
+        { type: 'or' }
+      );
+      const childStatus = autoApproved
+        ? MediaRequestStatus.APPROVED
+        : MediaRequestStatus.PENDING;
+      const request = new MediaRequest({
+        type: MediaType.TV,
+        media,
+        requestedBy: requestUser,
+        status: childStatus,
+        modifiedBy: autoApproved ? user : undefined,
+        is4k: requestBody.is4k,
+        serverId,
+        profileId,
+        rootFolder,
+        languageProfileId,
+        tags,
+        seasons: [],
+        episodes: finalEpisodes.map(
+          (episode) =>
+            new EpisodeRequest({
+              tvdbId: episode.tvdbId,
+              seasonNumber: episode.seasonNumber,
+              episodeNumber: episode.episodeNumber,
+              title: episode.title,
+              airDate: episode.airDate,
+              status: childStatus,
+            })
+        ),
+        episodeSelectionType: resolvedEpisodeSelection.type,
+        episodeStartTvdbId: resolvedEpisodeSelection.startTvdbId,
+        episodeEndTvdbId: resolvedEpisodeSelection.endTvdbId,
+        tvQuotaUnits: quotaUnits,
+        isAutoRequest,
+        ignoreQuota,
+      });
+
+      await requestRepository.save(request);
+      return request;
     } else {
       const tmdbMediaShow = tmdbMedia as Awaited<
         ReturnType<typeof tmdb.getTvShow>
@@ -538,6 +692,8 @@ export class MediaRequest {
                 : MediaRequestStatus.PENDING,
             })
         ),
+        episodes: [],
+        tvQuotaUnits: finalSeasons.length,
         isAutoRequest,
         ignoreQuota,
       });
@@ -596,6 +752,24 @@ export class MediaRequest {
     cascade: true,
   })
   public seasons: SeasonRequest[];
+
+  @OneToMany(() => EpisodeRequest, (episode) => episode.request, {
+    eager: true,
+    cascade: true,
+  })
+  public episodes: EpisodeRequest[];
+
+  @Column({ type: 'varchar', nullable: true })
+  public episodeSelectionType?: 'single' | 'range' | 'after';
+
+  @Column({ nullable: true })
+  public episodeStartTvdbId?: number;
+
+  @Column({ nullable: true })
+  public episodeEndTvdbId?: number;
+
+  @Column({ type: 'int', default: 0 })
+  public tvQuotaUnits: number;
 
   @Column({ default: false })
   public is4k: boolean;
@@ -754,9 +928,15 @@ export class MediaRequest {
   }
 
   @AfterLoad()
-  private sortSeasons() {
+  private sortChildren() {
     if (Array.isArray(this.seasons)) {
       this.seasons.sort((a, b) => a.id - b.id);
+    }
+    if (Array.isArray(this.episodes)) {
+      this.episodes.sort(
+        (a, b) =>
+          a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber
+      );
     }
   }
 
@@ -844,12 +1024,25 @@ export class MediaRequest {
           }),
           image: `https://image.tmdb.org/t/p/w600_and_h900_bestv2${tv.poster_path}`,
           extra: [
-            {
-              name: 'Requested Seasons',
-              value: entity.seasons
-                .map((season) => season.seasonNumber)
-                .join(', '),
-            },
+            entity.episodes?.length
+              ? {
+                  name: 'Requested Episodes',
+                  value:
+                    entity.episodeSelectionType === 'after'
+                      ? `S${String(entity.episodes[0].seasonNumber).padStart(2, '0')}E${String(entity.episodes[0].episodeNumber).padStart(2, '0')} onward`
+                      : entity.episodes
+                          .map(
+                            (episode) =>
+                              `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`
+                          )
+                          .join(', '),
+                }
+              : {
+                  name: 'Requested Seasons',
+                  value: entity.seasons
+                    .map((season) => season.seasonNumber)
+                    .join(', '),
+                },
           ],
         });
       }

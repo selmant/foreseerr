@@ -478,6 +478,7 @@ router.get<{ id: string }, UserRequestsResponse>(
         .createQueryBuilder('request')
         .leftJoinAndSelect('request.media', 'media')
         .leftJoinAndSelect('request.seasons', 'seasons')
+        .leftJoinAndSelect('request.episodes', 'episodes')
         .leftJoinAndSelect('request.modifiedBy', 'modifiedBy')
         .leftJoinAndSelect('request.requestedBy', 'requestedBy')
         .andWhere('requestedBy.id = :id', {

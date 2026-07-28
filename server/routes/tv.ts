@@ -1,6 +1,7 @@
 import { getMetadataProvider } from '@server/api/metadata';
 import RottenTomatoes from '@server/api/rating/rottentomatoes';
 import TheMovieDb from '@server/api/themoviedb';
+import Tvdb from '@server/api/tvdb';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
@@ -10,6 +11,7 @@ import {
   enrichResultsWithRatings,
   fetchCombinedRatings,
 } from '@server/lib/ratings';
+import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { mapTvResult } from '@server/models/Search';
 import { mapSeasonWithEpisodes, mapTvDetails } from '@server/models/Tv';
@@ -44,6 +46,9 @@ tvRoutes.get('/:id', async (req, res, next) => {
     });
 
     const data = mapTvDetails(tv, media, onUserWatchlist);
+    data.episodeRequestsEnabled =
+      metadataProvider instanceof Tvdb &&
+      getSettings().main.partialRequestsEnabled;
     data.ratings = await fetchCombinedRatings({
       mediaType: 'tv',
       tmdbId: data.id,
@@ -72,6 +77,46 @@ tvRoutes.get('/:id', async (req, res, next) => {
     return next({
       status: 500,
       message: 'Unable to retrieve series.',
+    });
+  }
+});
+
+tvRoutes.get('/:id/episodes', async (req, res, next) => {
+  try {
+    const tmdb = new TheMovieDb();
+    const tmdbTv = await tmdb.getTvShow({ tvId: Number(req.params.id) });
+    const metadataProvider = isAnimeMedia(tmdbTv)
+      ? await getMetadataProvider('anime')
+      : await getMetadataProvider('tv');
+
+    if (
+      !(metadataProvider instanceof Tvdb) ||
+      !getSettings().main.partialRequestsEnabled
+    ) {
+      return next({
+        status: 409,
+        message: 'Episode requests require the TVDB metadata provider.',
+      });
+    }
+
+    const catalog = await metadataProvider.getEpisodeCatalog({
+      tvId: Number(req.params.id),
+      language: (req.query.language as string) ?? req.locale,
+    });
+    const episodes = getSettings().main.enableSpecialEpisodes
+      ? catalog.episodes
+      : catalog.episodes.filter((episode) => episode.seasonNumber > 0);
+
+    return res.status(200).json({ ...catalog, episodes });
+  } catch (e) {
+    logger.warn('Unable to retrieve TVDB episode catalog', {
+      label: 'API',
+      errorMessage: e.message,
+      tvId: req.params.id,
+    });
+    return next({
+      status: 502,
+      message: 'Unable to retrieve episode catalog.',
     });
   }
 });

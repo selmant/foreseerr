@@ -71,6 +71,7 @@ interface RequestButtonProps {
   media?: Media;
   isShowComplete?: boolean;
   is4kShowComplete?: boolean;
+  episodeRequestsEnabled?: boolean;
 }
 
 const RequestButton = ({
@@ -80,6 +81,7 @@ const RequestButton = ({
   mediaType,
   isShowComplete = false,
   is4kShowComplete = false,
+  episodeRequestsEnabled = false,
 }: RequestButtonProps) => {
   const intl = useIntl();
   const settings = useSettings();
@@ -91,6 +93,9 @@ const RequestButton = ({
   const [initialSeasonSelection, setInitialSeasonSelection] = useState<
     'none' | 'all'
   >('none');
+  const [initialRequestScope, setInitialRequestScope] = useState<
+    'seasons' | 'episodes'
+  >('seasons');
   const [isQuickRequesting, setIsQuickRequesting] = useState(false);
 
   const instantRequestsEnabled = (is4k: boolean) =>
@@ -159,6 +164,18 @@ const RequestButton = ({
   const openTvModal = (is4k: boolean, selection: 'none' | 'all' = 'none') => {
     setEditRequest(false);
     setInitialSeasonSelection(selection);
+    setInitialRequestScope('seasons');
+    if (is4k) {
+      setShowRequest4kModal(true);
+    } else {
+      setShowRequestModal(true);
+    }
+  };
+
+  const openEpisodeModal = (is4k: boolean) => {
+    setEditRequest(false);
+    setInitialSeasonSelection('none');
+    setInitialRequestScope('episodes');
     if (is4k) {
       setShowRequest4kModal(true);
     } else {
@@ -442,6 +459,14 @@ const RequestButton = ({
         },
         svg: <ArrowDownTrayIcon />,
       });
+      if (episodeRequestsEnabled) {
+        buttons.push({
+          id: 'request-episodes',
+          text: intl.formatMessage(messages.requestepisodes),
+          action: () => openEpisodeModal(false),
+          svg: <ArrowDownTrayIcon />,
+        });
+      }
     } else {
       buttons.push({
         id: 'request',
@@ -475,6 +500,14 @@ const RequestButton = ({
       },
       svg: <ArrowDownTrayIcon />,
     });
+    if (episodeRequestsEnabled) {
+      buttons.push({
+        id: 'request-episodes-more',
+        text: intl.formatMessage(messages.requestepisodes),
+        action: () => openEpisodeModal(false),
+        svg: <ArrowDownTrayIcon />,
+      });
+    }
   }
 
   // 4K request button
@@ -523,6 +556,14 @@ const RequestButton = ({
         },
         svg: <ArrowDownTrayIcon />,
       });
+      if (episodeRequestsEnabled) {
+        buttons.push({
+          id: 'request-episodes-4k',
+          text: intl.formatMessage(messages.requestepisodes4k),
+          action: () => openEpisodeModal(true),
+          svg: <ArrowDownTrayIcon />,
+        });
+      }
     } else {
       buttons.push({
         id: 'request4k',
@@ -557,6 +598,14 @@ const RequestButton = ({
       },
       svg: <ArrowDownTrayIcon />,
     });
+    if (episodeRequestsEnabled) {
+      buttons.push({
+        id: 'request-episodes-more-4k',
+        text: intl.formatMessage(messages.requestepisodes4k),
+        action: () => openEpisodeModal(true),
+        svg: <ArrowDownTrayIcon />,
+      });
+    }
   }
 
   const [buttonOne, ...others] = buttons;
@@ -574,6 +623,7 @@ const RequestButton = ({
         initialSeasonSelection={
           mediaType === 'tv' ? initialSeasonSelection : 'none'
         }
+        initialRequestScope={initialRequestScope}
         editRequest={editRequest ? activeRequest : undefined}
         onComplete={() => {
           onUpdate();
@@ -592,6 +642,7 @@ const RequestButton = ({
         initialSeasonSelection={
           mediaType === 'tv' ? initialSeasonSelection : 'none'
         }
+        initialRequestScope={initialRequestScope}
         editRequest={editRequest ? active4kRequest : undefined}
         is4k
         onComplete={() => {

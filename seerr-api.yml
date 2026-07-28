@@ -1553,6 +1553,33 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WatchProviders'
+        episodeRequestsEnabled:
+          type: boolean
+          description: Whether TVDB-backed episode requests are available for this series.
+    EpisodeRequest:
+      type: object
+      properties:
+        id:
+          type: number
+          readOnly: true
+        tvdbId:
+          type: number
+        seasonNumber:
+          type: number
+        episodeNumber:
+          type: number
+        title:
+          type: string
+          nullable: true
+        airDate:
+          type: string
+          nullable: true
+        status:
+          type: number
+        searchTriggeredAt:
+          type: string
+          nullable: true
+          readOnly: true
     MediaRequest:
       type: object
       properties:
@@ -1595,6 +1622,23 @@ components:
           type: boolean
           example: false
           description: If true, this request will not count against the user's quota. Requires MANAGE_REQUESTS permission.
+        episodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/EpisodeRequest'
+        episodeSelectionType:
+          type: string
+          enum: [single, range, after]
+          nullable: true
+        episodeStartTvdbId:
+          type: number
+          nullable: true
+        episodeEndTvdbId:
+          type: number
+          nullable: true
+        tvQuotaUnits:
+          type: number
+          readOnly: true
       required:
         - id
         - status
@@ -7601,6 +7645,41 @@ paths:
                         minimum: 0
                     - type: string
                       enum: [all]
+                episodeSelection:
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [type, episodeTvdbId]
+                      properties:
+                        type:
+                          type: string
+                          enum: [single]
+                        episodeTvdbId:
+                          type: integer
+                          minimum: 1
+                    - type: object
+                      additionalProperties: false
+                      required: [type, startEpisodeTvdbId, endEpisodeTvdbId]
+                      properties:
+                        type:
+                          type: string
+                          enum: [range]
+                        startEpisodeTvdbId:
+                          type: integer
+                          minimum: 1
+                        endEpisodeTvdbId:
+                          type: integer
+                          minimum: 1
+                    - type: object
+                      additionalProperties: false
+                      required: [type, startEpisodeTvdbId]
+                      properties:
+                        type:
+                          type: string
+                          enum: [after]
+                        startEpisodeTvdbId:
+                          type: integer
+                          minimum: 1
                 is4k:
                   type: boolean
                   example: false
@@ -7987,6 +8066,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TvDetails'
+  /tv/{tvId}/episodes:
+    get:
+      summary: Get the canonical TVDB episode catalog
+      description: Returns official TVDB episodes when TVDB episode requests are enabled for the series.
+      tags:
+        - tv
+      parameters:
+        - in: path
+          name: tvId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: TVDB episode catalog returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tvdbSeriesId:
+                    type: number
+                  episodes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EpisodeRequest'
+        '409':
+          description: TVDB episode requests are not enabled
   /tv/{tvId}/season/{seasonNumber}:
     get:
       summary: Get season details and episode list

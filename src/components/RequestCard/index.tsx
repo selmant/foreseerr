@@ -10,6 +10,7 @@ import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { episodeRequestSummary } from '@app/utils/episodeRequests';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
 import { withProperties } from '@app/utils/typeHelpers';
 import {
@@ -33,6 +34,7 @@ import useSWR, { mutate } from 'swr';
 
 const messages = defineMessages('components.RequestCard', {
   seasons: '{seasonCount, plural, one {Season} other {Seasons}}',
+  episodes: '{episodeCount, plural, one {Episode} other {Episodes}}',
   failedretry: 'Something went wrong while retrying the request.',
   failedmodify: 'Something went wrong while modifying the request.',
   mediaerror: '{mediaType} Not Found',
@@ -426,6 +428,21 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+          {!isMovie(title) && (request.episodes?.length ?? 0) > 0 && (
+            <div className="card-field">
+              <span className="card-field-name">
+                {intl.formatMessage(messages.episodes, {
+                  episodeCount: request.episodes.length,
+                })}
+              </span>
+              <Badge>
+                {episodeRequestSummary({
+                  episodes: request.episodes,
+                  type: request.episodeSelectionType,
+                })}
+              </Badge>
             </div>
           )}
           <div className="mt-2 flex items-center text-sm sm:mt-1">

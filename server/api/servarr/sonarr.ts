@@ -13,11 +13,12 @@ export interface SonarrSeason {
     percentOfEpisodes: number;
   };
 }
-interface EpisodeResult {
+export interface EpisodeResult {
   seriesId: number;
   episodeFileId: number;
   seasonNumber: number;
   episodeNumber: number;
+  tvdbId: number;
   title: string;
   airDate: string;
   airDateUtc: string;
@@ -101,6 +102,7 @@ export interface AddSeriesOptions {
   monitored?: boolean;
   monitorNewItems?: SonarrSeries['monitorNewItems'];
   searchNow?: boolean;
+  episodeTvdbIds?: number[];
 }
 
 export interface LanguageProfile {
@@ -216,36 +218,46 @@ class SonarrAPI extends ServarrBase<{
             series: newSeriesResponse.data,
           });
 
-          try {
-            const episodes = await this.getEpisodes(newSeriesResponse.data.id);
-            const episodeIdsToMonitor = episodes
-              .filter(
-                (ep) =>
-                  options.seasons.includes(ep.seasonNumber) && !ep.monitored
-              )
-              .map((ep) => ep.id);
-
-            if (episodeIdsToMonitor.length > 0) {
-              logger.debug(
-                'Re-monitoring unmonitored episodes for requested seasons.',
-                {
-                  label: 'Sonarr',
-                  seriesId: newSeriesResponse.data.id,
-                  episodeCount: episodeIdsToMonitor.length,
-                }
+          if (options.episodeTvdbIds?.length) {
+            await this.applyEpisodeSelection(
+              newSeriesResponse.data.id,
+              options.episodeTvdbIds,
+              options.searchNow ?? false
+            );
+          } else {
+            try {
+              const episodes = await this.getEpisodes(
+                newSeriesResponse.data.id
               );
-              await this.monitorEpisodes(episodeIdsToMonitor);
-            }
-          } catch (e) {
-            logger.warn('Failed to re-monitor episodes', {
-              label: 'Sonarr',
-              errorMessage: e.message,
-              seriesId: newSeriesResponse.data.id,
-            });
-          }
+              const episodeIdsToMonitor = episodes
+                .filter(
+                  (ep) =>
+                    options.seasons.includes(ep.seasonNumber) && !ep.monitored
+                )
+                .map((ep) => ep.id);
 
-          if (options.searchNow) {
-            this.searchSeries(newSeriesResponse.data.id);
+              if (episodeIdsToMonitor.length > 0) {
+                logger.debug(
+                  'Re-monitoring unmonitored episodes for requested seasons.',
+                  {
+                    label: 'Sonarr',
+                    seriesId: newSeriesResponse.data.id,
+                    episodeCount: episodeIdsToMonitor.length,
+                  }
+                );
+                await this.monitorEpisodes(episodeIdsToMonitor);
+              }
+            } catch (e) {
+              logger.warn('Failed to re-monitor episodes', {
+                label: 'Sonarr',
+                errorMessage: e.message,
+                seriesId: newSeriesResponse.data.id,
+              });
+            }
+
+            if (options.searchNow) {
+              this.searchSeries(newSeriesResponse.data.id);
+            }
           }
 
           return newSeriesResponse.data;
@@ -281,7 +293,11 @@ class SonarrAPI extends ServarrBase<{
           seriesType: options.seriesType,
           addOptions: {
             ignoreEpisodesWithFiles: true,
-            searchForMissingEpisodes: options.searchNow,
+            searchForMissingEpisodes:
+              options.episodeTvdbIds?.length === 0 ||
+              options.episodeTvdbIds === undefined
+                ? options.searchNow
+                : false,
           },
         } as Partial<SonarrSeries>
       );
@@ -298,6 +314,14 @@ class SonarrAPI extends ServarrBase<{
           options,
         });
         throw new Error('Failed to add series to Sonarr');
+      }
+
+      if (createdSeriesResponse.data.id && options.episodeTvdbIds?.length) {
+        await this.applyEpisodeSelection(
+          createdSeriesResponse.data.id,
+          options.episodeTvdbIds,
+          options.searchNow ?? false
+        );
       }
 
       return createdSeriesResponse.data;
@@ -371,6 +395,9 @@ class SonarrAPI extends ServarrBase<{
   }
 
   public async monitorEpisodes(episodeIds: number[]): Promise<void> {
+    if (episodeIds.length === 0) {
+      return;
+    }
     try {
       await this.axios.put('/episode/monitor', {
         episodeIds,
@@ -384,6 +411,53 @@ class SonarrAPI extends ServarrBase<{
       });
       throw new Error('Failed to monitor episodes', { cause: e });
     }
+  }
+
+  public async searchEpisodes(episodeIds: number[]): Promise<void> {
+    if (episodeIds.length === 0) {
+      return;
+    }
+    await this.runCommand('EpisodeSearch', { episodeIds });
+  }
+
+  public async applyEpisodeSelection(
+    seriesId: number,
+    tvdbEpisodeIds: number[],
+    searchNow: boolean
+  ): Promise<EpisodeResult[]> {
+    const wanted = new Set(tvdbEpisodeIds);
+    const episodes = (await this.getEpisodes(seriesId)).filter((episode) =>
+      wanted.has(episode.tvdbId)
+    );
+    const resolved = new Set(episodes.map((episode) => episode.tvdbId));
+    const unresolved = tvdbEpisodeIds.filter((id) => !resolved.has(id));
+
+    if (unresolved.length > 0) {
+      throw new Error(
+        `[Sonarr] Failed to resolve TVDB episode IDs: ${unresolved.join(', ')}`
+      );
+    }
+
+    const missing = episodes.filter((episode) => !episode.hasFile);
+    const unmonitored = missing
+      .filter((episode) => !episode.monitored)
+      .map((episode) => episode.id);
+    if (unmonitored.length > 0) {
+      await this.monitorEpisodes(unmonitored);
+    }
+
+    if (searchNow) {
+      const now = Date.now();
+      const airedMissing = missing
+        .filter(
+          (episode) =>
+            !episode.airDateUtc || new Date(episode.airDateUtc).getTime() <= now
+        )
+        .map((episode) => episode.id);
+      await this.searchEpisodes(airedMissing);
+    }
+
+    return episodes;
   }
 
   private buildSeasonList(

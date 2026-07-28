@@ -27,7 +27,6 @@ import {
 } from 'typeorm';
 import Issue from './Issue';
 import { MediaRequest } from './MediaRequest';
-import SeasonRequest from './SeasonRequest';
 import { UserPushSubscription } from './UserPushSubscription';
 import { UserSettings } from './UserSettings';
 
@@ -340,15 +339,8 @@ export class User {
             .andWhere('request.ignoreQuota = :ignoreQuota', {
               ignoreQuota: false,
             })
-            .addSelect((subQuery) => {
-              return subQuery
-                .select('COUNT(season.id)', 'seasonCount')
-                .from(SeasonRequest, 'season')
-                .leftJoin('season.request', 'parentRequest')
-                .where('parentRequest.id = request.id');
-            }, 'seasonCount')
             .getMany()
-        ).reduce((sum: number, req: MediaRequest) => sum + req.seasonCount, 0)
+        ).reduce((sum: number, req: MediaRequest) => sum + req.tvQuotaUnits, 0)
       : 0;
 
     return {

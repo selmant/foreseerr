@@ -114,6 +114,7 @@ export interface TvDetails {
   watchProviders?: WatchProviders[];
   onUserWatchlist?: boolean;
   ratings?: RatingResponse | null;
+  episodeRequestsEnabled?: boolean;
 }
 
 const mapEpisodeResult = (episode: TmdbTvEpisodeResult): Episode => ({

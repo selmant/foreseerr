@@ -123,6 +123,19 @@ export interface TvdbEpisode {
   year: string;
 }
 
+export interface TvdbEpisodeCatalogItem {
+  tvdbId: number;
+  seasonNumber: number;
+  episodeNumber: number;
+  title: string;
+  airDate?: string;
+}
+
+export interface TvdbEpisodeCatalog {
+  tvdbSeriesId: number;
+  episodes: TvdbEpisodeCatalogItem[];
+}
+
 export interface TvdbSeasonDetails {
   id: number;
   seriesId: number;

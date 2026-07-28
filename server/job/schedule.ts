@@ -1,5 +1,6 @@
 import { MediaServerType } from '@server/constants/server';
 import blocklistedTagsProcessor from '@server/job/blocklistedTagsProcessor';
+import episodeRequestSync from '@server/job/episodeRequestSync';
 import availabilitySync from '@server/lib/availabilitySync';
 import downloadTracker from '@server/lib/downloadtracker';
 import ImageProxy from '@server/lib/imageproxy';
@@ -160,6 +161,22 @@ export const startJobs = (): void => {
     }),
     running: () => radarrScanner.status().running,
     cancelFn: () => radarrScanner.cancel(),
+  });
+
+  scheduledJobs.push({
+    id: 'episode-request-sync',
+    name: 'Episode Request Sync',
+    type: 'process',
+    interval: 'minutes',
+    cronSchedule: jobs['episode-request-sync'].schedule,
+    job: schedule.scheduleJob(jobs['episode-request-sync'].schedule, () => {
+      logger.info('Starting scheduled job: Episode Request Sync', {
+        label: 'Jobs',
+      });
+      episodeRequestSync.run();
+    }),
+    running: () => episodeRequestSync.running,
+    cancelFn: () => episodeRequestSync.cancel(),
   });
 
   // Run full sonarr scan every 24 hours

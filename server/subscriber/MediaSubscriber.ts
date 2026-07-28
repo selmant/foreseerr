@@ -67,6 +67,9 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
         ) {
           shouldComplete = true;
         } else if (event.mediaType === 'tv') {
+          if (request.episodes?.length) {
+            continue;
+          }
           const allSeasonResults = await Promise.all(
             request.seasons.map(async (requestSeason) => {
               const matchingSeason = event.seasons.find(

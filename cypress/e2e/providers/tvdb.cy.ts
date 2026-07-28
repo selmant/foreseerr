@@ -145,4 +145,57 @@ describe('TVDB Integration', () => {
     // select season 3 and verify it not visible
     cy.contains(SELECTORS.season3).should('not.exist');
   });
+
+  it('submits an inclusive cross-season TVDB episode range', () => {
+    cy.intercept('GET', '/api/v1/tv/225634/episodes', {
+      statusCode: 200,
+      body: {
+        tvdbSeriesId: 999,
+        episodes: [
+          {
+            tvdbId: 101,
+            seasonNumber: 1,
+            episodeNumber: 1,
+            title: 'Pilot',
+          },
+          {
+            tvdbId: 102,
+            seasonNumber: 1,
+            episodeNumber: 2,
+            title: 'Second',
+          },
+          {
+            tvdbId: 201,
+            seasonNumber: 2,
+            episodeNumber: 1,
+            title: 'Return',
+          },
+        ],
+      },
+    }).as('episodeCatalog');
+    cy.intercept('POST', '/api/v1/request', (req) => {
+      expect(req.body.episodeSelection).to.deep.equal({
+        type: 'range',
+        startEpisodeTvdbId: 101,
+        endEpisodeTvdbId: 201,
+      });
+      expect(req.body.seasons).to.equal(undefined);
+      req.reply({
+        statusCode: 201,
+        body: { media: { status: 2 } },
+      });
+    }).as('episodeRequest');
+
+    cy.visit(ROUTES.monsterTvShow);
+    cy.contains('button', 'Select Seasons')
+      .parent()
+      .find('button[aria-label="Expand"]')
+      .click();
+    cy.contains('Request Episodes…').click();
+    cy.wait('@episodeCatalog');
+    cy.contains('button', 'Episode range').click();
+    cy.contains('label', 'Ending episode').find('select').select('201');
+    cy.contains('button', 'Request 3 Episodes').click();
+    cy.wait('@episodeRequest');
+  });
 });
