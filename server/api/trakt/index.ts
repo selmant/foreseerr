@@ -469,6 +469,45 @@ class TraktAPI extends ExternalAPI {
     );
   }
 
+  public async addEpisodeToHistory(
+    tmdbShowId: number,
+    seasonNumber: number,
+    episodeNumber: number
+  ): Promise<unknown> {
+    return this.postAuthenticated(
+      '/sync/history',
+      TraktAPI.episodeHistoryPayload(tmdbShowId, seasonNumber, episodeNumber)
+    );
+  }
+
+  public async removeEpisodeFromHistory(
+    tmdbShowId: number,
+    seasonNumber: number,
+    episodeNumber: number
+  ): Promise<unknown> {
+    return this.postAuthenticated(
+      '/sync/history/remove',
+      TraktAPI.episodeHistoryPayload(tmdbShowId, seasonNumber, episodeNumber)
+    );
+  }
+
+  public static episodeHistoryPayload(
+    tmdbShowId: number,
+    seasonNumber: number,
+    episodeNumber: number
+  ): Record<string, unknown> {
+    return {
+      shows: [
+        {
+          ids: { tmdb: Number(tmdbShowId) },
+          seasons: [
+            { number: seasonNumber, episodes: [{ number: episodeNumber }] },
+          ],
+        },
+      ],
+    };
+  }
+
   public async addRating(
     mediaType: 'movie' | 'tv',
     tmdbId: number,

@@ -683,6 +683,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MediaActionProviderResult'
+    EpisodeWatchStatus:
+      type: object
+      required: [available, watchedEpisodeNumbers]
+      properties:
+        available:
+          type: boolean
+          description: Whether Trakt episode actions are available for the current user
+        watchedEpisodeNumbers:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+    EpisodeWatchWriteResult:
+      type: object
+      required: [provider, ok, watched]
+      properties:
+        provider:
+          type: string
+          enum: [trakt]
+        ok:
+          type: boolean
+        watched:
+          type: boolean
     RatingBadgeSettings:
       type: object
       properties:
@@ -8357,6 +8380,111 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/MediaActionStatus'
+  /media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/status:
+    get:
+      summary: Get episode watched status for a TV season
+      description: Returns one batched set of watched episode numbers from Trakt for the current user.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: tmdbId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - in: path
+          name: seasonNumber
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10000
+      responses:
+        '200':
+          description: Episode watched status returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchStatus'
+  /media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/{episodeNumber}/watched:
+    post:
+      summary: Mark a TV episode watched
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: tmdbId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - in: path
+          name: seasonNumber
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10000
+        - in: path
+          name: episodeNumber
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10000
+      responses:
+        '200':
+          description: Episode marked watched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+        '502':
+          description: Trakt episode actions are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+  /media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/{episodeNumber}/unwatched:
+    post:
+      summary: Mark a TV episode unwatched
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: tmdbId
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - in: path
+          name: seasonNumber
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10000
+        - in: path
+          name: episodeNumber
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10000
+      responses:
+        '200':
+          description: Episode marked unwatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+        '502':
+          description: Trakt episode actions are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
   /media-actions/{mediaType}/{tmdbId}/status:
     get:
       summary: Get media action status

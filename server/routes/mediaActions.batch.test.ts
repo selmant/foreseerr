@@ -2,6 +2,7 @@ import {
   getMediaActionDispatcher,
   type MediaActionAggregate,
 } from '@server/lib/mediaActions';
+import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import authRoutes from '@server/routes/auth';
@@ -61,6 +62,16 @@ const getStatusesMock = mock.method(
         providers: [],
       })
     )
+);
+const getEpisodeStatusMock = mock.method(
+  traktEpisodeActions,
+  'getSeasonStatus',
+  async () => ({ available: true, watchedEpisodeNumbers: [1, 3] })
+);
+const setEpisodeWatchedMock = mock.method(
+  traktEpisodeActions,
+  'setWatched',
+  async () => true
 );
 
 before(() => {
@@ -127,5 +138,70 @@ describe('media-actions status-batch bounds', () => {
       { mediaType: 'tv', tmdbId: 7 },
     ]);
     assert.equal(res.body.results.length, 2);
+  });
+});
+
+describe('episode media actions', () => {
+  beforeEach(() => {
+    getEpisodeStatusMock.mock.resetCalls();
+    setEpisodeWatchedMock.mock.resetCalls();
+  });
+
+  it('requires an authenticated user', async () => {
+    const res = await request(app).get(
+      '/api/v1/media-actions/tv/42/seasons/1/episodes/status'
+    );
+
+    assert.equal(res.status, 401);
+    assert.equal(getEpisodeStatusMock.mock.calls.length, 0);
+  });
+
+  it('returns one batched watched-state payload for a season', async () => {
+    const agent = await loginAsAdmin();
+    const res = await agent.get(
+      '/api/v1/media-actions/tv/42/seasons/1/episodes/status'
+    );
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, {
+      available: true,
+      watchedEpisodeNumbers: [1, 3],
+    });
+    assert.equal(getEpisodeStatusMock.mock.calls.length, 1);
+    assert.deepEqual(
+      getEpisodeStatusMock.mock.calls[0]?.arguments.slice(1),
+      [42, 1]
+    );
+  });
+
+  it('marks an episode watched using validated show and episode coordinates', async () => {
+    const agent = await loginAsAdmin();
+    const res = await agent.post(
+      '/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched'
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.watched, true);
+    assert.deepEqual(setEpisodeWatchedMock.mock.calls[0]?.arguments.slice(1), [
+      42,
+      1,
+      2,
+      true,
+    ]);
+  });
+
+  it('rejects malformed and out-of-range episode identifiers', async () => {
+    const agent = await loginAsAdmin();
+    const pathResult = await agent.get(
+      '/api/v1/media-actions/tv/not-a-number/seasons/1/episodes/status'
+    );
+    const coordinateResult = await agent.post(
+      "/api/v1/media-actions/tv/42/seasons/1/episodes/1'%20OR%201=1--/watched"
+    );
+
+    assert.equal(pathResult.status, 400);
+    assert.equal(coordinateResult.status, 400);
+    assert.equal(getEpisodeStatusMock.mock.calls.length, 0);
+    assert.equal(setEpisodeWatchedMock.mock.calls.length, 0);
   });
 });

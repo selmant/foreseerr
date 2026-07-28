@@ -27,6 +27,29 @@ describe('TVDB Integration', () => {
     episode9: '9 - Hang Men',
   };
 
+  const episodeSeason = {
+    airDate: '2024-09-19',
+    episodes: [
+      {
+        id: 101,
+        name: 'Pilot',
+        airDate: '2024-09-19',
+        episodeNumber: 1,
+        overview: 'Episode overview',
+        productionCode: '',
+        seasonNumber: 1,
+        showId: 225634,
+        voteAverage: 0,
+        voteCount: 0,
+      },
+    ],
+    externalIds: {},
+    id: 1,
+    name: 'Season 1',
+    overview: '',
+    seasonNumber: 1,
+  };
+
   // Reusable commands
   const navigateToMetadataSettings = () => {
     cy.visit(ROUTES.home);
@@ -307,9 +330,17 @@ describe('TVDB Integration', () => {
   });
 
   it('quick-requests one episode from the detail episode list', () => {
-    cy.intercept('GET', '/api/v1/tv/225634/season/1').as('season1');
+    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
+      req.continue((res) => {
+        res.body.mediaInfo = undefined;
+        res.body.episodeRequestsEnabled = true;
+      });
+    });
+    cy.intercept('GET', '/api/v1/tv/225634/season/1', episodeSeason).as(
+      'season1'
+    );
     cy.visit(ROUTES.monsterTvShow);
-    cy.contains(SELECTORS.season1).scrollIntoView().click();
+    cy.get('[data-testid="season-disclosure-1"]').scrollIntoView().click();
 
     cy.wait('@season1').then(({ response }) => {
       const episode = response?.body.episodes[0];
@@ -321,16 +352,65 @@ describe('TVDB Integration', () => {
         });
         req.reply({
           statusCode: 201,
-          body: { media: { status: 2 } },
+          body: {
+            id: 999,
+            status: 2,
+            episodes: [{ tvdbId: episode.id, status: 2 }],
+            media: { status: 2 },
+          },
         });
       }).as('singleEpisodeRequest');
 
       cy.get(`[data-testid="episode-quick-request-${episode.id}"]`).click();
       cy.wait('@singleEpisodeRequest');
-      cy.get(`[data-testid="episode-quick-request-${episode.id}"]`).should(
+      cy.get(`[data-testid="episode-request-status-${episode.id}"]`).should(
         'contain',
         'Requested'
       );
+      cy.get(`[data-testid="episode-quick-request-${episode.id}"]`).should(
+        'not.exist'
+      );
     });
+  });
+
+  it('shows season progress and toggles an episode watched on Trakt', () => {
+    cy.intercept('GET', '/api/v1/settings/public', (req) => {
+      delete req.headers['if-none-match'];
+      req.continue((res) => {
+        const body =
+          typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
+        res.send({
+          ...body,
+          traktConfigured: true,
+          mediaActionsTraktEnabled: true,
+        });
+      });
+    }).as('publicSettings');
+    cy.intercept(
+      'GET',
+      '/api/v1/media-actions/tv/225634/seasons/1/episodes/status',
+      { available: true, watchedEpisodeNumbers: [] }
+    ).as('episodeWatchStatus');
+    cy.intercept(
+      'POST',
+      '/api/v1/media-actions/tv/225634/seasons/1/episodes/*/watched',
+      { provider: 'trakt', ok: true, watched: true }
+    ).as('markEpisodeWatched');
+    cy.intercept('GET', '/api/v1/tv/225634/season/1', episodeSeason).as(
+      'season1'
+    );
+
+    cy.visit(ROUTES.monsterTvShow);
+    cy.wait('@publicSettings')
+      .its('response.body.traktConfigured')
+      .should('equal', true);
+    cy.wait('@episodeWatchStatus');
+    cy.get('[data-testid="season-disclosure-1"]').should('contain', '0/');
+    cy.get('[data-testid="season-disclosure-1"]').scrollIntoView().click();
+    cy.wait('@season1');
+
+    cy.get('button[aria-label="Mark watched"]').first().click();
+    cy.wait('@markEpisodeWatched');
+    cy.get('button[aria-label="Mark unwatched"]').should('exist');
   });
 });

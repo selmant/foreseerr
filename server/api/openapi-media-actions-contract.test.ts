@@ -16,6 +16,13 @@ describe('OpenAPI media-actions contract', () => {
     '/media-actions/{mediaType}/{tmdbId}/watched': ['post'],
     '/media-actions/{mediaType}/{tmdbId}/unwatched': ['post'],
     '/media-actions/{mediaType}/{tmdbId}/rate': ['post'],
+    '/media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/status': [
+      'get',
+    ],
+    '/media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/{episodeNumber}/watched':
+      ['post'],
+    '/media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/{episodeNumber}/unwatched':
+      ['post'],
   };
 
   for (const [path, methods] of Object.entries(requiredPaths)) {

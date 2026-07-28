@@ -6,12 +6,17 @@ import {
   type MediaActionMediaType,
   type MediaItemRef,
 } from '@server/lib/mediaActions';
+import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
 import logger from '@server/logger';
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
+import { z } from 'zod';
 
 export const STATUS_BATCH_MAX_ITEMS = 100;
 
 const mediaActionsRoutes = Router();
+
+const positiveIdSchema = z.coerce.number().int().positive().max(2_147_483_647);
+const episodeCoordinateSchema = z.coerce.number().int().min(0).max(10_000);
 
 function parseMediaType(value: string): MediaActionMediaType | null {
   if (value === 'movie' || value === 'tv') {
@@ -104,6 +109,102 @@ function handleActionError(
   });
   return next({ status: 500, message: fallbackMessage });
 }
+
+function parseEpisodePath(
+  params: Record<string, unknown>
+):
+  | { tmdbId: number; seasonNumber: number; episodeNumber?: number }
+  | { error: string } {
+  const tmdbId = positiveIdSchema.safeParse(params.tmdbId);
+  const seasonNumber = episodeCoordinateSchema.safeParse(params.seasonNumber);
+  const episodeNumber =
+    params.episodeNumber === undefined
+      ? undefined
+      : episodeCoordinateSchema.safeParse(params.episodeNumber);
+  if (
+    !tmdbId.success ||
+    !seasonNumber.success ||
+    (episodeNumber !== undefined && !episodeNumber.success)
+  ) {
+    return { error: 'Invalid episode identifiers.' };
+  }
+  return {
+    tmdbId: tmdbId.data,
+    seasonNumber: seasonNumber.data,
+    ...(episodeNumber ? { episodeNumber: episodeNumber.data } : {}),
+  };
+}
+
+mediaActionsRoutes.get(
+  '/tv/:tmdbId/seasons/:seasonNumber/episodes/status',
+  async (req, res, next) => {
+    try {
+      if (!req.user?.id) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const parsed = parseEpisodePath(req.params);
+      if ('error' in parsed) {
+        return next({ status: 400, message: parsed.error });
+      }
+      const status = await traktEpisodeActions.getSeasonStatus(
+        req.user.id,
+        parsed.tmdbId,
+        parsed.seasonNumber
+      );
+      return res.status(200).json(status);
+    } catch (error) {
+      return handleActionError(
+        error,
+        next,
+        'Unable to retrieve episode watch status.'
+      );
+    }
+  }
+);
+
+const setEpisodeWatched =
+  (watched: boolean): RequestHandler =>
+  async (req, res, next) => {
+    try {
+      if (!req.user?.id) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const parsed = parseEpisodePath(req.params);
+      if ('error' in parsed || parsed.episodeNumber === undefined) {
+        return next({ status: 400, message: 'Invalid episode identifiers.' });
+      }
+      const ok = await traktEpisodeActions.setWatched(
+        req.user.id,
+        parsed.tmdbId,
+        parsed.seasonNumber,
+        parsed.episodeNumber,
+        watched
+      );
+      return res.status(ok ? 200 : 502).json({
+        provider: 'trakt',
+        ok,
+        watched: ok ? watched : !watched,
+      });
+    } catch (error) {
+      return handleActionError(
+        error,
+        next,
+        watched
+          ? 'Unable to mark episode as watched.'
+          : 'Unable to mark episode as unwatched.'
+      );
+    }
+  };
+
+mediaActionsRoutes.post(
+  '/tv/:tmdbId/seasons/:seasonNumber/episodes/:episodeNumber/watched',
+  setEpisodeWatched(true)
+);
+
+mediaActionsRoutes.post(
+  '/tv/:tmdbId/seasons/:seasonNumber/episodes/:episodeNumber/unwatched',
+  setEpisodeWatched(false)
+);
 
 mediaActionsRoutes.get('/:mediaType/:tmdbId/status', async (req, res, next) => {
   try {

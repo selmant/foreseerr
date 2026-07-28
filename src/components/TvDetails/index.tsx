@@ -27,7 +27,10 @@ import RequestButton from '@app/components/RequestButton';
 import RequestModal from '@app/components/RequestModal';
 import Slider from '@app/components/Slider';
 import StatusBadge from '@app/components/StatusBadge';
-import Season from '@app/components/TvDetails/Season';
+import Season, {
+  SeasonWatchProgress,
+  type EpisodeRequestState,
+} from '@app/components/TvDetails/Season';
 import useDeepLinks from '@app/hooks/useDeepLinks';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
@@ -849,6 +852,23 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                       new Date(b.createdAt).getTime() -
                       new Date(a.createdAt).getTime()
                   )[0];
+                const episodeRequestStates: EpisodeRequestState[] = (
+                  data.mediaInfo?.requests ?? []
+                )
+                  .filter((mediaRequest) => !mediaRequest.is4k)
+                  .flatMap((mediaRequest) =>
+                    (mediaRequest.episodes ?? [])
+                      .filter(
+                        (episodeRequest) =>
+                          episodeRequest.seasonNumber === season.seasonNumber
+                      )
+                      .map((episodeRequest) => ({
+                        tvdbId: episodeRequest.tvdbId,
+                        episodeStatus: episodeRequest.status,
+                        requestStatus: mediaRequest.status,
+                        requestId: mediaRequest.id,
+                      }))
+                  );
 
                 if (season.episodeCount === 0) {
                   return null;
@@ -859,6 +879,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                     {({ open }) => (
                       <>
                         <Disclosure.Button
+                          data-testid={`season-disclosure-${season.seasonNumber}`}
                           className={`mt-2 flex w-full items-center justify-between space-x-2 border-gray-700 bg-gray-800 px-4 py-2 text-gray-200 ${
                             open
                               ? 'rounded-t-md border-l border-r border-t'
@@ -878,6 +899,11 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                                 episodeCount: season.episodeCount,
                               })}
                             </Badge>
+                            <SeasonWatchProgress
+                              tvId={data.id}
+                              seasonNumber={season.seasonNumber}
+                              episodeCount={season.episodeCount}
+                            />
                           </div>
                           {((!mSeason &&
                             request?.status === MediaRequestStatus.APPROVED) ||
@@ -1091,26 +1117,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                               episodeRequestsEnabled={
                                 data.episodeRequestsEnabled
                               }
-                              requestedEpisodeIds={(
-                                data.mediaInfo?.requests ?? []
-                              )
-                                .filter(
-                                  (mediaRequest) =>
-                                    !mediaRequest.is4k &&
-                                    mediaRequest.status !==
-                                      MediaRequestStatus.DECLINED
-                                )
-                                .flatMap((mediaRequest) =>
-                                  (mediaRequest.episodes ?? [])
-                                    .filter(
-                                      (episodeRequest) =>
-                                        episodeRequest.seasonNumber ===
-                                        season.seasonNumber
-                                    )
-                                    .map(
-                                      (episodeRequest) => episodeRequest.tvdbId
-                                    )
-                                )}
+                              episodeRequestStates={episodeRequestStates}
                               onRequestComplete={() => void revalidate()}
                             />
                           </Disclosure.Panel>

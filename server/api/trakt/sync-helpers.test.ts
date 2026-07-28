@@ -22,4 +22,15 @@ describe('TraktAPI sync payload helpers', () => {
     assert.equal(TraktAPI.findRatingForTmdb(ratings, 'movie', 550), 8);
     assert.equal(TraktAPI.findRatingForTmdb(ratings, 'movie', 999), null);
   });
+
+  it('builds an episode-history payload from stable show coordinates', () => {
+    assert.deepEqual(TraktAPI.episodeHistoryPayload(42, 3, 7), {
+      shows: [
+        {
+          ids: { tmdb: 42 },
+          seasons: [{ number: 3, episodes: [{ number: 7 }] }],
+        },
+      ],
+    });
+  });
 });

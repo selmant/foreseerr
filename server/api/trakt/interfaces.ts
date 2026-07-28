@@ -26,6 +26,14 @@ export interface TraktListEntry {
   watched_at?: string;
   rating?: number;
   listed_at?: string;
+  seasons?: {
+    number: number;
+    episodes?: {
+      number: number;
+      plays?: number;
+      last_watched_at?: string;
+    }[];
+  }[];
 }
 
 /** Stable browse filter for Trakt discover routes. */
