@@ -48,4 +48,40 @@ describe('Sonarr exact episode selection', () => {
     mock.method(api, 'getEpisodes', async () => [episode({ tvdbId: 101 })]);
     await assert.rejects(api.applyEpisodeSelection(9, [101, 404], true), /404/);
   });
+
+  it('waits for a newly added series to populate its episode catalog', async () => {
+    const api = new SonarrAPI({ apiKey: 'test', url: 'http://127.0.0.1' });
+    let lookupCount = 0;
+    const getEpisodes = mock.method(api, 'getEpisodes', async () => {
+      lookupCount += 1;
+      return lookupCount < 3
+        ? []
+        : [episode({ id: 1, tvdbId: 101 }), episode({ id: 2, tvdbId: 102 })];
+    });
+    const monitor = mock.method(api, 'monitorEpisodes', async () => undefined);
+    const search = mock.method(api, 'searchEpisodes', async () => undefined);
+
+    await api.applyEpisodeSelection(9, [101, 102], true, {
+      attempts: 3,
+      delayMs: 0,
+    });
+
+    assert.equal(getEpisodes.mock.callCount(), 3);
+    assert.deepEqual(monitor.mock.calls[0].arguments[0], [1, 2]);
+    assert.deepEqual(search.mock.calls[0].arguments[0], [1, 2]);
+  });
+
+  it('still fails after bounded episode catalog polling is exhausted', async () => {
+    const api = new SonarrAPI({ apiKey: 'test', url: 'http://127.0.0.1' });
+    const getEpisodes = mock.method(api, 'getEpisodes', async () => []);
+
+    await assert.rejects(
+      api.applyEpisodeSelection(9, [101], false, {
+        attempts: 3,
+        delayMs: 0,
+      }),
+      /101/
+    );
+    assert.equal(getEpisodes.mock.callCount(), 3);
+  });
 });

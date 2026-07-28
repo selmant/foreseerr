@@ -105,6 +105,17 @@ export interface AddSeriesOptions {
   episodeTvdbIds?: number[];
 }
 
+interface EpisodeSelectionRetryOptions {
+  attempts?: number;
+  delayMs?: number;
+}
+
+const NEW_SERIES_EPISODE_ATTEMPTS = 30;
+const NEW_SERIES_EPISODE_RETRY_DELAY_MS = 500;
+
+const delay = (milliseconds: number) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 export interface LanguageProfile {
   id: number;
   name: string;
@@ -320,7 +331,11 @@ class SonarrAPI extends ServarrBase<{
         await this.applyEpisodeSelection(
           createdSeriesResponse.data.id,
           options.episodeTvdbIds,
-          options.searchNow ?? false
+          options.searchNow ?? false,
+          {
+            attempts: NEW_SERIES_EPISODE_ATTEMPTS,
+            delayMs: NEW_SERIES_EPISODE_RETRY_DELAY_MS,
+          }
         );
       }
 
@@ -423,14 +438,35 @@ class SonarrAPI extends ServarrBase<{
   public async applyEpisodeSelection(
     seriesId: number,
     tvdbEpisodeIds: number[],
-    searchNow: boolean
+    searchNow: boolean,
+    retryOptions: EpisodeSelectionRetryOptions = {}
   ): Promise<EpisodeResult[]> {
     const wanted = new Set(tvdbEpisodeIds);
-    const episodes = (await this.getEpisodes(seriesId)).filter((episode) =>
-      wanted.has(episode.tvdbId)
-    );
-    const resolved = new Set(episodes.map((episode) => episode.tvdbId));
-    const unresolved = tvdbEpisodeIds.filter((id) => !resolved.has(id));
+    const attempts = Math.max(1, retryOptions.attempts ?? 1);
+    const delayMs = Math.max(0, retryOptions.delayMs ?? 0);
+    let episodes: EpisodeResult[] = [];
+    let unresolved = tvdbEpisodeIds;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      episodes = (await this.getEpisodes(seriesId)).filter((episode) =>
+        wanted.has(episode.tvdbId)
+      );
+      const resolved = new Set(episodes.map((episode) => episode.tvdbId));
+      unresolved = tvdbEpisodeIds.filter((id) => !resolved.has(id));
+
+      if (unresolved.length === 0 || attempt === attempts) {
+        break;
+      }
+
+      logger.debug('Waiting for Sonarr to populate newly added episodes.', {
+        label: 'Sonarr',
+        seriesId,
+        attempt,
+        attempts,
+        unresolvedEpisodeCount: unresolved.length,
+      });
+      await delay(delayMs);
+    }
 
     if (unresolved.length > 0) {
       throw new Error(

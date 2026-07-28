@@ -803,13 +803,15 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
               }
             }
           })
-          .catch(async () => {
+          .catch(async (error) => {
             try {
               const requestRepository = getRepository(MediaRequest);
 
               if (entity.status !== MediaRequestStatus.FAILED) {
                 entity.status = MediaRequestStatus.FAILED;
-                await requestRepository.save(entity);
+                await requestRepository.update(entity.id, {
+                  status: MediaRequestStatus.FAILED,
+                });
               }
             } catch (saveError) {
               logger.error('Failed to mark request as FAILED', {
@@ -828,6 +830,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
                 label: 'Media Request',
                 requestId: entity.id,
                 mediaId: entity.media.id,
+                errorMessage:
+                  error instanceof Error ? error.message : String(error),
                 sonarrSeriesOptions,
               }
             );
@@ -861,7 +865,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
 
         if (media) {
           entity.status = MediaRequestStatus.FAILED;
-          await requestRepository.save(entity);
+          await requestRepository.update(entity.id, {
+            status: MediaRequestStatus.FAILED,
+          });
 
           logger.warn(
             'Failed to send series request to Sonarr due to connection or configuration error, marking status as FAILED',
