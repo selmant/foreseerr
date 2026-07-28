@@ -2,11 +2,7 @@ import Badge from '@app/components/Common/Badge';
 import MultiRangeSlider from '@app/components/Common/MultiRangeSlider';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
-import {
-  ArrowsRightLeftIcon,
-  CursorArrowRaysIcon,
-  ForwardIcon,
-} from '@heroicons/react/24/outline';
+import { ArrowsRightLeftIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -26,25 +22,24 @@ interface EpisodeCatalog {
 }
 
 const messages = defineMessages('components.RequestModal.EpisodeSelector', {
-  individual: 'One episode',
-  individualHint: 'Pick exactly one episode.',
-  range: 'Episode range',
-  rangeHint: 'Drag the handles or choose exact endpoints below.',
-  after: 'From here onward',
-  afterHint: 'Keep following this series as new episodes appear.',
+  title: 'Choose episodes',
+  instruction:
+    'Select one episode, then optionally select another to include everything between them.',
+  addEndpoint: 'Choose another episode to make a range',
+  rangeReady: 'Range selected. Choose any episode to start over.',
   loading: 'Loading the TVDB episode timeline…',
   unavailable: 'The TVDB episode catalog could not be loaded.',
   empty: 'No requestable episodes were found.',
-  seasons: 'Season navigator',
+  seasons: 'Browse by season',
   specials: 'Specials',
   season: 'Season {seasonNumber}',
   episode: 'Episode {episodeNumber}',
-  start: 'Start',
-  end: 'End',
-  selectingStart: 'Choosing start',
-  selectingEnd: 'Choosing end',
+  start: 'First',
+  end: 'Last',
+  single: 'Single episode',
+  range: 'Episode range',
+  clear: 'Clear selection',
   summary: '{episodeCount} episodes · {seasonCount} quota units',
-  ongoing: 'Future TVDB episodes will join this request automatically.',
 });
 
 const episodeCode = (episode: EpisodeCatalogItem) =>
@@ -72,23 +67,24 @@ const EpisodeSelector = ({
   const { data, error } = useSWR<EpisodeCatalog>(
     `/api/v1/tv/${tmdbId}/episodes`
   );
-  const [mode, setMode] = useState<EpisodeSelection['type']>(
-    initialSelection?.type ?? 'single'
-  );
-  const initialStart =
+  const initialStartId =
     initialSelection?.type === 'single'
       ? initialSelection.episodeTvdbId
       : initialSelection?.startEpisodeTvdbId;
-  const [startId, setStartId] = useState<number | undefined>(initialStart);
+  const [startId, setStartId] = useState<number | undefined>(initialStartId);
   const [endId, setEndId] = useState<number | undefined>(
     initialSelection?.type === 'range'
       ? initialSelection.endEpisodeTvdbId
-      : undefined
+      : initialSelection?.type === 'single'
+        ? initialSelection.episodeTvdbId
+        : undefined
   );
   const [activeSeason, setActiveSeason] = useState<number | undefined>();
-  const [rangeHandle, setRangeHandle] = useState<'start' | 'end'>('start');
+  const [awaitingEndpoint, setAwaitingEndpoint] = useState(
+    initialSelection?.type === 'single'
+  );
 
-  const requestableEpisodes = useMemo(
+  const selectionEpisodes = useMemo(
     () =>
       (data?.episodes ?? []).filter(
         (episode) =>
@@ -97,40 +93,6 @@ const EpisodeSelector = ({
       ),
     [data, settings.currentSettings.enableSpecialEpisodes]
   );
-  const regularEpisodes = useMemo(
-    () => requestableEpisodes.filter((episode) => episode.seasonNumber > 0),
-    [requestableEpisodes]
-  );
-  const selectionEpisodes =
-    mode === 'single' ? requestableEpisodes : regularEpisodes;
-
-  useEffect(() => {
-    if (!selectionEpisodes.length) {
-      return;
-    }
-    const selectedStart = selectionEpisodes.find(
-      (episode) => episode.tvdbId === startId
-    );
-    const nextStart = selectedStart ?? selectionEpisodes[0];
-    if (!selectedStart) {
-      setStartId(nextStart.tvdbId);
-    }
-    if (activeSeason === undefined) {
-      setActiveSeason(nextStart.seasonNumber);
-    }
-    if (mode === 'range') {
-      const startIndex = selectionEpisodes.findIndex(
-        (episode) => episode.tvdbId === nextStart.tvdbId
-      );
-      const selectedEndIndex = selectionEpisodes.findIndex(
-        (episode) => episode.tvdbId === endId
-      );
-      if (selectedEndIndex < startIndex) {
-        setEndId(nextStart.tvdbId);
-      }
-    }
-  }, [activeSeason, endId, mode, selectionEpisodes, startId]);
-
   const seasons = useMemo(
     () =>
       Array.from(
@@ -151,112 +113,118 @@ const EpisodeSelector = ({
   const endIndex = selectionEpisodes.findIndex(
     (episode) => episode.tvdbId === endId
   );
-
-  const resolved = useMemo(() => {
-    if (startIndex < 0) {
-      return [];
-    }
-    if (mode === 'single') {
-      return [selectionEpisodes[startIndex]];
-    }
-    if (mode === 'after') {
-      return selectionEpisodes.slice(startIndex);
-    }
-    return endIndex >= startIndex
-      ? selectionEpisodes.slice(startIndex, endIndex + 1)
-      : [];
-  }, [endIndex, mode, selectionEpisodes, startIndex]);
+  const selectedStart = selectionEpisodes[startIndex];
+  const selectedEnd = selectionEpisodes[endIndex];
+  const hasSelection = startIndex >= 0 && endIndex >= startIndex;
+  const isRange = hasSelection && startIndex !== endIndex;
+  const resolved = useMemo(
+    () =>
+      hasSelection ? selectionEpisodes.slice(startIndex, endIndex + 1) : [],
+    [endIndex, hasSelection, selectionEpisodes, startIndex]
+  );
 
   useEffect(() => {
-    if (!startId || (mode === 'range' && !endId) || resolved.length === 0) {
+    if (!selectionEpisodes.length) {
+      return;
+    }
+
+    if (activeSeason === undefined) {
+      const initialEpisode = selectionEpisodes.find(
+        (episode) => episode.tvdbId === startId
+      );
+      setActiveSeason(
+        initialEpisode?.seasonNumber ??
+          selectionEpisodes.find((episode) => episode.seasonNumber > 0)
+            ?.seasonNumber ??
+          selectionEpisodes[0].seasonNumber
+      );
+    }
+
+    if (initialSelection?.type === 'after' && startIndex >= 0 && endIndex < 0) {
+      const lastRegularEpisode = selectionEpisodes.findLast(
+        (episode) => episode.seasonNumber > 0
+      );
+      if (lastRegularEpisode) {
+        setEndId(lastRegularEpisode.tvdbId);
+        setAwaitingEndpoint(false);
+      }
+    }
+  }, [
+    activeSeason,
+    endIndex,
+    initialSelection?.type,
+    selectionEpisodes,
+    startId,
+    startIndex,
+  ]);
+
+  useEffect(() => {
+    if (!hasSelection || !selectedStart || !selectedEnd) {
       onChange(undefined, 0, 0);
       return;
     }
-    const selection: EpisodeSelection =
-      mode === 'single'
-        ? { type: mode, episodeTvdbId: startId }
-        : mode === 'range'
-          ? {
-              type: mode,
-              startEpisodeTvdbId: startId,
-              endEpisodeTvdbId: endId!,
-            }
-          : { type: mode, startEpisodeTvdbId: startId };
+
+    const selection: EpisodeSelection = isRange
+      ? {
+          type: 'range',
+          startEpisodeTvdbId: selectedStart.tvdbId,
+          endEpisodeTvdbId: selectedEnd.tvdbId,
+        }
+      : { type: 'single', episodeTvdbId: selectedStart.tvdbId };
     onChange(
       selection,
       resolved.length,
       new Set(resolved.map((episode) => episode.seasonNumber)).size
     );
-  }, [endId, mode, onChange, resolved, startId]);
-
-  const selectMode = (nextMode: EpisodeSelection['type']) => {
-    const nextEpisodes =
-      nextMode === 'single' ? requestableEpisodes : regularEpisodes;
-    const currentStart = nextEpisodes.find(
-      (episode) => episode.tvdbId === startId
-    );
-    const nextStart = currentStart ?? nextEpisodes[0];
-    setMode(nextMode);
-    setRangeHandle(nextMode === 'range' ? 'end' : 'start');
-    if (nextStart) {
-      setStartId(nextStart.tvdbId);
-      setActiveSeason(nextStart.seasonNumber);
-      if (nextMode === 'range') {
-        const currentEndIndex = nextEpisodes.findIndex(
-          (episode) => episode.tvdbId === endId
-        );
-        const nextStartIndex = nextEpisodes.findIndex(
-          (episode) => episode.tvdbId === nextStart.tvdbId
-        );
-        if (currentEndIndex < nextStartIndex) {
-          setEndId(nextStart.tvdbId);
-        }
-      }
-    }
-  };
+  }, [hasSelection, isRange, onChange, resolved, selectedEnd, selectedStart]);
 
   const selectEpisode = (episode: EpisodeCatalogItem) => {
-    if (mode !== 'range') {
-      setStartId(episode.tvdbId);
-      return;
-    }
     const clickedIndex = selectionEpisodes.findIndex(
       (item) => item.tvdbId === episode.tvdbId
     );
-    if (rangeHandle === 'start') {
+    const startEpisode = selectionEpisodes[startIndex];
+    const canExtendRange =
+      awaitingEndpoint &&
+      startIndex >= 0 &&
+      startEpisode?.seasonNumber !== 0 &&
+      episode.seasonNumber !== 0 &&
+      clickedIndex !== startIndex;
+
+    if (!canExtendRange) {
       setStartId(episode.tvdbId);
-      if (endIndex < clickedIndex) {
-        setEndId(episode.tvdbId);
-      }
-      setRangeHandle('end');
-    } else {
-      if (clickedIndex < startIndex) {
-        setStartId(episode.tvdbId);
-      } else {
-        setEndId(episode.tvdbId);
-      }
-      setRangeHandle('start');
+      setEndId(episode.tvdbId);
+      setAwaitingEndpoint(episode.seasonNumber !== 0);
+      return;
     }
+
+    const firstIndex = Math.min(startIndex, clickedIndex);
+    const lastIndex = Math.max(startIndex, clickedIndex);
+    setStartId(selectionEpisodes[firstIndex].tvdbId);
+    setEndId(selectionEpisodes[lastIndex].tvdbId);
+    setAwaitingEndpoint(false);
   };
 
   const updateRangeStart = useCallback(
     (index: number) => {
       const episode = selectionEpisodes[index];
-      if (episode) {
+      if (episode?.seasonNumber !== 0) {
         setStartId(episode.tvdbId);
         setActiveSeason(episode.seasonNumber);
+        setAwaitingEndpoint(index === endIndex);
       }
     },
-    [selectionEpisodes]
+    [endIndex, selectionEpisodes]
   );
   const updateRangeEnd = useCallback(
     (index: number) => {
       const episode = selectionEpisodes[index];
-      if (episode) {
+      if (episode?.seasonNumber !== 0) {
         setEndId(episode.tvdbId);
+        setActiveSeason(episode.seasonNumber);
+        setAwaitingEndpoint(index === startIndex);
       }
     },
-    [selectionEpisodes]
+    [selectionEpisodes, startIndex]
   );
   const formatRangeValue = useCallback(
     (index: number) =>
@@ -265,6 +233,11 @@ const EpisodeSelector = ({
         : String(index),
     [selectionEpisodes]
   );
+  const clearSelection = () => {
+    setStartId(undefined);
+    setEndId(undefined);
+    setAwaitingEndpoint(false);
+  };
 
   if (error) {
     return (
@@ -288,112 +261,90 @@ const EpisodeSelector = ({
     );
   }
 
-  const modes = [
-    {
-      id: 'single' as const,
-      label: intl.formatMessage(messages.individual),
-      hint: intl.formatMessage(messages.individualHint),
-      icon: CursorArrowRaysIcon,
-    },
-    {
-      id: 'range' as const,
-      label: intl.formatMessage(messages.range),
-      hint: intl.formatMessage(messages.rangeHint),
-      icon: ArrowsRightLeftIcon,
-    },
-    {
-      id: 'after' as const,
-      label: intl.formatMessage(messages.after),
-      hint: intl.formatMessage(messages.afterHint),
-      icon: ForwardIcon,
-    },
-  ];
-  const selectedStart = selectionEpisodes[startIndex];
-  const selectedEnd = selectionEpisodes[endIndex];
-
   return (
     <div className="overflow-hidden rounded-xl border border-gray-700 bg-gray-950/70 shadow-2xl shadow-black/20">
-      <div className="grid gap-px border-b border-gray-700 bg-gray-700 sm:grid-cols-3">
-        {modes.map((item) => {
-          const Icon = item.icon;
-          const selected = mode === item.id;
-          return (
+      <div className="border-b border-gray-700 bg-gray-900 px-4 py-4 sm:px-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="mt-0.5 rounded-lg border border-indigo-400/30 bg-indigo-500/10 p-2 text-indigo-200">
+              <ArrowsRightLeftIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-white">
+                {intl.formatMessage(messages.title)}
+              </h3>
+              <p className="mt-1 max-w-xl text-xs leading-5 text-gray-400">
+                {hasSelection
+                  ? intl.formatMessage(
+                      awaitingEndpoint
+                        ? messages.addEndpoint
+                        : messages.rangeReady
+                    )
+                  : intl.formatMessage(messages.instruction)}
+              </p>
+            </div>
+          </div>
+          {hasSelection && (
             <button
-              key={item.id}
               type="button"
-              data-testid={`episode-selection-mode-${item.id}`}
-              onClick={() => selectMode(item.id)}
-              className={`group flex items-start gap-3 bg-gray-900 px-4 py-3 text-left transition ${
-                selected
-                  ? 'bg-indigo-500/15 text-white shadow-[inset_0_-2px_0_#818cf8]'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
-              }`}
+              onClick={clearSelection}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-gray-700 px-2.5 py-1.5 text-xs font-medium text-gray-400 transition hover:border-gray-500 hover:bg-gray-800 hover:text-white"
             >
-              <Icon
-                className={`mt-0.5 h-5 w-5 shrink-0 ${
-                  selected ? 'text-indigo-300' : 'text-gray-500'
-                }`}
-              />
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold">
-                  {item.label}
-                </span>
-                <span className="mt-0.5 hidden text-xs leading-4 text-gray-500 lg:block">
-                  {item.hint}
-                </span>
+              <XMarkIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">
+                {intl.formatMessage(messages.clear)}
               </span>
             </button>
-          );
-        })}
+          )}
+        </div>
       </div>
 
-      {mode === 'range' && selectedStart && selectedEnd && (
-        <div className="border-b border-gray-800 bg-gray-900/60 px-5 pb-4 pt-5">
-          <div className="mb-4 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+      {hasSelection && selectedStart && selectedEnd && (
+        <div className="border-b border-gray-800 bg-gray-900/55 px-4 pb-5 pt-4 sm:px-5">
+          <div className="mb-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
             <button
               type="button"
-              onClick={() => {
-                setRangeHandle('start');
-                setActiveSeason(selectedStart.seasonNumber);
-              }}
-              className={`rounded-full border px-3 py-1.5 transition ${
-                rangeHandle === 'start'
-                  ? 'border-cyan-400/60 bg-cyan-400/10 text-cyan-200'
-                  : 'border-gray-700 text-gray-400 hover:text-white'
-              }`}
+              onClick={() => setActiveSeason(selectedStart.seasonNumber)}
+              className="min-w-0 rounded-lg border border-cyan-400/30 bg-cyan-400/5 px-3 py-2 text-left transition hover:bg-cyan-400/10"
             >
-              {intl.formatMessage(
-                rangeHandle === 'start'
-                  ? messages.selectingStart
-                  : messages.start
-              )}{' '}
-              · {episodeCode(selectedStart)}
+              <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-300/80">
+                {intl.formatMessage(isRange ? messages.start : messages.single)}
+              </span>
+              <span className="mt-0.5 block truncate font-mono text-sm font-bold text-white">
+                {episodeCode(selectedStart)}
+              </span>
             </button>
-            <span className="h-px flex-1 bg-gradient-to-r from-cyan-400/50 via-indigo-400/50 to-fuchsia-400/50" />
+            <div className="flex items-center gap-1.5 text-gray-600">
+              <span className="h-px w-3 bg-gray-700 sm:w-8" />
+              <ArrowsRightLeftIcon className="h-4 w-4" />
+              <span className="h-px w-3 bg-gray-700 sm:w-8" />
+            </div>
             <button
               type="button"
-              onClick={() => {
-                setRangeHandle('end');
-                setActiveSeason(selectedEnd.seasonNumber);
-              }}
-              className={`rounded-full border px-3 py-1.5 transition ${
-                rangeHandle === 'end'
-                  ? 'border-fuchsia-400/60 bg-fuchsia-400/10 text-fuchsia-200'
-                  : 'border-gray-700 text-gray-400 hover:text-white'
+              disabled={!isRange}
+              onClick={() => setActiveSeason(selectedEnd.seasonNumber)}
+              className={`min-w-0 rounded-lg border px-3 py-2 text-right transition ${
+                isRange
+                  ? 'border-indigo-400/30 bg-indigo-400/5 hover:bg-indigo-400/10'
+                  : 'border-gray-800 bg-gray-900/40 opacity-40'
               }`}
             >
-              {intl.formatMessage(
-                rangeHandle === 'end' ? messages.selectingEnd : messages.end
-              )}{' '}
-              · {episodeCode(selectedEnd)}
+              <span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-300/80">
+                {intl.formatMessage(messages.end)}
+              </span>
+              <span className="mt-0.5 block truncate font-mono text-sm font-bold text-white">
+                {isRange ? episodeCode(selectedEnd) : '—'}
+              </span>
             </button>
           </div>
-          {selectionEpisodes.length > 1 && (
+          {selectionEpisodes.length > 1 && selectedStart.seasonNumber !== 0 && (
             <MultiRangeSlider
-              min={0}
+              min={selectionEpisodes.findIndex(
+                (episode) => episode.seasonNumber > 0
+              )}
               max={selectionEpisodes.length - 1}
-              defaultMinValue={Math.max(startIndex, 0)}
-              defaultMaxValue={Math.max(endIndex, startIndex, 0)}
+              defaultMinValue={startIndex}
+              defaultMaxValue={endIndex}
               formatValue={formatRangeValue}
               onUpdateMin={updateRangeStart}
               onUpdateMax={updateRangeEnd}
@@ -402,7 +353,7 @@ const EpisodeSelector = ({
         </div>
       )}
 
-      <div className="border-b border-gray-800 bg-gray-900/30 px-4 py-3">
+      <div className="border-b border-gray-800 bg-gray-900/25 px-4 py-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
           {intl.formatMessage(messages.seasons)}
         </div>
@@ -447,9 +398,8 @@ const EpisodeSelector = ({
               (item) => item.tvdbId === episode.tvdbId
             );
             const isStart = episode.tvdbId === startId;
-            const isEnd = mode === 'range' && episode.tvdbId === endId;
-            const inRange =
-              mode === 'range' && index >= startIndex && index <= endIndex;
+            const isEnd = isRange && episode.tvdbId === endId;
+            const inRange = isRange && index >= startIndex && index <= endIndex;
             const selected = isStart || isEnd || inRange;
             return (
               <button
@@ -459,14 +409,14 @@ const EpisodeSelector = ({
                 onClick={() => selectEpisode(episode)}
                 aria-pressed={selected}
                 className={`relative min-h-20 overflow-hidden rounded-lg border p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-400 ${
-                  isStart && isEnd
-                    ? 'border-indigo-300 bg-indigo-500/25 text-white'
+                  isStart && !isRange
+                    ? 'border-cyan-300 bg-cyan-400/15 text-white shadow-[inset_3px_0_0_#67e8f9]'
                     : isStart
                       ? 'border-cyan-400/70 bg-cyan-400/10 text-white'
                       : isEnd
-                        ? 'border-fuchsia-400/70 bg-fuchsia-400/10 text-white'
+                        ? 'border-indigo-400/70 bg-indigo-400/10 text-white'
                         : inRange
-                          ? 'border-indigo-500/40 bg-indigo-500/10 text-gray-100'
+                          ? 'border-indigo-500/35 bg-indigo-500/10 text-gray-100'
                           : 'border-gray-700 bg-gray-900/80 text-gray-300 hover:border-gray-500 hover:bg-gray-800'
                 }`}
               >
@@ -477,7 +427,11 @@ const EpisodeSelector = ({
                   {(isStart || isEnd) && (
                     <span className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
                       {intl.formatMessage(
-                        isStart ? messages.start : messages.end
+                        !isRange
+                          ? messages.single
+                          : isStart
+                            ? messages.start
+                            : messages.end
                       )}
                     </span>
                   )}
@@ -503,28 +457,29 @@ const EpisodeSelector = ({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-gray-700 bg-gray-900/80 px-4 py-3 text-sm text-gray-300">
-        {resolved.length > 0 && (
-          <span className="font-mono text-xs font-semibold text-white">
-            {episodeCode(resolved[0])}
-            {mode === 'range' && resolved.length > 1
-              ? ` → ${episodeCode(resolved[resolved.length - 1])}`
-              : mode === 'after'
-                ? ' → ∞'
-                : ''}
-          </span>
-        )}
-        <Badge badgeType={resolved.length ? 'primary' : 'danger'}>
-          {intl.formatMessage(messages.summary, {
-            episodeCount: resolved.length,
-            seasonCount: new Set(
-              resolved.map((episode) => episode.seasonNumber)
-            ).size,
-          })}
-        </Badge>
-        {mode === 'after' && (
-          <span className="text-xs text-indigo-200">
-            {intl.formatMessage(messages.ongoing)}
+      <div className="flex min-h-12 flex-wrap items-center gap-2 border-t border-gray-700 bg-gray-900/80 px-4 py-3 text-sm text-gray-300">
+        {hasSelection ? (
+          <>
+            <Badge badgeType="primary">
+              {intl.formatMessage(isRange ? messages.range : messages.single)}
+            </Badge>
+            <span className="font-mono text-xs font-semibold text-white">
+              {episodeCode(selectedStart)}
+              {isRange ? ` → ${episodeCode(selectedEnd)}` : ''}
+            </span>
+            <span className="text-xs text-gray-500">·</span>
+            <span className="text-xs text-gray-400">
+              {intl.formatMessage(messages.summary, {
+                episodeCount: resolved.length,
+                seasonCount: new Set(
+                  resolved.map((episode) => episode.seasonNumber)
+                ).size,
+              })}
+            </span>
+          </>
+        ) : (
+          <span className="text-xs text-gray-500">
+            {intl.formatMessage(messages.instruction)}
           </span>
         )}
       </div>

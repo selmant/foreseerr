@@ -193,7 +193,8 @@ describe('TVDB Integration', () => {
       .click();
     cy.contains('Request Episodes…').click();
     cy.wait('@episodeCatalog');
-    cy.get('[data-testid="episode-selection-mode-range"]').click();
+    cy.get('[data-testid="episode-selection-episode-101"]').click();
+    cy.contains('button', 'Request 1 Episode').should('be.enabled');
     cy.get('[data-testid="episode-selection-season-2"]').click();
     cy.get('[data-testid="episode-selection-episode-201"]').click();
     cy.contains('button', 'Request 3 Episodes').click();
