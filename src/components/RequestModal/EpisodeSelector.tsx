@@ -1,10 +1,6 @@
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
-import {
-  CheckIcon,
-  ChevronRightIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
+import { CheckIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
 import { useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -25,8 +21,7 @@ interface EpisodeCatalog {
 
 const messages = defineMessages('components.RequestModal.EpisodeSelector', {
   title: 'Choose episodes',
-  instruction:
-    'Choose where the request starts. It can stop at one episode, end later, or stay open for new episodes.',
+  instruction: 'Select an episode to request.',
   loading: 'Loading the TVDB episode timeline…',
   unavailable: 'The TVDB episode catalog could not be loaded.',
   empty: 'No requestable episodes were found.',
@@ -34,28 +29,22 @@ const messages = defineMessages('components.RequestModal.EpisodeSelector', {
   specials: 'Specials',
   season: 'Season {seasonNumber}',
   episode: 'Episode {episodeNumber}',
-  first: 'First episode',
-  last: 'Through',
+  first: 'First',
+  last: 'Last',
   selected: 'Selected',
   chooseFirst: 'Choose an episode',
-  chooseLast: 'This episode only',
-  editFirst: 'Change the first episode',
-  editLast: 'Choose an ending',
-  clear: 'Clear selection',
-  removeLast: 'Request only {episodeCode}',
+  clear: 'Change selection',
+  extend: 'Add more episodes',
+  extendHint: 'Choose the last episode to include',
+  extendFrom: 'Starting with {episodeCode}',
+  cancelExtend: 'Cancel',
   singleSummary: '1 episode selected',
   rangeSummary:
     '{episodeCount} episodes selected across {seasonCount, plural, one {# season} other {# seasons}}',
   selectedInSeason: '{selectedCount} selected',
   specialsSingle: 'Specials can be requested one at a time.',
   episodeLabel: '{episodeCode}: {title}',
-  ongoing: 'No end',
-  chooseOngoing: 'Choose',
-  ongoingDetail: 'New episodes included',
-  ongoingOption: 'Keep this request open',
-  ongoingDescription:
-    'Include every episode from {episodeCode} and add new episodes automatically.',
-  ongoingQuota: 'Episodes added later do not use more quota.',
+  ongoing: 'Include future episodes',
   ongoingSummary:
     '{episodeCount} available now across {seasonCount, plural, one {# season} other {# seasons}} · new episodes included',
 });
@@ -64,8 +53,6 @@ const episodeCode = (episode: EpisodeCatalogItem) =>
   `S${String(episode.seasonNumber).padStart(2, '0')}E${String(
     episode.episodeNumber
   ).padStart(2, '0')}`;
-
-type ActiveBoundary = 'start' | 'end';
 
 interface EpisodeSelectorProps {
   tmdbId: number;
@@ -100,10 +87,10 @@ const EpisodeSelector = ({
         : undefined
   );
   const [activeSeason, setActiveSeason] = useState<number | undefined>();
-  const [activeBoundary, setActiveBoundary] = useState<ActiveBoundary>('start');
   const [isOngoing, setIsOngoing] = useState(
     initialSelection?.type === 'after'
   );
+  const [isExtending, setIsExtending] = useState(false);
 
   const selectionEpisodes = useMemo(
     () =>
@@ -160,7 +147,6 @@ const EpisodeSelector = ({
             ?.seasonNumber ??
           selectionEpisodes[0].seasonNumber
       );
-      setActiveBoundary(initialStartId ? 'end' : 'start');
     }
 
     if (initialSelection?.type === 'after' && startIndex >= 0 && endIndex < 0) {
@@ -169,7 +155,6 @@ const EpisodeSelector = ({
       );
       if (lastRegularEpisode) {
         setEndId(lastRegularEpisode.tvdbId);
-        setActiveBoundary('end');
       }
     }
   }, [
@@ -218,6 +203,7 @@ const EpisodeSelector = ({
     );
 
     if (
+      !isExtending ||
       !hasSelection ||
       episode.seasonNumber === 0 ||
       selectedStart.seasonNumber === 0
@@ -225,22 +211,7 @@ const EpisodeSelector = ({
       setStartId(episode.tvdbId);
       setEndId(episode.tvdbId);
       setIsOngoing(false);
-      setActiveBoundary(episode.seasonNumber === 0 ? 'start' : 'end');
-      return;
-    }
-
-    if (activeBoundary === 'start') {
-      if (isOngoing) {
-        setStartId(episode.tvdbId);
-        return;
-      }
-      if (clickedIndex <= endIndex) {
-        setStartId(episode.tvdbId);
-      } else {
-        setStartId(selectedEnd.tvdbId);
-        setEndId(episode.tvdbId);
-        setActiveBoundary('end');
-      }
+      setIsExtending(false);
       return;
     }
 
@@ -251,31 +222,14 @@ const EpisodeSelector = ({
       setStartId(episode.tvdbId);
       setEndId(selectedStart.tvdbId);
     }
-  };
-
-  const chooseBoundary = (boundary: ActiveBoundary) => {
-    setActiveBoundary(boundary);
-    const episode = boundary === 'start' ? selectedStart : selectedEnd;
-    if (episode) {
-      setActiveSeason(episode.seasonNumber);
-    }
+    setIsExtending(false);
   };
 
   const clearSelection = () => {
     setStartId(undefined);
     setEndId(undefined);
     setIsOngoing(false);
-    setActiveBoundary('start');
-  };
-
-  const collapseToSingle = () => {
-    if (!selectedStart) {
-      return;
-    }
-    setEndId(selectedStart.tvdbId);
-    setIsOngoing(false);
-    setActiveBoundary('end');
-    setActiveSeason(selectedStart.seasonNumber);
+    setIsExtending(false);
   };
 
   const selectOngoing = () => {
@@ -290,7 +244,7 @@ const EpisodeSelector = ({
     }
     setEndId(lastRegularEpisode.tvdbId);
     setIsOngoing(true);
-    setActiveBoundary('end');
+    setIsExtending(false);
   };
 
   if (error) {
@@ -327,7 +281,7 @@ const EpisodeSelector = ({
               {intl.formatMessage(messages.instruction)}
             </p>
           </div>
-          {hasSelection && (
+          {hasSelection && !isExtending && (
             <button
               type="button"
               onClick={clearSelection}
@@ -339,107 +293,90 @@ const EpisodeSelector = ({
           )}
         </div>
 
-        <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-2 sm:gap-3">
-          <button
-            type="button"
-            data-testid="episode-selection-boundary-start"
-            aria-pressed={activeBoundary === 'start'}
-            onClick={() => chooseBoundary('start')}
-            className={`min-w-0 rounded-lg border px-3 py-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
-              activeBoundary === 'start'
-                ? 'border-indigo-400 bg-indigo-500/15 shadow-sm shadow-indigo-950/50'
-                : 'border-gray-700 bg-gray-800/70 hover:border-gray-500'
-            }`}
-          >
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
-              {intl.formatMessage(messages.first)}
-            </span>
-            <span className="mt-0.5 block truncate text-sm font-semibold text-white">
-              {selectedStart
-                ? episodeCode(selectedStart)
-                : intl.formatMessage(messages.chooseFirst)}
-            </span>
-            <span className="mt-0.5 hidden truncate text-xs text-gray-400 sm:block">
-              {selectedStart?.title || intl.formatMessage(messages.editFirst)}
-            </span>
-          </button>
-
-          <div className="flex items-center text-gray-600" aria-hidden="true">
-            <span className="hidden h-px w-3 bg-gray-600 sm:block" />
-            <ChevronRightIcon className="h-4 w-4" />
-            <span className="hidden h-px w-3 bg-gray-600 sm:block" />
-          </div>
-
-          <button
-            type="button"
-            data-testid="episode-selection-boundary-end"
-            aria-pressed={activeBoundary === 'end'}
-            disabled={!hasSelection || selectedStart?.seasonNumber === 0}
-            onClick={() => chooseBoundary('end')}
-            className={`group min-w-0 rounded-lg border px-3 py-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-45 ${
-              activeBoundary === 'end' && selectedStart?.seasonNumber !== 0
-                ? 'border-indigo-400 bg-indigo-500/15 shadow-sm shadow-indigo-950/50'
-                : 'border-gray-700 bg-gray-800/70 hover:border-gray-500'
-            }`}
-          >
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-400">
-              {intl.formatMessage(messages.last)}
-            </span>
-            <span className="mt-0.5 block truncate text-sm font-semibold text-white">
-              {isOngoing
-                ? intl.formatMessage(messages.ongoing)
-                : isRange && selectedEnd
-                  ? episodeCode(selectedEnd)
-                  : intl.formatMessage(messages.chooseLast)}
-            </span>
-            <span className="mt-0.5 hidden truncate text-xs text-gray-400 sm:block">
-              {isOngoing
-                ? intl.formatMessage(messages.ongoingDetail)
-                : isRange && selectedEnd
-                  ? selectedEnd.title
-                  : intl.formatMessage(messages.editLast)}
-            </span>
-          </button>
-        </div>
-
-        <div
-          className="mt-3 flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
-          aria-live="polite"
-        >
-          <span className="font-medium text-gray-200">
-            {hasSelection
-              ? intl.formatMessage(
-                  isOngoing
-                    ? messages.ongoingSummary
-                    : isRange
-                      ? messages.rangeSummary
-                      : messages.singleSummary,
-                  {
-                    episodeCount: resolved.length,
-                    seasonCount: new Set(
-                      resolved.map((episode) => episode.seasonNumber)
-                    ).size,
-                  }
-                )
-              : intl.formatMessage(messages.chooseFirst)}
-          </span>
-          {(isRange || isOngoing) && selectedStart && (
+        {isExtending && selectedStart ? (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-indigo-400/50 bg-indigo-500/10 px-3 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white">
+                {intl.formatMessage(messages.extendHint)}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-indigo-200">
+                {intl.formatMessage(messages.extendFrom, {
+                  episodeCode: episodeCode(selectedStart),
+                })}
+              </p>
+            </div>
             <button
               type="button"
-              onClick={collapseToSingle}
-              className="font-medium text-indigo-300 underline decoration-indigo-400/40 underline-offset-2 hover:text-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              onClick={() => setIsExtending(false)}
+              className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {intl.formatMessage(messages.removeLast, {
-                episodeCode: episodeCode(selectedStart),
-              })}
+              {intl.formatMessage(messages.cancelExtend)}
             </button>
-          )}
-          {selectedStart?.seasonNumber === 0 && (
-            <span className="text-gray-500">
-              {intl.formatMessage(messages.specialsSingle)}
-            </span>
-          )}
-        </div>
+          </div>
+        ) : hasSelection && selectedStart ? (
+          <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/70 p-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-white">
+                <CheckIcon className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1" aria-live="polite">
+                <p className="text-sm font-semibold text-white">
+                  {intl.formatMessage(
+                    isOngoing
+                      ? messages.ongoingSummary
+                      : isRange
+                        ? messages.rangeSummary
+                        : messages.singleSummary,
+                    {
+                      episodeCount: resolved.length,
+                      seasonCount: new Set(
+                        resolved.map((episode) => episode.seasonNumber)
+                      ).size,
+                    }
+                  )}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-gray-400">
+                  {isRange && selectedEnd
+                    ? `${episodeCode(selectedStart)} – ${episodeCode(
+                        selectedEnd
+                      )}`
+                    : episodeCode(selectedStart)}
+                </p>
+              </div>
+            </div>
+
+            {!isRange && !isOngoing && selectedStart.seasonNumber > 0 && (
+              <div className="mt-3 grid gap-2 border-t border-gray-700 pt-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  data-testid="episode-selection-extend"
+                  onClick={() => setIsExtending(true)}
+                  className="flex items-center justify-center gap-2 rounded-md bg-gray-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  {intl.formatMessage(messages.extend)}
+                </button>
+                <button
+                  type="button"
+                  data-testid="episode-selection-ongoing"
+                  onClick={selectOngoing}
+                  className="rounded-md bg-gray-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {intl.formatMessage(messages.ongoing)}
+                </button>
+              </div>
+            )}
+            {selectedStart.seasonNumber === 0 && (
+              <p className="mt-2 text-xs text-gray-500">
+                {intl.formatMessage(messages.specialsSingle)}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm font-medium text-gray-300">
+            {intl.formatMessage(messages.chooseFirst)}
+          </p>
+        )}
       </div>
 
       <div className="border-b border-gray-700 bg-gray-900/50 px-3 py-3 sm:px-4">
@@ -493,52 +430,6 @@ const EpisodeSelector = ({
       </div>
 
       <div className="max-h-[22rem] overflow-y-auto p-2 sm:p-3">
-        {hasSelection && selectedStart.seasonNumber > 0 && (
-          <button
-            type="button"
-            data-testid="episode-selection-ongoing"
-            aria-pressed={isOngoing}
-            onClick={selectOngoing}
-            className={`mb-2 flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 focus:ring-offset-gray-900 ${
-              isOngoing
-                ? 'border-indigo-400 bg-indigo-500/15 text-white'
-                : 'border-gray-700 bg-gray-800/60 text-gray-200 hover:border-gray-500 hover:bg-gray-800'
-            }`}
-          >
-            <span
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl leading-none ${
-                isOngoing
-                  ? 'bg-indigo-500 text-white'
-                  : 'bg-gray-700 text-indigo-300'
-              }`}
-              aria-hidden="true"
-            >
-              ∞
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold">
-                {intl.formatMessage(messages.ongoingOption)}
-              </span>
-              <span className="mt-0.5 block text-xs leading-5 text-gray-400">
-                {intl.formatMessage(messages.ongoingDescription, {
-                  episodeCode: episodeCode(selectedStart),
-                })}{' '}
-                {intl.formatMessage(messages.ongoingQuota)}
-              </span>
-            </span>
-            <span
-              className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
-                isOngoing
-                  ? 'bg-indigo-400/20 text-indigo-100'
-                  : 'bg-gray-700 text-gray-400'
-              }`}
-            >
-              {intl.formatMessage(
-                isOngoing ? messages.ongoing : messages.chooseOngoing
-              )}
-            </span>
-          </button>
-        )}
         <div
           className="space-y-1"
           role="group"

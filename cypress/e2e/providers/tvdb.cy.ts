@@ -151,6 +151,8 @@ describe('TVDB Integration', () => {
       delete req.headers['if-none-match'];
       req.continue((res) => {
         res.body.externalIds.tvdbId = 999;
+        res.body.mediaInfo = undefined;
+        res.body.episodeRequestsEnabled = true;
       });
     });
     cy.intercept('GET', '/api/v1/tv/225634/episodes', {
@@ -197,31 +199,19 @@ describe('TVDB Integration', () => {
     cy.contains('Request Episodes…').click();
     cy.wait('@episodeCatalog');
     cy.get('[data-testid="episode-selection-episode-101"]').click();
-    cy.get('[data-testid="episode-selection-boundary-start"]').should(
-      'contain',
-      'S01E01'
-    );
-    cy.get('[data-testid="episode-selection-boundary-end"]')
-      .should('have.attr', 'aria-pressed', 'true')
-      .and('contain', 'This episode only');
     cy.contains('1 episode selected').should('be.visible');
     cy.contains('button', 'Request 1 Episode').should('be.enabled');
+    cy.get('[data-testid="episode-selection-extend"]').click();
+    cy.contains('Choose the last episode to include').should('be.visible');
     cy.get('[data-testid="episode-selection-season-2"]').click();
     cy.get('[data-testid="episode-selection-episode-201"]').click();
-    cy.get('[data-testid="episode-selection-boundary-end"]').should(
-      'contain',
-      'S02E01'
-    );
     cy.contains('3 episodes selected across 2 seasons').should('be.visible');
-    cy.get('[data-testid="episode-selection-boundary-start"]').click();
-    cy.get('[data-testid="episode-selection-boundary-start"]')
-      .should('have.attr', 'aria-pressed', 'true')
-      .and('contain', 'S01E01');
+    cy.get('button[aria-label="Change selection"]').click();
+    cy.get('[data-testid="episode-selection-season-1"]').click();
     cy.get('[data-testid="episode-selection-episode-102"]').click();
-    cy.get('[data-testid="episode-selection-boundary-start"]').should(
-      'contain',
-      'S01E02'
-    );
+    cy.get('[data-testid="episode-selection-extend"]').click();
+    cy.get('[data-testid="episode-selection-season-2"]').click();
+    cy.get('[data-testid="episode-selection-episode-201"]').click();
     cy.contains('2 episodes selected across 2 seasons').should('be.visible');
     cy.contains('button', 'Request 2 Episodes').click();
     cy.wait('@episodeRequest');
@@ -232,6 +222,8 @@ describe('TVDB Integration', () => {
       delete req.headers['if-none-match'];
       req.continue((res) => {
         res.body.externalIds.tvdbId = 999;
+        res.body.mediaInfo = undefined;
+        res.body.episodeRequestsEnabled = true;
       });
     });
     cy.intercept('GET', '/api/v1/tv/225634/episodes', {
@@ -279,11 +271,7 @@ describe('TVDB Integration', () => {
     cy.get('[data-testid="episode-selection-episode-102"]').click();
     cy.get('[data-testid="episode-selection-ongoing"]')
       .should('be.visible')
-      .click()
-      .should('have.attr', 'aria-pressed', 'true');
-    cy.get('[data-testid="episode-selection-boundary-end"]')
-      .should('contain', 'No end')
-      .and('contain', 'New episodes included');
+      .click();
     cy.contains(
       '2 available now across 2 seasons · new episodes included'
     ).should('be.visible');
