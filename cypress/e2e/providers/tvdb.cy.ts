@@ -193,9 +193,65 @@ describe('TVDB Integration', () => {
       .click();
     cy.contains('Request Episodes…').click();
     cy.wait('@episodeCatalog');
-    cy.contains('button', 'Episode range').click();
-    cy.contains('label', 'Ending episode').find('select').select('201');
+    cy.get('[data-testid="episode-selection-mode-range"]').click();
+    cy.get('[data-testid="episode-selection-season-2"]').click();
+    cy.get('[data-testid="episode-selection-episode-201"]').click();
     cy.contains('button', 'Request 3 Episodes').click();
     cy.wait('@episodeRequest');
+  });
+
+  it('offers episode requests from discover cards', () => {
+    cy.intercept('/api/v1/discover/tv*').as('getPopularTv');
+    cy.visit(ROUTES.home);
+    cy.wait('@getPopularTv');
+
+    cy.contains('.slider-header', 'Popular Series')
+      .next('[data-testid="media-slider"]')
+      .find('[data-testid="title-card"]')
+      .first()
+      .trigger('mouseover')
+      .then(($card) => {
+        const menuButton = $card.find(
+          'button[aria-label="More request options"]'
+        );
+        if (menuButton.length) {
+          cy.wrap(menuButton).click();
+          cy.get('[data-testid="title-card-request-episodes"]').should(
+            'be.visible'
+          );
+        } else {
+          cy.wrap($card)
+            .find('[data-testid="title-card-request-episodes"]')
+            .should('be.visible');
+        }
+      });
+  });
+
+  it('quick-requests one episode from the detail episode list', () => {
+    cy.intercept('GET', '/api/v1/tv/225634/season/1').as('season1');
+    cy.visit(ROUTES.monsterTvShow);
+    cy.contains(SELECTORS.season1).scrollIntoView().click();
+
+    cy.wait('@season1').then(({ response }) => {
+      const episode = response?.body.episodes[0];
+      expect(episode?.id).to.be.a('number');
+      cy.intercept('POST', '/api/v1/request', (req) => {
+        expect(req.body.episodeSelection).to.deep.equal({
+          type: 'single',
+          episodeTvdbId: episode.id,
+        });
+        req.reply({
+          statusCode: 201,
+          body: { media: { status: 2 } },
+        });
+      }).as('singleEpisodeRequest');
+
+      cy.get(`[data-testid="episode-quick-request-${episode.id}"]`).click();
+      cy.wait('@singleEpisodeRequest');
+      cy.get(`[data-testid="episode-quick-request-${episode.id}"]`).should(
+        'contain',
+        'Requested'
+      );
+    });
   });
 });

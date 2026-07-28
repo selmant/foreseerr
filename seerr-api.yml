@@ -296,6 +296,10 @@ components:
         partialRequestsEnabled:
           type: boolean
           example: false
+        episodeRequestsEnabled:
+          type: boolean
+          description: Whether TVDB-backed episode requests are available.
+          example: false
         localLogin:
           type: boolean
           example: true

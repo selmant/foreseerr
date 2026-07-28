@@ -9,6 +9,7 @@ type MultiRangeSliderProps = {
   defaultMinValue?: number;
   defaultMaxValue?: number;
   subText?: string;
+  formatValue?: (value: number) => string;
   onUpdateMin: (min: number) => void;
   onUpdateMax: (max: number) => void;
 };
@@ -28,6 +29,7 @@ const MultiRangeSlider = ({
   defaultMinValue,
   defaultMaxValue,
   subText,
+  formatValue,
   onUpdateMin,
   onUpdateMax,
 }: MultiRangeSliderProps) => {
@@ -63,7 +65,7 @@ const MultiRangeSlider = ({
   return (
     <div className={`relative ${subText ? 'h-8' : 'h-4'} w-full`}>
       <Tooltip
-        content={formatSliderValue(valueMin, step)}
+        content={formatValue?.(valueMin) ?? formatSliderValue(valueMin, step)}
         tooltipConfig={{
           placement: 'top',
         }}
@@ -87,7 +89,9 @@ const MultiRangeSlider = ({
           }}
         />
       </Tooltip>
-      <Tooltip content={formatSliderValue(valueMax, step)}>
+      <Tooltip
+        content={formatValue?.(valueMax) ?? formatSliderValue(valueMax, step)}
+      >
         <input
           type="range"
           min={min}

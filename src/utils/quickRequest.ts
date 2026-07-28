@@ -1,4 +1,5 @@
 import type { MediaRequest } from '@server/entity/MediaRequest';
+import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
 import axios from 'axios';
 import { mutate } from 'swr';
 
@@ -12,6 +13,13 @@ export type QuickTvRequestOptions = {
 export type QuickMovieRequestOptions = {
   tmdbId: number;
   is4k?: boolean;
+};
+
+export type QuickEpisodeRequestOptions = {
+  tmdbId: number;
+  selection: EpisodeSelection;
+  is4k?: boolean;
+  tvdbId?: number;
 };
 
 const refreshRequestCaches = () => {
@@ -50,6 +58,27 @@ export const quickRequestTvSeasons = async ({
     mediaType: 'tv',
     is4k,
     seasons,
+    ...(tvdbId != null ? { tvdbId } : {}),
+  });
+
+  refreshRequestCaches();
+  return response.data;
+};
+
+/**
+ * Instant episode request (no modal). Server resolves and validates TVDB IDs.
+ */
+export const quickRequestTvEpisodes = async ({
+  tmdbId,
+  selection,
+  is4k = false,
+  tvdbId,
+}: QuickEpisodeRequestOptions): Promise<MediaRequest> => {
+  const response = await axios.post<MediaRequest>('/api/v1/request', {
+    mediaId: tmdbId,
+    mediaType: 'tv',
+    is4k,
+    episodeSelection: selection,
     ...(tvdbId != null ? { tvdbId } : {}),
   });
 

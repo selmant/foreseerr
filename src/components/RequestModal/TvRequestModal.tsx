@@ -69,6 +69,7 @@ interface RequestModalProps extends React.HTMLAttributes<HTMLDivElement> {
   /** When `all`, pre-check every requestable season once details load. */
   initialSeasonSelection?: 'none' | 'all';
   initialRequestScope?: 'seasons' | 'episodes';
+  initialEpisodeSelection?: EpisodeSelection;
   editRequest?: NonFunctionProperties<MediaRequest>;
 }
 
@@ -81,6 +82,7 @@ const TvRequestModal = ({
   is4k = false,
   initialSeasonSelection = 'none',
   initialRequestScope = 'seasons',
+  initialEpisodeSelection: requestedInitialEpisodeSelection,
 }: RequestModalProps) => {
   const settings = useSettings();
   const { addToast } = useToasts();
@@ -96,7 +98,7 @@ const TvRequestModal = ({
   const [requestScope, setRequestScope] = useState<'seasons' | 'episodes'>(
     editRequest?.episodeSelectionType ? 'episodes' : initialRequestScope
   );
-  const initialEpisodeSelection = useMemo<EpisodeSelection | undefined>(() => {
+  const editEpisodeSelection = useMemo<EpisodeSelection | undefined>(() => {
     if (!editRequest?.episodeSelectionType || !editRequest.episodeStartTvdbId) {
       return undefined;
     }
@@ -123,7 +125,7 @@ const TvRequestModal = ({
   }, [editRequest]);
   const [episodeSelection, setEpisodeSelection] = useState<
     EpisodeSelection | undefined
-  >(initialEpisodeSelection);
+  >(editEpisodeSelection ?? requestedInitialEpisodeSelection);
   const [episodeCount, setEpisodeCount] = useState(
     editRequest?.episodes?.length ?? 0
   );
@@ -146,6 +148,13 @@ const TvRequestModal = ({
       ? `/api/v1/user/${requestOverrides?.user?.id ?? user.id}/quota`
       : null
   );
+
+  useEffect(() => {
+    if (data && !data.episodeRequestsEnabled && requestScope === 'episodes') {
+      setRequestScope('seasons');
+      setEpisodeSelection(undefined);
+    }
+  }, [data, requestScope]);
 
   const selectionQuotaUnits =
     requestScope === 'episodes' ? episodeSeasonCount : selectedSeasons.length;
@@ -870,7 +879,9 @@ const TvRequestModal = ({
       ) : (
         <EpisodeSelector
           tmdbId={tmdbId}
-          initialSelection={initialEpisodeSelection}
+          initialSelection={
+            editEpisodeSelection ?? requestedInitialEpisodeSelection
+          }
           onChange={onEpisodeSelectionChange}
         />
       )}

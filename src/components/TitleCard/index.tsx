@@ -26,6 +26,7 @@ import {
   EyeIcon,
   EyeSlashIcon,
   MinusCircleIcon,
+  QueueListIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
 import { ChevronDownIcon } from '@heroicons/react/24/solid';
@@ -67,6 +68,8 @@ const messages = defineMessages('components.TitleCard', {
   requestseason1: 'Season 1',
   requestall: 'Request All',
   selectseasons: 'Select Seasons…',
+  requestepisodes: 'Episodes…',
+  seasons: 'Seasons',
   season1Success: 'Season 1 requested successfully!',
   season1Error: 'Could not request season 1. Opening the full request form.',
   requestAllSuccess: 'All seasons requested successfully!',
@@ -118,6 +121,9 @@ const TitleCard = ({
   const [initialSeasonSelection, setInitialSeasonSelection] = useState<
     'none' | 'all'
   >('none');
+  const [initialRequestScope, setInitialRequestScope] = useState<
+    'seasons' | 'episodes'
+  >('seasons');
   const [showTvMenu, setShowTvMenu] = useState(false);
   const [tvMenuPos, setTvMenuPos] = useState<{
     top: number;
@@ -145,11 +151,16 @@ const TitleCard = ({
     setCurrentStatus(newStatus);
     setShowRequestModal(false);
     setInitialSeasonSelection('none');
+    setInitialRequestScope('seasons');
   }, []);
 
-  const openTvRequestModal = (selection: 'none' | 'all' = 'none') => {
+  const openTvRequestModal = (
+    selection: 'none' | 'all' = 'none',
+    scope: 'seasons' | 'episodes' = 'seasons'
+  ) => {
     setShowTvMenu(false);
     setInitialSeasonSelection(selection);
+    setInitialRequestScope(scope);
     setShowRequestModal(true);
   };
 
@@ -474,6 +485,7 @@ const TitleCard = ({
   const closeModal = useCallback(() => {
     setShowRequestModal(false);
     setInitialSeasonSelection('none');
+    setInitialRequestScope('seasons');
   }, []);
 
   const showRequestButton = hasPermission(
@@ -509,6 +521,7 @@ const TitleCard = ({
         initialSeasonSelection={
           mediaType === 'tv' ? initialSeasonSelection : 'none'
         }
+        initialRequestScope={initialRequestScope}
         onComplete={requestComplete}
         onUpdating={requestUpdating}
         onCancel={closeModal}
@@ -850,9 +863,59 @@ const TitleCard = ({
                               <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
                               {intl.formatMessage(messages.selectseasons)}
                             </button>
+                            {settings.currentSettings
+                              .episodeRequestsEnabled && (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                data-testid="title-card-request-episodes"
+                                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  window.setTimeout(
+                                    () =>
+                                      openTvRequestModal('none', 'episodes'),
+                                    0
+                                  );
+                                }}
+                              >
+                                <QueueListIcon className="mr-2 h-4 w-4" />
+                                {intl.formatMessage(messages.requestepisodes)}
+                              </button>
+                            )}
                           </div>,
                           document.body
                         )}
+                    </div>
+                  ) : mediaType === 'tv' &&
+                    settings.currentSettings.episodeRequestsEnabled ? (
+                    <div className="relative z-40 flex w-full overflow-hidden rounded-md border border-indigo-500 bg-indigo-600/80">
+                      <button
+                        type="button"
+                        className="flex h-7 flex-1 items-center justify-center px-2 text-xs font-medium text-white transition hover:bg-indigo-600"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openTvRequestModal('none', 'seasons');
+                        }}
+                      >
+                        <ArrowDownTrayIcon className="mr-1 h-4 w-4" />
+                        {intl.formatMessage(messages.seasons)}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="title-card-request-episodes"
+                        className="flex h-7 flex-1 items-center justify-center border-l border-indigo-400 px-2 text-xs font-medium text-white transition hover:bg-indigo-600"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openTvRequestModal('none', 'episodes');
+                        }}
+                      >
+                        <QueueListIcon className="mr-1 h-4 w-4" />
+                        {intl.formatMessage(messages.requestepisodes)}
+                      </button>
                     </div>
                   ) : mediaType === 'tv' ? (
                     <Button

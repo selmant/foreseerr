@@ -5,6 +5,7 @@ import { Transition } from '@headlessui/react';
 import type { MediaStatus } from '@server/constants/media';
 import type { MediaRequest } from '@server/entity/MediaRequest';
 import type { NonFunctionProperties } from '@server/interfaces/api/common';
+import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
 
 interface RequestModalProps {
   show: boolean;
@@ -14,6 +15,7 @@ interface RequestModalProps {
   /** Pre-select seasons when opening the TV modal (e.g. request-all from split button). */
   initialSeasonSelection?: 'none' | 'all';
   initialRequestScope?: 'seasons' | 'episodes';
+  initialEpisodeSelection?: EpisodeSelection;
   editRequest?: NonFunctionProperties<MediaRequest>;
   onComplete?: (newStatus: MediaStatus) => void;
   onCancel?: () => void;
@@ -27,6 +29,7 @@ const RequestModal = ({
   is4k,
   initialSeasonSelection = 'none',
   initialRequestScope = 'seasons',
+  initialEpisodeSelection,
   editRequest,
   onComplete,
   onUpdating,
@@ -54,7 +57,7 @@ const RequestModal = ({
         />
       ) : type === 'tv' ? (
         <TvRequestModal
-          key={`${tmdbId}-${is4k ? '4k' : 'hd'}-${initialSeasonSelection}-${initialRequestScope}`}
+          key={`${tmdbId}-${is4k ? '4k' : 'hd'}-${initialSeasonSelection}-${initialRequestScope}-${JSON.stringify(initialEpisodeSelection)}`}
           onComplete={onComplete}
           onCancel={onCancel}
           tmdbId={tmdbId}
@@ -62,6 +65,7 @@ const RequestModal = ({
           is4k={is4k}
           initialSeasonSelection={initialSeasonSelection}
           initialRequestScope={initialRequestScope}
+          initialEpisodeSelection={initialEpisodeSelection}
           editRequest={editRequest}
         />
       ) : (

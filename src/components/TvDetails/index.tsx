@@ -1088,6 +1088,30 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                             <Season
                               tvId={data.id}
                               seasonNumber={season.seasonNumber}
+                              episodeRequestsEnabled={
+                                data.episodeRequestsEnabled
+                              }
+                              requestedEpisodeIds={(
+                                data.mediaInfo?.requests ?? []
+                              )
+                                .filter(
+                                  (mediaRequest) =>
+                                    !mediaRequest.is4k &&
+                                    mediaRequest.status !==
+                                      MediaRequestStatus.DECLINED
+                                )
+                                .flatMap((mediaRequest) =>
+                                  (mediaRequest.episodes ?? [])
+                                    .filter(
+                                      (episodeRequest) =>
+                                        episodeRequest.seasonNumber ===
+                                        season.seasonNumber
+                                    )
+                                    .map(
+                                      (episodeRequest) => episodeRequest.tvdbId
+                                    )
+                                )}
+                              onRequestComplete={() => void revalidate()}
                             />
                           </Disclosure.Panel>
                         </Transition>

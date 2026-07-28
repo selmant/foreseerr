@@ -230,6 +230,7 @@ interface FullPublicSettings extends PublicSettings {
   jellyfinForgotPasswordUrl?: string;
   jellyfinServerName?: string;
   partialRequestsEnabled: boolean;
+  episodeRequestsEnabled: boolean;
   enableSpecialEpisodes: boolean;
   cacheImages: boolean;
   vapidPublic: string;
@@ -843,6 +844,9 @@ class Settings {
       originalLanguage: this.data.main.originalLanguage,
       mediaServerType: this.main.mediaServerType,
       partialRequestsEnabled: this.data.main.partialRequestsEnabled,
+      episodeRequestsEnabled:
+        this.data.main.partialRequestsEnabled &&
+        this.data.metadataSettings.tv === MetadataProviderType.TVDB,
       enableSpecialEpisodes: this.data.main.enableSpecialEpisodes,
       cacheImages: this.data.main.cacheImages,
       vapidPublic: this.vapidPublic,
