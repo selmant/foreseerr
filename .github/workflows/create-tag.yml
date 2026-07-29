@@ -15,7 +15,7 @@ concurrency:
 jobs:
   determine-tag-version:
     name: Determine tag version
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -45,7 +45,7 @@ jobs:
 
   create-tag:
     name: Create tag
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -75,12 +75,17 @@ jobs:
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor }}@users.noreply.github.com"
 
-      - name: Bump package.json
-        run: npm version ${TAG_VERSION} --no-commit-hooks --no-git-tag-version
+      - name: Bump release versions
+        run: |
+          npm version ${TAG_VERSION} --no-commit-hooks --no-git-tag-version
+          version="${TAG_VERSION#v}"
+          sed -i "s/^version:.*/version: ${version}/" charts/foreseerr-chart/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: '${TAG_VERSION}'/" charts/foreseerr-chart/Chart.yaml
+          node scripts/check-version-consistency.mjs "${TAG_VERSION}"
 
       - name: Commit updated files
         run: |
-          git add package.json
+          git add package.json charts/foreseerr-chart/Chart.yaml
           git commit -m "chore(release): prepare ${TAG_VERSION}"
           git push
 

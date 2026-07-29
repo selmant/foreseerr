@@ -68,7 +68,7 @@ commit_preprocessors = [
 ]
 commit_parsers = [
   { message = '.*\(helm\).*', skip = true },
-  { message = '^chore\(release\): prepare for', skip = true },
+  { message = '^chore\(release\): prepare(?: for)? v?', skip = true },
   { message = '^chore\(deps.*\)', skip = true },
   { body = ".*security", group = "<!-- 0 -->🛡️ Security" },
   { message = "^feat", group = "<!-- 1 -->🚀 Features" },

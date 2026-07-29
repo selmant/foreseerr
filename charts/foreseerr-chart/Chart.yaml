@@ -5,9 +5,9 @@ description: Foreseerr helm chart for Kubernetes
 type: application
 # Chart SemVer tracks the Foreseerr app line from the first stable release
 # (previously inherited Seerr's 3.x chart versioning).
-version: 0.1.0
+version: 0.2.0
 # renovate: image=ghcr.io/selmant/foreseerr
-appVersion: 'v0.1.0'
+appVersion: 'v0.2.0'
 maintainers:
   - name: Foreseerr
     url: https://github.com/selmant
