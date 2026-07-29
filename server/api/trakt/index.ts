@@ -541,7 +541,10 @@ class TraktAPI extends ExternalAPI {
   ): Promise<TraktListEntry[]> {
     const path =
       mediaType === 'movie' ? '/sync/watched/movies' : '/sync/watched/shows';
-    return this.getAllSyncPages(path);
+    return this.getAllSyncPages(
+      path,
+      mediaType === 'tv' ? { extended: 'progress' } : undefined
+    );
   }
 
   public async getSyncRatings(
@@ -552,13 +555,17 @@ class TraktAPI extends ExternalAPI {
     return this.getAllSyncPages(path);
   }
 
-  private async getAllSyncPages(path: string): Promise<TraktListEntry[]> {
+  private async getAllSyncPages(
+    path: string,
+    params: Record<string, string | number> = {}
+  ): Promise<TraktListEntry[]> {
     const items: TraktListEntry[] = [];
     let page = 1;
 
     while (true) {
       const batch = await this.getAuthenticated<TraktListEntry[]>(path, {
         params: {
+          ...params,
           page,
           limit: TRAKT_SYNC_PAGE_SIZE,
         },
