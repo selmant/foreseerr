@@ -1,6 +1,7 @@
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import { CheckIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { MediaRequestStatus } from '@server/constants/media';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
 import { useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -47,6 +48,11 @@ const messages = defineMessages('components.RequestModal.EpisodeSelector', {
   ongoing: 'Include future episodes',
   ongoingSummary:
     '{episodeCount} available now across {seasonCount, plural, one {# season} other {# seasons}} · new episodes included',
+  pendingApproval: 'Awaiting approval',
+  requested: 'Requested',
+  available: 'Available',
+  failed: 'Failed',
+  declined: 'Declined',
 });
 
 const episodeCode = (episode: EpisodeCatalogItem) =>
@@ -57,6 +63,7 @@ const episodeCode = (episode: EpisodeCatalogItem) =>
 interface EpisodeSelectorProps {
   tmdbId: number;
   initialSelection?: EpisodeSelection;
+  requestStates?: EpisodeSelectorRequestState[];
   onChange: (
     selection: EpisodeSelection | undefined,
     episodeCount: number,
@@ -64,9 +71,25 @@ interface EpisodeSelectorProps {
   ) => void;
 }
 
+export interface EpisodeSelectorRequestState {
+  requestId: number;
+  requestStatus: MediaRequestStatus;
+  childStatus: MediaRequestStatus;
+  seasonNumber: number;
+  tvdbId?: number;
+}
+
+const effectiveRequestStatus = (state?: EpisodeSelectorRequestState) =>
+  state?.requestStatus === MediaRequestStatus.FAILED ||
+  state?.requestStatus === MediaRequestStatus.DECLINED ||
+  state?.requestStatus === MediaRequestStatus.COMPLETED
+    ? state.requestStatus
+    : state?.childStatus;
+
 const EpisodeSelector = ({
   tmdbId,
   initialSelection,
+  requestStates = [],
   onChange,
 }: EpisodeSelectorProps) => {
   const intl = useIntl();
@@ -115,6 +138,20 @@ const EpisodeSelector = ({
       ),
     [activeSeason, selectionEpisodes]
   );
+  const requestStateByEpisode = useMemo(() => {
+    const states = [...requestStates].sort((a, b) => a.requestId - b.requestId);
+    return new Map(
+      selectionEpisodes.map((episode) => {
+        const matchingStates = states.filter(
+          (state) =>
+            state.tvdbId === episode.tvdbId ||
+            (state.tvdbId === undefined &&
+              state.seasonNumber === episode.seasonNumber)
+        );
+        return [episode.tvdbId, matchingStates.at(-1)];
+      })
+    );
+  }, [requestStates, selectionEpisodes]);
   const startIndex = selectionEpisodes.findIndex(
     (episode) => episode.tvdbId === startId
   );
@@ -458,6 +495,24 @@ const EpisodeSelector = ({
                 : isEnd
                   ? messages.last
                   : undefined;
+            const requestStatus = effectiveRequestStatus(
+              requestStateByEpisode.get(episode.tvdbId)
+            );
+            const requestStatusLabel =
+              requestStatus === MediaRequestStatus.PENDING
+                ? messages.pendingApproval
+                : requestStatus === MediaRequestStatus.APPROVED
+                  ? messages.requested
+                  : requestStatus === MediaRequestStatus.COMPLETED
+                    ? messages.available
+                    : requestStatus === MediaRequestStatus.FAILED
+                      ? messages.failed
+                      : requestStatus === MediaRequestStatus.DECLINED
+                        ? messages.declined
+                        : undefined;
+            const requestCovered =
+              requestStatus !== undefined &&
+              requestStatus !== MediaRequestStatus.DECLINED;
 
             return (
               <button
@@ -465,6 +520,7 @@ const EpisodeSelector = ({
                 type="button"
                 data-testid={`episode-selection-episode-${episode.tvdbId}`}
                 onClick={() => selectEpisode(episode)}
+                disabled={requestCovered}
                 aria-pressed={selected}
                 aria-label={intl.formatMessage(messages.episodeLabel, {
                   episodeCode: episodeCode(episode),
@@ -475,14 +531,18 @@ const EpisodeSelector = ({
                     ? 'border-indigo-400/70 bg-indigo-500/15 text-white'
                     : inRange
                       ? 'border-indigo-500/25 bg-indigo-500/[0.07] text-gray-100'
-                      : 'border-transparent text-gray-300 hover:border-gray-700 hover:bg-gray-800/80'
+                      : requestCovered
+                        ? 'cursor-not-allowed border-transparent bg-gray-900/30 text-gray-500'
+                        : 'border-transparent text-gray-300 hover:border-gray-700 hover:bg-gray-800/80'
                 }`}
               >
                 <span
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xs font-semibold tabular-nums transition ${
                     selected
                       ? 'bg-indigo-500 text-white'
-                      : 'bg-gray-800 text-gray-400 group-hover:bg-gray-700 group-hover:text-gray-200'
+                      : requestCovered
+                        ? 'bg-gray-800/60 text-gray-600'
+                        : 'bg-gray-800 text-gray-400 group-hover:bg-gray-700 group-hover:text-gray-200'
                   }`}
                 >
                   E{episode.episodeNumber}
@@ -507,7 +567,23 @@ const EpisodeSelector = ({
                     )}
                   </span>
                 </span>
-                {selectionLabel ? (
+                {requestStatusLabel ? (
+                  <span
+                    data-testid={`episode-selection-request-status-${episode.tvdbId}`}
+                    className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                      requestStatus === MediaRequestStatus.FAILED ||
+                      requestStatus === MediaRequestStatus.DECLINED
+                        ? 'bg-red-500/10 text-red-300'
+                        : requestStatus === MediaRequestStatus.COMPLETED
+                          ? 'bg-green-500/10 text-green-300'
+                          : requestStatus === MediaRequestStatus.PENDING
+                            ? 'bg-yellow-500/10 text-yellow-200'
+                            : 'bg-indigo-400/10 text-indigo-200'
+                    }`}
+                  >
+                    {intl.formatMessage(requestStatusLabel)}
+                  </span>
+                ) : selectionLabel ? (
                   <span className="shrink-0 rounded-full bg-indigo-400/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-200">
                     {intl.formatMessage(selectionLabel)}
                   </span>

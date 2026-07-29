@@ -30,6 +30,7 @@ import StatusBadge from '@app/components/StatusBadge';
 import Season, {
   SeasonWatchProgress,
   type EpisodeRequestState,
+  type SeasonRequestState,
 } from '@app/components/TvDetails/Season';
 import useDeepLinks from '@app/hooks/useDeepLinks';
 import useLocale from '@app/hooks/useLocale';
@@ -869,6 +870,18 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                         requestId: mediaRequest.id,
                       }))
                   );
+                const seasonRequest = request?.seasons.find(
+                  (requestSeason) =>
+                    requestSeason.seasonNumber === season.seasonNumber
+                );
+                const seasonRequestState: SeasonRequestState | undefined =
+                  request && seasonRequest
+                    ? {
+                        episodeStatus: seasonRequest.status,
+                        requestStatus: request.status,
+                        requestId: request.id,
+                      }
+                    : undefined;
 
                 if (season.episodeCount === 0) {
                   return null;
@@ -1118,6 +1131,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                                 data.episodeRequestsEnabled
                               }
                               episodeRequestStates={episodeRequestStates}
+                              seasonRequestState={seasonRequestState}
                               onRequestComplete={() => void revalidate()}
                             />
                           </Disclosure.Panel>

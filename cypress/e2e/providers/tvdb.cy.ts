@@ -373,6 +373,116 @@ describe('TVDB Integration', () => {
     });
   });
 
+  it('marks every episode requested when a season request follows episode requests', () => {
+    const seasonWithThreeEpisodes = {
+      ...episodeSeason,
+      episodes: [
+        episodeSeason.episodes[0],
+        {
+          ...episodeSeason.episodes[0],
+          id: 102,
+          name: 'Second',
+          episodeNumber: 2,
+        },
+        {
+          ...episodeSeason.episodes[0],
+          id: 103,
+          name: 'Third',
+          episodeNumber: 3,
+        },
+      ],
+    };
+    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
+      delete req.headers['if-none-match'];
+      req.continue((res) => {
+        res.body.externalIds.tvdbId = 999;
+        res.body.episodeRequestsEnabled = true;
+        res.body.seasons = [
+          ...res.body.seasons,
+          {
+            ...res.body.seasons[0],
+            id: 2,
+            name: 'Season 2',
+            seasonNumber: 2,
+          },
+        ];
+        res.body.mediaInfo = {
+          ...res.body.mediaInfo,
+          status: 3,
+          status4k: 1,
+          issues: [],
+          seasons: [],
+          requests: [
+            {
+              id: 100,
+              status: 2,
+              is4k: false,
+              createdAt: '2026-07-28T10:00:00.000Z',
+              seasons: [],
+              episodes: [
+                {
+                  tvdbId: 101,
+                  seasonNumber: 1,
+                  episodeNumber: 1,
+                  status: 2,
+                },
+              ],
+            },
+            {
+              id: 101,
+              status: 2,
+              is4k: false,
+              createdAt: '2026-07-28T11:00:00.000Z',
+              seasons: [{ seasonNumber: 1, status: 2 }],
+              episodes: [],
+            },
+          ],
+        };
+      });
+    });
+    cy.intercept(
+      'GET',
+      '/api/v1/tv/225634/season/1',
+      seasonWithThreeEpisodes
+    ).as('season1');
+    cy.intercept('GET', '/api/v1/tv/225634/episodes', {
+      tvdbSeriesId: 999,
+      episodes: seasonWithThreeEpisodes.episodes.map((episode) => ({
+        tvdbId: episode.id,
+        seasonNumber: episode.seasonNumber,
+        episodeNumber: episode.episodeNumber,
+        title: episode.name,
+        airDate: episode.airDate,
+      })),
+    }).as('episodeCatalog');
+
+    cy.visit(ROUTES.monsterTvShow);
+    cy.get('[data-testid="season-disclosure-1"]').scrollIntoView().click();
+    cy.wait('@season1');
+
+    [101, 102, 103].forEach((episodeId) => {
+      cy.get(`[data-testid="episode-request-status-${episodeId}"]`).should(
+        'contain',
+        'Requested'
+      );
+      cy.get(`[data-testid="episode-quick-request-${episodeId}"]`).should(
+        'not.exist'
+      );
+    });
+
+    cy.get('button[aria-label="Expand"]').click();
+    cy.contains('Request Episodes…').click();
+    cy.wait('@episodeCatalog');
+    [101, 102, 103].forEach((episodeId) => {
+      cy.get(
+        `[data-testid="episode-selection-request-status-${episodeId}"]`
+      ).should('contain', 'Requested');
+      cy.get(`[data-testid="episode-selection-episode-${episodeId}"]`).should(
+        'be.disabled'
+      );
+    });
+  });
+
   it('shows season progress and toggles an episode watched on Trakt', () => {
     cy.intercept('GET', '/api/v1/settings/public', (req) => {
       delete req.headers['if-none-match'];

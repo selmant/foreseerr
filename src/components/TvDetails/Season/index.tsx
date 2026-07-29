@@ -52,6 +52,8 @@ export interface EpisodeRequestState {
   requestId: number;
 }
 
+export type SeasonRequestState = Omit<EpisodeRequestState, 'tvdbId'>;
+
 interface EpisodeWatchStatus {
   available: boolean;
   watchedEpisodeNumbers: number[];
@@ -107,6 +109,7 @@ type SeasonProps = {
   tvId: number;
   episodeRequestsEnabled?: boolean;
   episodeRequestStates?: EpisodeRequestState[];
+  seasonRequestState?: SeasonRequestState;
   onRequestComplete?: () => void;
 };
 
@@ -115,6 +118,7 @@ const Season = ({
   tvId,
   episodeRequestsEnabled = false,
   episodeRequestStates = [],
+  seasonRequestState,
   onRequestComplete,
 }: SeasonProps) => {
   const intl = useIntl();
@@ -140,8 +144,27 @@ const Season = ({
     const states = [...episodeRequestStates, ...localRequestStates].sort(
       (a, b) => a.requestId - b.requestId
     );
-    return new Map(states.map((state) => [state.tvdbId, state]));
-  }, [episodeRequestStates, localRequestStates]);
+    const explicitStates = new Map(
+      states.map((state) => [state.tvdbId, state])
+    );
+
+    if (!seasonRequestState || !data) {
+      return explicitStates;
+    }
+
+    return new Map(
+      data.episodes.map((episode) => {
+        const explicitState = explicitStates.get(episode.id);
+        return [
+          episode.id,
+          explicitState &&
+          explicitState.requestId > seasonRequestState.requestId
+            ? explicitState
+            : { tvdbId: episode.id, ...seasonRequestState },
+        ];
+      })
+    );
+  }, [data, episodeRequestStates, localRequestStates, seasonRequestState]);
   const traktEnabled =
     settings.currentSettings.traktConfigured &&
     settings.currentSettings.mediaActionsTraktEnabled !== false;

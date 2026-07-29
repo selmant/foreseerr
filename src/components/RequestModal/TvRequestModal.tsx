@@ -3,7 +3,9 @@ import Badge from '@app/components/Common/Badge';
 import Modal from '@app/components/Common/Modal';
 import type { RequestOverrides } from '@app/components/RequestModal/AdvancedRequester';
 import AdvancedRequester from '@app/components/RequestModal/AdvancedRequester';
-import EpisodeSelector from '@app/components/RequestModal/EpisodeSelector';
+import EpisodeSelector, {
+  type EpisodeSelectorRequestState,
+} from '@app/components/RequestModal/EpisodeSelector';
 import QuotaDisplay from '@app/components/RequestModal/QuotaDisplay';
 import SearchByNameModal from '@app/components/RequestModal/SearchByNameModal';
 import useSettings from '@app/hooks/useSettings';
@@ -133,6 +135,29 @@ const TvRequestModal = ({
   );
   const [episodeSeasonCount, setEpisodeSeasonCount] = useState(
     editRequest?.tvQuotaUnits ?? 0
+  );
+  const episodeRequestStates = useMemo<EpisodeSelectorRequestState[]>(
+    () =>
+      (data?.mediaInfo?.requests ?? [])
+        .filter(
+          (request) => request.is4k === is4k && request.id !== editRequest?.id
+        )
+        .flatMap((request) => [
+          ...(request.episodes ?? []).map((episode) => ({
+            requestId: request.id,
+            requestStatus: request.status,
+            childStatus: episode.status,
+            seasonNumber: episode.seasonNumber,
+            tvdbId: episode.tvdbId,
+          })),
+          ...(request.seasons ?? []).map((season) => ({
+            requestId: request.id,
+            requestStatus: request.status,
+            childStatus: season.status,
+            seasonNumber: season.seasonNumber,
+          })),
+        ]),
+    [data?.mediaInfo?.requests, editRequest?.id, is4k]
   );
   const [didApplyInitialSelection, setDidApplyInitialSelection] =
     useState(false);
@@ -887,6 +912,7 @@ const TvRequestModal = ({
       ) : (
         <EpisodeSelector
           tmdbId={tmdbId}
+          requestStates={episodeRequestStates}
           initialSelection={
             editEpisodeSelection ?? requestedInitialEpisodeSelection
           }
