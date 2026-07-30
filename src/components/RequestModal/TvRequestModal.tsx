@@ -21,6 +21,7 @@ import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces'
 import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
 import { isAnimeMedia } from '@server/lib/anime/detect';
 import { Permission } from '@server/lib/permissions';
+import { isSeasonFullyAvailable } from '@server/lib/seasonRequests';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -385,10 +386,7 @@ const TvRequestModal = ({
     const availableSeasons = (data?.mediaInfo?.seasons ?? [])
       .filter(
         (season) =>
-          (season[is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE ||
-            season[is4k ? 'status4k' : 'status'] ===
-              MediaStatus.PARTIALLY_AVAILABLE ||
-            season[is4k ? 'status4k' : 'status'] === MediaStatus.PROCESSING) &&
+          isSeasonFullyAvailable(season[is4k ? 'status4k' : 'status']) &&
           !requestedSeasons.includes(season.seasonNumber)
       )
       .map((season) => season.seasonNumber);
@@ -783,6 +781,16 @@ const TvRequestModal = ({
                             sn[is4k ? 'status4k' : 'status'] !==
                               MediaStatus.DELETED
                         );
+                        const seasonIsFullyAvailable = isSeasonFullyAvailable(
+                          mediaSeason?.[is4k ? 'status4k' : 'status']
+                        );
+                        const seasonHasActiveRequest =
+                          !!seasonRequest &&
+                          !editingSeasons.includes(season.seasonNumber);
+                        const seasonIsQuotaBlocked =
+                          !!quota?.tv.limit &&
+                          currentlyRemaining <= 0 &&
+                          !isSelectedSeason(season.seasonNumber);
                         return (
                           <tr key={`season-${season.id}`}>
                             <td
@@ -794,13 +802,16 @@ const TvRequestModal = ({
                               <span
                                 role="checkbox"
                                 tabIndex={0}
+                                data-testid={`season-request-toggle-${season.seasonNumber}`}
                                 aria-checked={
-                                  !!mediaSeason ||
-                                  (!!seasonRequest &&
-                                    !editingSeasons.includes(
-                                      season.seasonNumber
-                                    )) ||
+                                  seasonIsFullyAvailable ||
+                                  seasonHasActiveRequest ||
                                   isSelectedSeason(season.seasonNumber)
+                                }
+                                aria-disabled={
+                                  seasonIsFullyAvailable ||
+                                  seasonHasActiveRequest ||
+                                  seasonIsQuotaBlocked
                                 }
                                 onClick={() =>
                                   toggleSeason(season.seasonNumber)
@@ -811,14 +822,9 @@ const TvRequestModal = ({
                                   }
                                 }}
                                 className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer items-center justify-center pt-2 focus:outline-none ${
-                                  mediaSeason ||
-                                  (quota?.tv.limit &&
-                                    currentlyRemaining <= 0 &&
-                                    !isSelectedSeason(season.seasonNumber)) ||
-                                  (!!seasonRequest &&
-                                    !editingSeasons.includes(
-                                      season.seasonNumber
-                                    ))
+                                  seasonIsFullyAvailable ||
+                                  seasonIsQuotaBlocked ||
+                                  seasonHasActiveRequest
                                     ? 'opacity-50'
                                     : ''
                                 }`}
@@ -826,11 +832,8 @@ const TvRequestModal = ({
                                 <span
                                   aria-hidden="true"
                                   className={`${
-                                    !!mediaSeason ||
-                                    (!!seasonRequest &&
-                                      !editingSeasons.includes(
-                                        season.seasonNumber
-                                      )) ||
+                                    seasonIsFullyAvailable ||
+                                    seasonHasActiveRequest ||
                                     isSelectedSeason(season.seasonNumber)
                                       ? 'bg-indigo-500'
                                       : 'bg-gray-700'
@@ -839,11 +842,8 @@ const TvRequestModal = ({
                                 <span
                                   aria-hidden="true"
                                   className={`${
-                                    !!mediaSeason ||
-                                    (!!seasonRequest &&
-                                      !editingSeasons.includes(
-                                        season.seasonNumber
-                                      )) ||
+                                    seasonIsFullyAvailable ||
+                                    seasonHasActiveRequest ||
                                     isSelectedSeason(season.seasonNumber)
                                       ? 'translate-x-5'
                                       : 'translate-x-0'

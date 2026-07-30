@@ -483,6 +483,58 @@ describe('TVDB Integration', () => {
     });
   });
 
+  it('allows a full-season request after requesting some episodes', () => {
+    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
+      delete req.headers['if-none-match'];
+      req.continue((res) => {
+        res.body.externalIds.tvdbId = 999;
+        res.body.episodeRequestsEnabled = true;
+        res.body.mediaInfo = {
+          ...res.body.mediaInfo,
+          status: 3,
+          status4k: 1,
+          issues: [],
+          seasons: [{ seasonNumber: 1, status: 3, status4k: 1 }],
+          requests: [
+            {
+              id: 100,
+              status: 2,
+              is4k: false,
+              createdAt: '2026-07-28T10:00:00.000Z',
+              seasons: [],
+              episodes: [
+                {
+                  tvdbId: 101,
+                  seasonNumber: 1,
+                  episodeNumber: 1,
+                  status: 2,
+                },
+              ],
+            },
+          ],
+        };
+      });
+    });
+    cy.intercept('POST', '/api/v1/request', (req) => {
+      expect(req.body.seasons).to.deep.equal([1]);
+      expect(req.body.episodeSelection).to.equal(undefined);
+      req.reply({
+        statusCode: 201,
+        body: { media: { status: 3 } },
+      });
+    }).as('seasonRequest');
+
+    cy.visit(ROUTES.monsterTvShow);
+    cy.contains('button', 'Request More').click();
+    cy.get('[data-testid="season-request-toggle-1"]')
+      .should('have.attr', 'aria-checked', 'false')
+      .and('have.attr', 'aria-disabled', 'false')
+      .click()
+      .should('have.attr', 'aria-checked', 'true');
+    cy.contains('button', 'Request 1 Season').click();
+    cy.wait('@seasonRequest');
+  });
+
   it('shows season progress and toggles an episode watched on Trakt', () => {
     cy.intercept('GET', '/api/v1/settings/public', (req) => {
       delete req.headers['if-none-match'];

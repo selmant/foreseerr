@@ -17,6 +17,7 @@ import {
 } from '@server/lib/episodeRequests';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { Permission } from '@server/lib/permissions';
+import { isSeasonFullyAvailable } from '@server/lib/seasonRequests';
 import { MetadataProviderType, getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
@@ -601,17 +602,17 @@ export class MediaRequest {
           }, [] as number[]);
       }
 
-      // We should also check seasons that are available/partially available but don't have existing requests
+      // A partially available or processing season can come from an episode
+      // request, so only a completely available season blocks a full-season
+      // request. Active full-season requests are handled above.
       if (media.seasons) {
         existingSeasons = [
           ...existingSeasons,
           ...media.seasons
-            .filter(
-              (season) =>
-                season[requestBody.is4k ? 'status4k' : 'status'] !==
-                  MediaStatus.UNKNOWN &&
-                season[requestBody.is4k ? 'status4k' : 'status'] !==
-                  MediaStatus.DELETED
+            .filter((season) =>
+              isSeasonFullyAvailable(
+                season[requestBody.is4k ? 'status4k' : 'status']
+              )
             )
             .map((season) => season.seasonNumber),
         ];
