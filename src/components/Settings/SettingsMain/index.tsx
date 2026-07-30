@@ -211,7 +211,10 @@ const SettingsMain = () => {
                 versionCheck: values?.versionCheck,
               });
               mutate('/api/v1/settings/public');
-              mutate('/api/v1/status');
+              mutate(
+                (key) =>
+                  typeof key === 'string' && key.startsWith('/api/v1/status')
+              );
 
               if (setLocale) {
                 setLocale(
