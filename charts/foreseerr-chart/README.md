@@ -4,16 +4,20 @@ Helm chart for deploying [Foreseerr](https://github.com/selmant/foreseerr) on Ku
 
 Foreseerr is a Seerr fork with SuggestArr-inspired features. Config mounts remain Seerr-compatible at `/app/config`.
 
-## Install
+## Installation
 
 ```bash
 helm install foreseerr oci://ghcr.io/selmant/foreseerr/foreseerr-chart
 ```
 
-See `values.yaml` in this directory and the project README for more.
+## Configuration
+
+See [`values.yaml`](./values.yaml) for all options. The chart supports custom
+`dnsPolicy` and `dnsConfig` settings, pod user namespaces through `hostUsers`,
+and scheduling through `priorityClassName`.
 
 ## Update Notes
 
 ### From `seerr-chart`
 
-This chart was renamed from `seerr-chart`. Install path and helper template names use `foreseerr.*`. The container still mounts config at `/app/config`.
+This chart was renamed from `seerr-chart`. Helper templates use `foreseerr.*`. Config still mounts at `/app/config`.

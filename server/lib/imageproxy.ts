@@ -284,7 +284,10 @@ class ImageProxy {
       const buffer = Buffer.from(response.data, 'binary');
 
       const contentType = headerToString(response.headers['content-type']);
-      const extension = mime.getExtension(contentType) || '';
+      const extension = (mime.getExtension(contentType) || '').replace(
+        /[^\w-]/g,
+        ''
+      );
 
       let maxAge = Number(
         headerToString(response.headers['cache-control'], '0').split('=')[1]
@@ -292,7 +295,7 @@ class ImageProxy {
 
       if (!maxAge) maxAge = 86400;
       const expireAt = Date.now() + maxAge * 1000;
-      const etag = headerToString(response.headers.etag).replace(/"/g, '');
+      const etag = headerToString(response.headers.etag).replace(/[^\w-]/g, '');
 
       await this.writeToCacheDir(
         directory,

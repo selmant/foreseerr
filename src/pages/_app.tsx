@@ -11,6 +11,7 @@ import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
 import '@app/styles/globals.css';
 import { polyfillIntl } from '@app/utils/polyfillIntl';
+import { getHostAndPort } from '@app/utils/urlHelper';
 import '@fontsource-variable/inter';
 import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
@@ -266,6 +267,7 @@ CoreApp.getInitialProps = async (initialProps) => {
     emailEnabled: false,
     newPlexLogin: true,
     youtubeUrl: '',
+    versionCheck: true,
     plexClientIdentifier: '',
     traktConfigured: false,
     mediaActionsTraktEnabled: true,
@@ -276,9 +278,7 @@ CoreApp.getInitialProps = async (initialProps) => {
   if (ctx.res) {
     // Check if app is initialized and redirect if necessary
     const response = await axios.get<PublicSettingsResponse>(
-      `http://${process.env.HOST || 'localhost'}:${
-        process.env.PORT || 5055
-      }/api/v1/settings/public`
+      `http://${getHostAndPort()}/api/v1/settings/public`
     );
 
     currentSettings = response.data;
@@ -296,9 +296,7 @@ CoreApp.getInitialProps = async (initialProps) => {
       try {
         // Attempt to get the user by running a request to the local api
         const response = await axios.get<User>(
-          `http://${process.env.HOST || 'localhost'}:${
-            process.env.PORT || 5055
-          }/api/v1/auth/me`,
+          `http://${getHostAndPort()}/api/v1/auth/me`,
           {
             headers:
               ctx.req && ctx.req.headers.cookie

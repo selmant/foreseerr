@@ -11,7 +11,7 @@ This is a maintainer-facing reference, not published end-user documentation. It 
 At the first stable release, Foreseerr supports upgrading in place from:
 
 1. **A fresh Foreseerr installation.** No prior data; migrations run from an empty database.
-2. **An upstream Seerr database (SQLite or PostgreSQL)**, validated against the Seerr merge-base commit `759e35933860594282bd929587576b003a3efb2d`. Foreseerr's migration history continues directly from this commit's schema.
+2. **An upstream Seerr database (SQLite or PostgreSQL)**, validated against the synced Seerr commit `bd491c7e7ecf7d249da532f8fe9b82456ed6e42e`. Foreseerr's migration history continues directly from this commit's schema.
 3. **A previous stable Foreseerr release**, starting with `v0.1.0`. The frozen migration cutoff is `FORESEERR_V0_1_0_LAST_MIGRATION_TIMESTAMP` in `server/migration/foreseerrStableBaseline.ts`; coverage is in `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts`.
 
 Automated coverage:
