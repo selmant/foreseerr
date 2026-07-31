@@ -38,6 +38,8 @@ const messages = defineMessages(
     deleteFailed: 'Unable to delete linked account.',
     betterTraktEnabled:
       'Trakt is provided through Better Trakt in Jellyfin. Link your Jellyfin account here, then link Trakt and enable Foreseer access in the Jellyfin plugin.',
+    betterTraktSessionRefresh:
+      'Your Jellyfin session needs to be refreshed before Better Trakt can be used. Choose “Refresh Jellyfin Session” from Link Account and sign in again.',
     refreshJellyfinSession: 'Refresh Jellyfin Session',
   }
 );
@@ -72,6 +74,7 @@ const UserLinkedAccountsSettings = () => {
   const { data: traktStatus, mutate: revalidateTrakt } = useSWR<{
     provider: 'direct' | 'jellyfin';
     connected: boolean;
+    needsJellyfinSessionRefresh?: boolean;
     username: string | null;
   }>(
     user && settings.currentSettings.traktConfigured
@@ -210,8 +213,12 @@ const UserLinkedAccountsSettings = () => {
       <>
         {traktStatus?.provider === 'jellyfin' && (
           <Alert
-            title={intl.formatMessage(messages.betterTraktEnabled)}
-            type="info"
+            title={intl.formatMessage(
+              traktStatus.needsJellyfinSessionRefresh
+                ? messages.betterTraktSessionRefresh
+                : messages.betterTraktEnabled
+            )}
+            type={traktStatus.needsJellyfinSessionRefresh ? 'warning' : 'info'}
           />
         )}
         <div className="mb-6">
@@ -337,6 +344,7 @@ const UserLinkedAccountsSettings = () => {
         onSave={() => {
           setShowJellyfinModal(false);
           revalidateUser();
+          void revalidateTrakt();
         }}
         onSwitchToQuickConnect={() => {
           setShowJellyfinModal(false);
@@ -350,6 +358,7 @@ const UserLinkedAccountsSettings = () => {
         onSave={() => {
           setShowJellyfinQuickConnectModal(false);
           revalidateUser();
+          void revalidateTrakt();
         }}
         onSwitchToPassword={() => {
           setShowJellyfinQuickConnectModal(false);

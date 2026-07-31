@@ -639,6 +639,9 @@ userSettingsRoutes.get<{ id: string }>(
         return res.status(200).json({
           provider: 'jellyfin',
           connected,
+          needsJellyfinSessionRefresh: Boolean(
+            user?.jellyfinUserId && !user.jellyfinAuthToken
+          ),
           username: connected ? (user?.jellyfinUsername ?? 'Jellyfin') : null,
         });
       }
