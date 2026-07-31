@@ -36,6 +36,8 @@ const messages = defineMessages(
     plexErrorExists: 'This account is already linked to a Plex user',
     errorUnknown: 'An unknown error occurred',
     deleteFailed: 'Unable to delete linked account.',
+    betterTraktEnabled:
+      'Trakt is provided through Better Trakt in Jellyfin. Link your Jellyfin account here, then link Trakt and enable Foreseer access in the Jellyfin plugin.',
   }
 );
 
@@ -67,6 +69,7 @@ const UserLinkedAccountsSettings = () => {
     user ? `/api/v1/user/${user?.id}/settings/password` : null
   );
   const { data: traktStatus, mutate: revalidateTrakt } = useSWR<{
+    provider: 'direct' | 'jellyfin';
     connected: boolean;
     username: string | null;
   }>(
@@ -100,7 +103,11 @@ const UserLinkedAccountsSettings = () => {
         type: LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
-    if (traktStatus?.connected && traktStatus.username)
+    if (
+      traktStatus?.provider === 'direct' &&
+      traktStatus.connected &&
+      traktStatus.username
+    )
       accounts.push({
         type: LinkedAccountType.Trakt,
         username: traktStatus.username,
@@ -165,6 +172,7 @@ const UserLinkedAccountsSettings = () => {
       action: () => setShowTraktModal(true),
       hide:
         !settings.currentSettings.traktConfigured ||
+        traktStatus?.provider === 'jellyfin' ||
         accounts.some((a) => a.type === LinkedAccountType.Trakt),
     },
   ].filter((l) => !l.hide);
@@ -191,6 +199,12 @@ const UserLinkedAccountsSettings = () => {
   ) {
     return (
       <>
+        {traktStatus?.provider === 'jellyfin' && (
+          <Alert
+            title={intl.formatMessage(messages.betterTraktEnabled)}
+            type="info"
+          />
+        )}
         <div className="mb-6">
           <h3 className="heading">
             {intl.formatMessage(messages.linkedAccounts)}

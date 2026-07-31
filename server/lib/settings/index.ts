@@ -71,6 +71,7 @@ export interface TautulliSettings {
 }
 
 export interface TraktSettings {
+  provider?: 'direct' | 'jellyfin';
   clientId: string;
   clientSecret: string;
 }
@@ -722,15 +723,15 @@ class Settings {
 
   get trakt(): TraktSettings {
     if (!this.data.trakt) {
-      this.data.trakt = { clientId: '', clientSecret: '' };
+      this.data.trakt = { provider: 'direct', clientId: '', clientSecret: '' };
     }
     return this.data.trakt;
   }
 
   set trakt(data: TraktSettings) {
     this.data.trakt = mergeSettings(
-      this.data.trakt ?? { clientId: '', clientSecret: '' },
-      data
+      this.data.trakt ?? { provider: 'direct', clientId: '', clientSecret: '' },
+      { ...data, provider: data.provider ?? 'direct' }
     );
   }
 
@@ -862,9 +863,10 @@ class Settings {
       youtubeUrl: this.data.main.youtubeUrl,
       versionCheck: this.data.main.versionCheck,
       plexClientIdentifier: this.data.clientId,
-      traktConfigured: Boolean(
-        this.data.trakt?.clientId && this.data.trakt?.clientSecret
-      ),
+      traktConfigured:
+        this.trakt.provider === 'jellyfin'
+          ? Boolean(this.data.jellyfin?.ip)
+          : Boolean(this.data.trakt?.clientId && this.data.trakt?.clientSecret),
       mediaActionsTraktEnabled:
         this.data.mediaActions?.providers?.trakt !== false,
       mdblistConfigured: Boolean(this.data.mdblist?.apiKey?.trim()),

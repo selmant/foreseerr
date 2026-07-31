@@ -20,7 +20,16 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
   trakt: 'Trakt',
   traktSettings: 'Trakt Settings',
   traktSettingsDescription:
-    'Configure your Trakt API application credentials. Users can then link their Trakt accounts to browse personalized recommendations, lists, and watchlists.',
+    'Choose how Foreseer connects to Trakt. Users can then browse personalized recommendations, lists, and watchlists.',
+  provider: 'Connection method',
+  directProvider: 'Direct Trakt application',
+  directProviderTip:
+    'Use your own Trakt Client ID and Client Secret. This is the normal option when you already have a Trakt application.',
+  jellyfinProvider: 'Better Trakt through Jellyfin',
+  jellyfinProviderTip:
+    'Recommended if Trakt app-registration limits prevent creating an app. It needs more setup: install Better Trakt in Jellyfin, link each user there, and enable Foreseer access for those users.',
+  jellyfinProviderRequirements:
+    'Foreseer uses each user’s existing linked Jellyfin session. It never stores a Trakt refresh token in Foreseer. Better Trakt 1000.2026.731.2 or newer is required.',
   clientId: 'Client ID',
   clientSecret: 'Client Secret',
   actionsEnabled: 'Enable watched / rate actions',
@@ -42,6 +51,7 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
 });
 
 interface TraktSettingsResponse {
+  provider: 'direct' | 'jellyfin';
   clientId: string;
   clientSecret: string;
   configured: boolean;
@@ -50,6 +60,7 @@ interface TraktSettingsResponse {
 }
 
 interface TraktFormValues {
+  provider: 'direct' | 'jellyfin';
   clientId: string;
   clientSecret: string;
   actionsEnabled: boolean;
@@ -72,16 +83,24 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
   } | null>(null);
 
   const TraktSettingsSchema = Yup.object().shape({
+    provider: Yup.string().oneOf(['direct', 'jellyfin']).required(),
     clientId: Yup.string()
       .trim()
-      .required(intl.formatMessage(messages.validationClientId)),
+      .when('provider', {
+        is: 'direct',
+        then: (schema) =>
+          schema.required(intl.formatMessage(messages.validationClientId)),
+      }),
     clientSecret: Yup.string()
       .trim()
       .test(
         'clientSecret-required',
         intl.formatMessage(messages.validationClientSecret),
-        (value) => {
-          if (data?.configured) {
+        (value, context) => {
+          if (context.parent.provider === 'jellyfin') {
+            return true;
+          }
+          if (data?.provider === 'direct' && data.configured) {
             return true;
           }
           return Boolean(value);
@@ -90,7 +109,7 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
   });
 
   const credentialsChanging = (values: TraktFormValues) => {
-    if (!data) {
+    if (!data || values.provider !== 'direct') {
       return false;
     }
     const secretUnchanged =
@@ -110,6 +129,7 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
   ) => {
     try {
       await axios.post('/api/v1/settings/trakt', {
+        provider: values.provider,
         clientId: values.clientId.trim(),
         clientSecret: values.clientSecret.trim(),
         actionsEnabled: values.actionsEnabled,
@@ -178,6 +198,7 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
       </div>
       <Formik
         initialValues={{
+          provider: data?.provider ?? 'direct',
           clientId: data?.clientId ?? '',
           // Never seed the masked placeholder — reveal would only show asterisks.
           // Empty field: leave blank to keep the current secret (server preserves).
@@ -208,52 +229,108 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
         }) => (
           <form className="section" onSubmit={handleSubmit}>
             <div className="form-row">
-              <label htmlFor="clientId" className="text-label">
-                {intl.formatMessage(messages.clientId)}
-                <span className="label-required">*</span>
+              <label className="text-label">
+                {intl.formatMessage(messages.provider)}
               </label>
-              <div className="form-input-area">
-                <div className="form-input-field">
+              <div className="form-input-area space-y-3">
+                <label
+                  htmlFor="trakt-provider-direct"
+                  className="flex cursor-pointer items-start gap-2 text-sm text-gray-200"
+                >
                   <Field
-                    id="clientId"
-                    name="clientId"
-                    type="text"
-                    autoComplete="off"
+                    id="trakt-provider-direct"
+                    type="radio"
+                    name="provider"
+                    value="direct"
                   />
-                </div>
-                {errors.clientId &&
-                  touched.clientId &&
-                  typeof errors.clientId === 'string' && (
-                    <div className="error">{errors.clientId}</div>
-                  )}
-              </div>
-            </div>
-            <div className="form-row">
-              <label htmlFor="clientSecret" className="text-label">
-                {intl.formatMessage(messages.clientSecret)}
-                {!data?.configured && <span className="label-required">*</span>}
-                {data?.configured && (
-                  <span className="label-tip">
-                    {intl.formatMessage(messages.clientSecretTip)}
+                  <span>
+                    <span className="font-medium">
+                      {intl.formatMessage(messages.directProvider)}
+                    </span>
+                    <span className="mt-1 block text-gray-400">
+                      {intl.formatMessage(messages.directProviderTip)}
+                    </span>
                   </span>
-                )}
-              </label>
-              <div className="form-input-area">
-                <div className="form-input-field">
-                  <SensitiveInput
-                    as="field"
-                    id="clientSecret"
-                    name="clientSecret"
-                    autoComplete="off"
+                </label>
+                <label
+                  htmlFor="trakt-provider-jellyfin"
+                  className="flex cursor-pointer items-start gap-2 text-sm text-gray-200"
+                >
+                  <Field
+                    id="trakt-provider-jellyfin"
+                    type="radio"
+                    name="provider"
+                    value="jellyfin"
                   />
-                </div>
-                {errors.clientSecret &&
-                  touched.clientSecret &&
-                  typeof errors.clientSecret === 'string' && (
-                    <div className="error">{errors.clientSecret}</div>
-                  )}
+                  <span>
+                    <span className="font-medium">
+                      {intl.formatMessage(messages.jellyfinProvider)}
+                    </span>
+                    <span className="mt-1 block text-gray-400">
+                      {intl.formatMessage(messages.jellyfinProviderTip)}
+                    </span>
+                  </span>
+                </label>
+                {values.provider === 'jellyfin' && (
+                  <p className="text-sm text-yellow-200">
+                    {intl.formatMessage(messages.jellyfinProviderRequirements)}
+                  </p>
+                )}
               </div>
             </div>
+            {values.provider === 'direct' && (
+              <>
+                <div className="form-row">
+                  <label htmlFor="clientId" className="text-label">
+                    {intl.formatMessage(messages.clientId)}
+                    <span className="label-required">*</span>
+                  </label>
+                  <div className="form-input-area">
+                    <div className="form-input-field">
+                      <Field
+                        id="clientId"
+                        name="clientId"
+                        type="text"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {errors.clientId &&
+                      touched.clientId &&
+                      typeof errors.clientId === 'string' && (
+                        <div className="error">{errors.clientId}</div>
+                      )}
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label htmlFor="clientSecret" className="text-label">
+                    {intl.formatMessage(messages.clientSecret)}
+                    {!(data?.provider === 'direct' && data.configured) && (
+                      <span className="label-required">*</span>
+                    )}
+                    {data?.provider === 'direct' && data.configured && (
+                      <span className="label-tip">
+                        {intl.formatMessage(messages.clientSecretTip)}
+                      </span>
+                    )}
+                  </label>
+                  <div className="form-input-area">
+                    <div className="form-input-field">
+                      <SensitiveInput
+                        as="field"
+                        id="clientSecret"
+                        name="clientSecret"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {errors.clientSecret &&
+                      touched.clientSecret &&
+                      typeof errors.clientSecret === 'string' && (
+                        <div className="error">{errors.clientSecret}</div>
+                      )}
+                  </div>
+                </div>
+              </>
+            )}
             <div className="form-row">
               <label htmlFor="actionsEnabled" className="text-label">
                 {intl.formatMessage(messages.actionsEnabled)}

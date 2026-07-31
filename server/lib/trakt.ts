@@ -10,6 +10,8 @@ import { invalidateUserSyncCache } from '@server/lib/mediaActions/syncCache';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import AsyncLock from '@server/utils/asyncLock';
+import { getHostname } from '@server/utils/getHostname';
+import axios from 'axios';
 
 const traktRefreshLock = new AsyncLock();
 
@@ -24,6 +26,15 @@ export class TraktNotLinkedError extends Error {
   constructor(message = 'User has not linked a Trakt account') {
     super(message);
     this.name = 'TraktNotLinkedError';
+  }
+}
+
+export class TraktJellyfinProviderError extends Error {
+  constructor(
+    message = 'Better Trakt is not available for this Jellyfin user. Link Jellyfin, link Trakt in Better Trakt, and ask an administrator to enable Foreseer access.'
+  ) {
+    super(message);
+    this.name = 'TraktJellyfinProviderError';
   }
 }
 
@@ -48,6 +59,88 @@ export function getTraktAppCredentials(): {
     clientId: clientId.trim(),
     clientSecret: clientSecret.trim(),
   };
+}
+
+export const isJellyfinTraktProvider = (): boolean =>
+  getSettings().trakt.provider === 'jellyfin';
+
+type JellyfinTraktTokenResponse = {
+  AccessToken?: unknown;
+  AccessTokenExpiration?: unknown;
+  ClientId?: unknown;
+};
+
+async function getJellyfinTraktToken(
+  userId: number
+): Promise<TraktTokenState & { clientId: string }> {
+  const user = await getRepository(User)
+    .createQueryBuilder('user')
+    .addSelect('user.jellyfinAuthToken')
+    .addSelect('user.jellyfinDeviceId')
+    .where('user.id = :userId', { userId })
+    .getOne();
+
+  if (!user?.jellyfinUserId || !user.jellyfinAuthToken) {
+    throw new TraktJellyfinProviderError(
+      'Link your Jellyfin account to Foreseer before using Better Trakt.'
+    );
+  }
+
+  try {
+    const response = await axios.get<JellyfinTraktTokenResponse>(
+      `${getHostname()}/Trakt/me/Token`,
+      {
+        headers: {
+          Authorization: `MediaBrowser Token=${user.jellyfinAuthToken}`,
+        },
+        timeout: 10000,
+      }
+    );
+    const accessToken =
+      typeof response.data.AccessToken === 'string'
+        ? response.data.AccessToken.trim()
+        : '';
+    const clientId =
+      typeof response.data.ClientId === 'string'
+        ? response.data.ClientId.trim()
+        : '';
+    const expiresAt = Math.floor(
+      new Date(String(response.data.AccessTokenExpiration ?? '')).getTime() /
+        1000
+    );
+
+    if (!accessToken || !clientId || !Number.isFinite(expiresAt)) {
+      throw new TraktJellyfinProviderError(
+        'Better Trakt returned an incomplete token bridge response. Update Better Trakt and try again.'
+      );
+    }
+
+    return {
+      clientId,
+      accessToken,
+      // This sentinel makes TraktAPI call the provider callback before expiry;
+      // no refresh token is persisted or transmitted by Foreseer.
+      refreshToken: 'jellyfin-provider',
+      expiresAt,
+    };
+  } catch (e) {
+    if (e instanceof TraktJellyfinProviderError) {
+      throw e;
+    }
+    const status = axios.isAxiosError(e) ? e.response?.status : undefined;
+    if (status === 401 || status === 403) {
+      throw new TraktJellyfinProviderError();
+    }
+    logger.warn('Failed to retrieve Better Trakt token bridge response', {
+      label: 'Trakt API',
+      userId,
+      status,
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    throw new TraktJellyfinProviderError(
+      'Unable to reach Better Trakt through Jellyfin. Check the Jellyfin connection and plugin setup.'
+    );
+  }
 }
 
 export function createTraktAppClient(): TraktAPI {
@@ -242,6 +335,21 @@ export async function refreshUserTraktTokens(
 }
 
 export async function createTraktUserClient(userId: number): Promise<TraktAPI> {
+  if (isJellyfinTraktProvider()) {
+    const token = await getJellyfinTraktToken(userId);
+    return new TraktAPI({
+      clientId: token.clientId,
+      clientSecret: '',
+      accessToken: token.accessToken,
+      refreshToken: token.refreshToken,
+      expiresAt: token.expiresAt,
+      refreshTokens: async () => {
+        const refreshed = await getJellyfinTraktToken(userId);
+        return refreshed;
+      },
+    });
+  }
+
   const { clientId, clientSecret } = getTraktAppCredentials();
   const settings = await getUserTraktSettings(userId);
 

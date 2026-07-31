@@ -26,6 +26,7 @@ import {
   createTraktAppClient,
   ensureUserSettings,
   getUserTraktSettings,
+  isJellyfinTraktProvider,
 } from '@server/lib/trakt';
 import {
   TRAKT_DEVICE_SLOW_DOWN_SECONDS,
@@ -617,10 +618,26 @@ userSettingsRoutes.get<{ id: string }>(
   async (req, res, next) => {
     try {
       const settings = await getUserTraktSettings(Number(req.params.id));
+      if (isJellyfinTraktProvider()) {
+        const user = await getRepository(User)
+          .createQueryBuilder('user')
+          .addSelect('user.jellyfinAuthToken')
+          .where('user.id = :userId', { userId: Number(req.params.id) })
+          .getOne();
+        const connected = Boolean(
+          user?.jellyfinUserId && user.jellyfinAuthToken
+        );
+        return res.status(200).json({
+          provider: 'jellyfin',
+          connected,
+          username: connected ? (user?.jellyfinUsername ?? 'Jellyfin') : null,
+        });
+      }
       const connected = Boolean(
         settings?.traktAccessToken && settings.traktRefreshToken
       );
       return res.status(200).json({
+        provider: 'direct',
         connected,
         username: connected ? (settings?.traktUsername ?? null) : null,
       });
@@ -691,6 +708,12 @@ userSettingsRoutes.post<{ id: string }>(
   traktDeviceCodeCreationLimiter,
   async (req, res) => {
     try {
+      if (isJellyfinTraktProvider()) {
+        return res.status(409).json({
+          message:
+            'Trakt is provided by Better Trakt through Jellyfin. Link Trakt in Jellyfin instead.',
+        });
+      }
       const trakt = createTraktAppClient();
       const deviceCode = await trakt.requestDeviceCode();
       rememberTraktDeviceAuthSession(
@@ -722,6 +745,12 @@ userSettingsRoutes.post<{ id: string }>(
   enforceTraktDevicePollInterval,
   async (req, res) => {
     try {
+      if (isJellyfinTraktProvider()) {
+        return res.status(409).json({
+          message:
+            'Trakt is provided by Better Trakt through Jellyfin. Link Trakt in Jellyfin instead.',
+        });
+      }
       const deviceCode = String(req.body.deviceCode ?? '').trim();
       if (!deviceCode) {
         return res.status(400).json({ message: 'deviceCode is required' });
@@ -803,6 +832,12 @@ userSettingsRoutes.delete<{ id: string }>(
   isOwnProfileOrAdmin(),
   async (req, res, next) => {
     try {
+      if (isJellyfinTraktProvider()) {
+        return res.status(409).json({
+          message:
+            'Trakt is provided by Better Trakt through Jellyfin. Unlink it from Jellyfin instead.',
+        });
+      }
       const foreseerrUserId = Number(req.params.id);
       const userSettings = await getUserTraktSettings(foreseerrUserId);
       if (!userSettings) {

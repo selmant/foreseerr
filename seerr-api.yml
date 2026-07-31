@@ -620,6 +620,11 @@ components:
     TraktSettings:
       type: object
       properties:
+        provider:
+          type: string
+          enum: [direct, jellyfin]
+          description: Direct Trakt application credentials or the Better Trakt Jellyfin bridge
+          example: direct
         clientId:
           type: string
           example: 'your-trakt-client-id'
@@ -6001,6 +6006,9 @@ paths:
               schema:
                 type: object
                 properties:
+                  provider:
+                    type: string
+                    enum: [direct, jellyfin]
                   connected:
                     type: boolean
                   username:

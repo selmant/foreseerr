@@ -479,12 +479,18 @@ settingsRoutes.post('/tautulli', async (req, res, next) => {
 settingsRoutes.get('/trakt', async (_req, res) => {
   const settings = getSettings();
   const linkedAccountCount = await countLinkedTraktAccounts();
+  const provider =
+    settings.trakt.provider === 'jellyfin' ? 'jellyfin' : 'direct';
 
   res.status(200).json({
+    provider,
     clientId: settings.trakt.clientId,
     // Never return the full secret; indicate whether one is set
     clientSecret: settings.trakt.clientSecret ? '********' : '',
-    configured: Boolean(settings.trakt.clientId && settings.trakt.clientSecret),
+    configured:
+      provider === 'jellyfin'
+        ? Boolean(settings.jellyfin.ip)
+        : Boolean(settings.trakt.clientId && settings.trakt.clientSecret),
     actionsEnabled: settings.mediaActions?.providers?.trakt !== false,
     linkedAccountCount,
   });
@@ -494,6 +500,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
   const settings = getSettings();
 
   try {
+    const provider = req.body.provider === 'jellyfin' ? 'jellyfin' : 'direct';
     const previousClientId = settings.trakt.clientId;
     const previousClientSecret = settings.trakt.clientSecret;
     const clientId = String(req.body.clientId ?? '').trim();
@@ -507,7 +514,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
     const credentialsChanging =
       previousClientId !== clientId || previousClientSecret !== clientSecret;
 
-    if (credentialsChanging) {
+    if (provider === 'direct' && credentialsChanging) {
       const linkedAccountCount = await countLinkedTraktAccounts();
       if (
         linkedAccountCount > 0 &&
@@ -525,6 +532,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
     }
 
     settings.trakt = {
+      provider,
       clientId,
       clientSecret,
     };
@@ -535,7 +543,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
     };
     await settings.save();
 
-    if (credentialsChanging) {
+    if (provider === 'direct' && credentialsChanging) {
       const disconnectedAccountCount = await disconnectAllTraktLinks();
       clearSyncCache();
       logger.info('Disconnected Trakt accounts after credential change', {
@@ -545,11 +553,13 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
     }
 
     return res.status(200).json({
+      provider,
       clientId: settings.trakt.clientId,
       clientSecret: settings.trakt.clientSecret ? '********' : '',
-      configured: Boolean(
-        settings.trakt.clientId && settings.trakt.clientSecret
-      ),
+      configured:
+        provider === 'jellyfin'
+          ? Boolean(settings.jellyfin.ip)
+          : Boolean(settings.trakt.clientId && settings.trakt.clientSecret),
       actionsEnabled: settings.mediaActions.providers.trakt !== false,
       linkedAccountCount: await countLinkedTraktAccounts(),
     });

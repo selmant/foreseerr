@@ -161,9 +161,45 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
 
     assert.equal(res.status, 200);
     assert.deepEqual(res.body, {
+      provider: 'direct',
       connected: false,
       username: null,
     });
+  });
+
+  it('uses the linked Jellyfin account when Better Trakt is selected', async () => {
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    user.jellyfinUserId = 'jellyfin-user-1';
+    user.jellyfinUsername = 'jellyfin-user';
+    user.jellyfinAuthToken = 'jellyfin-access-token';
+    await getRepository(User).save(user);
+    getSettings().trakt = {
+      provider: 'jellyfin',
+      clientId: '',
+      clientSecret: '',
+    };
+
+    const status = await agent.get(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
+    );
+    assert.equal(status.status, 200);
+    assert.deepEqual(status.body, {
+      provider: 'jellyfin',
+      connected: true,
+      username: 'jellyfin-user',
+    });
+    assert.equal(
+      JSON.stringify(status.body).includes('jellyfin-access-token'),
+      false
+    );
+
+    const deviceCode = await agent.post(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
+    );
+    assert.equal(deviceCode.status, 409);
   });
 
   it('POST device/code returns Trakt device payload', async () => {
@@ -346,6 +382,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     );
     assert.equal(status.status, 200);
     assert.deepEqual(status.body, {
+      provider: 'direct',
       connected: true,
       username: 'trakt-user',
     });
@@ -505,6 +542,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
     );
     assert.deepEqual(status.body, {
+      provider: 'direct',
       connected: false,
       username: null,
     });
@@ -617,7 +655,11 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
     );
     assert.equal(status.status, 200);
-    assert.deepEqual(status.body, { connected: false, username: null });
+    assert.deepEqual(status.body, {
+      provider: 'direct',
+      connected: false,
+      username: null,
+    });
   });
 
   it('POST device/code returns 400 when Trakt is not configured', async () => {
