@@ -1,11 +1,9 @@
 import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
-import PageTitle from '@app/components/Common/PageTitle';
 import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
 import axios from 'axios';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate as globalMutate } from 'swr';
 
@@ -25,7 +23,6 @@ const messages = defineMessages('components.Settings.SettingsBetterTrakt', {
   active: 'Better Trakt is active',
   success: 'Better Trakt is now active.',
   failure: 'Unable to enable Better Trakt.',
-  normal: 'Use the normal Client ID / Client Secret setup',
 });
 
 type TraktSettingsResponse = {
@@ -67,7 +64,6 @@ const SettingsBetterTrakt = () => {
 
   return (
     <>
-      <PageTitle title={intl.formatMessage(messages.title)} />
       <div className="mb-6">
         <h3 className="heading">{intl.formatMessage(messages.title)}</h3>
         <p className="description">
@@ -95,7 +91,7 @@ const SettingsBetterTrakt = () => {
           <li>{intl.formatMessage(messages.admin)}</li>
         </ol>
       </div>
-      <div className="mt-6 flex gap-3">
+      <div className="mt-6">
         <Button
           buttonType="primary"
           onClick={enable}
@@ -105,12 +101,6 @@ const SettingsBetterTrakt = () => {
             data?.provider === 'jellyfin' ? messages.active : messages.enable
           )}
         </Button>
-        <Link
-          href="/settings/integrations"
-          className="inline-flex items-center text-sm text-gray-300 underline hover:text-white"
-        >
-          {intl.formatMessage(messages.normal)}
-        </Link>
       </div>
     </>
   );

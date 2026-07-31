@@ -4,6 +4,7 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
+import SettingsBetterTrakt from '@app/components/Settings/SettingsBetterTrakt';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
@@ -11,7 +12,6 @@ import { Transition } from '@headlessui/react';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { Field, Formik, type FormikHelpers } from 'formik';
-import Link from 'next/link';
 import { Fragment, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate as globalMutate } from 'swr';
@@ -21,9 +21,9 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
   trakt: 'Trakt',
   traktSettings: 'Trakt Settings',
   traktSettingsDescription:
-    'Configure your Trakt API application credentials. Users can then link their Trakt accounts to browse personalized recommendations, lists, and watchlists.',
-  betterTraktLink:
-    'Having trouble with Trakt app-registration limits? Configure Better Trakt through Jellyfin instead.',
+    'Choose how Foreseer connects users to Trakt for personalized recommendations, lists, and watchlists.',
+  directTab: 'Trakt API application',
+  betterTab: 'Better Trakt (Jellyfin)',
   clientId: 'Client ID',
   clientSecret: 'Client Secret',
   actionsEnabled: 'Enable watched / rate actions',
@@ -70,6 +70,7 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
     '/api/v1/settings/trakt'
   );
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [showBetterTrakt, setShowBetterTrakt] = useState(false);
   const [pendingSubmit, setPendingSubmit] = useState<{
     values: TraktFormValues;
     helpers: FormikHelpers<TraktFormValues>;
@@ -166,150 +167,182 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
         <p className="description">
           {intl.formatMessage(messages.traktSettingsDescription)}
         </p>
-        <p className="description mt-2">
-          {intl.formatMessage(messages.createAppTip, {
-            TraktAppLink: (msg: React.ReactNode) => (
-              <a
-                href="https://trakt.tv/oauth/applications"
-                target="_blank"
-                rel="noreferrer"
-                className="text-white underline transition hover:text-gray-200"
-              >
-                {msg}
-              </a>
-            ),
-          })}
-        </p>
-      </div>
-      <Formik
-        initialValues={{
-          clientId: data?.clientId ?? '',
-          // Never seed the masked placeholder — reveal would only show asterisks.
-          // Empty field: leave blank to keep the current secret (server preserves).
-          clientSecret: '',
-          actionsEnabled: data?.actionsEnabled !== false,
-        }}
-        enableReinitialize
-        validationSchema={TraktSettingsSchema}
-        onSubmit={async (values, helpers) => {
-          const linkedCount = data?.linkedAccountCount ?? 0;
-          if (credentialsChanging(values) && linkedCount > 0) {
-            setPendingSubmit({ values, helpers });
-            setConfirmModalOpen(true);
-            return;
-          }
-
-          await saveSettings(values, helpers);
-        }}
-      >
-        {({
-          errors,
-          touched,
-          values,
-          handleSubmit,
-          isSubmitting,
-          isValid,
-          setFieldValue,
-        }) => (
-          <form className="section" onSubmit={handleSubmit}>
-            <p className="mb-6 text-sm text-yellow-200">
-              <Link
-                href="/settings/integrations/trakt/jellyfin"
-                className="underline hover:text-yellow-100"
-              >
-                {intl.formatMessage(messages.betterTraktLink)}
-              </Link>
-            </p>
-            <>
-              <div className="form-row">
-                <label htmlFor="clientId" className="text-label">
-                  {intl.formatMessage(messages.clientId)}
-                  <span className="label-required">*</span>
-                </label>
-                <div className="form-input-area">
-                  <div className="form-input-field">
-                    <Field
-                      id="clientId"
-                      name="clientId"
-                      type="text"
-                      autoComplete="off"
-                    />
-                  </div>
-                  {errors.clientId &&
-                    touched.clientId &&
-                    typeof errors.clientId === 'string' && (
-                      <div className="error">{errors.clientId}</div>
-                    )}
-                </div>
-              </div>
-              <div className="form-row">
-                <label htmlFor="clientSecret" className="text-label">
-                  {intl.formatMessage(messages.clientSecret)}
-                  {!(data?.provider === 'direct' && data.configured) && (
-                    <span className="label-required">*</span>
-                  )}
-                  {data?.provider === 'direct' && data.configured && (
-                    <span className="label-tip">
-                      {intl.formatMessage(messages.clientSecretTip)}
-                    </span>
-                  )}
-                </label>
-                <div className="form-input-area">
-                  <div className="form-input-field">
-                    <SensitiveInput
-                      as="field"
-                      id="clientSecret"
-                      name="clientSecret"
-                      autoComplete="off"
-                    />
-                  </div>
-                  {errors.clientSecret &&
-                    touched.clientSecret &&
-                    typeof errors.clientSecret === 'string' && (
-                      <div className="error">{errors.clientSecret}</div>
-                    )}
-                </div>
-              </div>
-            </>
-            <div className="form-row">
-              <label htmlFor="actionsEnabled" className="text-label">
-                {intl.formatMessage(messages.actionsEnabled)}
-              </label>
-              <div className="form-input-area">
-                <Field
-                  type="checkbox"
-                  id="actionsEnabled"
-                  name="actionsEnabled"
-                  onChange={() =>
-                    setFieldValue('actionsEnabled', !values.actionsEnabled)
-                  }
-                />
-                <p className="text-sm text-gray-400">
-                  {intl.formatMessage(messages.actionsEnabledTip)}
-                </p>
-              </div>
-            </div>
-            <div className="actions">
-              <div className="flex justify-end">
-                <span className="ml-3 inline-flex rounded-md shadow-sm">
-                  <Button
-                    buttonType="primary"
-                    type="submit"
-                    disabled={isSubmitting || !isValid}
-                  >
-                    <ArrowDownOnSquareIcon />
-                    <span>
-                      {isSubmitting
-                        ? intl.formatMessage(globalMessages.saving)
-                        : intl.formatMessage(globalMessages.save)}
-                    </span>
-                  </Button>
-                </span>
-              </div>
-            </div>
-          </form>
+        {!showBetterTrakt && (
+          <p className="description mt-2">
+            {intl.formatMessage(messages.createAppTip, {
+              TraktAppLink: (msg: React.ReactNode) => (
+                <a
+                  href="https://trakt.tv/oauth/applications"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-white underline transition hover:text-gray-200"
+                >
+                  {msg}
+                </a>
+              ),
+            })}
+          </p>
         )}
-      </Formik>
+      </div>
+      <div
+        role="tablist"
+        aria-label={intl.formatMessage(messages.traktSettings)}
+        className="mb-6 flex gap-6 border-b border-gray-700"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!showBetterTrakt}
+          onClick={() => setShowBetterTrakt(false)}
+          className={`-mb-px border-b-2 px-1 pb-3 text-sm font-medium transition ${
+            !showBetterTrakt
+              ? 'border-white text-white'
+              : 'border-transparent text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          {intl.formatMessage(messages.directTab)}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={showBetterTrakt}
+          onClick={() => setShowBetterTrakt(true)}
+          className={`-mb-px border-b-2 px-1 pb-3 text-sm font-medium transition ${
+            showBetterTrakt
+              ? 'border-white text-white'
+              : 'border-transparent text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          {intl.formatMessage(messages.betterTab)}
+        </button>
+      </div>
+      <div role="tabpanel">
+        {showBetterTrakt ? (
+          <SettingsBetterTrakt />
+        ) : (
+          <Formik
+            initialValues={{
+              clientId: data?.clientId ?? '',
+              // Never seed the masked placeholder — reveal would only show asterisks.
+              // Empty field: leave blank to keep the current secret (server preserves).
+              clientSecret: '',
+              actionsEnabled: data?.actionsEnabled !== false,
+            }}
+            enableReinitialize
+            validationSchema={TraktSettingsSchema}
+            onSubmit={async (values, helpers) => {
+              const linkedCount = data?.linkedAccountCount ?? 0;
+              if (credentialsChanging(values) && linkedCount > 0) {
+                setPendingSubmit({ values, helpers });
+                setConfirmModalOpen(true);
+                return;
+              }
+
+              await saveSettings(values, helpers);
+            }}
+          >
+            {({
+              errors,
+              touched,
+              values,
+              handleSubmit,
+              isSubmitting,
+              isValid,
+              setFieldValue,
+            }) => (
+              <form className="section" onSubmit={handleSubmit}>
+                <>
+                  <div className="form-row">
+                    <label htmlFor="clientId" className="text-label">
+                      {intl.formatMessage(messages.clientId)}
+                      <span className="label-required">*</span>
+                    </label>
+                    <div className="form-input-area">
+                      <div className="form-input-field">
+                        <Field
+                          id="clientId"
+                          name="clientId"
+                          type="text"
+                          autoComplete="off"
+                        />
+                      </div>
+                      {errors.clientId &&
+                        touched.clientId &&
+                        typeof errors.clientId === 'string' && (
+                          <div className="error">{errors.clientId}</div>
+                        )}
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <label htmlFor="clientSecret" className="text-label">
+                      {intl.formatMessage(messages.clientSecret)}
+                      {!(data?.provider === 'direct' && data.configured) && (
+                        <span className="label-required">*</span>
+                      )}
+                      {data?.provider === 'direct' && data.configured && (
+                        <span className="label-tip">
+                          {intl.formatMessage(messages.clientSecretTip)}
+                        </span>
+                      )}
+                    </label>
+                    <div className="form-input-area">
+                      <div className="form-input-field">
+                        <SensitiveInput
+                          as="field"
+                          id="clientSecret"
+                          name="clientSecret"
+                          autoComplete="off"
+                        />
+                      </div>
+                      {errors.clientSecret &&
+                        touched.clientSecret &&
+                        typeof errors.clientSecret === 'string' && (
+                          <div className="error">{errors.clientSecret}</div>
+                        )}
+                    </div>
+                  </div>
+                </>
+                <div className="form-row">
+                  <label htmlFor="actionsEnabled" className="text-label">
+                    {intl.formatMessage(messages.actionsEnabled)}
+                  </label>
+                  <div className="form-input-area">
+                    <Field
+                      type="checkbox"
+                      id="actionsEnabled"
+                      name="actionsEnabled"
+                      onChange={() =>
+                        setFieldValue('actionsEnabled', !values.actionsEnabled)
+                      }
+                    />
+                    <p className="text-sm text-gray-400">
+                      {intl.formatMessage(messages.actionsEnabledTip)}
+                    </p>
+                  </div>
+                </div>
+                <div className="actions">
+                  <div className="flex justify-end">
+                    <span className="ml-3 inline-flex rounded-md shadow-sm">
+                      <Button
+                        buttonType="primary"
+                        type="submit"
+                        disabled={isSubmitting || !isValid}
+                      >
+                        <ArrowDownOnSquareIcon />
+                        <span>
+                          {isSubmitting
+                            ? intl.formatMessage(globalMessages.saving)
+                            : intl.formatMessage(globalMessages.save)}
+                        </span>
+                      </Button>
+                    </span>
+                  </div>
+                </div>
+              </form>
+            )}
+          </Formik>
+        )}
+      </div>
       <Transition
         as={Fragment}
         show={confirmModalOpen}
