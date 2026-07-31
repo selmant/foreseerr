@@ -21,7 +21,7 @@ import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces'
 import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
 import { isAnimeMedia } from '@server/lib/anime/detect';
 import { Permission } from '@server/lib/permissions';
-import { isSeasonFullyAvailable } from '@server/lib/seasonRequests';
+import { isSeasonCoveredForFullRequest } from '@server/lib/seasonRequests';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -367,13 +367,14 @@ const TvRequestModal = ({
   };
 
   const getAllRequestedSeasons = (): number[] => {
-    const requestedSeasons = (data?.mediaInfo?.requests ?? [])
-      .filter(
-        (request) =>
-          request.is4k === is4k &&
-          request.status !== MediaRequestStatus.DECLINED &&
-          request.status !== MediaRequestStatus.COMPLETED
-      )
+    const activeRequests = (data?.mediaInfo?.requests ?? []).filter(
+      (request) =>
+        request.is4k === is4k &&
+        request.status !== MediaRequestStatus.DECLINED &&
+        request.status !== MediaRequestStatus.COMPLETED
+    );
+    const requestedSeasons = activeRequests
+      .filter((request) => request.seasons.length > 0)
       .reduce((requestedSeasons, request) => {
         return [
           ...requestedSeasons,
@@ -382,12 +383,19 @@ const TvRequestModal = ({
             .map((sr) => sr.seasonNumber),
         ];
       }, [] as number[]);
+    const activeEpisodeRequestedSeasons = new Set(
+      activeRequests.flatMap((request) =>
+        request.episodes.map((episode) => episode.seasonNumber)
+      )
+    );
 
     const availableSeasons = (data?.mediaInfo?.seasons ?? [])
       .filter(
         (season) =>
-          isSeasonFullyAvailable(season[is4k ? 'status4k' : 'status']) &&
-          !requestedSeasons.includes(season.seasonNumber)
+          isSeasonCoveredForFullRequest(
+            season[is4k ? 'status4k' : 'status'],
+            activeEpisodeRequestedSeasons.has(season.seasonNumber)
+          ) && !requestedSeasons.includes(season.seasonNumber)
       )
       .map((season) => season.seasonNumber);
 
@@ -781,9 +789,23 @@ const TvRequestModal = ({
                             sn[is4k ? 'status4k' : 'status'] !==
                               MediaStatus.DELETED
                         );
-                        const seasonIsFullyAvailable = isSeasonFullyAvailable(
-                          mediaSeason?.[is4k ? 'status4k' : 'status']
+                        const seasonHasActiveEpisodeRequest = (
+                          data?.mediaInfo?.requests ?? []
+                        ).some(
+                          (request) =>
+                            request.is4k === is4k &&
+                            request.status !== MediaRequestStatus.DECLINED &&
+                            request.status !== MediaRequestStatus.COMPLETED &&
+                            request.episodes.some(
+                              (episode) =>
+                                episode.seasonNumber === season.seasonNumber
+                            )
                         );
+                        const seasonIsCoveredByAvailability =
+                          isSeasonCoveredForFullRequest(
+                            mediaSeason?.[is4k ? 'status4k' : 'status'],
+                            seasonHasActiveEpisodeRequest
+                          );
                         const seasonHasActiveRequest =
                           !!seasonRequest &&
                           !editingSeasons.includes(season.seasonNumber);
@@ -804,12 +826,12 @@ const TvRequestModal = ({
                                 tabIndex={0}
                                 data-testid={`season-request-toggle-${season.seasonNumber}`}
                                 aria-checked={
-                                  seasonIsFullyAvailable ||
+                                  seasonIsCoveredByAvailability ||
                                   seasonHasActiveRequest ||
                                   isSelectedSeason(season.seasonNumber)
                                 }
                                 aria-disabled={
-                                  seasonIsFullyAvailable ||
+                                  seasonIsCoveredByAvailability ||
                                   seasonHasActiveRequest ||
                                   seasonIsQuotaBlocked
                                 }
@@ -822,7 +844,7 @@ const TvRequestModal = ({
                                   }
                                 }}
                                 className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer items-center justify-center pt-2 focus:outline-none ${
-                                  seasonIsFullyAvailable ||
+                                  seasonIsCoveredByAvailability ||
                                   seasonIsQuotaBlocked ||
                                   seasonHasActiveRequest
                                     ? 'opacity-50'
@@ -832,7 +854,7 @@ const TvRequestModal = ({
                                 <span
                                   aria-hidden="true"
                                   className={`${
-                                    seasonIsFullyAvailable ||
+                                    seasonIsCoveredByAvailability ||
                                     seasonHasActiveRequest ||
                                     isSelectedSeason(season.seasonNumber)
                                       ? 'bg-indigo-500'
@@ -842,7 +864,7 @@ const TvRequestModal = ({
                                 <span
                                   aria-hidden="true"
                                   className={`${
-                                    seasonIsFullyAvailable ||
+                                    seasonIsCoveredByAvailability ||
                                     seasonHasActiveRequest ||
                                     isSelectedSeason(season.seasonNumber)
                                       ? 'translate-x-5'

@@ -189,6 +189,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
     assert.deepEqual(status.body, {
       provider: 'jellyfin',
       connected: true,
+      needsJellyfinSessionRefresh: false,
       username: 'jellyfin-user',
     });
     assert.equal(

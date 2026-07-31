@@ -2,6 +2,11 @@ import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
+import {
+  clearSyncCache,
+  getUserSyncSnapshot,
+  seedUserSyncCache,
+} from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import { checkUser, isAuthenticated } from '@server/middleware/auth';
@@ -88,6 +93,7 @@ async function loginAsAdmin() {
 
 describe('Trakt settings credential safety', () => {
   beforeEach(() => {
+    clearSyncCache();
     const settings = getSettings();
     settings.trakt = {
       clientId: 'test-client-id',
@@ -218,5 +224,26 @@ describe('Trakt settings credential safety', () => {
 
     saveMock.mock.restore();
     validateMock.mock.restore();
+  });
+
+  it('clears user Trakt state when switching to the Jellyfin provider', async () => {
+    const agent = await loginAsAdmin();
+    seedUserSyncCache(1, {
+      watchedMovies: [{ movie: { ids: { tmdb: 123 } } }],
+      watchedShows: [],
+      ratingsMovies: [],
+      ratingsShows: [],
+      fetchedAt: Date.now() / 1000,
+    });
+
+    const res = await agent.post('/api/v1/settings/trakt').send({
+      provider: 'jellyfin',
+      clientId: 'test-client-id',
+      clientSecret: '',
+      actionsEnabled: true,
+    });
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(getUserSyncSnapshot(1), undefined);
   });
 });

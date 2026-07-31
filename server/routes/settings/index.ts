@@ -501,6 +501,8 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
 
   try {
     const provider = req.body.provider === 'jellyfin' ? 'jellyfin' : 'direct';
+    const previousProvider =
+      settings.trakt.provider === 'jellyfin' ? 'jellyfin' : 'direct';
     const previousClientId = settings.trakt.clientId;
     const previousClientSecret = settings.trakt.clientSecret;
     const clientId = String(req.body.clientId ?? '').trim();
@@ -513,6 +515,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
 
     const credentialsChanging =
       previousClientId !== clientId || previousClientSecret !== clientSecret;
+    const providerChanging = previousProvider !== provider;
 
     if (provider === 'direct' && credentialsChanging) {
       const linkedAccountCount = await countLinkedTraktAccounts();
@@ -550,6 +553,10 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
         label: 'Settings',
         disconnectedAccountCount,
       });
+    }
+
+    if (providerChanging) {
+      clearSyncCache();
     }
 
     return res.status(200).json({

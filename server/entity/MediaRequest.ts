@@ -17,7 +17,7 @@ import {
 } from '@server/lib/episodeRequests';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { Permission } from '@server/lib/permissions';
-import { isSeasonFullyAvailable } from '@server/lib/seasonRequests';
+import { isSeasonCoveredForFullRequest } from '@server/lib/seasonRequests';
 import { MetadataProviderType, getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
@@ -603,15 +603,28 @@ export class MediaRequest {
       }
 
       // A partially available or processing season can come from an episode
-      // request, so only a completely available season blocks a full-season
-      // request. Active full-season requests are handled above.
+      // request. Keep externally processing seasons covered, while allowing
+      // a partial episode request to be upgraded to a full-season request.
       if (media.seasons) {
+        const activeEpisodeRequestedSeasons = new Set(
+          (media.requests ?? [])
+            .filter(
+              (request) =>
+                request.is4k === requestBody.is4k &&
+                request.status !== MediaRequestStatus.DECLINED &&
+                request.status !== MediaRequestStatus.COMPLETED
+            )
+            .flatMap((request) =>
+              (request.episodes ?? []).map((episode) => episode.seasonNumber)
+            )
+        );
         existingSeasons = [
           ...existingSeasons,
           ...media.seasons
             .filter((season) =>
-              isSeasonFullyAvailable(
-                season[requestBody.is4k ? 'status4k' : 'status']
+              isSeasonCoveredForFullRequest(
+                season[requestBody.is4k ? 'status4k' : 'status'],
+                activeEpisodeRequestedSeasons.has(season.seasonNumber)
               )
             )
             .map((season) => season.seasonNumber),
