@@ -38,6 +38,7 @@ const messages = defineMessages(
     deleteFailed: 'Unable to delete linked account.',
     betterTraktEnabled:
       'Trakt is provided through Better Trakt in Jellyfin. Link your Jellyfin account here, then link Trakt and enable Foreseer access in the Jellyfin plugin.',
+    refreshJellyfinSession: 'Refresh Jellyfin Session',
   }
 );
 
@@ -143,6 +144,14 @@ const UserLinkedAccountsSettings = () => {
   };
 
   const linkable = [
+    {
+      name: intl.formatMessage(messages.refreshJellyfinSession),
+      action: () => setShowJellyfinModal(true),
+      hide:
+        traktStatus?.provider !== 'jellyfin' ||
+        settings.currentSettings.mediaServerType !== MediaServerType.JELLYFIN ||
+        !accounts.some((a) => a.type === LinkedAccountType.Jellyfin),
+    },
     {
       name: 'Plex',
       action: () => {

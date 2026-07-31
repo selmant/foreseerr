@@ -408,7 +408,10 @@ userSettingsRoutes.post<{ username: string; password: string }>(
     // Do not allow linking of an already linked account
     if (
       await userRepository.exist({
-        where: { jellyfinUsername: req.body.username },
+        where: {
+          jellyfinUsername: req.body.username,
+          id: Not(req.user.id),
+        },
       })
     ) {
       return res.status(422).json({
@@ -443,7 +446,10 @@ userSettingsRoutes.post<{ username: string; password: string }>(
       // Do not allow linking of an already linked account
       if (
         await userRepository.exist({
-          where: { jellyfinUserId: account.User.Id },
+          where: {
+            jellyfinUserId: account.User.Id,
+            id: Not(req.user.id),
+          },
         })
       ) {
         return res.status(422).json({
@@ -575,7 +581,10 @@ userSettingsRoutes.post<{ secret: string }>(
 
       if (
         await userRepository.exist({
-          where: { jellyfinUserId: account.User.Id },
+          where: {
+            jellyfinUserId: account.User.Id,
+            id: Not(req.user.id),
+          },
         })
       ) {
         return res.status(422).json({
