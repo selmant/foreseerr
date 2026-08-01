@@ -117,3 +117,33 @@ describe('SonarrAPI getSeriesByTvdbId', () => {
     });
   });
 });
+
+describe('SonarrAPI getCalendar', () => {
+  afterEach(() => mock.restoreAll());
+
+  it('requests the bounded calendar endpoint and preserves embedded series data', async () => {
+    const sonarr = buildSonarr();
+    const get = mock.method(getAxios(sonarr), 'get', async () => ({
+      data: [
+        {
+          id: 7,
+          seriesId: 4,
+          title: 'Pilot',
+          airDate: '2026-08-04',
+          series: { id: 4, title: 'Example', tvdbId: 12, monitored: true },
+        },
+      ],
+    }));
+    const result = await sonarr.getCalendar('2026-08-01', '2026-08-31');
+
+    assert.strictEqual(result[0].series?.tvdbId, 12);
+    assert.strictEqual(get.mock.calls[0].arguments[0], '/calendar');
+    assert.deepStrictEqual(get.mock.calls[0].arguments[1], {
+      params: {
+        start: '2026-08-01',
+        end: '2026-08-31',
+        unmonitored: false,
+      },
+    });
+  });
+});

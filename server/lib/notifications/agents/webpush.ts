@@ -141,6 +141,10 @@ class WebPushAgent
           userName: payload.request?.requestedBy.displayName,
         });
         break;
+      case Notification.NEW_SEASON:
+      case Notification.RELEASE_DATE_CHANGED:
+        message = payload.message;
+        break;
       case Notification.ISSUE_CREATED:
         message = intl.formatMessage(messages.issueCreated, {
           issueType,
@@ -172,11 +176,13 @@ class WebPushAgent
         };
     }
 
-    const actionUrl = payload.issue
-      ? `/issues/${payload.issue.id}`
-      : payload.media
-        ? `/${payload.media.mediaType}/${payload.media.tmdbId}`
-        : undefined;
+    const actionUrl =
+      payload.watchUrl ??
+      (payload.issue
+        ? `/issues/${payload.issue.id}`
+        : payload.media
+          ? `/${payload.media.mediaType}/${payload.media.tmdbId}`
+          : undefined);
 
     const actionUrlTitle = actionUrl
       ? intl.formatMessage(

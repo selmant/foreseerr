@@ -5,6 +5,7 @@ import availabilitySync from '@server/lib/availabilitySync';
 import downloadTracker from '@server/lib/downloadtracker';
 import ImageProxy from '@server/lib/imageproxy';
 import refreshToken from '@server/lib/refreshToken';
+import releaseCalendarSync from '@server/lib/releases/sync';
 import {
   jellyfinFullScanner,
   jellyfinRecentScanner,
@@ -177,6 +178,22 @@ export const startJobs = (): void => {
     }),
     running: () => episodeRequestSync.running,
     cancelFn: () => episodeRequestSync.cancel(),
+  });
+
+  scheduledJobs.push({
+    id: 'release-calendar-sync',
+    name: 'Release Calendar Sync',
+    type: 'process',
+    interval: 'hours',
+    cronSchedule: jobs['release-calendar-sync'].schedule,
+    job: schedule.scheduleJob(jobs['release-calendar-sync'].schedule, () => {
+      logger.info('Starting scheduled job: Release Calendar Sync', {
+        label: 'Jobs',
+      });
+      releaseCalendarSync.run();
+    }),
+    running: () => releaseCalendarSync.running,
+    cancelFn: () => releaseCalendarSync.cancel(),
   });
 
   // Run full sonarr scan every 24 hours

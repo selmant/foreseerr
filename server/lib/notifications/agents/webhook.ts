@@ -151,7 +151,10 @@ class WebhookAgent
 
     const parsedJSON = JSON.parse(JSON.parse(payloadString));
 
-    return this.parseKeys(parsedJSON, payload, type);
+    return {
+      ...this.parseKeys(parsedJSON, payload, type),
+      ...(payload.watchUrl ? { watchUrl: payload.watchUrl } : {}),
+    };
   }
 
   public shouldSend(): boolean {

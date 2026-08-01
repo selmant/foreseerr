@@ -64,6 +64,12 @@ const messages = defineMessages('components.NotificationTypeSelector', {
   mediaautorequested: 'Request Automatically Submitted',
   mediaautorequestedDescription:
     'Get notified when new media requests are automatically submitted for items on Your Watchlist.',
+  newSeason: 'New Season',
+  newSeasonDescription:
+    'Get notified when a series you requested has a new season.',
+  releaseDateChanged: 'Release Date Changed',
+  releaseDateChangedDescription:
+    'Get notified when a relevant release date moves or is withdrawn.',
 });
 
 export const hasNotificationType = (
@@ -106,6 +112,8 @@ export enum Notification {
   ISSUE_RESOLVED = 1024,
   ISSUE_REOPENED = 2048,
   MEDIA_AUTO_REQUESTED = 4096,
+  NEW_SEASON = 16384,
+  RELEASE_DATE_CHANGED = 32768,
 }
 
 export const ALL_NOTIFICATIONS = Object.values(Notification)
@@ -196,6 +204,20 @@ const NotificationTypeSelector = ({
             ))));
 
     const types: NotificationItem[] = [
+      {
+        id: 'new-season',
+        name: intl.formatMessage(messages.newSeason),
+        description: intl.formatMessage(messages.newSeasonDescription),
+        value: Notification.NEW_SEASON,
+        hasNotifyUser: true,
+      },
+      {
+        id: 'release-date-changed',
+        name: intl.formatMessage(messages.releaseDateChanged),
+        description: intl.formatMessage(messages.releaseDateChangedDescription),
+        value: Notification.RELEASE_DATE_CHANGED,
+        hasNotifyUser: true,
+      },
       {
         id: 'media-auto-requested',
         name: intl.formatMessage(messages.mediaautorequested),

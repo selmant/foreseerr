@@ -200,9 +200,11 @@ class EmailAgent
           imageUrl: embedPoster ? payload.image : undefined,
           timestamp: new Date().toTimeString(),
           requestedBy: payload.request.requestedBy.displayName,
-          actionUrl: applicationUrl
-            ? `${applicationUrl}/${payload.media?.mediaType}/${payload.media?.tmdbId}`
-            : undefined,
+          actionUrl:
+            payload.watchUrl ??
+            (applicationUrl
+              ? `${applicationUrl}/${payload.media?.mediaType}/${payload.media?.tmdbId}`
+              : undefined),
           applicationUrl,
           applicationTitle,
           logoUrl,

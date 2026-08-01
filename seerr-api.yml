@@ -40,6 +40,8 @@ tags:
     description: Collection of media to watch later
   - name: blocklist
     description: Blocklisted media from discovery page.
+  - name: calendar
+    description: Unified Sonarr and Radarr release calendar.
 servers:
   - url: '{server}/api/v1'
     variables:
@@ -2743,6 +2745,78 @@ components:
       name: X-Api-Key
 
 paths:
+  /calendar:
+    get:
+      summary: Get release calendar entries
+      tags: [calendar]
+      parameters:
+        - in: query
+          name: start
+          required: true
+          schema: { type: string, format: date-time }
+        - in: query
+          name: end
+          required: true
+          schema: { type: string, format: date-time }
+        - in: query
+          name: scope
+          schema: { type: string, enum: [mine, all], default: mine }
+        - in: query
+          name: mediaType
+          schema: { type: string, enum: [movie, tv] }
+        - in: query
+          name: source
+          schema: { type: string, enum: [sonarr, radarr] }
+        - in: query
+          name: serverId
+          description: Administrator only.
+          schema: { type: integer }
+        - in: query
+          name: is4k
+          schema: { type: boolean }
+        - in: query
+          name: includeEpisodes
+          schema: { type: boolean, default: true }
+        - in: query
+          name: includeUnmonitored
+          description: Administrator only.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Range-bounded normalized calendar results.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        [id, mediaType, source, title, startsAt, dateType]
+                      properties:
+                        id: { type: integer }
+                        mediaType: { type: string, enum: [movie, tv] }
+                        source: { type: string, enum: [sonarr, radarr] }
+                        title: { type: string }
+                        subtitle: { type: string, nullable: true }
+                        startsAt: { type: string, format: date-time }
+                        allDay: { type: boolean }
+                        dateType:
+                          {
+                            type: string,
+                            enum: [air, digital, physical, theatrical],
+                          }
+                        requestedByCurrentUser: { type: boolean }
+                        available: { type: boolean }
+                  partialSources:
+                    type: array
+                    items: { type: object }
+        '400': { description: Invalid range or filter. }
+        '401': { description: Unauthorized. }
+        '403': { description: Administrator-only filter requested. }
   /status:
     get:
       summary: Get Foreseerr status

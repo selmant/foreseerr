@@ -401,7 +401,8 @@ export type JobId =
   | 'image-cache-cleanup'
   | 'availability-sync'
   | 'process-blocklisted-tags'
-  | 'episode-request-sync';
+  | 'episode-request-sync'
+  | 'release-calendar-sync';
 
 export interface AllSettings {
   clientId: string;
@@ -659,6 +660,9 @@ class Settings {
         },
         'episode-request-sync': {
           schedule: '0 */15 * * * *',
+        },
+        'release-calendar-sync': {
+          schedule: '0 0 */6 * * *',
         },
       },
       network: {

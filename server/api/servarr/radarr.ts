@@ -23,6 +23,16 @@ export interface RadarrMovie {
   tmdbId: number;
   imdbId: string;
   titleSlug: string;
+  year?: number;
+  inCinemas?: string;
+  digitalRelease?: string;
+  physicalRelease?: string;
+  minimumAvailability?: string;
+  images?: {
+    coverType: string;
+    url: string;
+    remoteUrl?: string;
+  }[];
   folderName: string;
   path: string;
   profileId: number;
@@ -80,6 +90,28 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
       });
     }
   };
+
+  public async getCalendar(
+    start: Date | string,
+    end: Date | string,
+    includeUnmonitored = false
+  ): Promise<RadarrMovie[]> {
+    try {
+      const response = await this.axios.get<RadarrMovie[]>('/calendar', {
+        params: {
+          start: start instanceof Date ? start.toISOString() : start,
+          end: end instanceof Date ? end.toISOString() : end,
+          unmonitored: includeUnmonitored,
+        },
+      });
+
+      return response.data;
+    } catch (e) {
+      throw new Error(`[Radarr] Failed to retrieve calendar: ${e.message}`, {
+        cause: e,
+      });
+    }
+  }
 
   public getMovie = async ({ id }: { id: number }): Promise<RadarrMovie> => {
     try {

@@ -159,13 +159,15 @@ class PushoverAgent
       message += `<small>\n<b>${extra.name}:</b> ${extra.value}</small>`;
     }
 
-    const url = applicationUrl
-      ? payload.issue
-        ? `${applicationUrl}/issues/${payload.issue.id}`
-        : payload.media
-          ? `${applicationUrl}/${payload.media.mediaType}/${payload.media.tmdbId}`
-          : undefined
-      : undefined;
+    const url =
+      payload.watchUrl ??
+      (applicationUrl
+        ? payload.issue
+          ? `${applicationUrl}/issues/${payload.issue.id}`
+          : payload.media
+            ? `${applicationUrl}/${payload.media.mediaType}/${payload.media.tmdbId}`
+            : undefined
+        : undefined);
     const url_title = url
       ? intl.formatMessage(
           payload.issue ? globalMessages.viewIssue : globalMessages.viewMedia,

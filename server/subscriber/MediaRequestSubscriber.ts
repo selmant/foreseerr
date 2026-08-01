@@ -92,6 +92,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         media: latestMedia,
         image: `https://image.tmdb.org/t/p/w600_and_h900_bestv2${movie.poster_path}`,
         request: entity,
+        watchUrl: entity.is4k ? latestMedia.mediaUrl4k : latestMedia.mediaUrl,
       });
     } catch (e) {
       logger.error('Something went wrong sending media notification(s)', {
@@ -188,6 +189,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
               },
         ],
         request: entity,
+        watchUrl: entity.is4k ? latestMedia.mediaUrl4k : latestMedia.mediaUrl,
       });
     } catch (e) {
       logger.error('Something went wrong sending media notification(s)', {

@@ -144,13 +144,15 @@ class TelegramAgent
       message += `\n\*${extra.name}:\* ${extra.value}`;
     }
 
-    const url = applicationUrl
-      ? payload.issue
-        ? `${applicationUrl}/issues/${payload.issue.id}`
-        : payload.media
-          ? `${applicationUrl}/${payload.media.mediaType}/${payload.media.tmdbId}`
-          : undefined
-      : undefined;
+    const url =
+      payload.watchUrl ??
+      (applicationUrl
+        ? payload.issue
+          ? `${applicationUrl}/issues/${payload.issue.id}`
+          : payload.media
+            ? `${applicationUrl}/${payload.media.mediaType}/${payload.media.tmdbId}`
+            : undefined
+        : undefined);
 
     if (url) {
       message += `\n\n\[${this.escapeText(

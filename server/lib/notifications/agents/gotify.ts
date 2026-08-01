@@ -102,8 +102,10 @@ class GotifyAgent
       message += `\n\n**${extra.name}**\n${extra.value}  `;
     }
 
-    if (applicationUrl && payload.media) {
-      const actionUrl = `${applicationUrl}/${payload.media.mediaType}/${payload.media.tmdbId}`;
+    if ((applicationUrl && payload.media) || payload.watchUrl) {
+      const actionUrl =
+        payload.watchUrl ??
+        `${applicationUrl}/${payload.media?.mediaType}/${payload.media?.tmdbId}`;
       const displayUrl =
         actionUrl.length > 40 ? `${actionUrl.slice(0, 41)}...` : actionUrl;
       message += `\n\n**${intl.formatMessage(globalMessages.openIn, { applicationTitle })}:** [${displayUrl}](${actionUrl})  `;

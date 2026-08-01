@@ -31,6 +31,19 @@ export interface EpisodeResult {
   id: number;
 }
 
+/** The series fields Sonarr includes with calendar episode responses. */
+export interface SonarrCalendarSeries {
+  id: number;
+  title: string;
+  tvdbId: number;
+  monitored: boolean;
+  titleSlug?: string;
+}
+
+export interface SonarrCalendarEpisode extends EpisodeResult {
+  series?: SonarrCalendarSeries;
+}
+
 export interface SonarrSeries {
   title: string;
   sortTitle: string;
@@ -408,6 +421,31 @@ class SonarrAPI extends ServarrBase<{
         seriesId,
       });
       throw new Error('Failed to get episodes', { cause: e });
+    }
+  }
+
+  public async getCalendar(
+    start: Date | string,
+    end: Date | string,
+    includeUnmonitored = false
+  ): Promise<SonarrCalendarEpisode[]> {
+    try {
+      const response = await this.axios.get<SonarrCalendarEpisode[]>(
+        '/calendar',
+        {
+          params: {
+            start: start instanceof Date ? start.toISOString() : start,
+            end: end instanceof Date ? end.toISOString() : end,
+            unmonitored: includeUnmonitored,
+          },
+        }
+      );
+
+      return response.data;
+    } catch (e) {
+      throw new Error(`[Sonarr] Failed to retrieve calendar: ${e.message}`, {
+        cause: e,
+      });
     }
   }
 

@@ -22,6 +22,7 @@ interface PushbulletPayload {
   title: string;
   body: string;
   channel_tag?: string;
+  url?: string;
 }
 
 class PushbulletAgent
@@ -101,10 +102,12 @@ class PushbulletAgent
       body += `\n${extra.name}: ${extra.value}`;
     }
 
+    const url = payload.watchUrl;
     return {
-      type: 'note',
+      type: url ? 'link' : 'note',
       title,
       body,
+      url,
     };
   }
 

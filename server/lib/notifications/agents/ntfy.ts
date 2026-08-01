@@ -90,8 +90,8 @@ class NtfyAgent
 
     const attach = embedPoster ? payload.image : undefined;
 
-    let click;
-    if (applicationUrl && payload.media) {
+    let click = payload.watchUrl;
+    if (!click && applicationUrl && payload.media) {
       click = `${applicationUrl}/${payload.media.mediaType}/${payload.media.tmdbId}`;
     }
 
