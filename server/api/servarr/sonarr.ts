@@ -441,7 +441,49 @@ class SonarrAPI extends ServarrBase<{
         }
       );
 
-      return response.data;
+      const episodes = response.data;
+      const seriesIds = [
+        ...new Set(
+          episodes
+            .filter((episode) => !episode.series)
+            .map((episode) => episode.seriesId)
+        ),
+      ];
+
+      if (seriesIds.length === 0) {
+        return episodes;
+      }
+
+      // Some Sonarr versions omit the embedded series object from calendar
+      // responses. Fetch each missing series once, then apply it to all of
+      // that series' episodes instead of making one request per episode.
+      const seriesById = new Map<number, SonarrCalendarSeries>();
+      await Promise.all(
+        seriesIds.map(async (seriesId) => {
+          try {
+            const series = await this.getSeriesById(seriesId);
+            seriesById.set(seriesId, {
+              id: series.id ?? seriesId,
+              title: series.title,
+              tvdbId: series.tvdbId,
+              monitored: series.monitored,
+              titleSlug: series.titleSlug,
+            });
+          } catch (e) {
+            logger.warn('Failed to enrich Sonarr calendar episode series', {
+              label: 'Sonarr API',
+              errorMessage: e instanceof Error ? e.message : String(e),
+              seriesId,
+            });
+          }
+        })
+      );
+
+      return episodes.map((episode) =>
+        episode.series || !seriesById.has(episode.seriesId)
+          ? episode
+          : { ...episode, series: seriesById.get(episode.seriesId) }
+      );
     } catch (e) {
       throw new Error(`[Sonarr] Failed to retrieve calendar: ${e.message}`, {
         cause: e,

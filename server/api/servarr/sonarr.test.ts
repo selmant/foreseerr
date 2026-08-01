@@ -146,4 +146,62 @@ describe('SonarrAPI getCalendar', () => {
       },
     });
   });
+
+  it('hydrates missing series metadata once per series', async () => {
+    const sonarr = buildSonarr();
+    const get = mock.method(getAxios(sonarr), 'get', async (path: string) => {
+      if (path === '/calendar') {
+        return {
+          data: [
+            {
+              id: 7,
+              seriesId: 4,
+              title: 'Episode one',
+              airDate: '2026-08-04',
+            },
+            {
+              id: 8,
+              seriesId: 4,
+              title: 'Episode two',
+              airDate: '2026-08-11',
+            },
+          ],
+        };
+      }
+
+      assert.strictEqual(path, '/series/4');
+      return {
+        data: {
+          id: 4,
+          title: 'Example',
+          tvdbId: 12,
+          titleSlug: 'example',
+          monitored: false,
+        },
+      };
+    });
+
+    const result = await sonarr.getCalendar('2026-08-01', '2026-08-31');
+
+    assert.strictEqual(get.mock.callCount(), 2);
+    assert.deepStrictEqual(
+      result.map((episode) => episode.series),
+      [
+        {
+          id: 4,
+          title: 'Example',
+          tvdbId: 12,
+          titleSlug: 'example',
+          monitored: false,
+        },
+        {
+          id: 4,
+          title: 'Example',
+          tvdbId: 12,
+          titleSlug: 'example',
+          monitored: false,
+        },
+      ]
+    );
+  });
 });
