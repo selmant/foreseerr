@@ -86,7 +86,7 @@ const messages = defineMessages('components.Calendar', {
   todayCountdown: 'Today',
   overdue: 'Released',
   showing: 'Showing {start}–{end}',
-  nextMore: 'Next: {title} (+{count} more)',
+  dayReleases: 'Releases on {date}',
 });
 
 type View = 'month' | 'agenda';
@@ -194,6 +194,10 @@ const Calendar = () => {
   const [is4k, setIs4k] = useState(initialFilters.is4k);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
+  const [selectedDay, setSelectedDay] = useState<{
+    date: Date;
+    items: CalendarItem[];
+  } | null>(null);
 
   useEffect(() => {
     if (window.matchMedia('(max-width: 1023px)').matches) setView('agenda');
@@ -395,6 +399,9 @@ const Calendar = () => {
             anchorDate={anchorDate}
             items={items}
             onSelect={setSelectedItem}
+            onSelectDay={(dayItems, date) =>
+              setSelectedDay({ items: dayItems, date })
+            }
           />
         ) : null}
         {items.length > 0 && view === 'agenda' ? (
@@ -419,6 +426,34 @@ const Calendar = () => {
         item={selectedItem}
         onClose={() => setSelectedItem(null)}
       />
+      <SlideOver
+        show={selectedDay !== null}
+        title={
+          selectedDay
+            ? intl.formatMessage(messages.dayReleases, {
+                date: intl.formatDate(selectedDay.date, {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                }),
+              })
+            : ''
+        }
+        onClose={() => setSelectedDay(null)}
+      >
+        <div className="space-y-2">
+          {selectedDay?.items.map((item) => (
+            <CalendarChip
+              item={item}
+              key={item.id}
+              onClick={() => {
+                setSelectedDay(null);
+                setSelectedItem(item);
+              }}
+            />
+          ))}
+        </div>
+      </SlideOver>
     </>
   );
 
@@ -466,10 +501,12 @@ const MonthView = ({
   anchorDate,
   items,
   onSelect,
+  onSelectDay,
 }: {
   anchorDate: Date;
   items: CalendarItem[];
   onSelect: (item: CalendarItem) => void;
+  onSelectDay: (items: CalendarItem[], date: Date) => void;
 }) => {
   const intl = useIntl();
   const range = calendarRange(anchorDate, 'month');
@@ -518,13 +555,10 @@ const MonthView = ({
                 ))}
                 {dayItems.length > 3 ? (
                   <button
-                    onClick={() => onSelect(dayItems[3])}
+                    onClick={() => onSelectDay(dayItems, day)}
                     className="w-full text-left text-xs text-indigo-300 hover:text-indigo-100"
                   >
-                    {intl.formatMessage(messages.nextMore, {
-                      title: dayItems[3].title,
-                      count: dayItems.length - 3,
-                    })}
+                    +{dayItems.length - 3} more
                   </button>
                 ) : null}
               </div>
