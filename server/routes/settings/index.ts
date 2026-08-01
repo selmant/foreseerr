@@ -18,6 +18,10 @@ import { scheduledJobs } from '@server/job/schedule';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
+import {
+  clearIntegrationHealthCache,
+  getIntegrationHealth,
+} from '@server/lib/integrationHealth';
 import { clearSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
 import { clearMdblistProviderState } from '@server/lib/ratings';
@@ -309,6 +313,7 @@ settingsRoutes.post('/jellyfin', async (req, res, next) => {
     settings.jellyfin.serverId = result.Id;
     settings.jellyfin.name = result.ServerName;
     await settings.save();
+    clearIntegrationHealthCache();
   } catch (e) {
     if (e instanceof ApiError) {
       logger.error('Something went wrong testing Jellyfin connection', {
@@ -496,6 +501,21 @@ settingsRoutes.get('/trakt', async (_req, res) => {
   });
 });
 
+settingsRoutes.get('/integrations/status', async (_req, res, next) => {
+  try {
+    return res.status(200).json(await getIntegrationHealth());
+  } catch (e) {
+    logger.error('Unable to check integration health', {
+      label: 'Settings',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    return next({
+      status: 500,
+      message: 'Unable to check integration health.',
+    });
+  }
+});
+
 settingsRoutes.post('/trakt', async (req, res, next) => {
   const settings = getSettings();
 
@@ -505,11 +525,16 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
       settings.trakt.provider === 'jellyfin' ? 'jellyfin' : 'direct';
     const previousClientId = settings.trakt.clientId;
     const previousClientSecret = settings.trakt.clientSecret;
-    const clientId = String(req.body.clientId ?? '').trim();
+    let clientId = String(req.body.clientId ?? '').trim();
     let clientSecret = String(req.body.clientSecret ?? '').trim();
 
-    // Preserve existing secret when the masked placeholder is submitted
-    if (!clientSecret || clientSecret === '********') {
+    if (provider === 'jellyfin') {
+      // Better Trakt obtains its credentials from Jellyfin. Do not retain
+      // unused direct Trakt application credentials in settings.json.
+      clientId = '';
+      clientSecret = '';
+    } else if (!clientSecret || clientSecret === '********') {
+      // Preserve the existing secret when the masked placeholder is submitted.
       clientSecret = settings.trakt.clientSecret;
     }
 
@@ -545,6 +570,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
       },
     };
     await settings.save();
+    clearIntegrationHealthCache();
 
     if (provider === 'direct' && credentialsChanging) {
       const disconnectedAccountCount = await disconnectAllTraktLinks();
@@ -661,6 +687,7 @@ settingsRoutes.post('/mdblist', async (req, res, next) => {
       ),
     };
     await settings.save();
+    clearIntegrationHealthCache();
 
     if (clearingKey || apiKey !== previousApiKey) {
       clearMdblistProviderState();

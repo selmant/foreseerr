@@ -44,8 +44,6 @@ const SettingsBetterTrakt = () => {
     try {
       await axios.post('/api/v1/settings/trakt', {
         provider: 'jellyfin',
-        clientId: data?.clientId ?? '',
-        clientSecret: '',
         actionsEnabled: data?.actionsEnabled !== false,
       });
       addToast(intl.formatMessage(messages.success), {
@@ -54,6 +52,7 @@ const SettingsBetterTrakt = () => {
       });
       await mutate();
       await globalMutate('/api/v1/settings/public');
+      await globalMutate('/api/v1/settings/integrations/status');
     } catch {
       addToast(intl.formatMessage(messages.failure), {
         autoDismiss: true,

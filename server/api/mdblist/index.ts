@@ -176,6 +176,19 @@ class MdblistAPI extends ExternalAPI {
     return Boolean(this.apiKey);
   }
 
+  /**
+   * Validate the configured key with a stable, inexpensive title lookup.
+   * Health checks must throw on failure so callers can distinguish an invalid
+   * key from a title that simply has no aggregated ratings.
+   */
+  public async validateApiKey(): Promise<void> {
+    if (!this.apiKey) {
+      throw new Error('MDBList API key is not configured');
+    }
+
+    await this.get<MdblistMediaPayload>('/tmdb/movie/550', undefined, 0);
+  }
+
   private acquireCircuitSlot(): 'allowed' | 'probe' | 'blocked' {
     if (this.circuitState === 'closed') {
       return 'allowed';

@@ -1,7 +1,10 @@
+import JellyfinAPI from '@server/api/jellyfin';
+import MdblistAPI from '@server/api/mdblist';
 import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
+import { clearIntegrationHealthCache } from '@server/lib/integrationHealth';
 import {
   clearSyncCache,
   getUserSyncSnapshot,
@@ -94,11 +97,14 @@ async function loginAsAdmin() {
 describe('Trakt settings credential safety', () => {
   beforeEach(() => {
     clearSyncCache();
+    clearIntegrationHealthCache();
     const settings = getSettings();
     settings.trakt = {
       clientId: 'test-client-id',
       clientSecret: 'test-client-secret',
     };
+    settings.mdblist = { ...settings.mdblist, apiKey: '' };
+    settings.jellyfin = { ...settings.jellyfin, ip: '', apiKey: '' };
   });
 
   it('requires confirmation before changing credentials with linked accounts', async () => {
@@ -244,6 +250,71 @@ describe('Trakt settings credential safety', () => {
     });
 
     assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.clientId, '');
+    assert.equal(res.body.clientSecret, '');
+    assert.deepEqual(getSettings().trakt, {
+      provider: 'jellyfin',
+      clientId: '',
+      clientSecret: '',
+    });
     assert.equal(getUserSyncSnapshot(1), undefined);
+  });
+
+  it('reports live health for direct Trakt and MDBList', async () => {
+    const traktMock = mock.method(
+      TraktAPI.prototype,
+      'validateApplicationCredentials',
+      async () => undefined
+    );
+    const mdblistMock = mock.method(
+      MdblistAPI.prototype,
+      'validateApiKey',
+      async () => undefined
+    );
+    const agent = await loginAsAdmin();
+    const settings = getSettings();
+    settings.mdblist = { ...settings.mdblist, apiKey: 'test-mdblist-key' };
+
+    const res = await agent.get('/api/v1/settings/integrations/status');
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.trakt, {
+      provider: 'direct',
+      state: 'healthy',
+      detail: 'Trakt application credentials are valid.',
+      checkedAt: res.body.trakt.checkedAt,
+    });
+    assert.equal(res.body.mdblist.state, 'healthy');
+    assert.equal(mdblistMock.mock.calls.length, 1);
+    assert.equal(traktMock.mock.calls.length, 1);
+
+    mdblistMock.mock.restore();
+    traktMock.mock.restore();
+  });
+
+  it('reports a reachable Better Trakt bridge separately from user access', async () => {
+    const jellyfinMock = mock.method(
+      JellyfinAPI.prototype,
+      'getSystemInfo',
+      async () => ({ Id: 'jellyfin-server' })
+    );
+    const agent = await loginAsAdmin();
+    const settings = getSettings();
+    settings.trakt = { provider: 'jellyfin', clientId: '', clientSecret: '' };
+    settings.jellyfin = {
+      ...settings.jellyfin,
+      ip: 'jellyfin.example.test',
+      apiKey: 'jellyfin-api-key',
+    };
+
+    const res = await agent.get('/api/v1/settings/integrations/status');
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.trakt.provider, 'jellyfin');
+    assert.equal(res.body.trakt.state, 'healthy');
+    assert.match(res.body.trakt.detail, /per linked user/i);
+    assert.equal(jellyfinMock.mock.calls.length, 1);
+
+    jellyfinMock.mock.restore();
   });
 });

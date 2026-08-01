@@ -137,6 +137,7 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
       helpers.setSubmitting(false);
       mutate();
       globalMutate('/api/v1/settings/public');
+      globalMutate('/api/v1/settings/integrations/status');
     }
   };
 

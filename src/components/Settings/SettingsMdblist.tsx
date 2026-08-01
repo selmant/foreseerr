@@ -111,6 +111,7 @@ const SettingsMdblist = ({ onSave }: SettingsMdblistProps) => {
       setClearModalOpen(false);
       mutate();
       globalMutate('/api/v1/settings/public');
+      globalMutate('/api/v1/settings/integrations/status');
     }
   };
 
@@ -195,6 +196,7 @@ const SettingsMdblist = ({ onSave }: SettingsMdblistProps) => {
           } finally {
             mutate();
             globalMutate('/api/v1/settings/public');
+            globalMutate('/api/v1/settings/integrations/status');
           }
         }}
       >

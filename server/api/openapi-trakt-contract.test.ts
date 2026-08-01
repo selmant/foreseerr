@@ -16,6 +16,7 @@ describe('OpenAPI Trakt contract', () => {
 
   const requiredPaths: Record<string, string[]> = {
     '/settings/trakt': ['get', 'post'],
+    '/settings/integrations/status': ['get'],
     '/user/{userId}/settings/linked-accounts/trakt': ['get', 'delete'],
     '/user/{userId}/settings/linked-accounts/trakt/device/code': ['post'],
     '/user/{userId}/settings/linked-accounts/trakt/device/token': ['post'],
