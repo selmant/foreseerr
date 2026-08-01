@@ -22,12 +22,14 @@ const messages = defineMessages(
       'IMDb, Rotten Tomatoes, Metacritic, and Trakt community ratings.',
     configured: 'Configured',
     notConfigured: 'Not configured',
-    connected: 'Connected',
+    connected: 'Reachable',
     degraded: 'Needs attention',
     configure: 'Configure',
     edit: 'Edit',
     editTrakt: 'Configure Trakt',
     editMdblist: 'Configure MDBList',
+    statusUnavailable: 'Status unavailable',
+    checkedAt: 'Checked {time}',
   }
 );
 
@@ -48,10 +50,10 @@ const ExternalIntegrationCards = () => {
   const intl = useIntl();
   const settings = useSettings();
   const [editing, setEditing] = useState<Integration | null>(null);
-  const { data: health } = useSWR<IntegrationHealthResponse>(
-    '/api/v1/settings/integrations/status',
-    { refreshInterval: 5 * 60 * 1000 }
-  );
+  const { data: health, error: healthError } =
+    useSWR<IntegrationHealthResponse>('/api/v1/settings/integrations/status', {
+      refreshInterval: 5 * 60 * 1000,
+    });
 
   const integrations = [
     {
@@ -77,24 +79,28 @@ const ExternalIntegrationCards = () => {
       <ul className="grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-2">
         {integrations.map((integration) => {
           const healthState = integration.health?.state;
-          const badgeType = healthState
-            ? healthState === 'healthy'
-              ? 'success'
-              : healthState === 'degraded'
-                ? 'danger'
-                : 'warning'
-            : integration.configured
-              ? 'success'
-              : 'warning';
-          const badgeMessage = healthState
-            ? healthState === 'healthy'
-              ? messages.connected
-              : healthState === 'degraded'
-                ? messages.degraded
-                : messages.notConfigured
-            : integration.configured
-              ? messages.configured
-              : messages.notConfigured;
+          const badgeType = healthError
+            ? ('light' as const)
+            : healthState
+              ? healthState === 'healthy'
+                ? 'success'
+                : healthState === 'degraded'
+                  ? 'danger'
+                  : 'warning'
+              : integration.configured
+                ? 'success'
+                : 'warning';
+          const badgeMessage = healthError
+            ? messages.statusUnavailable
+            : healthState
+              ? healthState === 'healthy'
+                ? messages.connected
+                : healthState === 'degraded'
+                  ? messages.degraded
+                  : messages.notConfigured
+              : integration.configured
+                ? messages.configured
+                : messages.notConfigured;
 
           return (
             <li
@@ -115,9 +121,21 @@ const ExternalIntegrationCards = () => {
                     {integration.description}
                   </p>
                   {integration.health && (
-                    <p className="mt-2 text-xs leading-5 text-gray-400">
-                      {integration.health.detail}
-                    </p>
+                    <>
+                      <p className="mt-2 text-xs leading-5 text-gray-400">
+                        {integration.health.detail}
+                      </p>
+                      {integration.health.checkedAt && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          {intl.formatMessage(messages.checkedAt, {
+                            time: intl.formatDate(
+                              integration.health.checkedAt,
+                              { hour: 'numeric', minute: '2-digit' }
+                            ),
+                          })}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="flex-shrink-0 opacity-90">

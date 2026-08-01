@@ -1,8 +1,12 @@
 import JellyfinAPI from '@server/api/jellyfin';
 import MdblistAPI from '@server/api/mdblist';
 import TraktAPI from '@server/api/trakt';
+import { getRepository } from '@server/datasource';
+import { User } from '@server/entity/User';
+import { mapWithConcurrency } from '@server/lib/concurrency';
 import { getSettings } from '@server/lib/settings';
 import { getHostname } from '@server/utils/getHostname';
+import axios from 'axios';
 
 const HEALTH_CHECK_TTL_MS = 5 * 60 * 1000;
 
@@ -14,8 +18,33 @@ export interface IntegrationHealth {
   checkedAt: string | null;
 }
 
+export type JellyfinTraktUserState =
+  | 'ready'
+  | 'needs_session_refresh'
+  | 'needs_trakt_link'
+  | 'needs_access'
+  | 'unavailable';
+
+export interface JellyfinTraktUserReadiness {
+  userId: number;
+  displayName: string;
+  state: JellyfinTraktUserState;
+}
+
+export interface JellyfinTraktReadiness {
+  eligibleUsers: number;
+  readyUsers: number;
+  users: JellyfinTraktUserReadiness[];
+}
+
+export interface TraktIntegrationHealth extends IntegrationHealth {
+  provider: 'direct' | 'jellyfin';
+  direct: IntegrationHealth;
+  jellyfin: IntegrationHealth & { readiness: JellyfinTraktReadiness };
+}
+
 export interface IntegrationHealthResponse {
-  trakt: IntegrationHealth & { provider: 'direct' | 'jellyfin' };
+  trakt: TraktIntegrationHealth;
   mdblist: IntegrationHealth;
 }
 
@@ -57,19 +86,75 @@ const checkDirectTrakt = async (): Promise<IntegrationHealth> => {
       clientId: settings.trakt.clientId,
       clientSecret: settings.trakt.clientSecret,
     }).validateApplicationCredentials();
-    return healthy('Trakt application credentials are valid.');
+    return healthy('Trakt is reachable and the Client ID was accepted.');
   } catch {
-    return degraded('Trakt application credentials could not be validated.');
+    return degraded('Trakt could not accept the saved application settings.');
   }
 };
 
-const checkJellyfinTrakt = async (): Promise<IntegrationHealth> => {
+const emptyJellyfinReadiness = (): JellyfinTraktReadiness => ({
+  eligibleUsers: 0,
+  readyUsers: 0,
+  users: [],
+});
+
+const checkJellyfinUserReadiness = async (
+  user: User
+): Promise<JellyfinTraktUserReadiness> => {
+  if (!user.jellyfinAuthToken) {
+    return {
+      userId: user.id,
+      displayName: user.displayName,
+      state: 'needs_session_refresh',
+    };
+  }
+
+  try {
+    const response = await axios.get<{
+      IsLinked?: unknown;
+      AllowExternalTokenAccess?: unknown;
+    }>(`${getHostname()}/Trakt/me`, {
+      headers: {
+        Authorization: `MediaBrowser Token=${user.jellyfinAuthToken}`,
+      },
+      timeout: 5000,
+    });
+
+    const state: JellyfinTraktUserState =
+      response.data.IsLinked !== true
+        ? 'needs_trakt_link'
+        : response.data.AllowExternalTokenAccess !== true
+          ? 'needs_access'
+          : 'ready';
+    return { userId: user.id, displayName: user.displayName, state };
+  } catch (e) {
+    const status = axios.isAxiosError(e) ? e.response?.status : undefined;
+    return {
+      userId: user.id,
+      displayName: user.displayName,
+      state:
+        status === 401 || status === 403
+          ? 'needs_session_refresh'
+          : 'unavailable',
+    };
+  }
+};
+
+const checkJellyfinTrakt = async (): Promise<
+  IntegrationHealth & { readiness: JellyfinTraktReadiness }
+> => {
   const settings = getSettings();
   if (!settings.jellyfin.ip) {
-    return notConfigured('Jellyfin is not configured.');
+    return {
+      ...notConfigured('Jellyfin is not configured.'),
+      readiness: emptyJellyfinReadiness(),
+    };
   }
   if (!settings.jellyfin.apiKey) {
-    return degraded('Jellyfin is configured but its API token is missing.');
+    return {
+      ...degraded('Jellyfin is configured but its API token is missing.'),
+      readiness: emptyJellyfinReadiness(),
+    };
   }
 
   try {
@@ -77,11 +162,49 @@ const checkJellyfinTrakt = async (): Promise<IntegrationHealth> => {
       getHostname(),
       settings.jellyfin.apiKey
     ).getSystemInfo();
-    return healthy(
-      'Jellyfin is reachable. Better Trakt access is checked per linked user.'
+    const users = await getRepository(User)
+      .createQueryBuilder('user')
+      .addSelect('user.jellyfinAuthToken')
+      .where('user.jellyfinUserId IS NOT NULL')
+      .getMany();
+    const userReadiness = await mapWithConcurrency(
+      users,
+      4,
+      checkJellyfinUserReadiness
     );
+    const readiness: JellyfinTraktReadiness = {
+      eligibleUsers: userReadiness.length,
+      readyUsers: userReadiness.filter((user) => user.state === 'ready').length,
+      users: userReadiness,
+    };
+
+    if (readiness.eligibleUsers === 0) {
+      return {
+        ...degraded(
+          'Jellyfin is reachable, but no Foreseer users are linked to Jellyfin.'
+        ),
+        readiness,
+      };
+    }
+    if (readiness.readyUsers !== readiness.eligibleUsers) {
+      return {
+        ...degraded(
+          `Jellyfin is reachable. ${readiness.readyUsers} of ${readiness.eligibleUsers} users are ready for Better Trakt.`
+        ),
+        readiness,
+      };
+    }
+    return {
+      ...healthy(
+        `Jellyfin and Better Trakt are ready for all ${readiness.readyUsers} linked users.`
+      ),
+      readiness,
+    };
   } catch {
-    return degraded('Jellyfin could not be reached with its saved API token.');
+    return {
+      ...degraded('Jellyfin could not be reached with its saved API token.'),
+      readiness: emptyJellyfinReadiness(),
+    };
   }
 };
 
@@ -106,12 +229,14 @@ export const getIntegrationHealth =
 
     const provider =
       getSettings().trakt.provider === 'jellyfin' ? 'jellyfin' : 'direct';
-    const [trakt, mdblist] = await Promise.all([
-      provider === 'jellyfin' ? checkJellyfinTrakt() : checkDirectTrakt(),
+    const [direct, jellyfin, mdblist] = await Promise.all([
+      checkDirectTrakt(),
+      checkJellyfinTrakt(),
       checkMdblist(),
     ]);
+    const active = provider === 'jellyfin' ? jellyfin : direct;
     const value: IntegrationHealthResponse = {
-      trakt: { provider, ...trakt },
+      trakt: { provider, ...active, direct, jellyfin },
       mdblist,
     };
 

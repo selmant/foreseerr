@@ -16,6 +16,7 @@ import { checkUser, isAuthenticated } from '@server/middleware/auth';
 import authRoutes from '@server/routes/auth';
 import settingsRoutes from '@server/routes/settings';
 import { setupTestDb } from '@server/test/db';
+import axios from 'axios';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import express from 'express';
@@ -233,7 +234,26 @@ describe('Trakt settings credential safety', () => {
   });
 
   it('clears user Trakt state when switching to the Jellyfin provider', async () => {
+    const jellyfinMock = mock.method(
+      JellyfinAPI.prototype,
+      'getSystemInfo',
+      async () => ({ Id: 'jellyfin-server' })
+    );
     const agent = await loginAsAdmin();
+    const settings = getSettings();
+    settings.jellyfin = {
+      ...settings.jellyfin,
+      ip: 'jellyfin.example.test',
+      apiKey: 'jellyfin-api-key',
+    };
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+      relations: { settings: true },
+    });
+    const userSettings = user.settings ?? new UserSettings({ user });
+    userSettings.traktAccessToken = 'linked-access';
+    userSettings.traktRefreshToken = 'linked-refresh';
+    await getRepository(UserSettings).save(userSettings);
     seedUserSyncCache(1, {
       watchedMovies: [{ movie: { ids: { tmdb: 123 } } }],
       watchedShows: [],
@@ -247,6 +267,7 @@ describe('Trakt settings credential safety', () => {
       clientId: 'test-client-id',
       clientSecret: '',
       actionsEnabled: true,
+      confirmProviderSwitch: true,
     });
 
     assert.equal(res.status, 200, JSON.stringify(res.body));
@@ -258,6 +279,27 @@ describe('Trakt settings credential safety', () => {
       clientSecret: '',
     });
     assert.equal(getUserSyncSnapshot(1), undefined);
+
+    const persisted = await getRepository(UserSettings)
+      .createQueryBuilder('settings')
+      .addSelect('settings.traktAccessToken')
+      .leftJoin('settings.user', 'user')
+      .where('user.id = :userId', { userId: user.id })
+      .getOneOrFail();
+    assert.equal(persisted.traktAccessToken, null);
+    jellyfinMock.mock.restore();
+  });
+
+  it('requires explicit confirmation before switching providers', async () => {
+    const agent = await loginAsAdmin();
+    const res = await agent.post('/api/v1/settings/trakt').send({
+      provider: 'jellyfin',
+      actionsEnabled: true,
+    });
+
+    assert.equal(res.status, 400);
+    assert.match(res.body.message ?? '', /confirmProviderSwitch/i);
+    assert.equal(getSettings().trakt.provider ?? 'direct', 'direct');
   });
 
   it('reports live health for direct Trakt and MDBList', async () => {
@@ -278,12 +320,18 @@ describe('Trakt settings credential safety', () => {
     const res = await agent.get('/api/v1/settings/integrations/status');
 
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(res.body.trakt, {
-      provider: 'direct',
+    assert.equal(res.body.trakt.provider, 'direct');
+    assert.equal(res.body.trakt.state, 'healthy');
+    assert.equal(
+      res.body.trakt.detail,
+      'Trakt is reachable and the Client ID was accepted.'
+    );
+    assert.deepEqual(res.body.trakt.direct, {
       state: 'healthy',
-      detail: 'Trakt application credentials are valid.',
-      checkedAt: res.body.trakt.checkedAt,
+      detail: 'Trakt is reachable and the Client ID was accepted.',
+      checkedAt: res.body.trakt.direct.checkedAt,
     });
+    assert.equal(res.body.trakt.jellyfin.state, 'not_configured');
     assert.equal(res.body.mdblist.state, 'healthy');
     assert.equal(mdblistMock.mock.calls.length, 1);
     assert.equal(traktMock.mock.calls.length, 1);
@@ -298,6 +346,9 @@ describe('Trakt settings credential safety', () => {
       'getSystemInfo',
       async () => ({ Id: 'jellyfin-server' })
     );
+    const betterTraktMock = mock.method(axios, 'get', async () => ({
+      data: { IsLinked: true, AllowExternalTokenAccess: true },
+    }));
     const agent = await loginAsAdmin();
     const settings = getSettings();
     settings.trakt = { provider: 'jellyfin', clientId: '', clientSecret: '' };
@@ -306,15 +357,39 @@ describe('Trakt settings credential safety', () => {
       ip: 'jellyfin.example.test',
       apiKey: 'jellyfin-api-key',
     };
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    user.jellyfinUserId = 'jellyfin-user-id';
+    user.jellyfinAuthToken = 'jellyfin-user-token';
+    await getRepository(User).save(user);
 
     const res = await agent.get('/api/v1/settings/integrations/status');
 
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.trakt.provider, 'jellyfin');
     assert.equal(res.body.trakt.state, 'healthy');
-    assert.match(res.body.trakt.detail, /per linked user/i);
+    assert.match(res.body.trakt.detail, /ready for all 1 linked users/i);
+    assert.equal(res.body.trakt.jellyfin.readiness.readyUsers, 1);
+    assert.equal(res.body.trakt.jellyfin.readiness.users[0].state, 'ready');
     assert.equal(jellyfinMock.mock.calls.length, 1);
+    assert.equal(betterTraktMock.mock.calls.length, 1);
 
+    betterTraktMock.mock.restore();
     jellyfinMock.mock.restore();
+  });
+
+  it('updates watched and rating actions without changing provider settings', async () => {
+    const agent = await loginAsAdmin();
+    const before = { ...getSettings().trakt };
+
+    const res = await agent
+      .post('/api/v1/settings/trakt/actions')
+      .send({ actionsEnabled: false });
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.actionsEnabled, false);
+    assert.deepEqual(getSettings().trakt, before);
+    assert.equal(getSettings().mediaActions.providers.trakt, false);
   });
 });

@@ -516,6 +516,46 @@ settingsRoutes.get('/integrations/status', async (_req, res, next) => {
   }
 });
 
+settingsRoutes.post('/integrations/status/refresh', async (_req, res, next) => {
+  try {
+    clearIntegrationHealthCache();
+    return res.status(200).json(await getIntegrationHealth());
+  } catch (e) {
+    logger.error('Unable to refresh integration health', {
+      label: 'Settings',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    return next({
+      status: 500,
+      message: 'Unable to refresh integration health.',
+    });
+  }
+});
+
+settingsRoutes.post('/trakt/actions', async (req, res, next) => {
+  if (typeof req.body.actionsEnabled !== 'boolean') {
+    return next({
+      status: 400,
+      message: 'actionsEnabled must be a boolean.',
+    });
+  }
+
+  try {
+    const settings = getSettings();
+    settings.mediaActions = {
+      providers: { trakt: req.body.actionsEnabled },
+    };
+    await settings.save();
+    return res.status(200).json({ actionsEnabled: req.body.actionsEnabled });
+  } catch (e) {
+    logger.error('Unable to update Trakt action settings', {
+      label: 'Settings',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    return next({ status: 500, message: 'Unable to update Trakt actions.' });
+  }
+});
+
 settingsRoutes.post('/trakt', async (req, res, next) => {
   const settings = getSettings();
 
@@ -541,6 +581,37 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
     const credentialsChanging =
       previousClientId !== clientId || previousClientSecret !== clientSecret;
     const providerChanging = previousProvider !== provider;
+
+    if (provider === 'direct' && (!clientId || !clientSecret)) {
+      return res.status(400).json({
+        message: 'A Trakt Client ID and Client Secret are required.',
+      });
+    }
+
+    if (provider === 'jellyfin' && providerChanging) {
+      if (req.body.confirmProviderSwitch !== true) {
+        return res.status(400).json({
+          message:
+            'Switching to Better Trakt clears Direct Trakt credentials and linked accounts. Set confirmProviderSwitch to true to proceed.',
+        });
+      }
+      if (!settings.jellyfin.ip || !settings.jellyfin.apiKey) {
+        return res.status(400).json({
+          message: 'Configure Jellyfin before switching to Better Trakt.',
+        });
+      }
+      try {
+        await new JellyfinAPI(
+          getHostname(),
+          settings.jellyfin.apiKey
+        ).getSystemInfo();
+      } catch {
+        return res.status(400).json({
+          message:
+            'Jellyfin could not be reached. Fix the Jellyfin connection before switching.',
+        });
+      }
+    }
 
     if (provider === 'direct' && credentialsChanging) {
       const linkedAccountCount = await countLinkedTraktAccounts();
@@ -576,6 +647,12 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
       const disconnectedAccountCount = await disconnectAllTraktLinks();
       clearSyncCache();
       logger.info('Disconnected Trakt accounts after credential change', {
+        label: 'Settings',
+        disconnectedAccountCount,
+      });
+    } else if (provider === 'jellyfin' && providerChanging) {
+      const disconnectedAccountCount = await disconnectAllTraktLinks();
+      logger.info('Disconnected Direct Trakt accounts after provider switch', {
         label: 'Settings',
         disconnectedAccountCount,
       });

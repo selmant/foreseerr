@@ -2,17 +2,29 @@ import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/solid';
 import { Field } from 'formik';
 import { useState } from 'react';
 
-interface CustomInputProps extends React.ComponentProps<'input'> {
+type SensitiveInputLabels = {
+  revealLabel?: string;
+  hideLabel?: string;
+};
+
+interface CustomInputProps
+  extends React.ComponentProps<'input'>, SensitiveInputLabels {
   as?: 'input';
 }
 
-interface CustomFieldProps extends React.ComponentProps<typeof Field> {
+interface CustomFieldProps
+  extends React.ComponentProps<typeof Field>, SensitiveInputLabels {
   as?: 'field';
 }
 
 type SensitiveInputProps = CustomInputProps | CustomFieldProps;
 
-const SensitiveInput = ({ as = 'input', ...props }: SensitiveInputProps) => {
+const SensitiveInput = ({
+  as = 'input',
+  revealLabel = 'Show sensitive value',
+  hideLabel = 'Hide sensitive value',
+  ...props
+}: SensitiveInputProps) => {
   const [isHidden, setHidden] = useState(true);
   const Component = as === 'input' ? 'input' : Field;
   const componentProps =
@@ -52,6 +64,8 @@ const SensitiveInput = ({ as = 'input', ...props }: SensitiveInputProps) => {
           setHidden(!isHidden);
         }}
         type="button"
+        aria-label={isHidden ? revealLabel : hideLabel}
+        title={isHidden ? revealLabel : hideLabel}
         className="input-action"
       >
         {isHidden ? <EyeSlashIcon /> : <EyeIcon />}

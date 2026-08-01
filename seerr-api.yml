@@ -647,6 +647,10 @@ components:
           type: boolean
           description: Required on POST when changing credentials while users are linked
           example: false
+        confirmProviderSwitch:
+          type: boolean
+          description: Required when switching from Direct Trakt to Better Trakt
+          example: false
     MediaActionProviderResult:
       type: object
       properties:
@@ -3334,6 +3338,35 @@ paths:
       responses:
         '200':
           description: Integration health returned
+  /settings/integrations/status/refresh:
+    post:
+      summary: Refresh integration health
+      description: Clears cached integration health and runs non-mutating checks immediately.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: Integration health refreshed
+  /settings/trakt/actions:
+    post:
+      summary: Update Trakt media actions
+      description: Enables or disables watched and rating actions independently of the active Trakt connection method.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - actionsEnabled
+              properties:
+                actionsEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Trakt media actions updated
   /settings/mdblist:
     get:
       summary: Get MDBList settings
