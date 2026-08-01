@@ -86,6 +86,7 @@ const messages = defineMessages('components.Calendar', {
   todayCountdown: 'Today',
   overdue: 'Released',
   showing: 'Showing {start}–{end}',
+  nextMore: 'Next: {title} (+{count} more)',
 });
 
 type View = 'month' | 'agenda';
@@ -520,7 +521,10 @@ const MonthView = ({
                     onClick={() => onSelect(dayItems[3])}
                     className="w-full text-left text-xs text-indigo-300 hover:text-indigo-100"
                   >
-                    +{dayItems.length - 3} more
+                    {intl.formatMessage(messages.nextMore, {
+                      title: dayItems[3].title,
+                      count: dayItems.length - 3,
+                    })}
                   </button>
                 ) : null}
               </div>
