@@ -90,6 +90,46 @@ const messages = defineMessages('components.Calendar', {
 
 type View = 'month' | 'agenda';
 
+const calendarFilterStorageKey = 'foreseer.calendar.filters';
+
+type CalendarFilterState = {
+  scope: CalendarScope;
+  mediaType: CalendarMediaType | '';
+  source: CalendarSource | '';
+  is4k: boolean;
+};
+
+const readCalendarFilters = (): CalendarFilterState => {
+  const defaults: CalendarFilterState = {
+    scope: 'mine',
+    mediaType: '',
+    source: '',
+    is4k: false,
+  };
+
+  if (typeof window === 'undefined') return defaults;
+
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(calendarFilterStorageKey) ?? '{}'
+    ) as Partial<CalendarFilterState>;
+    return {
+      scope: stored.scope === 'all' ? 'all' : defaults.scope,
+      mediaType:
+        stored.mediaType === 'movie' || stored.mediaType === 'tv'
+          ? stored.mediaType
+          : defaults.mediaType,
+      source:
+        stored.source === 'radarr' || stored.source === 'sonarr'
+          ? stored.source
+          : defaults.source,
+      is4k: stored.is4k === true,
+    };
+  } catch {
+    return defaults;
+  }
+};
+
 const startOfDay = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
@@ -140,18 +180,30 @@ const getDateBadge = (
 const Calendar = () => {
   const intl = useIntl();
   const { hasPermission } = useUser();
+  const initialFilters = useMemo(readCalendarFilters, []);
   const [view, setView] = useState<View>('month');
   const [anchorDate, setAnchorDate] = useState(() => startOfDay(new Date()));
-  const [scope, setScope] = useState<CalendarScope>('mine');
-  const [mediaType, setMediaType] = useState<CalendarMediaType | ''>('');
-  const [source, setSource] = useState<CalendarSource | ''>('');
-  const [is4k, setIs4k] = useState(false);
+  const [scope, setScope] = useState<CalendarScope>(initialFilters.scope);
+  const [mediaType, setMediaType] = useState<CalendarMediaType | ''>(
+    initialFilters.mediaType
+  );
+  const [source, setSource] = useState<CalendarSource | ''>(
+    initialFilters.source
+  );
+  const [is4k, setIs4k] = useState(initialFilters.is4k);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
 
   useEffect(() => {
     if (window.matchMedia('(max-width: 1023px)').matches) setView('agenda');
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      calendarFilterStorageKey,
+      JSON.stringify({ scope, mediaType, source, is4k })
+    );
+  }, [scope, mediaType, source, is4k]);
 
   const range = useMemo(
     () => calendarRange(anchorDate, view),
@@ -286,9 +338,6 @@ const Calendar = () => {
               {intl.formatMessage(messages.filters)}
             </Button>
           </div>
-        </div>
-        <div className="hidden rounded-lg border border-gray-700 bg-gray-800/70 p-4 shadow lg:block">
-          {filters}
         </div>
         {data?.partialSources?.length ? (
           <Alert
