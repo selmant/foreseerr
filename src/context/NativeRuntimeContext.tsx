@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 export type NativeRuntimeState =
@@ -46,24 +47,53 @@ export const NativeRuntimeProvider = ({
     }
 
     setState('probing');
-    // Phase 1 retains the existing manual Jellyfin login. The native bridge
-    // is therefore playback-ready once its capability contract is present.
-    setState('ready');
+    const authRequestId = createRequestId();
+    let authInFlight = false;
+
+    const bootstrap = () => {
+      if (authInFlight || !host.capabilities.includes('auth-bootstrap')) return;
+      authInFlight = true;
+      setState('authenticating');
+      host.requestAuthChallenge(authRequestId);
+    };
 
     const onNativeEvent = (event: Event) => {
       const detail = (event as CustomEvent<NativeEvent>).detail;
       if (!detail || detail.protocolVersion !== 1) return;
-      if (detail.type === 'accepted' || detail.type === 'playing') {
+      if (detail.type === 'auth-challenge' && detail.challenge) {
+        axios
+          .post('/api/v1/desktop/auth-tickets', {
+            challenge: detail.challenge,
+            protocolVersion: 1,
+          })
+          .then(({ data }) => {
+            host.completeAuth(authRequestId, data.ticket);
+          })
+          .catch(() => {
+            authInFlight = false;
+            setState('degraded');
+          });
+      } else if (detail.type === 'accepted' || detail.type === 'playing') {
         setState('playing');
       } else if (detail.type === 'stopped' || detail.type === 'finished') {
         setState('ready');
+      } else if (detail.type === 'ready') {
+        authInFlight = false;
+        setState('ready');
       } else if (detail.type === 'error') {
+        authInFlight = false;
         setState('degraded');
       }
     };
     window.addEventListener('foreseer:native-event', onNativeEvent);
-    return () =>
+    bootstrap();
+    const retry = window.setInterval(() => {
+      bootstrap();
+    }, 15000);
+    return () => {
+      window.clearInterval(retry);
       window.removeEventListener('foreseer:native-event', onNativeEvent);
+    };
   }, []);
 
   const value = useMemo<NativeRuntimeContextValue>(
@@ -100,6 +130,8 @@ interface NativeEvent {
   protocolVersion: 1;
   requestId: string;
   type:
+    | 'auth-challenge'
+    | 'ready'
     | 'accepted'
     | 'resolving'
     | 'starting'
@@ -108,4 +140,5 @@ interface NativeEvent {
     | 'finished'
     | 'canceled'
     | 'error';
+  challenge?: string;
 }
