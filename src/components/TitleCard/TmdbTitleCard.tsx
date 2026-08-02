@@ -19,7 +19,10 @@ export interface TmdbTitleCardProps {
   subtitle?: string;
   progressPercent?: number;
   jellyfinItemId?: string | null;
+  playItemId?: string | null;
+  jellyfinSeriesId?: string | null;
   mediaUrl?: string | null;
+  onLibraryOpenSeries?: (jellyfinSeriesId: string) => void;
 }
 
 const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
@@ -39,7 +42,10 @@ const TmdbTitleCard = ({
   subtitle,
   progressPercent,
   jellyfinItemId,
+  playItemId,
+  jellyfinSeriesId,
   mediaUrl,
+  onLibraryOpenSeries,
 }: TmdbTitleCardProps) => {
   const { hasPermission } = useUser();
 
@@ -80,8 +86,16 @@ const TmdbTitleCard = ({
           jellyfinItemId ??
           title.mediaInfo?.jellyfinMediaId ??
           title.mediaInfo?.jellyfinMediaId4k,
+        playItemId,
+        jellyfinSeriesId:
+          jellyfinSeriesId ??
+          (type === 'tv'
+            ? (title.mediaInfo?.jellyfinMediaId ??
+              title.mediaInfo?.jellyfinMediaId4k)
+            : undefined),
         mediaUrl:
           mediaUrl ?? title.mediaInfo?.mediaUrl ?? title.mediaInfo?.mediaUrl4k,
+        onLibraryOpenSeries,
       }
     : {};
 

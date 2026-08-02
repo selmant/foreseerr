@@ -61,7 +61,10 @@ interface TitleCardProps {
   subtitle?: string;
   progressPercent?: number;
   jellyfinItemId?: string | null;
+  playItemId?: string | null;
+  jellyfinSeriesId?: string | null;
   mediaUrl?: string | null;
+  onLibraryOpenSeries?: (jellyfinSeriesId: string) => void;
 }
 
 const messages = defineMessages('components.TitleCard', {
@@ -105,7 +108,10 @@ const TitleCard = ({
   subtitle,
   progressPercent,
   jellyfinItemId,
+  playItemId,
+  jellyfinSeriesId,
   mediaUrl,
+  onLibraryOpenSeries,
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
@@ -520,7 +526,8 @@ const TitleCard = ({
       type: 'or',
     });
 
-  const showLibraryPlay = Boolean(libraryMode && jellyfinItemId);
+  const libraryPlayId = playItemId || jellyfinItemId || undefined;
+  const showLibraryPlay = Boolean(libraryMode && libraryPlayId);
   const detailHref =
     mediaType === 'movie'
       ? `/movie/${id}`
@@ -533,10 +540,10 @@ const TitleCard = ({
     event.preventDefault();
     event.stopPropagation();
     if (
-      jellyfinItemId &&
+      libraryPlayId &&
       play({
         provider: 'jellyfin',
-        itemId: jellyfinItemId,
+        itemId: libraryPlayId,
         fallbackUrl: playFallbackUrl,
         label: title,
         quality: 'standard',
@@ -546,6 +553,18 @@ const TitleCard = ({
     }
     if (mediaUrl) {
       window.open(mediaUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const onLibraryCardNavigate = (event: React.MouseEvent) => {
+    if (
+      libraryMode &&
+      mediaType === 'tv' &&
+      jellyfinSeriesId &&
+      onLibraryOpenSeries
+    ) {
+      event.preventDefault();
+      onLibraryOpenSeries(jellyfinSeriesId);
     }
   };
 
@@ -764,6 +783,7 @@ const TitleCard = ({
             <div className="absolute inset-0 overflow-hidden rounded-xl">
               <Link
                 href={detailHref}
+                onClick={onLibraryCardNavigate}
                 className="absolute inset-0 h-full w-full cursor-pointer overflow-hidden text-left"
                 style={{
                   background:

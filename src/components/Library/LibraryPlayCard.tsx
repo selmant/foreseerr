@@ -4,13 +4,23 @@ import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
 
 interface LibraryPlayCardProps {
   item: LibraryTitle;
+  onOpenSeries?: (item: LibraryTitle) => void;
 }
 
 /**
  * Library shelf card: reuse Discover TitleCard posters/metadata when TMDB is known.
  * Falls back to a TitleCard shell with the placeholder poster when not.
  */
-const LibraryPlayCard = ({ item }: LibraryPlayCardProps) => {
+const LibraryPlayCard = ({ item, onOpenSeries }: LibraryPlayCardProps) => {
+  const openSeries =
+    item.mediaType === 'tv' && (item.jellyfinSeriesId || item.jellyfinItemId)
+      ? () =>
+          onOpenSeries?.({
+            ...item,
+            jellyfinSeriesId: item.jellyfinSeriesId ?? item.jellyfinItemId,
+          })
+      : undefined;
+
   if (item.tmdbId) {
     return (
       <TmdbTitleCard
@@ -21,7 +31,10 @@ const LibraryPlayCard = ({ item }: LibraryPlayCardProps) => {
         subtitle={item.subtitle}
         progressPercent={item.progressPercent}
         jellyfinItemId={item.jellyfinItemId}
+        playItemId={item.playItemId}
+        jellyfinSeriesId={item.jellyfinSeriesId}
         mediaUrl={item.mediaUrl}
+        onLibraryOpenSeries={openSeries ? () => openSeries() : undefined}
       />
     );
   }
@@ -37,7 +50,10 @@ const LibraryPlayCard = ({ item }: LibraryPlayCardProps) => {
       subtitle={item.subtitle}
       progressPercent={item.progressPercent}
       jellyfinItemId={item.jellyfinItemId}
+      playItemId={item.playItemId}
+      jellyfinSeriesId={item.jellyfinSeriesId}
       mediaUrl={item.mediaUrl}
+      onLibraryOpenSeries={openSeries ? () => openSeries() : undefined}
     />
   );
 };

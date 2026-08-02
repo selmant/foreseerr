@@ -2,11 +2,13 @@ import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import LibraryPlayCard from '@app/components/Library/LibraryPlayCard';
+import LibrarySeriesPanel from '@app/components/Library/LibrarySeriesPanel';
 import Slider from '@app/components/Slider';
 import defineMessages from '@app/utils/defineMessages';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import type {
   LibraryAvailableResponse,
+  LibraryTitle,
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
 import { useEffect, useState } from 'react';
@@ -36,6 +38,7 @@ const Library = () => {
   const [query, setQuery] = useState('');
   const [mediaType, setMediaType] = useState<'all' | 'movie' | 'tv'>('all');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [panelSeries, setPanelSeries] = useState<LibraryTitle | null>(null);
 
   useEffect(() => {
     const handle = window.setTimeout(
@@ -111,6 +114,7 @@ const Library = () => {
                   <LibraryPlayCard
                     key={`${shelf.id}-${item.jellyfinItemId}`}
                     item={item}
+                    onOpenSeries={setPanelSeries}
                   />
                 ))}
               />
@@ -177,12 +181,20 @@ const Library = () => {
                 key={`available-${item.jellyfinItemId}-${item.tmdbId ?? 0}`}
                 className="inline-block px-2 pb-4 align-top"
               >
-                <LibraryPlayCard item={item} />
+                <LibraryPlayCard item={item} onOpenSeries={setPanelSeries} />
               </div>
             ))}
           </div>
         )}
       </div>
+
+      <LibrarySeriesPanel
+        show={Boolean(panelSeries?.jellyfinSeriesId)}
+        jellyfinSeriesId={panelSeries?.jellyfinSeriesId ?? null}
+        seedTitle={panelSeries?.title}
+        seedTmdbId={panelSeries?.tmdbId}
+        onClose={() => setPanelSeries(null)}
+      />
     </>
   );
 };
