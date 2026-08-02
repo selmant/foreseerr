@@ -12,13 +12,15 @@ describe('OpenAPI library contract', () => {
   const apiSpecPath = join(__dirname, '../../seerr-api.yml');
   const apiDocs = yaml.load(readFileSync(apiSpecPath, 'utf8')) as {
     paths: Record<string, Record<string, unknown>>;
-    components: { schemas: Record<string, unknown> };
+    components: { schemas: Record<string, Record<string, unknown>> };
   };
 
   const requiredPaths: Record<string, string[]> = {
     '/library/watch-now': ['get'],
     '/library/available': ['get'],
     '/library/search': ['get'],
+    '/library/series/{jellyfinSeriesId}': ['get'],
+    '/library/series/{jellyfinSeriesId}/seasons/{seasonId}/episodes': ['get'],
   };
 
   for (const [path, methods] of Object.entries(requiredPaths)) {
@@ -39,5 +41,22 @@ describe('OpenAPI library contract', () => {
     assert.ok(apiDocs.components.schemas.LibraryShelf);
     assert.ok(apiDocs.components.schemas.LibraryWatchNowResponse);
     assert.ok(apiDocs.components.schemas.LibraryAvailableResponse);
+  });
+
+  it('declares series panel schemas and play-target fields', () => {
+    const title = apiDocs.components.schemas.LibraryTitle as {
+      properties: Record<string, unknown>;
+    };
+    assert.ok(title.properties.playItemId);
+    assert.ok(title.properties.jellyfinSeriesId);
+    assert.ok(apiDocs.components.schemas.LibrarySeriesDetailResponse);
+    assert.ok(apiDocs.components.schemas.LibrarySeasonEpisodesResponse);
+    assert.ok(apiDocs.components.schemas.LibraryEpisode);
+    assert.ok(apiDocs.components.schemas.LibrarySeriesSeason);
+
+    const shelf = apiDocs.components.schemas.LibraryShelf as {
+      properties: { id: { enum: string[] } };
+    };
+    assert.ok(shelf.properties.id.enum.includes('recent-episodes'));
   });
 });

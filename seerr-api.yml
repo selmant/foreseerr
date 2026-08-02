@@ -1820,6 +1820,12 @@ components:
           enum: [movie, tv]
         jellyfinItemId:
           type: string
+        playItemId:
+          type: string
+          description: Item id Play should send (resolved episode for series rows)
+        jellyfinSeriesId:
+          type: string
+          description: Series id for opening the Library series panel
         title:
           type: string
         subtitle:
@@ -1838,7 +1844,7 @@ components:
       properties:
         id:
           type: string
-          enum: [continue, recent, forgotten]
+          enum: [continue, recent, recent-episodes, forgotten]
         title:
           type: string
         items:
@@ -1869,6 +1875,86 @@ components:
         code:
           type: string
           enum: [not_linked, server_unreachable, unsupported_media_server]
+    LibrarySeriesSeason:
+      type: object
+      required: [jellyfinSeasonId, name]
+      properties:
+        jellyfinSeasonId:
+          type: string
+        name:
+          type: string
+        indexNumber:
+          type: number
+        episodeCount:
+          type: number
+    LibrarySeriesDetailResponse:
+      type: object
+      required: [jellyfinSeriesId, title, seasons]
+      properties:
+        jellyfinSeriesId:
+          type: string
+        tmdbId:
+          type: number
+        title:
+          type: string
+        playItemId:
+          type: string
+        subtitle:
+          type: string
+        seasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/LibrarySeriesSeason'
+        code:
+          type: string
+          enum:
+            [
+              not_linked,
+              server_unreachable,
+              unsupported_media_server,
+              not_found,
+            ]
+    LibraryEpisode:
+      type: object
+      required: [jellyfinItemId, name]
+      properties:
+        jellyfinItemId:
+          type: string
+        name:
+          type: string
+        indexNumber:
+          type: number
+        parentIndexNumber:
+          type: number
+        subtitle:
+          type: string
+        overview:
+          type: string
+        progressPercent:
+          type: number
+        watched:
+          type: boolean
+    LibrarySeasonEpisodesResponse:
+      type: object
+      required: [jellyfinSeriesId, jellyfinSeasonId, episodes]
+      properties:
+        jellyfinSeriesId:
+          type: string
+        jellyfinSeasonId:
+          type: string
+        episodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/LibraryEpisode'
+        code:
+          type: string
+          enum:
+            [
+              not_linked,
+              server_unreachable,
+              unsupported_media_server,
+              not_found,
+            ]
     DiscordSettings:
       type: object
       properties:
@@ -9044,6 +9130,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LibraryAvailableResponse'
+        '401':
+          description: Unauthorized
+  /library/series/{jellyfinSeriesId}:
+    get:
+      summary: Get Library series panel detail
+      description: >
+        Seasons and resolved Play-next target for an owned series, using the
+        authenticated user's linked Jellyfin identity.
+      tags:
+        - library
+      parameters:
+        - in: path
+          name: jellyfinSeriesId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Series panel payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibrarySeriesDetailResponse'
+        '401':
+          description: Unauthorized
+  /library/series/{jellyfinSeriesId}/seasons/{seasonId}/episodes:
+    get:
+      summary: List Library series season episodes
+      description: Episodes for one season with watched/progress for the Library panel.
+      tags:
+        - library
+      parameters:
+        - in: path
+          name: jellyfinSeriesId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: seasonId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Season episodes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibrarySeasonEpisodesResponse'
         '401':
           description: Unauthorized
   /media:
