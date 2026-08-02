@@ -1,0 +1,54 @@
+import Modal from '@app/components/Common/Modal';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import defineMessages from '@app/utils/defineMessages';
+import { PowerIcon } from '@heroicons/react/24/outline';
+import { useState } from 'react';
+import { useIntl } from 'react-intl';
+
+const messages = defineMessages('components.Layout.QuitAppControl', {
+  quit: 'Quit Foreseer',
+  quitTitle: 'Quit Foreseer?',
+  quitDescription:
+    'This closes the desktop app. You can open it again anytime.',
+  quitConfirm: 'Quit',
+});
+
+const QuitAppControl = () => {
+  const intl = useIntl();
+  const { canQuit, quit } = useNativeRuntime();
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  if (!canQuit) {
+    return null;
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="flex w-full items-center rounded-md px-2 py-2 text-base font-medium leading-6 text-gray-300 transition duration-150 ease-in-out hover:bg-gray-700 hover:text-white focus:bg-gray-700 focus:outline-none lg:text-lg"
+        data-testid="native-quit-app"
+        onClick={() => setShowConfirm(true)}
+      >
+        <PowerIcon className="mr-3 h-6 w-6" />
+        {intl.formatMessage(messages.quit)}
+      </button>
+      {showConfirm && (
+        <Modal
+          title={intl.formatMessage(messages.quitTitle)}
+          onCancel={() => setShowConfirm(false)}
+          onOk={() => {
+            setShowConfirm(false);
+            quit();
+          }}
+          okText={intl.formatMessage(messages.quitConfirm)}
+          okButtonType="danger"
+        >
+          {intl.formatMessage(messages.quitDescription)}
+        </Modal>
+      )}
+    </>
+  );
+};
+
+export default QuitAppControl;

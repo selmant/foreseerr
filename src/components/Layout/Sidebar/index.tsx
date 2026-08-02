@@ -1,4 +1,5 @@
 import Badge from '@app/components/Common/Badge';
+import QuitAppControl from '@app/components/Layout/QuitAppControl';
 import VersionStatus from '@app/components/Layout/VersionStatus';
 import useClickOutside from '@app/hooks/useClickOutside';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -248,11 +249,12 @@ const Sidebar = ({
                         );
                       })}
                     </nav>
-                    {hasPermission(Permission.ADMIN) && (
-                      <div className="px-2">
+                    <div className="mt-auto space-y-2 px-2">
+                      <QuitAppControl />
+                      {hasPermission(Permission.ADMIN) && (
                         <VersionStatus onClick={() => setClosed()} />
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="w-14 flex-shrink-0">
@@ -338,11 +340,10 @@ const Sidebar = ({
                   );
                 })}
               </nav>
-              {hasPermission(Permission.ADMIN) && (
-                <div className="px-2">
-                  <VersionStatus />
-                </div>
-              )}
+              <div className="mt-auto space-y-2 px-2">
+                <QuitAppControl />
+                {hasPermission(Permission.ADMIN) && <VersionStatus />}
+              </div>
             </div>
           </div>
         </div>

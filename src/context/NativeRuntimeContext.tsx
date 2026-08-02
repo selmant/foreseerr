@@ -28,12 +28,16 @@ export interface NativePlayTarget {
 
 interface NativeRuntimeContextValue {
   state: NativeRuntimeState;
+  canQuit: boolean;
   play: (target: NativePlayTarget) => boolean;
+  quit: () => boolean;
 }
 
 const NativeRuntimeContext = createContext<NativeRuntimeContextValue>({
   state: 'web',
+  canQuit: false,
   play: () => false,
+  quit: () => false,
 });
 
 const createRequestId = () => crypto.randomUUID();
@@ -42,12 +46,25 @@ export const NativeRuntimeProvider = ({
   children,
 }: React.PropsWithChildren) => {
   const [state, setState] = useState<NativeRuntimeState>('web');
+  const [canQuit, setCanQuit] = useState(false);
   const activePlayRequestId = useRef<string | undefined>(undefined);
   const activePlayTimeout = useRef<number | undefined>(undefined);
   const queuedPlayTarget = useRef<NativePlayTarget | undefined>(undefined);
   const { user, error: userError } = useUser();
   const userId = userError ? undefined : user?.id;
   const previousUserId = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    const host = window.jelliumHost;
+    setCanQuit(
+      !!host &&
+        host.protocolVersion === 1 &&
+        host.hostName === 'jellium-desktop' &&
+        host.capabilities.includes('quit')
+    );
+  }, []);
+
+  const quit = useCallback(() => window.jelliumHost?.quit() ?? false, []);
 
   const admitPlay = useCallback((target: NativePlayTarget) => {
     if (target.provider !== 'jellyfin' || !target.itemId) return false;
@@ -221,6 +238,8 @@ export const NativeRuntimeProvider = ({
   const value = useMemo<NativeRuntimeContextValue>(
     () => ({
       state,
+      canQuit,
+      quit,
       play: (target) => {
         if (target.provider !== 'jellyfin' || !target.itemId) {
           return false;
@@ -236,7 +255,7 @@ export const NativeRuntimeProvider = ({
         return false;
       },
     }),
-    [admitPlay, state]
+    [admitPlay, canQuit, quit, state]
   );
 
   return (
