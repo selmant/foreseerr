@@ -66,7 +66,8 @@ export const runMigrations = async (
   delete (migrated as { requestFilters?: unknown }).requestFilters;
 
   const migrations = (await fs.readdir(migrationsDir)).filter(
-    (file) => file.endsWith('.js') || file.endsWith('.ts')
+    (file) =>
+      (file.endsWith('.js') || file.endsWith('.ts')) && !file.includes('.test.')
   );
   const knownMigrationNames = migrations.map((file) =>
     file.replace(/\.(js|ts)$/, '')
