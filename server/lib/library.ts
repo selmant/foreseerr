@@ -11,10 +11,16 @@ import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
 import type {
+  LibraryEpisode,
+  LibrarySeasonEpisodesResponse,
+  LibrarySeriesDetailResponse,
+  LibrarySeriesSeason,
   LibraryShelf,
   LibraryTitle,
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
+import type { SeriesPlayTarget } from '@server/lib/libraryPlayTarget';
+import { resolveSeriesPlayTarget } from '@server/lib/libraryPlayTarget';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { getHostname } from '@server/utils/getHostname';
@@ -202,11 +208,24 @@ export const mapJellyfinItemsToLibraryTitles = async (
         : media?.mediaType === MediaType.TV
           ? 'tv'
           : mediaTypeFromItem(item);
+
+    const jellyfinSeriesId =
+      item.Type === 'Series'
+        ? item.Id
+        : item.Type === 'Episode'
+          ? item.SeriesId
+          : undefined;
+
+    const playItemId =
+      item.Type === 'Movie' || item.Type === 'Episode' ? item.Id : undefined;
+
     return {
       mediaId: media?.id,
       tmdbId,
       mediaType,
       jellyfinItemId: item.Id,
+      playItemId,
+      jellyfinSeriesId,
       title: titleForItem(item),
       subtitle: subtitleForItem(item),
       overview: item.Overview,
@@ -215,6 +234,156 @@ export const mapJellyfinItemsToLibraryTitles = async (
       progressPercent: progressFromItem(item),
     };
   });
+};
+
+const applyPlayTarget = (
+  title: LibraryTitle,
+  target: ReturnType<typeof resolveSeriesPlayTarget>
+): LibraryTitle => {
+  if (!target) return title;
+  return {
+    ...title,
+    playItemId: target.playItemId,
+    subtitle: title.subtitle ?? target.subtitle,
+    progressPercent: title.progressPercent ?? target.progressPercent,
+  };
+};
+
+const nextUpBySeriesId = (
+  nextUp: JellyfinLibraryItemExtended[]
+): Map<string, JellyfinLibraryItemExtended> => {
+  const map = new Map<string, JellyfinLibraryItemExtended>();
+  for (const item of nextUp) {
+    if (item.Type === 'Episode' && item.SeriesId && !map.has(item.SeriesId)) {
+      map.set(item.SeriesId, item);
+    }
+  }
+  return map;
+};
+
+const resumeBySeriesId = (
+  resume: JellyfinLibraryItemExtended[]
+): Map<string, JellyfinLibraryItemExtended> => {
+  const map = new Map<string, JellyfinLibraryItemExtended>();
+  for (const item of resume) {
+    if (
+      item.Type === 'Episode' &&
+      item.SeriesId &&
+      !map.has(item.SeriesId) &&
+      ((item.UserData?.PlaybackPositionTicks ?? 0) > 0 ||
+        ((item.UserData?.PlayedPercentage ?? 0) > 0 &&
+          (item.UserData?.PlayedPercentage ?? 0) < 95))
+    ) {
+      map.set(item.SeriesId, item);
+    }
+  }
+  return map;
+};
+
+const fetchAllSeriesEpisodes = async (
+  client: JellyfinAPI,
+  seriesId: string
+): Promise<JellyfinLibraryItemExtended[]> => {
+  const seasons = await client.getSeasons(seriesId);
+  const episodes: JellyfinLibraryItemExtended[] = [];
+  for (const season of seasons ?? []) {
+    if (!season?.Id) continue;
+    const seasonEpisodes = await client.getEpisodes(seriesId, season.Id);
+    for (const episode of seasonEpisodes ?? []) {
+      episodes.push(episode as JellyfinLibraryItemExtended);
+    }
+  }
+  return episodes;
+};
+
+/** Attach playItemId for series rows using resume/next-up, then optional full resolve. */
+export const enrichSeriesPlayTargets = async (
+  client: JellyfinAPI,
+  titles: LibraryTitle[],
+  options: {
+    resume?: JellyfinLibraryItemExtended[];
+    nextUp?: JellyfinLibraryItemExtended[];
+    resolveMissing?: boolean;
+  } = {}
+): Promise<LibraryTitle[]> => {
+  const resume =
+    options.resume ??
+    (await client
+      .getResumeItems(32)
+      .catch(() => [] as JellyfinLibraryItemExtended[]));
+  const nextUp =
+    options.nextUp ??
+    (await client
+      .getNextUpEpisodes(48)
+      .catch(() => [] as JellyfinLibraryItemExtended[]));
+
+  const resumeMap = resumeBySeriesId(resume);
+  const nextUpMap = nextUpBySeriesId(nextUp);
+
+  const enriched: LibraryTitle[] = [];
+  for (const title of titles) {
+    if (title.mediaType !== 'tv' || title.playItemId) {
+      enriched.push(title);
+      continue;
+    }
+
+    const seriesId = title.jellyfinSeriesId ?? title.jellyfinItemId;
+    const resumeHit = resumeMap.get(seriesId);
+    if (resumeHit) {
+      enriched.push(
+        applyPlayTarget(
+          { ...title, jellyfinSeriesId: seriesId },
+          resolveSeriesPlayTarget(seriesId, [resumeHit], [resumeHit])
+        )
+      );
+      continue;
+    }
+
+    const nextHit = nextUpMap.get(seriesId);
+    if (nextHit) {
+      enriched.push(
+        applyPlayTarget(
+          { ...title, jellyfinSeriesId: seriesId },
+          {
+            playItemId: nextHit.Id,
+            subtitle: `Up next ${
+              nextHit.ParentIndexNumber != null && nextHit.IndexNumber != null
+                ? `S${nextHit.ParentIndexNumber}E${nextHit.IndexNumber}`
+                : nextHit.Name || 'Episode'
+            }`,
+            progressPercent: progressFromItem(nextHit),
+          }
+        )
+      );
+      continue;
+    }
+
+    if (!options.resolveMissing) {
+      enriched.push({ ...title, jellyfinSeriesId: seriesId });
+      continue;
+    }
+
+    try {
+      const episodes = await fetchAllSeriesEpisodes(client, seriesId);
+      const target = resolveSeriesPlayTarget(
+        seriesId,
+        episodes,
+        resume.filter((e) => e.SeriesId === seriesId)
+      );
+      enriched.push(
+        applyPlayTarget({ ...title, jellyfinSeriesId: seriesId }, target)
+      );
+    } catch (e) {
+      logger.debug('Failed to resolve series play target', {
+        label: 'Library',
+        seriesId,
+        errorMessage: e instanceof Error ? e.message : String(e),
+      });
+      enriched.push({ ...title, jellyfinSeriesId: seriesId });
+    }
+  }
+
+  return enriched;
 };
 
 export const buildForgottenRequestsShelf = async (
@@ -256,6 +425,8 @@ export const buildForgottenRequestsShelf = async (
       tmdbId: media.tmdbId,
       mediaType: media.mediaType === MediaType.MOVIE ? 'movie' : 'tv',
       jellyfinItemId,
+      jellyfinSeriesId:
+        media.mediaType === MediaType.TV ? jellyfinItemId : undefined,
       title:
         media.mediaType === MediaType.MOVIE
           ? `Movie ${media.tmdbId}`
@@ -280,9 +451,11 @@ export const buildWatchNowResponse = async (
   const shelves: LibraryShelf[] = [];
 
   try {
-    const [resume, latest] = await Promise.all([
+    const [resume, latest, latestEpisodes, nextUp] = await Promise.all([
       linked.client.getResumeItems(16),
       linked.client.getUserLatestItems(16),
+      linked.client.getUserLatestEpisodes(16),
+      linked.client.getNextUpEpisodes(48),
     ]);
 
     const continueItems = await mapJellyfinItemsToLibraryTitles(resume);
@@ -294,12 +467,26 @@ export const buildWatchNowResponse = async (
       });
     }
 
-    const recentItems = await mapJellyfinItemsToLibraryTitles(latest);
+    const recentItems = await enrichSeriesPlayTargets(
+      linked.client,
+      await mapJellyfinItemsToLibraryTitles(latest),
+      { resume, nextUp, resolveMissing: true }
+    );
     if (recentItems.length) {
       shelves.push({
         id: 'recent',
         title: 'Recently Added',
         items: recentItems,
+      });
+    }
+
+    const recentEpisodeItems =
+      await mapJellyfinItemsToLibraryTitles(latestEpisodes);
+    if (recentEpisodeItems.length) {
+      shelves.push({
+        id: 'recent-episodes',
+        title: 'Recently Added Episodes',
+        items: recentEpisodeItems,
       });
     }
   } catch (e) {
@@ -310,7 +497,11 @@ export const buildWatchNowResponse = async (
     return { shelves: [], code: 'server_unreachable' };
   }
 
-  const forgotten = await buildForgottenRequestsShelf(userId, 16);
+  const forgotten = await enrichSeriesPlayTargets(
+    linked.client,
+    await buildForgottenRequestsShelf(userId, 16),
+    { resolveMissing: true }
+  );
   if (forgotten.length) {
     shelves.push({
       id: 'forgotten',
@@ -346,7 +537,11 @@ export const listAvailableLibrary = async (options: {
         limit: options.take,
         mediaType: options.mediaType,
       });
-      const mapped = await mapJellyfinItemsToLibraryTitles(items);
+      const mapped = await enrichSeriesPlayTargets(
+        linked.client,
+        await mapJellyfinItemsToLibraryTitles(items),
+        { resolveMissing: true }
+      );
       // Keep only items we know are in Foreseer available catalog when possible;
       // still return Jellyfin hits that map so play works.
       return { results: mapped, total: mapped.length };
@@ -391,6 +586,8 @@ export const listAvailableLibrary = async (options: {
       tmdbId: m.tmdbId,
       mediaType: m.mediaType === MediaType.MOVIE ? 'movie' : 'tv',
       jellyfinItemId,
+      jellyfinSeriesId:
+        m.mediaType === MediaType.TV ? jellyfinItemId : undefined,
       title:
         m.mediaType === MediaType.MOVIE
           ? `Movie ${m.tmdbId}`
@@ -400,5 +597,172 @@ export const listAvailableLibrary = async (options: {
     };
   });
 
+  const linked = await createUserJellyfinClient(options.userId);
+  if (linked.ok) {
+    try {
+      const enriched = await enrichSeriesPlayTargets(linked.client, results, {
+        resolveMissing: true,
+      });
+      return { results: enriched, total };
+    } catch (e) {
+      logger.debug('Failed to enrich available library play targets', {
+        label: 'Library',
+        errorMessage: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   return { results, total };
+};
+
+export const getLibrarySeriesDetail = async (
+  userId: number,
+  jellyfinSeriesId: string
+): Promise<LibrarySeriesDetailResponse> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return {
+      jellyfinSeriesId,
+      title: 'Series',
+      seasons: [],
+      code: linked.code,
+    };
+  }
+
+  try {
+    const [seasonsRaw, nextUp, resume] = await Promise.all([
+      linked.client.getSeasons(jellyfinSeriesId),
+      linked.client.getNextUpEpisodes(8, jellyfinSeriesId),
+      linked.client.getResumeItems(32),
+    ]);
+
+    const seasons: LibrarySeriesSeason[] = (seasonsRaw ?? [])
+      .filter((season) => Boolean(season?.Id))
+      .map((season) => ({
+        jellyfinSeasonId: season.Id,
+        name: season.Name || `Season ${season.IndexNumber ?? ''}`,
+        indexNumber: season.IndexNumber,
+      }));
+
+    let playTarget: SeriesPlayTarget | undefined = nextUp[0]
+      ? {
+          playItemId: nextUp[0].Id,
+          subtitle: `Up next ${
+            nextUp[0].ParentIndexNumber != null && nextUp[0].IndexNumber != null
+              ? `S${nextUp[0].ParentIndexNumber}E${nextUp[0].IndexNumber}`
+              : nextUp[0].Name || 'Episode'
+          }`,
+          progressPercent: progressFromItem(nextUp[0]),
+        }
+      : undefined;
+
+    let seriesTitle =
+      nextUp[0]?.SeriesName ||
+      resume.find((e) => e.SeriesId === jellyfinSeriesId)?.SeriesName;
+
+    if (!playTarget && seasons.length) {
+      const episodes = await fetchAllSeriesEpisodes(
+        linked.client,
+        jellyfinSeriesId
+      );
+      playTarget = resolveSeriesPlayTarget(
+        jellyfinSeriesId,
+        episodes,
+        resume.filter((e) => e.SeriesId === jellyfinSeriesId)
+      );
+      seriesTitle = seriesTitle || episodes[0]?.SeriesName;
+    }
+
+    const mediaRows = await resolveMediaRows([
+      {
+        Id: jellyfinSeriesId,
+        Name: seriesTitle || 'Series',
+        Type: 'Series',
+        HasSubtitles: false,
+        LocationType: 'FileSystem',
+        MediaType: 'Video',
+        ProviderIds: {},
+      } as JellyfinLibraryItemExtended,
+    ]);
+    const media = mediaRows.get(jellyfinSeriesId);
+
+    return {
+      jellyfinSeriesId,
+      tmdbId: media?.tmdbId,
+      title: seriesTitle || `Series ${media?.tmdbId ?? jellyfinSeriesId}`,
+      playItemId: playTarget?.playItemId,
+      subtitle: playTarget?.subtitle,
+      seasons,
+    };
+  } catch (e) {
+    logger.error('Failed to load library series detail', {
+      label: 'Library',
+      jellyfinSeriesId,
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return {
+      jellyfinSeriesId,
+      title: 'Series',
+      seasons: [],
+      code: 'server_unreachable',
+    };
+  }
+};
+
+export const getLibrarySeasonEpisodes = async (
+  userId: number,
+  jellyfinSeriesId: string,
+  seasonId: string
+): Promise<LibrarySeasonEpisodesResponse> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return {
+      jellyfinSeriesId,
+      jellyfinSeasonId: seasonId,
+      episodes: [],
+      code: linked.code,
+    };
+  }
+
+  try {
+    const items = await linked.client.getEpisodes(jellyfinSeriesId, seasonId);
+    const episodes: LibraryEpisode[] = (items ?? []).map((item) => {
+      const extended = item as JellyfinLibraryItemExtended;
+      const season = extended.ParentIndexNumber;
+      const number = extended.IndexNumber;
+      return {
+        jellyfinItemId: extended.Id,
+        name: extended.Name || 'Episode',
+        indexNumber: number,
+        parentIndexNumber: season,
+        subtitle:
+          season != null && number != null ? `S${season}E${number}` : undefined,
+        overview: extended.Overview,
+        progressPercent: progressFromItem(extended),
+        watched: Boolean(
+          extended.UserData?.Played ||
+          (extended.UserData?.PlayedPercentage ?? 0) >= 95
+        ),
+      };
+    });
+
+    return {
+      jellyfinSeriesId,
+      jellyfinSeasonId: seasonId,
+      episodes,
+    };
+  } catch (e) {
+    logger.error('Failed to load library season episodes', {
+      label: 'Library',
+      jellyfinSeriesId,
+      seasonId,
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return {
+      jellyfinSeriesId,
+      jellyfinSeasonId: seasonId,
+      episodes: [],
+      code: 'server_unreachable',
+    };
+  }
 };

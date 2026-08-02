@@ -493,7 +493,13 @@ class JellyfinAPI extends ExternalAPI {
 
   public async getSeasons(seriesID: string): Promise<JellyfinLibraryItem[]> {
     try {
-      const seasonResponse = await this.get<any>(`/Shows/${seriesID}/Seasons`);
+      const seasonResponse = await this.get<any>(`/Shows/${seriesID}/Seasons`, {
+        params: {
+          userId: this.userId ?? 'Me',
+          EnableUserData: true,
+          Fields: 'ProviderIds,Overview',
+        },
+      });
 
       return seasonResponse.Items;
     } catch (e) {
@@ -519,7 +525,11 @@ class JellyfinAPI extends ExternalAPI {
         {
           params: {
             seasonId: seasonID,
-            ...(options?.includeMediaInfo && { fields: 'MediaSources' }),
+            userId: this.userId ?? 'Me',
+            EnableUserData: true,
+            Fields: options?.includeMediaInfo
+              ? 'MediaSources,ProviderIds,Overview'
+              : 'ProviderIds,Overview',
           },
         }
       );
@@ -604,6 +614,61 @@ class JellyfinAPI extends ExternalAPI {
     } catch (e) {
       logger.error(
         `Something went wrong while getting latest items from the Jellyfin server: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  /** Recently added episodes visible to the authenticated user. */
+  public async getUserLatestEpisodes(
+    limit = 20
+  ): Promise<JellyfinLibraryItemExtended[]> {
+    try {
+      const endpoint =
+        this.mediaServerType === MediaServerType.JELLYFIN
+          ? `/Items/Latest`
+          : `/Users/${this.userId ?? 'Me'}/Items/Latest`;
+      const response = await this.get<JellyfinLibraryItemExtended[]>(endpoint, {
+        params: {
+          Limit: limit,
+          Fields: 'ProviderIds,Overview',
+          IncludeItemTypes: 'Episode',
+          EnableUserData: true,
+          ...(this.mediaServerType === MediaServerType.JELLYFIN
+            ? { userId: this.userId ?? 'Me' }
+            : {}),
+        },
+      });
+      return Array.isArray(response) ? response : [];
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting latest episodes from the Jellyfin server: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  /** Next-up episodes for the user, optionally scoped to one series. */
+  public async getNextUpEpisodes(
+    limit = 24,
+    seriesId?: string
+  ): Promise<JellyfinLibraryItemExtended[]> {
+    try {
+      const response = await this.get<JellyfinItemsReponse>(`/Shows/NextUp`, {
+        params: {
+          UserId: this.userId ?? 'Me',
+          Limit: limit,
+          Fields: 'ProviderIds,Overview',
+          EnableUserData: true,
+          ...(seriesId ? { SeriesId: seriesId } : {}),
+        },
+      });
+      return response.Items ?? [];
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting next-up episodes from the Jellyfin server: ${e.message}`,
         { label: 'Jellyfin API', error: e?.response?.status }
       );
       throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);

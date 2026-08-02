@@ -1,9 +1,13 @@
 import type {
   LibraryAvailableResponse,
+  LibrarySeasonEpisodesResponse,
+  LibrarySeriesDetailResponse,
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
 import {
   buildWatchNowResponse,
+  getLibrarySeasonEpisodes,
+  getLibrarySeriesDetail,
   listAvailableLibrary,
 } from '@server/lib/library';
 import { Router } from 'express';
@@ -114,6 +118,54 @@ libraryRoutes.get<unknown, LibraryAvailableResponse>(
       return next({
         status: 500,
         message: e instanceof Error ? e.message : 'Failed to search library',
+      });
+    }
+  }
+);
+
+libraryRoutes.get<{ jellyfinSeriesId: string }, LibrarySeriesDetailResponse>(
+  '/series/:jellyfinSeriesId',
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const payload = await getLibrarySeriesDetail(
+        req.user.id,
+        req.params.jellyfinSeriesId
+      );
+      return res.status(200).json(payload);
+    } catch (e) {
+      return next({
+        status: 500,
+        message:
+          e instanceof Error ? e.message : 'Failed to load library series',
+      });
+    }
+  }
+);
+
+libraryRoutes.get<
+  { jellyfinSeriesId: string; seasonId: string },
+  LibrarySeasonEpisodesResponse
+>(
+  '/series/:jellyfinSeriesId/seasons/:seasonId/episodes',
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const payload = await getLibrarySeasonEpisodes(
+        req.user.id,
+        req.params.jellyfinSeriesId,
+        req.params.seasonId
+      );
+      return res.status(200).json(payload);
+    } catch (e) {
+      return next({
+        status: 500,
+        message:
+          e instanceof Error ? e.message : 'Failed to load library episodes',
       });
     }
   }
