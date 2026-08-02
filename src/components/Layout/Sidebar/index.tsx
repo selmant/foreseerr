@@ -11,6 +11,7 @@ import {
   ExclamationTriangleIcon,
   EyeSlashIcon,
   FilmIcon,
+  RectangleStackIcon,
   SparklesIcon,
   TvIcon,
   UsersIcon,
@@ -24,6 +25,7 @@ import { useIntl } from 'react-intl';
 
 export const menuMessages = defineMessages('components.Layout.Sidebar', {
   dashboard: 'Discover',
+  library: 'Library',
   browsemovies: 'Movies',
   browsetv: 'Series',
   requests: 'Requests',
@@ -60,6 +62,12 @@ const SidebarLinks: SidebarLinkProps[] = [
     messagesKey: 'dashboard',
     svgIcon: <SparklesIcon className="mr-3 h-6 w-6" />,
     activeRegExp: /^\/(discover\/?)?$/,
+  },
+  {
+    href: '/library',
+    messagesKey: 'library',
+    svgIcon: <RectangleStackIcon className="mr-3 h-6 w-6" />,
+    activeRegExp: /^\/library/,
   },
   {
     href: '/discover/movies',

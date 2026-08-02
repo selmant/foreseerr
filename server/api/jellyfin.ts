@@ -128,6 +128,14 @@ export interface JellyfinLibraryItemExtended extends JellyfinLibraryItem {
   Height?: number;
   IsHD?: boolean;
   DateCreated?: string;
+  Overview?: string;
+  UserData?: {
+    PlaybackPositionTicks?: number;
+    PlayedPercentage?: number;
+    RunTimeTicks?: number;
+    Played?: boolean;
+  };
+  RunTimeTicks?: number;
 }
 
 type EpisodeReturn<T> = T extends { includeMediaInfo: true }
@@ -542,6 +550,95 @@ class JellyfinAPI extends ExternalAPI {
         { label: 'Jellyfin API', error: e.response?.status }
       );
 
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  /** Continue Watching / in-progress items for the authenticated user. */
+  public async getResumeItems(
+    limit = 20
+  ): Promise<JellyfinLibraryItemExtended[]> {
+    try {
+      const userSegment = this.userId ?? 'Me';
+      const response = await this.get<JellyfinItemsReponse>(
+        `/Users/${userSegment}/Items/Resume`,
+        {
+          params: {
+            Limit: limit,
+            Fields: 'ProviderIds,Overview',
+            IncludeItemTypes: 'Movie,Episode',
+            EnableUserData: true,
+          },
+        }
+      );
+      return response.Items ?? [];
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting resume items from the Jellyfin server: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  /** Recently added titles visible to the authenticated user (all libraries). */
+  public async getUserLatestItems(
+    limit = 20
+  ): Promise<JellyfinLibraryItemExtended[]> {
+    try {
+      const endpoint =
+        this.mediaServerType === MediaServerType.JELLYFIN
+          ? `/Items/Latest`
+          : `/Users/${this.userId ?? 'Me'}/Items/Latest`;
+      const response = await this.get<JellyfinLibraryItemExtended[]>(endpoint, {
+        params: {
+          Limit: limit,
+          Fields: 'ProviderIds,Overview',
+          IncludeItemTypes: 'Movie,Series',
+          ...(this.mediaServerType === MediaServerType.JELLYFIN
+            ? { userId: this.userId ?? 'Me' }
+            : {}),
+        },
+      });
+      return Array.isArray(response) ? response : [];
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting latest items from the Jellyfin server: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  /** Search Movies/Series in libraries visible to the authenticated user. */
+  public async searchLibraryItems(
+    query: string,
+    options: { limit?: number; mediaType?: 'movie' | 'tv' } = {}
+  ): Promise<JellyfinLibraryItemExtended[]> {
+    try {
+      const include =
+        options.mediaType === 'movie'
+          ? 'Movie'
+          : options.mediaType === 'tv'
+            ? 'Series'
+            : 'Movie,Series';
+      const response = await this.get<JellyfinItemsReponse>(`/Items`, {
+        params: {
+          SearchTerm: query,
+          Recursive: true,
+          Limit: options.limit ?? 20,
+          Fields: 'ProviderIds,Overview',
+          IncludeItemTypes: include,
+          EnableUserData: true,
+          userId: this.userId ?? 'Me',
+        },
+      });
+      return response.Items ?? [];
+    } catch (e) {
+      logger.error(
+        `Something went wrong while searching the Jellyfin server: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
       throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
     }
   }

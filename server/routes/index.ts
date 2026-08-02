@@ -36,6 +36,7 @@ import desktopRoutes from './desktop';
 import discoverRoutes, { createTmdbWithRegionLanguage } from './discover';
 import issueRoutes from './issue';
 import issueCommentRoutes from './issueComment';
+import libraryRoutes from './library';
 import mediaRoutes from './media';
 import mediaActionsRoutes from './mediaActions';
 import movieRoutes from './movie';
@@ -175,6 +176,7 @@ router.use(
 router.use('/movie', isAuthenticated(), movieRoutes);
 router.use('/tv', isAuthenticated(), tvRoutes);
 router.use('/media', isAuthenticated(), mediaRoutes);
+router.use('/library', isAuthenticated(), libraryRoutes);
 router.use('/media-actions', isAuthenticated(), mediaActionsRoutes);
 router.use('/person', isAuthenticated(), personRoutes);
 router.use('/collection', isAuthenticated(), collectionRoutes);

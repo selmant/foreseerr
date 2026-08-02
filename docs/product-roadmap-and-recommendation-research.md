@@ -68,6 +68,12 @@ their media server. Possible rows include:
 - Continue a genre, director, or studio you recently enjoyed
 - Highly rated titles in the library that you have not watched
 
+**Shipped baseline (Foreseer `/library`):** Continue Watching and Recently Added
+via user-linked Jellyfin APIs, Ready to Watch from the user's available
+requests, plus available browse/search. Cards play through desktop `playItem`
+or Jellyfin deep links. Personalized scoring and household Watch Tonight remain
+later phases.
+
 The product should distinguish clearly between:
 
 - **Watch now:** already available locally
@@ -708,7 +714,7 @@ delete their personal feedback history.
 2. Normalize, deduplicate, filter, rank, and explain candidates.
 3. Add MDBList personalized-list discovery after validating the API flow.
 4. Add pinning for Couchmoney and other authenticated Trakt lists.
-5. Add Jellyfin-powered Watch Something Now.
+5. Add Jellyfin-powered Watch Something Now. **In progress:** Foreseer `/library` ships Continue Watching, Recently Added, Ready to Watch (available requests), and available browse/search; play uses existing desktop `playItem` / Jellyfin links.
 6. Add per-provider readiness, caching, and manual refresh.
 
 ### Phase 2: user feedback and explainability
