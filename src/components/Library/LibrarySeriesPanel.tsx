@@ -96,7 +96,7 @@ const LibrarySeriesPanel = ({
   };
 
   return (
-    <SlideOver show={show} title={title} onClose={onClose} variant="fast">
+    <SlideOver show={show} title={title} onClose={onClose}>
       {statusCode === 'not_linked' ? (
         <p className="text-sm text-gray-300">
           {intl.formatMessage(messages.notLinked)}
