@@ -202,6 +202,15 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       text: getAvailableMediaServerName(),
       url: plexUrl,
       svg: <PlayIcon />,
+      native:
+        settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN &&
+        data.mediaInfo?.jellyfinMediaId
+          ? {
+              provider: 'jellyfin',
+              itemId: data.mediaInfo.jellyfinMediaId,
+              quality: 'standard',
+            }
+          : undefined,
     });
   }
 
@@ -216,6 +225,15 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       text: getAvailable4kMediaServerName(),
       url: plexUrl4k,
       svg: <PlayIcon />,
+      native:
+        settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN &&
+        data.mediaInfo?.jellyfinMediaId4k
+          ? {
+              provider: 'jellyfin',
+              itemId: data.mediaInfo.jellyfinMediaId4k,
+              quality: '4k',
+            }
+          : undefined,
     });
   }
 

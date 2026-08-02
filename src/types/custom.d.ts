@@ -30,3 +30,20 @@ declare module '*.css' {
   const classNames: IClassNames;
   export = classNames;
 }
+interface JelliumHostV1 {
+  readonly protocolVersion: 1;
+  readonly hostName: 'foreseer-desktop';
+  readonly hostVersion: string;
+  readonly capabilities: readonly string[];
+  requestAuthChallenge(requestId: string): boolean;
+  playItem(requestId: string, itemId: string): boolean;
+  completeAuth(requestId: string, ticket: string): boolean;
+  minimize(): boolean;
+  toggleMaximize(): boolean;
+  toggleFullscreen(): boolean;
+  quit(): boolean;
+}
+
+interface Window {
+  readonly jelliumHost?: JelliumHostV1;
+}
