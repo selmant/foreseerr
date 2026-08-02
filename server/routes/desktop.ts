@@ -17,6 +17,11 @@ const maxRequestsPerWindow = 10;
 const rateWindowMs = 60_000;
 const requests = new Map<string, { count: number; resetAt: number }>();
 
+desktopRoutes.use((_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
 const challengeBody = z.object({
   challenge: z.string().regex(/^[a-f0-9]{64}$/),
   protocolVersion: z.literal(1),
@@ -209,7 +214,6 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
     ) {
       return res.status(409).json({ code: 'not_linked' });
     }
-    res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({
       serverUrl: externalJellyfinHost(),
       serverId: settings.jellyfin.serverId,

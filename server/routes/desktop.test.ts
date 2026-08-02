@@ -78,6 +78,7 @@ describe('desktop auth tickets', () => {
       .send({ challenge, protocolVersion: 1 });
 
     assert.strictEqual(issued.status, 201);
+    assert.strictEqual(issued.headers['cache-control'], 'no-store');
     const redeemed = await request(app)
       .post('/desktop/auth-tickets/redeem')
       .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });

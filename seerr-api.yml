@@ -2768,6 +2768,9 @@ paths:
       responses:
         '201':
           description: Single-use ticket issued
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
           content:
             application/json:
               schema:
@@ -2779,7 +2782,8 @@ paths:
                     description: Sensitive single-use value; never log or cache.
                   expiresIn:
                     type: integer
-        '403': { description: Cookie session required }
+        '401': { description: Authentication required }
+        '403': { description: Browser cookie session required }
         '409': { description: Jellyfin account is not linked }
         '429': { description: Rate limited }
   /desktop/auth-tickets/redeem:
