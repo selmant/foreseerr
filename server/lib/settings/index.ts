@@ -662,7 +662,7 @@ class Settings {
           schedule: '0 */15 * * * *',
         },
         'release-calendar-sync': {
-          schedule: '0 0 */6 * * *',
+          schedule: '0 */5 * * * *',
         },
       },
       network: {

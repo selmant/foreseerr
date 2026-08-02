@@ -184,7 +184,7 @@ export const startJobs = (): void => {
     id: 'release-calendar-sync',
     name: 'Release Calendar Sync',
     type: 'process',
-    interval: 'hours',
+    interval: 'minutes',
     cronSchedule: jobs['release-calendar-sync'].schedule,
     job: schedule.scheduleJob(jobs['release-calendar-sync'].schedule, () => {
       logger.info('Starting scheduled job: Release Calendar Sync', {
