@@ -15,6 +15,11 @@ export interface TmdbTitleCardProps {
   isAddedToWatchlist?: boolean;
   mutateParent?: () => void;
   ratings?: RatingResponse | null;
+  libraryMode?: boolean;
+  subtitle?: string;
+  progressPercent?: number;
+  jellyfinItemId?: string | null;
+  mediaUrl?: string | null;
 }
 
 const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
@@ -30,6 +35,11 @@ const TmdbTitleCard = ({
   isAddedToWatchlist = false,
   mutateParent,
   ratings,
+  libraryMode = false,
+  subtitle,
+  progressPercent,
+  jellyfinItemId,
+  mediaUrl,
 }: TmdbTitleCardProps) => {
   const { hasPermission } = useUser();
 
@@ -61,6 +71,20 @@ const TmdbTitleCard = ({
     ) : null;
   }
 
+  const libraryProps = libraryMode
+    ? {
+        libraryMode: true as const,
+        subtitle,
+        progressPercent,
+        jellyfinItemId:
+          jellyfinItemId ??
+          title.mediaInfo?.jellyfinMediaId ??
+          title.mediaInfo?.jellyfinMediaId4k,
+        mediaUrl:
+          mediaUrl ?? title.mediaInfo?.mediaUrl ?? title.mediaInfo?.mediaUrl4k,
+      }
+    : {};
+
   return isMovie(title) ? (
     <TitleCard
       key={title.id}
@@ -78,6 +102,7 @@ const TmdbTitleCard = ({
       mediaType={'movie'}
       canExpand={canExpand}
       mutateParent={mutateParent}
+      {...libraryProps}
     />
   ) : (
     <TitleCard
@@ -96,6 +121,7 @@ const TmdbTitleCard = ({
       mediaType={'tv'}
       canExpand={canExpand}
       mutateParent={mutateParent}
+      {...libraryProps}
     />
   );
 };

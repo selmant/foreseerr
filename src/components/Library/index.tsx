@@ -171,12 +171,14 @@ const Library = () => {
             {intl.formatMessage(messages.noResults)}
           </p>
         ) : (
-          <div className="flex flex-wrap gap-4">
+          <div className="relative -mx-2 flex flex-wrap">
             {available.results.map((item) => (
-              <LibraryPlayCard
+              <div
                 key={`available-${item.jellyfinItemId}-${item.tmdbId ?? 0}`}
-                item={item}
-              />
+                className="inline-block px-2 pb-4 align-top"
+              >
+                <LibraryPlayCard item={item} />
+              </div>
             ))}
           </div>
         )}

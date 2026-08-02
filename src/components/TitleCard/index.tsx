@@ -9,6 +9,7 @@ import RequestModal from '@app/components/RequestModal';
 import ErrorCard from '@app/components/TitleCard/ErrorCard';
 import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
@@ -29,7 +30,7 @@ import {
   QueueListIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
-import { ChevronDownIcon } from '@heroicons/react/24/solid';
+import { ChevronDownIcon, PlayIcon } from '@heroicons/react/24/solid';
 import type { RatingResponse } from '@server/api/ratings';
 import { MediaStatus } from '@server/constants/media';
 import type { Watchlist } from '@server/entity/Watchlist';
@@ -55,6 +56,12 @@ interface TitleCardProps {
   inProgress?: boolean;
   isAddedToWatchlist?: number | boolean;
   mutateParent?: () => void;
+  /** Owned-media / Library shelves: hide request chrome, optional play. */
+  libraryMode?: boolean;
+  subtitle?: string;
+  progressPercent?: number;
+  jellyfinItemId?: string | null;
+  mediaUrl?: string | null;
 }
 
 const messages = defineMessages('components.TitleCard', {
@@ -77,6 +84,7 @@ const messages = defineMessages('components.TitleCard', {
     'Could not request all seasons. Opening the full request form.',
   movieSuccess: 'Requested successfully!',
   movieError: 'Could not request. Opening the full request form.',
+  play: 'Play',
 });
 
 const TitleCard = ({
@@ -93,11 +101,17 @@ const TitleCard = ({
   inProgress = false,
   canExpand = false,
   mutateParent,
+  libraryMode = false,
+  subtitle,
+  progressPercent,
+  jellyfinItemId,
+  mediaUrl,
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
   const settings = useSettings();
   const { user, hasPermission } = useUser();
+  const { play } = useNativeRuntime();
   const [isUpdating, setIsUpdating] = useState(false);
 
   const traktLinkKey =
@@ -488,19 +502,52 @@ const TitleCard = ({
     setInitialRequestScope('seasons');
   }, []);
 
-  const showRequestButton = hasPermission(
-    [
-      Permission.REQUEST,
-      mediaType === 'movie' || mediaType === 'collection'
-        ? Permission.REQUEST_MOVIE
-        : Permission.REQUEST_TV,
-    ],
-    { type: 'or' }
-  );
+  const showRequestButton =
+    !libraryMode &&
+    hasPermission(
+      [
+        Permission.REQUEST,
+        mediaType === 'movie' || mediaType === 'collection'
+          ? Permission.REQUEST_MOVIE
+          : Permission.REQUEST_TV,
+      ],
+      { type: 'or' }
+    );
 
-  const showHideButton = hasPermission([Permission.MANAGE_BLOCKLIST], {
-    type: 'or',
-  });
+  const showHideButton =
+    !libraryMode &&
+    hasPermission([Permission.MANAGE_BLOCKLIST], {
+      type: 'or',
+    });
+
+  const showLibraryPlay = Boolean(libraryMode && jellyfinItemId);
+  const detailHref =
+    mediaType === 'movie'
+      ? `/movie/${id}`
+      : mediaType === 'collection'
+        ? `/collection/${id}`
+        : `/tv/${id}`;
+  const playFallbackUrl = mediaUrl || detailHref;
+
+  const onLibraryPlay = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (
+      jellyfinItemId &&
+      play({
+        provider: 'jellyfin',
+        itemId: jellyfinItemId,
+        fallbackUrl: playFallbackUrl,
+        label: title,
+        quality: 'standard',
+      })
+    ) {
+      return;
+    }
+    if (mediaUrl) {
+      window.open(mediaUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   return (
     <div
@@ -581,6 +628,14 @@ const TitleCard = ({
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             fill
           />
+          {progressPercent != null && progressPercent > 0 ? (
+            <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 h-1 bg-black/70">
+              <div
+                className="h-full bg-indigo-500"
+                style={{ width: `${Math.min(100, progressPercent)}%` }}
+              />
+            </div>
+          ) : null}
           <div className="absolute left-0 right-0 z-30 flex items-start justify-between gap-2 p-2">
             <div className="flex min-w-0 flex-col items-start gap-1.5">
               <div
@@ -617,6 +672,7 @@ const TitleCard = ({
                     />
                   )}
                   {user?.userType !== UserType.PLEX &&
+                    !libraryMode &&
                     (toggleWatchlist ? (
                       <Button
                         buttonType={'ghost'}
@@ -707,13 +763,7 @@ const TitleCard = ({
           >
             <div className="absolute inset-0 overflow-hidden rounded-xl">
               <Link
-                href={
-                  mediaType === 'movie'
-                    ? `/movie/${id}`
-                    : mediaType === 'collection'
-                      ? `/collection/${id}`
-                      : `/tv/${id}`
-                }
+                href={detailHref}
                 className="absolute inset-0 h-full w-full cursor-pointer overflow-hidden text-left"
                 style={{
                   background:
@@ -727,11 +777,14 @@ const TitleCard = ({
                 >
                   <div
                     className={`flex min-h-0 flex-1 flex-col justify-end overflow-hidden px-2 text-white ${
+                      showLibraryPlay ||
                       !showRequestButton ||
                       (currentStatus &&
                         currentStatus !== MediaStatus.UNKNOWN &&
                         currentStatus !== MediaStatus.DELETED)
-                        ? 'pb-2'
+                        ? showLibraryPlay
+                          ? 'pb-11'
+                          : 'pb-2'
                         : 'pb-11'
                     }`}
                   >
@@ -752,6 +805,11 @@ const TitleCard = ({
                     >
                       {title}
                     </h1>
+                    {subtitle ? (
+                      <div className="shrink-0 truncate text-xs text-gray-200">
+                        {subtitle}
+                      </div>
+                    ) : null}
                     {summary && (
                       <div className="min-h-0 shrink overflow-hidden">
                         <div
@@ -779,6 +837,17 @@ const TitleCard = ({
               </Link>
 
               <div className="absolute bottom-0 left-0 right-0 z-40 flex justify-between px-2 py-2">
+                {showLibraryPlay ? (
+                  <Button
+                    buttonType="primary"
+                    buttonSize="sm"
+                    className="z-40 w-full"
+                    onClick={onLibraryPlay}
+                  >
+                    <PlayIcon className="h-4 w-4" />{' '}
+                    <span>{intl.formatMessage(messages.play)}</span>
+                  </Button>
+                ) : null}
                 {showRequestButton &&
                   (!currentStatus ||
                     currentStatus === MediaStatus.UNKNOWN ||
