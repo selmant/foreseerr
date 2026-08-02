@@ -11,6 +11,9 @@ export class DesktopAuthTicket {
   @Index()
   public userId: number;
 
+  @Column({ type: 'varchar', length: 255, select: false })
+  public sessionId: string;
+
   @Column({ type: 'varchar', length: 64 })
   public ticketDigest: string;
 

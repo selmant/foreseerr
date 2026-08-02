@@ -535,6 +535,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
               tmdbId={data.mediaInfo?.tmdbId}
               mediaType="movie"
               plexUrl={plexUrl}
+              jellyfinItemId={data.mediaInfo?.jellyfinMediaId}
               serviceUrl={data.mediaInfo?.serviceUrl}
             />
             {settings.currentSettings.movie4kEnabled &&
@@ -559,6 +560,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                   tmdbId={data.mediaInfo?.tmdbId}
                   mediaType="movie"
                   plexUrl={plexUrl4k}
+                  jellyfinItemId={data.mediaInfo?.jellyfinMediaId4k}
                   serviceUrl={data.mediaInfo?.serviceUrl4k}
                 />
               )}

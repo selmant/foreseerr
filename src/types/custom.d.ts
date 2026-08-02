@@ -32,12 +32,13 @@ declare module '*.css' {
 }
 interface JelliumHostV1 {
   readonly protocolVersion: 1;
-  readonly hostName: 'foreseer-desktop';
+  readonly hostName: 'jellium-desktop';
   readonly hostVersion: string;
   readonly capabilities: readonly string[];
   requestAuthChallenge(requestId: string): boolean;
   playItem(requestId: string, itemId: string): boolean;
   completeAuth(requestId: string, ticket: string): boolean;
+  clearSession(requestId: string): boolean;
   minimize(): boolean;
   toggleMaximize(): boolean;
   toggleFullscreen(): boolean;

@@ -12,11 +12,12 @@ interface BadgeProps {
     | 'light';
   className?: string;
   href?: string;
+  onClick?: React.MouseEventHandler<HTMLElement>;
   children: React.ReactNode;
 }
 
 const Badge = (
-  { badgeType = 'default', className, href, children }: BadgeProps,
+  { badgeType = 'default', className, href, onClick, children }: BadgeProps,
   ref?: React.Ref<HTMLElement>
 ) => {
   const badgeStyle = [
@@ -85,6 +86,7 @@ const Badge = (
         rel="noopener noreferrer"
         className={badgeStyle.join(' ')}
         ref={ref as React.Ref<HTMLAnchorElement>}
+        onClick={onClick}
       >
         {children}
       </a>
@@ -95,6 +97,7 @@ const Badge = (
         href={href}
         className={badgeStyle.join(' ')}
         ref={ref as React.Ref<HTMLAnchorElement>}
+        onClick={onClick}
       >
         {children}
       </Link>

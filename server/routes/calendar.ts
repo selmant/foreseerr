@@ -1,3 +1,4 @@
+import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import ReleaseDateChange from '@server/entity/ReleaseDateChange';
@@ -5,6 +6,7 @@ import ReleaseOccurrence from '@server/entity/ReleaseOccurrence';
 import { Permission } from '@server/lib/permissions';
 import { getReleaseRelevanceMap } from '@server/lib/releases/relevance';
 import releaseCalendarSync from '@server/lib/releases/sync';
+import { getSettings } from '@server/lib/settings';
 import { Router } from 'express';
 import { In } from 'typeorm';
 
@@ -196,6 +198,12 @@ calendarRoutes.get('/', async (req, res, next) => {
         ? mediaById.get(occurrence.mediaId)
         : undefined;
       const rawWatchUrl = occurrence.is4k ? media?.mediaUrl4k : media?.mediaUrl;
+      const jellyfinItemId =
+        getSettings().main.mediaServerType === MediaServerType.JELLYFIN
+          ? occurrence.is4k
+            ? media?.jellyfinMediaId4k
+            : media?.jellyfinMediaId
+          : undefined;
       let watchUrl: string | undefined;
       if (rawWatchUrl) {
         try {
@@ -231,6 +239,7 @@ calendarRoutes.get('/', async (req, res, next) => {
         monitored: occurrence.monitored,
         available: occurrence.hasFile,
         watchUrl,
+        jellyfinItemId,
         is4k: occurrence.is4k,
         detailUrl: occurrence.tmdbId
           ? `/${occurrence.mediaType}/${occurrence.tmdbId}`

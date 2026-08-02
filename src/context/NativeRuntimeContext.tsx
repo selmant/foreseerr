@@ -1,5 +1,14 @@
+import { useUser } from '@app/hooks/useUser';
 import axios from 'axios';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 export type NativeRuntimeState =
   | 'web'
@@ -27,94 +36,193 @@ const NativeRuntimeContext = createContext<NativeRuntimeContextValue>({
   play: () => false,
 });
 
-const createRequestId = () =>
-  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+const createRequestId = () => crypto.randomUUID();
 
 export const NativeRuntimeProvider = ({
   children,
 }: React.PropsWithChildren) => {
   const [state, setState] = useState<NativeRuntimeState>('web');
+  const activePlayRequestId = useRef<string | undefined>(undefined);
+  const activePlayTimeout = useRef<number | undefined>(undefined);
+  const queuedPlayTarget = useRef<NativePlayTarget | undefined>(undefined);
+  const { user, error: userError } = useUser();
+  const userId = userError ? undefined : user?.id;
+  const previousUserId = useRef<number | undefined>(undefined);
+
+  const admitPlay = useCallback((target: NativePlayTarget) => {
+    if (target.provider !== 'jellyfin' || !target.itemId) return false;
+    const requestId = createRequestId();
+    const admitted =
+      window.jelliumHost?.playItem(requestId, target.itemId) ?? false;
+    if (admitted) {
+      activePlayRequestId.current = requestId;
+      activePlayTimeout.current = window.setTimeout(() => {
+        if (activePlayRequestId.current === requestId) {
+          setState('degraded');
+        }
+      }, 30000);
+      setState('playing');
+    }
+    return admitted;
+  }, []);
+
+  useEffect(() => {
+    const host = window.jelliumHost;
+    if (
+      previousUserId.current !== undefined &&
+      previousUserId.current !== userId &&
+      host?.capabilities.includes('session-reset')
+    ) {
+      host.clearSession(createRequestId());
+      activePlayRequestId.current = undefined;
+      queuedPlayTarget.current = undefined;
+      window.clearTimeout(activePlayTimeout.current);
+      setState(userId ? 'probing' : 'web');
+    }
+    previousUserId.current = userId;
+  }, [userId]);
 
   useEffect(() => {
     const host = window.jelliumHost;
     if (
       !host ||
       host.protocolVersion !== 1 ||
-      host.hostName !== 'foreseer-desktop' ||
+      host.hostName !== 'jellium-desktop' ||
       !host.capabilities.includes('play-item')
     ) {
       return;
     }
+    if (!userId) {
+      return;
+    }
 
     setState('probing');
-    const authRequestId = createRequestId();
+    let authRequestId: string | undefined;
     let authInFlight = false;
+    let authReady = false;
+    let authTimeout: number | undefined;
 
     const bootstrap = () => {
-      if (authInFlight || !host.capabilities.includes('auth-bootstrap')) return;
+      if (authInFlight || authReady) return;
+      if (!host.capabilities.includes('auth-bootstrap')) {
+        queuedPlayTarget.current = undefined;
+        setState('degraded');
+        return;
+      }
+      authRequestId = createRequestId();
       authInFlight = true;
       setState('authenticating');
-      host.requestAuthChallenge(authRequestId);
+      if (!host.requestAuthChallenge(authRequestId)) {
+        authInFlight = false;
+        authRequestId = undefined;
+        queuedPlayTarget.current = undefined;
+        setState('degraded');
+      } else {
+        authTimeout = window.setTimeout(() => {
+          authInFlight = false;
+          authRequestId = undefined;
+          queuedPlayTarget.current = undefined;
+          setState('degraded');
+        }, 30000);
+      }
     };
 
     const onNativeEvent = (event: Event) => {
       const detail = (event as CustomEvent<NativeEvent>).detail;
       if (!detail || detail.protocolVersion !== 1) return;
-      if (detail.type === 'auth-challenge' && detail.challenge) {
+      const isAuthEvent = detail.requestId === authRequestId;
+      const isPlayEvent = detail.requestId === activePlayRequestId.current;
+      if (
+        detail.type === 'auth-challenge' &&
+        isAuthEvent &&
+        detail.challenge &&
+        /^[a-f0-9]{64}$/.test(detail.challenge)
+      ) {
         axios
           .post('/api/v1/desktop/auth-tickets', {
             challenge: detail.challenge,
             protocolVersion: 1,
           })
           .then(({ data }) => {
-            host.completeAuth(authRequestId, data.ticket);
+            if (detail.requestId !== authRequestId) return;
+            if (!host.completeAuth(detail.requestId, data.ticket)) {
+              authInFlight = false;
+              authRequestId = undefined;
+              queuedPlayTarget.current = undefined;
+              window.clearTimeout(authTimeout);
+              setState('degraded');
+            }
           })
           .catch(() => {
             authInFlight = false;
+            authRequestId = undefined;
+            queuedPlayTarget.current = undefined;
+            window.clearTimeout(authTimeout);
             setState('degraded');
           });
-      } else if (detail.type === 'accepted' || detail.type === 'playing') {
+      } else if (
+        isPlayEvent &&
+        ['accepted', 'resolving', 'starting', 'playing'].includes(detail.type)
+      ) {
+        if (detail.type === 'playing') {
+          window.clearTimeout(activePlayTimeout.current);
+        }
         setState('playing');
-      } else if (detail.type === 'stopped' || detail.type === 'finished') {
+      } else if (
+        isPlayEvent &&
+        ['stopped', 'finished', 'canceled'].includes(detail.type)
+      ) {
+        activePlayRequestId.current = undefined;
+        window.clearTimeout(activePlayTimeout.current);
         setState('ready');
-      } else if (detail.type === 'ready') {
+      } else if (detail.type === 'ready' && isAuthEvent) {
         authInFlight = false;
-        setState('ready');
-      } else if (detail.type === 'error') {
+        authReady = true;
+        authRequestId = undefined;
+        window.clearTimeout(authTimeout);
+        const queued = queuedPlayTarget.current;
+        queuedPlayTarget.current = undefined;
+        if (!queued || !admitPlay(queued)) setState('ready');
+      } else if (detail.type === 'error' && isAuthEvent) {
         authInFlight = false;
+        authReady = false;
+        authRequestId = undefined;
+        queuedPlayTarget.current = undefined;
+        window.clearTimeout(authTimeout);
         setState('degraded');
+      } else if (detail.type === 'error' && isPlayEvent) {
+        activePlayRequestId.current = undefined;
+        window.clearTimeout(activePlayTimeout.current);
+        setState('ready');
       }
     };
-    window.addEventListener('foreseer:native-event', onNativeEvent);
+    window.addEventListener('jellium:host-event', onNativeEvent);
     bootstrap();
     const retry = window.setInterval(() => {
       bootstrap();
     }, 15000);
     return () => {
       window.clearInterval(retry);
-      window.removeEventListener('foreseer:native-event', onNativeEvent);
+      window.clearTimeout(authTimeout);
+      window.removeEventListener('jellium:host-event', onNativeEvent);
     };
-  }, []);
+  }, [admitPlay, userId]);
 
   const value = useMemo<NativeRuntimeContextValue>(
     () => ({
       state,
       play: (target) => {
-        if (
-          state !== 'ready' ||
-          target.provider !== 'jellyfin' ||
-          !target.itemId
-        ) {
+        if (target.provider !== 'jellyfin' || !target.itemId) {
           return false;
         }
-        const requestId = createRequestId();
-        const admitted =
-          window.jelliumHost?.playItem(requestId, target.itemId) ?? false;
-        if (admitted) setState('playing');
-        return admitted;
+        if (state === 'probing' || state === 'authenticating') {
+          queuedPlayTarget.current = target;
+          return true;
+        }
+        return state === 'ready' ? admitPlay(target) : false;
       },
     }),
-    [state]
+    [admitPlay, state]
   );
 
   return (

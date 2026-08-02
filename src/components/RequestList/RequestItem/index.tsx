@@ -159,6 +159,11 @@ const RequestItemError = ({
                     is4k={requestData.is4k}
                     mediaType={requestData.type}
                     plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
+                    jellyfinItemId={
+                      requestData.is4k
+                        ? requestData.media.jellyfinMediaId4k
+                        : requestData.media.jellyfinMediaId
+                    }
                     serviceUrl={
                       requestData.is4k
                         ? requestData.media.serviceUrl4k
@@ -574,6 +579,11 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                   tmdbId={requestData.media.tmdbId}
                   mediaType={requestData.type}
                   plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
+                  jellyfinItemId={
+                    requestData.is4k
+                      ? requestData.media.jellyfinMediaId4k
+                      : requestData.media.jellyfinMediaId
+                  }
                   serviceUrl={
                     requestData.is4k
                       ? requestData.media.serviceUrl4k

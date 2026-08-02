@@ -24,6 +24,7 @@ export interface CalendarItem {
   detailUrl?: string | null;
   sourceUrl?: string | null;
   watchUrl?: string | null;
+  jellyfinItemId?: string | null;
   requestedByCurrentUser: boolean;
   requestStatus?:
     | 'pending'

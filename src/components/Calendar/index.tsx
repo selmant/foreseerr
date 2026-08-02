@@ -5,6 +5,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import Header from '@app/components/Common/Header';
 import PageTitle from '@app/components/Common/PageTitle';
 import SlideOver from '@app/components/Common/SlideOver';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import useCalendar from '@app/hooks/useCalendar';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -752,6 +753,7 @@ const CalendarDetails = ({
   onClose: () => void;
 }) => {
   const intl = useIntl();
+  const { play } = useNativeRuntime();
   if (!item) return null;
   const episode = formatEpisode(item, intl);
   return (
@@ -876,7 +878,25 @@ const CalendarDetails = ({
             </Button>
           ) : null}
           {item.watchUrl && item.available ? (
-            <Button as="a" href={item.watchUrl} buttonType="success">
+            <Button
+              as="a"
+              href={item.watchUrl}
+              buttonType="success"
+              onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
+                if (
+                  item.jellyfinItemId &&
+                  play({
+                    provider: 'jellyfin',
+                    itemId: item.jellyfinItemId,
+                    fallbackUrl: item.watchUrl!,
+                    label: intl.formatMessage(messages.watch),
+                    quality: item.is4k ? '4k' : 'standard',
+                  })
+                ) {
+                  event.preventDefault();
+                }
+              }}
+            >
               <PlayIcon className="mr-1 h-4 w-4" />
               {intl.formatMessage(messages.watch)}
             </Button>

@@ -2745,6 +2745,98 @@ components:
       name: X-Api-Key
 
 paths:
+  /desktop/auth-tickets:
+    post:
+      summary: Issue a challenge-bound desktop authentication ticket
+      tags: [auth]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge, protocolVersion]
+              properties:
+                challenge:
+                  type: string
+                  pattern: '^[a-f0-9]{64}$'
+                protocolVersion:
+                  type: integer
+                  enum: [1]
+      responses:
+        '201':
+          description: Single-use ticket issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticket, expiresIn]
+                properties:
+                  ticket:
+                    type: string
+                    description: Sensitive single-use value; never log or cache.
+                  expiresIn:
+                    type: integer
+        '403': { description: Cookie session required }
+        '409': { description: Jellyfin account is not linked }
+        '429': { description: Rate limited }
+  /desktop/auth-tickets/redeem:
+    post:
+      summary: Redeem a challenge-bound desktop authentication ticket
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket, verifier, protocolVersion]
+              properties:
+                ticket:
+                  type: string
+                  writeOnly: true
+                  pattern: '^[A-Za-z0-9_-]{43}$'
+                verifier:
+                  type: string
+                  writeOnly: true
+                  pattern: '^[A-Za-z0-9_-]{43}$'
+                protocolVersion:
+                  type: integer
+                  enum: [1]
+      responses:
+        '200':
+          description: Native Jellyfin session bootstrap
+          headers:
+            Cache-Control:
+              schema: { type: string, enum: [no-store] }
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [
+                    serverUrl,
+                    serverId,
+                    userId,
+                    deviceId,
+                    accessToken,
+                    bootstrapGeneration,
+                  ]
+                properties:
+                  serverUrl: { type: string, format: uri }
+                  serverId: { type: string }
+                  userId: { type: string }
+                  deviceId: { type: string }
+                  accessToken:
+                    type: string
+                    description: Sensitive native-only credential; response is no-store.
+                  bootstrapGeneration: { type: string }
+        '401': { description: 'Ticket, verifier, or issuer session invalid' }
+        '409': { description: Ticket used or Jellyfin account not linked }
+        '429': { description: Rate limited }
   /calendar:
     get:
       summary: Get release calendar entries
@@ -2811,6 +2903,8 @@ paths:
                           }
                         requestedByCurrentUser: { type: boolean }
                         available: { type: boolean }
+                        watchUrl: { type: string, format: uri, nullable: true }
+                        jellyfinItemId: { type: string, nullable: true }
                   partialSources:
                     type: array
                     items: { type: object }

@@ -1,12 +1,14 @@
 import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import { DesktopAuthTicket } from '@server/entity/DesktopAuthTicket';
+import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
 import { getSettings } from '@server/lib/settings';
 import { isAuthenticated } from '@server/middleware/auth';
 import { getHostname } from '@server/utils/getHostname';
 import { Router } from 'express';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { MoreThan } from 'typeorm';
 import { z } from 'zod';
 
 const desktopRoutes = Router();
@@ -37,6 +39,16 @@ const sameDigest = (left: string, right: string) => {
 
 const allowRequest = (key: string) => {
   const now = Date.now();
+  if (requests.size >= 4096) {
+    for (const [candidate, value] of requests) {
+      if (value.resetAt <= now) requests.delete(candidate);
+    }
+    while (requests.size >= 4096) {
+      const oldest = requests.keys().next().value;
+      if (!oldest) break;
+      requests.delete(oldest);
+    }
+  }
   const current = requests.get(key);
   if (!current || current.resetAt <= now) {
     requests.set(key, { count: 1, resetAt: now + rateWindowMs });
@@ -51,13 +63,18 @@ const cleanupExpiredTickets = async () => {
   await getRepository(DesktopAuthTicket)
     .createQueryBuilder()
     .delete()
-    .where('expiresAt < :now', { now: new Date() })
+    .where('"expiresAt" < :now', { now: new Date() })
     .execute();
 };
 
 const externalJellyfinHost = () => {
   const settings = getSettings();
-  return settings.jellyfin.externalHostname?.trim() || getHostname();
+  const value = settings.jellyfin.externalHostname?.trim() || getHostname();
+  const parsed = z.string().url().safeParse(value);
+  if (!parsed.success || !/^https?:\/\//.test(parsed.data)) {
+    throw new Error('Invalid Jellyfin desktop server URL');
+  }
+  return parsed.data.replace(/\/$/, '');
 };
 
 const findLinkedUser = (userId: number) =>
@@ -76,11 +93,16 @@ desktopRoutes.post(
   isAuthenticated(),
   async (req, res, next) => {
     const parsed = challengeBody.safeParse(req.body);
-    if (!parsed.success || !req.user) {
+    if (!parsed.success) {
       return res.status(400).json({ code: 'invalid_request' });
     }
-    const key = `${req.ip}:${req.user.id}`;
-    if (!allowRequest(key)) {
+    if (!req.user || req.session?.userId !== req.user.id) {
+      return res.status(403).json({ code: 'session_required' });
+    }
+    if (
+      !allowRequest(`issue:ip:${req.ip}`) ||
+      !allowRequest(`issue:session:${req.sessionID}`)
+    ) {
       return res.status(429).json({ code: 'rate_limited' });
     }
     const settings = getSettings();
@@ -100,6 +122,7 @@ desktopRoutes.post(
       const opaqueTicket = randomBytes(32).toString('base64url');
       const ticket = new DesktopAuthTicket({
         userId: req.user.id,
+        sessionId: req.sessionID,
         ticketDigest: digest(opaqueTicket),
         challengeDigest: parsed.data.challenge,
         protocolVersion: 1,
@@ -120,18 +143,26 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
   if (!parsed.success) {
     return res.status(400).json({ code: 'invalid_request' });
   }
-  if (!allowRequest(req.ip ?? '')) {
+  if (!allowRequest(`redeem:ip:${req.ip ?? ''}`)) {
     return res.status(429).json({ code: 'rate_limited' });
   }
   const { ticket, verifier } = parsed.data;
   const repository = getRepository(DesktopAuthTicket);
-  const record = await repository.findOne({
-    where: { ticketDigest: digest(ticket), protocolVersion: 1 },
-  });
-  if (!record || record.consumedAt) {
-    return res
-      .status(401)
-      .json({ code: record ? 'ticket_used' : 'ticket_expired' });
+  const record = await repository
+    .createQueryBuilder('ticket')
+    .addSelect('ticket.sessionId')
+    .where('ticket.ticketDigest = :ticketDigest', {
+      ticketDigest: digest(ticket),
+    })
+    .andWhere('ticket.protocolVersion = :protocolVersion', {
+      protocolVersion: 1,
+    })
+    .getOne();
+  if (!record) {
+    return res.status(401).json({ code: 'ticket_expired' });
+  }
+  if (record.consumedAt) {
+    return res.status(409).json({ code: 'ticket_used' });
   }
   if (record.expiresAt.getTime() <= Date.now()) {
     return res.status(401).json({ code: 'ticket_expired' });
@@ -139,13 +170,25 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
   if (!sameDigest(record.challengeDigest, digest(verifier))) {
     return res.status(401).json({ code: 'invalid_verifier' });
   }
+  const session = await getRepository(Session).findOne({
+    where: { id: record.sessionId, expiredAt: MoreThan(Date.now()) },
+  });
+  let sessionUserId: number | undefined;
+  try {
+    sessionUserId = session ? JSON.parse(session.json).userId : undefined;
+  } catch {
+    sessionUserId = undefined;
+  }
+  if (sessionUserId !== record.userId) {
+    return res.status(401).json({ code: 'session_expired' });
+  }
 
   // Consume atomically so two native workers cannot redeem the same ticket.
   const result = await repository
     .createQueryBuilder()
     .update(DesktopAuthTicket)
     .set({ consumedAt: new Date() })
-    .where('id = :id AND consumedAt IS NULL AND expiresAt > :now', {
+    .where('id = :id AND "consumedAt" IS NULL AND "expiresAt" > :now', {
       id: record.id,
       now: new Date(),
     })
@@ -161,10 +204,12 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
       !user?.jellyfinUserId ||
       !user.jellyfinAuthToken ||
       !user.jellyfinDeviceId ||
-      settings.main.mediaServerType !== MediaServerType.JELLYFIN
+      settings.main.mediaServerType !== MediaServerType.JELLYFIN ||
+      !settings.jellyfin.serverId
     ) {
       return res.status(409).json({ code: 'not_linked' });
     }
+    res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({
       serverUrl: externalJellyfinHost(),
       serverId: settings.jellyfin.serverId,

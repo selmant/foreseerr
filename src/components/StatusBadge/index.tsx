@@ -2,6 +2,7 @@ import Spinner from '@app/assets/spinner.svg';
 import Badge from '@app/components/Common/Badge';
 import Tooltip from '@app/components/Common/Tooltip';
 import DownloadBlock from '@app/components/DownloadBlock';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -27,6 +28,7 @@ interface StatusBadgeProps {
   is4k?: boolean;
   inProgress?: boolean;
   plexUrl?: string;
+  jellyfinItemId?: string | null;
   serviceUrl?: string;
   tmdbId?: number;
   mediaType?: 'movie' | 'tv';
@@ -40,6 +42,7 @@ const StatusBadge = ({
   is4k = false,
   inProgress = false,
   plexUrl,
+  jellyfinItemId,
   serviceUrl,
   tmdbId,
   mediaType,
@@ -49,6 +52,7 @@ const StatusBadge = ({
   const intl = useIntl();
   const { hasPermission } = useUser();
   const settings = useSettings();
+  const { play } = useNativeRuntime();
 
   let mediaLink: string | undefined;
   let mediaLinkDescription: string | undefined;
@@ -169,6 +173,21 @@ const StatusBadge = ({
           <Badge
             badgeType="success"
             href={mediaLink}
+            onClick={(event) => {
+              if (
+                mediaLink &&
+                jellyfinItemId &&
+                play({
+                  provider: 'jellyfin',
+                  itemId: jellyfinItemId,
+                  fallbackUrl: mediaLink,
+                  label: mediaLinkDescription ?? 'Jellyfin',
+                  quality: is4k ? '4k' : 'standard',
+                })
+              ) {
+                event.preventDefault();
+              }
+            }}
             className={`${
               inProgress && 'relative !bg-gray-700/80 !px-0 hover:!bg-gray-700'
             } overflow-hidden`}

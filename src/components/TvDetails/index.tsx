@@ -585,6 +585,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
               tmdbId={data.mediaInfo?.tmdbId}
               mediaType="tv"
               plexUrl={plexUrl}
+              jellyfinItemId={data.mediaInfo?.jellyfinMediaId}
               serviceUrl={data.mediaInfo?.serviceUrl}
             />
             {settings.currentSettings.series4kEnabled &&
@@ -609,6 +610,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   tmdbId={data.mediaInfo?.tmdbId}
                   mediaType="tv"
                   plexUrl={plexUrl4k}
+                  jellyfinItemId={data.mediaInfo?.jellyfinMediaId4k}
                   serviceUrl={data.mediaInfo?.serviceUrl4k}
                 />
               )}

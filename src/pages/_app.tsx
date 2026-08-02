@@ -199,42 +199,42 @@ const CoreApp: Omit<NextAppComponentType, 'origGetInitialProps'> = ({
         },
       }}
     >
-      <NativeRuntimeProvider>
-        <LanguageContext.Provider value={{ locale: currentLocale, setLocale }}>
-          <IntlProvider
-            locale={currentLocale}
-            defaultLocale="en"
-            messages={loadedMessages}
-          >
-            <LoadingBar />
-            <SettingsProvider currentSettings={currentSettings}>
-              <InteractionProvider>
-                <Head>
-                  <title>{currentSettings.applicationTitle}</title>
-                  <meta
-                    name="viewport"
-                    content="initial-scale=1, viewport-fit=cover, width=device-width"
-                  />
-                  <PWAHeader
-                    applicationTitle={currentSettings.applicationTitle}
-                  />
-                </Head>
-                <StatusChecker />
-                <ServiceWorkerSetup />
-                <UserContext initialUser={user}>{component}</UserContext>
-                <Toaster
-                  position="top-right"
-                  toastOptions={{ duration: 4000 }}
-                  containerStyle={{
-                    zIndex: 10000,
-                    paddingTop: 'env(safe-area-inset-top)',
-                  }}
+      <LanguageContext.Provider value={{ locale: currentLocale, setLocale }}>
+        <IntlProvider
+          locale={currentLocale}
+          defaultLocale="en"
+          messages={loadedMessages}
+        >
+          <LoadingBar />
+          <SettingsProvider currentSettings={currentSettings}>
+            <InteractionProvider>
+              <Head>
+                <title>{currentSettings.applicationTitle}</title>
+                <meta
+                  name="viewport"
+                  content="initial-scale=1, viewport-fit=cover, width=device-width"
                 />
-              </InteractionProvider>
-            </SettingsProvider>
-          </IntlProvider>
-        </LanguageContext.Provider>
-      </NativeRuntimeProvider>
+                <PWAHeader
+                  applicationTitle={currentSettings.applicationTitle}
+                />
+              </Head>
+              <StatusChecker />
+              <ServiceWorkerSetup />
+              <UserContext initialUser={user}>
+                <NativeRuntimeProvider>{component}</NativeRuntimeProvider>
+              </UserContext>
+              <Toaster
+                position="top-right"
+                toastOptions={{ duration: 4000 }}
+                containerStyle={{
+                  zIndex: 10000,
+                  paddingTop: 'env(safe-area-inset-top)',
+                }}
+              />
+            </InteractionProvider>
+          </SettingsProvider>
+        </IntlProvider>
+      </LanguageContext.Provider>
     </SWRConfig>
   );
 };
