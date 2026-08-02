@@ -56,9 +56,11 @@ export const NativeRuntimeProvider = ({
       window.jelliumHost?.playItem(requestId, target.itemId) ?? false;
     if (admitted) {
       activePlayRequestId.current = requestId;
+      window.clearTimeout(activePlayTimeout.current);
       activePlayTimeout.current = window.setTimeout(() => {
         if (activePlayRequestId.current === requestId) {
-          setState('degraded');
+          activePlayRequestId.current = undefined;
+          setState('ready');
         }
       }, 30000);
       setState('playing');
@@ -127,6 +129,14 @@ export const NativeRuntimeProvider = ({
       }
     };
 
+    const clearActivePlay = () => {
+      activePlayRequestId.current = undefined;
+      window.clearTimeout(activePlayTimeout.current);
+      setState((current) =>
+        current === 'playing' || current === 'degraded' ? 'ready' : current
+      );
+    };
+
     const onNativeEvent = (event: Event) => {
       const detail = (event as CustomEvent<NativeEvent>).detail;
       if (!detail || detail.protocolVersion !== 1) return;
@@ -169,12 +179,11 @@ export const NativeRuntimeProvider = ({
         }
         setState('playing');
       } else if (
-        isPlayEvent &&
-        ['stopped', 'finished', 'canceled'].includes(detail.type)
+        ['stopped', 'finished', 'canceled'].includes(detail.type) &&
+        (isPlayEvent || activePlayRequestId.current !== undefined)
       ) {
-        activePlayRequestId.current = undefined;
-        window.clearTimeout(activePlayTimeout.current);
-        setState('ready');
+        // Accept terminal events even when request ids race after Video OSD Back.
+        clearActivePlay();
       } else if (detail.type === 'ready' && isAuthEvent) {
         authInFlight = false;
         authReady = true;
@@ -190,10 +199,11 @@ export const NativeRuntimeProvider = ({
         queuedPlayTarget.current = undefined;
         window.clearTimeout(authTimeout);
         setState('degraded');
-      } else if (detail.type === 'error' && isPlayEvent) {
-        activePlayRequestId.current = undefined;
-        window.clearTimeout(activePlayTimeout.current);
-        setState('ready');
+      } else if (
+        detail.type === 'error' &&
+        (isPlayEvent || activePlayRequestId.current !== undefined)
+      ) {
+        clearActivePlay();
       }
     };
     window.addEventListener('jellium:host-event', onNativeEvent);
@@ -219,7 +229,11 @@ export const NativeRuntimeProvider = ({
           queuedPlayTarget.current = target;
           return true;
         }
-        return state === 'ready' ? admitPlay(target) : false;
+        // ready: normal path. playing/degraded: allow retry after Back/timeout races.
+        if (state === 'ready' || state === 'playing' || state === 'degraded') {
+          return admitPlay(target);
+        }
+        return false;
       },
     }),
     [admitPlay, state]
