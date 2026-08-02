@@ -632,15 +632,19 @@ class JellyfinAPI extends ExternalAPI {
       const response = await this.get<JellyfinLibraryItemExtended[]>(endpoint, {
         params: {
           Limit: limit,
-          Fields: 'ProviderIds,Overview',
+          Fields: 'ProviderIds,Overview,DateCreated',
           IncludeItemTypes: 'Episode',
+          // Default GroupItems=true collapses episodes into Series rows.
+          GroupItems: false,
           EnableUserData: true,
           ...(this.mediaServerType === MediaServerType.JELLYFIN
             ? { userId: this.userId ?? 'Me' }
             : {}),
         },
       });
-      return Array.isArray(response) ? response : [];
+      const items = Array.isArray(response) ? response : [];
+      // Defend against servers that still return grouped Series rows.
+      return items.filter((item) => item.Type === 'Episode');
     } catch (e) {
       logger.error(
         `Something went wrong while getting latest episodes from the Jellyfin server: ${e.message}`,
