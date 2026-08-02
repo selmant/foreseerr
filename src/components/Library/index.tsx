@@ -193,6 +193,8 @@ const Library = () => {
         jellyfinSeriesId={panelSeries?.jellyfinSeriesId ?? null}
         seedTitle={panelSeries?.title}
         seedTmdbId={panelSeries?.tmdbId}
+        seedPlayItemId={panelSeries?.playItemId}
+        seedSubtitle={panelSeries?.subtitle}
         onClose={() => setPanelSeries(null)}
       />
     </>

@@ -684,22 +684,28 @@ export const getLibrarySeriesDetail = async (
         }
       : undefined;
 
-    let seriesTitle =
-      nextUp[0]?.SeriesName ||
-      resume.find((e) => e.SeriesId === jellyfinSeriesId)?.SeriesName;
-
-    if (!playTarget && seasons.length) {
-      const episodes = await fetchAllSeriesEpisodes(
-        linked.client,
-        jellyfinSeriesId
-      );
+    // Prefer NextUp/resume only on open. Do not walk every season here —
+    // that N+1 path can stall the panel; season episode list covers Play.
+    const resumeHit = resume.find(
+      (e) =>
+        e.SeriesId === jellyfinSeriesId &&
+        e.Type === 'Episode' &&
+        ((e.UserData?.PlaybackPositionTicks ?? 0) > 0 ||
+          ((e.UserData?.PlayedPercentage ?? 0) > 0 &&
+            (e.UserData?.PlayedPercentage ?? 0) < 95))
+    );
+    if (!playTarget && resumeHit) {
       playTarget = resolveSeriesPlayTarget(
         jellyfinSeriesId,
-        episodes,
-        resume.filter((e) => e.SeriesId === jellyfinSeriesId)
+        [resumeHit],
+        [resumeHit]
       );
-      seriesTitle = seriesTitle || episodes[0]?.SeriesName;
     }
+
+    const seriesTitle =
+      nextUp[0]?.SeriesName ||
+      resumeHit?.SeriesName ||
+      resume.find((e) => e.SeriesId === jellyfinSeriesId)?.SeriesName;
 
     const mediaRows = await resolveMediaRows([
       {

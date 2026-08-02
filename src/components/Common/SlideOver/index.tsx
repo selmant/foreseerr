@@ -11,6 +11,11 @@ interface SlideOverProps {
   subText?: string;
   onClose: () => void;
   children: React.ReactNode;
+  /**
+   * `fast` skips backdrop-blur and shortens slide animation.
+   * Prefer for CEF/native shells where blur is expensive.
+   */
+  variant?: 'default' | 'fast';
 }
 
 const SlideOver = ({
@@ -19,10 +24,12 @@ const SlideOver = ({
   subText,
   onClose,
   children,
+  variant = 'default',
 }: SlideOverProps) => {
   const [isMounted, setIsMounted] = useState(false);
   const slideoverRef = useRef(null);
   useLockBodyScroll(show);
+  const fast = variant === 'fast';
 
   useEffect(() => {
     setIsMounted(true);
@@ -37,16 +44,18 @@ const SlideOver = ({
       as={Fragment}
       show={show}
       appear
-      enter="transition-opacity ease-in-out duration-300"
+      enter={`transition-opacity ease-in-out ${fast ? 'duration-150' : 'duration-300'}`}
       enterFrom="opacity-0"
       enterTo="opacity-100"
-      leave="transition-opacity ease-in-out duration-300"
+      leave={`transition-opacity ease-in-out ${fast ? 'duration-100' : 'duration-300'}`}
       leaveFrom="opacity-100"
       leaveTo="opacity-0"
     >
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
-        className={`fixed inset-0 z-50 overflow-hidden bg-gray-800/70`}
+        className={`fixed inset-0 z-50 overflow-hidden ${
+          fast ? 'bg-gray-900/80' : 'bg-gray-800/70'
+        }`}
         onClick={() => onClose()}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
@@ -58,10 +67,14 @@ const SlideOver = ({
           <section className="absolute inset-y-0 right-0 flex max-w-full">
             <Transition.Child
               appear
-              enter="transition-transform ease-in-out duration-500 sm:duration-700"
+              enter={`transition-transform ease-out ${
+                fast ? 'duration-200' : 'duration-500 sm:duration-700'
+              }`}
               enterFrom="translate-x-full"
               enterTo="translate-x-0"
-              leave="transition-transform ease-in-out duration-500 sm:duration-700"
+              leave={`transition-transform ease-in ${
+                fast ? 'duration-150' : 'duration-500 sm:duration-700'
+              }`}
               leaveFrom="translate-x-0"
               leaveTo="translate-x-full"
             >
@@ -71,7 +84,11 @@ const SlideOver = ({
                 ref={slideoverRef}
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex h-full flex-col rounded-lg bg-gray-800/80 shadow-xl ring-1 ring-gray-700 backdrop-blur">
+                <div
+                  className={`flex h-full flex-col rounded-lg shadow-xl ring-1 ring-gray-700 ${
+                    fast ? 'bg-gray-800' : 'bg-gray-800/80 backdrop-blur'
+                  }`}
+                >
                   <header className="space-y-1 border-b border-gray-700 px-4 py-4">
                     <div className="flex items-center justify-between space-x-3">
                       <h2 className="text-overseerr text-2xl font-bold leading-7">

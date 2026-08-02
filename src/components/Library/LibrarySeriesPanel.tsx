@@ -28,6 +28,8 @@ interface LibrarySeriesPanelProps {
   jellyfinSeriesId: string | null;
   seedTitle?: string;
   seedTmdbId?: number;
+  seedPlayItemId?: string;
+  seedSubtitle?: string;
   onClose: () => void;
 }
 
@@ -36,6 +38,8 @@ const LibrarySeriesPanel = ({
   jellyfinSeriesId,
   seedTitle,
   seedTmdbId,
+  seedPlayItemId,
+  seedSubtitle,
   onClose,
 }: LibrarySeriesPanelProps) => {
   const intl = useIntl();
@@ -77,6 +81,8 @@ const LibrarySeriesPanel = ({
 
   const title = series?.title || seedTitle || 'Series';
   const tmdbId = series?.tmdbId ?? seedTmdbId;
+  const playItemId = series?.playItemId || seedPlayItemId;
+  const playSubtitle = series?.subtitle || seedSubtitle;
   const statusCode = series?.code ?? episodes?.code;
 
   const playEpisode = (itemId: string, label: string) => {
@@ -90,7 +96,7 @@ const LibrarySeriesPanel = ({
   };
 
   return (
-    <SlideOver show={show} title={title} onClose={onClose}>
+    <SlideOver show={show} title={title} onClose={onClose} variant="fast">
       {statusCode === 'not_linked' ? (
         <p className="text-sm text-gray-300">
           {intl.formatMessage(messages.notLinked)}
@@ -99,23 +105,16 @@ const LibrarySeriesPanel = ({
         <p className="text-sm text-red-400">
           {intl.formatMessage(messages.unreachable)}
         </p>
-      ) : !series ? (
-        <LoadingSpinner />
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            {series.playItemId ? (
+            {playItemId ? (
               <Button
                 buttonType="primary"
-                onClick={() =>
-                  playEpisode(
-                    series.playItemId as string,
-                    series.subtitle || title
-                  )
-                }
+                onClick={() => playEpisode(playItemId, playSubtitle || title)}
               >
                 {intl.formatMessage(messages.playNext)}
-                {series.subtitle ? ` · ${series.subtitle}` : ''}
+                {playSubtitle ? ` · ${playSubtitle}` : ''}
               </Button>
             ) : null}
             {tmdbId ? (
@@ -130,79 +129,85 @@ const LibrarySeriesPanel = ({
             ) : null}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            {series.seasons.map((season) => (
-              <button
-                key={season.jellyfinSeasonId}
-                type="button"
-                onClick={() => setSelectedSeasonId(season.jellyfinSeasonId)}
-                className={`rounded-md px-3 py-1.5 text-sm ${
-                  selectedSeasonId === season.jellyfinSeasonId
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                {season.name}
-              </button>
-            ))}
-          </div>
-
-          <div>
-            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-400">
-              {intl.formatMessage(messages.episodes)}
-            </h3>
-            {!episodes && !episodesError ? (
-              <LoadingSpinner />
-            ) : episodesError ? (
-              <p className="text-sm text-red-400">
-                {intl.formatMessage(messages.loadFailed)}
-              </p>
-            ) : !episodes?.episodes.length ? (
-              <p className="text-sm text-gray-400">
-                {intl.formatMessage(messages.emptySeason)}
-              </p>
-            ) : (
-              <ul className="divide-y divide-gray-700 rounded-md border border-gray-700">
-                {episodes.episodes.map((episode) => (
-                  <li
-                    key={episode.jellyfinItemId}
-                    className="flex items-center gap-3 px-3 py-2"
+          {!series ? (
+            <LoadingSpinner />
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {series.seasons.map((season) => (
+                  <button
+                    key={season.jellyfinSeasonId}
+                    type="button"
+                    onClick={() => setSelectedSeasonId(season.jellyfinSeasonId)}
+                    className={`rounded-md px-3 py-1.5 text-sm ${
+                      selectedSeasonId === season.jellyfinSeasonId
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-gray-100">
-                        {episode.subtitle ? `${episode.subtitle} · ` : ''}
-                        {episode.name}
-                      </div>
-                      {episode.watched ? (
-                        <div className="text-xs text-gray-500">
-                          {intl.formatMessage(messages.watched)}
-                        </div>
-                      ) : episode.progressPercent ? (
-                        <div className="mt-1 h-1 w-full overflow-hidden rounded bg-gray-700">
-                          <div
-                            className="h-full bg-indigo-500"
-                            style={{ width: `${episode.progressPercent}%` }}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                    <Button
-                      buttonType="primary"
-                      buttonSize="sm"
-                      onClick={() =>
-                        playEpisode(
-                          episode.jellyfinItemId,
-                          `${title} ${episode.subtitle ?? episode.name}`
-                        )
-                      }
-                    >
-                      {intl.formatMessage(messages.play)}
-                    </Button>
-                  </li>
+                    {season.name}
+                  </button>
                 ))}
-              </ul>
-            )}
-          </div>
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-400">
+                  {intl.formatMessage(messages.episodes)}
+                </h3>
+                {!episodes && !episodesError ? (
+                  <LoadingSpinner />
+                ) : episodesError ? (
+                  <p className="text-sm text-red-400">
+                    {intl.formatMessage(messages.loadFailed)}
+                  </p>
+                ) : !episodes?.episodes.length ? (
+                  <p className="text-sm text-gray-400">
+                    {intl.formatMessage(messages.emptySeason)}
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-gray-700 rounded-md border border-gray-700">
+                    {episodes.episodes.map((episode) => (
+                      <li
+                        key={episode.jellyfinItemId}
+                        className="flex items-center gap-3 px-3 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-gray-100">
+                            {episode.subtitle ? `${episode.subtitle} · ` : ''}
+                            {episode.name}
+                          </div>
+                          {episode.watched ? (
+                            <div className="text-xs text-gray-500">
+                              {intl.formatMessage(messages.watched)}
+                            </div>
+                          ) : episode.progressPercent ? (
+                            <div className="mt-1 h-1 w-full overflow-hidden rounded bg-gray-700">
+                              <div
+                                className="h-full bg-indigo-500"
+                                style={{ width: `${episode.progressPercent}%` }}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                        <Button
+                          buttonType="primary"
+                          buttonSize="sm"
+                          onClick={() =>
+                            playEpisode(
+                              episode.jellyfinItemId,
+                              `${title} ${episode.subtitle ?? episode.name}`
+                            )
+                          }
+                        >
+                          {intl.formatMessage(messages.play)}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
     </SlideOver>
