@@ -147,7 +147,8 @@ class JellyfinAPI extends ExternalAPI {
   constructor(
     jellyfinHost: string,
     authToken?: string | null,
-    deviceId?: string | null
+    deviceId?: string | null,
+    timeout?: number
   ) {
     const settings = getSettings();
     const safeDeviceId =
@@ -169,6 +170,7 @@ class JellyfinAPI extends ExternalAPI {
       jellyfinHost,
       {},
       {
+        timeout,
         headers: {
           Authorization: authHeaderVal,
           'Content-Type': 'application/json',

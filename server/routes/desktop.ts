@@ -1,3 +1,4 @@
+import JellyfinAPI from '@server/api/jellyfin';
 import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import { DesktopAuthTicket } from '@server/entity/DesktopAuthTicket';
@@ -5,6 +6,7 @@ import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
 import { getSettings } from '@server/lib/settings';
 import { isAuthenticated } from '@server/middleware/auth';
+import { ApiError } from '@server/types/error';
 import { getHostname } from '@server/utils/getHostname';
 import { Router } from 'express';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -116,8 +118,7 @@ desktopRoutes.post(
       settings.main.mediaServerType !== MediaServerType.JELLYFIN ||
       !linkedUser?.jellyfinUserId ||
       !linkedUser.jellyfinAuthToken ||
-      !linkedUser.jellyfinDeviceId ||
-      !settings.jellyfin.serverId
+      !linkedUser.jellyfinDeviceId
     ) {
       return res.status(409).json({ code: 'not_linked' });
     }
@@ -205,18 +206,39 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
   try {
     const user = await findLinkedUser(record.userId);
     const settings = getSettings();
+    if (settings.main.mediaServerType !== MediaServerType.JELLYFIN) {
+      return res.status(409).json({ code: 'unsupported_media_server' });
+    }
     if (
       !user?.jellyfinUserId ||
       !user.jellyfinAuthToken ||
-      !user.jellyfinDeviceId ||
-      settings.main.mediaServerType !== MediaServerType.JELLYFIN ||
-      !settings.jellyfin.serverId
+      !user.jellyfinDeviceId
     ) {
       return res.status(409).json({ code: 'not_linked' });
     }
+    const serverUrl = externalJellyfinHost();
+    let linkedIdentity;
+    try {
+      linkedIdentity = await new JellyfinAPI(
+        serverUrl,
+        user.jellyfinAuthToken,
+        user.jellyfinDeviceId,
+        5000
+      ).getUser();
+    } catch (error) {
+      const status = error instanceof ApiError ? error.statusCode : undefined;
+      const code =
+        status === 401 || status === 403
+          ? 'token_invalid'
+          : 'server_unreachable';
+      return res.status(code === 'token_invalid' ? 401 : 503).json({ code });
+    }
+    if (linkedIdentity.Id !== user.jellyfinUserId || !linkedIdentity.ServerId) {
+      return res.status(401).json({ code: 'token_invalid' });
+    }
     return res.status(200).json({
-      serverUrl: externalJellyfinHost(),
-      serverId: settings.jellyfin.serverId,
+      serverUrl,
+      serverId: linkedIdentity.ServerId,
       userId: user.jellyfinUserId,
       deviceId: user.jellyfinDeviceId,
       accessToken: user.jellyfinAuthToken,

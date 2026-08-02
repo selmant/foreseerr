@@ -2784,7 +2784,7 @@ paths:
                     type: integer
         '401': { description: Authentication required }
         '403': { description: Browser cookie session required }
-        '409': { description: Jellyfin account is not linked }
+        '409': { description: Jellyfin account is not linked or unsupported }
         '429': { description: Rate limited }
   /desktop/auth-tickets/redeem:
     post:
@@ -2838,9 +2838,13 @@ paths:
                     type: string
                     description: Sensitive native-only credential; response is no-store.
                   bootstrapGeneration: { type: string }
-        '401': { description: 'Ticket, verifier, or issuer session invalid' }
+        '401':
+          {
+            description: 'Ticket, verifier, issuer session, or linked token invalid',
+          }
         '409': { description: Ticket used or Jellyfin account not linked }
         '429': { description: Rate limited }
+        '503': { description: Jellyfin server unavailable }
   /calendar:
     get:
       summary: Get release calendar entries

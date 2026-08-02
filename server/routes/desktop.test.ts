@@ -1,3 +1,5 @@
+import JellyfinAPI, { type JellyfinUserResponse } from '@server/api/jellyfin';
+import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import { Session } from '@server/entity/Session';
@@ -5,15 +7,25 @@ import { User } from '@server/entity/User';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
+import { ApiError } from '@server/types/error';
 import express, { type Express } from 'express';
 import session from 'express-session';
 import assert from 'node:assert/strict';
-import { before, beforeEach, describe, it } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
 import request from 'supertest';
 import desktopRoutes from './desktop';
 
 let app: Express;
 let apiApp: Express;
+const originalGetUser = JellyfinAPI.prototype.getUser;
+const validLinkedIdentity = (): JellyfinUserResponse => ({
+  Name: 'linked-user',
+  ServerId: 'authoritative-server',
+  ServerName: 'Jellyfin',
+  Id: 'user-1',
+  Configuration: { GroupedFolders: [] },
+  Policy: { IsAdministrator: false },
+});
 
 function createApp(withCookieUser = true) {
   const instance = express();
@@ -36,8 +48,13 @@ function createApp(withCookieUser = true) {
 }
 
 before(async () => {
+  JellyfinAPI.prototype.getUser = async () => validLinkedIdentity();
   app = createApp();
   apiApp = createApp(false);
+});
+
+after(() => {
+  JellyfinAPI.prototype.getUser = originalGetUser;
 });
 
 setupTestDb();
@@ -85,6 +102,7 @@ describe('desktop auth tickets', () => {
 
     assert.strictEqual(redeemed.status, 200);
     assert.strictEqual(redeemed.body.userId, 'user-1');
+    assert.strictEqual(redeemed.body.serverId, 'authoritative-server');
     assert.strictEqual(redeemed.body.accessToken, 'secret-token');
     assert.strictEqual(redeemed.headers['cache-control'], 'no-store');
 
@@ -165,5 +183,45 @@ describe('desktop auth tickets', () => {
       responses.map(({ status }) => status).sort(),
       [200, 409]
     );
+  });
+
+  it('uses the linked Jellyfin identity when cached serverId is empty', async () => {
+    getSettings().jellyfin.serverId = '';
+    const verifier = 'f'.repeat(43);
+    const challenge = await import('node:crypto').then(({ createHash }) =>
+      createHash('sha256').update(verifier).digest('hex')
+    );
+    const issued = await request(app)
+      .post('/desktop/auth-tickets')
+      .send({ challenge, protocolVersion: 1 });
+    assert.strictEqual(issued.status, 201);
+
+    const redeemed = await request(app)
+      .post('/desktop/auth-tickets/redeem')
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+    assert.strictEqual(redeemed.status, 200);
+    assert.strictEqual(redeemed.body.serverId, 'authoritative-server');
+  });
+
+  it('rejects an invalid linked Jellyfin token with a closed error', async () => {
+    JellyfinAPI.prototype.getUser = async () => {
+      throw new ApiError(401, ApiErrorCode.InvalidAuthToken);
+    };
+    try {
+      const verifier = 'g'.repeat(43);
+      const challenge = await import('node:crypto').then(({ createHash }) =>
+        createHash('sha256').update(verifier).digest('hex')
+      );
+      const issued = await request(app)
+        .post('/desktop/auth-tickets')
+        .send({ challenge, protocolVersion: 1 });
+      const redeemed = await request(app)
+        .post('/desktop/auth-tickets/redeem')
+        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+      assert.strictEqual(redeemed.status, 401);
+      assert.strictEqual(redeemed.body.code, 'token_invalid');
+    } finally {
+      JellyfinAPI.prototype.getUser = async () => validLinkedIdentity();
+    }
   });
 });
