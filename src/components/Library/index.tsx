@@ -25,6 +25,7 @@ const messages = defineMessages('components.Library', {
   available: 'Available in Library',
   searchPlaceholder: 'Search your library…',
   noResults: 'No matching titles.',
+  loadFailed: 'Could not load library titles. Try again in a moment.',
   movies: 'Movies',
   series: 'Series',
   all: 'All',
@@ -163,7 +164,7 @@ const Library = () => {
           <LoadingSpinner />
         ) : availableError ? (
           <p className="text-sm text-red-400">
-            {intl.formatMessage(messages.serverUnreachable)}
+            {intl.formatMessage(messages.loadFailed)}
           </p>
         ) : !available?.results.length ? (
           <p className="text-sm text-gray-400">

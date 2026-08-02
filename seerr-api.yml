@@ -42,6 +42,8 @@ tags:
     description: Blocklisted media from discovery page.
   - name: calendar
     description: Unified Sonarr and Radarr release calendar.
+  - name: library
+    description: Owned-media Watch Now shelves and available library browse.
 servers:
   - url: '{server}/api/v1'
     variables:
@@ -1805,6 +1807,68 @@ components:
         results:
           type: number
           example: 100
+    LibraryTitle:
+      type: object
+      required: [mediaType, jellyfinItemId, title]
+      properties:
+        mediaId:
+          type: number
+        tmdbId:
+          type: number
+        mediaType:
+          type: string
+          enum: [movie, tv]
+        jellyfinItemId:
+          type: string
+        title:
+          type: string
+        subtitle:
+          type: string
+        overview:
+          type: string
+        mediaUrl:
+          type: string
+        status:
+          type: number
+        progressPercent:
+          type: number
+    LibraryShelf:
+      type: object
+      required: [id, title, items]
+      properties:
+        id:
+          type: string
+          enum: [continue, recent, forgotten]
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LibraryTitle'
+    LibraryWatchNowResponse:
+      type: object
+      required: [shelves]
+      properties:
+        shelves:
+          type: array
+          items:
+            $ref: '#/components/schemas/LibraryShelf'
+        code:
+          type: string
+          enum: [not_linked, server_unreachable, unsupported_media_server]
+    LibraryAvailableResponse:
+      type: object
+      required: [pageInfo, results]
+      properties:
+        pageInfo:
+          $ref: '#/components/schemas/PageInfo'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LibraryTitle'
+        code:
+          type: string
+          enum: [not_linked, server_unreachable, unsupported_media_server]
     DiscordSettings:
       type: object
       properties:
@@ -8894,6 +8958,94 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MediaActionStatus'
+  /library/watch-now:
+    get:
+      summary: Get Watch Now library shelves
+      description: >
+        Returns Continue Watching, Recently Added, and Ready to Watch shelves
+        for the authenticated user using their linked Jellyfin identity.
+      tags:
+        - library
+      responses:
+        '200':
+          description: Watch Now shelves (may be empty with a code)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryWatchNowResponse'
+        '401':
+          description: Unauthorized
+  /library/available:
+    get:
+      summary: List available library titles
+      description: >
+        Paginated titles that are available or partially available in Foreseer
+        and mapped to Jellyfin. Title search (`q`) uses the linked Jellyfin API.
+      tags:
+        - library
+      parameters:
+        - in: query
+          name: take
+          schema:
+            type: number
+            nullable: true
+            example: 20
+        - in: query
+          name: skip
+          schema:
+            type: number
+            nullable: true
+            example: 0
+        - in: query
+          name: mediaType
+          schema:
+            type: string
+            enum: [movie, tv]
+        - in: query
+          name: q
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available library page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryAvailableResponse'
+        '401':
+          description: Unauthorized
+  /library/search:
+    get:
+      summary: Search available library titles
+      description: Search owned/available titles. Non-numeric `q` queries Jellyfin.
+      tags:
+        - library
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: take
+          schema:
+            type: number
+            nullable: true
+            example: 20
+        - in: query
+          name: mediaType
+          schema:
+            type: string
+            enum: [movie, tv]
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryAvailableResponse'
+        '401':
+          description: Unauthorized
   /media:
     get:
       summary: Get media
