@@ -451,12 +451,40 @@ export const buildWatchNowResponse = async (
   const shelves: LibraryShelf[] = [];
 
   try {
-    const [resume, latest, latestEpisodes, nextUp] = await Promise.all([
-      linked.client.getResumeItems(16),
-      linked.client.getUserLatestItems(16),
-      linked.client.getUserLatestEpisodes(16),
-      linked.client.getNextUpEpisodes(48),
-    ]);
+    const settings = getSettings();
+    const tvLibraryIds = (settings.jellyfin.libraries ?? [])
+      .filter((lib) => lib.enabled && lib.type === 'show')
+      .map((lib) => lib.id)
+      .filter(Boolean);
+
+    const [resume, latest, nextUp, ...latestEpisodeBatches] = await Promise.all(
+      [
+        linked.client.getResumeItems(16),
+        linked.client.getUserLatestItems(16),
+        linked.client.getNextUpEpisodes(48),
+        ...(tvLibraryIds.length
+          ? tvLibraryIds.map((id) =>
+              linked.client.getUserLatestEpisodes(16, id)
+            )
+          : [linked.client.getUserLatestEpisodes(16)]),
+      ]
+    );
+
+    const latestEpisodeById = new Map<string, JellyfinLibraryItemExtended>();
+    for (const batch of latestEpisodeBatches) {
+      for (const item of batch) {
+        if (!latestEpisodeById.has(item.Id)) {
+          latestEpisodeById.set(item.Id, item);
+        }
+      }
+    }
+    const latestEpisodes = [...latestEpisodeById.values()]
+      .sort((a, b) => {
+        const da = a.DateCreated ? Date.parse(a.DateCreated) : 0;
+        const db = b.DateCreated ? Date.parse(b.DateCreated) : 0;
+        return db - da;
+      })
+      .slice(0, 16);
 
     const continueItems = await mapJellyfinItemsToLibraryTitles(resume);
     if (continueItems.length) {

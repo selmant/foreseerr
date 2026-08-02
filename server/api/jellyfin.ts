@@ -620,30 +620,30 @@ class JellyfinAPI extends ExternalAPI {
     }
   }
 
-  /** Recently added episodes visible to the authenticated user. */
+  /**
+   * Recently added episodes by Jellyfin DateCreated (library ingest time).
+   * Prefer /Items SortBy=DateCreated over /Items/Latest — Latest does not
+   * match strict date-added order (verified against live Jellyfin).
+   */
   public async getUserLatestEpisodes(
-    limit = 20
+    limit = 20,
+    parentId?: string
   ): Promise<JellyfinLibraryItemExtended[]> {
     try {
-      const endpoint =
-        this.mediaServerType === MediaServerType.JELLYFIN
-          ? `/Items/Latest`
-          : `/Users/${this.userId ?? 'Me'}/Items/Latest`;
-      const response = await this.get<JellyfinLibraryItemExtended[]>(endpoint, {
+      const response = await this.get<JellyfinItemsReponse>(`/Items`, {
         params: {
-          Limit: limit,
-          Fields: 'ProviderIds,Overview,DateCreated',
+          userId: this.userId ?? 'Me',
           IncludeItemTypes: 'Episode',
-          // Default GroupItems=true collapses episodes into Series rows.
-          GroupItems: false,
+          Recursive: true,
+          SortBy: 'DateCreated',
+          SortOrder: 'Descending',
+          Limit: limit,
+          Fields: 'ProviderIds,Overview,DateCreated,PremiereDate',
           EnableUserData: true,
-          ...(this.mediaServerType === MediaServerType.JELLYFIN
-            ? { userId: this.userId ?? 'Me' }
-            : {}),
+          ...(parentId ? { ParentId: parentId } : {}),
         },
       });
-      const items = Array.isArray(response) ? response : [];
-      // Defend against servers that still return grouped Series rows.
+      const items = response.Items ?? [];
       return items.filter((item) => item.Type === 'Episode');
     } catch (e) {
       logger.error(
