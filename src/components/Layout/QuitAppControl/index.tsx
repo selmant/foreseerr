@@ -26,7 +26,7 @@ const QuitAppControl = () => {
     <>
       <button
         type="button"
-        className="flex w-full items-center rounded-md px-2 py-2 text-base font-medium leading-6 text-gray-300 transition duration-150 ease-in-out hover:bg-gray-700 hover:text-white focus:bg-gray-700 focus:outline-none lg:text-lg"
+        className="flex w-full items-center rounded-md px-2 py-2 text-base font-medium leading-6 text-red-400 transition duration-150 ease-in-out hover:bg-red-600/20 hover:text-red-300 focus:bg-red-600/20 focus:outline-none lg:text-lg"
         data-testid="native-quit-app"
         onClick={() => setShowConfirm(true)}
       >
