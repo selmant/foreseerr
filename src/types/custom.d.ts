@@ -36,7 +36,11 @@ interface JelliumHostV1 {
   readonly hostVersion: string;
   readonly capabilities: readonly string[];
   requestAuthChallenge(requestId: string): boolean;
-  playItem(requestId: string, itemId: string): boolean;
+  playItem(
+    requestId: string,
+    itemId: string,
+    startPositionTicks?: number
+  ): boolean;
   completeAuth(requestId: string, ticket: string): boolean;
   clearSession(requestId: string): boolean;
   minimize(): boolean;

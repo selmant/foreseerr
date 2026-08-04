@@ -30,6 +30,7 @@ const LibraryPlayCard = ({ item, onOpenSeries }: LibraryPlayCardProps) => {
         libraryMode
         subtitle={item.subtitle}
         progressPercent={item.progressPercent}
+        startPositionTicks={item.startPositionTicks}
         jellyfinItemId={item.jellyfinItemId}
         playItemId={item.playItemId}
         jellyfinSeriesId={item.jellyfinSeriesId}
@@ -49,6 +50,7 @@ const LibraryPlayCard = ({ item, onOpenSeries }: LibraryPlayCardProps) => {
       libraryMode
       subtitle={item.subtitle}
       progressPercent={item.progressPercent}
+      startPositionTicks={item.startPositionTicks}
       jellyfinItemId={item.jellyfinItemId}
       playItemId={item.playItemId}
       jellyfinSeriesId={item.jellyfinSeriesId}

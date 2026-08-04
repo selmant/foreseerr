@@ -83,15 +83,17 @@ const LibrarySeriesPanel = ({
   const tmdbId = series?.tmdbId ?? seedTmdbId;
   const playItemId = series?.playItemId || seedPlayItemId;
   const playSubtitle = series?.subtitle || seedSubtitle;
+  const playStartTicks = series?.startPositionTicks;
   const statusCode = series?.code ?? episodes?.code;
 
-  const playEpisode = (itemId: string, label: string) => {
+  const playEpisode = (itemId: string, label: string, ticks?: number) => {
     play({
       provider: 'jellyfin',
       itemId,
       fallbackUrl: tmdbId ? `/tv/${tmdbId}` : '/',
       label,
       quality: 'standard',
+      startPositionTicks: ticks,
     });
   };
 
@@ -111,7 +113,9 @@ const LibrarySeriesPanel = ({
             {playItemId ? (
               <Button
                 buttonType="primary"
-                onClick={() => playEpisode(playItemId, playSubtitle || title)}
+                onClick={() =>
+                  playEpisode(playItemId, playSubtitle || title, playStartTicks)
+                }
               >
                 {intl.formatMessage(messages.playNext)}
                 {playSubtitle ? ` · ${playSubtitle}` : ''}
@@ -195,7 +199,8 @@ const LibrarySeriesPanel = ({
                           onClick={() =>
                             playEpisode(
                               episode.jellyfinItemId,
-                              `${title} ${episode.subtitle ?? episode.name}`
+                              `${title} ${episode.subtitle ?? episode.name}`,
+                              episode.startPositionTicks
                             )
                           }
                         >

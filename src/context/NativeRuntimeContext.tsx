@@ -24,6 +24,7 @@ export interface NativePlayTarget {
   fallbackUrl: string;
   label: string;
   quality: 'standard' | '4k' | 'trailer';
+  startPositionTicks?: number;
 }
 
 interface NativeRuntimeContextValue {
@@ -70,7 +71,11 @@ export const NativeRuntimeProvider = ({
     if (target.provider !== 'jellyfin' || !target.itemId) return false;
     const requestId = createRequestId();
     const admitted =
-      window.jelliumHost?.playItem(requestId, target.itemId) ?? false;
+      window.jelliumHost?.playItem(
+        requestId,
+        target.itemId,
+        target.startPositionTicks
+      ) ?? false;
     if (admitted) {
       activePlayRequestId.current = requestId;
       window.clearTimeout(activePlayTimeout.current);

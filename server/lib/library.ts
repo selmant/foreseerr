@@ -232,6 +232,7 @@ export const mapJellyfinItemsToLibraryTitles = async (
       mediaUrl: media?.mediaUrl ?? mediaUrlForItem(item.Id),
       status: media?.status,
       progressPercent: progressFromItem(item),
+      startPositionTicks: item.UserData?.PlaybackPositionTicks,
     };
   });
 };
@@ -246,6 +247,7 @@ const applyPlayTarget = (
     playItemId: target.playItemId,
     subtitle: title.subtitle ?? target.subtitle,
     progressPercent: title.progressPercent ?? target.progressPercent,
+    startPositionTicks: title.startPositionTicks ?? target.startPositionTicks,
   };
 };
 
@@ -352,6 +354,7 @@ export const enrichSeriesPlayTargets = async (
                 : nextHit.Name || 'Episode'
             }`,
             progressPercent: progressFromItem(nextHit),
+            startPositionTicks: nextHit.UserData?.PlaybackPositionTicks,
           }
         )
       );
@@ -681,6 +684,7 @@ export const getLibrarySeriesDetail = async (
               : nextUp[0].Name || 'Episode'
           }`,
           progressPercent: progressFromItem(nextUp[0]),
+          startPositionTicks: nextUp[0].UserData?.PlaybackPositionTicks,
         }
       : undefined;
 
@@ -726,6 +730,7 @@ export const getLibrarySeriesDetail = async (
       title: seriesTitle || `Series ${media?.tmdbId ?? jellyfinSeriesId}`,
       playItemId: playTarget?.playItemId,
       subtitle: playTarget?.subtitle,
+      startPositionTicks: playTarget?.startPositionTicks,
       seasons,
     };
   } catch (e) {
@@ -773,6 +778,7 @@ export const getLibrarySeasonEpisodes = async (
           season != null && number != null ? `S${season}E${number}` : undefined,
         overview: extended.Overview,
         progressPercent: progressFromItem(extended),
+        startPositionTicks: extended.UserData?.PlaybackPositionTicks,
         watched: Boolean(
           extended.UserData?.Played ||
           (extended.UserData?.PlayedPercentage ?? 0) >= 95

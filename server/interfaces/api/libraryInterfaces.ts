@@ -18,6 +18,8 @@ export interface LibraryTitle {
   status?: MediaStatus;
   /** Episode/movie progress 0–100 when resume data is present. */
   progressPercent?: number;
+  /** Tick position to resume from (1 tick = 100 ns) when native runtime is available. */
+  startPositionTicks?: number;
 }
 
 export interface LibraryShelf {
@@ -49,6 +51,7 @@ export interface LibrarySeriesDetailResponse {
   title: string;
   playItemId?: string;
   subtitle?: string;
+  startPositionTicks?: number;
   seasons: LibrarySeriesSeason[];
   code?:
     | 'not_linked'
@@ -65,6 +68,7 @@ export interface LibraryEpisode {
   subtitle?: string;
   overview?: string;
   progressPercent?: number;
+  startPositionTicks?: number;
   watched?: boolean;
 }
 

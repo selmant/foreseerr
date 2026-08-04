@@ -18,6 +18,7 @@ export interface TmdbTitleCardProps {
   libraryMode?: boolean;
   subtitle?: string;
   progressPercent?: number;
+  startPositionTicks?: number;
   jellyfinItemId?: string | null;
   playItemId?: string | null;
   jellyfinSeriesId?: string | null;
@@ -41,6 +42,7 @@ const TmdbTitleCard = ({
   libraryMode = false,
   subtitle,
   progressPercent,
+  startPositionTicks,
   jellyfinItemId,
   playItemId,
   jellyfinSeriesId,
@@ -82,6 +84,7 @@ const TmdbTitleCard = ({
         libraryMode: true as const,
         subtitle,
         progressPercent,
+        startPositionTicks,
         jellyfinItemId:
           jellyfinItemId ??
           title.mediaInfo?.jellyfinMediaId ??

@@ -16,6 +16,7 @@ export interface SeriesPlayTarget {
   playItemId: string;
   subtitle: string;
   progressPercent?: number;
+  startPositionTicks?: number;
 }
 
 const isInProgress = (episode: PlayTargetEpisode): boolean => {
@@ -94,6 +95,7 @@ export const resolveSeriesPlayTarget = (
       playItemId: resumeHit.Id,
       subtitle: `Up next ${formatSxE(resumeHit)}`,
       progressPercent: progressFromEpisode(resumeHit),
+      startPositionTicks: resumeHit.UserData?.PlaybackPositionTicks,
     };
   }
 
@@ -103,6 +105,7 @@ export const resolveSeriesPlayTarget = (
       playItemId: inProgress.Id,
       subtitle: `Up next ${formatSxE(inProgress)}`,
       progressPercent: progressFromEpisode(inProgress),
+      startPositionTicks: inProgress.UserData?.PlaybackPositionTicks,
     };
   }
 
@@ -112,6 +115,7 @@ export const resolveSeriesPlayTarget = (
       playItemId: nextUnwatched.Id,
       subtitle: `Up next ${formatSxE(nextUnwatched)}`,
       progressPercent: progressFromEpisode(nextUnwatched),
+      startPositionTicks: nextUnwatched.UserData?.PlaybackPositionTicks,
     };
   }
 
