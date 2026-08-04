@@ -6,6 +6,7 @@ import {
   type MediaActionMediaType,
   type MediaItemRef,
 } from '@server/lib/mediaActions';
+import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
 import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
 import logger from '@server/logger';
 import { Router, type RequestHandler } from 'express';
@@ -146,12 +147,31 @@ mediaActionsRoutes.get(
       if ('error' in parsed) {
         return next({ status: 400, message: parsed.error });
       }
-      const status = await traktEpisodeActions.getSeasonStatus(
-        req.user.id,
-        parsed.tmdbId,
-        parsed.seasonNumber
-      );
-      return res.status(200).json(status);
+      const [traktStatus, jellyfinStatus] = await Promise.all([
+        traktEpisodeActions.getSeasonStatus(
+          req.user.id,
+          parsed.tmdbId,
+          parsed.seasonNumber
+        ),
+        jellyfinEpisodeActions.getSeasonStatus(
+          req.user.id,
+          parsed.tmdbId,
+          parsed.seasonNumber
+        ),
+      ]);
+
+      const allWatched = new Set<number>();
+      for (const ep of traktStatus.watchedEpisodeNumbers) {
+        allWatched.add(ep);
+      }
+      for (const ep of jellyfinStatus.watchedEpisodeNumbers) {
+        allWatched.add(ep);
+      }
+
+      return res.status(200).json({
+        available: traktStatus.available || jellyfinStatus.available,
+        watchedEpisodeNumbers: Array.from(allWatched).sort((a, b) => a - b),
+      });
     } catch (error) {
       return handleActionError(
         error,
@@ -173,17 +193,37 @@ const setEpisodeWatched =
       if ('error' in parsed || parsed.episodeNumber === undefined) {
         return next({ status: 400, message: 'Invalid episode identifiers.' });
       }
-      const ok = await traktEpisodeActions.setWatched(
-        req.user.id,
-        parsed.tmdbId,
-        parsed.seasonNumber,
-        parsed.episodeNumber,
-        watched
-      );
-      return res.status(ok ? 200 : 502).json({
-        provider: 'trakt',
-        ok,
-        watched: ok ? watched : !watched,
+
+      const [traktOk, jellyfinOk] = await Promise.all([
+        traktEpisodeActions.setWatched(
+          req.user.id,
+          parsed.tmdbId,
+          parsed.seasonNumber,
+          parsed.episodeNumber,
+          watched
+        ),
+        jellyfinEpisodeActions.setEpisodeWatched(
+          req.user.id,
+          parsed.tmdbId,
+          parsed.seasonNumber,
+          parsed.episodeNumber,
+          watched
+        ),
+      ]);
+
+      return res.status(traktOk ? 200 : 502).json({
+        providers: [
+          {
+            provider: 'trakt',
+            ok: traktOk,
+            watched: traktOk ? watched : !watched,
+          },
+          {
+            provider: 'jellyfin',
+            ok: jellyfinOk,
+            watched: jellyfinOk ? watched : !watched,
+          },
+        ],
       });
     } catch (error) {
       return handleActionError(

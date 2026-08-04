@@ -679,6 +679,32 @@ class JellyfinAPI extends ExternalAPI {
     }
   }
 
+  public async markPlayed(itemId: string): Promise<void> {
+    try {
+      const userSegment = this.userId ?? 'Me';
+      await this.post(`/Users/${userSegment}/PlayedItems/${itemId}`, {});
+    } catch (e) {
+      logger.error(
+        `Something went wrong while marking item as played on Jellyfin: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  public async markUnplayed(itemId: string): Promise<void> {
+    try {
+      const userSegment = this.userId ?? 'Me';
+      await this.axios.delete(`/Users/${userSegment}/PlayedItems/${itemId}`);
+    } catch (e) {
+      logger.error(
+        `Something went wrong while marking item as unplayed on Jellyfin: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
   /** Search Movies/Series in libraries visible to the authenticated user. */
   public async searchLibraryItems(
     query: string,

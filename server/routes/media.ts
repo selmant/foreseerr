@@ -17,7 +17,7 @@ import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { Router } from 'express';
 import type { FindOneOptions } from 'typeorm';
-import { EntityNotFoundError, In, IsNull, Not } from 'typeorm';
+import { EntityNotFoundError, In } from 'typeorm';
 
 const mediaRoutes = Router();
 
@@ -27,7 +27,7 @@ mediaRoutes.get('/', async (req, res, next) => {
   const pageSize = req.query.take ? Number(req.query.take) : 20;
   const skip = req.query.skip ? Number(req.query.skip) : 0;
 
-  let statusFilter = undefined;
+  let statusFilter: MediaStatus | ReturnType<typeof In> | undefined = undefined;
 
   switch (req.query.filter) {
     case 'available':
@@ -50,33 +50,63 @@ mediaRoutes.get('/', async (req, res, next) => {
       break;
   }
 
-  let sortFilter: FindOneOptions<Media>['order'] = {
-    id: 'DESC',
-  };
-
-  switch (req.query.sort) {
-    case 'modified':
-      sortFilter = {
-        updatedAt: 'DESC',
-      };
-      break;
-    case 'mediaAdded':
-      sortFilter = {
-        mediaAddedAt: 'DESC',
-      };
-  }
-
-  let whereClause: FindOneOptions<Media>['where'];
-  if (statusFilter || req.query.sort === 'mediaAdded') {
-    whereClause = {};
-    if (statusFilter) whereClause.status = statusFilter;
-    if (req.query.sort === 'mediaAdded')
-      whereClause.mediaAddedAt = Not(IsNull());
-  }
+  let sortFilter: 'id' | 'updatedAt' | 'mediaAddedAt' = 'id';
+  if (req.query.sort === 'modified') sortFilter = 'updatedAt';
+  else if (req.query.sort === 'mediaAdded') sortFilter = 'mediaAddedAt';
 
   try {
+    if (sortFilter === 'mediaAddedAt') {
+      let qb = mediaRepository
+        .createQueryBuilder('media')
+        .innerJoin(
+          (qb) =>
+            qb
+              .select('MAX(sub.id)', 'maxId')
+              .from(Media, 'sub')
+              .where('sub.mediaAddedAt IS NOT NULL')
+              .groupBy('sub.tmdbId'),
+          'dedup',
+          'media.id = dedup.maxId'
+        );
+
+      if (statusFilter) {
+        qb = qb.andWhere('media.status IN (:...statuses)', {
+          statuses: Array.isArray(statusFilter) ? statusFilter : [statusFilter],
+        });
+      }
+
+      const mediaCount = await qb.clone().getCount();
+      const media = await qb
+        .orderBy('media.mediaAddedAt', 'DESC')
+        .take(pageSize)
+        .skip(skip)
+        .getMany();
+
+      return res.status(200).json({
+        pageInfo: {
+          pages: Math.ceil(mediaCount / pageSize),
+          pageSize,
+          results: mediaCount,
+          page: Math.ceil(skip / pageSize) + 1,
+        },
+        results: media,
+      } as MediaResultsResponse);
+    }
+
+    let sortFilterOptions: FindOneOptions<Media>['order'] = {
+      id: 'DESC',
+    };
+    if (sortFilter === 'updatedAt') {
+      sortFilterOptions = { updatedAt: 'DESC' };
+    }
+
+    let whereClause: FindOneOptions<Media>['where'];
+    if (statusFilter) {
+      whereClause = { status: statusFilter };
+    }
+
     const [media, mediaCount] = await mediaRepository.findAndCount({
-      order: sortFilter,
+      order: sortFilterOptions,
       where: whereClause,
       take: pageSize,
       skip,

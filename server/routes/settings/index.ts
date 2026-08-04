@@ -543,7 +543,10 @@ settingsRoutes.post('/trakt/actions', async (req, res, next) => {
   try {
     const settings = getSettings();
     settings.mediaActions = {
-      providers: { trakt: req.body.actionsEnabled },
+      providers: {
+        trakt: req.body.actionsEnabled,
+        jellyfin: settings.mediaActions.providers.jellyfin,
+      },
     };
     await settings.save();
     return res.status(200).json({ actionsEnabled: req.body.actionsEnabled });
@@ -638,6 +641,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
     settings.mediaActions = {
       providers: {
         trakt: req.body.actionsEnabled !== false,
+        jellyfin: settings.mediaActions.providers.jellyfin,
       },
     };
     await settings.save();

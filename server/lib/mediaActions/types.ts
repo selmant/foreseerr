@@ -1,6 +1,6 @@
 export type MediaActionMediaType = 'movie' | 'tv';
 
-export type MediaActionProviderId = 'trakt';
+export type MediaActionProviderId = 'trakt' | 'jellyfin';
 
 export interface MediaItemRef {
   mediaType: MediaActionMediaType;

@@ -79,6 +79,7 @@ export interface TraktSettings {
 export interface MediaActionsSettings {
   providers: {
     trakt: boolean;
+    jellyfin: boolean;
   };
 }
 
@@ -246,6 +247,7 @@ interface FullPublicSettings extends PublicSettings {
   plexClientIdentifier: string;
   traktConfigured: boolean;
   mediaActionsTraktEnabled: boolean;
+  mediaActionsJellyfinEnabled: boolean;
   mdblistConfigured: boolean;
   ratingBadges: RatingBadgeSettings;
 }
@@ -496,6 +498,7 @@ class Settings {
       mediaActions: {
         providers: {
           trakt: true,
+          jellyfin: true,
         },
       },
       mdblist: {
@@ -741,18 +744,23 @@ class Settings {
 
   get mediaActions(): MediaActionsSettings {
     if (!this.data.mediaActions) {
-      this.data.mediaActions = { providers: { trakt: true } };
+      this.data.mediaActions = { providers: { trakt: true, jellyfin: true } };
     } else if (!this.data.mediaActions.providers) {
-      this.data.mediaActions.providers = { trakt: true };
-    } else if (this.data.mediaActions.providers.trakt === undefined) {
-      this.data.mediaActions.providers.trakt = true;
+      this.data.mediaActions.providers = { trakt: true, jellyfin: true };
+    } else {
+      if (this.data.mediaActions.providers.trakt === undefined) {
+        this.data.mediaActions.providers.trakt = true;
+      }
+      if (this.data.mediaActions.providers.jellyfin === undefined) {
+        this.data.mediaActions.providers.jellyfin = true;
+      }
     }
     return this.data.mediaActions;
   }
 
   set mediaActions(data: MediaActionsSettings) {
     this.data.mediaActions = mergeSettings(
-      this.data.mediaActions ?? { providers: { trakt: true } },
+      this.data.mediaActions ?? { providers: { trakt: true, jellyfin: true } },
       data
     );
   }
@@ -873,6 +881,8 @@ class Settings {
           : Boolean(this.data.trakt?.clientId && this.data.trakt?.clientSecret),
       mediaActionsTraktEnabled:
         this.data.mediaActions?.providers?.trakt !== false,
+      mediaActionsJellyfinEnabled:
+        this.data.mediaActions?.providers?.jellyfin !== false,
       mdblistConfigured: Boolean(this.data.mdblist?.apiKey?.trim()),
       ratingBadges: {
         showTmdb:

@@ -1,4 +1,5 @@
 import { MediaActionDispatcher } from './dispatcher';
+import { JellyfinMediaActionProvider } from './jellyfin';
 import { TraktMediaActionProvider } from './trakt';
 import type { MediaActionProvider } from './types';
 
@@ -16,7 +17,7 @@ export { classifyWriteOutcome, writeHttpStatus } from './writeOutcome';
 let defaultDispatcher: MediaActionDispatcher | null = null;
 
 export function getDefaultMediaActionProviders(): MediaActionProvider[] {
-  return [new TraktMediaActionProvider()];
+  return [new TraktMediaActionProvider(), new JellyfinMediaActionProvider()];
 }
 
 export function getMediaActionDispatcher(): MediaActionDispatcher {
