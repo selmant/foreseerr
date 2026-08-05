@@ -108,9 +108,21 @@ const subtitleForItem = (
   return item.SeriesName;
 };
 
+const GUID_PATTERN =
+  /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+
+const isLikelyGuid = (name: string): boolean => {
+  const stripped = name.replace(/[^0-9a-f]/gi, '');
+  return stripped.length >= 32 && GUID_PATTERN.test(name);
+};
+
 const titleForItem = (item: JellyfinLibraryItemExtended): string => {
   if (item.Type === 'Episode') {
-    return item.SeriesName || item.Name || 'Episode';
+    return (
+      item.SeriesName ||
+      (item.Name && !isLikelyGuid(item.Name) ? item.Name : undefined) ||
+      'Episode'
+    );
   }
   return item.Name;
 };
@@ -430,10 +442,7 @@ export const buildForgottenRequestsShelf = async (
       jellyfinItemId,
       jellyfinSeriesId:
         media.mediaType === MediaType.TV ? jellyfinItemId : undefined,
-      title:
-        media.mediaType === MediaType.MOVIE
-          ? `Movie ${media.tmdbId}`
-          : `Series ${media.tmdbId}`,
+      title: media.mediaType === MediaType.MOVIE ? 'Movie' : 'Series',
       mediaUrl: request.is4k ? media.mediaUrl4k : media.mediaUrl,
       status: media.status,
     });
@@ -619,10 +628,7 @@ export const listAvailableLibrary = async (options: {
       jellyfinItemId,
       jellyfinSeriesId:
         m.mediaType === MediaType.TV ? jellyfinItemId : undefined,
-      title:
-        m.mediaType === MediaType.MOVIE
-          ? `Movie ${m.tmdbId}`
-          : `Series ${m.tmdbId}`,
+      title: m.mediaType === MediaType.MOVIE ? 'Movie' : 'Series',
       mediaUrl: m.mediaUrl ?? m.mediaUrl4k,
       status: m.status,
     };
@@ -675,6 +681,18 @@ export const getLibrarySeriesDetail = async (
         indexNumber: season.IndexNumber,
       }));
 
+    const seriesTitle = (seasonsRaw ?? []).find(
+      (s) => s?.SeriesName
+    )?.SeriesName;
+
+    if (!seriesTitle) {
+      logger.warn('Could not determine series name from season data', {
+        label: 'Library',
+        jellyfinSeriesId,
+        seasonCount: (seasonsRaw ?? []).length,
+      });
+    }
+
     let playTarget: SeriesPlayTarget | undefined = nextUp[0]
       ? {
           playItemId: nextUp[0].Id,
@@ -706,11 +724,6 @@ export const getLibrarySeriesDetail = async (
       );
     }
 
-    const seriesTitle =
-      nextUp[0]?.SeriesName ||
-      resumeHit?.SeriesName ||
-      resume.find((e) => e.SeriesId === jellyfinSeriesId)?.SeriesName;
-
     const mediaRows = await resolveMediaRows([
       {
         Id: jellyfinSeriesId,
@@ -727,7 +740,7 @@ export const getLibrarySeriesDetail = async (
     return {
       jellyfinSeriesId,
       tmdbId: media?.tmdbId,
-      title: seriesTitle || `Series ${media?.tmdbId ?? jellyfinSeriesId}`,
+      title: seriesTitle || 'Series',
       playItemId: playTarget?.playItemId,
       subtitle: playTarget?.subtitle,
       startPositionTicks: playTarget?.startPositionTicks,
@@ -769,9 +782,26 @@ export const getLibrarySeasonEpisodes = async (
       const extended = item as JellyfinLibraryItemExtended;
       const season = extended.ParentIndexNumber;
       const number = extended.IndexNumber;
+
+      if (extended.Name && isLikelyGuid(extended.Name)) {
+        logger.warn(
+          'Episode name is a GUID — Jellyfin may not have identified this episode',
+          {
+            label: 'Library',
+            jellyfinSeriesId,
+            seasonId,
+            jellyfinItemId: extended.Id,
+            rawName: extended.Name,
+          }
+        );
+      }
+
       return {
         jellyfinItemId: extended.Id,
-        name: extended.Name || 'Episode',
+        name:
+          extended.Name && !isLikelyGuid(extended.Name)
+            ? extended.Name
+            : 'Episode',
         indexNumber: number,
         parentIndexNumber: season,
         subtitle:
