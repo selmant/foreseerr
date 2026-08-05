@@ -108,21 +108,9 @@ const subtitleForItem = (
   return item.SeriesName;
 };
 
-const GUID_PATTERN =
-  /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
-
-const isLikelyGuid = (name: string): boolean => {
-  const stripped = name.replace(/[^0-9a-f]/gi, '');
-  return stripped.length >= 32 && GUID_PATTERN.test(name);
-};
-
 const titleForItem = (item: JellyfinLibraryItemExtended): string => {
   if (item.Type === 'Episode') {
-    return (
-      item.SeriesName ||
-      (item.Name && !isLikelyGuid(item.Name) ? item.Name : undefined) ||
-      'Episode'
-    );
+    return item.SeriesName || item.Name || 'Episode';
   }
   return item.Name;
 };
@@ -482,15 +470,19 @@ export const buildWatchNowResponse = async (
       ]
     );
 
-    const latestEpisodeById = new Map<string, JellyfinLibraryItemExtended>();
+    const latestEpisodeBySeries = new Map<
+      string,
+      JellyfinLibraryItemExtended
+    >();
     for (const batch of latestEpisodeBatches) {
       for (const item of batch) {
-        if (!latestEpisodeById.has(item.Id)) {
-          latestEpisodeById.set(item.Id, item);
+        const key = item.SeriesId ?? item.Id;
+        if (!latestEpisodeBySeries.has(key)) {
+          latestEpisodeBySeries.set(key, item);
         }
       }
     }
-    const latestEpisodes = [...latestEpisodeById.values()]
+    const latestEpisodes = [...latestEpisodeBySeries.values()]
       .sort((a, b) => {
         const da = a.DateCreated ? Date.parse(a.DateCreated) : 0;
         const db = b.DateCreated ? Date.parse(b.DateCreated) : 0;
@@ -667,10 +659,11 @@ export const getLibrarySeriesDetail = async (
   }
 
   try {
-    const [seasonsRaw, nextUp, resume] = await Promise.all([
+    const [seasonsRaw, nextUp, resume, seriesItem] = await Promise.all([
       linked.client.getSeasons(jellyfinSeriesId),
       linked.client.getNextUpEpisodes(8, jellyfinSeriesId),
       linked.client.getResumeItems(32),
+      linked.client.getItemData(jellyfinSeriesId),
     ]);
 
     const seasons: LibrarySeriesSeason[] = (seasonsRaw ?? [])
@@ -681,17 +674,7 @@ export const getLibrarySeriesDetail = async (
         indexNumber: season.IndexNumber,
       }));
 
-    const seriesTitle = (seasonsRaw ?? []).find(
-      (s) => s?.SeriesName
-    )?.SeriesName;
-
-    if (!seriesTitle) {
-      logger.warn('Could not determine series name from season data', {
-        label: 'Library',
-        jellyfinSeriesId,
-        seasonCount: (seasonsRaw ?? []).length,
-      });
-    }
+    const seriesTitle = seriesItem?.Name;
 
     let playTarget: SeriesPlayTarget | undefined = nextUp[0]
       ? {
@@ -782,26 +765,9 @@ export const getLibrarySeasonEpisodes = async (
       const extended = item as JellyfinLibraryItemExtended;
       const season = extended.ParentIndexNumber;
       const number = extended.IndexNumber;
-
-      if (extended.Name && isLikelyGuid(extended.Name)) {
-        logger.warn(
-          'Episode name is a GUID — Jellyfin may not have identified this episode',
-          {
-            label: 'Library',
-            jellyfinSeriesId,
-            seasonId,
-            jellyfinItemId: extended.Id,
-            rawName: extended.Name,
-          }
-        );
-      }
-
       return {
         jellyfinItemId: extended.Id,
-        name:
-          extended.Name && !isLikelyGuid(extended.Name)
-            ? extended.Name
-            : 'Episode',
+        name: extended.Name || 'Episode',
         indexNumber: number,
         parentIndexNumber: season,
         subtitle:
