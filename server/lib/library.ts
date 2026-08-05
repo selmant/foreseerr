@@ -464,9 +464,9 @@ export const buildWatchNowResponse = async (
         linked.client.getNextUpEpisodes(48),
         ...(tvLibraryIds.length
           ? tvLibraryIds.map((id) =>
-              linked.client.getUserLatestEpisodes(16, id)
+              linked.client.getUserLatestEpisodes(32, id)
             )
-          : [linked.client.getUserLatestEpisodes(16)]),
+          : [linked.client.getUserLatestEpisodes(32)]),
       ]
     );
 
@@ -514,6 +514,42 @@ export const buildWatchNowResponse = async (
 
     const recentEpisodeItems =
       await mapJellyfinItemsToLibraryTitles(latestEpisodes);
+
+    const missingTmdb = recentEpisodeItems.filter(
+      (item) => !item.tmdbId && item.jellyfinSeriesId
+    );
+    if (missingTmdb.length > 0) {
+      const seriesIds = [
+        ...new Set(missingTmdb.map((item) => item.jellyfinSeriesId!)),
+      ];
+      const seriesItems = await Promise.allSettled(
+        seriesIds.map((id) => linked.client.getItemData(id))
+      );
+      const tmdbBySeriesId = new Map<string, number>();
+      for (let i = 0; i < seriesIds.length; i++) {
+        const result = seriesItems[i];
+        if (result.status === 'fulfilled' && result.value) {
+          const raw =
+            result.value.ProviderIds?.Tmdb ??
+            result.value.ProviderIds?.TheMovieDb;
+          if (raw) {
+            const n = Number(raw);
+            if (Number.isFinite(n) && n > 0) {
+              tmdbBySeriesId.set(seriesIds[i], n);
+            }
+          }
+        }
+      }
+      for (const item of recentEpisodeItems) {
+        if (!item.tmdbId && item.jellyfinSeriesId) {
+          const resolved = tmdbBySeriesId.get(item.jellyfinSeriesId);
+          if (resolved) {
+            item.tmdbId = resolved;
+          }
+        }
+      }
+    }
+
     if (recentEpisodeItems.length) {
       shelves.push({
         id: 'recent-episodes',
