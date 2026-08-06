@@ -56,22 +56,34 @@ mediaRoutes.get('/', async (req, res, next) => {
 
   try {
     if (sortFilter === 'mediaAddedAt') {
-      let qb = mediaRepository
-        .createQueryBuilder('media')
-        .innerJoin(
-          (qb) =>
-            qb
-              .select('MAX(sub.id)', 'maxId')
-              .from(Media, 'sub')
-              .where('sub.mediaAddedAt IS NOT NULL')
-              .groupBy('sub.tmdbId'),
-          'dedup',
-          'media.id = dedup.maxId'
-        );
+      const statuses = statusFilter
+        ? Array.isArray(statusFilter)
+          ? statusFilter
+          : [statusFilter]
+        : undefined;
 
-      if (statusFilter) {
+      let qb = mediaRepository.createQueryBuilder('media').innerJoin(
+        (qb) => {
+          let sub = qb
+            .select('MAX(sub.id)', 'maxId')
+            .from(Media, 'sub')
+            .where('sub.mediaAddedAt IS NOT NULL');
+
+          if (statuses) {
+            sub = sub.andWhere('sub.status IN (:...subStatuses)', {
+              subStatuses: statuses,
+            });
+          }
+
+          return sub.groupBy('sub.tmdbId');
+        },
+        'dedup',
+        'media.id = dedup.maxId'
+      );
+
+      if (statuses) {
         qb = qb.andWhere('media.status IN (:...statuses)', {
-          statuses: Array.isArray(statusFilter) ? statusFilter : [statusFilter],
+          statuses,
         });
       }
 

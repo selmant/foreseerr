@@ -591,26 +591,28 @@ class JellyfinAPI extends ExternalAPI {
     }
   }
 
-  /** Recently added titles visible to the authenticated user (all libraries). */
+  /**
+   * Recently added movies/series by DateCreated (library ingest time).
+   * Prefer /Items SortBy=DateCreated over /Items/Latest — Latest does not
+   * match strict date-added order (verified against live Jellyfin).
+   */
   public async getUserLatestItems(
     limit = 20
   ): Promise<JellyfinLibraryItemExtended[]> {
     try {
-      const endpoint =
-        this.mediaServerType === MediaServerType.JELLYFIN
-          ? `/Items/Latest`
-          : `/Users/${this.userId ?? 'Me'}/Items/Latest`;
-      const response = await this.get<JellyfinLibraryItemExtended[]>(endpoint, {
+      const response = await this.get<JellyfinItemsReponse>(`/Items`, {
         params: {
-          Limit: limit,
-          Fields: 'ProviderIds,Overview',
+          userId: this.userId ?? 'Me',
           IncludeItemTypes: 'Movie,Series',
-          ...(this.mediaServerType === MediaServerType.JELLYFIN
-            ? { userId: this.userId ?? 'Me' }
-            : {}),
+          Recursive: true,
+          SortBy: 'DateCreated',
+          SortOrder: 'Descending',
+          Limit: limit,
+          Fields: 'ProviderIds,Overview,DateCreated,PremiereDate',
+          EnableUserData: true,
         },
       });
-      return Array.isArray(response) ? response : [];
+      return response.Items ?? [];
     } catch (e) {
       logger.error(
         `Something went wrong while getting latest items from the Jellyfin server: ${e.message}`,
