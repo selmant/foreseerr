@@ -1,3 +1,9 @@
+import type { NativeHostEventTypeV1 } from '@app/context/nativeRuntimeProtocol';
+import {
+  isCurrentNativePlayRequest,
+  isNativeHostEventTypeV1,
+  shouldClearNativePlayRequest,
+} from '@app/context/nativeRuntimeProtocol';
 import { useUser } from '@app/hooks/useUser';
 import axios from 'axios';
 import {
@@ -24,7 +30,6 @@ export interface NativePlayTarget {
   fallbackUrl: string;
   label: string;
   quality: 'standard' | '4k' | 'trailer';
-  startPositionTicks?: number;
 }
 
 interface NativeRuntimeContextValue {
@@ -71,11 +76,7 @@ export const NativeRuntimeProvider = ({
     if (target.provider !== 'jellyfin' || !target.itemId) return false;
     const requestId = createRequestId();
     const admitted =
-      window.jelliumHost?.playItem(
-        requestId,
-        target.itemId,
-        target.startPositionTicks
-      ) ?? false;
+      window.jelliumHost?.playItem(requestId, target.itemId) ?? false;
     if (admitted) {
       activePlayRequestId.current = requestId;
       window.clearTimeout(activePlayTimeout.current);
@@ -161,9 +162,17 @@ export const NativeRuntimeProvider = ({
 
     const onNativeEvent = (event: Event) => {
       const detail = (event as CustomEvent<NativeEvent>).detail;
-      if (!detail || detail.protocolVersion !== 1) return;
+      if (
+        !detail ||
+        detail.protocolVersion !== 1 ||
+        !isNativeHostEventTypeV1(detail.type)
+      )
+        return;
       const isAuthEvent = detail.requestId === authRequestId;
-      const isPlayEvent = detail.requestId === activePlayRequestId.current;
+      const isPlayEvent = isCurrentNativePlayRequest(
+        activePlayRequestId.current,
+        detail.requestId
+      );
       if (
         detail.type === 'auth-challenge' &&
         isAuthEvent &&
@@ -201,10 +210,13 @@ export const NativeRuntimeProvider = ({
         }
         setState('playing');
       } else if (
-        ['stopped', 'finished', 'canceled'].includes(detail.type) &&
-        (isPlayEvent || activePlayRequestId.current !== undefined)
+        detail.type !== 'error' &&
+        shouldClearNativePlayRequest(
+          activePlayRequestId.current,
+          detail.requestId,
+          detail.type
+        )
       ) {
-        // Accept terminal events even when request ids race after Video OSD Back.
         clearActivePlay();
       } else if (detail.type === 'ready' && isAuthEvent) {
         authInFlight = false;
@@ -222,8 +234,11 @@ export const NativeRuntimeProvider = ({
         window.clearTimeout(authTimeout);
         setState('degraded');
       } else if (
-        detail.type === 'error' &&
-        (isPlayEvent || activePlayRequestId.current !== undefined)
+        shouldClearNativePlayRequest(
+          activePlayRequestId.current,
+          detail.requestId,
+          detail.type
+        )
       ) {
         clearActivePlay();
       }
@@ -275,16 +290,6 @@ export const useNativeRuntime = () => useContext(NativeRuntimeContext);
 interface NativeEvent {
   protocolVersion: 1;
   requestId: string;
-  type:
-    | 'auth-challenge'
-    | 'ready'
-    | 'accepted'
-    | 'resolving'
-    | 'starting'
-    | 'playing'
-    | 'stopped'
-    | 'finished'
-    | 'canceled'
-    | 'error';
+  type: NativeHostEventTypeV1;
   challenge?: string;
 }

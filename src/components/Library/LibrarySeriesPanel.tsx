@@ -1,6 +1,7 @@
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import SlideOver from '@app/components/Common/SlideOver';
+import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import defineMessages from '@app/utils/defineMessages';
 import type {
@@ -83,17 +84,20 @@ const LibrarySeriesPanel = ({
   const tmdbId = series?.tmdbId ?? seedTmdbId;
   const playItemId = series?.playItemId || seedPlayItemId;
   const playSubtitle = series?.subtitle || seedSubtitle;
-  const playStartTicks = series?.startPositionTicks;
   const statusCode = series?.code ?? episodes?.code;
 
-  const playEpisode = (itemId: string, label: string, ticks?: number) => {
-    play({
+  const playEpisode = (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    itemId: string,
+    label: string,
+    fallbackUrl: string
+  ) => {
+    handleLibraryPlayClick(event, play, {
       provider: 'jellyfin',
       itemId,
-      fallbackUrl: tmdbId ? `/tv/${tmdbId}` : '/',
+      fallbackUrl,
       label,
       quality: 'standard',
-      startPositionTicks: ticks,
     });
   };
 
@@ -110,11 +114,18 @@ const LibrarySeriesPanel = ({
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            {playItemId ? (
+            {playItemId && series?.playUrl ? (
               <Button
+                as="a"
+                href={series.playUrl}
                 buttonType="primary"
-                onClick={() =>
-                  playEpisode(playItemId, playSubtitle || title, playStartTicks)
+                onClick={(event) =>
+                  playEpisode(
+                    event,
+                    playItemId,
+                    playSubtitle || title,
+                    series.playUrl!
+                  )
                 }
               >
                 {intl.formatMessage(messages.playNext)}
@@ -193,19 +204,24 @@ const LibrarySeriesPanel = ({
                             </div>
                           ) : null}
                         </div>
-                        <Button
-                          buttonType="primary"
-                          buttonSize="sm"
-                          onClick={() =>
-                            playEpisode(
-                              episode.jellyfinItemId,
-                              `${title} ${episode.subtitle ?? episode.name}`,
-                              episode.startPositionTicks
-                            )
-                          }
-                        >
-                          {intl.formatMessage(messages.play)}
-                        </Button>
+                        {episode.mediaUrl ? (
+                          <Button
+                            as="a"
+                            href={episode.mediaUrl}
+                            buttonType="primary"
+                            buttonSize="sm"
+                            onClick={(event) =>
+                              playEpisode(
+                                event,
+                                episode.jellyfinItemId,
+                                `${title} ${episode.subtitle ?? episode.name}`,
+                                episode.mediaUrl!
+                              )
+                            }
+                          >
+                            {intl.formatMessage(messages.play)}
+                          </Button>
+                        ) : null}
                       </li>
                     ))}
                   </ul>

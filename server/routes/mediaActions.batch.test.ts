@@ -2,6 +2,7 @@ import {
   getMediaActionDispatcher,
   type MediaActionAggregate,
 } from '@server/lib/mediaActions';
+import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
 import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
@@ -72,6 +73,21 @@ const setEpisodeWatchedMock = mock.method(
   traktEpisodeActions,
   'setWatched',
   async () => true
+);
+const traktEpisodeAvailableMock = mock.method(
+  traktEpisodeActions,
+  'isAvailable',
+  async () => true
+);
+const jellyfinEpisodeAvailableMock = mock.method(
+  jellyfinEpisodeActions,
+  'isAvailable',
+  async () => false
+);
+const jellyfinSetEpisodeWatchedMock = mock.method(
+  jellyfinEpisodeActions,
+  'setEpisodeWatched',
+  async () => false
 );
 
 before(() => {
@@ -145,6 +161,11 @@ describe('episode media actions', () => {
   beforeEach(() => {
     getEpisodeStatusMock.mock.resetCalls();
     setEpisodeWatchedMock.mock.resetCalls();
+    setEpisodeWatchedMock.mock.mockImplementation(async () => true);
+    traktEpisodeAvailableMock.mock.mockImplementation(async () => true);
+    jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => false);
+    jellyfinSetEpisodeWatchedMock.mock.mockImplementation(async () => false);
+    jellyfinSetEpisodeWatchedMock.mock.resetCalls();
   });
 
   it('requires an authenticated user', async () => {
@@ -188,6 +209,49 @@ describe('episode media actions', () => {
       2,
       true,
     ]);
+  });
+
+  it('succeeds when Jellyfin is the only enabled episode provider', async () => {
+    traktEpisodeAvailableMock.mock.mockImplementation(async () => false);
+    jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
+    jellyfinSetEpisodeWatchedMock.mock.mockImplementation(async () => true);
+    const agent = await loginAsAdmin();
+
+    const res = await agent.post(
+      '/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched'
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.outcome, 'success');
+    assert.deepEqual(res.body.providers, [
+      {
+        provider: 'jellyfin',
+        ok: true,
+        watched: true,
+        rating: null,
+        ratingStars: null,
+      },
+    ]);
+  });
+
+  it('reports partial success when Trakt rejects but Jellyfin succeeds', async () => {
+    jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
+    jellyfinSetEpisodeWatchedMock.mock.mockImplementation(async () => true);
+    setEpisodeWatchedMock.mock.mockImplementation(async () => {
+      throw new Error('Trakt unavailable');
+    });
+    const agent = await loginAsAdmin();
+
+    const res = await agent.post(
+      '/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched'
+    );
+
+    assert.equal(res.status, 207);
+    assert.equal(res.body.outcome, 'partial');
+    assert.equal(res.body.providers[0].provider, 'trakt');
+    assert.equal(res.body.providers[0].ok, false);
+    assert.equal(res.body.providers[1].provider, 'jellyfin');
+    assert.equal(res.body.providers[1].ok, true);
   });
 
   it('rejects malformed and out-of-range episode identifiers', async () => {

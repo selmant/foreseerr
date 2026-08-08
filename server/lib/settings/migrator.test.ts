@@ -164,7 +164,9 @@ describe('Settings migrator: upstream baseline compatibility', () => {
     // via constructor merge + getters, without clobbering existing data.
     const settings = new Settings(migrated);
     assert.deepEqual(settings.trakt, { clientId: '', clientSecret: '' });
-    assert.deepEqual(settings.mediaActions, { providers: { trakt: true } });
+    assert.deepEqual(settings.mediaActions, {
+      providers: { trakt: true, jellyfin: true },
+    });
     assert.equal(settings.mdblist.apiKey, '');
     assert.equal(settings.main.applicationTitle, 'My Upstream Seerr');
     assert.equal(settings.plex.ip, '10.0.0.5');

@@ -82,6 +82,15 @@ const mediaTypeFromItem = (
   return 'tv';
 };
 
+export const jellyfinPlaybackUrl = (
+  jellyfinHost: string,
+  serverId: string,
+  jellyfinItemId: string
+) =>
+  `${jellyfinHost.replace(/\/$/, '')}/web/index.html#!/details?id=${encodeURIComponent(
+    jellyfinItemId
+  )}&context=home&serverId=${encodeURIComponent(serverId)}`;
+
 const mediaUrlForItem = (jellyfinItemId: string): string | undefined => {
   const settings = getSettings();
   const jellyfin = settings.jellyfin;
@@ -91,7 +100,7 @@ const mediaUrlForItem = (jellyfinItemId: string): string | undefined => {
       ? jellyfin.externalHostname
       : getHostname();
   const serverId = jellyfin.serverId ?? '';
-  return `${jellyfinHost}/web/index.html#!/details?id=${jellyfinItemId}&context=home&serverId=${serverId}`;
+  return jellyfinPlaybackUrl(jellyfinHost, serverId, jellyfinItemId);
 };
 
 const subtitleForItem = (
@@ -761,6 +770,7 @@ export const getLibrarySeriesDetail = async (
       tmdbId: media?.tmdbId,
       title: seriesTitle || 'Series',
       playItemId: playTarget?.playItemId,
+      playUrl: playTarget ? mediaUrlForItem(playTarget.playItemId) : undefined,
       subtitle: playTarget?.subtitle,
       startPositionTicks: playTarget?.startPositionTicks,
       seasons,
@@ -809,6 +819,7 @@ export const getLibrarySeasonEpisodes = async (
         subtitle:
           season != null && number != null ? `S${season}E${number}` : undefined,
         overview: extended.Overview,
+        mediaUrl: mediaUrlForItem(extended.Id),
         progressPercent: progressFromItem(extended),
         startPositionTicks: extended.UserData?.PlaybackPositionTicks,
         watched: Boolean(

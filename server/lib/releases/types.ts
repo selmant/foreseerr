@@ -39,6 +39,7 @@ export interface ReleaseCalendarSourceStatus {
   source: ReleaseSource;
   serverId: number;
   lastSuccessAt?: Date;
+  lastBackfillAt?: Date;
   lastErrorAt?: Date;
   error?: string;
 }

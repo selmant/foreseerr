@@ -27,6 +27,10 @@ const RecentlyAddedSlider = () => {
     return null;
   }
 
+  if (mediaError) {
+    return null;
+  }
+
   return (
     <>
       <div className="slider-header">
@@ -36,7 +40,7 @@ const RecentlyAddedSlider = () => {
       </div>
       <Slider
         sliderKey="media"
-        isLoading={!media}
+        isLoading={!media && !mediaError}
         items={(media?.results ?? []).map((item) => (
           <TmdbTitleCard
             key={`media-slider-item-${item.id}`}

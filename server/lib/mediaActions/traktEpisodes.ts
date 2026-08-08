@@ -51,6 +51,8 @@ async function isAvailable(userId: number): Promise<boolean> {
 }
 
 export const traktEpisodeActions = {
+  isAvailable,
+
   async getSeasonStatus(
     userId: number,
     tmdbId: number,

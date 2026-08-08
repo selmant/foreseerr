@@ -5,8 +5,9 @@ import ReleaseDateChange from '@server/entity/ReleaseDateChange';
 import ReleaseOccurrence, {
   type ReleaseSource,
 } from '@server/entity/ReleaseOccurrence';
-import { In, LessThan } from 'typeorm';
+import { Between, In, LessThan } from 'typeorm';
 import { isMaterialDateChange, occurrenceKey } from './normalization';
+import { assertReleaseSyncLease, type ReleaseSyncLease } from './state';
 import type { NormalizedOccurrence, ReleaseCalendarSyncResult } from './types';
 
 const MISSING_GRACE_DAYS = 7;
@@ -32,6 +33,40 @@ const isSeasonPremiere = (occurrence: ReleaseOccurrence) =>
   (occurrence.seasonNumber ?? 0) > 0 &&
   occurrence.episodeNumber === 1;
 
+const RELEASE_OCCURRENCE_CONFLICT_COLUMNS = [
+  'source',
+  'sourceServerId',
+  'sourceItemId',
+  'dateType',
+] as const;
+
+const hasOccurrenceChanged = (
+  existing: ReleaseOccurrence,
+  next: NormalizedOccurrence,
+  mediaId: number | null
+) => {
+  const nullable = <T>(value: T | undefined | null) => value ?? null;
+  return (
+    existing.sourceSeriesId !== nullable(next.sourceSeriesId) ||
+    existing.mediaType !== next.mediaType ||
+    existing.tmdbId !== nullable(next.tmdbId) ||
+    existing.tvdbId !== nullable(next.tvdbId) ||
+    existing.mediaId !== mediaId ||
+    existing.title !== next.title ||
+    existing.subtitle !== nullable(next.subtitle) ||
+    existing.seasonNumber !== nullable(next.seasonNumber) ||
+    existing.episodeNumber !== nullable(next.episodeNumber) ||
+    existing.startsAt.getTime() !== next.startsAt.getTime() ||
+    existing.allDay !== next.allDay ||
+    existing.monitored !== next.monitored ||
+    existing.hasFile !== next.hasFile ||
+    existing.is4k !== next.is4k ||
+    existing.sourceUrl !== nullable(next.sourceUrl) ||
+    existing.rawDates !== next.rawDates ||
+    existing.missingSince !== null
+  );
+};
+
 export const reconcileServerOccurrences = async (input: {
   source: ReleaseSource;
   sourceServerId: number;
@@ -39,6 +74,8 @@ export const reconcileServerOccurrences = async (input: {
   start: Date;
   end: Date;
   result: ReleaseCalendarSyncResult;
+  initialBackfill: boolean;
+  lease?: ReleaseSyncLease;
 }): Promise<DiscoveredReleaseEvents> =>
   dataSource.transaction(async (manager) => {
     const occurrenceRepository = manager.getRepository(ReleaseOccurrence);
@@ -49,16 +86,38 @@ export const reconcileServerOccurrences = async (input: {
       now.getTime() - MISSING_GRACE_DAYS * 86400000
     );
 
+    if (input.lease) await assertReleaseSyncLease(input.lease, manager);
+
     const existingRows = await occurrenceRepository.find({
       where: {
         source: input.source,
         sourceServerId: input.sourceServerId,
+        startsAt: Between(input.start, input.end),
       },
     });
+    // Missing detection needs only the current calendar window. Conflict
+    // identity needs every returned source item, since a moved occurrence can
+    // cross into this window from outside it between two incremental runs.
     const existingByKey = new Map(
       existingRows.map((occurrence) => [occurrenceKey(occurrence), occurrence])
     );
-    const initialBackfill = existingRows.length === 0;
+    const sourceItemIds = [
+      ...new Set(
+        input.occurrences.map((occurrence) => occurrence.sourceItemId)
+      ),
+    ];
+    for (let index = 0; index < sourceItemIds.length; index += 500) {
+      const rows = await occurrenceRepository.find({
+        where: {
+          source: input.source,
+          sourceServerId: input.sourceServerId,
+          sourceItemId: In(sourceItemIds.slice(index, index + 500)),
+        },
+      });
+      rows.forEach((occurrence) =>
+        existingByKey.set(occurrenceKey(occurrence), occurrence)
+      );
+    }
 
     const movieIds = uniqueNumbers(
       input.occurrences.map((occurrence) => occurrence.tmdbId)
@@ -87,7 +146,8 @@ export const reconcileServerOccurrences = async (input: {
 
     const inserted = new Set<string>();
     const moved = new Map<string, Date>();
-    const toSave = input.occurrences.map((normalized) => {
+    const toUpsert: ReleaseOccurrence[] = [];
+    for (const normalized of input.occurrences) {
       const key = occurrenceKey(normalized);
       const existing = existingByKey.get(key);
       const media = normalized.tmdbId
@@ -97,6 +157,12 @@ export const reconcileServerOccurrences = async (input: {
           : undefined;
       if (!media) input.result.unmapped += 1;
 
+      if (
+        existing &&
+        !hasOccurrenceChanged(existing, normalized, media?.id ?? null)
+      ) {
+        continue;
+      }
       const occurrence = existing ?? occurrenceRepository.create();
       if (!existing) inserted.add(key);
       if (existing && isMaterialDateChange(existing, normalized)) {
@@ -110,10 +176,48 @@ export const reconcileServerOccurrences = async (input: {
         lastSeenAt: now,
         missingSince: null,
       });
-      return occurrence;
-    });
-    const saved = toSave.length ? await occurrenceRepository.save(toSave) : [];
+      toUpsert.push(occurrence);
+    }
+    if (toUpsert.length) {
+      await occurrenceRepository.upsert(toUpsert, {
+        conflictPaths: [...RELEASE_OCCURRENCE_CONFLICT_COLUMNS],
+        skipUpdateIfNoValuesChanged: true,
+      });
+    }
     input.result.inserted += inserted.size;
+
+    // Existing rows retain their primary key. Fetch only newly inserted keys
+    // so notifications have database IDs without re-reading the full source.
+    const savedByKey = new Map(
+      toUpsert
+        .filter((occurrence) => occurrence.id)
+        .map((occurrence) => [occurrenceKey(occurrence), occurrence])
+    );
+    if (inserted.size) {
+      const itemIds = [
+        ...new Set(
+          input.occurrences
+            .filter((occurrence) => inserted.has(occurrenceKey(occurrence)))
+            .map((occurrence) => occurrence.sourceItemId)
+        ),
+      ];
+      for (let index = 0; index < itemIds.length; index += 500) {
+        const rows = await occurrenceRepository.find({
+          where: {
+            source: input.source,
+            sourceServerId: input.sourceServerId,
+            sourceItemId: In(itemIds.slice(index, index + 500)),
+          },
+        });
+        rows.forEach((occurrence) => {
+          const key = occurrenceKey(occurrence);
+          if (inserted.has(key)) savedByKey.set(key, occurrence);
+        });
+      }
+    }
+    const saved = toUpsert.map(
+      (occurrence) => savedByKey.get(occurrenceKey(occurrence)) ?? occurrence
+    );
 
     const events: DiscoveredReleaseEvents = {
       dateChanges: [],
@@ -122,7 +226,7 @@ export const reconcileServerOccurrences = async (input: {
     for (const occurrence of saved) {
       const key = occurrenceKey(occurrence);
       if (inserted.has(key)) {
-        if (!initialBackfill && occurrence.source === 'radarr') {
+        if (!input.initialBackfill && occurrence.source === 'radarr') {
           const change = changeRepository.create({
             occurrenceId: occurrence.id,
             oldStartsAt: null,
@@ -137,7 +241,7 @@ export const reconcileServerOccurrences = async (input: {
           });
           events.dateChanges.push({ occurrence, change });
         }
-        if (!initialBackfill && isSeasonPremiere(occurrence)) {
+        if (!input.initialBackfill && isSeasonPremiere(occurrence)) {
           events.newSeasons.push(occurrence);
         }
       } else {

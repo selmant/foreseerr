@@ -18,7 +18,7 @@ export interface LibraryTitle {
   status?: MediaStatus;
   /** Episode/movie progress 0–100 when resume data is present. */
   progressPercent?: number;
-  /** Tick position to resume from (1 tick = 100 ns) when native runtime is available. */
+  /** Jellyfin resume metadata for display; native protocol v1 does not send it. */
   startPositionTicks?: number;
 }
 
@@ -50,6 +50,8 @@ export interface LibrarySeriesDetailResponse {
   tmdbId?: number;
   title: string;
   playItemId?: string;
+  /** Concrete Jellyfin episode URL for ordinary-browser Play next. */
+  playUrl?: string;
   subtitle?: string;
   startPositionTicks?: number;
   seasons: LibrarySeriesSeason[];
@@ -69,6 +71,8 @@ export interface LibraryEpisode {
   overview?: string;
   progressPercent?: number;
   startPositionTicks?: number;
+  /** Concrete Jellyfin episode URL for ordinary-browser playback. */
+  mediaUrl?: string;
   watched?: boolean;
 }
 

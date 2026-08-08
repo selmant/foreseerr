@@ -75,41 +75,51 @@ const parseBoolean = (value: unknown) =>
   value === 'true' ? true : value === 'false' ? false : undefined;
 
 calendarRoutes.get('/', async (req, res, next) => {
+  let start: Date;
+  let end: Date;
   try {
-    const { start, end } = parseRange(req.query);
-    const scope = (readSingle(req.query.scope) ?? 'mine') as CalendarScope;
-    const mediaType = readSingle(req.query.mediaType);
-    const source = readSingle(req.query.source);
-    const serverId = readSingle(req.query.serverId);
-    const is4k = parseBoolean(readSingle(req.query.is4k));
-    const includeEpisodes =
-      parseBoolean(readSingle(req.query.includeEpisodes)) ?? true;
-    const includeUnmonitored =
-      parseBoolean(readSingle(req.query.includeUnmonitored)) ?? false;
-    const isAdmin = req.user?.hasPermission(Permission.ADMIN) ?? false;
+    ({ start, end } = parseRange(req.query));
+  } catch (error) {
+    return next({
+      status: 400,
+      message:
+        error instanceof Error ? error.message : 'Invalid calendar query.',
+    });
+  }
+  const scope = (readSingle(req.query.scope) ?? 'mine') as CalendarScope;
+  const mediaType = readSingle(req.query.mediaType);
+  const source = readSingle(req.query.source);
+  const serverId = readSingle(req.query.serverId);
+  const is4k = parseBoolean(readSingle(req.query.is4k));
+  const includeEpisodes =
+    parseBoolean(readSingle(req.query.includeEpisodes)) ?? true;
+  const includeUnmonitored =
+    parseBoolean(readSingle(req.query.includeUnmonitored)) ?? false;
+  const isAdmin = req.user?.hasPermission(Permission.ADMIN) ?? false;
 
-    if (scope !== 'mine' && scope !== 'all') {
-      return next({ status: 400, message: 'scope must be mine or all.' });
-    }
-    if (mediaType && mediaType !== 'movie' && mediaType !== 'tv') {
-      return next({ status: 400, message: 'mediaType must be movie or tv.' });
-    }
-    if (source && source !== 'sonarr' && source !== 'radarr') {
-      return next({ status: 400, message: 'source must be sonarr or radarr.' });
-    }
-    if ((!isAdmin && serverId) || (!isAdmin && includeUnmonitored)) {
-      return next({
-        status: 403,
-        message: 'This calendar filter requires administrator permission.',
-      });
-    }
-    if (serverId && (!/^\d+$/.test(serverId) || Number(serverId) < 1)) {
-      return next({
-        status: 400,
-        message: 'serverId must be a positive integer.',
-      });
-    }
+  if (scope !== 'mine' && scope !== 'all') {
+    return next({ status: 400, message: 'scope must be mine or all.' });
+  }
+  if (mediaType && mediaType !== 'movie' && mediaType !== 'tv') {
+    return next({ status: 400, message: 'mediaType must be movie or tv.' });
+  }
+  if (source && source !== 'sonarr' && source !== 'radarr') {
+    return next({ status: 400, message: 'source must be sonarr or radarr.' });
+  }
+  if ((!isAdmin && serverId) || (!isAdmin && includeUnmonitored)) {
+    return next({
+      status: 403,
+      message: 'This calendar filter requires administrator permission.',
+    });
+  }
+  if (serverId && (!/^\d+$/.test(serverId) || Number(serverId) < 1)) {
+    return next({
+      status: 400,
+      message: 'serverId must be a positive integer.',
+    });
+  }
 
+  try {
     const occurrenceRepository = getRepository(ReleaseOccurrence);
     const query = occurrenceRepository
       .createQueryBuilder('occurrence')
@@ -287,11 +297,7 @@ calendarRoutes.get('/', async (req, res, next) => {
       );
     return res.status(200).json({ results: items, partialSources });
   } catch (error) {
-    return next({
-      status: 400,
-      message:
-        error instanceof Error ? error.message : 'Invalid calendar query.',
-    });
+    return next(error);
   }
 });
 

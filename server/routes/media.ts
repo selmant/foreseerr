@@ -27,28 +27,30 @@ mediaRoutes.get('/', async (req, res, next) => {
   const pageSize = req.query.take ? Number(req.query.take) : 20;
   const skip = req.query.skip ? Number(req.query.skip) : 0;
 
-  let statusFilter: MediaStatus | ReturnType<typeof In> | undefined = undefined;
+  let statuses: MediaStatus[] | undefined;
 
   switch (req.query.filter) {
     case 'available':
-      statusFilter = MediaStatus.AVAILABLE;
+      statuses = [MediaStatus.AVAILABLE];
       break;
     case 'partial':
-      statusFilter = MediaStatus.PARTIALLY_AVAILABLE;
+      statuses = [MediaStatus.PARTIALLY_AVAILABLE];
       break;
     case 'allavailable':
-      statusFilter = In([
-        MediaStatus.AVAILABLE,
-        MediaStatus.PARTIALLY_AVAILABLE,
-      ]);
+      statuses = [MediaStatus.AVAILABLE, MediaStatus.PARTIALLY_AVAILABLE];
       break;
     case 'processing':
-      statusFilter = MediaStatus.PROCESSING;
+      statuses = [MediaStatus.PROCESSING];
       break;
     case 'pending':
-      statusFilter = MediaStatus.PENDING;
+      statuses = [MediaStatus.PENDING];
       break;
   }
+  const statusFilter = statuses
+    ? statuses.length === 1
+      ? statuses[0]
+      : In(statuses)
+    : undefined;
 
   let sortFilter: 'id' | 'updatedAt' | 'mediaAddedAt' = 'id';
   if (req.query.sort === 'modified') sortFilter = 'updatedAt';
@@ -56,12 +58,6 @@ mediaRoutes.get('/', async (req, res, next) => {
 
   try {
     if (sortFilter === 'mediaAddedAt') {
-      const statuses = statusFilter
-        ? Array.isArray(statusFilter)
-          ? statusFilter
-          : [statusFilter]
-        : undefined;
-
       let qb = mediaRepository.createQueryBuilder('media').innerJoin(
         (qb) => {
           let sub = qb

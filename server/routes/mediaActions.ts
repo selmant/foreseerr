@@ -4,6 +4,7 @@ import {
   writeHttpStatus,
   type MediaActionAggregate,
   type MediaActionMediaType,
+  type MediaActionProviderResult,
   type MediaItemRef,
 } from '@server/lib/mediaActions';
 import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
@@ -194,36 +195,84 @@ const setEpisodeWatched =
         return next({ status: 400, message: 'Invalid episode identifiers.' });
       }
 
-      const [traktOk, jellyfinOk] = await Promise.all([
-        traktEpisodeActions.setWatched(
-          req.user.id,
-          parsed.tmdbId,
-          parsed.seasonNumber,
-          parsed.episodeNumber,
-          watched
-        ),
-        jellyfinEpisodeActions.setEpisodeWatched(
-          req.user.id,
-          parsed.tmdbId,
-          parsed.seasonNumber,
-          parsed.episodeNumber,
-          watched
-        ),
+      const [traktAvailable, jellyfinAvailable] = await Promise.all([
+        traktEpisodeActions.isAvailable(req.user.id),
+        jellyfinEpisodeActions.isAvailable(req.user.id),
       ]);
+      const actions: Promise<MediaActionProviderResult>[] = [];
+      if (traktAvailable) {
+        actions.push(
+          traktEpisodeActions
+            .setWatched(
+              req.user.id,
+              parsed.tmdbId,
+              parsed.seasonNumber,
+              parsed.episodeNumber,
+              watched
+            )
+            .then((ok) => ({
+              provider: 'trakt' as const,
+              ok,
+              watched: ok ? watched : !watched,
+              rating: null,
+              ratingStars: null,
+            }))
+            .catch(
+              (error): MediaActionProviderResult => ({
+                provider: 'trakt',
+                ok: false,
+                watched: !watched,
+                rating: null,
+                ratingStars: null,
+                error: error instanceof Error ? error.message : 'unknown error',
+              })
+            )
+        );
+      }
+      if (jellyfinAvailable) {
+        actions.push(
+          jellyfinEpisodeActions
+            .setEpisodeWatched(
+              req.user.id,
+              parsed.tmdbId,
+              parsed.seasonNumber,
+              parsed.episodeNumber,
+              watched
+            )
+            .then((ok) => ({
+              provider: 'jellyfin' as const,
+              ok,
+              watched: ok ? watched : !watched,
+              rating: null,
+              ratingStars: null,
+            }))
+            .catch(
+              (error): MediaActionProviderResult => ({
+                provider: 'jellyfin',
+                ok: false,
+                watched: !watched,
+                rating: null,
+                ratingStars: null,
+                error: error instanceof Error ? error.message : 'unknown error',
+              })
+            )
+        );
+      }
+      const providers = await Promise.all(actions);
+      const aggregate: MediaActionAggregate = {
+        tmdbId: parsed.tmdbId,
+        mediaType: 'tv',
+        watched,
+        rating: null,
+        ratingStars: null,
+        providers,
+      };
+      const outcome = classifyWriteOutcome(aggregate);
 
-      return res.status(traktOk ? 200 : 502).json({
-        providers: [
-          {
-            provider: 'trakt',
-            ok: traktOk,
-            watched: traktOk ? watched : !watched,
-          },
-          {
-            provider: 'jellyfin',
-            ok: jellyfinOk,
-            watched: jellyfinOk ? watched : !watched,
-          },
-        ],
+      return res.status(writeHttpStatus(outcome)).json({
+        outcome,
+        watched: aggregate.watched,
+        providers: aggregate.providers,
       });
     } catch (error) {
       return handleActionError(

@@ -21,6 +21,10 @@ function emptyStatus(): MediaActionStatus {
 }
 
 export const jellyfinEpisodeActions = {
+  async isAvailable(userId: number): Promise<boolean> {
+    return Boolean(await getJellyfinEpisodeClient(userId));
+  },
+
   async setEpisodeWatched(
     userId: number,
     tmdbShowId: number,

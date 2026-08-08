@@ -224,4 +224,22 @@ describe('desktop auth tickets', () => {
       JellyfinAPI.prototype.getUser = async () => validLinkedIdentity();
     }
   });
+
+  it('rejects an HTTP Jellyfin bootstrap URL by default', async () => {
+    getSettings().jellyfin.externalHostname = 'http://jellyfin.example.test';
+    const verifier = 'h'.repeat(43);
+    const challenge = await import('node:crypto').then(({ createHash }) =>
+      createHash('sha256').update(verifier).digest('hex')
+    );
+    const issued = await request(app)
+      .post('/desktop/auth-tickets')
+      .send({ challenge, protocolVersion: 1 });
+    assert.strictEqual(issued.status, 201);
+
+    const redeemed = await request(app)
+      .post('/desktop/auth-tickets/redeem')
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+    assert.strictEqual(redeemed.status, 500);
+    assert.strictEqual(redeemed.body.accessToken, undefined);
+  });
 });

@@ -78,10 +78,14 @@ const externalJellyfinHost = () => {
   const settings = getSettings();
   const value = settings.jellyfin.externalHostname?.trim() || getHostname();
   const parsed = z.string().url().safeParse(value);
-  if (!parsed.success || !/^https?:\/\//.test(parsed.data)) {
+  if (!parsed.success || !parsed.data.startsWith('https://')) {
     throw new Error('Invalid Jellyfin desktop server URL');
   }
-  return parsed.data.replace(/\/$/, '');
+  const url = new URL(parsed.data);
+  if (url.username || url.password) {
+    throw new Error('Invalid Jellyfin desktop server URL');
+  }
+  return url.toString().replace(/\/$/, '');
 };
 
 const findLinkedUser = (userId: number) =>

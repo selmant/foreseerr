@@ -60,7 +60,6 @@ interface TitleCardProps {
   libraryMode?: boolean;
   subtitle?: string;
   progressPercent?: number;
-  startPositionTicks?: number;
   jellyfinItemId?: string | null;
   playItemId?: string | null;
   jellyfinSeriesId?: string | null;
@@ -108,7 +107,6 @@ const TitleCard = ({
   libraryMode = false,
   subtitle,
   progressPercent,
-  startPositionTicks,
   jellyfinItemId,
   playItemId,
   jellyfinSeriesId,
@@ -549,7 +547,6 @@ const TitleCard = ({
         fallbackUrl: playFallbackUrl,
         label: title,
         quality: 'standard',
-        startPositionTicks,
       })
     ) {
       return;

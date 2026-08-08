@@ -1,0 +1,103 @@
+{
+  "fixtureId": "foreseer-native-protocol-v1-2026-08-08",
+  "protocolVersion": 1,
+  "eventName": "jellium:host-event",
+  "host": {
+    "name": "jellium-desktop",
+    "versionSource": "package-metadata",
+    "versionMaxLength": 128,
+    "capabilities": [
+      "play-item",
+      "auth-bootstrap",
+      "player-events",
+      "session-reset",
+      "window-controls",
+      "quit"
+    ]
+  },
+  "limits": {
+    "requestIdMaxLength": 64,
+    "itemIdMaxLength": 128,
+    "ticketLength": 43,
+    "challengeHexLength": 64,
+    "setupMessageMaxLength": 256,
+    "serverUrlMaxLength": 2048,
+    "bootstrapIdMaxLength": 256,
+    "accessTokenMaxLength": 8192
+  },
+  "hostMethods": {
+    "requestAuthChallenge": ["requestId"],
+    "completeAuth": ["requestId", "ticket"],
+    "clearSession": ["requestId"],
+    "playItem": ["requestId", "itemId"],
+    "minimize": [],
+    "toggleMaximize": [],
+    "toggleFullscreen": [],
+    "quit": []
+  },
+  "setupMethods": {
+    "checkServerConnectivity": ["requestId", "url", "allowHttp"],
+    "saveServerUrl": ["requestId", "url", "allowHttp"]
+  },
+  "hostEventTypes": [
+    "auth-challenge",
+    "ready",
+    "accepted",
+    "resolving",
+    "starting",
+    "playing",
+    "stopped",
+    "finished",
+    "canceled",
+    "error"
+  ],
+  "terminalPlayEventTypes": ["stopped", "finished", "canceled", "error"],
+  "setupEventTypes": ["connectivity-success", "save-config-success", "error"],
+  "envelopes": {
+    "hostEventRequired": ["protocolVersion", "requestId", "type"],
+    "authChallengeField": "challenge",
+    "errorField": "errorCode",
+    "setupEventRequired": ["protocolVersion", "requestId", "type"],
+    "setupEventFields": ["status", "message"],
+    "setupEventForbiddenFields": ["challenge", "errorCode"]
+  },
+  "requestCorrelation": {
+    "required": true,
+    "replacementSequence": [
+      ["play-a", "accepted"],
+      ["play-b", "accepted"],
+      ["play-a", "canceled"],
+      ["play-b", "playing"],
+      ["play-b", "finished"]
+    ]
+  },
+  "resumePolicy": {
+    "owner": "jellyfin",
+    "startPositionTicksInProtocol": false
+  },
+  "browserFallback": {
+    "required": true,
+    "navigationPreventedOnlyAfterNativeAdmission": true
+  },
+  "bootstrapEnvelope": {
+    "wireFields": [
+      "serverUrl",
+      "serverId",
+      "userId",
+      "deviceId",
+      "accessToken",
+      "bootstrapGeneration"
+    ],
+    "nativeOnlyFields": ["accessToken", "deviceId"],
+    "redactedFields": ["accessToken", "ticket", "verifier"]
+  },
+  "examples": {
+    "setupConnectivitySuccess": {
+      "protocolVersion": 1,
+      "requestId": "setup-connectivity",
+      "type": "connectivity-success",
+      "status": 204,
+      "message": null
+    }
+  }
+}
