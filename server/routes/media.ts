@@ -61,7 +61,9 @@ mediaRoutes.get('/', async (req, res, next) => {
       let qb = mediaRepository.createQueryBuilder('media').innerJoin(
         (qb) => {
           let sub = qb
-            .select('MAX(sub.id)', 'maxId')
+            // Keep this alias lowercase: PostgreSQL folds unquoted identifiers
+            // to lowercase, including the raw join condition below.
+            .select('MAX(sub.id)', 'maxid')
             .from(Media, 'sub')
             .where('sub.mediaAddedAt IS NOT NULL');
 
@@ -74,7 +76,7 @@ mediaRoutes.get('/', async (req, res, next) => {
           return sub.groupBy('sub.tmdbId');
         },
         'dedup',
-        'media.id = dedup.maxId'
+        'media.id = dedup.maxid'
       );
 
       if (statuses) {
