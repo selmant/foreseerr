@@ -376,22 +376,22 @@ jobs:
       - parallel:
           - name: Verify signatures
             run: |
-              cosign verify "ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.image_digest }}" \
+              timeout --foreground 180s cosign verify "ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.image_digest }}" \
                 --certificate-identity "https://github.com/${{ github.workflow_ref }}" \
                 --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
-              cosign verify "${{ env.DOCKER_HUB }}@${{ needs.publish.outputs.image_digest }}" \
+              timeout --foreground 180s cosign verify "${{ env.DOCKER_HUB }}@${{ needs.publish.outputs.image_digest }}" \
                 --certificate-identity "https://github.com/${{ github.workflow_ref }}" \
                 --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
           - name: Verify attestations
             run: |
-              cosign verify-attestation "ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.image_digest }}" \
+              timeout --foreground 180s cosign verify-attestation "ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.image_digest }}" \
                 --type cyclonedx \
                 --certificate-identity "https://github.com/${{ github.workflow_ref }}" \
                 --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
-                cosign verify-attestation "${{ env.DOCKER_HUB }}@${{ needs.publish.outputs.image_digest }}" \
+              timeout --foreground 180s cosign verify-attestation "${{ env.DOCKER_HUB }}@${{ needs.publish.outputs.image_digest }}" \
                 --type cyclonedx \
                 --certificate-identity "https://github.com/${{ github.workflow_ref }}" \
                 --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
