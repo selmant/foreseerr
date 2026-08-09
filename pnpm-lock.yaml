@@ -358,8 +358,8 @@ importers:
         specifier: 2.4.1
         version: 2.4.1
       cy-mobile-commands:
-        specifier: 0.4.0
-        version: 0.4.0
+        specifier: 0.3.0
+        version: 0.3.0
       cypress:
         specifier: 15.13.1
         version: 15.13.1
