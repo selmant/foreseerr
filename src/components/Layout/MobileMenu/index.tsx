@@ -1,4 +1,5 @@
 import Badge from '@app/components/Common/Badge';
+import QuitAppControl from '@app/components/Layout/QuitAppControl';
 import { menuMessages } from '@app/components/Layout/Sidebar';
 import useClickOutside from '@app/hooks/useClickOutside';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -10,10 +11,8 @@ import {
   EllipsisHorizontalIcon,
   ExclamationTriangleIcon,
   EyeSlashIcon,
-  FilmIcon,
   RectangleStackIcon,
   SparklesIcon,
-  TvIcon,
   UsersIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -22,10 +21,8 @@ import {
   CogIcon as FilledCogIcon,
   ExclamationTriangleIcon as FilledExclamationTriangleIcon,
   EyeSlashIcon as FilledEyeSlashIcon,
-  FilmIcon as FilledFilmIcon,
   RectangleStackIcon as FilledRectangleStackIcon,
   SparklesIcon as FilledSparklesIcon,
-  TvIcon as FilledTvIcon,
   UsersIcon as FilledUsersIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
@@ -88,20 +85,6 @@ const MobileMenu = ({
       svgIcon: <RectangleStackIcon className="h-6 w-6" />,
       svgIconSelected: <FilledRectangleStackIcon className="h-6 w-6" />,
       activeRegExp: /^\/library/,
-    },
-    {
-      href: '/discover/movies',
-      content: intl.formatMessage(menuMessages.browsemovies),
-      svgIcon: <FilmIcon className="h-6 w-6" />,
-      svgIconSelected: <FilledFilmIcon className="h-6 w-6" />,
-      activeRegExp: /^\/discover\/movies$/,
-    },
-    {
-      href: '/discover/tv',
-      content: intl.formatMessage(menuMessages.browsetv),
-      svgIcon: <TvIcon className="h-6 w-6" />,
-      svgIconSelected: <FilledTvIcon className="h-6 w-6" />,
-      activeRegExp: /^\/discover\/tv$/,
     },
     {
       href: '/requests',
@@ -242,6 +225,9 @@ const MobileMenu = ({
             </Link>
           );
         })}
+        <div className="border-t border-gray-700 pt-4">
+          <QuitAppControl />
+        </div>
       </Transition>
       <div className="padding-bottom-safe border-t border-gray-600 bg-gray-800/90 backdrop-blur">
         <div className="flex h-full items-center justify-between px-6 py-4 text-gray-100">

@@ -11,10 +11,8 @@ import {
   CogIcon,
   ExclamationTriangleIcon,
   EyeSlashIcon,
-  FilmIcon,
   RectangleStackIcon,
   SparklesIcon,
-  TvIcon,
   UsersIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -69,18 +67,6 @@ const SidebarLinks: SidebarLinkProps[] = [
     messagesKey: 'library',
     svgIcon: <RectangleStackIcon className="mr-3 h-6 w-6" />,
     activeRegExp: /^\/library/,
-  },
-  {
-    href: '/discover/movies',
-    messagesKey: 'browsemovies',
-    svgIcon: <FilmIcon className="mr-3 h-6 w-6" />,
-    activeRegExp: /^\/discover\/movies$/,
-  },
-  {
-    href: '/discover/tv',
-    messagesKey: 'browsetv',
-    svgIcon: <TvIcon className="mr-3 h-6 w-6" />,
-    activeRegExp: /^\/discover\/tv$/,
   },
   {
     href: '/requests',
