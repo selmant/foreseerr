@@ -1,3 +1,4 @@
+import DiscoverNavigation from '@app/components/Discover/DiscoverNavigation';
 import MobileMenu from '@app/components/Layout/MobileMenu';
 import PullToRefresh from '@app/components/Layout/PullToRefresh';
 import SearchInput from '@app/components/Layout/SearchInput';
@@ -127,6 +128,10 @@ const Layout = ({ children }: LayoutProps) => {
           <div className="mb-6">
             <div className="max-w-8xl mx-auto px-4">
               <UserWarnings />
+              {(router.pathname === '/' ||
+                router.pathname.startsWith('/discover')) && (
+                <DiscoverNavigation />
+              )}
               {children}
             </div>
           </div>

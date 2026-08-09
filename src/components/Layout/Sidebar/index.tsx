@@ -60,7 +60,7 @@ const SidebarLinks: SidebarLinkProps[] = [
     href: '/',
     messagesKey: 'dashboard',
     svgIcon: <SparklesIcon className="mr-3 h-6 w-6" />,
-    activeRegExp: /^\/(discover\/?)?$/,
+    activeRegExp: /^\/(?:discover(?:\/.*)?)?$/,
   },
   {
     href: '/library',

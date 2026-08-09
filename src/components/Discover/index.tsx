@@ -28,10 +28,8 @@ import {
   ArrowDownOnSquareIcon,
   ArrowPathIcon,
   ArrowUturnLeftIcon,
-  FilmIcon,
   PencilIcon,
   PlusIcon,
-  TvIcon,
 } from '@heroicons/react/24/solid';
 import { DiscoverSliderType } from '@server/constants/discover';
 import type DiscoverSlider from '@server/entity/DiscoverSlider';
@@ -56,7 +54,6 @@ const messages = defineMessages('components.Discover', {
   customizediscover: 'Customize Discover',
   stopediting: 'Stop Editing',
   createnewslider: 'Create New Slider',
-  browse: 'Browse',
 });
 
 const Discover = () => {
@@ -130,19 +127,6 @@ const Discover = () => {
   return (
     <>
       <PageTitle title={intl.formatMessage(messages.discover)} />
-      <nav
-        aria-label={intl.formatMessage(messages.browse)}
-        className="mb-6 flex items-center gap-2"
-      >
-        <Button as="a" href="/discover/movies" buttonSize="sm">
-          <FilmIcon className="mr-1.5 h-4 w-4" />
-          {intl.formatMessage(globalMessages.movies)}
-        </Button>
-        <Button as="a" href="/discover/tv" buttonSize="sm">
-          <TvIcon className="mr-1.5 h-4 w-4" />
-          {intl.formatMessage(globalMessages.tvshows)}
-        </Button>
-      </nav>
       {hasPermission(Permission.ADMIN) && (
         <>
           {isEditing && (

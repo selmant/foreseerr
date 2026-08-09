@@ -77,7 +77,7 @@ const MobileMenu = ({
       content: intl.formatMessage(menuMessages.dashboard),
       svgIcon: <SparklesIcon className="h-6 w-6" />,
       svgIconSelected: <FilledSparklesIcon className="h-6 w-6" />,
-      activeRegExp: /^\/(discover\/?)?$/,
+      activeRegExp: /^\/(?:discover(?:\/.*)?)?$/,
     },
     {
       href: '/library',
