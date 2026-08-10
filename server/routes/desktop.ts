@@ -26,13 +26,13 @@ desktopRoutes.use((_req, res, next) => {
 
 const challengeBody = z.object({
   challenge: z.string().regex(/^[a-f0-9]{64}$/),
-  protocolVersion: z.literal(1),
+  protocolVersion: z.literal(2),
 });
 
 const redeemBody = z.object({
   ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   verifier: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-  protocolVersion: z.literal(1),
+  protocolVersion: z.literal(2),
 });
 
 const digest = (value: string) =>
@@ -135,7 +135,7 @@ desktopRoutes.post(
         sessionId: req.sessionID,
         ticketDigest: digest(opaqueTicket),
         challengeDigest: parsed.data.challenge,
-        protocolVersion: 1,
+        protocolVersion: 2,
         expiresAt: new Date(Date.now() + ticketLifetimeMs),
       });
       await getRepository(DesktopAuthTicket).save(ticket);
@@ -165,7 +165,7 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
       ticketDigest: digest(ticket),
     })
     .andWhere('ticket.protocolVersion = :protocolVersion', {
-      protocolVersion: 1,
+      protocolVersion: 2,
     })
     .getOne();
   if (!record) {

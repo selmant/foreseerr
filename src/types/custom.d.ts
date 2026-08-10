@@ -30,21 +30,25 @@ declare module '*.css' {
   const classNames: IClassNames;
   export = classNames;
 }
-interface JelliumHostV1 {
-  readonly protocolVersion: 1;
-  readonly hostName: 'jellium-desktop';
+interface ForeseerNativeCommandV2 {
+  id: string;
+  type: string;
+  ticket?: string;
+  itemId?: string;
+  url?: string;
+  allowHttp?: boolean;
+}
+
+interface ForeseerNativeV2 {
+  readonly protocolVersion: 2;
+  readonly hostName: 'foreseer-desktop';
   readonly hostVersion: string;
   readonly capabilities: readonly string[];
-  requestAuthChallenge(requestId: string): boolean;
-  playItem(requestId: string, itemId: string): boolean;
-  completeAuth(requestId: string, ticket: string): boolean;
-  clearSession(requestId: string): boolean;
-  minimize(): boolean;
-  toggleMaximize(): boolean;
-  toggleFullscreen(): boolean;
-  quit(): boolean;
+  send(command: ForeseerNativeCommandV2): boolean;
 }
 
 interface Window {
-  readonly jelliumHost?: JelliumHostV1;
+  readonly foreseerNative?: ForeseerNativeV2;
+  /** @deprecated v1 host; Seerr falls back to browser playback when only this exists. */
+  readonly jelliumHost?: unknown;
 }

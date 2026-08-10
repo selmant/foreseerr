@@ -1,7 +1,8 @@
-import type { NativeHostEventTypeV1 } from '@app/context/nativeRuntimeProtocol';
+import type { NativeHostEventTypeV2 } from '@app/context/nativeRuntimeProtocol';
 import {
   isCurrentNativePlayRequest,
-  isNativeHostEventTypeV1,
+  isNativeHostEventTypeV2,
+  isUsableForeseerNative,
   shouldClearNativePlayRequest,
 } from '@app/context/nativeRuntimeProtocol';
 import { useUser } from '@app/hooks/useUser';
@@ -61,22 +62,30 @@ export const NativeRuntimeProvider = ({
   const previousUserId = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    const host = window.jelliumHost;
+    const host = window.foreseerNative;
     setCanQuit(
-      !!host &&
-        host.protocolVersion === 1 &&
-        host.hostName === 'jellium-desktop' &&
-        host.capabilities.includes('quit')
+      isUsableForeseerNative(host) && host.capabilities.includes('quit')
     );
   }, []);
 
-  const quit = useCallback(() => window.jelliumHost?.quit() ?? false, []);
+  const quit = useCallback(() => {
+    const host = window.foreseerNative;
+    if (!isUsableForeseerNative(host) || !host.capabilities.includes('quit')) {
+      return false;
+    }
+    return host.send({ type: 'app.quit', id: createRequestId() });
+  }, []);
 
   const admitPlay = useCallback((target: NativePlayTarget) => {
     if (target.provider !== 'jellyfin' || !target.itemId) return false;
+    const host = window.foreseerNative;
+    if (!isUsableForeseerNative(host)) return false;
     const requestId = createRequestId();
-    const admitted =
-      window.jelliumHost?.playItem(requestId, target.itemId) ?? false;
+    const admitted = host.send({
+      type: 'play.item',
+      id: requestId,
+      itemId: target.itemId,
+    });
     if (admitted) {
       activePlayRequestId.current = requestId;
       window.clearTimeout(activePlayTimeout.current);
@@ -92,13 +101,14 @@ export const NativeRuntimeProvider = ({
   }, []);
 
   useEffect(() => {
-    const host = window.jelliumHost;
+    const host = window.foreseerNative;
     if (
       previousUserId.current !== undefined &&
       previousUserId.current !== userId &&
-      host?.capabilities.includes('session-reset')
+      isUsableForeseerNative(host) &&
+      host.capabilities.includes('session-reset')
     ) {
-      host.clearSession(createRequestId());
+      host.send({ type: 'session.clear', id: createRequestId() });
       activePlayRequestId.current = undefined;
       queuedPlayTarget.current = undefined;
       window.clearTimeout(activePlayTimeout.current);
@@ -108,13 +118,9 @@ export const NativeRuntimeProvider = ({
   }, [userId]);
 
   useEffect(() => {
-    const host = window.jelliumHost;
-    if (
-      !host ||
-      host.protocolVersion !== 1 ||
-      host.hostName !== 'jellium-desktop' ||
-      !host.capabilities.includes('play-item')
-    ) {
+    const host = window.foreseerNative;
+    // Missing/malformed host or leftover v1 jelliumHost → stay on browser path.
+    if (!isUsableForeseerNative(host)) {
       return;
     }
     if (!userId) {
@@ -137,7 +143,7 @@ export const NativeRuntimeProvider = ({
       authRequestId = createRequestId();
       authInFlight = true;
       setState('authenticating');
-      if (!host.requestAuthChallenge(authRequestId)) {
+      if (!host.send({ type: 'auth.challenge', id: authRequestId })) {
         authInFlight = false;
         authRequestId = undefined;
         queuedPlayTarget.current = undefined;
@@ -164,14 +170,14 @@ export const NativeRuntimeProvider = ({
       const detail = (event as CustomEvent<NativeEvent>).detail;
       if (
         !detail ||
-        detail.protocolVersion !== 1 ||
-        !isNativeHostEventTypeV1(detail.type)
+        detail.protocolVersion !== 2 ||
+        !isNativeHostEventTypeV2(detail.type)
       )
         return;
-      const isAuthEvent = detail.requestId === authRequestId;
+      const isAuthEvent = detail.id === authRequestId;
       const isPlayEvent = isCurrentNativePlayRequest(
         activePlayRequestId.current,
-        detail.requestId
+        detail.id
       );
       if (
         detail.type === 'auth-challenge' &&
@@ -182,11 +188,17 @@ export const NativeRuntimeProvider = ({
         axios
           .post('/api/v1/desktop/auth-tickets', {
             challenge: detail.challenge,
-            protocolVersion: 1,
+            protocolVersion: 2,
           })
           .then(({ data }) => {
-            if (detail.requestId !== authRequestId) return;
-            if (!host.completeAuth(detail.requestId, data.ticket)) {
+            if (detail.id !== authRequestId) return;
+            if (
+              !host.send({
+                type: 'auth.complete',
+                id: detail.id,
+                ticket: data.ticket,
+              })
+            ) {
               authInFlight = false;
               authRequestId = undefined;
               queuedPlayTarget.current = undefined;
@@ -213,7 +225,7 @@ export const NativeRuntimeProvider = ({
         detail.type !== 'error' &&
         shouldClearNativePlayRequest(
           activePlayRequestId.current,
-          detail.requestId,
+          detail.id,
           detail.type
         )
       ) {
@@ -236,14 +248,14 @@ export const NativeRuntimeProvider = ({
       } else if (
         shouldClearNativePlayRequest(
           activePlayRequestId.current,
-          detail.requestId,
+          detail.id,
           detail.type
         )
       ) {
         clearActivePlay();
       }
     };
-    window.addEventListener('jellium:host-event', onNativeEvent);
+    window.addEventListener('foreseer:native-event', onNativeEvent);
     bootstrap();
     const retry = window.setInterval(() => {
       bootstrap();
@@ -251,7 +263,7 @@ export const NativeRuntimeProvider = ({
     return () => {
       window.clearInterval(retry);
       window.clearTimeout(authTimeout);
-      window.removeEventListener('jellium:host-event', onNativeEvent);
+      window.removeEventListener('foreseer:native-event', onNativeEvent);
     };
   }, [admitPlay, userId]);
 
@@ -288,8 +300,8 @@ export const NativeRuntimeProvider = ({
 export const useNativeRuntime = () => useContext(NativeRuntimeContext);
 
 interface NativeEvent {
-  protocolVersion: 1;
-  requestId: string;
-  type: NativeHostEventTypeV1;
+  protocolVersion: 2;
+  id: string;
+  type: NativeHostEventTypeV2;
   challenge?: string;
 }

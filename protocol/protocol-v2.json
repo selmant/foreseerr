@@ -1,0 +1,94 @@
+{
+  "fixtureId": "foreseer-native-protocol-v2-2026-08-10",
+  "protocolVersion": 2,
+  "eventName": "foreseer:native-event",
+  "host": {
+    "name": "foreseer-desktop",
+    "versionSource": "package-metadata",
+    "versionMaxLength": 128,
+    "capabilities": [
+      "play-item",
+      "auth-bootstrap",
+      "player-events",
+      "session-reset",
+      "window-controls",
+      "quit",
+      "setup"
+    ]
+  },
+  "limits": {
+    "requestIdMaxLength": 64,
+    "itemIdMaxLength": 128,
+    "ticketLength": 43,
+    "challengeHexLength": 64,
+    "setupMessageMaxLength": 256,
+    "serverUrlMaxLength": 2048,
+    "bootstrapIdMaxLength": 256,
+    "accessTokenMaxLength": 8192,
+    "maxPayloadBytes": 16384
+  },
+  "commands": [
+    { "type": "auth.challenge", "fields": ["id"] },
+    { "type": "auth.complete", "fields": ["id", "ticket"] },
+    { "type": "session.clear", "fields": ["id"] },
+    { "type": "play.item", "fields": ["id", "itemId"] },
+    { "type": "setup.check", "fields": ["id", "url", "allowHttp"] },
+    { "type": "setup.save", "fields": ["id", "url", "allowHttp"] },
+    { "type": "window.minimize", "fields": ["id"] },
+    { "type": "window.toggle-maximize", "fields": ["id"] },
+    { "type": "window.toggle-fullscreen", "fields": ["id"] },
+    { "type": "app.quit", "fields": ["id"] }
+  ],
+  "hostEventTypes": [
+    "auth-challenge",
+    "ready",
+    "accepted",
+    "resolving",
+    "starting",
+    "playing",
+    "stopped",
+    "finished",
+    "canceled",
+    "error",
+    "connectivity-success",
+    "save-config-success"
+  ],
+  "terminalPlayEventTypes": ["stopped", "finished", "canceled", "error"],
+  "envelopes": {
+    "commandRequired": ["id", "type"],
+    "eventRequired": ["protocolVersion", "id", "type"],
+    "authChallengeField": "challenge",
+    "errorField": "errorCode"
+  },
+  "requestCorrelation": {
+    "required": true,
+    "replacementSequence": [
+      ["play-a", "accepted"],
+      ["play-b", "accepted"],
+      ["play-a", "canceled"],
+      ["play-b", "playing"],
+      ["play-b", "finished"]
+    ]
+  },
+  "resumePolicy": {
+    "owner": "jellyfin",
+    "startPositionTicksInProtocol": false
+  },
+  "browserFallback": {
+    "required": true,
+    "navigationPreventedOnlyAfterNativeAdmission": true,
+    "v1HostFallsBackToBrowser": true
+  },
+  "bootstrapEnvelope": {
+    "wireFields": [
+      "serverUrl",
+      "serverId",
+      "userId",
+      "deviceId",
+      "accessToken",
+      "bootstrapGeneration"
+    ],
+    "nativeOnlyFields": ["accessToken", "deviceId"],
+    "redactedFields": ["accessToken", "ticket", "verifier"]
+  }
+}

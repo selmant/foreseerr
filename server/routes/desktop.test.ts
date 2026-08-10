@@ -92,13 +92,13 @@ describe('desktop auth tickets', () => {
     const agent = request.agent(app);
     const issued = await agent
       .post('/desktop/auth-tickets')
-      .send({ challenge, protocolVersion: 1 });
+      .send({ challenge, protocolVersion: 2 });
 
     assert.strictEqual(issued.status, 201);
     assert.strictEqual(issued.headers['cache-control'], 'no-store');
     const redeemed = await request(app)
       .post('/desktop/auth-tickets/redeem')
-      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 });
 
     assert.strictEqual(redeemed.status, 200);
     assert.strictEqual(redeemed.body.userId, 'user-1');
@@ -108,7 +108,7 @@ describe('desktop auth tickets', () => {
 
     const replay = await request(app)
       .post('/desktop/auth-tickets/redeem')
-      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 });
     assert.strictEqual(replay.status, 409);
     assert.strictEqual(replay.body.code, 'ticket_used');
   });
@@ -120,14 +120,14 @@ describe('desktop auth tickets', () => {
     );
     const issued = await request(app)
       .post('/desktop/auth-tickets')
-      .send({ challenge, protocolVersion: 1 });
+      .send({ challenge, protocolVersion: 2 });
 
     const rejected = await request(app)
       .post('/desktop/auth-tickets/redeem')
       .send({
         ticket: issued.body.ticket,
         verifier: 'b'.repeat(43),
-        protocolVersion: 1,
+        protocolVersion: 2,
       });
     assert.strictEqual(rejected.status, 401);
     assert.strictEqual(rejected.body.code, 'invalid_verifier');
@@ -141,7 +141,7 @@ describe('desktop auth tickets', () => {
     const response = await request(apiApp)
       .post('/desktop/auth-tickets')
       .set('X-API-Key', getSettings().main.apiKey)
-      .send({ challenge, protocolVersion: 1 });
+      .send({ challenge, protocolVersion: 2 });
     assert.strictEqual(response.status, 403);
     assert.strictEqual(response.body.code, 'session_required');
   });
@@ -153,12 +153,12 @@ describe('desktop auth tickets', () => {
     );
     const issued = await request(app)
       .post('/desktop/auth-tickets')
-      .send({ challenge, protocolVersion: 1 });
+      .send({ challenge, protocolVersion: 2 });
     await getRepository(Session).delete({ id: 'desktop-test-session' });
 
     const response = await request(app)
       .post('/desktop/auth-tickets/redeem')
-      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 });
     assert.strictEqual(response.status, 401);
     assert.strictEqual(response.body.code, 'session_expired');
   });
@@ -170,14 +170,14 @@ describe('desktop auth tickets', () => {
     );
     const issued = await request(app)
       .post('/desktop/auth-tickets')
-      .send({ challenge, protocolVersion: 1 });
+      .send({ challenge, protocolVersion: 2 });
     const responses = await Promise.all([
       request(app)
         .post('/desktop/auth-tickets/redeem')
-        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 }),
+        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 }),
       request(app)
         .post('/desktop/auth-tickets/redeem')
-        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 }),
+        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 }),
     ]);
     assert.deepStrictEqual(
       responses.map(({ status }) => status).sort(),
@@ -193,12 +193,12 @@ describe('desktop auth tickets', () => {
     );
     const issued = await request(app)
       .post('/desktop/auth-tickets')
-      .send({ challenge, protocolVersion: 1 });
+      .send({ challenge, protocolVersion: 2 });
     assert.strictEqual(issued.status, 201);
 
     const redeemed = await request(app)
       .post('/desktop/auth-tickets/redeem')
-      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 });
     assert.strictEqual(redeemed.status, 200);
     assert.strictEqual(redeemed.body.serverId, 'authoritative-server');
   });
@@ -214,10 +214,10 @@ describe('desktop auth tickets', () => {
       );
       const issued = await request(app)
         .post('/desktop/auth-tickets')
-        .send({ challenge, protocolVersion: 1 });
+        .send({ challenge, protocolVersion: 2 });
       const redeemed = await request(app)
         .post('/desktop/auth-tickets/redeem')
-        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 });
       assert.strictEqual(redeemed.status, 401);
       assert.strictEqual(redeemed.body.code, 'token_invalid');
     } finally {
@@ -233,12 +233,12 @@ describe('desktop auth tickets', () => {
     );
     const issued = await request(app)
       .post('/desktop/auth-tickets')
-      .send({ challenge, protocolVersion: 1 });
+      .send({ challenge, protocolVersion: 2 });
     assert.strictEqual(issued.status, 201);
 
     const redeemed = await request(app)
       .post('/desktop/auth-tickets/redeem')
-      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 });
     assert.strictEqual(redeemed.status, 500);
     assert.strictEqual(redeemed.body.accessToken, undefined);
   });
