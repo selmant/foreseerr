@@ -30,7 +30,7 @@ import {
   QueueListIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
-import { ChevronDownIcon, PlayIcon } from '@heroicons/react/24/solid';
+import { ChevronDownIcon, CogIcon, PlayIcon } from '@heroicons/react/24/solid';
 import type { RatingResponse } from '@server/api/ratings';
 import { MediaStatus } from '@server/constants/media';
 import type { Watchlist } from '@server/entity/Watchlist';
@@ -65,6 +65,7 @@ interface TitleCardProps {
   jellyfinSeriesId?: string | null;
   mediaUrl?: string | null;
   onLibraryOpenSeries?: (jellyfinSeriesId: string) => void;
+  onLibraryManage?: () => void;
 }
 
 const messages = defineMessages('components.TitleCard', {
@@ -88,6 +89,7 @@ const messages = defineMessages('components.TitleCard', {
   movieSuccess: 'Requested successfully!',
   movieError: 'Could not request. Opening the full request form.',
   play: 'Play',
+  manage: 'Manage in {service}',
 });
 
 const TitleCard = ({
@@ -112,6 +114,7 @@ const TitleCard = ({
   jellyfinSeriesId,
   mediaUrl,
   onLibraryOpenSeries,
+  onLibraryManage,
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
@@ -568,6 +571,12 @@ const TitleCard = ({
     }
   };
 
+  const onLibraryManageClick = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onLibraryManage?.();
+  };
+
   return (
     <div
       className={canExpand ? 'w-full' : 'w-36 sm:w-36 md:w-44'}
@@ -856,17 +865,36 @@ const TitleCard = ({
                 </div>
               </Link>
 
-              <div className="absolute bottom-0 left-0 right-0 z-40 flex justify-between px-2 py-2">
+              <div className="absolute bottom-0 left-0 right-0 z-40 flex justify-between gap-1 px-2 py-2">
                 {showLibraryPlay ? (
                   <Button
                     buttonType="primary"
                     buttonSize="sm"
-                    className="z-40 w-full"
+                    className="z-40 flex-1"
                     onClick={onLibraryPlay}
                   >
                     <PlayIcon className="h-4 w-4" />{' '}
                     <span>{intl.formatMessage(messages.play)}</span>
                   </Button>
+                ) : null}
+                {libraryMode && onLibraryManage ? (
+                  <Tooltip
+                    content={intl.formatMessage(messages.manage, {
+                      service: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
+                    })}
+                  >
+                    <Button
+                      buttonType="default"
+                      buttonSize="sm"
+                      className="z-40 shrink-0"
+                      aria-label={intl.formatMessage(messages.manage, {
+                        service: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
+                      })}
+                      onClick={onLibraryManageClick}
+                    >
+                      <CogIcon className="!mr-0 h-4 w-4" />
+                    </Button>
+                  </Tooltip>
                 ) : null}
                 {showRequestButton &&
                   (!currentStatus ||

@@ -3,11 +3,14 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import SlideOver from '@app/components/Common/SlideOver';
 import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import type {
   LibrarySeasonEpisodesResponse,
   LibrarySeriesDetailResponse,
 } from '@server/interfaces/api/libraryInterfaces';
+import { hasServarrMapping } from '@server/lib/servarrMapping';
+import type { TvDetails } from '@server/models/Tv';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -16,6 +19,7 @@ const messages = defineMessages('components.Library.LibrarySeriesPanel', {
   playNext: 'Play next',
   viewDetails: 'View details',
   episodes: 'Episodes',
+  manageInSonarr: 'Manage in Sonarr',
   watched: 'Watched',
   play: 'Play',
   emptySeason: 'No episodes in this season.',
@@ -31,6 +35,7 @@ interface LibrarySeriesPanelProps {
   seedTmdbId?: number;
   seedPlayItemId?: string;
   seedSubtitle?: string;
+  onManage?: (title: TvDetails) => void;
   onClose: () => void;
 }
 
@@ -41,10 +46,12 @@ const LibrarySeriesPanel = ({
   seedTmdbId,
   seedPlayItemId,
   seedSubtitle,
+  onManage,
   onClose,
 }: LibrarySeriesPanelProps) => {
   const intl = useIntl();
   const { play } = useNativeRuntime();
+  const { hasPermission } = useUser();
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
 
   const { data: series, error: seriesError } =
@@ -85,6 +92,12 @@ const LibrarySeriesPanel = ({
   const playItemId = series?.playItemId || seedPlayItemId;
   const playSubtitle = series?.subtitle || seedSubtitle;
   const statusCode = series?.code ?? episodes?.code;
+  const { data: managedTitle } = useSWR<TvDetails>(
+    show && tmdbId && hasPermission(Permission.MANAGE_REQUESTS)
+      ? `/api/v1/tv/${tmdbId}`
+      : null
+  );
+  const canManage = hasServarrMapping(managedTitle?.mediaInfo);
 
   const playEpisode = (
     event: React.MouseEvent<HTMLAnchorElement>,
@@ -166,9 +179,20 @@ const LibrarySeriesPanel = ({
               </div>
 
               <div>
-                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-400">
-                  {intl.formatMessage(messages.episodes)}
-                </h3>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
+                    {intl.formatMessage(messages.episodes)}
+                  </h3>
+                  {canManage && managedTitle ? (
+                    <Button
+                      buttonType="default"
+                      buttonSize="sm"
+                      onClick={() => onManage?.(managedTitle)}
+                    >
+                      {intl.formatMessage(messages.manageInSonarr)}
+                    </Button>
+                  ) : null}
+                </div>
                 {!episodes && !episodesError ? (
                   <LoadingSpinner />
                 ) : episodesError ? (

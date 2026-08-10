@@ -3,6 +3,7 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import LibraryPlayCard from '@app/components/Library/LibraryPlayCard';
 import LibrarySeriesPanel from '@app/components/Library/LibrarySeriesPanel';
+import ManageSlideOver from '@app/components/ManageSlideOver';
 import Slider from '@app/components/Slider';
 import defineMessages from '@app/utils/defineMessages';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
@@ -11,9 +12,11 @@ import type {
   LibraryTitle,
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
+import type { MovieDetails } from '@server/models/Movie';
+import type { TvDetails } from '@server/models/Tv';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 
 const messages = defineMessages('components.Library', {
   library: 'Library',
@@ -39,6 +42,11 @@ const Library = () => {
   const [mediaType, setMediaType] = useState<'all' | 'movie' | 'tv'>('all');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [panelSeries, setPanelSeries] = useState<LibraryTitle | null>(null);
+  const [managedTitle, setManagedTitle] = useState<
+    | { data: MovieDetails; mediaType: 'movie' }
+    | { data: TvDetails; mediaType: 'tv' }
+    | null
+  >(null);
 
   useEffect(() => {
     const handle = window.setTimeout(
@@ -63,6 +71,20 @@ const Library = () => {
 
   const { data: available, error: availableError } =
     useSWR<LibraryAvailableResponse>(availableKey);
+
+  const revalidateLibrary = () => {
+    if (managedTitle) {
+      mutate(`/api/v1/${managedTitle.mediaType}/${managedTitle.data.id}`);
+    }
+    mutate('/api/v1/library/watch-now');
+    mutate(availableKey);
+  };
+
+  const openManager = (data: MovieDetails | TvDetails) => {
+    setManagedTitle(
+      'title' in data ? { data, mediaType: 'movie' } : { data, mediaType: 'tv' }
+    );
+  };
 
   const statusMessage = (() => {
     if (watchNow?.code === 'not_linked') {
@@ -115,6 +137,7 @@ const Library = () => {
                     key={`${shelf.id}-${item.jellyfinItemId}`}
                     item={item}
                     onOpenSeries={setPanelSeries}
+                    onManage={openManager}
                   />
                 ))}
               />
@@ -181,7 +204,11 @@ const Library = () => {
                 key={`available-${item.jellyfinItemId}-${item.tmdbId ?? 0}`}
                 className="inline-block px-2 pb-4 align-top"
               >
-                <LibraryPlayCard item={item} onOpenSeries={setPanelSeries} />
+                <LibraryPlayCard
+                  item={item}
+                  onOpenSeries={setPanelSeries}
+                  onManage={openManager}
+                />
               </div>
             ))}
           </div>
@@ -189,14 +216,32 @@ const Library = () => {
       </div>
 
       <LibrarySeriesPanel
-        show={Boolean(panelSeries?.jellyfinSeriesId)}
+        show={Boolean(panelSeries?.jellyfinSeriesId) && !managedTitle}
         jellyfinSeriesId={panelSeries?.jellyfinSeriesId ?? null}
         seedTitle={panelSeries?.title}
         seedTmdbId={panelSeries?.tmdbId}
         seedPlayItemId={panelSeries?.playItemId}
         seedSubtitle={panelSeries?.subtitle}
+        onManage={openManager}
         onClose={() => setPanelSeries(null)}
       />
+      {managedTitle?.mediaType === 'movie' ? (
+        <ManageSlideOver
+          show
+          data={managedTitle.data}
+          mediaType="movie"
+          revalidate={revalidateLibrary}
+          onClose={() => setManagedTitle(null)}
+        />
+      ) : managedTitle?.mediaType === 'tv' ? (
+        <ManageSlideOver
+          show
+          data={managedTitle.data}
+          mediaType="tv"
+          revalidate={revalidateLibrary}
+          onClose={() => setManagedTitle(null)}
+        />
+      ) : null}
     </>
   );
 };

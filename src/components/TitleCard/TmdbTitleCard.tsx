@@ -1,6 +1,7 @@
 import TitleCard from '@app/components/TitleCard';
 import { Permission, useUser } from '@app/hooks/useUser';
 import type { RatingResponse } from '@server/api/ratings';
+import { hasServarrMapping } from '@server/lib/servarrMapping';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import { useInView } from 'react-intersection-observer';
@@ -23,6 +24,7 @@ export interface TmdbTitleCardProps {
   jellyfinSeriesId?: string | null;
   mediaUrl?: string | null;
   onLibraryOpenSeries?: (jellyfinSeriesId: string) => void;
+  onLibraryManage?: (title: MovieDetails | TvDetails) => void;
 }
 
 const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
@@ -46,6 +48,7 @@ const TmdbTitleCard = ({
   jellyfinSeriesId,
   mediaUrl,
   onLibraryOpenSeries,
+  onLibraryManage,
 }: TmdbTitleCardProps) => {
   const { hasPermission } = useUser();
 
@@ -96,6 +99,11 @@ const TmdbTitleCard = ({
         mediaUrl:
           mediaUrl ?? title.mediaInfo?.mediaUrl ?? title.mediaInfo?.mediaUrl4k,
         onLibraryOpenSeries,
+        onLibraryManage:
+          hasPermission(Permission.MANAGE_REQUESTS) &&
+          hasServarrMapping(title.mediaInfo)
+            ? () => onLibraryManage?.(title)
+            : undefined,
       }
     : {};
 
