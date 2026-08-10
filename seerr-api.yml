@@ -9335,7 +9335,7 @@ paths:
           description: Unauthorized
     post:
       summary: Grab a Servarr release
-      description: Grabs a previously returned release token. Requires `MANAGE_REQUESTS`.
+      description: 'Grabs a previously returned release token. Quality-rejected releases require `acknowledgeRejections: true`; this explicit confirmation can override Arr quality rejections without changing its profiles. Requires `MANAGE_REQUESTS`.'
       tags:
         - media
       parameters:
@@ -9364,7 +9364,7 @@ paths:
         '401':
           description: Unauthorized
         '409':
-          description: Invalid, expired, or unacknowledged release token
+          description: Invalid, expired, unavailable, or unacknowledged release token
   /media/{mediaId}/servarr/imports/sources:
     get:
       summary: List safe Servarr manual import sources

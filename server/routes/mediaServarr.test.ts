@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { isInteractiveImportQueueItem } from './mediaServarr';
+import { canGrabRelease, isInteractiveImportQueueItem } from './mediaServarr';
 
 describe('Servarr interactive import eligibility', () => {
   const base = {
@@ -41,5 +41,34 @@ describe('Servarr interactive import eligibility', () => {
       isInteractiveImportQueueItem({ ...base, outputPath: undefined }),
       false
     );
+  });
+});
+
+describe('Servarr rejected release override', () => {
+  const release = {
+    guid: 'release-guid',
+    indexerId: 1,
+    title: 'Example release',
+    size: 1,
+    ageHours: 1,
+    publishDate: '2026-08-10T00:00:00.000Z',
+    indexer: 'Example indexer',
+    protocol: 'torrent',
+    approved: false,
+    rejected: false,
+    temporarilyRejected: false,
+    downloadAllowed: false,
+  };
+
+  it('allows an explicitly acknowledged quality-rejected release to be grabbed', () => {
+    assert.equal(canGrabRelease({ ...release, rejected: true }), true);
+    assert.equal(
+      canGrabRelease({ ...release, temporarilyRejected: true }),
+      true
+    );
+  });
+
+  it('continues to block an unavailable non-rejected release', () => {
+    assert.equal(canGrabRelease(release), false);
   });
 });

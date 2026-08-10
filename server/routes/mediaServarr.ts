@@ -168,6 +168,12 @@ export function isInteractiveImportQueueItem(item: QueueDetailsItem) {
   );
 }
 
+export function canGrabRelease(release: ServarrRelease) {
+  return (
+    release.downloadAllowed || release.rejected || release.temporarilyRejected
+  );
+}
+
 function importSourceFor(item: QueueDetailsItem): ImportSource {
   return {
     kind: 'queue',
@@ -373,7 +379,7 @@ mediaServarrRoutes.post(
       );
       const record = getToken(req.body.token, context, req.user!.id, 'release');
       const release = record.value as ServarrRelease;
-      if (!release.downloadAllowed)
+      if (!canGrabRelease(release))
         throw Object.assign(
           new Error(
             'This release cannot be downloaded by the configured client.'

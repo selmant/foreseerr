@@ -3,6 +3,7 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import useToasts from '@app/hooks/useToasts';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Select from 'react-select';
 
 type Episode = {
   id: number;
@@ -23,6 +24,7 @@ type ImportSource = {
   label: string;
 };
 type Rejection = { reason: string; type?: string };
+type SelectOption = { value: number; label: string };
 type Release = {
   token: string;
   title: string;
@@ -92,6 +94,26 @@ const ServarrPanel = ({
   const [importStatus, setImportStatus] = useState<string>();
   const episodes = useMemo(
     () => context?.seasons?.flatMap((season) => season.episodes) ?? [],
+    [context]
+  );
+  const episodeOptions = useMemo<SelectOption[]>(
+    () =>
+      episodes.map((episode) => ({
+        value: episode.id,
+        label: `S${String(episode.seasonNumber).padStart(2, '0')}E${String(
+          episode.episodeNumber
+        ).padStart(2, '0')} — ${episode.title}${
+          episode.hasFile ? ' (downloaded)' : ''
+        }`,
+      })),
+    [episodes]
+  );
+  const seasonOptions = useMemo<SelectOption[]>(
+    () =>
+      context?.seasons?.map((season) => ({
+        value: season.seasonNumber,
+        label: `Season ${season.seasonNumber}`,
+      })) ?? [],
     [context]
   );
 
@@ -346,41 +368,56 @@ const ServarrPanel = ({
       </div>
       {error && <div className="text-sm text-red-300">{error}</div>}
       {context.mediaType === 'tv' && (
-        <div className="flex flex-wrap gap-2">
-          <select
-            value={target}
-            onChange={(event) =>
-              setTarget(event.target.value as 'episode' | 'season')
-            }
-          >
-            <option value="episode">Episode</option>
-            <option value="season">Season pack</option>
-          </select>
+        <div className="space-y-2 rounded border border-gray-700 bg-gray-800/30 p-2">
+          <div className="flex rounded-md border border-gray-600 bg-gray-900/40 p-0.5 text-sm">
+            <button
+              className={`flex-1 rounded px-3 py-1.5 transition ${target === 'episode' ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-300 hover:bg-gray-700/70'}`}
+              type="button"
+              aria-pressed={target === 'episode'}
+              onClick={() => setTarget('episode')}
+            >
+              Episode
+            </button>
+            <button
+              className={`flex-1 rounded px-3 py-1.5 transition ${target === 'season' ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-300 hover:bg-gray-700/70'}`}
+              type="button"
+              aria-pressed={target === 'season'}
+              onClick={() => setTarget('season')}
+            >
+              Season pack
+            </button>
+          </div>
           {target === 'episode' ? (
-            <select
-              value={episodeId}
-              onChange={(event) => setEpisodeId(Number(event.target.value))}
-            >
-              {episodes.map((episode) => (
-                <option key={episode.id} value={episode.id}>
-                  S{String(episode.seasonNumber).padStart(2, '0')}E
-                  {String(episode.episodeNumber).padStart(2, '0')} —{' '}
-                  {episode.title}
-                  {episode.hasFile ? ' (downloaded)' : ''}
-                </option>
-              ))}
-            </select>
+            <Select<SelectOption, false>
+              aria-label="Episode to search"
+              className="react-select-container"
+              classNamePrefix="react-select"
+              isSearchable
+              maxMenuHeight={250}
+              menuPosition="fixed"
+              menuShouldScrollIntoView={false}
+              options={episodeOptions}
+              placeholder="Choose an episode"
+              value={episodeOptions.find(
+                (option) => option.value === episodeId
+              )}
+              onChange={(option) => setEpisodeId(option?.value)}
+            />
           ) : (
-            <select
-              value={seasonNumber}
-              onChange={(event) => setSeasonNumber(Number(event.target.value))}
-            >
-              {context.seasons?.map((season) => (
-                <option key={season.seasonNumber} value={season.seasonNumber}>
-                  Season {season.seasonNumber}
-                </option>
-              ))}
-            </select>
+            <Select<SelectOption, false>
+              aria-label="Season pack to search"
+              className="react-select-container"
+              classNamePrefix="react-select"
+              isSearchable={false}
+              menuPosition="fixed"
+              menuShouldScrollIntoView={false}
+              options={seasonOptions}
+              placeholder="Choose a season"
+              value={seasonOptions.find(
+                (option) => option.value === seasonNumber
+              )}
+              onChange={(option) => setSeasonNumber(option?.value)}
+            />
           )}
         </div>
       )}
@@ -448,7 +485,7 @@ const ServarrPanel = ({
                 className="mt-2"
                 buttonSize="sm"
                 onClick={() => grab(release)}
-                disabled={!release.downloadAllowed}
+                disabled={!release.downloadAllowed && !release.rejected}
               >
                 Grab{release.rejected ? ' anyway' : ''}
               </Button>

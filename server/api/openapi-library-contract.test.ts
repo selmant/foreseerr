@@ -77,4 +77,12 @@ describe('OpenAPI library contract', () => {
     assert.match(sources.description, /import warning/i);
     assert.match(imports.description, /marked for manual import/i);
   });
+
+  it('documents explicit quality-rejection acknowledgement for release grabs', () => {
+    const grab = apiDocs.paths['/media/{mediaId}/servarr/releases'].post as {
+      description: string;
+    };
+    assert.match(grab.description, /acknowledgeRejections/);
+    assert.match(grab.description, /override Arr quality rejections/i);
+  });
 });
