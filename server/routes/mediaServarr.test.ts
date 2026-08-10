@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { canGrabRelease, isInteractiveImportQueueItem } from './mediaServarr';
+import {
+  canGrabRelease,
+  episodeQueueStatus,
+  isInteractiveImportQueueItem,
+} from './mediaServarr';
 
 describe('Servarr interactive import eligibility', () => {
   const base = {
@@ -70,5 +74,37 @@ describe('Servarr rejected release override', () => {
 
   it('continues to block an unavailable non-rejected release', () => {
     assert.equal(canGrabRelease(release), false);
+  });
+});
+
+describe('Sonarr episode queue status', () => {
+  it('prioritizes active downloads and import work over library state', () => {
+    assert.equal(
+      episodeQueueStatus({ title: 'Episode', status: 'downloading' }),
+      'downloading'
+    );
+    assert.equal(
+      episodeQueueStatus({ title: 'Episode', status: 'importing' }),
+      'importing'
+    );
+    assert.equal(
+      episodeQueueStatus({
+        title: 'Episode',
+        status: 'completed',
+        trackedDownloadStatus: 'warning',
+      }),
+      'manual-import'
+    );
+  });
+
+  it('shows queued work without treating normal completed downloads as active', () => {
+    assert.equal(
+      episodeQueueStatus({ title: 'Episode', status: 'queued' }),
+      'queued'
+    );
+    assert.equal(
+      episodeQueueStatus({ title: 'Episode', status: 'completed' }),
+      undefined
+    );
   });
 });

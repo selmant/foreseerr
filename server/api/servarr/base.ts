@@ -71,7 +71,7 @@ export interface QueueDetailsItem {
   downloadId?: string;
   outputPath?: string;
   status?: string;
-  trackedDownloadStatus?: 'ok' | 'warning' | 'error';
+  trackedDownloadStatus?: string;
   trackedDownloadState?: string;
   statusMessages?: { title: string; messages: string[] }[];
 }

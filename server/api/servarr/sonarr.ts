@@ -558,6 +558,10 @@ class SonarrAPI extends ServarrBase<{
     return response.data;
   }
 
+  public async getSeriesQueue(seriesId: number) {
+    return (await this.getQueue()).filter((item) => item.seriesId === seriesId);
+  }
+
   public async getManualImportCandidates(params: {
     seriesId: number;
     folder?: string;

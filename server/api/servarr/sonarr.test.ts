@@ -245,6 +245,28 @@ describe('SonarrAPI interactive management', () => {
     ]);
   });
 
+  it('filters queue activity to the selected series', async () => {
+    const sonarr = buildSonarr();
+    const get = mock.method(getAxios(sonarr), 'get', async () => ({
+      data: {
+        records: [
+          { seriesId: 9, episodeId: 31, episode: { id: 31 } },
+          { seriesId: 10, episodeId: 32, episode: { id: 32 } },
+        ],
+      },
+    }));
+
+    const queue = await sonarr.getSeriesQueue(9);
+
+    assert.deepStrictEqual(get.mock.calls[0].arguments, [
+      '/queue',
+      { params: { includeEpisode: true } },
+    ]);
+    assert.deepStrictEqual(queue, [
+      { seriesId: 9, episodeId: 31, episode: { id: 31 } },
+    ]);
+  });
+
   it('passes queue download context through to manual import discovery', async () => {
     const sonarr = buildSonarr();
     const get = mock.method(getAxios(sonarr), 'get', async () => ({

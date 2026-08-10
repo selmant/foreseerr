@@ -3,7 +3,7 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import useToasts from '@app/hooks/useToasts';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Select from 'react-select';
+import Select, { type StylesConfig } from 'react-select';
 
 type Episode = {
   id: number;
@@ -12,6 +12,7 @@ type Episode = {
   title: string;
   hasFile: boolean;
   monitored: boolean;
+  queueStatus?: 'downloading' | 'queued' | 'importing' | 'manual-import';
 };
 type Context = {
   mediaType: 'movie' | 'tv';
@@ -28,7 +29,14 @@ type Rejection = { reason: string; type?: string };
 type SelectOption = {
   value: number;
   label: string;
-  status?: 'downloaded' | 'wanted' | 'unmonitored';
+  status?:
+    | 'downloading'
+    | 'queued'
+    | 'importing'
+    | 'manual-import'
+    | 'downloaded'
+    | 'wanted'
+    | 'unmonitored';
 };
 type Release = {
   token: string;
@@ -65,6 +73,22 @@ const formatSize = (size: number) =>
   `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
 
 const episodeStatus = {
+  downloading: {
+    label: 'Downloading',
+    className: 'border-sky-500/60 bg-sky-500/10 text-sky-200',
+  },
+  queued: {
+    label: 'Queued',
+    className: 'border-violet-500/60 bg-violet-500/10 text-violet-200',
+  },
+  importing: {
+    label: 'Importing',
+    className: 'border-emerald-500/60 bg-emerald-500/10 text-emerald-200',
+  },
+  'manual-import': {
+    label: 'Import required',
+    className: 'border-amber-500/60 bg-amber-500/10 text-amber-200',
+  },
   downloaded: {
     label: 'Downloaded',
     className: 'border-gray-600 bg-gray-800 text-gray-300',
@@ -77,6 +101,30 @@ const episodeStatus = {
     label: 'Not monitored',
     className: 'border-gray-700 bg-gray-900 text-gray-500',
   },
+};
+
+const episodeStatusOrder = {
+  downloading: 0,
+  importing: 1,
+  'manual-import': 2,
+  queued: 3,
+  wanted: 4,
+  unmonitored: 5,
+  downloaded: 6,
+};
+
+const slideOverSelectStyles: StylesConfig<SelectOption, false> = {
+  menuPortal: (base) => ({ ...base, zIndex: 60 }),
+  menu: (base) => ({
+    ...base,
+    backgroundColor: '#374151',
+    color: '#d1d5db',
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isFocused ? '#4b5563' : '#374151',
+    color: '#fff',
+  }),
 };
 
 const ServarrPanel = ({
@@ -94,6 +142,7 @@ const ServarrPanel = ({
   const [context, setContext] = useState<Context>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
+  const [grabbingToken, setGrabbingToken] = useState<string>();
   const [releases, setReleases] = useState<Release[]>([]);
   const [target, setTarget] = useState<'episode' | 'season'>('episode');
   const [episodeId, setEpisodeId] = useState<number>();
@@ -124,18 +173,20 @@ const ServarrPanel = ({
           label: `S${String(episode.seasonNumber).padStart(2, '0')}E${String(
             episode.episodeNumber
           ).padStart(2, '0')} — ${episode.title}`,
-          status: episode.hasFile
-            ? ('downloaded' as const)
-            : episode.monitored
-              ? ('wanted' as const)
-              : ('unmonitored' as const),
+          status:
+            episode.queueStatus ??
+            (episode.hasFile
+              ? ('downloaded' as const)
+              : episode.monitored
+                ? ('wanted' as const)
+                : ('unmonitored' as const)),
           seasonNumber: episode.seasonNumber,
           episodeNumber: episode.episodeNumber,
         }))
         .sort(
           (left, right) =>
-            Number(left.status === 'downloaded') -
-              Number(right.status === 'downloaded') ||
+            episodeStatusOrder[left.status ?? 'wanted'] -
+              episodeStatusOrder[right.status ?? 'wanted'] ||
             left.seasonNumber - right.seasonNumber ||
             left.episodeNumber - right.episodeNumber
         )
@@ -228,8 +279,10 @@ const ServarrPanel = ({
     }
   };
   const grab = async (release: Release) => {
+    setGrabbingToken(release.token);
+    setError(undefined);
     try {
-      await axios.post(`/api/v1/media/${mediaId}/servarr/releases/grab`, {
+      await axios.post(`/api/v1/media/${mediaId}/servarr/releases`, {
         is4k,
         token: release.token,
         acknowledgeRejections: release.rejected,
@@ -246,6 +299,8 @@ const ServarrPanel = ({
           ? err.response?.data?.message
           : 'Unable to grab release.'
       );
+    } finally {
+      setGrabbingToken(undefined);
     }
   };
   const loadImportSources = () => {
@@ -430,10 +485,14 @@ const ServarrPanel = ({
               classNamePrefix="react-select"
               isSearchable
               maxMenuHeight={250}
+              menuPortalTarget={
+                typeof document !== 'undefined' ? document.body : undefined
+              }
               menuPosition="fixed"
               menuShouldScrollIntoView={false}
               options={episodeOptions}
               placeholder="Choose an episode"
+              styles={slideOverSelectStyles}
               formatOptionLabel={(option) => {
                 const status = episodeStatus[option.status ?? 'wanted'];
                 return (
@@ -458,10 +517,14 @@ const ServarrPanel = ({
               className="react-select-container"
               classNamePrefix="react-select"
               isSearchable={false}
+              menuPortalTarget={
+                typeof document !== 'undefined' ? document.body : undefined
+              }
               menuPosition="fixed"
               menuShouldScrollIntoView={false}
               options={seasonOptions}
               placeholder="Choose a season"
+              styles={slideOverSelectStyles}
               value={seasonOptions.find(
                 (option) => option.value === seasonNumber
               )}
@@ -534,9 +597,14 @@ const ServarrPanel = ({
                 className="mt-2"
                 buttonSize="sm"
                 onClick={() => grab(release)}
-                disabled={!release.downloadAllowed && !release.rejected}
+                disabled={
+                  grabbingToken !== undefined ||
+                  (!release.downloadAllowed && !release.rejected)
+                }
               >
-                Grab{release.rejected ? ' anyway' : ''}
+                {grabbingToken === release.token
+                  ? 'Sending to Sonarr…'
+                  : `Grab${release.rejected ? ' anyway' : ''}`}
               </Button>
             </div>
           ))}

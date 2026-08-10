@@ -174,6 +174,17 @@ export function canGrabRelease(release: ServarrRelease) {
   );
 }
 
+export function episodeQueueStatus(item: QueueDetailsItem) {
+  const status = item.status?.toLowerCase();
+  if (status === 'completed' && item.trackedDownloadStatus === 'warning')
+    return 'manual-import' as const;
+  if (status === 'importing') return 'importing' as const;
+  if (status === 'downloading') return 'downloading' as const;
+  if (['queued', 'paused', 'delay'].includes(status ?? ''))
+    return 'queued' as const;
+  return undefined;
+}
+
 function importSourceFor(item: QueueDetailsItem): ImportSource {
   return {
     kind: 'queue',
@@ -262,11 +273,27 @@ mediaServarrRoutes.get(
           service: { type: context.type, name: context.serviceName },
           nativeUrl: context.nativeUrl,
         });
-      const series = await (context.client as SonarrAPI).getSeriesById(
-        context.externalId
-      );
-      const episodes = await (context.client as SonarrAPI).getEpisodes(
-        context.externalId
+      const sonarr = context.client as SonarrAPI;
+      const [series, episodes, queue] = await Promise.all([
+        sonarr.getSeriesById(context.externalId),
+        sonarr.getEpisodes(context.externalId),
+        sonarr.getSeriesQueue(context.externalId),
+      ]);
+      const queueStatusByEpisodeId = new Map(
+        queue
+          .map((item) =>
+            item.episode?.id
+              ? ([item.episode.id, episodeQueueStatus(item)] as const)
+              : undefined
+          )
+          .filter(
+            (
+              entry
+            ): entry is readonly [
+              number,
+              ReturnType<typeof episodeQueueStatus>,
+            ] => entry !== undefined
+          )
       );
       return res.json({
         mediaId: context.media.id,
@@ -276,9 +303,12 @@ mediaServarrRoutes.get(
         nativeUrl: context.nativeUrl,
         seasons: series.seasons.map((season) => ({
           ...season,
-          episodes: episodes.filter(
-            (episode) => episode.seasonNumber === season.seasonNumber
-          ),
+          episodes: episodes
+            .filter((episode) => episode.seasonNumber === season.seasonNumber)
+            .map((episode) => ({
+              ...episode,
+              queueStatus: queueStatusByEpisodeId.get(episode.id),
+            })),
         })),
       });
     } catch (error) {
@@ -369,7 +399,7 @@ mediaServarrRoutes.get(
 );
 
 mediaServarrRoutes.post(
-  '/:id/servarr/releases/grab',
+  '/:id/servarr/releases',
   protectedRoute,
   async (req, res, next) => {
     try {
