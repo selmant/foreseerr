@@ -1,6 +1,7 @@
 import logger from '@server/logger';
 import type { AxiosResponse } from 'axios';
 import ServarrBase from './base';
+import type { ManualImportCandidate, ServarrRelease } from './radarr';
 
 export interface SonarrSeason {
   seasonNumber: number;
@@ -515,6 +516,66 @@ class SonarrAPI extends ServarrBase<{
       return;
     }
     await this.runCommand('EpisodeSearch', { episodeIds });
+  }
+
+  public async getEpisodeReleases(
+    episodeId: number
+  ): Promise<ServarrRelease[]> {
+    const response = await this.axios.get<ServarrRelease[]>('/release', {
+      params: { episodeId },
+    });
+    return response.data;
+  }
+
+  public async getSeasonReleases(
+    seriesId: number,
+    seasonNumber: number
+  ): Promise<ServarrRelease[]> {
+    const response = await this.axios.get<ServarrRelease[]>('/release', {
+      params: { seriesId, seasonNumber },
+    });
+    return response.data;
+  }
+
+  public async grabRelease(
+    release: Pick<ServarrRelease, 'guid' | 'indexerId'>
+  ) {
+    await this.axios.post('/release', {
+      guid: release.guid,
+      indexerId: release.indexerId,
+    });
+  }
+
+  public async getSeriesQueueDetails(seriesId: number) {
+    const response = await this.axios.get('/queue/details', {
+      params: { seriesId },
+    });
+    return response.data as {
+      downloadId?: string;
+      outputPath?: string;
+      title: string;
+    }[];
+  }
+
+  public async getManualImportCandidates(params: {
+    seriesId: number;
+    folder?: string;
+    downloadId?: string;
+  }): Promise<ManualImportCandidate[]> {
+    const response = await this.axios.get<ManualImportCandidate[]>(
+      '/manualimport',
+      {
+        params: { ...params, filterExistingFiles: true },
+      }
+    );
+    return response.data;
+  }
+
+  public async manualImport(
+    files: ManualImportCandidate[],
+    importMode: 'move' | 'copy'
+  ) {
+    return this.runCommand('ManualImport', { files, importMode });
   }
 
   public async applyEpisodeSelection(

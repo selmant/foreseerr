@@ -142,3 +142,43 @@ describe('RadarrAPI getCalendar', () => {
     });
   });
 });
+
+describe('RadarrAPI interactive management', () => {
+  afterEach(() => mock.restoreAll());
+
+  it('searches releases for one movie and grabs the selected release', async () => {
+    const radarr = buildRadarr();
+    const get = mock.method(getAxios(radarr), 'get', async () => ({
+      data: [{ guid: 'release-guid', indexerId: 4, title: 'Example' }],
+    }));
+    const post = mock.method(getAxios(radarr), 'post', async () => ({
+      data: {},
+    }));
+
+    const releases = await radarr.getMovieReleases(55);
+    await radarr.grabRelease(releases[0]);
+
+    assert.deepStrictEqual(get.mock.calls[0].arguments, [
+      '/release',
+      { params: { movieId: 55 } },
+    ]);
+    assert.deepStrictEqual(post.mock.calls[0].arguments, [
+      '/release',
+      { guid: 'release-guid', indexerId: 4 },
+    ]);
+  });
+
+  it('uses the mapped movie when retrieving manual import candidates', async () => {
+    const radarr = buildRadarr();
+    const get = mock.method(getAxios(radarr), 'get', async () => ({
+      data: [],
+    }));
+
+    await radarr.getManualImportCandidates({ movieId: 12 });
+
+    assert.deepStrictEqual(get.mock.calls[0].arguments, [
+      '/manualimport',
+      { params: { movieId: 12, filterExistingFiles: true } },
+    ]);
+  });
+});

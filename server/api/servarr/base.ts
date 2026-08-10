@@ -48,7 +48,7 @@ export interface QualityProfile {
   name: string;
 }
 
-interface QueueItem {
+export interface QueueItem {
   size: number;
   title: string;
   sizeleft: number;
@@ -62,6 +62,17 @@ interface QueueItem {
   downloadClient: string;
   indexer: string;
   id: number;
+  outputPath?: string;
+}
+
+export interface ServarrCommand {
+  id: number;
+  name: string;
+  status: string;
+  message?: string;
+  queued?: string;
+  started?: string;
+  ended?: string;
 }
 
 export interface Tag {
@@ -236,17 +247,25 @@ class ServarrBase<QueueItemAppendT> extends ExternalAPI {
   protected async runCommand(
     commandName: string,
     options: Record<string, unknown>
-  ): Promise<void> {
+  ): Promise<ServarrCommand> {
     try {
-      await this.axios.post(`/command`, {
+      const response = await this.axios.post<ServarrCommand>(`/command`, {
         name: commandName,
         ...options,
       });
+      return response.data;
     } catch (e) {
       throw new Error(`[${this.apiName}] Failed to run command: ${e.message}`, {
         cause: e,
       });
     }
+  }
+
+  public async getCommand(commandId: number): Promise<ServarrCommand> {
+    const response = await this.axios.get<ServarrCommand>(
+      `/command/${commandId}`
+    );
+    return response.data;
   }
 }
 

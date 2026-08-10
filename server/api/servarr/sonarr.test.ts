@@ -205,3 +205,51 @@ describe('SonarrAPI getCalendar', () => {
     );
   });
 });
+
+describe('SonarrAPI interactive management', () => {
+  afterEach(() => mock.restoreAll());
+
+  it('searches a specific episode and season pack', async () => {
+    const sonarr = buildSonarr();
+    const get = mock.method(getAxios(sonarr), 'get', async () => ({
+      data: [],
+    }));
+
+    await sonarr.getEpisodeReleases(31);
+    await sonarr.getSeasonReleases(9, 2);
+
+    assert.deepStrictEqual(get.mock.calls[0].arguments, [
+      '/release',
+      { params: { episodeId: 31 } },
+    ]);
+    assert.deepStrictEqual(get.mock.calls[1].arguments, [
+      '/release',
+      { params: { seriesId: 9, seasonNumber: 2 } },
+    ]);
+  });
+
+  it('passes queue download context through to manual import discovery', async () => {
+    const sonarr = buildSonarr();
+    const get = mock.method(getAxios(sonarr), 'get', async () => ({
+      data: [],
+    }));
+
+    await sonarr.getManualImportCandidates({
+      seriesId: 9,
+      folder: '/downloads/example',
+      downloadId: 'download-id',
+    });
+
+    assert.deepStrictEqual(get.mock.calls[0].arguments, [
+      '/manualimport',
+      {
+        params: {
+          seriesId: 9,
+          folder: '/downloads/example',
+          downloadId: 'download-id',
+          filterExistingFiles: true,
+        },
+      },
+    ]);
+  });
+});

@@ -6,6 +6,7 @@ import SlideOver from '@app/components/Common/SlideOver';
 import Tooltip from '@app/components/Common/Tooltip';
 import DownloadBlock from '@app/components/DownloadBlock';
 import IssueBlock from '@app/components/IssueBlock';
+import ServarrManagement from '@app/components/ManageSlideOver/ServarrManagement';
 import RequestBlock from '@app/components/RequestBlock';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
@@ -257,6 +258,26 @@ const ManageSlideOver = ({
       subText={isMovie(data) ? data.title : data.name}
     >
       <div className="space-y-6">
+        {hasPermission(Permission.MANAGE_REQUESTS) &&
+          data.mediaInfo &&
+          ((data.mediaInfo.serviceId != null &&
+            data.mediaInfo.externalServiceId != null) ||
+            (data.mediaInfo.serviceId4k != null &&
+              data.mediaInfo.externalServiceId4k != null)) && (
+            <ServarrManagement
+              mediaId={data.mediaInfo.id}
+              mediaType={mediaType}
+              hasStandardMapping={
+                data.mediaInfo.serviceId != null &&
+                data.mediaInfo.externalServiceId != null
+              }
+              has4kMapping={
+                data.mediaInfo.serviceId4k != null &&
+                data.mediaInfo.externalServiceId4k != null
+              }
+              onChanged={revalidate}
+            />
+          )}
         {((data?.mediaInfo?.downloadStatus ?? []).length > 0 ||
           (data?.mediaInfo?.downloadStatus4k ?? []).length > 0) && (
           <div>

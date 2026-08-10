@@ -2,6 +2,46 @@ import logger from '@server/logger';
 import type { AxiosResponse } from 'axios';
 import ServarrBase from './base';
 
+export interface ServarrRelease {
+  guid: string;
+  indexerId: number;
+  title: string;
+  size: number;
+  ageHours: number;
+  publishDate: string;
+  indexer: string;
+  protocol: string;
+  seeders?: number;
+  leechers?: number;
+  quality?: { quality?: { name?: string; resolution?: number } };
+  customFormats?: { name: string }[];
+  customFormatScore?: number;
+  releaseGroup?: string;
+  approved: boolean;
+  rejected: boolean;
+  temporarilyRejected: boolean;
+  rejections?: string[];
+  downloadAllowed: boolean;
+}
+
+export interface ManualImportCandidate {
+  id: number;
+  path: string;
+  relativePath?: string;
+  folderName?: string;
+  name: string;
+  size: number;
+  downloadId?: string;
+  quality?: unknown;
+  languages?: unknown[];
+  releaseGroup?: string;
+  indexerFlags?: unknown;
+  customFormats?: { name: string }[];
+  customFormatScore?: number;
+  rejections?: { reason: string; type?: string }[];
+  movie?: { id: number; title: string };
+}
+
 export interface RadarrMovieOptions {
   title: string;
   qualityProfileId: number;
@@ -300,6 +340,54 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
         }
       );
     }
+  }
+
+  public async getMovieReleases(movieId: number): Promise<ServarrRelease[]> {
+    const response = await this.axios.get<ServarrRelease[]>('/release', {
+      params: { movieId },
+    });
+    return response.data;
+  }
+
+  public async grabRelease(
+    release: Pick<ServarrRelease, 'guid' | 'indexerId'>
+  ) {
+    await this.axios.post('/release', {
+      guid: release.guid,
+      indexerId: release.indexerId,
+    });
+  }
+
+  public async getMovieQueueDetails(movieId: number) {
+    const response = await this.axios.get('/queue/details', {
+      params: { movieId },
+    });
+    return response.data as {
+      downloadId?: string;
+      outputPath?: string;
+      title: string;
+    }[];
+  }
+
+  public async getManualImportCandidates(params: {
+    movieId: number;
+    folder?: string;
+    downloadId?: string;
+  }): Promise<ManualImportCandidate[]> {
+    const response = await this.axios.get<ManualImportCandidate[]>(
+      '/manualimport',
+      {
+        params: { ...params, filterExistingFiles: true },
+      }
+    );
+    return response.data;
+  }
+
+  public async manualImport(
+    files: ManualImportCandidate[],
+    importMode: 'move' | 'copy'
+  ) {
+    return this.runCommand('ManualImport', { files, importMode });
   }
   public removeMovie = async (tmdbId: number): Promise<void> => {
     const { id, title } = await this.getMovieByTmdbId(tmdbId);

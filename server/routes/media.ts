@@ -18,8 +18,11 @@ import { isAuthenticated } from '@server/middleware/auth';
 import { Router } from 'express';
 import type { FindOneOptions } from 'typeorm';
 import { EntityNotFoundError, In } from 'typeorm';
+import mediaServarrRoutes from './mediaServarr';
 
 const mediaRoutes = Router();
+
+mediaRoutes.use('/', mediaServarrRoutes);
 
 mediaRoutes.get('/', async (req, res, next) => {
   const mediaRepository = getRepository(Media);
