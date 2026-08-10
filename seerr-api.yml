@@ -9368,7 +9368,7 @@ paths:
   /media/{mediaId}/servarr/imports/sources:
     get:
       summary: List safe Servarr manual import sources
-      description: Lists relevant queue downloads and the mapped media folder without exposing Arr filesystem paths. Requires `MANAGE_REQUESTS`.
+      description: Lists only completed queue downloads that Sonarr or Radarr has marked with an import warning, without exposing Arr filesystem paths. Requires `MANAGE_REQUESTS`.
       tags:
         - media
       parameters:
@@ -9383,13 +9383,13 @@ paths:
             type: boolean
       responses:
         '200':
-          description: Opaque manual import source tokens
+          description: Opaque tokens for downloads currently requiring manual import; an empty list means no intervention is required.
         '401':
           description: Unauthorized
   /media/{mediaId}/servarr/imports/scan:
     post:
       summary: Scan a safe Servarr manual import source
-      description: Asks the mapped Sonarr or Radarr instance to inspect a previously listed source. Requires `MANAGE_REQUESTS`.
+      description: Asks the mapped Sonarr or Radarr instance to inspect a previously listed warning-state download. Returns 409 if Arr no longer requires manual import. Requires `MANAGE_REQUESTS`.
       tags:
         - media
       parameters:
@@ -9416,11 +9416,11 @@ paths:
         '401':
           description: Unauthorized
         '409':
-          description: Expired or invalid source token
+          description: Expired, invalid, or no-longer-actionable source token
   /media/{mediaId}/servarr/imports/reprocess:
     post:
       summary: Reprocess a Sonarr manual import candidate
-      description: Re-evaluates a candidate using Sonarr after selecting the intended episodes. Requires `MANAGE_REQUESTS`.
+      description: Re-evaluates a candidate using Sonarr after selecting the intended episodes. The source download must still be marked for manual import. Requires `MANAGE_REQUESTS`.
       tags:
         - media
       parameters:
@@ -9451,11 +9451,11 @@ paths:
         '401':
           description: Unauthorized
         '409':
-          description: Expired or invalid candidate token
+          description: Expired, invalid, or no-longer-actionable candidate token
   /media/{mediaId}/servarr/imports:
     get:
       summary: List Servarr manual import candidates
-      description: Lists folder and queue candidates for the mapped media. Requires `MANAGE_REQUESTS`.
+      description: Lists candidates only from queue downloads Arr has marked for manual import. Requires `MANAGE_REQUESTS`.
       tags:
         - media
       parameters:

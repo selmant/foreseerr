@@ -2,7 +2,7 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import useToasts from '@app/hooks/useToasts';
 import axios from 'axios';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type Episode = {
   id: number;
@@ -19,7 +19,7 @@ type Context = {
 };
 type ImportSource = {
   token: string;
-  kind: 'queue' | 'mediaFolder';
+  kind: 'queue';
   label: string;
 };
 type Rejection = { reason: string; type?: string };
@@ -78,6 +78,10 @@ const ServarrPanel = ({
   const [seasonNumber, setSeasonNumber] = useState<number>();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sources, setSources] = useState<ImportSource[]>([]);
+  const [importWorkflowOpen, setImportWorkflowOpen] = useState(false);
+  const [importAvailabilityError, setImportAvailabilityError] = useState<
+    string | undefined
+  >();
   const [selectedSource, setSelectedSource] = useState<string>();
   const [importSourceLabel, setImportSourceLabel] = useState<string>();
   const [selected, setSelected] = useState<string[]>([]);
@@ -90,6 +94,29 @@ const ServarrPanel = ({
     () => context?.seasons?.flatMap((season) => season.episodes) ?? [],
     [context]
   );
+
+  const refreshImportSources = useCallback(async () => {
+    try {
+      const response = await axios.get<{
+        sources: ImportSource[];
+      }>(`/api/v1/media/${mediaId}/servarr/imports/sources?is4k=${is4k}`);
+      setSources(response.data.sources);
+      setSelectedSource((current) =>
+        response.data.sources.some((source) => source.token === current)
+          ? current
+          : response.data.sources[0]?.token
+      );
+      setImportAvailabilityError(undefined);
+    } catch (err) {
+      setSources([]);
+      setImportAvailabilityError(
+        axios.isAxiosError(err)
+          ? (err.response?.data?.message ??
+              'Unable to check whether a download needs manual import.')
+          : 'Unable to check whether a download needs manual import.'
+      );
+    }
+  }, [is4k, mediaId]);
 
   useEffect(() => {
     setLoading(true);
@@ -109,7 +136,8 @@ const ServarrPanel = ({
         )
       )
       .finally(() => setLoading(false));
-  }, [mediaId, is4k]);
+    void refreshImportSources();
+  }, [is4k, mediaId, refreshImportSources]);
 
   const search = async () => {
     setLoading(true);
@@ -152,6 +180,7 @@ const ServarrPanel = ({
         appearance: 'success',
         autoDismiss: true,
       });
+      void refreshImportSources();
       onChanged();
     } catch (err) {
       setError(
@@ -161,27 +190,12 @@ const ServarrPanel = ({
       );
     }
   };
-  const loadImportSources = async () => {
-    setLoading(true);
+  const loadImportSources = () => {
     setError(undefined);
-    try {
-      const response = await axios.get<{
-        sources: ImportSource[];
-        nativeUrl?: string;
-      }>(`/api/v1/media/${mediaId}/servarr/imports/sources?is4k=${is4k}`);
-      setSources(response.data.sources);
-      setSelectedSource(response.data.sources[0]?.token);
-      setCandidates([]);
-      setSelected([]);
-    } catch (err) {
-      setError(
-        axios.isAxiosError(err)
-          ? err.response?.data?.message
-          : 'Unable to inspect import candidates.'
-      );
-    } finally {
-      setLoading(false);
-    }
+    setCandidates([]);
+    setSelected([]);
+    setImportSourceLabel(undefined);
+    setImportWorkflowOpen(true);
   };
   const scanImportSource = async () => {
     if (!selectedSource) return;
@@ -200,11 +214,14 @@ const ServarrPanel = ({
       setSelected([]);
       setEpisodeMappings({});
     } catch (err) {
-      setError(
-        axios.isAxiosError(err)
-          ? err.response?.data?.message
-          : 'Unable to scan this import source.'
-      );
+      const message = axios.isAxiosError(err)
+        ? err.response?.data?.message
+        : 'Unable to scan this import source.';
+      setError(message);
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        setImportWorkflowOpen(false);
+        void refreshImportSources();
+      }
     } finally {
       setLoading(false);
     }
@@ -285,6 +302,9 @@ const ServarrPanel = ({
       });
       setSelected([]);
       setImportStatus(response.data.status ?? 'queued');
+      setCandidates([]);
+      setImportWorkflowOpen(false);
+      void refreshImportSources();
       onChanged();
       const poll = async () => {
         try {
@@ -298,6 +318,7 @@ const ServarrPanel = ({
                 appearance: 'success',
                 autoDismiss: true,
               });
+              void refreshImportSources();
               onChanged();
             } else setError(status.data.message ?? 'Manual import failed.');
             return;
@@ -367,13 +388,16 @@ const ServarrPanel = ({
         <Button buttonType="primary" onClick={search} disabled={loading}>
           Search Releases
         </Button>
-        <Button
-          buttonType="default"
-          onClick={loadImportSources}
-          disabled={loading}
-        >
-          Manual Import
-        </Button>
+        {sources.length > 0 && (
+          <Button
+            buttonType="default"
+            className="border-yellow-700 text-yellow-200 hover:bg-yellow-950/40"
+            onClick={loadImportSources}
+            disabled={loading}
+          >
+            Manual Import ({sources.length})
+          </Button>
+        )}
         {context.nativeUrl && (
           <a
             className="text-primary-400 hover:text-primary-300 self-center text-sm"
@@ -385,6 +409,18 @@ const ServarrPanel = ({
           </a>
         )}
       </div>
+      {importAvailabilityError && (
+        <div className="flex items-center gap-2 text-xs text-yellow-300">
+          <span>{importAvailabilityError}</span>
+          <button
+            className="underline hover:text-yellow-100"
+            type="button"
+            onClick={() => void refreshImportSources()}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {releases.length > 0 && (
         <div className="space-y-2">
           {releases.map((release) => (
@@ -425,7 +461,7 @@ const ServarrPanel = ({
           Manual import: {importStatus}
         </div>
       )}
-      {sources.length > 0 && !candidates.length && (
+      {importWorkflowOpen && sources.length > 0 && !candidates.length && (
         <div className="space-y-2 rounded border border-gray-700 bg-gray-800/30 p-3 text-sm">
           <div className="font-medium text-white">
             Choose an Arr import source
@@ -441,8 +477,7 @@ const ServarrPanel = ({
           >
             {sources.map((source) => (
               <option key={source.token} value={source.token}>
-                {source.kind === 'queue' ? 'Download: ' : ''}
-                {source.label}
+                Download: {source.label}
               </option>
             ))}
           </select>
@@ -472,6 +507,7 @@ const ServarrPanel = ({
               onClick={() => {
                 setCandidates([]);
                 setImportSourceLabel(undefined);
+                setImportWorkflowOpen(true);
               }}
             >
               Change source

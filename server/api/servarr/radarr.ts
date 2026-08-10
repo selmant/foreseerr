@@ -1,6 +1,6 @@
 import logger from '@server/logger';
 import type { AxiosResponse } from 'axios';
-import ServarrBase from './base';
+import ServarrBase, { type QueueDetailsItem } from './base';
 
 export interface ServarrRelease {
   guid: string;
@@ -371,15 +371,16 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
     });
   }
 
-  public async getMovieQueueDetails(movieId: number) {
-    const response = await this.axios.get('/queue/details', {
-      params: { movieId },
-    });
-    return response.data as {
-      downloadId?: string;
-      outputPath?: string;
-      title: string;
-    }[];
+  public async getMovieQueueDetails(
+    movieId: number
+  ): Promise<QueueDetailsItem[]> {
+    const response = await this.axios.get<QueueDetailsItem[]>(
+      '/queue/details',
+      {
+        params: { movieId },
+      }
+    );
+    return response.data;
   }
 
   public async getManualImportCandidates(params: {

@@ -66,4 +66,15 @@ describe('OpenAPI library contract', () => {
     };
     assert.ok(shelf.properties.id.enum.includes('recent-episodes'));
   });
+
+  it('documents Arr-only manual import eligibility', () => {
+    const sources = apiDocs.paths['/media/{mediaId}/servarr/imports/sources']
+      .get as { description: string };
+    const imports = apiDocs.paths['/media/{mediaId}/servarr/imports'].get as {
+      description: string;
+    };
+    assert.match(sources.description, /completed queue downloads/i);
+    assert.match(sources.description, /import warning/i);
+    assert.match(imports.description, /marked for manual import/i);
+  });
 });

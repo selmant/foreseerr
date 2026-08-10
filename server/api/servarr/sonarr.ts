@@ -1,6 +1,6 @@
 import logger from '@server/logger';
 import type { AxiosResponse } from 'axios';
-import ServarrBase from './base';
+import ServarrBase, { type QueueDetailsItem } from './base';
 import type { ManualImportCandidate, ServarrRelease } from './radarr';
 
 export interface SonarrSeason {
@@ -546,15 +546,16 @@ class SonarrAPI extends ServarrBase<{
     });
   }
 
-  public async getSeriesQueueDetails(seriesId: number) {
-    const response = await this.axios.get('/queue/details', {
-      params: { seriesId },
-    });
-    return response.data as {
-      downloadId?: string;
-      outputPath?: string;
-      title: string;
-    }[];
+  public async getSeriesQueueDetails(
+    seriesId: number
+  ): Promise<QueueDetailsItem[]> {
+    const response = await this.axios.get<QueueDetailsItem[]>(
+      '/queue/details',
+      {
+        params: { seriesId },
+      }
+    );
+    return response.data;
   }
 
   public async getManualImportCandidates(params: {

@@ -65,6 +65,17 @@ export interface QueueItem {
   outputPath?: string;
 }
 
+/** The queue fields used to decide whether Arr requires interactive import. */
+export interface QueueDetailsItem {
+  title: string;
+  downloadId?: string;
+  outputPath?: string;
+  status?: string;
+  trackedDownloadStatus?: 'ok' | 'warning' | 'error';
+  trackedDownloadState?: string;
+  statusMessages?: { title: string; messages: string[] }[];
+}
+
 export interface ServarrCommand {
   id: number;
   name: string;
