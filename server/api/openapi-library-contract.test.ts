@@ -21,6 +21,10 @@ describe('OpenAPI library contract', () => {
     '/library/search': ['get'],
     '/library/series/{jellyfinSeriesId}': ['get'],
     '/library/series/{jellyfinSeriesId}/seasons/{seasonId}/episodes': ['get'],
+    '/media/{mediaId}/servarr/context': ['get'],
+    '/media/{mediaId}/servarr/releases': ['get', 'post'],
+    '/media/{mediaId}/servarr/imports': ['get', 'post'],
+    '/media/{mediaId}/servarr/commands/{token}': ['get'],
   };
 
   for (const [path, methods] of Object.entries(requiredPaths)) {

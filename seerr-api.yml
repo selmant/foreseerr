@@ -9276,6 +9276,193 @@ paths:
       responses:
         '204':
           description: Successfully removed media item
+  /media/{mediaId}/servarr/context:
+    get:
+      summary: Get mapped Servarr management context
+      description: Returns the mapped Radarr movie or Sonarr seasons and episodes. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: is4k
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Servarr management context
+        '401':
+          description: Unauthorized
+        '409':
+          description: Media is not mapped to a configured Servarr instance
+  /media/{mediaId}/servarr/releases:
+    get:
+      summary: Search mapped Servarr releases
+      description: Searches a mapped Radarr movie or Sonarr episode/season. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: is4k
+          schema:
+            type: boolean
+        - in: query
+          name: target
+          schema:
+            type: string
+            enum: [episode, season]
+        - in: query
+          name: episodeId
+          schema:
+            type: integer
+        - in: query
+          name: seasonNumber
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Release candidates with short-lived server-side tokens
+        '401':
+          description: Unauthorized
+    post:
+      summary: Grab a Servarr release
+      description: Grabs a previously returned release token. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                is4k:
+                  type: boolean
+                token:
+                  type: string
+                acknowledgeRejections:
+                  type: boolean
+      responses:
+        '200':
+          description: Release accepted by Servarr
+        '401':
+          description: Unauthorized
+        '409':
+          description: Invalid, expired, or unacknowledged release token
+  /media/{mediaId}/servarr/imports:
+    get:
+      summary: List Servarr manual import candidates
+      description: Lists folder and queue candidates for the mapped media. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: is4k
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Manual import candidates with short-lived server-side tokens
+        '401':
+          description: Unauthorized
+    post:
+      summary: Submit mapped Servarr manual import
+      description: Imports previously returned candidates. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateTokens, importMode]
+              properties:
+                is4k:
+                  type: boolean
+                candidateTokens:
+                  type: array
+                  items:
+                    type: string
+                importMode:
+                  type: string
+                  enum: [move, copy]
+                acknowledgeRejections:
+                  type: boolean
+                episodeMappings:
+                  type: array
+                  items:
+                    type: object
+                    required: [candidateToken, episodeIds]
+                    properties:
+                      candidateToken:
+                        type: string
+                      episodeIds:
+                        type: array
+                        items:
+                          type: integer
+      responses:
+        '200':
+          description: Manual import command accepted
+        '401':
+          description: Unauthorized
+        '409':
+          description: Invalid, expired, or unacknowledged import token
+  /media/{mediaId}/servarr/commands/{token}:
+    get:
+      summary: Get Servarr manual import command status
+      description: Returns the status of a previously submitted manual import command. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: is4k
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Command status
+        '401':
+          description: Unauthorized
+        '409':
+          description: Invalid or expired command token
   /media/{mediaId}/{status}:
     post:
       summary: Update media status
