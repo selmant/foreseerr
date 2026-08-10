@@ -2914,7 +2914,7 @@ paths:
                   pattern: '^[a-f0-9]{64}$'
                 protocolVersion:
                   type: integer
-                  enum: [1]
+                  enum: [1, 2]
       responses:
         '201':
           description: Single-use ticket issued
@@ -2959,7 +2959,7 @@ paths:
                   pattern: '^[A-Za-z0-9_-]{43}$'
                 protocolVersion:
                   type: integer
-                  enum: [1]
+                  enum: [1, 2]
       responses:
         '200':
           description: Native Jellyfin session bootstrap
