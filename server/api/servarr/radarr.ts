@@ -33,13 +33,26 @@ export interface ManualImportCandidate {
   size: number;
   downloadId?: string;
   quality?: unknown;
-  languages?: unknown[];
+  languages?: { id?: number; name?: string }[];
   releaseGroup?: string;
-  indexerFlags?: unknown;
+  indexerFlags?: number;
   customFormats?: { name: string }[];
   customFormatScore?: number;
   rejections?: { reason: string; type?: string }[];
-  movie?: { id: number; title: string };
+  movie?: { id: number; title: string; titleSlug?: string };
+  movieId?: number;
+  series?: { id: number; title: string; titleSlug?: string };
+  seriesId?: number;
+  seasonNumber?: number;
+  episodes?: {
+    id: number;
+    seasonNumber: number;
+    episodeNumber: number;
+    title: string;
+    hasFile?: boolean;
+  }[];
+  episodeIds?: number[];
+  releaseType?: string;
 }
 
 export interface RadarrMovieOptions {
@@ -379,6 +392,16 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
       {
         params: { ...params, filterExistingFiles: true },
       }
+    );
+    return response.data;
+  }
+
+  public async reprocessManualImportCandidates(
+    files: ManualImportCandidate[]
+  ): Promise<ManualImportCandidate[]> {
+    const response = await this.axios.post<ManualImportCandidate[]>(
+      '/manualimport',
+      files
     );
     return response.data;
   }

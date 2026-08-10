@@ -23,17 +23,38 @@ type Context = {
   externalId: number;
   client: RadarrAPI | SonarrAPI;
   serviceName: string;
+  nativeUrl?: string;
 };
+type ImportSource =
+  | {
+      kind: 'queue';
+      label: string;
+      folder: string;
+      downloadId: string;
+    }
+  | { kind: 'mediaFolder'; label: string };
 type Token = {
   userId: number;
   mediaId: number;
   is4k: boolean;
   type: Context['type'];
   externalId: number;
-  value: ServarrRelease | ManualImportCandidate | number;
+  kind: 'release' | 'import-source' | 'import-candidate' | 'command';
+  value: ServarrRelease | ManualImportCandidate | ImportSource | number;
 };
 
 const parseIs4k = (value: unknown) => value === 'true' || value === true;
+const safeExternalUrl = (value?: string) => {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol)
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
 const tokenFor = (record: Token, ttl = 900) => {
   const token = randomUUID();
   tokens.set(token, record, ttl);
@@ -69,6 +90,7 @@ async function resolveContext(
       type: 'radarr',
       externalId,
       serviceName: service.name,
+      nativeUrl: safeExternalUrl(service.externalUrl),
       client: new RadarrAPI({
         apiKey: service.apiKey,
         url: RadarrAPI.buildUrl(service, '/api/v3'),
@@ -87,6 +109,7 @@ async function resolveContext(
     type: 'sonarr',
     externalId,
     serviceName: service.name,
+    nativeUrl: safeExternalUrl(service.externalUrl),
     client: new SonarrAPI({
       apiKey: service.apiKey,
       url: SonarrAPI.buildUrl(service, '/api/v3'),
@@ -94,7 +117,12 @@ async function resolveContext(
   };
 }
 
-function getToken(token: string, context: Context, userId: number): Token {
+function getToken(
+  token: string,
+  context: Context,
+  userId: number,
+  kind?: Token['kind']
+): Token {
   const record = tokens.get<Token>(token);
   if (
     !record ||
@@ -102,7 +130,8 @@ function getToken(token: string, context: Context, userId: number): Token {
     record.mediaId !== context.media.id ||
     record.is4k !== context.is4k ||
     record.type !== context.type ||
-    record.externalId !== context.externalId
+    record.externalId !== context.externalId ||
+    (kind && record.kind !== kind)
   ) {
     throw Object.assign(
       new Error('This operation has expired. Refresh and try again.'),
@@ -113,6 +142,57 @@ function getToken(token: string, context: Context, userId: number): Token {
 }
 
 const protectedRoute = isAuthenticated(Permission.MANAGE_REQUESTS);
+
+function isCompleteImportCandidate(
+  candidate: ManualImportCandidate,
+  type: Context['type']
+) {
+  return type === 'radarr'
+    ? !!candidate.movie && !!candidate.quality && !!candidate.languages?.length
+    : !!candidate.series &&
+        candidate.seasonNumber != null &&
+        !!candidate.episodes?.length &&
+        !!candidate.quality &&
+        !!candidate.languages?.length;
+}
+
+function candidateResponse(
+  candidate: ManualImportCandidate,
+  context: Context,
+  userId: number,
+  source?: string
+) {
+  const episodes = candidate.episodes ?? [];
+  const complete = isCompleteImportCandidate(candidate, context.type);
+  return {
+    token: tokenFor({
+      userId,
+      mediaId: context.media.id,
+      is4k: context.is4k,
+      type: context.type,
+      externalId: context.externalId,
+      kind: 'import-candidate',
+      value: candidate,
+    }),
+    source,
+    name: candidate.name,
+    relativePath: candidate.relativePath,
+    folderName: candidate.folderName,
+    size: candidate.size,
+    quality: (candidate.quality as { quality?: { name?: string } })?.quality
+      ?.name,
+    languages:
+      candidate.languages?.map((language) => language.name).filter(Boolean) ??
+      [],
+    releaseGroup: candidate.releaseGroup,
+    customFormats: candidate.customFormats?.map((format) => format.name) ?? [],
+    customFormatScore: candidate.customFormatScore,
+    rejections: candidate.rejections ?? [],
+    seasonNumber: candidate.seasonNumber,
+    episodes,
+    complete,
+  };
+}
 
 mediaServarrRoutes.get(
   '/:id/servarr/context',
@@ -129,6 +209,7 @@ mediaServarrRoutes.get(
           mediaType: 'movie',
           is4k: context.is4k,
           service: { type: context.type, name: context.serviceName },
+          nativeUrl: context.nativeUrl,
         });
       const series = await (context.client as SonarrAPI).getSeriesById(
         context.externalId
@@ -141,6 +222,7 @@ mediaServarrRoutes.get(
         mediaType: 'tv',
         is4k: context.is4k,
         service: { type: context.type, name: context.serviceName },
+        nativeUrl: context.nativeUrl,
         seasons: series.seasons.map((season) => ({
           ...season,
           episodes: episodes.filter(
@@ -209,6 +291,7 @@ mediaServarrRoutes.get(
               is4k: context.is4k,
               type: context.type,
               externalId: context.externalId,
+              kind: 'release',
               value: release,
             },
             1500
@@ -243,7 +326,7 @@ mediaServarrRoutes.post(
         Number(req.params.id),
         !!req.body.is4k
       );
-      const record = getToken(req.body.token, context, req.user!.id);
+      const record = getToken(req.body.token, context, req.user!.id, 'release');
       const release = record.value as ServarrRelease;
       if (!release.downloadAllowed)
         throw Object.assign(
@@ -263,6 +346,190 @@ mediaServarrRoutes.post(
       await context.client.grabRelease(release);
       tokens.del(req.body.token);
       return res.json({ accepted: true });
+    } catch (error) {
+      next({
+        status: (error as { status?: number }).status ?? 502,
+        message: (error as Error).message,
+      });
+    }
+  }
+);
+
+mediaServarrRoutes.get(
+  '/:id/servarr/imports/sources',
+  protectedRoute,
+  async (req, res, next) => {
+    try {
+      const context = await resolveContext(
+        Number(req.params.id),
+        parseIs4k(req.query.is4k)
+      );
+      const queue =
+        context.type === 'radarr'
+          ? await (context.client as RadarrAPI).getMovieQueueDetails(
+              context.externalId
+            )
+          : await (context.client as SonarrAPI).getSeriesQueueDetails(
+              context.externalId
+            );
+      const sources: ImportSource[] = [
+        ...queue
+          .filter((item) => item.downloadId && item.outputPath)
+          .slice(0, 20)
+          .map((item) => ({
+            kind: 'queue' as const,
+            label: item.title,
+            folder: item.outputPath!,
+            downloadId: item.downloadId!,
+          })),
+        {
+          kind: 'mediaFolder',
+          label:
+            context.type === 'radarr'
+              ? 'Current movie folder'
+              : 'Current series folder',
+        },
+      ];
+      return res.json({
+        nativeUrl: context.nativeUrl,
+        sources: sources.map((source) => ({
+          token: tokenFor({
+            userId: req.user!.id,
+            mediaId: context.media.id,
+            is4k: context.is4k,
+            type: context.type,
+            externalId: context.externalId,
+            kind: 'import-source',
+            value: source,
+          }),
+          kind: source.kind,
+          label: source.label,
+        })),
+      });
+    } catch (error) {
+      next({
+        status: (error as { status?: number }).status ?? 502,
+        message: (error as Error).message,
+      });
+    }
+  }
+);
+
+mediaServarrRoutes.post(
+  '/:id/servarr/imports/scan',
+  protectedRoute,
+  async (req, res, next) => {
+    try {
+      if (
+        typeof req.body.sourceToken !== 'string' ||
+        req.body.sourceToken.length > 128
+      )
+        throw Object.assign(new Error('Choose an import source.'), {
+          status: 400,
+        });
+      const context = await resolveContext(
+        Number(req.params.id),
+        parseIs4k(req.body.is4k)
+      );
+      const source = getToken(
+        req.body.sourceToken,
+        context,
+        req.user!.id,
+        'import-source'
+      ).value as ImportSource;
+      const candidates =
+        context.type === 'radarr'
+          ? await (context.client as RadarrAPI).getManualImportCandidates(
+              source.kind === 'queue'
+                ? {
+                    movieId: context.externalId,
+                    folder: source.folder,
+                    downloadId: source.downloadId,
+                  }
+                : { movieId: context.externalId }
+            )
+          : await (context.client as SonarrAPI).getManualImportCandidates(
+              source.kind === 'queue'
+                ? {
+                    seriesId: context.externalId,
+                    folder: source.folder,
+                    downloadId: source.downloadId,
+                  }
+                : { seriesId: context.externalId }
+            );
+      return res.json({
+        source: source.label,
+        candidates: candidates.map((candidate) =>
+          candidateResponse(candidate, context, req.user!.id, source.label)
+        ),
+      });
+    } catch (error) {
+      next({
+        status: (error as { status?: number }).status ?? 502,
+        message: (error as Error).message,
+      });
+    }
+  }
+);
+
+mediaServarrRoutes.post(
+  '/:id/servarr/imports/reprocess',
+  protectedRoute,
+  async (req, res, next) => {
+    try {
+      if (
+        typeof req.body.candidateToken !== 'string' ||
+        req.body.candidateToken.length > 128 ||
+        !Array.isArray(req.body.episodeIds) ||
+        !req.body.episodeIds.length ||
+        req.body.episodeIds.length > 100 ||
+        req.body.episodeIds.some((id: unknown) => !Number.isInteger(id))
+      )
+        throw Object.assign(new Error('Choose valid episodes to rematch.'), {
+          status: 400,
+        });
+      const context = await resolveContext(
+        Number(req.params.id),
+        parseIs4k(req.body.is4k)
+      );
+      if (context.type !== 'sonarr')
+        throw Object.assign(
+          new Error('Episode rematching is only available for Sonarr.'),
+          { status: 400 }
+        );
+      const candidate = getToken(
+        req.body.candidateToken,
+        context,
+        req.user!.id,
+        'import-candidate'
+      ).value as ManualImportCandidate;
+      const validEpisodes = new Set(
+        (
+          await (context.client as SonarrAPI).getEpisodes(context.externalId)
+        ).map((episode) => episode.id)
+      );
+      const episodeIds = [...new Set(req.body.episodeIds as number[])];
+      if (episodeIds.some((id) => !validEpisodes.has(id)))
+        throw Object.assign(
+          new Error('Every selected episode must belong to this series.'),
+          { status: 400 }
+        );
+      const [reprocessed] = await (
+        context.client as SonarrAPI
+      ).reprocessManualImportCandidates([
+        {
+          ...candidate,
+          seriesId: context.externalId,
+          episodeIds,
+        },
+      ]);
+      if (!reprocessed)
+        throw Object.assign(
+          new Error('Sonarr did not return a rematched import candidate.'),
+          { status: 502 }
+        );
+      tokens.del(req.body.candidateToken);
+      return res.json(candidateResponse(reprocessed, context, req.user!.id));
     } catch (error) {
       next({
         status: (error as { status?: number }).status ?? 502,
@@ -342,6 +609,7 @@ mediaServarrRoutes.get(
               is4k: context.is4k,
               type: context.type,
               externalId: context.externalId,
+              kind: 'import-candidate',
               value: candidate,
             }),
             source,
@@ -382,15 +650,32 @@ mediaServarrRoutes.post(
       const selected = Array.isArray(req.body.candidateTokens)
         ? req.body.candidateTokens
         : [];
-      if (!selected.length || selected.length > 100)
+      if (
+        !selected.length ||
+        selected.length > 100 ||
+        selected.some(
+          (token: unknown) =>
+            typeof token !== 'string' ||
+            token.length === 0 ||
+            token.length > 128
+        )
+      )
         throw Object.assign(
           new Error('Select between one and 100 files to import.'),
           { status: 400 }
         );
       const files: ManualImportCandidate[] = selected.map(
         (token: string) =>
-          getToken(token, context, req.user!.id).value as ManualImportCandidate
+          getToken(token, context, req.user!.id, 'import-candidate')
+            .value as ManualImportCandidate
       );
+      if (files.some((file) => !isCompleteImportCandidate(file, context.type)))
+        throw Object.assign(
+          new Error(
+            'One or more files need additional Arr metadata before importing.'
+          ),
+          { status: 409 }
+        );
       if (
         files.some((file) => file.rejections?.length) &&
         !req.body.acknowledgeRejections
@@ -449,6 +734,7 @@ mediaServarrRoutes.post(
             is4k: context.is4k,
             type: context.type,
             externalId: context.externalId,
+            kind: 'command',
             value: command.id,
           },
           3600
@@ -473,8 +759,12 @@ mediaServarrRoutes.get(
         Number(req.params.id),
         parseIs4k(req.query.is4k)
       );
-      const commandId = getToken(req.params.token, context, req.user!.id)
-        .value as number;
+      const commandId = getToken(
+        req.params.token,
+        context,
+        req.user!.id,
+        'command'
+      ).value as number;
       const command = await context.client.getCommand(commandId);
       return res.json({
         status: command.status?.toLowerCase() ?? 'unknown',

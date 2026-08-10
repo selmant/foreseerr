@@ -23,6 +23,9 @@ describe('OpenAPI library contract', () => {
     '/library/series/{jellyfinSeriesId}/seasons/{seasonId}/episodes': ['get'],
     '/media/{mediaId}/servarr/context': ['get'],
     '/media/{mediaId}/servarr/releases': ['get', 'post'],
+    '/media/{mediaId}/servarr/imports/sources': ['get'],
+    '/media/{mediaId}/servarr/imports/scan': ['post'],
+    '/media/{mediaId}/servarr/imports/reprocess': ['post'],
     '/media/{mediaId}/servarr/imports': ['get', 'post'],
     '/media/{mediaId}/servarr/commands/{token}': ['get'],
   };

@@ -9365,6 +9365,93 @@ paths:
           description: Unauthorized
         '409':
           description: Invalid, expired, or unacknowledged release token
+  /media/{mediaId}/servarr/imports/sources:
+    get:
+      summary: List safe Servarr manual import sources
+      description: Lists relevant queue downloads and the mapped media folder without exposing Arr filesystem paths. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: is4k
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Opaque manual import source tokens
+        '401':
+          description: Unauthorized
+  /media/{mediaId}/servarr/imports/scan:
+    post:
+      summary: Scan a safe Servarr manual import source
+      description: Asks the mapped Sonarr or Radarr instance to inspect a previously listed source. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceToken]
+              properties:
+                is4k:
+                  type: boolean
+                sourceToken:
+                  type: string
+      responses:
+        '200':
+          description: Arr manual import candidates with opaque tokens
+        '401':
+          description: Unauthorized
+        '409':
+          description: Expired or invalid source token
+  /media/{mediaId}/servarr/imports/reprocess:
+    post:
+      summary: Reprocess a Sonarr manual import candidate
+      description: Re-evaluates a candidate using Sonarr after selecting the intended episodes. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidateToken, episodeIds]
+              properties:
+                is4k:
+                  type: boolean
+                candidateToken:
+                  type: string
+                episodeIds:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Reprocessed candidate with a replacement opaque token
+        '401':
+          description: Unauthorized
+        '409':
+          description: Expired or invalid candidate token
   /media/{mediaId}/servarr/imports:
     get:
       summary: List Servarr manual import candidates

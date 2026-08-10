@@ -181,4 +181,23 @@ describe('RadarrAPI interactive management', () => {
       { params: { movieId: 12, filterExistingFiles: true } },
     ]);
   });
+
+  it('asks Radarr to reprocess candidates before importing them', async () => {
+    const radarr = buildRadarr();
+    const post = mock.method(getAxios(radarr), 'post', async () => ({
+      data: [
+        { id: 4, path: '/downloads/example.mkv', name: 'example.mkv', size: 1 },
+      ],
+    }));
+    const candidates = [
+      { id: 4, path: '/downloads/example.mkv', name: 'example.mkv', size: 1 },
+    ];
+
+    await radarr.reprocessManualImportCandidates(candidates);
+
+    assert.deepStrictEqual(post.mock.calls[0].arguments, [
+      '/manualimport',
+      candidates,
+    ]);
+  });
 });

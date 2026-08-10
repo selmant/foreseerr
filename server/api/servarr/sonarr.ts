@@ -571,6 +571,16 @@ class SonarrAPI extends ServarrBase<{
     return response.data;
   }
 
+  public async reprocessManualImportCandidates(
+    files: ManualImportCandidate[]
+  ): Promise<ManualImportCandidate[]> {
+    const response = await this.axios.post<ManualImportCandidate[]>(
+      '/manualimport',
+      files
+    );
+    return response.data;
+  }
+
   public async manualImport(
     files: ManualImportCandidate[],
     importMode: 'move' | 'copy'

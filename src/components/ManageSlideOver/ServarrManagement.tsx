@@ -15,7 +15,14 @@ type Context = {
   mediaType: 'movie' | 'tv';
   service: { type: string; name: string };
   seasons?: { seasonNumber: number; episodes: Episode[] }[];
+  nativeUrl?: string;
 };
+type ImportSource = {
+  token: string;
+  kind: 'queue' | 'mediaFolder';
+  label: string;
+};
+type Rejection = { reason: string; type?: string };
 type Release = {
   token: string;
   title: string;
@@ -38,8 +45,13 @@ type Candidate = {
   size: number;
   quality?: string;
   languages: string[];
-  rejections: string[];
+  releaseGroup?: string;
+  customFormats: string[];
+  customFormatScore?: number;
+  rejections: Rejection[];
+  seasonNumber?: number;
   episodes?: Episode[];
+  complete: boolean;
 };
 
 const formatSize = (size: number) =>
@@ -65,6 +77,9 @@ const ServarrPanel = ({
   const [episodeId, setEpisodeId] = useState<number>();
   const [seasonNumber, setSeasonNumber] = useState<number>();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [sources, setSources] = useState<ImportSource[]>([]);
+  const [selectedSource, setSelectedSource] = useState<string>();
+  const [importSourceLabel, setImportSourceLabel] = useState<string>();
   const [selected, setSelected] = useState<string[]>([]);
   const [episodeMappings, setEpisodeMappings] = useState<
     Record<string, number[]>
@@ -146,14 +161,18 @@ const ServarrPanel = ({
       );
     }
   };
-  const loadImports = async () => {
+  const loadImportSources = async () => {
     setLoading(true);
     setError(undefined);
     try {
-      const response = await axios.get<{ candidates: Candidate[] }>(
-        `/api/v1/media/${mediaId}/servarr/imports?is4k=${is4k}`
-      );
-      setCandidates(response.data.candidates);
+      const response = await axios.get<{
+        sources: ImportSource[];
+        nativeUrl?: string;
+      }>(`/api/v1/media/${mediaId}/servarr/imports/sources?is4k=${is4k}`);
+      setSources(response.data.sources);
+      setSelectedSource(response.data.sources[0]?.token);
+      setCandidates([]);
+      setSelected([]);
     } catch (err) {
       setError(
         axios.isAxiosError(err)
@@ -164,11 +183,80 @@ const ServarrPanel = ({
       setLoading(false);
     }
   };
+  const scanImportSource = async () => {
+    if (!selectedSource) return;
+    setLoading(true);
+    setError(undefined);
+    try {
+      const response = await axios.post<{
+        source: string;
+        candidates: Candidate[];
+      }>(`/api/v1/media/${mediaId}/servarr/imports/scan`, {
+        is4k,
+        sourceToken: selectedSource,
+      });
+      setImportSourceLabel(response.data.source);
+      setCandidates(response.data.candidates);
+      setSelected([]);
+      setEpisodeMappings({});
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err)
+          ? err.response?.data?.message
+          : 'Unable to scan this import source.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+  const reprocessCandidate = async (candidate: Candidate) => {
+    const episodeIds =
+      episodeMappings[candidate.token] ??
+      candidate.episodes?.map((episode) => episode.id) ??
+      [];
+    if (!episodeIds.length) {
+      setError('Choose at least one episode before rematching.');
+      return;
+    }
+    setLoading(true);
+    setError(undefined);
+    try {
+      const response = await axios.post<Candidate>(
+        `/api/v1/media/${mediaId}/servarr/imports/reprocess`,
+        { is4k, candidateToken: candidate.token, episodeIds }
+      );
+      setCandidates((current) =>
+        current.map((item) =>
+          item.token === candidate.token ? response.data : item
+        )
+      );
+      setSelected((current) =>
+        current.map((token) =>
+          token === candidate.token ? response.data.token : token
+        )
+      );
+      setEpisodeMappings((current) => {
+        const next = { ...current };
+        delete next[candidate.token];
+        return { ...next, [response.data.token]: episodeIds };
+      });
+    } catch (err) {
+      setError(
+        axios.isAxiosError(err)
+          ? err.response?.data?.message
+          : 'Sonarr could not rematch this file.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
   const submitImport = async () => {
     const files = candidates.filter((candidate) =>
       selected.includes(candidate.token)
     );
-    const warnings = files.flatMap((candidate) => candidate.rejections);
+    const warnings = files.flatMap((candidate) =>
+      candidate.rejections.map((rejection) => rejection.reason)
+    );
     if (
       !window.confirm(
         `Import ${files.length} file(s) using ${mode}?${warnings.length ? `\n\nWarnings:\n${warnings.join('\n')}` : ''}`
@@ -279,9 +367,23 @@ const ServarrPanel = ({
         <Button buttonType="primary" onClick={search} disabled={loading}>
           Search Releases
         </Button>
-        <Button buttonType="default" onClick={loadImports} disabled={loading}>
+        <Button
+          buttonType="default"
+          onClick={loadImportSources}
+          disabled={loading}
+        >
           Manual Import
         </Button>
+        {context.nativeUrl && (
+          <a
+            className="text-primary-400 hover:text-primary-300 self-center text-sm"
+            href={context.nativeUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open in {context.service.type === 'sonarr' ? 'Sonarr' : 'Radarr'}
+          </a>
+        )}
       </div>
       {releases.length > 0 && (
         <div className="space-y-2">
@@ -323,8 +425,58 @@ const ServarrPanel = ({
           Manual import: {importStatus}
         </div>
       )}
+      {sources.length > 0 && !candidates.length && (
+        <div className="space-y-2 rounded border border-gray-700 bg-gray-800/30 p-3 text-sm">
+          <div className="font-medium text-white">
+            Choose an Arr import source
+          </div>
+          <p className="text-gray-300">
+            Foreseer asks {context.service.name} to scan the selected download;
+            it does not inspect your filesystem itself.
+          </p>
+          <select
+            className="w-full"
+            value={selectedSource}
+            onChange={(event) => setSelectedSource(event.target.value)}
+          >
+            {sources.map((source) => (
+              <option key={source.token} value={source.token}>
+                {source.kind === 'queue' ? 'Download: ' : ''}
+                {source.label}
+              </option>
+            ))}
+          </select>
+          <Button
+            buttonType="primary"
+            buttonSize="sm"
+            disabled={!selectedSource || loading}
+            onClick={scanImportSource}
+          >
+            Review files
+          </Button>
+        </div>
+      )}
+      {importSourceLabel && !loading && candidates.length === 0 && (
+        <div className="rounded border border-gray-700 p-3 text-sm text-gray-300">
+          {context.service.name} found no manual-import candidates in{' '}
+          {importSourceLabel}.
+        </div>
+      )}
       {candidates.length > 0 && (
         <div className="space-y-2">
+          <div className="flex items-center justify-between text-sm text-gray-300">
+            <span>Review from {importSourceLabel}</span>
+            <Button
+              buttonType="default"
+              buttonSize="sm"
+              onClick={() => {
+                setCandidates([]);
+                setImportSourceLabel(undefined);
+              }}
+            >
+              Change source
+            </Button>
+          </div>
           <div className="flex items-center gap-2">
             <select
               value={mode}
@@ -353,6 +505,7 @@ const ServarrPanel = ({
                 <input
                   className="mr-2"
                   type="checkbox"
+                  disabled={!candidate.complete}
                   checked={selected.includes(candidate.token)}
                   onChange={() =>
                     setSelected((current) =>
@@ -369,34 +522,75 @@ const ServarrPanel = ({
                   {candidate.source ? ` · ${candidate.source}` : ''}
                 </span>
               </label>
+              <div className="ml-6 mt-1 text-gray-300">
+                {candidate.languages.join(', ') || 'Unknown language'}
+                {candidate.customFormats.length
+                  ? ` · ${candidate.customFormats.join(', ')}`
+                  : ''}
+                {candidate.customFormatScore !== undefined
+                  ? ` · CF ${candidate.customFormatScore}`
+                  : ''}
+              </div>
+              {!candidate.complete && (
+                <div className="ml-6 mt-1 text-yellow-300">
+                  Arr needs additional metadata for this file. Open it in Arr to
+                  complete the import.
+                </div>
+              )}
               {context.mediaType === 'tv' &&
-                selected.includes(candidate.token) && (
-                  <select
-                    className="mt-2 block"
-                    value={
-                      episodeMappings[candidate.token]?.[0] ??
-                      candidate.episodes?.[0]?.id ??
-                      ''
-                    }
-                    onChange={(event) =>
-                      setEpisodeMappings((current) => ({
-                        ...current,
-                        [candidate.token]: [Number(event.target.value)],
-                      }))
-                    }
-                  >
-                    {episodes.map((episode) => (
-                      <option key={episode.id} value={episode.id}>
-                        S{String(episode.seasonNumber).padStart(2, '0')}E
-                        {String(episode.episodeNumber).padStart(2, '0')} —{' '}
-                        {episode.title}
-                      </option>
-                    ))}
-                  </select>
+                (selected.includes(candidate.token) || !candidate.complete) && (
+                  <div className="ml-6 mt-2 rounded border border-gray-600 p-2">
+                    <div className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">
+                      Sonarr episode assignment
+                    </div>
+                    <div className="max-h-40 space-y-1 overflow-y-auto">
+                      {episodes.map((episode) => {
+                        const assigned =
+                          episodeMappings[candidate.token] ??
+                          candidate.episodes?.map((item) => item.id) ??
+                          [];
+                        return (
+                          <label key={episode.id} className="block">
+                            <input
+                              className="mr-2"
+                              type="checkbox"
+                              checked={assigned.includes(episode.id)}
+                              onChange={() =>
+                                setEpisodeMappings((current) => {
+                                  const ids =
+                                    current[candidate.token] ?? assigned;
+                                  return {
+                                    ...current,
+                                    [candidate.token]: ids.includes(episode.id)
+                                      ? ids.filter((id) => id !== episode.id)
+                                      : [...ids, episode.id],
+                                  };
+                                })
+                              }
+                            />
+                            S{String(episode.seasonNumber).padStart(2, '0')}E
+                            {String(episode.episodeNumber).padStart(2, '0')} —{' '}
+                            {episode.title}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      className="mt-2"
+                      buttonType="default"
+                      buttonSize="sm"
+                      disabled={loading}
+                      onClick={() => reprocessCandidate(candidate)}
+                    >
+                      Apply with Sonarr
+                    </Button>
+                  </div>
                 )}
               {candidate.rejections.length > 0 && (
                 <div className="ml-6 mt-1 text-yellow-300">
-                  {candidate.rejections.join(' • ')}
+                  {candidate.rejections
+                    .map((rejection) => rejection.reason)
+                    .join(' • ')}
                 </div>
               )}
             </div>

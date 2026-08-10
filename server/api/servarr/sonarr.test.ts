@@ -252,4 +252,28 @@ describe('SonarrAPI interactive management', () => {
       },
     ]);
   });
+
+  it('asks Sonarr to reprocess an episode rematch before importing', async () => {
+    const sonarr = buildSonarr();
+    const post = mock.method(getAxios(sonarr), 'post', async () => ({
+      data: [],
+    }));
+    const candidates = [
+      {
+        id: 4,
+        path: '/downloads/example.mkv',
+        name: 'example.mkv',
+        size: 1,
+        seriesId: 9,
+        episodeIds: [31, 32],
+      },
+    ];
+
+    await sonarr.reprocessManualImportCandidates(candidates);
+
+    assert.deepStrictEqual(post.mock.calls[0].arguments, [
+      '/manualimport',
+      candidates,
+    ]);
+  });
 });
