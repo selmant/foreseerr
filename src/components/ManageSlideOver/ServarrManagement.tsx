@@ -68,6 +68,7 @@ type Candidate = {
   episodes?: Episode[];
   complete: boolean;
 };
+type GrabFeedback = { kind: 'success' | 'error'; message: string };
 
 const formatSize = (size: number) =>
   `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
@@ -143,6 +144,7 @@ const ServarrPanel = ({
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [grabbingToken, setGrabbingToken] = useState<string>();
+  const [grabFeedback, setGrabFeedback] = useState<GrabFeedback>();
   const [releases, setReleases] = useState<Release[]>([]);
   const [target, setTarget] = useState<'episode' | 'season'>('episode');
   const [episodeId, setEpisodeId] = useState<number>();
@@ -268,6 +270,7 @@ const ServarrPanel = ({
         `/api/v1/media/${mediaId}/servarr/releases?${params}`
       );
       setReleases(response.data.results);
+      setGrabFeedback(undefined);
     } catch (err) {
       setError(
         axios.isAxiosError(err)
@@ -281,12 +284,15 @@ const ServarrPanel = ({
   const grab = async (release: Release) => {
     setGrabbingToken(release.token);
     setError(undefined);
+    setGrabFeedback(undefined);
     try {
       await axios.post(`/api/v1/media/${mediaId}/servarr/releases`, {
         is4k,
         token: release.token,
         acknowledgeRejections: release.rejected,
       });
+      const message = `Sent to ${context?.service.name ?? 'Arr'}. It may take a moment to appear in the download queue.`;
+      setGrabFeedback({ kind: 'success', message });
       addToast('Release sent to download client.', {
         appearance: 'success',
         autoDismiss: true,
@@ -294,11 +300,15 @@ const ServarrPanel = ({
       void refreshImportSources();
       onChanged();
     } catch (err) {
-      setError(
-        axios.isAxiosError(err)
-          ? err.response?.data?.message
-          : 'Unable to grab release.'
-      );
+      const message = axios.isAxiosError(err)
+        ? (err.response?.data?.message ?? 'Unable to grab release.')
+        : 'Unable to grab release.';
+      setError(message);
+      setGrabFeedback({ kind: 'error', message });
+      addToast(message, {
+        appearance: 'error',
+        autoDismiss: true,
+      });
     } finally {
       setGrabbingToken(undefined);
     }
@@ -572,6 +582,19 @@ const ServarrPanel = ({
       )}
       {releases.length > 0 && (
         <div className="space-y-2">
+          {grabFeedback && (
+            <div
+              aria-live="polite"
+              className={`rounded border px-3 py-2 text-sm ${
+                grabFeedback.kind === 'success'
+                  ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-100'
+                  : 'border-red-500/60 bg-red-500/10 text-red-100'
+              }`}
+              role="status"
+            >
+              {grabFeedback.message}
+            </div>
+          )}
           {releases.map((release) => (
             <div
               key={release.token}
