@@ -228,6 +228,23 @@ describe('SonarrAPI interactive management', () => {
     ]);
   });
 
+  it('submits an interactive release to Sonarr using its guid and indexer', async () => {
+    const sonarr = buildSonarr();
+    const post = mock.method(getAxios(sonarr), 'post', async () => ({
+      data: {},
+    }));
+
+    await sonarr.grabRelease({
+      guid: 'https://indexer.example/release/123',
+      indexerId: 7,
+    });
+
+    assert.deepStrictEqual(post.mock.calls[0].arguments, [
+      '/release',
+      { guid: 'https://indexer.example/release/123', indexerId: 7 },
+    ]);
+  });
+
   it('passes queue download context through to manual import discovery', async () => {
     const sonarr = buildSonarr();
     const get = mock.method(getAxios(sonarr), 'get', async () => ({

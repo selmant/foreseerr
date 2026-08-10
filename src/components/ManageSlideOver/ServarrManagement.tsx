@@ -11,6 +11,7 @@ type Episode = {
   episodeNumber: number;
   title: string;
   hasFile: boolean;
+  monitored: boolean;
 };
 type Context = {
   mediaType: 'movie' | 'tv';
@@ -24,7 +25,11 @@ type ImportSource = {
   label: string;
 };
 type Rejection = { reason: string; type?: string };
-type SelectOption = { value: number; label: string };
+type SelectOption = {
+  value: number;
+  label: string;
+  status?: 'downloaded' | 'wanted' | 'unmonitored';
+};
 type Release = {
   token: string;
   title: string;
@@ -58,6 +63,21 @@ type Candidate = {
 
 const formatSize = (size: number) =>
   `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
+
+const episodeStatus = {
+  downloaded: {
+    label: 'Downloaded',
+    className: 'border-gray-600 bg-gray-800 text-gray-300',
+  },
+  wanted: {
+    label: 'Wanted',
+    className: 'border-primary-500/60 bg-primary-500/10 text-primary-200',
+  },
+  unmonitored: {
+    label: 'Not monitored',
+    className: 'border-gray-700 bg-gray-900 text-gray-500',
+  },
+};
 
 const ServarrPanel = ({
   mediaId,
@@ -98,14 +118,28 @@ const ServarrPanel = ({
   );
   const episodeOptions = useMemo<SelectOption[]>(
     () =>
-      episodes.map((episode) => ({
-        value: episode.id,
-        label: `S${String(episode.seasonNumber).padStart(2, '0')}E${String(
-          episode.episodeNumber
-        ).padStart(2, '0')} — ${episode.title}${
-          episode.hasFile ? ' (downloaded)' : ''
-        }`,
-      })),
+      episodes
+        .map((episode) => ({
+          value: episode.id,
+          label: `S${String(episode.seasonNumber).padStart(2, '0')}E${String(
+            episode.episodeNumber
+          ).padStart(2, '0')} — ${episode.title}`,
+          status: episode.hasFile
+            ? ('downloaded' as const)
+            : episode.monitored
+              ? ('wanted' as const)
+              : ('unmonitored' as const),
+          seasonNumber: episode.seasonNumber,
+          episodeNumber: episode.episodeNumber,
+        }))
+        .sort(
+          (left, right) =>
+            Number(left.status === 'downloaded') -
+              Number(right.status === 'downloaded') ||
+            left.seasonNumber - right.seasonNumber ||
+            left.episodeNumber - right.episodeNumber
+        )
+        .map(({ value, label, status }) => ({ value, label, status })),
     [episodes]
   );
   const seasonOptions = useMemo<SelectOption[]>(
@@ -146,7 +180,13 @@ const ServarrPanel = ({
       .get<Context>(`/api/v1/media/${mediaId}/servarr/context?is4k=${is4k}`)
       .then((response) => {
         setContext(response.data);
-        if (response.data.seasons?.[0]) {
+        const preferredEpisode = response.data.seasons
+          ?.flatMap((season) => season.episodes)
+          .find((episode) => !episode.hasFile && episode.monitored);
+        if (preferredEpisode) {
+          setSeasonNumber(preferredEpisode.seasonNumber);
+          setEpisodeId(preferredEpisode.id);
+        } else if (response.data.seasons?.[0]) {
           setSeasonNumber(response.data.seasons[0].seasonNumber);
           setEpisodeId(response.data.seasons[0].episodes[0]?.id);
         }
@@ -188,10 +228,6 @@ const ServarrPanel = ({
     }
   };
   const grab = async (release: Release) => {
-    const warning = release.rejected
-      ? `\n\nServarr rejected this release:\n${release.rejections.join('\n')}`
-      : '';
-    if (!window.confirm(`Grab "${release.title}"?${warning}`)) return;
     try {
       await axios.post(`/api/v1/media/${mediaId}/servarr/releases/grab`, {
         is4k,
@@ -398,6 +434,19 @@ const ServarrPanel = ({
               menuShouldScrollIntoView={false}
               options={episodeOptions}
               placeholder="Choose an episode"
+              formatOptionLabel={(option) => {
+                const status = episodeStatus[option.status ?? 'wanted'];
+                return (
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="truncate">{option.label}</span>
+                    <span
+                      className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${status.className}`}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                );
+              }}
               value={episodeOptions.find(
                 (option) => option.value === episodeId
               )}
