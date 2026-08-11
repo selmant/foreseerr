@@ -1,6 +1,7 @@
 import Modal from '@app/components/Common/Modal';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import defineMessages from '@app/utils/defineMessages';
+import { Transition } from '@headlessui/react';
 import { PowerIcon } from '@heroicons/react/24/outline';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -33,7 +34,16 @@ const QuitAppControl = () => {
         <PowerIcon className="mr-3 h-6 w-6" />
         {intl.formatMessage(messages.quit)}
       </button>
-      {showConfirm && (
+      <Transition
+        as="div"
+        enter="transition-opacity duration-300"
+        enterFrom="opacity-0"
+        enterTo="opacity-100"
+        leave="transition-opacity duration-300"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+        show={showConfirm}
+      >
         <Modal
           title={intl.formatMessage(messages.quitTitle)}
           onCancel={() => setShowConfirm(false)}
@@ -46,7 +56,7 @@ const QuitAppControl = () => {
         >
           {intl.formatMessage(messages.quitDescription)}
         </Modal>
-      )}
+      </Transition>
     </>
   );
 };
