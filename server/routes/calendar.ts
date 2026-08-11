@@ -251,6 +251,7 @@ calendarRoutes.get('/', async (req, res, next) => {
         watchUrl,
         jellyfinItemId,
         is4k: occurrence.is4k,
+        tmdbId: occurrence.tmdbId ?? undefined,
         detailUrl: occurrence.tmdbId
           ? `/${occurrence.mediaType}/${occurrence.tmdbId}`
           : undefined,

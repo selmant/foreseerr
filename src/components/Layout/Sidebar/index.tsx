@@ -235,7 +235,7 @@ const Sidebar = ({
                         );
                       })}
                     </nav>
-                    <div className="mt-auto space-y-2 px-2">
+                    <div className="mt-auto space-y-2 px-4">
                       <QuitAppControl />
                       {hasPermission(Permission.ADMIN) && (
                         <VersionStatus onClick={() => setClosed()} />
@@ -326,7 +326,7 @@ const Sidebar = ({
                   );
                 })}
               </nav>
-              <div className="mt-auto space-y-2 px-2">
+              <div className="mt-auto space-y-2 px-4">
                 <QuitAppControl />
                 {hasPermission(Permission.ADMIN) && <VersionStatus />}
               </div>

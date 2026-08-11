@@ -55,7 +55,7 @@ const VersionStatus = ({ onClick }: VersionStatusProps) => {
       }}
       role="button"
       tabIndex={0}
-      className={`mx-2 flex items-center rounded-lg p-2 text-xs ring-1 ring-gray-700 transition duration-300 ${
+      className={`flex items-center rounded-lg p-2 text-xs ring-1 ring-gray-700 transition duration-300 ${
         data.updateAvailable
           ? 'bg-yellow-500 text-white hover:bg-yellow-400'
           : 'bg-gray-900 text-gray-300 hover:bg-gray-800'

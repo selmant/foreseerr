@@ -21,6 +21,7 @@ export interface CalendarItem {
   allDay: boolean;
   dateType: CalendarDateType;
   posterPath?: string | null;
+  tmdbId?: number | null;
   detailUrl?: string | null;
   sourceUrl?: string | null;
   watchUrl?: string | null;
