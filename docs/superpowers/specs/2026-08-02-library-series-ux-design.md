@@ -2,7 +2,7 @@
 
 Date: 2026-08-02  
 Status: approved for planning  
-Owner: SeerrSuggestArr (Foreseer web Library). Native desktop remains play-only via `jelliumHost.playItem`.
+Owner: SeerrSuggestArr (Foreseer web Library). Native desktop remains play-only via `foreseerNative.send({ type: 'play.item', ... })`.
 
 ## Problem
 
@@ -183,7 +183,7 @@ Slide-over / drawer:
 Library UI
   → /api/v1/library/* (Foreseer)
     → Jellyfin user API (linked token)
-  → window.jelliumHost.playItem(requestId, episodeOrMovieId)  // native only
+  → window.foreseerNative.send({ type: 'play.item', id, itemId })  // native only
 ```
 
 - Foreseer web owns shelf composition, next-up policy, and panel UX.

@@ -1,7 +1,7 @@
-import type { NativeHostEventTypeV2 } from '@app/context/nativeRuntimeProtocol';
+import type { NativeHostEventTypeV1 } from '@app/context/nativeRuntimeProtocol';
 import {
   isCurrentNativePlayRequest,
-  isNativeHostEventTypeV2,
+  isNativeHostEventTypeV1,
   isUsableForeseerNative,
   shouldClearNativePlayRequest,
 } from '@app/context/nativeRuntimeProtocol';
@@ -119,7 +119,7 @@ export const NativeRuntimeProvider = ({
 
   useEffect(() => {
     const host = window.foreseerNative;
-    // Missing/malformed host or leftover v1 jelliumHost → stay on browser path.
+    // No usable protocol-v1 host → stay on ordinary browser playback.
     if (!isUsableForeseerNative(host)) {
       return;
     }
@@ -170,8 +170,8 @@ export const NativeRuntimeProvider = ({
       const detail = (event as CustomEvent<NativeEvent>).detail;
       if (
         !detail ||
-        detail.protocolVersion !== 2 ||
-        !isNativeHostEventTypeV2(detail.type)
+        detail.protocolVersion !== 1 ||
+        !isNativeHostEventTypeV1(detail.type)
       )
         return;
       const isAuthEvent = detail.id === authRequestId;
@@ -188,7 +188,7 @@ export const NativeRuntimeProvider = ({
         axios
           .post('/api/v1/desktop/auth-tickets', {
             challenge: detail.challenge,
-            protocolVersion: 2,
+            protocolVersion: 1,
           })
           .then(({ data }) => {
             if (detail.id !== authRequestId) return;
@@ -307,8 +307,8 @@ export const NativeRuntimeProvider = ({
 export const useNativeRuntime = () => useContext(NativeRuntimeContext);
 
 interface NativeEvent {
-  protocolVersion: 2;
+  protocolVersion: 1;
   id: string;
-  type: NativeHostEventTypeV2;
+  type: NativeHostEventTypeV1;
   challenge?: string;
 }

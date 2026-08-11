@@ -1,9 +1,9 @@
 {
-  "fixtureId": "foreseer-native-protocol-v1-2026-08-08",
+  "fixtureId": "foreseer-native-protocol-v1-2026-08-11",
   "protocolVersion": 1,
-  "eventName": "jellium:host-event",
+  "eventName": "foreseer:native-event",
   "host": {
-    "name": "jellium-desktop",
+    "name": "foreseer-desktop",
     "versionSource": "package-metadata",
     "versionMaxLength": 128,
     "capabilities": [
@@ -12,7 +12,8 @@
       "player-events",
       "session-reset",
       "window-controls",
-      "quit"
+      "quit",
+      "setup"
     ]
   },
   "limits": {
@@ -23,22 +24,51 @@
     "setupMessageMaxLength": 256,
     "serverUrlMaxLength": 2048,
     "bootstrapIdMaxLength": 256,
-    "accessTokenMaxLength": 8192
+    "accessTokenMaxLength": 8192,
+    "maxPayloadBytes": 16384
   },
-  "hostMethods": {
-    "requestAuthChallenge": ["requestId"],
-    "completeAuth": ["requestId", "ticket"],
-    "clearSession": ["requestId"],
-    "playItem": ["requestId", "itemId"],
-    "minimize": [],
-    "toggleMaximize": [],
-    "toggleFullscreen": [],
-    "quit": []
-  },
-  "setupMethods": {
-    "checkServerConnectivity": ["requestId", "url", "allowHttp"],
-    "saveServerUrl": ["requestId", "url", "allowHttp"]
-  },
+  "commands": [
+    {
+      "type": "auth.challenge",
+      "fields": ["id"]
+    },
+    {
+      "type": "auth.complete",
+      "fields": ["id", "ticket"]
+    },
+    {
+      "type": "session.clear",
+      "fields": ["id"]
+    },
+    {
+      "type": "play.item",
+      "fields": ["id", "itemId"]
+    },
+    {
+      "type": "setup.check",
+      "fields": ["id", "url", "allowHttp"]
+    },
+    {
+      "type": "setup.save",
+      "fields": ["id", "url", "allowHttp"]
+    },
+    {
+      "type": "window.minimize",
+      "fields": ["id"]
+    },
+    {
+      "type": "window.toggle-maximize",
+      "fields": ["id"]
+    },
+    {
+      "type": "window.toggle-fullscreen",
+      "fields": ["id"]
+    },
+    {
+      "type": "app.quit",
+      "fields": ["id"]
+    }
+  ],
   "hostEventTypes": [
     "auth-challenge",
     "ready",
@@ -49,17 +79,16 @@
     "stopped",
     "finished",
     "canceled",
-    "error"
+    "error",
+    "connectivity-success",
+    "save-config-success"
   ],
   "terminalPlayEventTypes": ["stopped", "finished", "canceled", "error"],
-  "setupEventTypes": ["connectivity-success", "save-config-success", "error"],
   "envelopes": {
-    "hostEventRequired": ["protocolVersion", "requestId", "type"],
+    "commandRequired": ["id", "type"],
+    "eventRequired": ["protocolVersion", "id", "type"],
     "authChallengeField": "challenge",
-    "errorField": "errorCode",
-    "setupEventRequired": ["protocolVersion", "requestId", "type"],
-    "setupEventFields": ["status", "message"],
-    "setupEventForbiddenFields": ["challenge", "errorCode"]
+    "errorField": "errorCode"
   },
   "requestCorrelation": {
     "required": true,
@@ -90,14 +119,5 @@
     ],
     "nativeOnlyFields": ["accessToken", "deviceId"],
     "redactedFields": ["accessToken", "ticket", "verifier"]
-  },
-  "examples": {
-    "setupConnectivitySuccess": {
-      "protocolVersion": 1,
-      "requestId": "setup-connectivity",
-      "type": "connectivity-success",
-      "status": 204,
-      "message": null
-    }
   }
 }

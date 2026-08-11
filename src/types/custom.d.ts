@@ -30,7 +30,7 @@ declare module '*.css' {
   const classNames: IClassNames;
   export = classNames;
 }
-interface ForeseerNativeCommandV2 {
+interface ForeseerNativeCommandV1 {
   id: string;
   type: string;
   ticket?: string;
@@ -39,16 +39,14 @@ interface ForeseerNativeCommandV2 {
   allowHttp?: boolean;
 }
 
-interface ForeseerNativeV2 {
-  readonly protocolVersion: 2;
+interface ForeseerNativeV1 {
+  readonly protocolVersion: 1;
   readonly hostName: 'foreseer-desktop';
   readonly hostVersion: string;
   readonly capabilities: readonly string[];
-  send(command: ForeseerNativeCommandV2): boolean;
+  send(command: ForeseerNativeCommandV1): boolean;
 }
 
 interface Window {
-  readonly foreseerNative?: ForeseerNativeV2;
-  /** @deprecated v1 host; Seerr falls back to browser playback when only this exists. */
-  readonly jelliumHost?: unknown;
+  readonly foreseerNative?: ForeseerNativeV1;
 }

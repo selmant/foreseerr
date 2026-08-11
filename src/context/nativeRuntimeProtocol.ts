@@ -1,10 +1,10 @@
 /**
- * Protocol v2 uses a single send(command) surface. Resume selection remains
+ * Protocol v1 uses a single send(command) surface. Resume selection remains
  * Jellyfin-owned; startPositionTicks stays out of the native bridge.
  */
-export const nativeProtocolV2 = {
-  fixtureId: 'foreseer-native-protocol-v2-2026-08-10',
-  protocolVersion: 2,
+export const nativeProtocolV1 = {
+  fixtureId: 'foreseer-native-protocol-v1-2026-08-11',
+  protocolVersion: 1,
   hostName: 'foreseer-desktop',
   eventName: 'foreseer:native-event',
   limits: {
@@ -20,7 +20,7 @@ export const nativeProtocolV2 = {
   resumeOwner: 'jellyfin',
 } as const;
 
-export interface ForeseerNativeCommandV2 {
+export interface ForeseerNativeCommandV1 {
   id: string;
   type: string;
   ticket?: string;
@@ -29,15 +29,15 @@ export interface ForeseerNativeCommandV2 {
   allowHttp?: boolean;
 }
 
-export interface ForeseerNativeV2 {
-  readonly protocolVersion: 2;
+export interface ForeseerNativeV1 {
+  readonly protocolVersion: 1;
   readonly hostName: 'foreseer-desktop';
   readonly hostVersion: string;
   readonly capabilities: readonly string[];
-  send(command: ForeseerNativeCommandV2): boolean;
+  send(command: ForeseerNativeCommandV1): boolean;
 }
 
-export const nativeHostEventTypesV2 = [
+export const nativeHostEventTypesV1 = [
   'auth-challenge',
   'ready',
   'accepted',
@@ -52,19 +52,19 @@ export const nativeHostEventTypesV2 = [
   'save-config-success',
 ] as const;
 
-export type NativeHostEventTypeV2 = (typeof nativeHostEventTypesV2)[number];
+export type NativeHostEventTypeV1 = (typeof nativeHostEventTypesV1)[number];
 
-export const terminalNativePlayEventTypesV2 = [
+export const terminalNativePlayEventTypesV1 = [
   'stopped',
   'finished',
   'canceled',
   'error',
-] as const satisfies readonly NativeHostEventTypeV2[];
+] as const satisfies readonly NativeHostEventTypeV1[];
 
-export const isNativeHostEventTypeV2 = (
+export const isNativeHostEventTypeV1 = (
   type: string
-): type is NativeHostEventTypeV2 =>
-  (nativeHostEventTypesV2 as readonly string[]).includes(type);
+): type is NativeHostEventTypeV1 =>
+  (nativeHostEventTypesV1 as readonly string[]).includes(type);
 
 export const isCurrentNativePlayRequest = (
   activeRequestId: string | undefined,
@@ -73,8 +73,8 @@ export const isCurrentNativePlayRequest = (
 
 export const isTerminalNativePlayEvent = (
   type: string
-): type is (typeof terminalNativePlayEventTypesV2)[number] =>
-  (terminalNativePlayEventTypesV2 as readonly string[]).includes(type);
+): type is (typeof terminalNativePlayEventTypesV1)[number] =>
+  (terminalNativePlayEventTypesV1 as readonly string[]).includes(type);
 
 export const shouldClearNativePlayRequest = (
   activeRequestId: string | undefined,
@@ -85,11 +85,11 @@ export const shouldClearNativePlayRequest = (
   isTerminalNativePlayEvent(type);
 
 export const isUsableForeseerNative = (
-  host: ForeseerNativeV2 | undefined
-): host is ForeseerNativeV2 =>
+  host: ForeseerNativeV1 | undefined
+): host is ForeseerNativeV1 =>
   !!host &&
-  host.protocolVersion === nativeProtocolV2.protocolVersion &&
-  host.hostName === nativeProtocolV2.hostName &&
+  host.protocolVersion === nativeProtocolV1.protocolVersion &&
+  host.hostName === nativeProtocolV1.hostName &&
   typeof host.send === 'function' &&
   Array.isArray(host.capabilities) &&
   host.capabilities.includes('play-item');

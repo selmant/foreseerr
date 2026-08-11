@@ -5,58 +5,57 @@ import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
   isCurrentNativePlayRequest,
-  isNativeHostEventTypeV2,
+  isNativeHostEventTypeV1,
   isTerminalNativePlayEvent,
   isUsableForeseerNative,
-  nativeHostEventTypesV2,
-  nativeProtocolV2,
+  nativeHostEventTypesV1,
+  nativeProtocolV1,
   shouldClearNativePlayRequest,
-  terminalNativePlayEventTypesV2,
-  type ForeseerNativeV2,
+  terminalNativePlayEventTypesV1,
+  type ForeseerNativeV1,
 } from '../../src/context/nativeRuntimeProtocol';
 
 const fixture = JSON.parse(
-  readFileSync(join(process.cwd(), 'protocol/protocol-v2.json'), 'utf8')
+  readFileSync(join(process.cwd(), 'protocol/protocol-v1.json'), 'utf8')
 );
 
-describe('native runtime protocol v2', () => {
+describe('native runtime protocol v1', () => {
   it('conforms to the checked-in protocol fixture', () => {
-    assert.equal(fixture.fixtureId, nativeProtocolV2.fixtureId);
-    assert.equal(fixture.protocolVersion, nativeProtocolV2.protocolVersion);
-    assert.equal(fixture.host.name, nativeProtocolV2.hostName);
-    assert.equal(fixture.eventName, nativeProtocolV2.eventName);
+    assert.equal(fixture.fixtureId, nativeProtocolV1.fixtureId);
+    assert.equal(fixture.protocolVersion, nativeProtocolV1.protocolVersion);
+    assert.equal(fixture.host.name, nativeProtocolV1.hostName);
+    assert.equal(fixture.eventName, nativeProtocolV1.eventName);
     assert.equal(
       fixture.limits.requestIdMaxLength,
-      nativeProtocolV2.limits.requestIdMaxLength
+      nativeProtocolV1.limits.requestIdMaxLength
     );
     assert.equal(
       fixture.limits.itemIdMaxLength,
-      nativeProtocolV2.limits.itemIdMaxLength
+      nativeProtocolV1.limits.itemIdMaxLength
     );
     assert.equal(
       fixture.limits.ticketLength,
-      nativeProtocolV2.limits.ticketLength
+      nativeProtocolV1.limits.ticketLength
     );
     assert.equal(
       fixture.limits.challengeHexLength,
-      nativeProtocolV2.limits.challengeHexLength
+      nativeProtocolV1.limits.challengeHexLength
     );
-    assert.deepEqual(nativeProtocolV2.playCommand, {
+    assert.deepEqual(nativeProtocolV1.playCommand, {
       type: 'play.item',
       fields: ['id', 'itemId'],
     });
-    assert.equal(fixture.resumePolicy.owner, nativeProtocolV2.resumeOwner);
+    assert.equal(fixture.resumePolicy.owner, nativeProtocolV1.resumeOwner);
     assert.equal(fixture.resumePolicy.startPositionTicksInProtocol, false);
     assert.equal(fixture.browserFallback.required, true);
     assert.equal(
       fixture.browserFallback.navigationPreventedOnlyAfterNativeAdmission,
       true
     );
-    assert.equal(fixture.browserFallback.v1HostFallsBackToBrowser, true);
-    assert.deepEqual(fixture.hostEventTypes, nativeHostEventTypesV2);
+    assert.deepEqual(fixture.hostEventTypes, nativeHostEventTypesV1);
     assert.deepEqual(
       fixture.terminalPlayEventTypes,
-      terminalNativePlayEventTypesV2
+      terminalNativePlayEventTypesV1
     );
     assert.equal(fixture.requestCorrelation.required, true);
     assert.deepEqual(fixture.bootstrapEnvelope.wireFields, [
@@ -69,7 +68,7 @@ describe('native runtime protocol v2', () => {
     ]);
   });
 
-  it('keeps playback command fields at protocol v2', () => {
+  it('keeps playback command fields at protocol v1', () => {
     const play = fixture.commands.find(
       (command: { type: string }) => command.type === 'play.item'
     );
@@ -78,14 +77,14 @@ describe('native runtime protocol v2', () => {
 
   it('rejects event types outside the closed protocol set', () => {
     for (const type of fixture.hostEventTypes) {
-      assert.equal(isNativeHostEventTypeV2(type), true);
+      assert.equal(isNativeHostEventTypeV1(type), true);
     }
-    assert.equal(isNativeHostEventTypeV2('token'), false);
-    assert.equal(isNativeHostEventTypeV2('renderer-details'), false);
+    assert.equal(isNativeHostEventTypeV1('token'), false);
+    assert.equal(isNativeHostEventTypeV1('renderer-details'), false);
   });
 
   it('matches protocol identifier and field size constraints', () => {
-    assert.deepEqual(nativeProtocolV2.limits, {
+    assert.deepEqual(nativeProtocolV1.limits, {
       requestIdMaxLength: 64,
       itemIdMaxLength: 128,
       ticketLength: 43,
@@ -93,8 +92,18 @@ describe('native runtime protocol v2', () => {
     });
   });
 
-  it('treats missing and v1-shaped hosts as unusable', () => {
+  it('treats missing and wrong-shaped hosts as unusable', () => {
     assert.equal(isUsableForeseerNative(undefined), false);
+    assert.equal(
+      isUsableForeseerNative({
+        protocolVersion: 99,
+        hostName: 'foreseer-desktop',
+        hostVersion: '0.1.0',
+        capabilities: ['play-item'],
+        send: () => true,
+      } as unknown as ForeseerNativeV1),
+      false
+    );
     assert.equal(
       isUsableForeseerNative({
         protocolVersion: 1,
@@ -102,12 +111,12 @@ describe('native runtime protocol v2', () => {
         hostVersion: '0.1.0',
         capabilities: ['play-item'],
         send: () => true,
-      } as unknown as ForeseerNativeV2),
+      } as unknown as ForeseerNativeV1),
       false
     );
     assert.equal(
       isUsableForeseerNative({
-        protocolVersion: 2,
+        protocolVersion: 1,
         hostName: 'foreseer-desktop',
         hostVersion: '0.2.0',
         capabilities: ['play-item', 'auth-bootstrap'],
