@@ -251,10 +251,12 @@ calendarRoutes.get('/', async (req, res, next) => {
         watchUrl,
         jellyfinItemId,
         is4k: occurrence.is4k,
-        tmdbId: occurrence.tmdbId ?? undefined,
-        detailUrl: occurrence.tmdbId
-          ? `/${occurrence.mediaType}/${occurrence.tmdbId}`
-          : undefined,
+        // Sonarr occurrences store tvdb only; fall back to linked Media.tmdbId.
+        tmdbId: occurrence.tmdbId ?? media?.tmdbId ?? undefined,
+        detailUrl:
+          occurrence.tmdbId || media?.tmdbId
+            ? `/${occurrence.mediaType}/${occurrence.tmdbId ?? media?.tmdbId}`
+            : undefined,
         ...(isAdmin && occurrence.sourceUrl
           ? { sourceUrl: occurrence.sourceUrl }
           : {}),
