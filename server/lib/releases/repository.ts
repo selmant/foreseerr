@@ -33,13 +33,6 @@ const isSeasonPremiere = (occurrence: ReleaseOccurrence) =>
   (occurrence.seasonNumber ?? 0) > 0 &&
   occurrence.episodeNumber === 1;
 
-const RELEASE_OCCURRENCE_CONFLICT_COLUMNS = [
-  'source',
-  'sourceServerId',
-  'sourceItemId',
-  'dateType',
-] as const;
-
 const hasOccurrenceChanged = (
   existing: ReleaseOccurrence,
   next: NormalizedOccurrence,
@@ -146,7 +139,7 @@ export const reconcileServerOccurrences = async (input: {
 
     const inserted = new Set<string>();
     const moved = new Map<string, Date>();
-    const toUpsert: ReleaseOccurrence[] = [];
+    const toPersist: ReleaseOccurrence[] = [];
     for (const normalized of input.occurrences) {
       const key = occurrenceKey(normalized);
       const existing = existingByKey.get(key);
@@ -163,6 +156,8 @@ export const reconcileServerOccurrences = async (input: {
       ) {
         continue;
       }
+      // Prefer save over upsert: TypeORM upsert rewrites `id` from EXCLUDED on
+      // conflict, which nulls PKs under Postgres and breaks date-change FKs.
       const occurrence = existing ?? occurrenceRepository.create();
       if (!existing) inserted.add(key);
       if (existing && isMaterialDateChange(existing, normalized)) {
@@ -176,48 +171,12 @@ export const reconcileServerOccurrences = async (input: {
         lastSeenAt: now,
         missingSince: null,
       });
-      toUpsert.push(occurrence);
+      toPersist.push(occurrence);
     }
-    if (toUpsert.length) {
-      await occurrenceRepository.upsert(toUpsert, {
-        conflictPaths: [...RELEASE_OCCURRENCE_CONFLICT_COLUMNS],
-        skipUpdateIfNoValuesChanged: true,
-      });
-    }
+    const saved = toPersist.length
+      ? await occurrenceRepository.save(toPersist)
+      : [];
     input.result.inserted += inserted.size;
-
-    // Existing rows retain their primary key. Fetch only newly inserted keys
-    // so notifications have database IDs without re-reading the full source.
-    const savedByKey = new Map(
-      toUpsert
-        .filter((occurrence) => occurrence.id)
-        .map((occurrence) => [occurrenceKey(occurrence), occurrence])
-    );
-    if (inserted.size) {
-      const itemIds = [
-        ...new Set(
-          input.occurrences
-            .filter((occurrence) => inserted.has(occurrenceKey(occurrence)))
-            .map((occurrence) => occurrence.sourceItemId)
-        ),
-      ];
-      for (let index = 0; index < itemIds.length; index += 500) {
-        const rows = await occurrenceRepository.find({
-          where: {
-            source: input.source,
-            sourceServerId: input.sourceServerId,
-            sourceItemId: In(itemIds.slice(index, index + 500)),
-          },
-        });
-        rows.forEach((occurrence) => {
-          const key = occurrenceKey(occurrence);
-          if (inserted.has(key)) savedByKey.set(key, occurrence);
-        });
-      }
-    }
-    const saved = toUpsert.map(
-      (occurrence) => savedByKey.get(occurrenceKey(occurrence)) ?? occurrence
-    );
 
     const events: DiscoveredReleaseEvents = {
       dateChanges: [],

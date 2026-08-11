@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { getRepository } from '@server/datasource';
+import ReleaseDateChange from '@server/entity/ReleaseDateChange';
 import ReleaseOccurrence from '@server/entity/ReleaseOccurrence';
 import ReleaseSyncState from '@server/entity/ReleaseSyncState';
 import restoreReleaseCalendarSyncInterval from '@server/lib/settings/migrations/0012_restore_release_calendar_sync_interval';
@@ -221,5 +222,64 @@ describe('release calendar reconciliation', () => {
       moved.startsAt.toISOString(),
       occurrence().startsAt.toISOString()
     );
+  });
+
+  it('updates changed occurrences that already have date-change history', async () => {
+    // Existing rows are updated by primary key (save), not upserted. That keeps
+    // release_date_change FKs stable when title/date fields change.
+    await reconcileServerOccurrences({
+      source: 'radarr',
+      sourceServerId: 1,
+      occurrences: [occurrence()],
+      ...window,
+      result: emptySyncResult(),
+      initialBackfill: true,
+    });
+    const existing = await getRepository(ReleaseOccurrence).findOneByOrFail({
+      source: 'radarr',
+      sourceServerId: 1,
+      sourceItemId: 42,
+      dateType: 'digital',
+    });
+    await getRepository(ReleaseDateChange).save(
+      getRepository(ReleaseDateChange).create({
+        occurrenceId: existing.id,
+        oldStartsAt: null,
+        newStartsAt: existing.startsAt,
+        changeKind: 'announced',
+        detectedAt: new Date('2026-08-02T00:00:00.000Z'),
+        notifiable: true,
+        metadata: '{"source":"radarr","dateType":"digital"}',
+      })
+    );
+
+    const result = emptySyncResult();
+    await reconcileServerOccurrences({
+      source: 'radarr',
+      sourceServerId: 1,
+      occurrences: [
+        {
+          ...occurrence(),
+          title: 'Changed again',
+          rawDates: '{"digitalRelease":"2026-08-20","title":"Changed again"}',
+        },
+      ],
+      ...window,
+      result,
+      initialBackfill: false,
+    });
+
+    const updated = await getRepository(ReleaseOccurrence).findOneByOrFail({
+      id: existing.id,
+    });
+    assert.equal(updated.title, 'Changed again');
+    assert.equal(await getRepository(ReleaseOccurrence).count(), 1);
+    assert.equal(
+      await getRepository(ReleaseDateChange).countBy({
+        occurrenceId: existing.id,
+      }),
+      1
+    );
+    assert.equal(result.inserted, 0);
   });
 });
