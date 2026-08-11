@@ -557,8 +557,11 @@
     @apply bg-gradient-to-br from-indigo-400 to-purple-400 bg-clip-text text-transparent;
   }
 
+  /* Chromeless shells (installed PWA + native desktop) keep in-app chrome
+     affordances such as the searchbar Back button. Ordinary browser tabs hide
+     them because the host already provides navigation chrome. */
   @media all and (display-mode: browser) {
-    .pwa-only {
+    html:not(.native-shell) .pwa-only {
       @apply hidden;
     }
   }

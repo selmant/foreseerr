@@ -110,9 +110,11 @@ const Layout = ({ children }: LayoutProps) => {
               <Bars3BottomLeftIcon className="h-7 w-7" />
             </button>
             <button
+              type="button"
               className={`mr-2 text-white ${
                 isScrolled ? 'opacity-90' : 'opacity-70'
               } pwa-only transition duration-300 hover:text-white focus:text-white focus:outline-none`}
+              aria-label="Go back"
               onClick={() => router.back()}
             >
               <ArrowLeftIcon className="w-7" />

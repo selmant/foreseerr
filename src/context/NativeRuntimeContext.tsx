@@ -63,9 +63,17 @@ export const NativeRuntimeProvider = ({
 
   useEffect(() => {
     const host = window.foreseerNative;
-    setCanQuit(
-      isUsableForeseerNative(host) && host.capabilities.includes('quit')
-    );
+    if (isUsableForeseerNative(host)) {
+      setCanQuit(host.capabilities.includes('quit'));
+      // Native desktop has no browser chrome — share PWA chromeless UI (e.g. Back).
+      document.documentElement.classList.add('native-shell');
+    } else {
+      setCanQuit(false);
+      document.documentElement.classList.remove('native-shell');
+    }
+    return () => {
+      document.documentElement.classList.remove('native-shell');
+    };
   }, []);
 
   const quit = useCallback(() => {
