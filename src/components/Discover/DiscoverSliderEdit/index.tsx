@@ -22,7 +22,7 @@ import {
 import { DiscoverSliderType } from '@server/constants/discover';
 import type DiscoverSlider from '@server/entity/DiscoverSlider';
 import axios from 'axios';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDrag, useDrop } from 'react-aria';
 import { useIntl } from 'react-intl';
 
@@ -70,11 +70,37 @@ const DiscoverSliderEdit = ({
     Position.None
   );
 
-  const { dragProps, isDragging } = useDrag({
+  const { dragProps, isDragging: ariaDragging } = useDrag({
     getItems() {
       return [{ id: (slider.id ?? -1).toString(), title: slider.title ?? '' }];
     },
   });
+
+  // CEF/native hosts can start HTML5 drag but never fire dragend, leaving
+  // react-aria stuck in isDragging. Opacity-0 then permanently hides the row.
+  // Keep a visible drag affordance and force-clear on pointer/drag end.
+  const [forceShowAfterDrag, setForceShowAfterDrag] = useState(false);
+  const isDragging = ariaDragging && !forceShowAfterDrag;
+
+  useEffect(() => {
+    if (!ariaDragging) {
+      setForceShowAfterDrag(false);
+      return;
+    }
+
+    const release = () => setForceShowAfterDrag(true);
+    window.addEventListener('pointerup', release, true);
+    window.addEventListener('mouseup', release, true);
+    window.addEventListener('dragend', release, true);
+    window.addEventListener('blur', release);
+
+    return () => {
+      window.removeEventListener('pointerup', release, true);
+      window.removeEventListener('mouseup', release, true);
+      window.removeEventListener('dragend', release, true);
+      window.removeEventListener('blur', release);
+    };
+  }, [ariaDragging]);
 
   const deleteSlider = async () => {
     try {
@@ -187,7 +213,7 @@ const DiscoverSliderEdit = ({
       key={`discover-slider-${slider.id}-editing`}
       data-testid="discover-slider-edit-mode"
       className={`relative mb-4 rounded-lg bg-gray-800 shadow-md ${
-        isDragging ? 'opacity-0' : 'opacity-100'
+        isDragging ? 'opacity-60 ring-2 ring-indigo-400/80' : 'opacity-100'
       }`}
       {...dragProps}
       {...dropProps}
