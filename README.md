@@ -6,6 +6,8 @@
 
 It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex / Emby), and Radarr/Sonarr support. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 
+**Jellyfin-first.** Foreseerr’s deeper features — Library / Watch Now, native Desktop playback, Jellyfin watched actions, and the Better Trakt bridge — are built and tested around Jellyfin. Plex and Emby remain supported for Seerr-style sign-in, library scans, requests, and availability. Cross-server features such as Direct Trakt, rating badges (e.g. MDBList), Discover, and the request pipeline work regardless of media server. Full Library and Desktop parity for Plex/Emby is not a current priority; please treat those as best-effort.
+
 **Docs:** [selmant.github.io/foreseerr](https://selmant.github.io/foreseerr/)
 
 ## Optional Native Desktop Companion
