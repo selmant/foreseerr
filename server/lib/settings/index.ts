@@ -687,7 +687,7 @@ class Settings {
           forceMinTtl: 0,
           forceMaxTtl: -1,
         },
-        apiRequestTimeout: 10000,
+        apiRequestTimeout: 60000,
       },
       migrations: [],
     };

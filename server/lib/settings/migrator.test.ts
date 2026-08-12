@@ -148,6 +148,7 @@ describe('Settings migrator: upstream baseline compatibility', () => {
     assert.equal(migrated.plex.ip, '10.0.0.5');
     assert.equal(migrated.plex.libraries.length, 1);
     assert.equal(migrated.clientId, 'legacy-client-id');
+    assert.equal(migrated.network.apiRequestTimeout, 60000);
 
     // A backup of the pre-migration file was written before mutating.
     const backupPath = settingsPath.replace('.json', '.old.json');
@@ -170,6 +171,16 @@ describe('Settings migrator: upstream baseline compatibility', () => {
     assert.equal(settings.mdblist.apiKey, '');
     assert.equal(settings.main.applicationTitle, 'My Upstream Seerr');
     assert.equal(settings.plex.ip, '10.0.0.5');
+  });
+
+  it('preserves an administrator-selected API request timeout', async () => {
+    const settingsPath = tempSettingsPath();
+    const fixture = upstreamBaselineFixture();
+    fixture.network.apiRequestTimeout = 30_000;
+
+    const migrated = await runMigrations(fixture, settingsPath);
+
+    assert.equal(migrated.network.apiRequestTimeout, 30_000);
   });
 
   it('rejects a settings.json written by a newer, unrecognized Foreseerr version', async () => {
