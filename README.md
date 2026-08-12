@@ -10,7 +10,7 @@ It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex 
 
 ## Optional Native Desktop Companion
 
-[Foreseer Desktop](https://github.com/selmant/foreseer-desktop) is the
+[Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) is the
 optional native companion for Foreseerr. It loads the same hosted Foreseerr UI
 in a desktop window and, for supported Jellyfin playback, uses the maintained
 [Jellium runtime fork](https://github.com/selmant/jellium-desktop) to play in
@@ -21,7 +21,7 @@ The desktop binary never replaces this web application: browsers keep their
 normal Jellyfin links, while a compatible desktop runtime adds native playback
 only after the signed-in user's account is linked to Jellyfin. See the
 [native desktop guide](docs/using-seerr/native-desktop.md) for the user-facing
-behavior and [Foreseer Desktop](https://github.com/selmant/foreseer-desktop)
+behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
 for installation and release compatibility.
 
 > [!NOTE]

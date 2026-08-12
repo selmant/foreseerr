@@ -13,7 +13,7 @@ Welcome to the Foreseerr Documentation.
 
 Foreseerr is a complete web application. If you want same-window native
 Jellyfin playback on a desktop computer, install the optional
-[Foreseer Desktop](https://github.com/selmant/foreseer-desktop) companion. It
+[Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) companion. It
 uses this hosted UI and preserves ordinary browser playback whenever the native
 runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
 

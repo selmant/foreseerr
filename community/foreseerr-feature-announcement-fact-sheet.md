@@ -13,7 +13,7 @@ rules immediately before posting.
 
 - Foreseerr: <https://github.com/selmant/foreseerr>
 - Foreseerr documentation: <https://selmant.github.io/foreseerr/>
-- Foreseer Desktop: <https://github.com/selmant/foreseer-desktop>
+- Foreseer Desktop: <https://github.com/selmant/foreseerr-desktop>
 - Jellium runtime fork: <https://github.com/selmant/jellium-desktop>
 - Native Desktop guide: `docs/using-seerr/native-desktop.md`
 

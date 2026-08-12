@@ -5,7 +5,7 @@ description: Use Foreseerr through the optional Foreseer Desktop companion.
 
 # Native Desktop
 
-[Foreseer Desktop](https://github.com/selmant/foreseer-desktop) is an optional
+[Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) is an optional
 native shell for the hosted Foreseerr application. It is useful when you want
 to browse Foreseerr normally and start supported Jellyfin playback in the same
 desktop window.
@@ -33,7 +33,7 @@ all retain the browser fallback.
 
 - A working Foreseerr account and a linked Jellyfin account.
 - A supported Foreseer Desktop release or source build. See the
-  [Desktop README](https://github.com/selmant/foreseer-desktop#readme) for the
+  [Desktop README](https://github.com/selmant/foreseerr-desktop#readme) for the
   current platform and packaging status.
 - The exact HTTPS address of your Foreseerr instance. Configure this in the
   Desktop app; do not put Jellyfin tokens, device IDs, or administrative keys
@@ -66,4 +66,4 @@ Jellyfin access token.
   usable.
 
 For installation, release pins, and native-runtime troubleshooting, use the
-[Foreseer Desktop repository](https://github.com/selmant/foreseer-desktop).
+[Foreseer Desktop repository](https://github.com/selmant/foreseerr-desktop).
