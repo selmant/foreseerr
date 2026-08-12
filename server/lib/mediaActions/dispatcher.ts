@@ -2,6 +2,8 @@ import { providerRatingToStars } from './score';
 import type {
   MarkWatchedOptions,
   MediaActionAggregate,
+  MediaActionItemAvailability,
+  MediaActionOperationCapability,
   MediaActionProvider,
   MediaActionProviderResult,
   MediaActionStatus,
@@ -14,49 +16,122 @@ function emptyStatus(): MediaActionStatus {
   return { watched: false, rating: null, ratingStars: null };
 }
 
+function unavailableReason(
+  providers: MediaActionProviderResult[],
+  matching: MediaActionProviderResult[]
+): MediaActionItemAvailability['watched']['reason'] {
+  if (matching.some((provider) => provider.ok)) {
+    return undefined;
+  }
+  if (matching.length === 0) {
+    return providers.length > 0 ? 'unsupported' : 'no_provider';
+  }
+  if (
+    matching.every(
+      (provider) => provider.error === 'No Jellyfin mapping for item'
+    )
+  ) {
+    return 'not_mapped';
+  }
+  return 'provider_error';
+}
+
+function actionAvailability(
+  providers: MediaActionProviderResult[],
+  providerDefinitions: MediaActionProvider[]
+): MediaActionItemAvailability {
+  const forOperation = (capability: MediaActionOperationCapability) => {
+    const matching = providers.filter((result) =>
+      providerDefinitions.some(
+        (provider) =>
+          provider.id === result.provider && provider.capabilities[capability]
+      )
+    );
+    const available = matching.some((provider) => provider.ok);
+    const reason = available
+      ? undefined
+      : unavailableReason(providers, matching);
+    return reason ? { available, reason } : { available };
+  };
+
+  return {
+    watched: forOperation('writeWatched'),
+    rating: forOperation('writeRating'),
+  };
+}
+
 function withStars(status: MediaActionStatus): MediaActionStatus {
   return {
     watched: status.watched,
     rating: status.rating,
     ratingStars: status.ratingStars ?? providerRatingToStars(status.rating),
+    ...(status.error ? { error: status.error } : {}),
   };
 }
 
+function supportsRead(provider: MediaActionProvider): boolean {
+  return provider.capabilities.readWatched || provider.capabilities.readRating;
+}
+
+/**
+ * Aggregation policy:
+ * - watched: any successful provider reports watched
+ * - rating: first successful rating-capable provider with a non-null rating
+ */
 function aggregateFromProviders(
   item: MediaItemRef,
-  providers: MediaActionProviderResult[]
+  providers: MediaActionProviderResult[],
+  providerDefinitions: MediaActionProvider[]
 ): MediaActionAggregate {
   const successful = providers.filter((p) => p.ok);
-  // Prefer first successful provider for aggregate readout (Trakt is first today).
-  const primary = successful[0];
-  const status = primary
+  const watched = successful.some((provider) => provider.watched);
+  const ratingProvider = successful.find((provider) => provider.rating != null);
+  const status = ratingProvider
     ? withStars({
-        watched: primary.watched,
-        rating: primary.rating,
-        ratingStars: primary.ratingStars,
+        watched,
+        rating: ratingProvider.rating,
+        ratingStars: ratingProvider.ratingStars,
       })
-    : emptyStatus();
+    : withStars({
+        watched,
+        rating: null,
+        ratingStars: null,
+      });
 
   return {
     tmdbId: item.tmdbId,
     mediaType: item.mediaType,
     ...status,
     providers,
+    actions: actionAvailability(providers, providerDefinitions),
   };
+}
+
+async function filterAvailableProviders(
+  providers: MediaActionProvider[],
+  userId: number,
+  capability?: MediaActionOperationCapability
+): Promise<MediaActionProvider[]> {
+  const enabled: MediaActionProvider[] = [];
+  for (const provider of providers) {
+    if (capability && !provider.capabilities[capability]) {
+      continue;
+    }
+    if (await provider.isAvailable(userId)) {
+      enabled.push(provider);
+    }
+  }
+  return enabled;
 }
 
 async function runOnProviders(
   providers: MediaActionProvider[],
   userId: number,
   item: MediaItemRef,
+  capability: MediaActionOperationCapability,
   action: (provider: MediaActionProvider) => Promise<MediaActionStatus>
 ): Promise<MediaActionAggregate> {
-  const enabled: MediaActionProvider[] = [];
-  for (const provider of providers) {
-    if (await provider.isAvailable(userId)) {
-      enabled.push(provider);
-    }
-  }
+  const enabled = await filterAvailableProviders(providers, userId, capability);
 
   if (enabled.length === 0) {
     return {
@@ -64,6 +139,7 @@ async function runOnProviders(
       mediaType: item.mediaType,
       ...emptyStatus(),
       providers: [],
+      actions: actionAvailability([], providers),
     };
   }
 
@@ -71,7 +147,7 @@ async function runOnProviders(
     enabled.map(async (provider): Promise<MediaActionProviderResult> => {
       try {
         const status = withStars(await action(provider));
-        return { provider: provider.id, ok: true, ...status };
+        return { provider: provider.id, ok: !status.error, ...status };
       } catch (e) {
         return {
           provider: provider.id,
@@ -83,7 +159,7 @@ async function runOnProviders(
     })
   );
 
-  return aggregateFromProviders(item, results);
+  return aggregateFromProviders(item, results, providers);
 }
 
 export class MediaActionDispatcher {
@@ -93,9 +169,37 @@ export class MediaActionDispatcher {
     userId: number,
     item: MediaItemRef
   ): Promise<MediaActionAggregate> {
-    return runOnProviders(this.providers, userId, item, (p) =>
-      p.getStatus(userId, item)
+    const enabled = await filterAvailableProviders(this.providers, userId).then(
+      (providers) => providers.filter(supportsRead)
     );
+
+    if (enabled.length === 0) {
+      return {
+        tmdbId: item.tmdbId,
+        mediaType: item.mediaType,
+        ...emptyStatus(),
+        providers: [],
+        actions: actionAvailability([], this.providers),
+      };
+    }
+
+    const results = await Promise.all(
+      enabled.map(async (provider): Promise<MediaActionProviderResult> => {
+        try {
+          const status = withStars(await provider.getStatus(userId, item));
+          return { provider: provider.id, ok: !status.error, ...status };
+        } catch (e) {
+          return {
+            provider: provider.id,
+            ok: false,
+            ...emptyStatus(),
+            error: e instanceof Error ? e.message : 'unknown error',
+          };
+        }
+      })
+    );
+
+    return aggregateFromProviders(item, results, this.providers);
   }
 
   async getStatuses(
@@ -106,12 +210,9 @@ export class MediaActionDispatcher {
       return [];
     }
 
-    const enabled: MediaActionProvider[] = [];
-    for (const provider of this.providers) {
-      if (await provider.isAvailable(userId)) {
-        enabled.push(provider);
-      }
-    }
+    const enabled = (
+      await filterAvailableProviders(this.providers, userId)
+    ).filter(supportsRead);
 
     if (enabled.length === 0) {
       return items.map((item) => ({
@@ -119,6 +220,7 @@ export class MediaActionDispatcher {
         mediaType: item.mediaType,
         ...emptyStatus(),
         providers: [],
+        actions: actionAvailability([], this.providers),
       }));
     }
 
@@ -132,14 +234,26 @@ export class MediaActionDispatcher {
       enabled.map(async (provider) => {
         try {
           const statuses = await provider.getStatuses(userId, items);
+          const returned = new Set<string>();
           for (const status of statuses) {
             const key = `${status.mediaType}:${status.tmdbId}`;
             const list = byKey.get(key);
             if (!list) continue;
+            returned.add(key);
             list.push({
               provider: provider.id,
-              ok: true,
+              ok: !status.error,
               ...withStars(status),
+            });
+          }
+          for (const item of items) {
+            const key = `${item.mediaType}:${item.tmdbId}`;
+            if (returned.has(key)) continue;
+            byKey.get(key)?.push({
+              provider: provider.id,
+              ok: false,
+              ...emptyStatus(),
+              error: 'Provider did not return a status for item',
             });
           }
         } catch (e) {
@@ -160,7 +274,8 @@ export class MediaActionDispatcher {
     return items.map((item) =>
       aggregateFromProviders(
         item,
-        byKey.get(`${item.mediaType}:${item.tmdbId}`) ?? []
+        byKey.get(`${item.mediaType}:${item.tmdbId}`) ?? [],
+        this.providers
       )
     );
   }
@@ -170,7 +285,7 @@ export class MediaActionDispatcher {
     item: MediaItemRef,
     options?: MarkWatchedOptions
   ): Promise<MediaActionAggregate> {
-    return runOnProviders(this.providers, userId, item, (p) =>
+    return runOnProviders(this.providers, userId, item, 'writeWatched', (p) =>
       p.markWatched(userId, item, options)
     );
   }
@@ -180,7 +295,7 @@ export class MediaActionDispatcher {
     item: MediaItemRef,
     options?: UnmarkWatchedOptions
   ): Promise<MediaActionAggregate> {
-    return runOnProviders(this.providers, userId, item, (p) =>
+    return runOnProviders(this.providers, userId, item, 'writeWatched', (p) =>
       p.unmarkWatched(userId, item, options)
     );
   }
@@ -190,7 +305,7 @@ export class MediaActionDispatcher {
     item: MediaItemRef,
     options: RateOptions
   ): Promise<MediaActionAggregate> {
-    return runOnProviders(this.providers, userId, item, (p) =>
+    return runOnProviders(this.providers, userId, item, 'writeRating', (p) =>
       p.rate(userId, item, options)
     );
   }

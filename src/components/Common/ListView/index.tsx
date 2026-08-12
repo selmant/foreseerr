@@ -138,6 +138,7 @@ const ListView = ({
                       (title.mediaInfo?.downloadStatus ?? []).length > 0
                     }
                     canExpand
+                    mutateParent={mutateParent}
                   />
                 );
                 break;
@@ -161,6 +162,7 @@ const ListView = ({
                       (title.mediaInfo?.downloadStatus ?? []).length > 0
                     }
                     canExpand
+                    mutateParent={mutateParent}
                   />
                 );
                 break;

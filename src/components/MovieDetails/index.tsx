@@ -1,12 +1,4 @@
-import RTAudFresh from '@app/assets/rt_aud_fresh.svg';
-import RTAudRotten from '@app/assets/rt_aud_rotten.svg';
-import RTFresh from '@app/assets/rt_fresh.svg';
-import RTRotten from '@app/assets/rt_rotten.svg';
-import ImdbLogo from '@app/assets/services/imdb.svg';
-import MetacriticLogo from '@app/assets/services/metacritic.svg';
-import TraktLogo from '@app/assets/services/trakt.svg';
 import Spinner from '@app/assets/spinner.svg';
-import TmdbLogo from '@app/assets/tmdb_logo.svg';
 import BlocklistModal from '@app/components/BlocklistModal';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
@@ -14,11 +6,13 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import type { PlayButtonLink } from '@app/components/Common/PlayButton';
 import PlayButton from '@app/components/Common/PlayButton';
+import RatingBadges from '@app/components/Common/RatingBadges';
 import Tag from '@app/components/Common/Tag';
 import Tooltip from '@app/components/Common/Tooltip';
 import ExternalLinkBlock from '@app/components/ExternalLinkBlock';
 import IssueModal from '@app/components/IssueModal';
 import ManageSlideOver from '@app/components/ManageSlideOver';
+import MediaActionDetailBar from '@app/components/MediaActions/MediaActionDetailBar';
 import MediaSlider from '@app/components/MediaSlider';
 import PersonCard from '@app/components/PersonCard';
 import RequestButton from '@app/components/RequestButton';
@@ -587,6 +581,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
           </span>
         </div>
         <div className="media-actions">
+          <MediaActionDetailBar tmdbId={data.id} mediaType="movie" />
           {showHideButton &&
             data?.mediaInfo?.status !== MediaStatus.PROCESSING &&
             data?.mediaInfo?.status !== MediaStatus.AVAILABLE &&
@@ -791,139 +786,15 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
             </div>
           )}
           <div className="media-facts">
-            {(() => {
-              const badges = settings.currentSettings.ratingBadges;
-              const showRt =
-                badges.showRt &&
-                ratingData?.rt?.criticsRating &&
-                typeof ratingData?.rt?.criticsScore === 'number';
-              const showRtUser =
-                badges.showRtUser &&
-                ratingData?.rt?.audienceRating &&
-                !!ratingData?.rt?.audienceScore;
-              const showImdb =
-                badges.showImdb && !!ratingData?.imdb?.criticsScore;
-              const showMetacritic =
-                badges.showMetacritic && ratingData?.metacritic?.score != null;
-              const showTrakt =
-                badges.showTraktCommunity && ratingData?.trakt?.rating != null;
-              const showTmdb = badges.showTmdb && !!data.voteCount;
-
-              if (
-                !showRt &&
-                !showRtUser &&
-                !showImdb &&
-                !showMetacritic &&
-                !showTrakt &&
-                !showTmdb
-              ) {
-                return null;
-              }
-
-              return (
-                <div className="media-ratings">
-                  {showRt && (
-                    <Tooltip
-                      content={intl.formatMessage(messages.rtcriticsscore)}
-                    >
-                      <a
-                        href={ratingData?.rt?.url}
-                        className="media-rating"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {ratingData?.rt?.criticsRating === 'Rotten' ? (
-                          <RTRotten className="w-6" />
-                        ) : (
-                          <RTFresh className="w-6" />
-                        )}
-                        <span>{ratingData?.rt?.criticsScore}%</span>
-                      </a>
-                    </Tooltip>
-                  )}
-                  {showRtUser && (
-                    <Tooltip
-                      content={intl.formatMessage(messages.rtaudiencescore)}
-                    >
-                      <a
-                        href={ratingData?.rt?.url}
-                        className="media-rating"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {ratingData?.rt?.audienceRating === 'Spilled' ? (
-                          <RTAudRotten className="w-6" />
-                        ) : (
-                          <RTAudFresh className="w-6" />
-                        )}
-                        <span>{ratingData?.rt?.audienceScore}%</span>
-                      </a>
-                    </Tooltip>
-                  )}
-                  {showImdb && ratingData?.imdb && (
-                    <Tooltip
-                      content={intl.formatMessage(messages.imdbuserscore, {
-                        formattedCount: intl.formatNumber(
-                          ratingData.imdb.criticsScoreCount,
-                          {
-                            notation: 'compact',
-                            compactDisplay: 'short',
-                            maximumFractionDigits: 1,
-                          }
-                        ),
-                      })}
-                    >
-                      <a
-                        href={ratingData.imdb.url}
-                        className="media-rating"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <ImdbLogo className="mr-1 w-6" />
-                        <span>{ratingData.imdb.criticsScore}</span>
-                      </a>
-                    </Tooltip>
-                  )}
-                  {showMetacritic && (
-                    <Tooltip
-                      content={intl.formatMessage(messages.metacriticscore)}
-                    >
-                      <span className="media-rating">
-                        <MetacriticLogo className="mr-1 h-6 w-6" />
-                        <span>{ratingData?.metacritic?.score}</span>
-                      </span>
-                    </Tooltip>
-                  )}
-                  {showTrakt && (
-                    <Tooltip
-                      content={intl.formatMessage(messages.traktcommunityscore)}
-                    >
-                      <span className="media-rating">
-                        <TraktLogo className="mr-1 h-6 w-6" />
-                        <span>
-                          {Number(ratingData?.trakt?.rating).toFixed(1)}
-                        </span>
-                      </span>
-                    </Tooltip>
-                  )}
-                  {showTmdb && (
-                    <Tooltip
-                      content={intl.formatMessage(messages.tmdbuserscore)}
-                    >
-                      <a
-                        href={`https://www.themoviedb.org/movie/${data.id}?language=${locale}`}
-                        className="media-rating"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <TmdbLogo className="mr-1 w-6" />
-                        <span>{Math.round(data.voteAverage * 10)}%</span>
-                      </a>
-                    </Tooltip>
-                  )}
-                </div>
-              );
-            })()}
+            <RatingBadges
+              detail
+              item={{
+                tmdbRating: data.voteAverage,
+                ratings: data.ratings,
+              }}
+              badgeSettings={settings.currentSettings.ratingBadges}
+              tmdbHref={`https://www.themoviedb.org/movie/${data.id}?language=${locale}`}
+            />
             {data.originalTitle &&
               data.originalLanguage !== locale.slice(0, 2) && (
                 <div className="media-fact">

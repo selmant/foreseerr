@@ -467,19 +467,33 @@ class JellyfinAPI extends ExternalAPI {
   public async getItemData(
     id: string
   ): Promise<JellyfinLibraryItemExtended | undefined> {
+    const items = await this.getItemsData([id]);
+    return items[0];
+  }
+
+  public async getItemsData(
+    ids: string[]
+  ): Promise<JellyfinLibraryItemExtended[]> {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
     try {
       const itemResponse = await this.get<JellyfinItemsReponse>(`/Items`, {
         params: {
-          ids: id,
+          ids: uniqueIds.join(','),
+          userId: this.userId ?? 'Me',
+          EnableUserData: true,
           fields: 'ProviderIds,MediaSources,Width,Height,IsHD,DateCreated',
         },
       });
 
-      return itemResponse.Items?.[0];
+      return itemResponse.Items ?? [];
     } catch (e) {
       if (availabilitySync.running) {
         if (e.response?.status === 500) {
-          return undefined;
+          return [];
         }
       }
 

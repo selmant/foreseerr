@@ -11,6 +11,7 @@ import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useIsTouch } from '@app/hooks/useIsTouch';
+import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
@@ -40,7 +41,7 @@ import Link from 'next/link';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useIntl } from 'react-intl';
-import useSWR, { mutate } from 'swr';
+import { mutate } from 'swr';
 
 interface TitleCardProps {
   id: number;
@@ -122,20 +123,13 @@ const TitleCard = ({
   const { user, hasPermission } = useUser();
   const { play } = useNativeRuntime();
   const [isUpdating, setIsUpdating] = useState(false);
-
-  const traktLinkKey =
-    settings.currentSettings.traktConfigured &&
-    settings.currentSettings.mediaActionsTraktEnabled &&
-    user
-      ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
-      : null;
-  const { data: traktLink } = useSWR<{ connected: boolean }>(traktLinkKey, {
-    revalidateOnFocus: false,
-  });
+  const { data: mediaActionCapabilities } = useMediaActionCapabilities();
+  const surfaceCapabilities =
+    mediaType === 'movie'
+      ? mediaActionCapabilities?.movie
+      : mediaActionCapabilities?.tv;
   const mediaActionsEnabled = Boolean(
-    settings.currentSettings.traktConfigured &&
-    settings.currentSettings.mediaActionsTraktEnabled !== false &&
-    traktLink?.connected &&
+    (surfaceCapabilities?.watched || surfaceCapabilities?.rating) &&
     (mediaType === 'movie' || mediaType === 'tv')
   );
   const [currentStatus, setCurrentStatus] = useState(status);

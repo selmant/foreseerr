@@ -12,13 +12,14 @@ import {
   patchUserSyncItem,
   warmUserSyncCache,
 } from './syncCache';
-import type {
-  MarkWatchedOptions,
-  MediaActionProvider,
-  MediaActionStatus,
-  MediaItemRef,
-  RateOptions,
-  UnmarkWatchedOptions,
+import {
+  TRAKT_MEDIA_ACTION_CAPABILITIES,
+  type MarkWatchedOptions,
+  type MediaActionProvider,
+  type MediaActionStatus,
+  type MediaItemRef,
+  type RateOptions,
+  type UnmarkWatchedOptions,
 } from './types';
 
 function toStatus(watched: boolean, rating: number | null): MediaActionStatus {
@@ -40,6 +41,7 @@ function watchedAtIso(
 
 export class TraktMediaActionProvider implements MediaActionProvider {
   readonly id = 'trakt' as const;
+  readonly capabilities = TRAKT_MEDIA_ACTION_CAPABILITIES;
 
   async isAvailable(userId: number): Promise<boolean> {
     const settings = getSettings();

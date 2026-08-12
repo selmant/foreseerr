@@ -148,4 +148,16 @@ describe('release calendar date normalization', () => {
     assert.strictEqual(occurrence.sourceSeriesTvdbId, 8);
     assert.strictEqual(occurrence.allDay, false);
   });
+
+  it('keeps timed UTC air dates timezone-stable across parsing', () => {
+    const parsed = parseProviderDate('2026-10-01T18:00:00Z');
+    assert.deepStrictEqual(parsed, {
+      startsAt: new Date('2026-10-01T18:00:00.000Z'),
+      allDay: false,
+    });
+    assert.strictEqual(
+      parsed?.startsAt.toISOString(),
+      '2026-10-01T18:00:00.000Z'
+    );
+  });
 });

@@ -7,17 +7,53 @@ import {
   findLinkedJellyfinUser,
 } from '@server/lib/library';
 import { getSettings } from '@server/lib/settings';
-import type {
-  MarkWatchedOptions,
-  MediaActionProvider,
-  MediaActionStatus,
-  MediaItemRef,
-  RateOptions,
-  UnmarkWatchedOptions,
+import { In } from 'typeorm';
+import {
+  getCachedJellyfinWatched,
+  invalidateJellyfinStatusCache,
+  setCachedJellyfinWatched,
+} from './jellyfinStatusCache';
+import {
+  JELLYFIN_MEDIA_ACTION_CAPABILITIES,
+  type MarkWatchedOptions,
+  type MediaActionProvider,
+  type MediaActionStatus,
+  type MediaItemRef,
+  type RateOptions,
+  type UnmarkWatchedOptions,
 } from './types';
 
 function emptyStatus(): MediaActionStatus {
   return { watched: false, rating: null, ratingStars: null };
+}
+
+export const JELLYFIN_STATUS_BATCH_CHUNK_SIZE = 50;
+
+/** Fetch bounded chunks without allowing one failure to erase other results. */
+export async function fetchJellyfinStatusChunks<T>(
+  ids: string[],
+  fetch: (chunk: string[]) => Promise<T[]>
+): Promise<{ entries: T[]; failedIds: string[] }> {
+  const uniqueIds = [...new Set(ids)];
+  const entries: T[] = [];
+  const failedIds: string[] = [];
+
+  for (
+    let index = 0;
+    index < uniqueIds.length;
+    index += JELLYFIN_STATUS_BATCH_CHUNK_SIZE
+  ) {
+    const chunk = uniqueIds.slice(
+      index,
+      index + JELLYFIN_STATUS_BATCH_CHUNK_SIZE
+    );
+    try {
+      entries.push(...(await fetch(chunk)));
+    } catch {
+      failedIds.push(...chunk);
+    }
+  }
+  return { entries, failedIds };
 }
 
 export const jellyfinEpisodeActions = {
@@ -58,6 +94,35 @@ export const jellyfinEpisodeActions = {
       } else {
         await client.markUnplayed(episode.Id);
       }
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Library pages already know Jellyfin's opaque episode ID. The server uses
+   * the linked-user client, so neither a token nor any other credential is
+   * accepted or returned by this API.
+   */
+  async setItemWatched(
+    userId: number,
+    jellyfinItemId: string,
+    watched: boolean
+  ): Promise<boolean> {
+    const client = await getJellyfinEpisodeClient(userId);
+    if (!client) return false;
+
+    try {
+      const item = await client.getItemData(jellyfinItemId);
+      if (!item || item.Type !== 'Episode') return false;
+      if (watched) {
+        await client.markPlayed(jellyfinItemId);
+      } else {
+        await client.markUnplayed(jellyfinItemId);
+      }
+      invalidateJellyfinStatusCache(userId);
+      setCachedJellyfinWatched(userId, jellyfinItemId, watched);
       return true;
     } catch {
       return false;
@@ -112,6 +177,7 @@ async function getJellyfinEpisodeClient(userId: number) {
 
 export class JellyfinMediaActionProvider implements MediaActionProvider {
   readonly id = 'jellyfin' as const;
+  readonly capabilities = JELLYFIN_MEDIA_ACTION_CAPABILITIES;
 
   async isAvailable(userId: number): Promise<boolean> {
     const settings = getSettings();
@@ -139,7 +205,7 @@ export class JellyfinMediaActionProvider implements MediaActionProvider {
     const media = await this.findMediaItem(item);
     const jellyfinId = media?.jellyfinMediaId ?? media?.jellyfinMediaId4k;
     if (!jellyfinId) {
-      return emptyStatus();
+      throw new Error('No Jellyfin mapping for item');
     }
 
     const { client } = await this.getClient(userId);
@@ -150,8 +216,10 @@ export class JellyfinMediaActionProvider implements MediaActionProvider {
         rating: null,
         ratingStars: null,
       };
-    } catch {
-      return emptyStatus();
+    } catch (error) {
+      throw error instanceof Error
+        ? error
+        : new Error('Failed to read Jellyfin watch state');
     }
   }
 
@@ -162,27 +230,71 @@ export class JellyfinMediaActionProvider implements MediaActionProvider {
     if (items.length === 0) return [];
 
     const { client } = await this.getClient(userId);
+    const mediaByKey = await this.findMediaItems(items);
     const results: (MediaItemRef & MediaActionStatus)[] = [];
+    const idsToFetch: string[] = [];
+    const itemsByJellyfinId = new Map<string, MediaItemRef[]>();
 
     for (const item of items) {
-      const media = await this.findMediaItem(item);
+      const media = mediaByKey.get(`${item.mediaType}:${item.tmdbId}`);
       const jellyfinId = media?.jellyfinMediaId ?? media?.jellyfinMediaId4k;
       if (!jellyfinId) {
-        results.push({ ...item, ...emptyStatus() });
-        continue;
-      }
-      try {
-        const data = await client.getItemData(jellyfinId);
         results.push({
           ...item,
-          watched: data?.UserData?.Played ?? false,
+          ...emptyStatus(),
+          error: 'No Jellyfin mapping for item',
+        });
+        continue;
+      }
+      const cached = getCachedJellyfinWatched(userId, jellyfinId);
+      if (cached != null) {
+        results.push({
+          ...item,
+          watched: cached,
           rating: null,
           ratingStars: null,
         });
-      } catch {
-        results.push({ ...item, ...emptyStatus() });
+        continue;
+      }
+      const mappedItems = itemsByJellyfinId.get(jellyfinId);
+      if (mappedItems) {
+        mappedItems.push(item);
+      } else {
+        idsToFetch.push(jellyfinId);
+        itemsByJellyfinId.set(jellyfinId, [item]);
       }
     }
+
+    const { entries, failedIds } = await fetchJellyfinStatusChunks(
+      idsToFetch,
+      (chunk) => client.getItemsData(chunk)
+    );
+    const byId = new Map(entries.map((entry) => [entry.Id, entry]));
+    for (const jellyfinId of idsToFetch) {
+      const mappedItems = itemsByJellyfinId.get(jellyfinId) ?? [];
+      const entry = byId.get(jellyfinId);
+      if (!entry) {
+        const error = failedIds.includes(jellyfinId)
+          ? 'Failed to read Jellyfin watch state'
+          : 'Jellyfin did not return item status';
+        for (const item of mappedItems) {
+          results.push({ ...item, ...emptyStatus(), error });
+        }
+        continue;
+      }
+
+      const watched = entry.UserData?.Played ?? false;
+      setCachedJellyfinWatched(userId, jellyfinId, watched);
+      for (const item of mappedItems) {
+        results.push({
+          ...item,
+          watched,
+          rating: null,
+          ratingStars: null,
+        });
+      }
+    }
+
     return results;
   }
 
@@ -195,11 +307,13 @@ export class JellyfinMediaActionProvider implements MediaActionProvider {
     const media = await this.findMediaItem(item);
     const jellyfinId = media?.jellyfinMediaId ?? media?.jellyfinMediaId4k;
     if (!jellyfinId) {
-      return emptyStatus();
+      throw new Error('No Jellyfin mapping for item');
     }
 
     const { client } = await this.getClient(userId);
     await client.markPlayed(jellyfinId);
+    invalidateJellyfinStatusCache(userId);
+    setCachedJellyfinWatched(userId, jellyfinId, true);
     return { watched: true, rating: null, ratingStars: null };
   }
 
@@ -212,11 +326,13 @@ export class JellyfinMediaActionProvider implements MediaActionProvider {
     const media = await this.findMediaItem(item);
     const jellyfinId = media?.jellyfinMediaId ?? media?.jellyfinMediaId4k;
     if (!jellyfinId) {
-      return emptyStatus();
+      throw new Error('No Jellyfin mapping for item');
     }
 
     const { client } = await this.getClient(userId);
     await client.markUnplayed(jellyfinId);
+    invalidateJellyfinStatusCache(userId);
+    setCachedJellyfinWatched(userId, jellyfinId, false);
     return { watched: false, rating: null, ratingStars: null };
   }
 
@@ -237,6 +353,38 @@ export class JellyfinMediaActionProvider implements MediaActionProvider {
       throw new Error('Jellyfin client not available');
     }
     return result;
+  }
+
+  private async findMediaItems(
+    items: MediaItemRef[]
+  ): Promise<Map<string, Media>> {
+    const mediaRepository = getRepository(Media);
+    const movieIds = items
+      .filter((item) => item.mediaType === 'movie')
+      .map((item) => item.tmdbId);
+    const tvIds = items
+      .filter((item) => item.mediaType === 'tv')
+      .map((item) => item.tmdbId);
+
+    const [movies, shows] = await Promise.all([
+      movieIds.length
+        ? mediaRepository.find({
+            where: { mediaType: MediaType.MOVIE, tmdbId: In(movieIds) },
+          })
+        : Promise.resolve([]),
+      tvIds.length
+        ? mediaRepository.find({
+            where: { mediaType: MediaType.TV, tmdbId: In(tvIds) },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const map = new Map<string, Media>();
+    for (const media of [...movies, ...shows]) {
+      const mediaType = media.mediaType === MediaType.MOVIE ? 'movie' : 'tv';
+      map.set(`${mediaType}:${media.tmdbId}`, media);
+    }
+    return map;
   }
 
   private async findMediaItem(

@@ -25,6 +25,9 @@ interface RatingBadgesProps {
   compact?: boolean;
   /** Focused poster uses the full provider set in a two-column layout. */
   expanded?: boolean;
+  /** Detail page horizontal row using media-rating styles. */
+  detail?: boolean;
+  tmdbHref?: string;
   className?: string;
 }
 
@@ -60,6 +63,8 @@ const RatingBadges = ({
   badgeSettings = DEFAULT_RATING_BADGE_SETTINGS,
   compact = false,
   expanded = false,
+  detail = false,
+  tmdbHref,
   className = '',
 }: RatingBadgesProps) => {
   const activeSettings = resolveRatingBadgeSettings(
@@ -73,6 +78,40 @@ const RatingBadges = ({
 
   if (!badges.length) {
     return null;
+  }
+
+  if (detail) {
+    return (
+      <div className={['media-ratings', className].filter(Boolean).join(' ')}>
+        {badges.map((badge) => {
+          const href = badge.key === 'tmdb' && tmdbHref ? tmdbHref : badge.href;
+          const content = (
+            <>
+              <span className="flex items-center">
+                <BadgeIcon badge={badge} />
+              </span>
+              <span>{badge.value}</span>
+            </>
+          );
+          return (
+            <Tooltip key={badge.key} content={badge.title}>
+              {href ? (
+                <a
+                  href={href}
+                  className="media-rating"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {content}
+                </a>
+              ) : (
+                <span className="media-rating">{content}</span>
+              )}
+            </Tooltip>
+          );
+        })}
+      </div>
+    );
   }
 
   const list = (

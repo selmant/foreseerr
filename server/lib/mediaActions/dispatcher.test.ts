@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { MediaActionDispatcher } from './dispatcher';
-import type {
-  MediaActionProvider,
-  MediaActionStatus,
-  MediaItemRef,
+import {
+  JELLYFIN_MEDIA_ACTION_CAPABILITIES,
+  TRAKT_MEDIA_ACTION_CAPABILITIES,
+  type MediaActionProvider,
+  type MediaActionStatus,
+  type MediaItemRef,
 } from './types';
 
 const item: MediaItemRef = { mediaType: 'movie', tmdbId: 550 };
@@ -21,7 +23,7 @@ function stubStatus(
 }
 
 function makeProvider(
-  id: 'trakt',
+  id: 'trakt' | 'jellyfin',
   overrides: Partial<MediaActionProvider> & {
     available?: boolean;
     fail?: boolean;
@@ -29,9 +31,14 @@ function makeProvider(
 ): MediaActionProvider {
   const available = overrides.available ?? true;
   const fail = overrides.fail ?? false;
+  const capabilities =
+    id === 'jellyfin'
+      ? JELLYFIN_MEDIA_ACTION_CAPABILITIES
+      : TRAKT_MEDIA_ACTION_CAPABILITIES;
 
   return {
     id,
+    capabilities,
     isAvailable: async () => available,
     getStatus: async () => {
       if (fail) throw new Error(`${id} failed`);
@@ -145,5 +152,73 @@ describe('MediaActionDispatcher', () => {
     assert.equal(results[0].watched, true);
     assert.equal(results[0].ratingStars, 4);
     assert.equal(results[1].mediaType, 'tv');
+  });
+
+  it('aggregates watched when any provider reports watched', async () => {
+    const trakt = makeProvider('trakt', {
+      getStatus: async () =>
+        stubStatus({ watched: false, rating: null, ratingStars: null }),
+    });
+    const jellyfin = makeProvider('jellyfin', {
+      getStatus: async () =>
+        stubStatus({ watched: true, rating: null, ratingStars: null }),
+    });
+    const dispatcher = new MediaActionDispatcher([trakt, jellyfin]);
+    const result = await dispatcher.getStatus(1, item);
+
+    assert.equal(result.watched, true);
+    assert.equal(result.rating, null);
+    assert.equal(result.providers.length, 2);
+  });
+
+  it('prefers the first successful rating provider for aggregate rating', async () => {
+    const trakt = makeProvider('trakt', {
+      getStatus: async () =>
+        stubStatus({ watched: true, rating: 8, ratingStars: 4 }),
+    });
+    const jellyfin = makeProvider('jellyfin', {
+      getStatus: async () =>
+        stubStatus({ watched: false, rating: null, ratingStars: null }),
+    });
+    const dispatcher = new MediaActionDispatcher([trakt, jellyfin]);
+    const result = await dispatcher.getStatus(1, item);
+
+    assert.equal(result.watched, true);
+    assert.equal(result.rating, 8);
+    assert.equal(result.ratingStars, 4);
+  });
+
+  it('skips Jellyfin for rating writes because it does not support writeRating', async () => {
+    const calls: string[] = [];
+    const trakt = makeProvider('trakt', {
+      rate: async () => {
+        calls.push('trakt');
+        return stubStatus({ watched: true, rating: 10, ratingStars: 5 });
+      },
+    });
+    const jellyfin = makeProvider('jellyfin', {
+      rate: async () => {
+        calls.push('jellyfin');
+        return stubStatus();
+      },
+    });
+
+    const dispatcher = new MediaActionDispatcher([trakt, jellyfin]);
+    const result = await dispatcher.rate(1, item, { ratingStars: 5 });
+
+    assert.deepEqual(calls, ['trakt']);
+    assert.equal(result.providers.length, 1);
+    assert.equal(result.providers[0].provider, 'trakt');
+    assert.equal(result.providers[0].ok, true);
+  });
+
+  it('returns failure when only Jellyfin is available for rating', async () => {
+    const trakt = makeProvider('trakt', { available: false });
+    const jellyfin = makeProvider('jellyfin');
+    const dispatcher = new MediaActionDispatcher([trakt, jellyfin]);
+    const result = await dispatcher.rate(1, item, { ratingStars: 4 });
+
+    assert.equal(result.providers.length, 0);
+    assert.equal(result.rating, null);
   });
 });

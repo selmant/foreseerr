@@ -1,16 +1,21 @@
-import type { MediaActionStatusResponse } from '@app/components/TitleCard/MediaActionControls';
-import useSettings from '@app/hooks/useSettings';
+import type { MediaActionStatusResponse } from '@app/hooks/useMediaActions';
+import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import { useUser } from '@app/hooks/useUser';
+import {
+  mediaActionBatchKey,
+  mediaActionStatusKey,
+} from '@app/utils/mediaActionInvalidation';
 import axios from 'axios';
 import {
   createContext,
   useContext,
   useEffect,
   useMemo,
-  useRef,
   type ReactNode,
 } from 'react';
 import useSWR, { mutate as globalMutate } from 'swr';
+
+export type { MediaActionStatusResponse };
 
 export type TitleCardBatchRef = {
   mediaType: 'movie' | 'tv';
@@ -65,8 +70,9 @@ export function TitleCardBatchProvider({
   refs,
   children,
 }: TitleCardBatchProviderProps) {
-  const settings = useSettings();
   const { user } = useUser();
+  const { data: capabilities, isLoading: capabilitiesLoading } =
+    useMediaActionCapabilities();
   const refsKey = useMemo(() => stableRefsKey(refs), [refs]);
   const uniqueRefs = useMemo(() => {
     const seen = new Set<string>();
@@ -80,24 +86,19 @@ export function TitleCardBatchProvider({
     return out;
   }, [refs]);
 
-  const mediaActionsLikely = Boolean(
-    settings.currentSettings.traktConfigured &&
-    settings.currentSettings.mediaActionsTraktEnabled !== false &&
-    user
+  const titleActionsAvailable = Boolean(
+    user &&
+    uniqueRefs.length &&
+    uniqueRefs.some((ref) => {
+      const surface =
+        ref.mediaType === 'movie' ? capabilities?.movie : capabilities?.tv;
+      return surface?.watched || surface?.rating;
+    })
   );
 
-  const traktLinkKey = mediaActionsLikely
-    ? `/api/v1/user/${user?.id}/settings/linked-accounts/trakt`
-    : null;
-  const { data: traktLink, isLoading: traktLinkLoading } = useSWR<{
-    connected: boolean;
-  }>(traktLinkKey, {
-    revalidateOnFocus: false,
-  });
-
   const statusKey =
-    mediaActionsLikely && traktLink?.connected && uniqueRefs.length
-      ? ['/api/v1/media-actions/status-batch', refsKey]
+    titleActionsAvailable && uniqueRefs.length
+      ? mediaActionBatchKey(refsKey)
       : null;
 
   const { data: statusData, isLoading: statusLoading } =
@@ -118,20 +119,16 @@ export function TitleCardBatchProvider({
       { revalidateOnFocus: false, shouldRetryOnError: false }
     );
 
-  const seededStatusRef = useRef<string | null>(null);
   useEffect(() => {
     if (!statusData?.results?.length) return;
-    const seedKey = refsKey;
-    if (seededStatusRef.current === seedKey) return;
-    seededStatusRef.current = seedKey;
     for (const result of statusData.results) {
       void globalMutate(
-        `/api/v1/media-actions/${result.mediaType}/${result.tmdbId}/status`,
+        mediaActionStatusKey(result.mediaType, result.tmdbId),
         result,
         { revalidate: false }
       );
     }
-  }, [statusData, refsKey]);
+  }, [statusData]);
 
   const statusMap = useMemo(() => {
     const map = new Map<string, MediaActionStatusResponse>();
@@ -143,22 +140,21 @@ export function TitleCardBatchProvider({
 
   const value = useMemo<TitleCardBatchContextValue>(
     () => ({
-      // Only claim ownership once we know Trakt is linked and a batch is wired.
       active: Boolean(statusKey),
       isLoading: Boolean(
-        traktLinkKey &&
-        (traktLinkLoading || (statusKey && statusLoading && !statusData))
+        titleActionsAvailable &&
+        (capabilitiesLoading || (statusKey && statusLoading && !statusData))
       ),
       getStatus: (mediaType, tmdbId) =>
         statusMap.get(itemKey(mediaType, tmdbId)),
     }),
     [
+      capabilitiesLoading,
+      statusData,
       statusKey,
       statusLoading,
-      statusData,
       statusMap,
-      traktLinkKey,
-      traktLinkLoading,
+      titleActionsAvailable,
     ]
   );
 

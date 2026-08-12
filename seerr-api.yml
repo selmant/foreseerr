@@ -660,7 +660,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [trakt]
+          enum: [trakt, jellyfin]
         ok:
           type: boolean
         watched:
@@ -677,6 +677,8 @@ components:
           type: string
     MediaActionStatus:
       type: object
+      required:
+        [tmdbId, mediaType, watched, rating, ratingStars, providers, actions]
       properties:
         tmdbId:
           type: number
@@ -699,6 +701,71 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MediaActionProviderResult'
+        actions:
+          $ref: '#/components/schemas/MediaActionItemAvailability'
+    MediaActionOperationAvailability:
+      type: object
+      required: [available]
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: string
+          enum: [no_provider, not_mapped, provider_error, unsupported]
+          description: Present when this action cannot be performed for this title.
+    MediaActionItemAvailability:
+      type: object
+      required: [watched, rating]
+      properties:
+        watched:
+          $ref: '#/components/schemas/MediaActionOperationAvailability'
+        rating:
+          $ref: '#/components/schemas/MediaActionOperationAvailability'
+    MediaActionOperationCapabilities:
+      type: object
+      required: [readWatched, writeWatched, readRating, writeRating]
+      properties:
+        readWatched:
+          type: boolean
+        writeWatched:
+          type: boolean
+        readRating:
+          type: boolean
+        writeRating:
+          type: boolean
+    MediaActionProviderCapability:
+      type: object
+      required: [id, linked, capabilities]
+      properties:
+        id:
+          type: string
+          enum: [trakt, jellyfin]
+        linked:
+          type: boolean
+        capabilities:
+          $ref: '#/components/schemas/MediaActionOperationCapabilities'
+    MediaActionSurfaceCapabilities:
+      type: object
+      required: [watched, rating]
+      properties:
+        watched:
+          type: boolean
+        rating:
+          type: boolean
+    MediaActionCapabilitiesResponse:
+      type: object
+      required: [movie, tv, episode, providers]
+      properties:
+        movie:
+          $ref: '#/components/schemas/MediaActionSurfaceCapabilities'
+        tv:
+          $ref: '#/components/schemas/MediaActionSurfaceCapabilities'
+        episode:
+          $ref: '#/components/schemas/MediaActionSurfaceCapabilities'
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaActionProviderCapability'
     EpisodeWatchStatus:
       type: object
       required: [available, watchedEpisodeNumbers]
@@ -713,15 +780,17 @@ components:
             minimum: 0
     EpisodeWatchWriteResult:
       type: object
-      required: [provider, ok, watched]
+      required: [outcome, watched, providers]
       properties:
-        provider:
+        outcome:
           type: string
-          enum: [trakt]
-        ok:
-          type: boolean
+          enum: [success, partial, failure]
         watched:
           type: boolean
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaActionProviderResult'
     RatingBadgeSettings:
       type: object
       properties:
@@ -1042,6 +1111,10 @@ components:
         mediaActionsTraktEnabled:
           type: boolean
           description: Whether Trakt is enabled for watched/unwatched/rate fan-out
+          example: true
+        mediaActionsJellyfinEnabled:
+          type: boolean
+          description: Whether Jellyfin is enabled as a media-actions watched provider
           example: true
         mdblistConfigured:
           type: boolean
@@ -2914,7 +2987,7 @@ paths:
                   pattern: '^[a-f0-9]{64}$'
                 protocolVersion:
                   type: integer
-                  enum: [1, 2]
+                  enum: [1]
       responses:
         '201':
           description: Single-use ticket issued
@@ -2959,7 +3032,7 @@ paths:
                   pattern: '^[A-Za-z0-9_-]{43}$'
                 protocolVersion:
                   type: integer
-                  enum: [1, 2]
+                  enum: [1]
       responses:
         '200':
           description: Native Jellyfin session bootstrap
@@ -8726,6 +8799,21 @@ paths:
                       $ref: '#/components/schemas/CreditCrew'
                   id:
                     type: number
+  /media-actions/capabilities:
+    get:
+      summary: Per-user media action capabilities
+      description: Returns which watched and rating operations are available for the authenticated user across providers.
+      tags:
+        - media
+      responses:
+        '200':
+          description: Capability matrix for the current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaActionCapabilitiesResponse'
+        '401':
+          description: Unauthorized
   /media-actions/status-batch:
     post:
       summary: Batch media action status
@@ -8820,9 +8908,26 @@ paths:
             type: integer
             minimum: 0
             maximum: 10000
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jellyfinItemId:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  description: Optional direct Jellyfin episode identity supplied by Library surfaces.
       responses:
         '200':
           description: Episode marked watched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+        '207':
+          description: Episode updated by only a subset of linked providers
           content:
             application/json:
               schema:
@@ -8859,6 +8964,77 @@ paths:
             type: integer
             minimum: 0
             maximum: 10000
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jellyfinItemId:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  description: Optional direct Jellyfin episode identity supplied by Library surfaces.
+      responses:
+        '200':
+          description: Episode marked unwatched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+        '207':
+          description: Episode updated by only a subset of linked providers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+        '502':
+          description: Trakt episode actions are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+  /media-actions/episodes/jellyfin/{jellyfinItemId}/watched:
+    post:
+      summary: Mark a Jellyfin library episode watched
+      description: Uses the current user's linked Jellyfin session; no Jellyfin credentials are accepted by this endpoint.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: jellyfinItemId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      responses:
+        '200':
+          description: Episode marked watched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+        '502':
+          description: Linked Jellyfin episode is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeWatchWriteResult'
+  /media-actions/episodes/jellyfin/{jellyfinItemId}/unwatched:
+    post:
+      summary: Mark a Jellyfin library episode unwatched
+      description: Uses the current user's linked Jellyfin session; no Jellyfin credentials are accepted by this endpoint.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: jellyfinItemId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
       responses:
         '200':
           description: Episode marked unwatched
@@ -8867,7 +9043,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EpisodeWatchWriteResult'
         '502':
-          description: Trakt episode actions are unavailable
+          description: Linked Jellyfin episode is unavailable
           content:
             application/json:
               schema:

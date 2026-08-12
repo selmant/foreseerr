@@ -13,6 +13,7 @@ import {
 } from '@app/components/Discover/mergeFilterDefaults';
 import useDiscover from '@app/hooks/useDiscover';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
+import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -57,6 +58,7 @@ const Trending = () => {
     preparedFilters.ignoreWatched === 'false'
       ? 1
       : 0);
+  const hideWatched = preparedFilters.ignoreWatched === 'true';
 
   const {
     isLoadingInitialData,
@@ -66,6 +68,7 @@ const Trending = () => {
     titles,
     fetchMore,
     error,
+    mutate,
   } = useDiscover<MovieResult | TvResult | PersonResult>(
     '/api/v1/discover/trending',
     {
@@ -75,6 +78,8 @@ const Trending = () => {
       ...discoverDefaultsRequestExtras(),
     }
   );
+
+  useRegisterHideWatchedRevalidation(mutate, hideWatched);
 
   if (error) {
     return <ErrorPage statusCode={500} />;

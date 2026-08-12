@@ -15,6 +15,7 @@ import NodeCache from 'node-cache';
 import { randomUUID } from 'node:crypto';
 
 const mediaServarrRoutes = Router();
+/** Process-local operation tokens; see docs/servarr-interactive-operations.md */
 const tokens = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 
 type Context = {

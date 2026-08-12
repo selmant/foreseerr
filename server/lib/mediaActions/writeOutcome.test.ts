@@ -13,6 +13,10 @@ function aggregate(
     rating: null,
     ratingStars: null,
     providers,
+    actions: {
+      watched: { available: providers.some((provider) => provider.ok) },
+      rating: { available: false, reason: 'unsupported' },
+    },
   };
 }
 
@@ -60,8 +64,7 @@ describe('classifyWriteOutcome', () => {
         ratingStars: null,
       },
       {
-        // Cast: only trakt exists today; shape supports future multi-provider.
-        provider: 'trakt',
+        provider: 'jellyfin',
         ok: false,
         watched: false,
         rating: null,

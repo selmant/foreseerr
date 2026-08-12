@@ -1,5 +1,6 @@
 import {
   classifyWriteOutcome,
+  getMediaActionCapabilities,
   getMediaActionDispatcher,
   writeHttpStatus,
   type MediaActionAggregate,
@@ -19,6 +20,7 @@ const mediaActionsRoutes = Router();
 
 const positiveIdSchema = z.coerce.number().int().positive().max(2_147_483_647);
 const episodeCoordinateSchema = z.coerce.number().int().min(0).max(10_000);
+const jellyfinItemIdSchema = z.string().trim().min(1).max(255);
 
 function parseMediaType(value: string): MediaActionMediaType | null {
   if (value === 'movie' || value === 'tv') {
@@ -71,6 +73,7 @@ function toResponse(result: MediaActionAggregate, includeOutcome = false) {
     watched: result.watched,
     rating: result.rating,
     ratingStars: result.ratingStars,
+    actions: result.actions,
     providers: result.providers.map((p) => ({
       provider: p.provider,
       ok: p.ok,
@@ -137,6 +140,48 @@ function parseEpisodePath(
   };
 }
 
+function episodeWriteAggregate(
+  tmdbId: number,
+  watched: boolean,
+  providers: MediaActionProviderResult[]
+): MediaActionAggregate {
+  const writeSucceeded = providers.some((provider) => provider.ok);
+  return {
+    tmdbId,
+    mediaType: 'tv',
+    watched,
+    rating: null,
+    ratingStars: null,
+    providers,
+    actions: {
+      watched: writeSucceeded
+        ? { available: true }
+        : {
+            available: false,
+            reason: providers.length === 0 ? 'no_provider' : 'provider_error',
+          },
+      rating: { available: false, reason: 'unsupported' },
+    },
+  };
+}
+
+mediaActionsRoutes.get('/capabilities', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+
+    const capabilities = await getMediaActionCapabilities(req.user.id);
+    return res.status(200).json(capabilities);
+  } catch (error) {
+    return handleActionError(
+      error,
+      next,
+      'Unable to retrieve media action capabilities.'
+    );
+  }
+});
+
 mediaActionsRoutes.get(
   '/tv/:tmdbId/seasons/:seasonNumber/episodes/status',
   async (req, res, next) => {
@@ -199,6 +244,9 @@ const setEpisodeWatched =
         traktEpisodeActions.isAvailable(req.user.id),
         jellyfinEpisodeActions.isAvailable(req.user.id),
       ]);
+      const directJellyfinItem = jellyfinItemIdSchema.safeParse(
+        req.body?.jellyfinItemId
+      );
       const actions: Promise<MediaActionProviderResult>[] = [];
       if (traktAvailable) {
         actions.push(
@@ -231,14 +279,20 @@ const setEpisodeWatched =
       }
       if (jellyfinAvailable) {
         actions.push(
-          jellyfinEpisodeActions
-            .setEpisodeWatched(
-              req.user.id,
-              parsed.tmdbId,
-              parsed.seasonNumber,
-              parsed.episodeNumber,
-              watched
-            )
+          (directJellyfinItem.success
+            ? jellyfinEpisodeActions.setItemWatched(
+                req.user.id,
+                directJellyfinItem.data,
+                watched
+              )
+            : jellyfinEpisodeActions.setEpisodeWatched(
+                req.user.id,
+                parsed.tmdbId,
+                parsed.seasonNumber,
+                parsed.episodeNumber,
+                watched
+              )
+          )
             .then((ok) => ({
               provider: 'jellyfin' as const,
               ok,
@@ -259,14 +313,11 @@ const setEpisodeWatched =
         );
       }
       const providers = await Promise.all(actions);
-      const aggregate: MediaActionAggregate = {
-        tmdbId: parsed.tmdbId,
-        mediaType: 'tv',
+      const aggregate = episodeWriteAggregate(
+        parsed.tmdbId,
         watched,
-        rating: null,
-        ratingStars: null,
-        providers,
-      };
+        providers
+      );
       const outcome = classifyWriteOutcome(aggregate);
 
       return res.status(writeHttpStatus(outcome)).json({
@@ -293,6 +344,71 @@ mediaActionsRoutes.post(
 mediaActionsRoutes.post(
   '/tv/:tmdbId/seasons/:seasonNumber/episodes/:episodeNumber/unwatched',
   setEpisodeWatched(false)
+);
+
+const setJellyfinItemWatched =
+  (watched: boolean): RequestHandler =>
+  async (req, res, next) => {
+    try {
+      if (!req.user?.id) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const jellyfinItemId = jellyfinItemIdSchema.safeParse(
+        req.params.jellyfinItemId
+      );
+      if (!jellyfinItemId.success) {
+        return next({
+          status: 400,
+          message: 'Invalid Jellyfin item identifier.',
+        });
+      }
+
+      const available = await jellyfinEpisodeActions.isAvailable(req.user.id);
+      const ok = available
+        ? await jellyfinEpisodeActions.setItemWatched(
+            req.user.id,
+            jellyfinItemId.data,
+            watched
+          )
+        : false;
+      const providers: MediaActionProviderResult[] = available
+        ? [
+            {
+              provider: 'jellyfin',
+              ok,
+              watched: ok ? watched : !watched,
+              rating: null,
+              ratingStars: null,
+              ...(ok ? {} : { error: 'Jellyfin episode item is unavailable' }),
+            },
+          ]
+        : [];
+      const aggregate = episodeWriteAggregate(0, watched, providers);
+      const outcome = classifyWriteOutcome(aggregate);
+      return res.status(writeHttpStatus(outcome)).json({
+        outcome,
+        watched,
+        providers,
+      });
+    } catch (error) {
+      return handleActionError(
+        error,
+        next,
+        watched
+          ? 'Unable to mark Jellyfin episode as watched.'
+          : 'Unable to mark Jellyfin episode as unwatched.'
+      );
+    }
+  };
+
+mediaActionsRoutes.post(
+  '/episodes/jellyfin/:jellyfinItemId/watched',
+  setJellyfinItemWatched(true)
+);
+
+mediaActionsRoutes.post(
+  '/episodes/jellyfin/:jellyfinItemId/unwatched',
+  setJellyfinItemWatched(false)
 );
 
 mediaActionsRoutes.get('/:mediaType/:tmdbId/status', async (req, res, next) => {

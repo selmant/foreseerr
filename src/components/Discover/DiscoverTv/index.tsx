@@ -14,6 +14,7 @@ import {
 } from '@app/components/Discover/mergeFilterDefaults';
 import useDiscover from '@app/hooks/useDiscover';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
+import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -65,6 +66,7 @@ const DiscoverTv = () => {
     preparedFilters.ignoreWatched === 'false'
       ? 1
       : 0);
+  const hideWatched = preparedFilters.ignoreWatched === 'true';
 
   const {
     isLoadingInitialData,
@@ -74,10 +76,13 @@ const DiscoverTv = () => {
     titles,
     fetchMore,
     error,
+    mutate,
   } = useDiscover<TvResult, never, FilterOptions>('/api/v1/discover/tv', {
     ...preparedFilters,
     ...discoverDefaultsRequestExtras(),
   });
+
+  useRegisterHideWatchedRevalidation(mutate, hideWatched);
 
   if (error) {
     return <ErrorPage statusCode={500} />;

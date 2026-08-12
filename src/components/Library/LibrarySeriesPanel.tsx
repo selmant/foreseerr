@@ -1,10 +1,12 @@
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import SlideOver from '@app/components/Common/SlideOver';
+import LibraryEpisodeWatchToggle from '@app/components/Library/LibraryEpisodeWatchToggle';
 import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
 import type {
   LibrarySeasonEpisodesResponse,
   LibrarySeriesDetailResponse,
@@ -53,6 +55,9 @@ const LibrarySeriesPanel = ({
   const { play } = useNativeRuntime();
   const { hasPermission } = useUser();
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [episodeWatchOverrides, setEpisodeWatchOverrides] = useState<
+    Map<string, boolean>
+  >(new Map());
 
   const { data: series, error: seriesError } =
     useSWR<LibrarySeriesDetailResponse>(
@@ -80,12 +85,33 @@ const LibrarySeriesPanel = ({
     });
   }, [series]);
 
-  const { data: episodes, error: episodesError } =
-    useSWR<LibrarySeasonEpisodesResponse>(
-      show && jellyfinSeriesId && selectedSeasonId
-        ? `/api/v1/library/series/${jellyfinSeriesId}/seasons/${selectedSeasonId}/episodes`
-        : null
-    );
+  useEffect(() => {
+    setEpisodeWatchOverrides(new Map());
+  }, [selectedSeasonId]);
+
+  const {
+    data: episodes,
+    error: episodesError,
+    mutate: mutateEpisodes,
+  } = useSWR<LibrarySeasonEpisodesResponse>(
+    show && jellyfinSeriesId && selectedSeasonId
+      ? `/api/v1/library/series/${jellyfinSeriesId}/seasons/${selectedSeasonId}/episodes`
+      : null
+  );
+
+  const episodesKey =
+    show && jellyfinSeriesId && selectedSeasonId
+      ? `/api/v1/library/series/${jellyfinSeriesId}/seasons/${selectedSeasonId}/episodes`
+      : '';
+
+  useEffect(() => {
+    if (!episodesKey) {
+      return undefined;
+    }
+    return registerLibraryShelfRevalidator(async () => {
+      await mutateEpisodes();
+    });
+  }, [episodesKey, mutateEpisodes]);
 
   const title = series?.title || seedTitle || 'Series';
   const tmdbId = series?.tmdbId ?? seedTmdbId;
@@ -205,49 +231,75 @@ const LibrarySeriesPanel = ({
                   </p>
                 ) : (
                   <ul className="divide-y divide-gray-700 rounded-md border border-gray-700">
-                    {episodes.episodes.map((episode) => (
-                      <li
-                        key={episode.jellyfinItemId}
-                        className="flex items-center gap-3 px-3 py-2"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-gray-100">
-                            {episode.subtitle ? `${episode.subtitle} · ` : ''}
-                            {episode.name}
+                    {episodes.episodes.map((episode) => {
+                      const watched =
+                        episodeWatchOverrides.get(episode.jellyfinItemId) ??
+                        Boolean(episode.watched);
+                      return (
+                        <li
+                          key={episode.jellyfinItemId}
+                          className="flex items-center gap-3 px-3 py-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-gray-100">
+                              {episode.subtitle ? `${episode.subtitle} · ` : ''}
+                              {episode.name}
+                            </div>
+                            {watched ? (
+                              <div className="text-xs text-gray-500">
+                                {intl.formatMessage(messages.watched)}
+                              </div>
+                            ) : episode.progressPercent ? (
+                              <div className="mt-1 h-1 w-full overflow-hidden rounded bg-gray-700">
+                                <div
+                                  className="h-full bg-indigo-500"
+                                  style={{
+                                    width: `${episode.progressPercent}%`,
+                                  }}
+                                />
+                              </div>
+                            ) : null}
                           </div>
-                          {episode.watched ? (
-                            <div className="text-xs text-gray-500">
-                              {intl.formatMessage(messages.watched)}
-                            </div>
-                          ) : episode.progressPercent ? (
-                            <div className="mt-1 h-1 w-full overflow-hidden rounded bg-gray-700">
-                              <div
-                                className="h-full bg-indigo-500"
-                                style={{ width: `${episode.progressPercent}%` }}
-                              />
-                            </div>
+                          {tmdbId &&
+                          episode.parentIndexNumber != null &&
+                          episode.indexNumber != null ? (
+                            <LibraryEpisodeWatchToggle
+                              tmdbId={tmdbId}
+                              jellyfinItemId={episode.jellyfinItemId}
+                              seasonNumber={episode.parentIndexNumber}
+                              episodeNumber={episode.indexNumber}
+                              watched={watched}
+                              episodesKey={episodesKey}
+                              onLocalChange={(nextWatched) =>
+                                setEpisodeWatchOverrides((current) => {
+                                  const next = new Map(current);
+                                  next.set(episode.jellyfinItemId, nextWatched);
+                                  return next;
+                                })
+                              }
+                            />
                           ) : null}
-                        </div>
-                        {episode.mediaUrl ? (
-                          <Button
-                            as="a"
-                            href={episode.mediaUrl}
-                            buttonType="primary"
-                            buttonSize="sm"
-                            onClick={(event) =>
-                              playEpisode(
-                                event,
-                                episode.jellyfinItemId,
-                                `${title} ${episode.subtitle ?? episode.name}`,
-                                episode.mediaUrl!
-                              )
-                            }
-                          >
-                            {intl.formatMessage(messages.play)}
-                          </Button>
-                        ) : null}
-                      </li>
-                    ))}
+                          {episode.mediaUrl ? (
+                            <Button
+                              as="a"
+                              href={episode.mediaUrl}
+                              buttonType="primary"
+                              buttonSize="sm"
+                              onClick={(event) =>
+                                playEpisode(
+                                  event,
+                                  episode.jellyfinItemId,
+                                  `${title} ${episode.subtitle ?? episode.name}`,
+                                  episode.mediaUrl!
+                                )
+                              }
+                            >
+                              {intl.formatMessage(messages.play)}
+                            </Button>
+                          ) : null}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

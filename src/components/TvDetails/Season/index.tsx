@@ -3,10 +3,15 @@ import Badge from '@app/components/Common/Badge';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import RequestModal from '@app/components/RequestModal';
-import useSettings from '@app/hooks/useSettings';
+import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { invalidateMediaActionCaches } from '@app/utils/mediaActionInvalidation';
+import {
+  writeSucceeded,
+  type MediaActionWriteResponse,
+} from '@app/utils/mediaActions';
 import { quickRequestTvEpisodes } from '@app/utils/quickRequest';
 import {
   ArrowDownTrayIcon,
@@ -40,7 +45,9 @@ const messages = defineMessages('components.TvDetails.Season', {
   markWatched: 'Mark watched',
   markUnwatched: 'Mark unwatched',
   watched: 'Watched',
-  watchActionError: 'Could not update this episode on Trakt. Try again.',
+  watchActionError: 'Could not update this episode. Try again.',
+  watchActionPartial:
+    'Updated on one provider, but another provider could not be synchronized.',
   seasonWatched: 'Watched',
   seasonWatchProgress: '{watched}/{total} watched',
 });
@@ -79,10 +86,8 @@ export const SeasonWatchProgress = ({
   episodeCount: number;
 }) => {
   const intl = useIntl();
-  const settings = useSettings();
-  const enabled =
-    settings.currentSettings.traktConfigured &&
-    settings.currentSettings.mediaActionsTraktEnabled !== false;
+  const { data: capabilities } = useMediaActionCapabilities();
+  const enabled = Boolean(capabilities?.episode.watched);
   const { data } = useSWR<EpisodeWatchStatus>(
     enabled ? seasonWatchStatusKey(tvId, seasonNumber) : null,
     { revalidateOnFocus: false }
@@ -122,7 +127,7 @@ const Season = ({
   onRequestComplete,
 }: SeasonProps) => {
   const intl = useIntl();
-  const settings = useSettings();
+  const { data: capabilities } = useMediaActionCapabilities();
   const { addToast } = useToasts();
   const { hasPermission } = useUser();
   const { data, error, mutate } = useSWR<SeasonWithEpisodes>(
@@ -165,10 +170,8 @@ const Season = ({
       })
     );
   }, [data, episodeRequestStates, localRequestStates, seasonRequestState]);
-  const traktEnabled =
-    settings.currentSettings.traktConfigured &&
-    settings.currentSettings.mediaActionsTraktEnabled !== false;
-  const watchStatusKey = traktEnabled
+  const episodeActionsEnabled = Boolean(capabilities?.episode.watched);
+  const watchStatusKey = episodeActionsEnabled
     ? seasonWatchStatusKey(tvId, seasonNumber)
     : null;
   const { data: watchStatus, mutate: mutateWatchStatus } =
@@ -261,11 +264,23 @@ const Season = ({
     );
     try {
       const action = wasWatched ? 'unwatched' : 'watched';
-      const response = await axios.post<{ ok: boolean }>(
+      const response = await axios.post<MediaActionWriteResponse>(
         `/api/v1/media-actions/tv/${tvId}/seasons/${seasonNumber}/episodes/${episodeNumber}/${action}`
       );
-      if (!response.data.ok) {
-        throw new Error('Trakt rejected episode update');
+      if (!writeSucceeded(response.data)) {
+        throw new Error('Episode watch update failed');
+      }
+      await invalidateMediaActionCaches({
+        mediaType: 'tv',
+        tmdbId: tvId,
+        tvId,
+        seasonNumber,
+      });
+      if (response.data.outcome === 'partial') {
+        addToast(intl.formatMessage(messages.watchActionPartial), {
+          appearance: 'warning',
+          autoDismiss: true,
+        });
       }
     } catch {
       await mutateWatchStatus(previous, false);

@@ -113,6 +113,29 @@ describe('desktop auth tickets', () => {
     assert.strictEqual(replay.body.code, 'ticket_used');
   });
 
+  it('rejects unsupported protocol versions at issue and redeem', async () => {
+    const verifier = 'z'.repeat(43);
+    const challenge = await import('node:crypto').then(({ createHash }) =>
+      createHash('sha256').update(verifier).digest('hex')
+    );
+    const agent = request.agent(app);
+
+    const unsupportedIssue = await agent
+      .post('/desktop/auth-tickets')
+      .send({ challenge, protocolVersion: 2 });
+    assert.strictEqual(unsupportedIssue.status, 400);
+
+    const issued = await agent
+      .post('/desktop/auth-tickets')
+      .send({ challenge, protocolVersion: 1 });
+    assert.strictEqual(issued.status, 201);
+
+    const unsupportedRedeem = await request(app)
+      .post('/desktop/auth-tickets/redeem')
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 2 });
+    assert.strictEqual(unsupportedRedeem.status, 400);
+  });
+
   it('rejects a wrong verifier without consuming the ticket', async () => {
     const verifier = 'a'.repeat(43);
     const challenge = await import('node:crypto').then(({ createHash }) =>

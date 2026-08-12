@@ -61,6 +61,10 @@ const getStatusesMock = mock.method(
         rating: null,
         ratingStars: null,
         providers: [],
+        actions: {
+          watched: { available: false, reason: 'no_provider' },
+          rating: { available: false, reason: 'no_provider' },
+        },
       })
     )
 );
@@ -87,6 +91,11 @@ const jellyfinEpisodeAvailableMock = mock.method(
 const jellyfinSetEpisodeWatchedMock = mock.method(
   jellyfinEpisodeActions,
   'setEpisodeWatched',
+  async () => false
+);
+const jellyfinSetItemWatchedMock = mock.method(
+  jellyfinEpisodeActions,
+  'setItemWatched',
   async () => false
 );
 
@@ -166,6 +175,8 @@ describe('episode media actions', () => {
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => false);
     jellyfinSetEpisodeWatchedMock.mock.mockImplementation(async () => false);
     jellyfinSetEpisodeWatchedMock.mock.resetCalls();
+    jellyfinSetItemWatchedMock.mock.mockImplementation(async () => false);
+    jellyfinSetItemWatchedMock.mock.resetCalls();
   });
 
   it('requires an authenticated user', async () => {
@@ -202,7 +213,13 @@ describe('episode media actions', () => {
     );
 
     assert.equal(res.status, 200);
+    assert.equal(res.body.outcome, 'success');
     assert.equal(res.body.watched, true);
+    assert.ok(Array.isArray(res.body.providers));
+    assert.equal(res.body.providers[0]?.provider, 'trakt');
+    assert.equal(res.body.providers[0]?.ok, true);
+    assert.equal(res.body.providers[0]?.watched, true);
+    assert.equal(res.body.ok, undefined);
     assert.deepEqual(setEpisodeWatchedMock.mock.calls[0]?.arguments.slice(1), [
       42,
       1,
@@ -232,6 +249,25 @@ describe('episode media actions', () => {
         ratingStars: null,
       },
     ]);
+  });
+
+  it('uses a direct Jellyfin episode identity supplied by Library', async () => {
+    traktEpisodeAvailableMock.mock.mockImplementation(async () => false);
+    jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
+    jellyfinSetItemWatchedMock.mock.mockImplementation(async () => true);
+    const agent = await loginAsAdmin();
+
+    const res = await agent
+      .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
+      .send({ jellyfinItemId: 'episode-opaque-id' });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.outcome, 'success');
+    assert.deepEqual(
+      jellyfinSetItemWatchedMock.mock.calls[0]?.arguments.slice(1),
+      ['episode-opaque-id', true]
+    );
+    assert.equal(jellyfinSetEpisodeWatchedMock.mock.calls.length, 0);
   });
 
   it('reports partial success when Trakt rejects but Jellyfin succeeds', async () => {

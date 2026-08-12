@@ -1,10 +1,6 @@
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
-import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchContext';
-import {
-  useMediaActions,
-  type MediaActionStatusResponse,
-} from '@app/hooks/useMediaActions';
+import { useMediaActions } from '@app/hooks/useMediaActions';
 import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
 import {
@@ -25,28 +21,21 @@ import {
 import { createPortal } from 'react-dom';
 import { useIntl } from 'react-intl';
 
-export type { MediaActionStatusResponse };
-
-interface MediaActionControlsProps {
-  tmdbId: number;
-  mediaType: 'movie' | 'tv';
-  enabled: boolean;
-  /** Called after watched/rating changes so hide-watched lists can refresh. */
-  onStatusChange?: () => void;
-}
-
-const messages = defineMessages('components.TitleCard.MediaActionControls', {
-  markWatched: 'Not watched · mark watched',
-  markUnwatched: 'Watched · mark unwatched',
-  statusLoading: 'Loading watch status…',
-  rate: 'Rate',
-  ratingLabel: 'Your rating',
-  ratingOutOf: '{score}/10',
-  ratingHint: 'Click a star to save',
-  actionFailed: 'Could not update watch status. Try again.',
-  actionPartial:
-    'Updated on one provider, but another provider could not be synchronized.',
-});
+const messages = defineMessages(
+  'components.MediaActions.MediaActionDetailBar',
+  {
+    markWatched: 'Mark watched',
+    markUnwatched: 'Mark unwatched',
+    statusLoading: 'Loading watch status…',
+    rate: 'Rate',
+    ratingLabel: 'Your rating',
+    ratingOutOf: '{score}/10',
+    ratingHint: 'Click a star to save',
+    actionFailed: 'Could not update watch status. Try again.',
+    actionPartial:
+      'Updated on some connected services. Check the service status for the remaining sync.',
+  }
+);
 
 const STAR_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] as const;
 
@@ -54,17 +43,17 @@ function starsToTrakt(stars: number): number {
   return Math.max(1, Math.min(10, Math.round(stars * 2)));
 }
 
+function nearestStarStep(stars: number): number {
+  return STAR_STEPS.reduce((best, step) =>
+    Math.abs(step - stars) < Math.abs(best - stars) ? step : best
+  );
+}
+
 function starFillAmount(displayStars: number, index: number): number {
   const remaining = displayStars - index;
   if (remaining >= 1) return 1;
   if (remaining >= 0.5) return 0.5;
   return 0;
-}
-
-function nearestStarStep(stars: number): number {
-  return STAR_STEPS.reduce((best, step) =>
-    Math.abs(step - stars) < Math.abs(best - stars) ? step : best
-  );
 }
 
 interface RatingStarProps {
@@ -103,11 +92,7 @@ const RatingStar = ({
         className="absolute inset-y-0 left-0 z-10 w-1/2 cursor-pointer disabled:cursor-wait"
         onMouseEnter={() => onHover(halfValue)}
         onFocus={() => onHover(halfValue)}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onPick(halfValue);
-        }}
+        onClick={() => onPick(halfValue)}
       />
       <button
         type="button"
@@ -116,25 +101,23 @@ const RatingStar = ({
         className="absolute inset-y-0 right-0 z-10 w-1/2 cursor-pointer disabled:cursor-wait"
         onMouseEnter={() => onHover(fullValue)}
         onFocus={() => onHover(fullValue)}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onPick(fullValue);
-        }}
+        onClick={() => onPick(fullValue)}
       />
     </span>
   );
 };
 
-const MediaActionControls = ({
+interface MediaActionDetailBarProps {
+  tmdbId: number;
+  mediaType: 'movie' | 'tv';
+}
+
+const MediaActionDetailBar = ({
   tmdbId,
   mediaType,
-  enabled,
-  onStatusChange,
-}: MediaActionControlsProps) => {
+}: MediaActionDetailBarProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const batch = useTitleCardBatch();
   const [showRate, setShowRate] = useState(false);
   const [draftStars, setDraftStars] = useState(3);
   const [hoverStars, setHoverStars] = useState<number | null>(null);
@@ -144,11 +127,6 @@ const MediaActionControls = ({
   } | null>(null);
   const rateAnchorRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-
-  const batchStatus = batch?.getStatus(mediaType, tmdbId);
-  const deferToBatch = Boolean(
-    batch?.active && (batchStatus != null || batch.isLoading)
-  );
 
   const {
     actionsEnabled,
@@ -162,10 +140,7 @@ const MediaActionControls = ({
   } = useMediaActions({
     tmdbId,
     mediaType,
-    enabled,
-    externalStatus: batchStatus,
-    deferStatusFetch: deferToBatch,
-    onStatusChange,
+    enabled: true,
   });
 
   useEffect(() => {
@@ -186,13 +161,12 @@ const MediaActionControls = ({
       if (!rect) return;
       const width = 208;
       const gap = 8;
-      const left = Math.max(
-        8,
-        Math.min(rect.right - width, window.innerWidth - width - 8)
-      );
       setPopoverPos({
         top: rect.bottom + gap,
-        left,
+        left: Math.max(
+          8,
+          Math.min(rect.right - width, window.innerWidth - width - 8)
+        ),
       });
     };
 
@@ -220,6 +194,7 @@ const MediaActionControls = ({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setShowRate(false);
+        rateAnchorRef.current?.querySelector('button')?.focus();
       }
     };
     document.addEventListener('mousedown', onDocClick);
@@ -229,11 +204,6 @@ const MediaActionControls = ({
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [showRate]);
-
-  const stop = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
 
   const notifyFailure = useCallback(() => {
     addToast(intl.formatMessage(messages.actionFailed), {
@@ -249,31 +219,27 @@ const MediaActionControls = ({
     });
   }, [addToast, intl]);
 
-  const handleToggleWatched = useCallback(
-    async (e: React.MouseEvent) => {
-      stop(e);
-      const ok = await toggleWatched();
-      if (!ok) {
-        notifyFailure();
-      } else if (ok === 'partial') {
-        notifyPartial();
-      }
-    },
-    [notifyFailure, notifyPartial, stop, toggleWatched]
-  );
+  const handleToggleWatched = useCallback(async () => {
+    const outcome = await toggleWatched();
+    if (!outcome) {
+      notifyFailure();
+    } else if (outcome === 'partial') {
+      notifyPartial();
+    }
+  }, [notifyFailure, notifyPartial, toggleWatched]);
 
   const handleSubmitRating = useCallback(
     async (stars: number) => {
       const previousDraft = draftStars;
       const clamped = nearestStarStep(stars);
       setDraftStars(clamped);
-      const ok = await submitRating(clamped);
-      if (!ok) {
+      const outcome = await submitRating(clamped);
+      if (!outcome) {
         setDraftStars(previousDraft);
         notifyFailure();
         return;
       }
-      if (ok === 'partial') {
+      if (outcome === 'partial') {
         notifyPartial();
       }
       setShowRate(false);
@@ -281,52 +247,38 @@ const MediaActionControls = ({
     [draftStars, notifyFailure, notifyPartial, submitRating]
   );
 
-  if (!enabled || !actionsEnabled) {
+  if (!actionsEnabled) {
     return null;
   }
 
   const watched = Boolean(data?.watched);
-  const displayStars = hoverStars ?? draftStars;
-  const displayScore = starsToTrakt(displayStars);
   const savedStars = data?.ratingStars ?? null;
-  const hasRating = savedStars != null;
-
-  const watchedTooltip = statusPending
+  const displayStars = hoverStars ?? draftStars;
+  const watchedLabel = statusPending
     ? intl.formatMessage(messages.statusLoading)
     : intl.formatMessage(
         watched ? messages.markUnwatched : messages.markWatched
       );
 
   return (
-    <div className="relative flex flex-col items-end gap-1">
+    <div className="z-40 mr-2 flex items-center gap-2">
       {canWatch && (
-        <Tooltip content={watchedTooltip}>
+        <Tooltip content={watchedLabel}>
           <Button
             buttonType="ghost"
-            className="z-40"
-            buttonSize="sm"
+            buttonSize="md"
             disabled={busy || statusPending}
             aria-pressed={statusPending ? undefined : watched}
             aria-busy={statusPending || busy}
-            aria-label={watchedTooltip}
+            aria-label={watchedLabel}
             onClick={handleToggleWatched}
           >
-            {statusPending ? (
-              <span
-                className="inline-block h-3.5 w-3.5 animate-pulse rounded-full border border-white/40 bg-white/10"
-                aria-hidden
-              />
-            ) : watched ? (
-              <CheckBadgeSolid
-                className="h-3.5 w-3.5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.55)]"
-                aria-hidden
-              />
+            {watched ? (
+              <CheckBadgeSolid className="h-5 w-5 text-emerald-400" />
             ) : (
-              <CheckBadgeOutline
-                className="h-3.5 w-3.5 text-white/75"
-                aria-hidden
-              />
+              <CheckBadgeOutline className="h-5 w-5" />
             )}
+            <span className="ml-2 hidden sm:inline">{watchedLabel}</span>
           </Button>
         </Tooltip>
       )}
@@ -334,7 +286,7 @@ const MediaActionControls = ({
         <div className="relative" ref={rateAnchorRef}>
           <Tooltip
             content={
-              hasRating
+              savedStars != null
                 ? intl.formatMessage(messages.ratingOutOf, {
                     score: starsToTrakt(savedStars),
                   })
@@ -343,24 +295,26 @@ const MediaActionControls = ({
           >
             <Button
               buttonType="ghost"
-              className="z-40"
-              buttonSize="sm"
+              buttonSize="md"
               disabled={busy || statusPending}
-              onClick={(e) => {
-                stop(e);
-                setShowRate((v) => !v);
-              }}
+              onClick={() => setShowRate((value) => !value)}
             >
-              {hasRating ? (
-                <span className="flex items-center gap-0.5 text-[10px] font-semibold tabular-nums text-amber-300">
-                  <StarSolid className="h-3.5 w-3.5" aria-hidden />
-                  {starsToTrakt(savedStars)}
-                </span>
+              {savedStars != null ? (
+                <>
+                  <StarSolid className="h-5 w-5 text-amber-300" />
+                  <span className="ml-2 hidden sm:inline">
+                    {intl.formatMessage(messages.ratingOutOf, {
+                      score: starsToTrakt(savedStars),
+                    })}
+                  </span>
+                </>
               ) : (
-                <StarOutline
-                  className="h-3.5 w-3.5 text-white/75"
-                  aria-hidden
-                />
+                <>
+                  <StarOutline className="h-5 w-5" />
+                  <span className="ml-2 hidden sm:inline">
+                    {intl.formatMessage(messages.rate)}
+                  </span>
+                </>
               )}
             </Button>
           </Tooltip>
@@ -369,20 +323,18 @@ const MediaActionControls = ({
             createPortal(
               <div
                 ref={popoverRef}
+                role="dialog"
+                aria-label={intl.formatMessage(messages.ratingLabel)}
                 className="fixed z-[100] w-52 rounded-xl border border-gray-600/80 bg-gray-900/95 p-3 shadow-2xl backdrop-blur-sm"
-                style={{ top: popoverPos.top, left: popoverPos.left }}
+                style={popoverPos}
               >
                 <div className="mb-2.5 flex items-end justify-between gap-2">
                   <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
                     {intl.formatMessage(messages.ratingLabel)}
                   </span>
                   <span className="tabular-nums leading-none">
-                    <span
-                      className={`text-2xl font-semibold tracking-tight transition-colors ${
-                        hoverStars != null ? 'text-amber-200' : 'text-amber-300'
-                      }`}
-                    >
-                      {displayScore}
+                    <span className="text-2xl font-semibold text-amber-300">
+                      {starsToTrakt(displayStars)}
                     </span>
                     <span className="ml-0.5 text-xs text-gray-500">/10</span>
                   </span>
@@ -414,4 +366,4 @@ const MediaActionControls = ({
   );
 };
 
-export default MediaActionControls;
+export default MediaActionDetailBar;

@@ -274,6 +274,7 @@ CoreApp.getInitialProps = async (initialProps) => {
     plexClientIdentifier: '',
     traktConfigured: false,
     mediaActionsTraktEnabled: true,
+    mediaActionsJellyfinEnabled: true,
     mdblistConfigured: false,
     ratingBadges: { ...DEFAULT_RATING_BADGE_SETTINGS },
   };

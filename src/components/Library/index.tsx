@@ -6,6 +6,7 @@ import LibrarySeriesPanel from '@app/components/Library/LibrarySeriesPanel';
 import ManageSlideOver from '@app/components/ManageSlideOver';
 import Slider from '@app/components/Slider';
 import defineMessages from '@app/utils/defineMessages';
+import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import type {
   LibraryAvailableResponse,
@@ -14,7 +15,7 @@ import type {
 } from '@server/interfaces/api/libraryInterfaces';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
 
@@ -72,13 +73,17 @@ const Library = () => {
   const { data: available, error: availableError } =
     useSWR<LibraryAvailableResponse>(availableKey);
 
-  const revalidateLibrary = () => {
+  const revalidateLibrary = useCallback(() => {
     if (managedTitle) {
       mutate(`/api/v1/${managedTitle.mediaType}/${managedTitle.data.id}`);
     }
     mutate('/api/v1/library/watch-now');
     mutate(availableKey);
-  };
+  }, [availableKey, managedTitle]);
+
+  useEffect(() => {
+    return registerLibraryShelfRevalidator(revalidateLibrary);
+  }, [revalidateLibrary]);
 
   const openManager = (data: MovieDetails | TvDetails) => {
     setManagedTitle(

@@ -58,6 +58,7 @@ export interface PublicSettingsResponse {
   plexClientIdentifier: string;
   traktConfigured: boolean;
   mediaActionsTraktEnabled: boolean;
+  mediaActionsJellyfinEnabled: boolean;
   mdblistConfigured: boolean;
   ratingBadges: RatingBadgeSettings;
 }
