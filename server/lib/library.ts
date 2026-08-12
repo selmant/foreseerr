@@ -20,7 +20,10 @@ import type {
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
 import type { SeriesPlayTarget } from '@server/lib/libraryPlayTarget';
-import { resolveSeriesPlayTarget } from '@server/lib/libraryPlayTarget';
+import {
+  filterPlayableLibraryTitles,
+  resolveSeriesPlayTarget,
+} from '@server/lib/libraryPlayTarget';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { getHostname } from '@server/utils/getHostname';
@@ -508,10 +511,12 @@ export const buildWatchNowResponse = async (
       });
     }
 
-    const recentItems = await enrichSeriesPlayTargets(
-      linked.client,
-      await mapJellyfinItemsToLibraryTitles(latest),
-      { resume, nextUp, resolveMissing: true }
+    const recentItems = filterPlayableLibraryTitles(
+      await enrichSeriesPlayTargets(
+        linked.client,
+        await mapJellyfinItemsToLibraryTitles(latest),
+        { resume, nextUp, resolveMissing: true }
+      )
     );
     if (recentItems.length) {
       shelves.push({
@@ -574,10 +579,12 @@ export const buildWatchNowResponse = async (
     return { shelves: [], code: 'server_unreachable' };
   }
 
-  const forgotten = await enrichSeriesPlayTargets(
-    linked.client,
-    await buildForgottenRequestsShelf(userId, 16),
-    { resolveMissing: true }
+  const forgotten = filterPlayableLibraryTitles(
+    await enrichSeriesPlayTargets(
+      linked.client,
+      await buildForgottenRequestsShelf(userId, 16),
+      { resolveMissing: true }
+    )
   );
   if (forgotten.length) {
     shelves.push({
@@ -614,10 +621,12 @@ export const listAvailableLibrary = async (options: {
         limit: options.take,
         mediaType: options.mediaType,
       });
-      const mapped = await enrichSeriesPlayTargets(
-        linked.client,
-        await mapJellyfinItemsToLibraryTitles(items),
-        { resolveMissing: true }
+      const mapped = filterPlayableLibraryTitles(
+        await enrichSeriesPlayTargets(
+          linked.client,
+          await mapJellyfinItemsToLibraryTitles(items),
+          { resolveMissing: true }
+        )
       );
       // Keep only items we know are in Foreseer available catalog when possible;
       // still return Jellyfin hits that map so play works.
@@ -674,9 +683,11 @@ export const listAvailableLibrary = async (options: {
   const linked = await createUserJellyfinClient(options.userId);
   if (linked.ok) {
     try {
-      const enriched = await enrichSeriesPlayTargets(linked.client, results, {
-        resolveMissing: true,
-      });
+      const enriched = filterPlayableLibraryTitles(
+        await enrichSeriesPlayTargets(linked.client, results, {
+          resolveMissing: true,
+        })
+      );
       return { results: enriched, total };
     } catch (e) {
       logger.debug('Failed to enrich available library play targets', {
