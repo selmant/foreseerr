@@ -68,6 +68,12 @@ const authenticateQCMock = mock.method(
   async () => ({ ...defaultAuthenticateResponse })
 );
 
+const jellyfinLoginMock = mock.method(
+  JellyfinAPI.prototype,
+  'login',
+  async () => ({ ...defaultAuthenticateResponse })
+);
+
 let app: Express;
 
 function createApp() {
@@ -128,6 +134,49 @@ function configureJellyfin() {
   settings.jellyfin.useSsl = false;
   settings.jellyfin.urlBase = '';
 }
+
+describe('POST /auth/jellyfin', () => {
+  beforeEach(() => {
+    jellyfinLoginMock.mock.resetCalls();
+    jellyfinLoginMock.mock.mockImplementation(async () => ({
+      ...defaultAuthenticateResponse,
+    }));
+    configureJellyfin();
+  });
+
+  it('refreshes the personal Jellyfin session for an existing user', async () => {
+    const userRepo = getRepository(User);
+    const existingUser = new User({
+      email: 'existing@seerr.dev',
+      jellyfinUsername: 'quickconnectuser',
+      jellyfinUserId: 'jf-qc-user-001',
+      jellyfinDeviceId: 'old-device-id',
+      permissions: 0,
+      avatar: '/avatarproxy/jf-qc-user-001?v=0',
+      userType: UserType.JELLYFIN,
+    });
+    await userRepo.save(existingUser);
+
+    const res = await request(app).post('/auth/jellyfin').send({
+      username: 'quickconnectuser',
+      password: 'test-password',
+    });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(jellyfinLoginMock.mock.callCount(), 1);
+
+    const updatedUser = await userRepo.findOneOrFail({
+      where: { jellyfinUserId: 'jf-qc-user-001' },
+      select: {
+        id: true,
+        jellyfinAuthToken: true,
+        jellyfinDeviceId: true,
+      },
+    });
+    assert.strictEqual(updatedUser.jellyfinAuthToken, 'fake-qc-access-token');
+    assert.strictEqual(updatedUser.jellyfinDeviceId, 'old-device-id');
+  });
+});
 
 describe('POST /auth/jellyfin/quickconnect/initiate', () => {
   beforeEach(() => {
