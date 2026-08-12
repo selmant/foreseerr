@@ -5,6 +5,7 @@ import LibraryPlayCard from '@app/components/Library/LibraryPlayCard';
 import LibrarySeriesPanel from '@app/components/Library/LibrarySeriesPanel';
 import ManageSlideOver from '@app/components/ManageSlideOver';
 import Slider from '@app/components/Slider';
+import useVerticalScroll from '@app/hooks/useVerticalScroll';
 import defineMessages from '@app/utils/defineMessages';
 import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
@@ -18,6 +19,9 @@ import type { TvDetails } from '@server/models/Tv';
 import { useCallback, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
+import useSWRInfinite from 'swr/infinite';
+
+const PAGE_SIZE = 24;
 
 const messages = defineMessages('components.Library', {
   library: 'Library',
@@ -62,24 +66,76 @@ const Library = () => {
       revalidateOnFocus: true,
     });
 
-  const availableKey = debouncedQuery
-    ? `/api/v1/library/search?q=${encodeURIComponent(debouncedQuery)}&take=24${
-        mediaType !== 'all' ? `&mediaType=${mediaType}` : ''
-      }`
-    : `/api/v1/library/available?take=24&skip=0${
-        mediaType !== 'all' ? `&mediaType=${mediaType}` : ''
-      }`;
+  const availableScopeKey = `${debouncedQuery}:${mediaType}`;
+  const {
+    data: availablePages,
+    error: availableError,
+    isValidating: isLoadingAvailable,
+    mutate: mutateAvailable,
+    setSize,
+    size,
+  } = useSWRInfinite<LibraryAvailableResponse>(
+    (pageIndex, previousPageData) => {
+      if (
+        previousPageData &&
+        previousPageData.pageInfo.page >= previousPageData.pageInfo.pages
+      ) {
+        return null;
+      }
 
-  const { data: available, error: availableError } =
-    useSWR<LibraryAvailableResponse>(availableKey);
+      const params = new URLSearchParams({
+        take: String(PAGE_SIZE),
+        skip: String(pageIndex * PAGE_SIZE),
+      });
+      if (debouncedQuery) {
+        params.set('q', debouncedQuery);
+      }
+      if (mediaType !== 'all') {
+        params.set('mediaType', mediaType);
+      }
+
+      return `/api/v1/library/${
+        debouncedQuery ? 'search' : 'available'
+      }?${params.toString()}`;
+    },
+    { revalidateFirstPage: false }
+  );
+
+  useEffect(() => {
+    setSize(1);
+  }, [availableScopeKey, setSize]);
+
+  const available = availablePages?.flatMap((page) => page.results) ?? [];
+  const isLoadingInitialAvailable = !availablePages && !availableError;
+  const lastAvailablePage = availablePages?.[availablePages.length - 1];
+  const isReachingAvailableEnd =
+    !lastAvailablePage ||
+    lastAvailablePage.pageInfo.page >= lastAvailablePage.pageInfo.pages;
+  const isLoadingMoreAvailable =
+    isLoadingAvailable &&
+    !!availablePages &&
+    typeof availablePages[size - 1] === 'undefined';
+
+  const loadMoreAvailable = useCallback(() => {
+    if (!isLoadingMoreAvailable && !isReachingAvailableEnd) {
+      setSize((size) => size + 1);
+    }
+  }, [isLoadingMoreAvailable, isReachingAvailableEnd, setSize]);
+
+  useVerticalScroll(
+    loadMoreAvailable,
+    !isLoadingInitialAvailable &&
+      !isLoadingMoreAvailable &&
+      !isReachingAvailableEnd
+  );
 
   const revalidateLibrary = useCallback(() => {
     if (managedTitle) {
       mutate(`/api/v1/${managedTitle.mediaType}/${managedTitle.data.id}`);
     }
     mutate('/api/v1/library/watch-now');
-    mutate(availableKey);
-  }, [availableKey, managedTitle]);
+    mutateAvailable();
+  }, [managedTitle, mutateAvailable]);
 
   useEffect(() => {
     return registerLibraryShelfRevalidator(revalidateLibrary);
@@ -192,19 +248,19 @@ const Library = () => {
           </div>
         </div>
 
-        {!available && !availableError ? (
+        {isLoadingInitialAvailable ? (
           <LoadingSpinner />
         ) : availableError ? (
           <p className="text-sm text-red-400">
             {intl.formatMessage(messages.loadFailed)}
           </p>
-        ) : !available?.results.length ? (
+        ) : !available.length ? (
           <p className="text-sm text-gray-400">
             {intl.formatMessage(messages.noResults)}
           </p>
         ) : (
           <div className="relative -mx-2 flex flex-wrap">
-            {available.results.map((item) => (
+            {available.map((item) => (
               <div
                 key={`available-${item.jellyfinItemId}-${item.tmdbId ?? 0}`}
                 className="inline-block px-2 pb-4 align-top"
@@ -218,6 +274,7 @@ const Library = () => {
             ))}
           </div>
         )}
+        {isLoadingMoreAvailable ? <LoadingSpinner /> : null}
       </div>
 
       <LibrarySeriesPanel

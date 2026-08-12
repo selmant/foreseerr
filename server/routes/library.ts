@@ -91,6 +91,7 @@ libraryRoutes.get<unknown, LibraryAvailableResponse>(
         });
       }
       const take = Math.min(Math.max(Number(req.query.take) || 20, 1), 50);
+      const skip = Math.max(Number(req.query.skip) || 0, 0);
       const mediaType =
         req.query.mediaType === 'movie' || req.query.mediaType === 'tv'
           ? req.query.mediaType
@@ -98,7 +99,7 @@ libraryRoutes.get<unknown, LibraryAvailableResponse>(
 
       const { results, total, code } = await listAvailableLibrary({
         take,
-        skip: 0,
+        skip,
         mediaType,
         query: q,
         userId: req.user.id,
@@ -106,10 +107,10 @@ libraryRoutes.get<unknown, LibraryAvailableResponse>(
 
       return res.status(200).json({
         pageInfo: {
-          pages: 1,
+          pages: Math.ceil(total / take) || 1,
           pageSize: take,
           results: total,
-          page: 1,
+          page: Math.floor(skip / take) + 1,
         },
         results,
         ...(code ? { code } : {}),
