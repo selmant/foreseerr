@@ -146,6 +146,8 @@ export interface TmdbBrowseMetadata {
   original_language: string;
   release_date: string | null;
   genre_ids: number[];
+  runtime: number | null;
+  status?: string;
 }
 
 export interface TmdbMovieDetails {

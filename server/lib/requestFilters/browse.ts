@@ -84,6 +84,9 @@ const matchesBrowseFilters = (
     genreIds: number[];
     originalLanguage?: string;
     releaseDate?: string | null;
+    runtime?: number | null;
+    status?: string;
+    mediaType?: 'movie' | 'tv';
   },
   filters: BrowseQueryFilters,
   external: ExternalRatings = {}
@@ -138,6 +141,41 @@ const matchesBrowseFilters = (
   }
   if (filters.releaseDateLte != null) {
     if (!releaseDate || releaseDate > filters.releaseDateLte) {
+      return false;
+    }
+  }
+  const runtime = item.runtime;
+  if (
+    filters.runtimeGte != null &&
+    (runtime == null ||
+      !Number.isFinite(runtime) ||
+      runtime < filters.runtimeGte)
+  ) {
+    return false;
+  }
+  if (
+    filters.runtimeLte != null &&
+    (runtime == null ||
+      !Number.isFinite(runtime) ||
+      runtime > filters.runtimeLte)
+  ) {
+    return false;
+  }
+  if (filters.seriesStatusIds.length > 0) {
+    const statusById = [
+      'Returning Series',
+      'Planned',
+      'In Production',
+      'Ended',
+      'Canceled',
+      'Pilot',
+    ];
+    if (
+      item.mediaType !== 'tv' ||
+      !filters.seriesStatusIds.some(
+        (statusId) => item.status === statusById[statusId]
+      )
+    ) {
       return false;
     }
   }
@@ -271,6 +309,7 @@ export const filterDiscoverResults = async <T extends BrowseResult>(
           genreIds: item.genreIds ?? [],
           originalLanguage: item.originalLanguage,
           releaseDate: releaseDateForItem(item),
+          mediaType: item.mediaType,
         },
         filters,
         external
@@ -329,6 +368,8 @@ export const filterTraktDiscoverItems = async (
         item.year != null ? `${item.year}-01-01` : null;
       let genreIds: number[] = [];
       let originalLanguage: string | undefined;
+      let runtime: number | null = null;
+      let status: string | undefined;
       let title = item.title;
 
       if (needTmdb) {
@@ -342,6 +383,7 @@ export const filterTraktDiscoverItems = async (
             releaseDate = movie.release_date || releaseDate;
             genreIds = movie.genre_ids;
             originalLanguage = movie.original_language;
+            runtime = movie.runtime;
             title = movie.title;
           } else {
             const show = await tmdb.getTvBrowseMetadata({
@@ -352,6 +394,8 @@ export const filterTraktDiscoverItems = async (
             releaseDate = show.release_date || releaseDate;
             genreIds = show.genre_ids;
             originalLanguage = show.original_language;
+            runtime = show.runtime;
+            status = show.status;
             title = show.title;
           }
         } catch {
@@ -406,6 +450,9 @@ export const filterTraktDiscoverItems = async (
             genreIds,
             originalLanguage,
             releaseDate,
+            runtime,
+            status,
+            mediaType: item.mediaType,
           },
           filters,
           external

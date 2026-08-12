@@ -6,7 +6,9 @@ import {
   countActiveFilters,
   prepareFilterValues,
 } from '@app/components/Discover/constants';
-import FilterSlideover from '@app/components/Discover/FilterSlideover';
+import FilterSlideover, {
+  browseFilterCapabilities,
+} from '@app/components/Discover/FilterSlideover';
 import {
   discoverDefaultsRequestExtras,
   mergeFilterDefaults,
@@ -136,7 +138,7 @@ const Trending = () => {
           </div>
           <FilterSlideover
             type={filterType}
-            mode="browse"
+            capabilities={browseFilterCapabilities}
             showHideWatched
             currentFilters={preparedFilters}
             onClose={() => setShowFilters(false)}

@@ -2931,6 +2931,27 @@ components:
         type: number
         example: 10000
       description: Maximum TMDB vote count for post-fetch filtering
+    DiscoverRuntimeGte:
+      in: query
+      name: withRuntimeGte
+      schema:
+        type: number
+        example: 90
+      description: Minimum runtime in minutes, applied post-fetch via TMDB
+    DiscoverRuntimeLte:
+      in: query
+      name: withRuntimeLte
+      schema:
+        type: number
+        example: 180
+      description: Maximum runtime in minutes, applied post-fetch via TMDB
+    DiscoverSeriesStatus:
+      in: query
+      name: status
+      schema:
+        type: string
+        example: 3|4
+      description: Series statuses (0 Returning, 1 Planned, 2 In Production, 3 Ended, 4 Canceled, 5 Pilot), applied post-fetch via TMDB
     DiscoverIgnoreWatched:
       in: query
       name: ignoreWatched
@@ -7566,6 +7587,9 @@ paths:
         - $ref: '#/components/parameters/DiscoverVoteAverageLte'
         - $ref: '#/components/parameters/DiscoverVoteCountGte'
         - $ref: '#/components/parameters/DiscoverVoteCountLte'
+        - $ref: '#/components/parameters/DiscoverRuntimeGte'
+        - $ref: '#/components/parameters/DiscoverRuntimeLte'
+        - $ref: '#/components/parameters/DiscoverSeriesStatus'
         - $ref: '#/components/parameters/DiscoverImdbRatingGte'
         - $ref: '#/components/parameters/DiscoverImdbRatingLte'
         - $ref: '#/components/parameters/DiscoverImdbVotesGte'
@@ -7962,6 +7986,9 @@ paths:
         - $ref: '#/components/parameters/DiscoverVoteAverageLte'
         - $ref: '#/components/parameters/DiscoverVoteCountGte'
         - $ref: '#/components/parameters/DiscoverVoteCountLte'
+        - $ref: '#/components/parameters/DiscoverRuntimeGte'
+        - $ref: '#/components/parameters/DiscoverRuntimeLte'
+        - $ref: '#/components/parameters/DiscoverSeriesStatus'
         - $ref: '#/components/parameters/DiscoverImdbRatingGte'
         - $ref: '#/components/parameters/DiscoverImdbRatingLte'
         - $ref: '#/components/parameters/DiscoverImdbVotesGte'
