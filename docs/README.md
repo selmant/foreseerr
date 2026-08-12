@@ -9,6 +9,14 @@ Welcome to the Foreseerr Documentation.
 
 **Foreseerr** is a free and open source software application for managing requests for your media library. It integrates with the media server of your choice: [Jellyfin](https://jellyfin.org), [Plex](https://plex.tv), and [Emby](https://emby.media/). In addition, it integrates with your existing services, such as **[Sonarr](https://sonarr.tv/)**, **[Radarr](https://radarr.video/)**.
 
+## Optional Native Desktop
+
+Foreseerr is a complete web application. If you want same-window native
+Jellyfin playback on a desktop computer, install the optional
+[Foreseer Desktop](https://github.com/selmant/foreseer-desktop) companion. It
+uses this hosted UI and preserves ordinary browser playback whenever the native
+runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
+
 ## Features
 
 - **Full Jellyfin/Emby/Plex integration**. Login and manage user access with Jellyfin/Emby/Plex.
