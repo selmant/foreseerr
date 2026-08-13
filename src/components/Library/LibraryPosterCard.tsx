@@ -1,6 +1,9 @@
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
-import { libraryWatchMark } from '@app/components/Library/libraryPosterWatchMark';
+import {
+  isLibrarySeriesPoster,
+  libraryWatchMark,
+} from '@app/components/Library/libraryPosterWatchMark';
 import useLibraryPlay from '@app/components/Library/useLibraryPlay';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import defineMessages from '@app/utils/defineMessages';
@@ -39,6 +42,8 @@ const LibraryPosterCard = ({
     item.mediaType === 'movie' ? messages.movie : messages.series
   );
   const watchMark = libraryWatchMark(item);
+  const isSeriesPoster = isLibrarySeriesPoster(item);
+  const showProgressBar = progress > 0 && !isSeriesPoster;
   const showOverviewHover = !isBrowse && !isTouch;
 
   const openInspector = () => {
@@ -50,7 +55,9 @@ const LibraryPosterCard = ({
       ? `${item.title}, unwatched`
       : watchMark === 'watched'
         ? `${item.title}, watched`
-        : item.title;
+        : watchMark === 'remaining' && item.unplayedItemCount
+          ? `${item.title}, ${item.unplayedItemCount} unwatched episodes`
+          : item.title;
 
   return (
     <article
@@ -105,7 +112,16 @@ const LibraryPosterCard = ({
             <CheckCircleIcon className="h-5 w-5" />
           </span>
         ) : null}
-        {progress > 0 ? (
+        {watchMark === 'remaining' && item.unplayedItemCount ? (
+          <span
+            data-testid="library-remaining-count"
+            className="pointer-events-none absolute right-1.5 top-1.5 z-10 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-emerald-400 px-1.5 text-[11px] font-bold tabular-nums text-black shadow-md"
+            aria-hidden
+          >
+            {item.unplayedItemCount}
+          </span>
+        ) : null}
+        {showProgressBar ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-1 bg-gray-800">
             <div
               className="h-full bg-indigo-500"

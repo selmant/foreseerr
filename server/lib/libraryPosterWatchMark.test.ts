@@ -16,12 +16,64 @@ describe('libraryWatchMark', () => {
     assert.equal(libraryWatchMark({ watched: true }), 'watched');
   });
 
-  it('prefers in-progress over unplayed and watched', () => {
+  it('prefers in-progress over unplayed and watched for movies and episodes', () => {
     assert.equal(libraryWatchMark({ inProgress: true }), 'progress');
     assert.equal(libraryWatchMark({ progressPercent: 40 }), 'progress');
     assert.equal(
       libraryWatchMark({ watched: true, progressPercent: 40 }),
       'progress'
+    );
+  });
+
+  const series = {
+    mediaType: 'tv' as const,
+    jellyfinItemId: 'series-1',
+    jellyfinSeriesId: 'series-1',
+  };
+
+  it('uses a remaining count for a started series that still has unplayed episodes', () => {
+    assert.equal(
+      libraryWatchMark({
+        ...series,
+        unplayedItemCount: 12,
+        progressPercent: 40,
+      }),
+      'remaining'
+    );
+    assert.equal(
+      libraryWatchMark({
+        ...series,
+        unplayedItemCount: 3,
+        lastPlayedAt: '2026-08-01T00:00:00Z',
+      }),
+      'remaining'
+    );
+  });
+
+  it('keeps the unplayed flag for a series that was never started', () => {
+    assert.equal(
+      libraryWatchMark({ ...series, unplayedItemCount: 24 }),
+      'unplayed'
+    );
+  });
+
+  it('marks a series with no remaining episodes as watched', () => {
+    assert.equal(
+      libraryWatchMark({ ...series, unplayedItemCount: 0 }),
+      'watched'
+    );
+    assert.equal(libraryWatchMark({ ...series, watched: true }), 'watched');
+  });
+
+  it('keeps episode rows on episode play state, not series remaining', () => {
+    assert.equal(
+      libraryWatchMark({
+        mediaType: 'tv',
+        jellyfinItemId: 'ep-1',
+        jellyfinSeriesId: 'series-1',
+        unplayedItemCount: 12,
+      }),
+      'unplayed'
     );
   });
 });

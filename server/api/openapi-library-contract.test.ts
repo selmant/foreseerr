@@ -86,6 +86,7 @@ describe('OpenAPI library contract', () => {
       'backdropUrl',
       'runtimeMinutes',
       'inspectorItemId',
+      'unplayedItemCount',
     ]) {
       assert.ok(title.properties[field], `LibraryTitle missing ${field}`);
     }

@@ -486,6 +486,7 @@ export const hydrateForgottenLibraryTitles = (
       PlaybackPositionTicks?: number;
       LastPlayedDate?: string;
       RunTimeTicks?: number;
+      UnplayedItemCount?: number;
     };
   }[]
 ): LibraryTitle[] => {

@@ -53,6 +53,8 @@ export interface LibraryTitle {
   runtimeMinutes?: number;
   /** Movie id, or parent series id for episode rows. */
   inspectorItemId?: string;
+  /** Unplayed episodes remaining. Set on series rows from Jellyfin UserData. */
+  unplayedItemCount?: number;
 }
 
 export interface LibraryShelf {

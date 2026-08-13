@@ -129,6 +129,22 @@ describe('libraryTitleDisplayFields', () => {
       '/api/v1/library/items/series-1/images/primary'
     );
   });
+
+  it('exposes unplayed episode count on series without treating completion as resume', () => {
+    const fields = libraryTitleDisplayFields({
+      Id: 'series-1',
+      Type: 'Series',
+      UserData: {
+        Played: false,
+        PlayedPercentage: 40,
+        UnplayedItemCount: 12,
+        LastPlayedDate: '2026-08-01T00:00:00Z',
+      },
+    });
+    assert.equal(fields.watched, false);
+    assert.equal(fields.inProgress, false);
+    assert.equal(fields.unplayedItemCount, 12);
+  });
 });
 
 describe('listBrowseFromClient', () => {

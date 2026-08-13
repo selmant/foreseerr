@@ -275,4 +275,26 @@ describe('Library', () => {
       '[data-testid=library-watched-mark]'
     );
   });
+
+  it('shows remaining episode count on a started series', () => {
+    cy.intercept('GET', '/api/v1/library/browse*', {
+      pageInfo: { pages: 1, pageSize: 24, results: 1, page: 1 },
+      results: [
+        {
+          ...seriesItem,
+          unplayedItemCount: 12,
+          progressPercent: 40,
+        },
+      ],
+    }).as('browseRemaining');
+    cy.visit('/library/browse');
+    cy.wait('@browseRemaining');
+    cy.contains('[data-testid=library-poster-card]', 'Foundation')
+      .find('[data-testid=library-remaining-count]')
+      .should('contain', '12');
+    cy.contains('[data-testid=library-poster-card]', 'Foundation').should(
+      'not.have.descendants',
+      '[data-testid=library-unplayed-pip]'
+    );
+  });
 });
