@@ -4,6 +4,13 @@ import type {
   LibraryWatchedFilter,
 } from '@server/interfaces/api/libraryInterfaces';
 
+export type LibraryDensity = 'comfortable' | 'compact';
+
+export const LIBRARY_DENSITY_KEY = 'foreseer.library.density';
+
+export const parseLibraryDensity = (value: unknown): LibraryDensity =>
+  value === 'compact' ? 'compact' : 'comfortable';
+
 export interface ParsedLibraryBrowseQuery {
   q?: string;
   mediaType?: 'movie' | 'tv';

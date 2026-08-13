@@ -1,5 +1,6 @@
 import {
   parseLibraryBrowseQuery,
+  parseLibraryDensity,
   serializeLibraryBrowseQuery,
 } from '@server/lib/libraryBrowseQuery';
 import assert from 'node:assert/strict';
@@ -60,6 +61,8 @@ describe('parseLibraryBrowseQuery', () => {
   it('ignores density', () => {
     const parsed = parseLibraryBrowseQuery({ density: 'compact' });
     assert.equal('density' in parsed, false);
+    assert.equal(parseLibraryDensity('compact'), 'compact');
+    assert.equal(parseLibraryDensity('nope'), 'comfortable');
   });
 });
 

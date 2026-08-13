@@ -17,6 +17,11 @@ module.exports = {
       },
       fontFamily: {
         sans: ['Inter Variable', ...defaultTheme.fontFamily.sans],
+        display: ['Barlow Condensed', ...defaultTheme.fontFamily.sans],
+      },
+      colors: {
+        'library-charcoal': '#12151c',
+        'library-navy': '#131928',
       },
       typography: (theme) => ({
         DEFAULT: {
@@ -86,8 +91,11 @@ module.exports = {
     },
   },
   plugins: [
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('@tailwindcss/forms'),
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('@tailwindcss/typography'),
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('@tailwindcss/aspect-ratio'),
   ],
 };
