@@ -172,7 +172,7 @@ describe('Library', () => {
   it('updates the browse URL from search and sort', () => {
     cy.visit('/library/browse');
     cy.wait('@browse');
-    cy.get('input[type=search]').type('dune');
+    cy.get('[data-testid=library-browse-search]').type('dune');
     cy.url().should('include', 'q=dune');
     cy.contains('button', 'Movies').click();
     cy.url().should('include', 'mediaType=movie');

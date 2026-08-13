@@ -51,13 +51,9 @@ describe('TVDB Integration', () => {
   };
 
   // Reusable commands
-  const navigateToMetadataSettings = () => {
-    cy.visit(ROUTES.home);
-    cy.get(SELECTORS.sidebarToggle).click();
-    cy.get(SELECTORS.sidebarSettingsMobile).click();
-    cy.get(
-      `${SELECTORS.settingsNavDesktop} a[href="${ROUTES.metadataSettings}"]`
-    ).click();
+  const openMetadataSettings = () => {
+    cy.visit(ROUTES.metadataSettings);
+    cy.contains('h3', 'Metadata Providers').should('be.visible');
   };
 
   const testAndVerifyMetadataConnection = () => {
@@ -82,15 +78,44 @@ describe('TVDB Integration', () => {
     return cy.wait('@saveMetadata');
   };
 
+  const interceptMediaActionCapabilities = () => {
+    cy.intercept('GET', '/api/v1/media-actions/capabilities', {
+      movie: { watched: true, rating: true },
+      tv: { watched: true, rating: true },
+      episode: { watched: true, rating: false },
+      providers: [
+        {
+          id: 'trakt',
+          linked: true,
+          capabilities: {
+            readWatched: true,
+            writeWatched: true,
+            readRating: true,
+            writeRating: true,
+          },
+        },
+      ],
+    }).as('mediaActionCapabilities');
+  };
+
+  const patchMonsterTv = (
+    patch: (body: Record<string, unknown>) => void,
+    alias = 'monsterTv'
+  ) => {
+    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
+      delete req.headers['if-none-match'];
+      req.continue((res) => {
+        patch(res.body as Record<string, unknown>);
+      });
+    }).as(alias);
+  };
+
   beforeEach(() => {
     // Perform login
     cy.login(Cypress.env('ADMIN_EMAIL'), Cypress.env('ADMIN_PASSWORD'));
+    interceptMediaActionCapabilities();
 
-    // Navigate to Metadata settings
-    navigateToMetadataSettings();
-
-    // Verify we're on the correct settings page
-    cy.contains('h3', 'Metadata Providers').should('be.visible');
+    openMetadataSettings();
 
     // Configure TVDB as TV provider and test connection
     cy.get(SELECTORS.tvMetadataProviderSelector).click();
@@ -170,13 +195,13 @@ describe('TVDB Integration', () => {
   });
 
   it('submits an inclusive cross-season TVDB episode range', () => {
-    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
-      delete req.headers['if-none-match'];
-      req.continue((res) => {
-        res.body.externalIds.tvdbId = 999;
-        res.body.mediaInfo = undefined;
-        res.body.episodeRequestsEnabled = true;
-      });
+    patchMonsterTv((body) => {
+      body.externalIds = {
+        ...((body.externalIds as object) ?? {}),
+        tvdbId: 999,
+      };
+      body.mediaInfo = undefined;
+      body.episodeRequestsEnabled = true;
     });
     cy.intercept('GET', '/api/v1/tv/225634/episodes', {
       statusCode: 200,
@@ -241,13 +266,13 @@ describe('TVDB Integration', () => {
   });
 
   it('submits an open-ended TVDB episode request', () => {
-    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
-      delete req.headers['if-none-match'];
-      req.continue((res) => {
-        res.body.externalIds.tvdbId = 999;
-        res.body.mediaInfo = undefined;
-        res.body.episodeRequestsEnabled = true;
-      });
+    patchMonsterTv((body) => {
+      body.externalIds = {
+        ...((body.externalIds as object) ?? {}),
+        tvdbId: 999,
+      };
+      body.mediaInfo = undefined;
+      body.episodeRequestsEnabled = true;
     });
     cy.intercept('GET', '/api/v1/tv/225634/episodes', {
       statusCode: 200,
@@ -303,7 +328,27 @@ describe('TVDB Integration', () => {
   });
 
   it('offers episode requests from discover cards', () => {
-    cy.intercept('/api/v1/discover/tv*').as('getPopularTv');
+    cy.intercept('GET', '/api/v1/discover/tv*', {
+      page: 1,
+      totalPages: 1,
+      totalResults: 1,
+      results: [
+        {
+          id: 225634,
+          mediaType: 'tv',
+          name: 'Monster',
+          originalName: 'Monster',
+          overview: 'Unrequested series for episode-request UI.',
+          firstAirDate: '2024-01-01',
+          voteAverage: 8,
+          voteCount: 10,
+          popularity: 100,
+          genreIds: [],
+          originalLanguage: 'en',
+          originCountry: ['US'],
+        },
+      ],
+    }).as('getPopularTv');
     cy.visit(ROUTES.home);
     cy.wait('@getPopularTv');
 
@@ -311,30 +356,22 @@ describe('TVDB Integration', () => {
       .next('[data-testid="media-slider"]')
       .find('[data-testid="title-card"]')
       .first()
-      .trigger('mouseover')
-      .then(($card) => {
-        const menuButton = $card.find(
-          'button[aria-label="More request options"]'
-        );
-        if (menuButton.length) {
-          cy.wrap(menuButton).click();
-          cy.get('[data-testid="title-card-request-episodes"]').should(
-            'be.visible'
-          );
-        } else {
-          cy.wrap($card)
-            .find('[data-testid="title-card-request-episodes"]')
-            .should('be.visible');
-        }
-      });
+      .as('discoverCard');
+
+    cy.get('@discoverCard')
+      .find('[data-testid="title-card-title"]')
+      .should('contain', 'Monster');
+    cy.get('@discoverCard')
+      .find('button[aria-label="More request options"]')
+      .should('be.visible')
+      .click();
+    cy.get('[data-testid="title-card-request-episodes"]').should('be.visible');
   });
 
   it('quick-requests one episode from the detail episode list', () => {
-    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
-      req.continue((res) => {
-        res.body.mediaInfo = undefined;
-        res.body.episodeRequestsEnabled = true;
-      });
+    patchMonsterTv((body) => {
+      body.mediaInfo = undefined;
+      body.episodeRequestsEnabled = true;
     });
     cy.intercept('GET', '/api/v1/tv/225634/season/1', episodeSeason).as(
       'season1'
@@ -392,53 +429,53 @@ describe('TVDB Integration', () => {
         },
       ],
     };
-    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
-      delete req.headers['if-none-match'];
-      req.continue((res) => {
-        res.body.externalIds.tvdbId = 999;
-        res.body.episodeRequestsEnabled = true;
-        res.body.seasons = [
-          ...res.body.seasons,
+    patchMonsterTv((body) => {
+      body.externalIds = {
+        ...((body.externalIds as object) ?? {}),
+        tvdbId: 999,
+      };
+      body.episodeRequestsEnabled = true;
+      body.seasons = [
+        ...(body.seasons as object[]),
+        {
+          ...(body.seasons as object[])[0],
+          id: 2,
+          name: 'Season 2',
+          seasonNumber: 2,
+        },
+      ];
+      body.mediaInfo = {
+        ...(body.mediaInfo as object),
+        status: 3,
+        status4k: 1,
+        issues: [],
+        seasons: [],
+        requests: [
           {
-            ...res.body.seasons[0],
-            id: 2,
-            name: 'Season 2',
-            seasonNumber: 2,
+            id: 100,
+            status: 2,
+            is4k: false,
+            createdAt: '2026-07-28T10:00:00.000Z',
+            seasons: [],
+            episodes: [
+              {
+                tvdbId: 101,
+                seasonNumber: 1,
+                episodeNumber: 1,
+                status: 2,
+              },
+            ],
           },
-        ];
-        res.body.mediaInfo = {
-          ...res.body.mediaInfo,
-          status: 3,
-          status4k: 1,
-          issues: [],
-          seasons: [],
-          requests: [
-            {
-              id: 100,
-              status: 2,
-              is4k: false,
-              createdAt: '2026-07-28T10:00:00.000Z',
-              seasons: [],
-              episodes: [
-                {
-                  tvdbId: 101,
-                  seasonNumber: 1,
-                  episodeNumber: 1,
-                  status: 2,
-                },
-              ],
-            },
-            {
-              id: 101,
-              status: 2,
-              is4k: false,
-              createdAt: '2026-07-28T11:00:00.000Z',
-              seasons: [{ seasonNumber: 1, status: 2 }],
-              episodes: [],
-            },
-          ],
-        };
-      });
+          {
+            id: 101,
+            status: 2,
+            is4k: false,
+            createdAt: '2026-07-28T11:00:00.000Z',
+            seasons: [{ seasonNumber: 1, status: 2 }],
+            episodes: [],
+          },
+        ],
+      };
     });
     cy.intercept(
       'GET',
@@ -484,37 +521,37 @@ describe('TVDB Integration', () => {
   });
 
   it('allows a full-season request after requesting some episodes', () => {
-    cy.intercept('GET', '/api/v1/tv/225634', (req) => {
-      delete req.headers['if-none-match'];
-      req.continue((res) => {
-        res.body.externalIds.tvdbId = 999;
-        res.body.episodeRequestsEnabled = true;
-        res.body.mediaInfo = {
-          ...res.body.mediaInfo,
-          status: 3,
-          status4k: 1,
-          issues: [],
-          seasons: [{ seasonNumber: 1, status: 3, status4k: 1 }],
-          requests: [
-            {
-              id: 100,
-              status: 2,
-              is4k: false,
-              createdAt: '2026-07-28T10:00:00.000Z',
-              seasons: [],
-              episodes: [
-                {
-                  tvdbId: 101,
-                  seasonNumber: 1,
-                  episodeNumber: 1,
-                  status: 2,
-                },
-              ],
-            },
-          ],
-        };
-      });
-    });
+    patchMonsterTv((body) => {
+      body.externalIds = {
+        ...((body.externalIds as object) ?? {}),
+        tvdbId: 999,
+      };
+      body.episodeRequestsEnabled = true;
+      body.mediaInfo = {
+        ...(body.mediaInfo as object),
+        status: 3,
+        status4k: 5,
+        issues: [],
+        seasons: [],
+        requests: [
+          {
+            id: 100,
+            status: 2,
+            is4k: false,
+            createdAt: '2026-07-28T10:00:00.000Z',
+            seasons: [],
+            episodes: [
+              {
+                tvdbId: 101,
+                seasonNumber: 1,
+                episodeNumber: 1,
+                status: 2,
+              },
+            ],
+          },
+        ],
+      };
+    }, 'monsterTvShow');
     cy.intercept('POST', '/api/v1/request', (req) => {
       expect(req.body.seasons).to.deep.equal([1]);
       expect(req.body.episodeSelection).to.equal(undefined);
@@ -525,6 +562,7 @@ describe('TVDB Integration', () => {
     }).as('seasonRequest');
 
     cy.visit(ROUTES.monsterTvShow);
+    cy.wait('@monsterTvShow');
     cy.contains('button', 'Request More').click();
     cy.get('[data-testid="season-request-toggle-1"]')
       .should('have.attr', 'aria-checked', 'false')
@@ -539,33 +577,54 @@ describe('TVDB Integration', () => {
     cy.intercept('GET', '/api/v1/settings/public', (req) => {
       delete req.headers['if-none-match'];
       req.continue((res) => {
+        const raw = res.body;
         const body =
-          typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
+          typeof raw === 'string' && raw
+            ? JSON.parse(raw)
+            : raw && typeof raw === 'object'
+              ? raw
+              : {};
         res.send({
           ...body,
           traktConfigured: true,
           mediaActionsTraktEnabled: true,
         });
       });
-    }).as('publicSettings');
+    });
+    let watchedEpisodeNumbers: number[] = [];
     cy.intercept(
       'GET',
       '/api/v1/media-actions/tv/225634/seasons/1/episodes/status',
-      { available: true, watchedEpisodeNumbers: [] }
+      (req) => {
+        req.reply({ available: true, watchedEpisodeNumbers });
+      }
     ).as('episodeWatchStatus');
     cy.intercept(
       'POST',
       '/api/v1/media-actions/tv/225634/seasons/1/episodes/*/watched',
-      { provider: 'trakt', ok: true, watched: true }
+      (req) => {
+        watchedEpisodeNumbers = [1];
+        req.reply({
+          outcome: 'success',
+          watched: true,
+          providers: [
+            {
+              provider: 'trakt',
+              ok: true,
+              watched: true,
+              rating: null,
+              ratingStars: null,
+            },
+          ],
+        });
+      }
     ).as('markEpisodeWatched');
     cy.intercept('GET', '/api/v1/tv/225634/season/1', episodeSeason).as(
       'season1'
     );
 
     cy.visit(ROUTES.monsterTvShow);
-    cy.wait('@publicSettings')
-      .its('response.body.traktConfigured')
-      .should('equal', true);
+    cy.wait('@mediaActionCapabilities');
     cy.wait('@episodeWatchStatus');
     cy.get('[data-testid="season-disclosure-1"]').should('contain', '0/');
     cy.get('[data-testid="season-disclosure-1"]').scrollIntoView().click();

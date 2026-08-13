@@ -72,6 +72,7 @@ const LibraryBrowseToolbar = ({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <input
           type="search"
+          data-testid="library-browse-search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder={intl.formatMessage(messages.searchPlaceholder)}

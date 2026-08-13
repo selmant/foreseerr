@@ -5,17 +5,12 @@ Cypress.Commands.add('login', (email, password) => {
   cy.session(
     [email, password],
     () => {
-      cy.visit('/login');
-
-      cy.get('[data-testid=email]').type(email);
-      cy.get('[data-testid=password]').type(password);
-
-      cy.intercept('/api/v1/auth/local').as('localLogin');
-      cy.get('[data-testid=local-signin-button]').click();
-
-      cy.wait('@localLogin');
-
-      cy.url().should('contain', '/');
+      cy.request('POST', '/api/v1/auth/local', { email, password })
+        .its('status')
+        .should('eq', 200);
+      cy.getCookie('connect.sid').should('exist');
+      cy.visit('/');
+      cy.location('pathname').should('not.eq', '/login');
     },
     {
       validate() {
