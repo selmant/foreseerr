@@ -1,15 +1,20 @@
 import type {
   LibraryAvailableResponse,
+  LibraryBrowseResponse,
+  LibraryFacetsResponse,
   LibrarySeasonEpisodesResponse,
   LibrarySeriesDetailResponse,
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
 import {
   buildWatchNowResponse,
+  getLibraryFacetsForUser,
   getLibrarySeasonEpisodes,
   getLibrarySeriesDetail,
   listAvailableLibrary,
+  listBrowseLibrary,
 } from '@server/lib/library';
+import { parseLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
 import { Router } from 'express';
 
 const libraryRoutes = Router();
@@ -119,6 +124,59 @@ libraryRoutes.get<unknown, LibraryAvailableResponse>(
       return next({
         status: 500,
         message: e instanceof Error ? e.message : 'Failed to search library',
+      });
+    }
+  }
+);
+
+libraryRoutes.get<unknown, LibraryBrowseResponse>(
+  '/browse',
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const query = parseLibraryBrowseQuery(
+        req.query as Record<string, unknown>
+      );
+      const { results, total, code } = await listBrowseLibrary(
+        req.user.id,
+        query
+      );
+
+      return res.status(200).json({
+        pageInfo: {
+          pages: Math.ceil(total / query.take) || 1,
+          pageSize: query.take,
+          results: total,
+          page: Math.floor(query.skip / query.take) + 1,
+        },
+        results,
+        ...(code ? { code } : {}),
+      });
+    } catch (e) {
+      return next({
+        status: 500,
+        message: e instanceof Error ? e.message : 'Failed to browse library',
+      });
+    }
+  }
+);
+
+libraryRoutes.get<unknown, LibraryFacetsResponse>(
+  '/facets',
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const payload = await getLibraryFacetsForUser(req.user.id);
+      return res.status(200).json(payload);
+    } catch (e) {
+      return next({
+        status: 500,
+        message:
+          e instanceof Error ? e.message : 'Failed to load library facets',
       });
     }
   }

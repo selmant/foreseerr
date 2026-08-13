@@ -11,7 +11,9 @@ import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
 import type {
+  LibraryBrowseResponse,
   LibraryEpisode,
+  LibraryFacetsResponse,
   LibrarySeasonEpisodesResponse,
   LibrarySeriesDetailResponse,
   LibrarySeriesSeason,
@@ -19,6 +21,11 @@ import type {
   LibraryTitle,
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
+import {
+  libraryTitleDisplayFields,
+  listBrowseFromClient,
+} from '@server/lib/libraryBrowse';
+import type { ParsedLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
 import type { SeriesPlayTarget } from '@server/lib/libraryPlayTarget';
 import {
   filterPlayableLibraryTitles,
@@ -245,6 +252,7 @@ export const mapJellyfinItemsToLibraryTitles = async (
       status: media?.status,
       progressPercent: progressFromItem(item),
       startPositionTicks: item.UserData?.PlaybackPositionTicks,
+      ...libraryTitleDisplayFields(item),
     };
   });
 };
@@ -698,6 +706,53 @@ export const listAvailableLibrary = async (options: {
   }
 
   return { results, total };
+};
+
+export const listBrowseLibrary = async (
+  userId: number,
+  query: ParsedLibraryBrowseQuery
+): Promise<{
+  results: LibraryTitle[];
+  total: number;
+  code?: LibraryBrowseResponse['code'];
+}> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return { results: [], total: 0, code: linked.code };
+  }
+
+  try {
+    return await listBrowseFromClient(
+      linked.client,
+      query,
+      mapJellyfinItemsToLibraryTitles
+    );
+  } catch (e) {
+    logger.error('Failed to browse Jellyfin library', {
+      label: 'Library',
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return { results: [], total: 0, code: 'server_unreachable' };
+  }
+};
+
+export const getLibraryFacetsForUser = async (
+  userId: number
+): Promise<LibraryFacetsResponse> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return { genres: [], code: linked.code };
+  }
+
+  try {
+    return await linked.client.getLibraryFacets();
+  } catch (e) {
+    logger.error('Failed to load library facets', {
+      label: 'Library',
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return { genres: [], code: 'server_unreachable' };
+  }
 };
 
 export const getLibrarySeriesDetail = async (
