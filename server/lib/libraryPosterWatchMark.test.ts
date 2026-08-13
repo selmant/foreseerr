@@ -31,7 +31,7 @@ describe('libraryWatchMark', () => {
     jellyfinSeriesId: 'series-1',
   };
 
-  it('uses a remaining count for a started series that still has unplayed episodes', () => {
+  it('uses remaining count whenever a series still has unplayed episodes', () => {
     assert.equal(
       libraryWatchMark({
         ...series,
@@ -43,17 +43,9 @@ describe('libraryWatchMark', () => {
     assert.equal(
       libraryWatchMark({
         ...series,
-        unplayedItemCount: 3,
-        lastPlayedAt: '2026-08-01T00:00:00Z',
+        unplayedItemCount: 24,
       }),
       'remaining'
-    );
-  });
-
-  it('keeps the unplayed flag for a series that was never started', () => {
-    assert.equal(
-      libraryWatchMark({ ...series, unplayedItemCount: 24 }),
-      'unplayed'
     );
   });
 

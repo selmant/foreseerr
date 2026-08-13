@@ -283,7 +283,6 @@ describe('Library', () => {
         {
           ...seriesItem,
           unplayedItemCount: 12,
-          progressPercent: 40,
         },
       ],
     }).as('browseRemaining');

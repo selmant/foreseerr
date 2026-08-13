@@ -27,14 +27,7 @@ export const libraryWatchMark = (item: {
     if (item.watched || item.unplayedItemCount === 0) {
       return 'watched';
     }
-    const started =
-      Boolean(item.lastPlayedAt) ||
-      Boolean(item.inProgress) ||
-      (item.progressPercent != null && item.progressPercent > 0);
-    if (
-      started &&
-      (item.unplayedItemCount == null || item.unplayedItemCount > 0)
-    ) {
+    if (item.unplayedItemCount != null && item.unplayedItemCount > 0) {
       return 'remaining';
     }
     return 'unplayed';
