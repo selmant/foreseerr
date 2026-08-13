@@ -51,13 +51,9 @@ describe('TVDB Integration', () => {
   };
 
   // Reusable commands
-  const navigateToMetadataSettings = () => {
-    cy.visit(ROUTES.home);
-    cy.get(SELECTORS.sidebarToggle).click();
-    cy.get(SELECTORS.sidebarSettingsMobile).click();
-    cy.get(
-      `${SELECTORS.settingsNavDesktop} a[href="${ROUTES.metadataSettings}"]`
-    ).click();
+  const openMetadataSettings = () => {
+    cy.visit(ROUTES.metadataSettings);
+    cy.contains('h3', 'Metadata Providers').should('be.visible');
   };
 
   const testAndVerifyMetadataConnection = () => {
@@ -102,22 +98,6 @@ describe('TVDB Integration', () => {
     }).as('mediaActionCapabilities');
   };
 
-  const interceptEpisodeRequestsSettings = () => {
-    cy.intercept('GET', '/api/v1/settings/public', (req) => {
-      delete req.headers['if-none-match'];
-      req.continue((res) => {
-        const body =
-          typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
-        res.send({
-          ...body,
-          episodeRequestsEnabled: true,
-          traktConfigured: true,
-          mediaActionsTraktEnabled: true,
-        });
-      });
-    });
-  };
-
   const patchMonsterTv = (
     patch: (body: Record<string, unknown>) => void,
     alias = 'monsterTv'
@@ -134,13 +114,8 @@ describe('TVDB Integration', () => {
     // Perform login
     cy.login(Cypress.env('ADMIN_EMAIL'), Cypress.env('ADMIN_PASSWORD'));
     interceptMediaActionCapabilities();
-    interceptEpisodeRequestsSettings();
 
-    // Navigate to Metadata settings
-    navigateToMetadataSettings();
-
-    // Verify we're on the correct settings page
-    cy.contains('h3', 'Metadata Providers').should('be.visible');
+    openMetadataSettings();
 
     // Configure TVDB as TV provider and test connection
     cy.get(SELECTORS.tvMetadataProviderSelector).click();
@@ -364,7 +339,6 @@ describe('TVDB Integration', () => {
           name: 'Monster',
           originalName: 'Monster',
           overview: 'Unrequested series for episode-request UI.',
-          posterPath: '/monster.jpg',
           firstAirDate: '2024-01-01',
           voteAverage: 8,
           voteCount: 10,
@@ -382,22 +356,16 @@ describe('TVDB Integration', () => {
       .next('[data-testid="media-slider"]')
       .find('[data-testid="title-card"]')
       .first()
-      .trigger('mouseover')
-      .then(($card) => {
-        const menuButton = $card.find(
-          'button[aria-label="More request options"]'
-        );
-        if (menuButton.length) {
-          cy.wrap(menuButton).click();
-          cy.get('[data-testid="title-card-request-episodes"]').should(
-            'be.visible'
-          );
-        } else {
-          cy.wrap($card)
-            .find('[data-testid="title-card-request-episodes"]')
-            .should('be.visible');
-        }
-      });
+      .as('discoverCard');
+
+    cy.get('@discoverCard')
+      .find('[data-testid="title-card-title"]')
+      .should('contain', 'Monster');
+    cy.get('@discoverCard')
+      .find('button[aria-label="More request options"]')
+      .should('be.visible')
+      .click();
+    cy.get('[data-testid="title-card-request-episodes"]').should('be.visible');
   });
 
   it('quick-requests one episode from the detail episode list', () => {
@@ -606,6 +574,23 @@ describe('TVDB Integration', () => {
   });
 
   it('shows season progress and toggles an episode watched on Trakt', () => {
+    cy.intercept('GET', '/api/v1/settings/public', (req) => {
+      delete req.headers['if-none-match'];
+      req.continue((res) => {
+        const raw = res.body;
+        const body =
+          typeof raw === 'string' && raw
+            ? JSON.parse(raw)
+            : raw && typeof raw === 'object'
+              ? raw
+              : {};
+        res.send({
+          ...body,
+          traktConfigured: true,
+          mediaActionsTraktEnabled: true,
+        });
+      });
+    });
     let watchedEpisodeNumbers: number[] = [];
     cy.intercept(
       'GET',
