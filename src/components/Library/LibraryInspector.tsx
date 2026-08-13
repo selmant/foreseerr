@@ -3,6 +3,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import LibraryEpisodeWatchToggle from '@app/components/Library/LibraryEpisodeWatchToggle';
 import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
+import MediaActionDetailBar from '@app/components/MediaActions/MediaActionDetailBar';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useLockBodyScroll } from '@app/hooks/useLockBodyScroll';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -261,7 +262,7 @@ const LibraryInspector = ({
                       />
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {data.playItemId && (data.playUrl || data.mediaUrl) ? (
                       <Button
                         as="a"
@@ -284,6 +285,12 @@ const LibraryInspector = ({
                               : messages.play
                         )}
                       </Button>
+                    ) : null}
+                    {tmdbId ? (
+                      <MediaActionDetailBar
+                        tmdbId={tmdbId}
+                        mediaType={data.mediaType}
+                      />
                     ) : null}
                     {detailsHref ? (
                       <Button as="a" href={detailsHref} buttonType="default">

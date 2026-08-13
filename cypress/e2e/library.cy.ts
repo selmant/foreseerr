@@ -5,6 +5,7 @@ const movieItem = {
   inspectorItemId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   title: 'Dune',
   year: 2021,
+  tmdbId: 123,
   posterUrl:
     '/api/v1/library/items/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/images/primary',
   mediaUrl: 'https://jellyfin.example/web/dune',
@@ -17,6 +18,7 @@ const seriesItem = {
   inspectorItemId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   title: 'Foundation',
   year: 2021,
+  tmdbId: 456,
   posterUrl:
     '/api/v1/library/items/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/images/primary',
 };
@@ -25,6 +27,38 @@ describe('Library', () => {
   beforeEach(() => {
     cy.viewport(1280, 800);
     cy.loginAsAdmin();
+    cy.intercept('GET', '/api/v1/media-actions/capabilities', {
+      movie: { watched: true, rating: true },
+      tv: { watched: true, rating: true },
+      episode: { watched: true, rating: false },
+      providers: [
+        {
+          id: 'trakt',
+          linked: true,
+          capabilities: {
+            readWatched: true,
+            writeWatched: true,
+            readRating: true,
+            writeRating: true,
+          },
+        },
+      ],
+    }).as('capabilities');
+    cy.intercept('GET', '/api/v1/media-actions/**/status', (req) => {
+      const isMovie = req.url.includes('/movie/');
+      req.reply({
+        tmdbId: isMovie ? 123 : 456,
+        mediaType: isMovie ? 'movie' : 'tv',
+        watched: false,
+        rating: null,
+        ratingStars: null,
+        providers: [],
+        actions: {
+          watched: { available: true },
+          rating: { available: true },
+        },
+      });
+    }).as('actionStatus');
     cy.intercept('GET', '/api/v1/library/watch-now', {
       shelves: [
         {
@@ -77,6 +111,7 @@ describe('Library', () => {
         playItemId: movieItem.playItemId,
         playUrl: movieItem.mediaUrl,
         mediaUrl: movieItem.mediaUrl,
+        tmdbId: 123,
       }
     ).as('movieInspector');
     cy.intercept(
@@ -87,6 +122,7 @@ describe('Library', () => {
         jellyfinSeriesId: seriesItem.jellyfinSeriesId,
         mediaType: 'tv',
         title: 'Foundation',
+        tmdbId: 456,
         playItemId: 'cccccccccccccccccccccccccccccccc',
         playUrl: 'https://jellyfin.example/web/ep',
         seasons: [
@@ -120,7 +156,13 @@ describe('Library', () => {
     cy.wait('@watchNow');
     cy.contains('Continue Watching');
     cy.get('[data-testid=library-resume-card]').should('contain', 'Dune');
-    cy.contains('[data-testid=library-poster-card]', 'Foundation');
+    cy.get('[data-testid=library-resume-card]').should(
+      'not.have.descendants',
+      '[data-testid=library-unplayed-pip]'
+    );
+    cy.contains('[data-testid=library-poster-card]', 'Foundation').find(
+      '[data-testid=library-unplayed-pip]'
+    );
     cy.contains('a', 'Browse').click();
     cy.url().should('include', '/library/browse');
     cy.wait('@browse');
@@ -158,18 +200,20 @@ describe('Library', () => {
     cy.visit('/library/browse');
     cy.wait('@browse');
     cy.contains('[data-testid=library-poster-card]', 'Dune')
-      .find('button[aria-label="Dune"]')
+      .find('button[aria-label^="Dune"]')
       .click();
     cy.wait('@movieInspectorMapped');
     cy.get('[role=dialog]').should('contain', 'Dune');
     cy.get('[role=dialog]').should('contain', 'Play');
+    cy.get('[role=dialog]').should('contain', 'Rate');
+    cy.get('[role=dialog]').should('contain', 'Mark watched');
   });
 
   it('opens a series inspector with season episodes', () => {
     cy.visit('/library/browse');
     cy.wait('@browse');
     cy.contains('[data-testid=library-poster-card]', 'Foundation')
-      .find('button[aria-label="Foundation"]')
+      .find('button[aria-label^="Foundation"]')
       .click();
     cy.wait('@seriesInspector');
     cy.wait('@episodes');
@@ -209,5 +253,23 @@ describe('Library', () => {
     cy.url().should('include', 'density=compact');
     cy.get('[data-testid=library-poster-card]').should('contain', 'Dune');
     cy.contains('Could not load library titles.').should('not.exist');
+  });
+
+  it('marks unwatched posters and hides the pip once watched', () => {
+    cy.visit('/library/browse');
+    cy.wait('@browse');
+    cy.contains('[data-testid=library-poster-card]', 'Dune').find(
+      '[data-testid=library-unplayed-pip]'
+    );
+    cy.intercept('GET', '/api/v1/library/browse*', {
+      pageInfo: { pages: 1, pageSize: 24, results: 2, page: 1 },
+      results: [{ ...movieItem, watched: true }, seriesItem],
+    }).as('browseWatched');
+    cy.visit('/library/browse');
+    cy.wait('@browseWatched');
+    cy.contains('[data-testid=library-poster-card]', 'Dune').should(
+      'not.have.descendants',
+      '[data-testid=library-unplayed-pip]'
+    );
   });
 });

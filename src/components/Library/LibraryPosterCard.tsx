@@ -1,5 +1,6 @@
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
+import { showLibraryUnplayedPip } from '@app/components/Library/libraryPosterWatchMark';
 import useLibraryPlay from '@app/components/Library/useLibraryPlay';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import defineMessages from '@app/utils/defineMessages';
@@ -54,7 +55,11 @@ const LibraryPosterCard = ({
           type="button"
           onClick={openInspector}
           className="absolute inset-0 z-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400"
-          aria-label={item.title}
+          aria-label={
+            showLibraryUnplayedPip(item)
+              ? `${item.title}, unwatched`
+              : item.title
+          }
         >
           {item.posterUrl ? (
             <CachedImage
@@ -77,6 +82,13 @@ const LibraryPosterCard = ({
           >
             {typeLabel}
           </div>
+        ) : null}
+        {showLibraryUnplayedPip(item) ? (
+          <span
+            data-testid="library-unplayed-pip"
+            className="pointer-events-none absolute right-2 top-2 z-10 h-2.5 w-2.5 rounded-full bg-indigo-400 shadow ring-2 ring-black/40"
+            aria-hidden
+          />
         ) : null}
         {progress > 0 ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-1 bg-gray-800">
