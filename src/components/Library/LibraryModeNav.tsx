@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Library.LibraryModeNav', {
+  views: 'Library views',
   overview: 'Overview',
   browse: 'Browse',
 });
@@ -15,8 +16,8 @@ const LibraryModeNav = () => {
 
   return (
     <nav
-      aria-label={intl.formatMessage(messages.browse)}
-      className="mb-6 flex gap-2"
+      aria-label={intl.formatMessage(messages.views)}
+      className="flex shrink-0 gap-2"
     >
       <Link
         href="/library"

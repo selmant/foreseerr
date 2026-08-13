@@ -79,13 +79,15 @@ const Library = () => {
   return (
     <>
       <PageTitle title={intl.formatMessage(messages.library)} />
-      <div className="mb-6">
-        <Header>{intl.formatMessage(messages.library)}</Header>
-        <p className="mt-1 text-sm text-gray-400">
-          {intl.formatMessage(messages.subtitle)}
-        </p>
+      <div className="mb-6 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+        <div>
+          <Header>{intl.formatMessage(messages.library)}</Header>
+          <p className="mt-1 text-sm text-gray-400">
+            {intl.formatMessage(messages.subtitle)}
+          </p>
+        </div>
+        <LibraryModeNav />
       </div>
-      <LibraryModeNav />
 
       {!watchNow && !watchNowError ? (
         <LoadingSpinner />
@@ -117,8 +119,8 @@ const Library = () => {
                     key={`${shelf.id}-${item.jellyfinItemId}`}
                     item={item}
                     variant={shelf.id === 'continue' ? 'resume' : 'poster'}
+                    surface="overview"
                     onOpen={setInspectorItem}
-                    onManage={openManager}
                   />
                 ))}
               />

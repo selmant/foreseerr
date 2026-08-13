@@ -2,8 +2,6 @@ import LibraryPlayCard from '@app/components/Library/LibraryPlayCard';
 import defineMessages from '@app/utils/defineMessages';
 import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
 import type { LibraryDensity } from '@server/lib/libraryBrowseQuery';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
 import type { RefObject } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -22,7 +20,6 @@ interface LibraryBrowseGridProps {
   reachedEnd: boolean;
   onRetry: () => void;
   onOpen: (item: LibraryTitle) => void;
-  onManage: (title: MovieDetails | TvDetails) => void;
   sentinelRef: RefObject<HTMLDivElement | null>;
 }
 
@@ -34,7 +31,6 @@ const LibraryBrowseGrid = ({
   reachedEnd,
   onRetry,
   onOpen,
-  onManage,
   sentinelRef,
 }: LibraryBrowseGridProps) => {
   const intl = useIntl();
@@ -78,8 +74,8 @@ const LibraryBrowseGrid = ({
             key={item.jellyfinItemId}
             item={item}
             compact
+            surface="browse"
             onOpen={onOpen}
-            onManage={onManage}
           />
         ))}
         {loading

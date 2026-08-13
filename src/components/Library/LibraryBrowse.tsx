@@ -204,13 +204,15 @@ const LibraryBrowse = () => {
   return (
     <>
       <PageTitle title={intl.formatMessage(messages.browse)} />
-      <div className="mb-4">
-        <Header>{intl.formatMessage(messages.library)}</Header>
-        <p className="mt-1 text-sm text-gray-400">
-          {intl.formatMessage(messages.subtitle)}
-        </p>
+      <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
+        <div>
+          <Header>{intl.formatMessage(messages.library)}</Header>
+          <p className="mt-1 text-sm text-gray-400">
+            {intl.formatMessage(messages.subtitle)}
+          </p>
+        </div>
+        <LibraryModeNav />
       </div>
-      <LibraryModeNav />
       {statusMessage ? (
         <p className="rounded-md border border-gray-700 bg-library-charcoal px-4 py-3 text-sm text-gray-300">
           {statusMessage}
@@ -222,9 +224,6 @@ const LibraryBrowse = () => {
             onQueryChange={setSearchInput}
             state={state}
             density={state.density}
-            genres={facets?.genres ?? []}
-            yearMin={facets?.yearMin}
-            yearMax={facets?.yearMax}
             resultCount={total}
             onChange={applyPatch}
             onDensityChange={(density) => {
@@ -238,35 +237,24 @@ const LibraryBrowse = () => {
                 { shallow: true }
               );
             }}
-            onReset={() => {
-              void router.replace(
-                {
-                  pathname: '/library/browse',
-                  query: paramsFromState({
-                    ...browseStateFromQuery({}),
-                    density: state.density,
-                  }),
-                },
-                undefined,
-                { shallow: true }
-              );
-            }}
             onOpenFilters={() => setFiltersOpen(true)}
           />
           <LibraryBrowseFilters
-            open={filtersOpen}
+            show={filtersOpen}
             onClose={() => setFiltersOpen(false)}
-            query={searchInput}
-            onQueryChange={setSearchInput}
             state={state}
-            density={state.density}
             genres={facets?.genres ?? []}
             yearMin={facets?.yearMin}
             yearMax={facets?.yearMax}
-            resultCount={total}
             onChange={applyPatch}
-            onDensityChange={(density) => storeDensity(density)}
-            onReset={() => applyPatch({})}
+            onReset={() =>
+              applyPatch({
+                watched: undefined,
+                genre: undefined,
+                yearFrom: undefined,
+                yearTo: undefined,
+              })
+            }
           />
           {loadingInitial ? (
             <LoadingSpinner />
@@ -281,7 +269,6 @@ const LibraryBrowse = () => {
                 void mutate();
               }}
               onOpen={openDetails}
-              onManage={openManage}
               sentinelRef={sentinelRef}
             />
           )}

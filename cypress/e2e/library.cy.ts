@@ -111,6 +111,7 @@ describe('Library', () => {
     cy.wait('@watchNow');
     cy.contains('Continue Watching');
     cy.get('[data-testid=library-resume-card]').should('contain', 'Dune');
+    cy.contains('[data-testid=library-poster-card]', 'Foundation');
     cy.contains('a', 'Browse').click();
     cy.url().should('include', '/library/browse');
     cy.wait('@browse');
@@ -176,5 +177,19 @@ describe('Library', () => {
     cy.visit('/library/browse');
     cy.wait('@unsupported');
     cy.contains('Complete Library browse requires a Jellyfin media server.');
+  });
+
+  it('keeps play off browse posters and toggles genres in the filter panel', () => {
+    cy.visit('/library/browse');
+    cy.wait('@browse');
+    cy.contains('[data-testid=library-poster-card]', 'Dune').should(
+      'not.contain',
+      'Play'
+    );
+    cy.contains('button', 'Active Filter').click();
+    cy.contains('button', 'Drama').click();
+    cy.url().should('include', 'genre=Drama');
+    cy.contains('button', 'Unwatched').click();
+    cy.url().should('include', 'watched=unwatched');
   });
 });
