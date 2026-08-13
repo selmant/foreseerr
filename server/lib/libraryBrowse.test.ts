@@ -101,10 +101,32 @@ describe('libraryTitleDisplayFields', () => {
     assert.equal(fields.inspectorItemId, 'series-1');
     assert.equal(fields.inProgress, true);
     assert.equal(fields.watched, false);
-    assert.equal(fields.posterUrl, '/api/v1/library/items/ep-1/images/primary');
+    assert.equal(
+      fields.posterUrl,
+      '/api/v1/library/items/series-1/images/primary'
+    );
     assert.equal(
       fields.backdropUrl,
       '/api/v1/library/items/ep-1/images/backdrop'
+    );
+  });
+
+  it('keeps movie and series posters on the item itself', () => {
+    const movie = libraryTitleDisplayFields({
+      Id: 'movie-1',
+      Type: 'Movie',
+    });
+    const series = libraryTitleDisplayFields({
+      Id: 'series-1',
+      Type: 'Series',
+    });
+    assert.equal(
+      movie.posterUrl,
+      '/api/v1/library/items/movie-1/images/primary'
+    );
+    assert.equal(
+      series.posterUrl,
+      '/api/v1/library/items/series-1/images/primary'
     );
   });
 });

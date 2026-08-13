@@ -9,6 +9,7 @@ import LibraryModeNav from '@app/components/Library/LibraryModeNav';
 import {
   browseStateFromQuery,
   restoreBrowseScroll,
+  serializeBrowseApiQuery,
   serializeBrowseState,
   storeBrowseScroll,
   storeDensity,
@@ -113,7 +114,7 @@ const LibraryBrowse = () => {
     '/api/v1/library/facets'
   );
 
-  const scopeKey = serializeBrowseState({ ...state, skip: 0 }).toString();
+  const scopeKey = serializeBrowseApiQuery({ ...state, skip: 0 }).toString();
   const {
     data: pages,
     error,
@@ -129,7 +130,7 @@ const LibraryBrowse = () => {
       ) {
         return null;
       }
-      const params = serializeBrowseState({
+      const params = serializeBrowseApiQuery({
         ...state,
         take: PAGE_SIZE,
         skip: pageIndex * PAGE_SIZE,

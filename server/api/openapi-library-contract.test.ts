@@ -111,6 +111,11 @@ describe('OpenAPI library contract', () => {
     ]) {
       assert.ok(names.includes(name), `browse missing query ${name}`);
     }
+    assert.equal(
+      names.includes('density'),
+      false,
+      'density is a client layout flag, not a browse API query'
+    );
 
     const image = apiDocs.paths[
       '/library/items/{jellyfinItemId}/images/{imageType}'

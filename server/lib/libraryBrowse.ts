@@ -119,6 +119,8 @@ export const libraryTitleDisplayFields = (item: {
     !played &&
     ((percentage != null && percentage > 0 && percentage < 95) ||
       (item.UserData?.PlaybackPositionTicks ?? 0) > 0);
+  const posterItemId =
+    item.Type === 'Episode' && item.SeriesId ? item.SeriesId : item.Id;
 
   return {
     year: item.ProductionYear,
@@ -127,7 +129,7 @@ export const libraryTitleDisplayFields = (item: {
     inProgress,
     addedAt: item.DateCreated,
     lastPlayedAt: item.UserData?.LastPlayedDate,
-    posterUrl: libraryItemImageUrl(item.Id, 'primary'),
+    posterUrl: libraryItemImageUrl(posterItemId, 'primary'),
     backdropUrl: item.BackdropImageTags?.length
       ? libraryItemImageUrl(item.Id, 'backdrop')
       : undefined,

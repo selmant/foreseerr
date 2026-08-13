@@ -65,6 +65,11 @@ export const serializeBrowseState = (
   return params;
 };
 
+/** Browse API query only. Density is a client layout flag and 400s OpenAPI. */
+export const serializeBrowseApiQuery = (
+  state: LibraryBrowsePageState
+): URLSearchParams => serializeLibraryBrowseQuery(state);
+
 export const LIBRARY_SCROLL_KEY = 'foreseer.library.browse.scroll';
 
 export const storeBrowseScroll = (scrollY: number) => {

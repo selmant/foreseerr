@@ -52,9 +52,18 @@ describe('Library', () => {
       yearMin: 1990,
       yearMax: 2024,
     }).as('facets');
-    cy.intercept('GET', '/api/v1/library/browse*', {
-      pageInfo: { pages: 1, pageSize: 24, results: 2, page: 1 },
-      results: [movieItem, seriesItem],
+    cy.intercept('GET', '/api/v1/library/browse*', (req) => {
+      if (new URL(req.url, 'http://localhost').searchParams.has('density')) {
+        req.reply({
+          statusCode: 400,
+          body: { message: "Unknown query parameter 'density'" },
+        });
+        return;
+      }
+      req.reply({
+        pageInfo: { pages: 1, pageSize: 24, results: 2, page: 1 },
+        results: [movieItem, seriesItem],
+      });
     }).as('browse');
     cy.intercept(
       'GET',
@@ -191,5 +200,14 @@ describe('Library', () => {
     cy.url().should('include', 'genre=Drama');
     cy.contains('button', 'Unwatched').click();
     cy.url().should('include', 'watched=unwatched');
+  });
+
+  it('keeps compact density on the page URL and still loads titles', () => {
+    cy.visit('/library/browse');
+    cy.wait('@browse');
+    cy.contains('button', 'Compact').click();
+    cy.url().should('include', 'density=compact');
+    cy.get('[data-testid=library-poster-card]').should('contain', 'Dune');
+    cy.contains('Could not load library titles.').should('not.exist');
   });
 });

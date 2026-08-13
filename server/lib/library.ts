@@ -23,6 +23,7 @@ import type {
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
 import {
+  libraryItemImageUrl,
   libraryTitleDisplayFields,
   listBrowseFromClient,
 } from '@server/lib/libraryBrowse';
@@ -454,11 +455,62 @@ export const buildForgottenRequestsShelf = async (
       title: media.mediaType === MediaType.MOVIE ? 'Movie' : 'Series',
       mediaUrl: request.is4k ? media.mediaUrl4k : media.mediaUrl,
       status: media.status,
+      posterUrl: libraryItemImageUrl(jellyfinItemId, 'primary'),
+      backdropUrl: libraryItemImageUrl(jellyfinItemId, 'backdrop'),
     });
     if (titles.length >= limit) break;
   }
 
   return titles;
+};
+
+export const hydrateForgottenLibraryTitles = (
+  forgotten: LibraryTitle[],
+  jellyfinItems: {
+    Id: string;
+    Type?: string;
+    Name?: string;
+    SeriesName?: string;
+    SeriesId?: string;
+    ParentIndexNumber?: number;
+    IndexNumber?: number;
+    Overview?: string;
+    ProductionYear?: number;
+    Genres?: string[];
+    DateCreated?: string;
+    RunTimeTicks?: number;
+    BackdropImageTags?: string[];
+    UserData?: {
+      Played?: boolean;
+      PlayedPercentage?: number;
+      PlaybackPositionTicks?: number;
+      LastPlayedDate?: string;
+      RunTimeTicks?: number;
+    };
+  }[]
+): LibraryTitle[] => {
+  const byId = new Map(jellyfinItems.map((item) => [item.Id, item]));
+  return forgotten.map((title) => {
+    const item = byId.get(title.jellyfinItemId);
+    if (!item) {
+      return {
+        ...title,
+        posterUrl:
+          title.posterUrl ??
+          libraryItemImageUrl(title.jellyfinItemId, 'primary'),
+        backdropUrl:
+          title.backdropUrl ??
+          libraryItemImageUrl(title.jellyfinItemId, 'backdrop'),
+      };
+    }
+    return {
+      ...title,
+      title: titleForItem(item as JellyfinLibraryItemExtended),
+      subtitle: subtitleForItem(item as JellyfinLibraryItemExtended),
+      overview: item.Overview ?? title.overview,
+      ...libraryTitleDisplayFields(item),
+    };
+  });
 };
 
 export const buildWatchNowResponse = async (
@@ -588,12 +640,27 @@ export const buildWatchNowResponse = async (
     return { shelves: [], code: 'server_unreachable' };
   }
 
-  const forgotten = filterPlayableLibraryTitles(
+  const forgottenBase = filterPlayableLibraryTitles(
     await enrichSeriesPlayTargets(
       linked.client,
       await buildForgottenRequestsShelf(userId, 16),
       { resolveMissing: true }
     )
+  );
+  let forgottenItems: JellyfinLibraryItemExtended[] = [];
+  try {
+    forgottenItems = await linked.client.getItemsData(
+      forgottenBase.map((title) => title.jellyfinItemId)
+    );
+  } catch (e) {
+    logger.debug('Failed to hydrate Ready to Watch items from Jellyfin', {
+      label: 'Library',
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+  }
+  const forgotten = hydrateForgottenLibraryTitles(
+    forgottenBase,
+    forgottenItems
   );
   if (forgotten.length) {
     shelves.push({
