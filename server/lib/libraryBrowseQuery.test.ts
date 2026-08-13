@@ -1,7 +1,9 @@
 import {
+  countActiveLibraryBrowseFilters,
   parseLibraryBrowseQuery,
   parseLibraryDensity,
   serializeLibraryBrowseQuery,
+  toggleLibraryBrowseGenre,
 } from '@server/lib/libraryBrowseQuery';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -91,5 +93,47 @@ describe('serializeLibraryBrowseQuery', () => {
     );
     restored.genre = serialized.getAll('genre');
     assert.deepEqual(restored, original);
+  });
+});
+
+describe('countActiveLibraryBrowseFilters', () => {
+  it('ignores search, sort, paging, and density', () => {
+    assert.equal(
+      countActiveLibraryBrowseFilters(
+        parseLibraryBrowseQuery({
+          q: 'dune',
+          sort: 'title',
+          order: 'asc',
+          take: '12',
+          skip: '24',
+        })
+      ),
+      0
+    );
+  });
+
+  it('counts watch status, years, and each genre, but not media type', () => {
+    assert.equal(
+      countActiveLibraryBrowseFilters(
+        parseLibraryBrowseQuery({
+          mediaType: 'movie',
+          watched: 'unwatched',
+          genre: ['Drama', 'Sci-Fi'],
+          yearFrom: '1990',
+          yearTo: '2024',
+        })
+      ),
+      5
+    );
+  });
+});
+
+describe('toggleLibraryBrowseGenre', () => {
+  it('adds, removes, and clears the last genre', () => {
+    assert.deepEqual(toggleLibraryBrowseGenre(undefined, 'Drama'), ['Drama']);
+    assert.deepEqual(toggleLibraryBrowseGenre(['Drama', 'Sci-Fi'], 'Drama'), [
+      'Sci-Fi',
+    ]);
+    assert.equal(toggleLibraryBrowseGenre(['Drama'], 'Drama'), undefined);
   });
 });

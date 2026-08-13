@@ -137,6 +137,7 @@ export interface JellyfinLibraryItemExtended extends JellyfinLibraryItem {
     Played?: boolean;
     LastPlayedDate?: string;
     IsFavorite?: boolean;
+    UnplayedItemCount?: number;
   };
   RunTimeTicks?: number;
   ProductionYear?: number;

@@ -111,14 +111,22 @@ export const libraryTitleDisplayFields = (item: {
     PlaybackPositionTicks?: number;
     LastPlayedDate?: string;
     RunTimeTicks?: number;
+    UnplayedItemCount?: number;
   };
 }) => {
   const played = Boolean(item.UserData?.Played);
   const percentage = item.UserData?.PlayedPercentage;
+  const isSeries = item.Type === 'Series';
   const inProgress =
+    !isSeries &&
     !played &&
     ((percentage != null && percentage > 0 && percentage < 95) ||
       (item.UserData?.PlaybackPositionTicks ?? 0) > 0);
+  const posterItemId =
+    item.Type === 'Episode' && item.SeriesId ? item.SeriesId : item.Id;
+  const unplayedItemCount = isSeries
+    ? item.UserData?.UnplayedItemCount
+    : undefined;
 
   return {
     year: item.ProductionYear,
@@ -127,7 +135,7 @@ export const libraryTitleDisplayFields = (item: {
     inProgress,
     addedAt: item.DateCreated,
     lastPlayedAt: item.UserData?.LastPlayedDate,
-    posterUrl: libraryItemImageUrl(item.Id, 'primary'),
+    posterUrl: libraryItemImageUrl(posterItemId, 'primary'),
     backdropUrl: item.BackdropImageTags?.length
       ? libraryItemImageUrl(item.Id, 'backdrop')
       : undefined,
@@ -136,6 +144,7 @@ export const libraryTitleDisplayFields = (item: {
     ),
     inspectorItemId:
       item.Type === 'Episode' && item.SeriesId ? item.SeriesId : item.Id,
+    ...(unplayedItemCount != null ? { unplayedItemCount } : {}),
   };
 };
 

@@ -110,6 +110,34 @@ export const parseLibraryBrowseQuery = (
   return parsed;
 };
 
+export const countActiveLibraryBrowseFilters = (
+  query: ParsedLibraryBrowseQuery
+): number => {
+  let count = 0;
+  if (query.watched) {
+    count += 1;
+  }
+  count += query.genre?.length ?? 0;
+  if (query.yearFrom != null) {
+    count += 1;
+  }
+  if (query.yearTo != null) {
+    count += 1;
+  }
+  return count;
+};
+
+export const toggleLibraryBrowseGenre = (
+  current: string[] | undefined,
+  genre: string
+): string[] | undefined => {
+  const selected = current ?? [];
+  const next = selected.includes(genre)
+    ? selected.filter((entry) => entry !== genre)
+    : [...selected, genre];
+  return next.length ? next : undefined;
+};
+
 export const serializeLibraryBrowseQuery = (
   query: ParsedLibraryBrowseQuery
 ): URLSearchParams => {

@@ -1938,6 +1938,9 @@ components:
         inspectorItemId:
           type: string
           description: Movie id, or parent series id for episode rows
+        unplayedItemCount:
+          type: number
+          description: Unplayed episodes remaining on series rows
     LibraryBrowseResponse:
       type: object
       required: [pageInfo, results]

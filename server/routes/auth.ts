@@ -440,6 +440,8 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       );
       user.avatar = getUserAvatarUrl(user);
       user.jellyfinUsername = account.User.Name;
+      user.jellyfinAuthToken = account.AccessToken;
+      user.jellyfinDeviceId = deviceId;
 
       if (user.username === account.User.Name) {
         user.username = '';
@@ -475,6 +477,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
         jellyfinUsername: account.User.Name,
         jellyfinUserId: account.User.Id,
         jellyfinDeviceId: deviceId,
+        jellyfinAuthToken: account.AccessToken,
         permissions: settings.main.defaultPermissions,
         userType:
           settings.main.mediaServerType === MediaServerType.JELLYFIN

@@ -1,88 +1,174 @@
-import LibraryBrowseToolbar, {
-  SORT_OPTIONS,
-} from '@app/components/Library/LibraryBrowseToolbar';
+import Button from '@app/components/Common/Button';
+import SlideOver from '@app/components/Common/SlideOver';
 import defineMessages from '@app/utils/defineMessages';
-import type {
-  LibraryDensity,
-  ParsedLibraryBrowseQuery,
+import {
+  countActiveLibraryBrowseFilters,
+  toggleLibraryBrowseGenre,
+  type ParsedLibraryBrowseQuery,
 } from '@server/lib/libraryBrowseQuery';
-import { useEffect, useRef } from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Library.LibraryBrowseFilters', {
-  title: 'Filters and sort',
-  close: 'Done',
+  title: 'Filters',
+  activefilters:
+    '{count, plural, one {# Active Filter} other {# Active Filters}}',
+  watchStatus: 'Watch status',
+  any: 'Any',
+  unwatched: 'Unwatched',
+  inProgress: 'In progress',
+  played: 'Played',
+  genres: 'Genres',
+  noGenres: 'No genres available.',
+  yearFrom: 'From year',
+  yearTo: 'To year',
+  reset: 'Clear Active Filters',
 });
 
 interface LibraryBrowseFiltersProps {
-  open: boolean;
-  query: string;
-  onQueryChange: (value: string) => void;
+  show: boolean;
   state: ParsedLibraryBrowseQuery;
-  density: LibraryDensity;
   genres: string[];
   yearMin?: number;
   yearMax?: number;
-  resultCount?: number;
   onChange: (patch: Partial<ParsedLibraryBrowseQuery>) => void;
-  onDensityChange: (density: LibraryDensity) => void;
   onReset: () => void;
   onClose: () => void;
 }
 
+const chipClass = (active: boolean) =>
+  `min-h-11 rounded-md px-3 text-sm ${
+    active
+      ? 'bg-indigo-600 text-white'
+      : 'bg-gray-800 text-gray-300 ring-1 ring-gray-700'
+  }`;
+
 const LibraryBrowseFilters = ({
-  open,
+  show,
+  state,
+  genres,
+  yearMin,
+  yearMax,
+  onChange,
+  onReset,
   onClose,
-  ...toolbarProps
 }: LibraryBrowseFiltersProps) => {
   const intl = useIntl();
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      dialogRef.current?.focus();
-    }
-  }, [open]);
-
-  if (!open) {
-    return null;
-  }
+  const activeFilterCount = countActiveLibraryBrowseFilters(state);
 
   return (
-    /* eslint-disable jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */
-    <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={onClose}>
-      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={intl.formatMessage(messages.title)}
-        tabIndex={-1}
-        className="library-sheet absolute inset-x-0 bottom-0 max-h-[90vh] overflow-y-auto rounded-t-2xl bg-library-navy p-4"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            onClose();
-          }
-        }}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="library-display text-2xl uppercase text-white">
-            {intl.formatMessage(messages.title)}
-          </h2>
-          <button
-            type="button"
-            className="min-h-11 rounded-md px-3 text-sm text-indigo-300"
-            onClick={onClose}
-          >
-            {intl.formatMessage(messages.close)}
-          </button>
+    <SlideOver
+      show={show}
+      title={intl.formatMessage(messages.title)}
+      subText={intl.formatMessage(messages.activefilters, {
+        count: activeFilterCount,
+      })}
+      onClose={onClose}
+    >
+      <div className="space-y-6">
+        <fieldset>
+          <legend className="mb-2 text-sm font-semibold text-gray-300">
+            {intl.formatMessage(messages.watchStatus)}
+          </legend>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                [undefined, messages.any],
+                ['unwatched', messages.unwatched],
+                ['inProgress', messages.inProgress],
+                ['played', messages.played],
+              ] as const
+            ).map(([value, msg]) => (
+              <button
+                key={`watched-${String(value)}`}
+                type="button"
+                aria-pressed={state.watched === value}
+                className={chipClass(state.watched === value)}
+                onClick={() => onChange({ watched: value, skip: 0 })}
+              >
+                {intl.formatMessage(msg)}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend className="mb-2 text-sm font-semibold text-gray-300">
+            {intl.formatMessage(messages.genres)}
+          </legend>
+          {genres.length ? (
+            <div className="flex max-h-64 flex-wrap gap-2 overflow-y-auto">
+              {genres.map((genre) => {
+                const active = Boolean(state.genre?.includes(genre));
+                return (
+                  <button
+                    key={genre}
+                    type="button"
+                    aria-pressed={active}
+                    className={chipClass(active)}
+                    onClick={() =>
+                      onChange({
+                        genre: toggleLibraryBrowseGenre(state.genre, genre),
+                        skip: 0,
+                      })
+                    }
+                  >
+                    {genre}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">
+              {intl.formatMessage(messages.noGenres)}
+            </p>
+          )}
+        </fieldset>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-sm text-gray-300">
+            {intl.formatMessage(messages.yearFrom)}
+            <input
+              type="number"
+              className="mt-1 min-h-11 w-full rounded-md border border-gray-700 bg-gray-900 px-3 text-gray-100"
+              placeholder={yearMin ? String(yearMin) : undefined}
+              value={state.yearFrom ?? ''}
+              onChange={(event) =>
+                onChange({
+                  yearFrom: event.target.value
+                    ? Number(event.target.value)
+                    : undefined,
+                  skip: 0,
+                })
+              }
+            />
+          </label>
+          <label className="text-sm text-gray-300">
+            {intl.formatMessage(messages.yearTo)}
+            <input
+              type="number"
+              className="mt-1 min-h-11 w-full rounded-md border border-gray-700 bg-gray-900 px-3 text-gray-100"
+              placeholder={yearMax ? String(yearMax) : undefined}
+              value={state.yearTo ?? ''}
+              onChange={(event) =>
+                onChange({
+                  yearTo: event.target.value
+                    ? Number(event.target.value)
+                    : undefined,
+                  skip: 0,
+                })
+              }
+            />
+          </label>
         </div>
-        <LibraryBrowseToolbar {...toolbarProps} onOpenFilters={undefined} />
+
+        {activeFilterCount > 0 ? (
+          <Button buttonType="ghost" className="w-full" onClick={onReset}>
+            {intl.formatMessage(messages.reset)}
+          </Button>
+        ) : null}
       </div>
-    </div>
+    </SlideOver>
   );
 };
 
-export { SORT_OPTIONS };
 export default LibraryBrowseFilters;

@@ -1,7 +1,9 @@
 import defineMessages from '@app/utils/defineMessages';
-import type {
-  LibraryDensity,
-  ParsedLibraryBrowseQuery,
+import { BarsArrowDownIcon, FunnelIcon } from '@heroicons/react/24/solid';
+import {
+  countActiveLibraryBrowseFilters,
+  type LibraryDensity,
+  type ParsedLibraryBrowseQuery,
 } from '@server/lib/libraryBrowseQuery';
 import { useIntl } from 'react-intl';
 
@@ -10,9 +12,6 @@ const messages = defineMessages('components.Library.LibraryBrowseToolbar', {
   all: 'All',
   movies: 'Movies',
   series: 'Series',
-  unwatched: 'Unwatched',
-  inProgress: 'In progress',
-  played: 'Played',
   sortDateAdded: 'Recently added',
   sortTitleAsc: 'Title A–Z',
   sortTitleDesc: 'Title Z–A',
@@ -21,11 +20,10 @@ const messages = defineMessages('components.Library.LibraryBrowseToolbar', {
   sortLastPlayed: 'Last played',
   comfortable: 'Comfortable',
   compact: 'Compact',
-  filters: 'Filters',
+  activefilters:
+    '{count, plural, one {# Active Filter} other {# Active Filters}}',
   results: '{count, number} titles',
-  yearFrom: 'From year',
-  yearTo: 'To year',
-  reset: 'Reset filters',
+  sortBy: 'Sort',
 });
 
 export const SORT_OPTIONS = [
@@ -42,14 +40,10 @@ interface LibraryBrowseToolbarProps {
   onQueryChange: (value: string) => void;
   state: ParsedLibraryBrowseQuery;
   density: LibraryDensity;
-  genres: string[];
-  yearMin?: number;
-  yearMax?: number;
   resultCount?: number;
   onChange: (patch: Partial<ParsedLibraryBrowseQuery>) => void;
   onDensityChange: (density: LibraryDensity) => void;
-  onReset: () => void;
-  onOpenFilters?: () => void;
+  onOpenFilters: () => void;
 }
 
 const chipClass = (active: boolean) =>
@@ -64,21 +58,18 @@ const LibraryBrowseToolbar = ({
   onQueryChange,
   state,
   density,
-  genres,
-  yearMin,
-  yearMax,
   resultCount,
   onChange,
   onDensityChange,
-  onReset,
   onOpenFilters,
 }: LibraryBrowseToolbarProps) => {
   const intl = useIntl();
   const sortValue = `${state.sort}:${state.order}`;
+  const activeFilterCount = countActiveLibraryBrowseFilters(state);
 
   return (
     <div className="sticky top-0 z-20 space-y-3 bg-gray-900/95 py-3 backdrop-blur">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <input
           type="search"
           value={query}
@@ -86,17 +77,48 @@ const LibraryBrowseToolbar = ({
           placeholder={intl.formatMessage(messages.searchPlaceholder)}
           className="min-h-11 w-full flex-1 rounded-md border border-gray-700 bg-library-charcoal px-3 text-sm text-gray-100 placeholder:text-gray-500 focus:border-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
         />
-        {onOpenFilters ? (
+        <div className="flex shrink-0 gap-2">
+          <div className="flex min-w-0 flex-1 sm:flex-none">
+            <span className="inline-flex items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-gray-100">
+              <BarsArrowDownIcon className="h-5 w-5" />
+            </span>
+            <select
+              aria-label={intl.formatMessage(messages.sortBy)}
+              className="min-h-11 min-w-0 flex-1 rounded-r-md border border-gray-500 bg-gray-800 px-2 text-sm text-gray-100 sm:w-48"
+              value={sortValue}
+              onChange={(event) => {
+                const [sort, order] = event.target.value.split(':') as [
+                  ParsedLibraryBrowseQuery['sort'],
+                  ParsedLibraryBrowseQuery['order'],
+                ];
+                onChange({ sort, order, skip: 0 });
+              }}
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option
+                  key={`${option.sort}:${option.order}`}
+                  value={`${option.sort}:${option.order}`}
+                >
+                  {intl.formatMessage(messages[option.key])}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             type="button"
-            className="min-h-11 rounded-md bg-indigo-600 px-4 text-sm text-white lg:hidden"
+            className="inline-flex min-h-11 items-center gap-2 rounded-md bg-indigo-600 px-4 text-sm text-white"
             onClick={onOpenFilters}
           >
-            {intl.formatMessage(messages.filters)}
+            <FunnelIcon className="h-5 w-5" />
+            <span>
+              {intl.formatMessage(messages.activefilters, {
+                count: activeFilterCount,
+              })}
+            </span>
           </button>
-        ) : null}
+        </div>
       </div>
-      <div className="hidden flex-wrap items-center gap-2 lg:flex">
+      <div className="flex flex-wrap items-center gap-2">
         {(
           [
             [undefined, messages.all],
@@ -114,124 +136,29 @@ const LibraryBrowseToolbar = ({
             {intl.formatMessage(msg)}
           </button>
         ))}
-        {(
-          [
-            [undefined, messages.all],
-            ['unwatched', messages.unwatched],
-            ['inProgress', messages.inProgress],
-            ['played', messages.played],
-          ] as const
-        ).map(([value, msg]) => (
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <button
-            key={`watched-${String(value)}`}
             type="button"
-            aria-pressed={state.watched === value}
-            className={chipClass(state.watched === value)}
-            onClick={() => onChange({ watched: value, skip: 0 })}
+            aria-pressed={density === 'comfortable'}
+            className={chipClass(density === 'comfortable')}
+            onClick={() => onDensityChange('comfortable')}
           >
-            {intl.formatMessage(msg)}
+            {intl.formatMessage(messages.comfortable)}
           </button>
-        ))}
-        <select
-          aria-label="Sort"
-          className="min-h-11 rounded-md border border-gray-700 bg-library-charcoal px-2 text-sm text-gray-100"
-          value={sortValue}
-          onChange={(event) => {
-            const [sort, order] = event.target.value.split(':') as [
-              ParsedLibraryBrowseQuery['sort'],
-              ParsedLibraryBrowseQuery['order'],
-            ];
-            onChange({ sort, order, skip: 0 });
-          }}
-        >
-          {SORT_OPTIONS.map((option) => (
-            <option
-              key={`${option.sort}:${option.order}`}
-              value={`${option.sort}:${option.order}`}
-            >
-              {intl.formatMessage(messages[option.key])}
-            </option>
-          ))}
-        </select>
-        <select
-          multiple
-          aria-label="Genres"
-          className="min-h-11 min-w-[10rem] rounded-md border border-gray-700 bg-library-charcoal px-2 text-sm text-gray-100"
-          value={state.genre ?? []}
-          onChange={(event) => {
-            const selected = Array.from(event.target.selectedOptions).map(
-              (option) => option.value
-            );
-            onChange({
-              genre: selected.length ? selected : undefined,
-              skip: 0,
-            });
-          }}
-        >
-          {genres.map((genre) => (
-            <option key={genre} value={genre}>
-              {genre}
-            </option>
-          ))}
-        </select>
-        <input
-          type="number"
-          aria-label={intl.formatMessage(messages.yearFrom)}
-          className="min-h-11 w-24 rounded-md border border-gray-700 bg-library-charcoal px-2 text-sm text-gray-100"
-          placeholder={yearMin ? String(yearMin) : 'From'}
-          value={state.yearFrom ?? ''}
-          onChange={(event) =>
-            onChange({
-              yearFrom: event.target.value
-                ? Number(event.target.value)
-                : undefined,
-              skip: 0,
-            })
-          }
-        />
-        <input
-          type="number"
-          aria-label={intl.formatMessage(messages.yearTo)}
-          className="min-h-11 w-24 rounded-md border border-gray-700 bg-library-charcoal px-2 text-sm text-gray-100"
-          placeholder={yearMax ? String(yearMax) : 'To'}
-          value={state.yearTo ?? ''}
-          onChange={(event) =>
-            onChange({
-              yearTo: event.target.value
-                ? Number(event.target.value)
-                : undefined,
-              skip: 0,
-            })
-          }
-        />
-        <button
-          type="button"
-          aria-pressed={density === 'comfortable'}
-          className={chipClass(density === 'comfortable')}
-          onClick={() => onDensityChange('comfortable')}
-        >
-          {intl.formatMessage(messages.comfortable)}
-        </button>
-        <button
-          type="button"
-          aria-pressed={density === 'compact'}
-          className={chipClass(density === 'compact')}
-          onClick={() => onDensityChange('compact')}
-        >
-          {intl.formatMessage(messages.compact)}
-        </button>
-        <button
-          type="button"
-          className="min-h-11 text-sm text-gray-400 underline"
-          onClick={onReset}
-        >
-          {intl.formatMessage(messages.reset)}
-        </button>
-        {resultCount != null ? (
-          <span className="text-sm text-gray-400">
-            {intl.formatMessage(messages.results, { count: resultCount })}
-          </span>
-        ) : null}
+          <button
+            type="button"
+            aria-pressed={density === 'compact'}
+            className={chipClass(density === 'compact')}
+            onClick={() => onDensityChange('compact')}
+          >
+            {intl.formatMessage(messages.compact)}
+          </button>
+          {resultCount != null ? (
+            <span className="text-sm text-gray-400">
+              {intl.formatMessage(messages.results, { count: resultCount })}
+            </span>
+          ) : null}
+        </div>
       </div>
     </div>
   );
