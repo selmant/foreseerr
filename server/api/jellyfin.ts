@@ -3,6 +3,7 @@ import ExternalAPI from '@server/api/externalapi';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import availabilitySync from '@server/lib/availabilitySync';
+import { jellyfinItemImageRequest } from '@server/lib/libraryBrowse';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { ApiError } from '@server/types/error';
@@ -852,6 +853,38 @@ class JellyfinAPI extends ExternalAPI {
       this.getLibraryYearBound('Descending'),
     ]);
     return { genres, yearMin, yearMax };
+  }
+
+  public async getItemImage(
+    jellyfinItemId: string,
+    imageType: 'primary' | 'backdrop'
+  ): Promise<{ buffer: Buffer; contentType: string } | undefined> {
+    const { path, params } = jellyfinItemImageRequest(
+      jellyfinItemId,
+      imageType
+    );
+    try {
+      const response = await this.axios.get<ArrayBuffer>(path, {
+        params,
+        responseType: 'arraybuffer',
+        headers: { Accept: 'image/*' },
+        validateStatus: (status) => status === 200 || status === 404,
+      });
+      if (response.status === 404 || !response.data) {
+        return undefined;
+      }
+      const contentType =
+        typeof response.headers['content-type'] === 'string'
+          ? response.headers['content-type']
+          : 'image/jpeg';
+      return { buffer: Buffer.from(response.data), contentType };
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting a Jellyfin image: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
   }
 }
 

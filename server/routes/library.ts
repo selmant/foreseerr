@@ -2,6 +2,7 @@ import type {
   LibraryAvailableResponse,
   LibraryBrowseResponse,
   LibraryFacetsResponse,
+  LibraryItemInspectorResponse,
   LibrarySeasonEpisodesResponse,
   LibrarySeriesDetailResponse,
   LibraryWatchNowResponse,
@@ -9,11 +10,14 @@ import type {
 import {
   buildWatchNowResponse,
   getLibraryFacetsForUser,
+  getLibraryItemImage,
+  getLibraryItemInspector,
   getLibrarySeasonEpisodes,
   getLibrarySeriesDetail,
   listAvailableLibrary,
   listBrowseLibrary,
 } from '@server/lib/library';
+import { isJellyfinItemId } from '@server/lib/libraryBrowse';
 import { parseLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
 import { Router } from 'express';
 
@@ -177,6 +181,67 @@ libraryRoutes.get<unknown, LibraryFacetsResponse>(
         status: 500,
         message:
           e instanceof Error ? e.message : 'Failed to load library facets',
+      });
+    }
+  }
+);
+
+libraryRoutes.get<
+  { jellyfinItemId: string; imageType: string },
+  Buffer | { message: string }
+>('/items/:jellyfinItemId/images/:imageType', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+    if (!isJellyfinItemId(req.params.jellyfinItemId)) {
+      return next({ status: 404, message: 'Not found' });
+    }
+    const imageType =
+      req.params.imageType === 'primary' || req.params.imageType === 'backdrop'
+        ? req.params.imageType
+        : undefined;
+    if (!imageType) {
+      return next({ status: 404, message: 'Not found' });
+    }
+    const image = await getLibraryItemImage(
+      req.user.id,
+      req.params.jellyfinItemId,
+      imageType
+    );
+    if (!image.ok) {
+      return next({
+        status: image.status,
+        message: image.code ?? 'Failed to load image',
+      });
+    }
+    res.setHeader('Content-Type', image.contentType);
+    res.setHeader('Cache-Control', 'private, max-age=21600');
+    return res.status(200).end(image.buffer);
+  } catch (e) {
+    return next({
+      status: 502,
+      message: e instanceof Error ? e.message : 'Failed to load library image',
+    });
+  }
+});
+
+libraryRoutes.get<{ jellyfinItemId: string }, LibraryItemInspectorResponse>(
+  '/items/:jellyfinItemId',
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const payload = await getLibraryItemInspector(
+        req.user.id,
+        req.params.jellyfinItemId
+      );
+      return res.status(200).json(payload);
+    } catch (e) {
+      return next({
+        status: 500,
+        message: e instanceof Error ? e.message : 'Failed to load library item',
       });
     }
   }

@@ -14,6 +14,7 @@ import type {
   LibraryBrowseResponse,
   LibraryEpisode,
   LibraryFacetsResponse,
+  LibraryItemInspectorResponse,
   LibrarySeasonEpisodesResponse,
   LibrarySeriesDetailResponse,
   LibrarySeriesSeason,
@@ -724,6 +725,7 @@ export const listBrowseLibrary = async (
   try {
     return await listBrowseFromClient(
       linked.client,
+      linked.user.jellyfinUserId ?? 'Me',
       query,
       mapJellyfinItemsToLibraryTitles
     );
@@ -752,6 +754,168 @@ export const getLibraryFacetsForUser = async (
       errorMessage: e instanceof Error ? e.message : String(e),
     });
     return { genres: [], code: 'server_unreachable' };
+  }
+};
+
+export const resolveInspectorTargetId = (
+  item: Pick<JellyfinLibraryItemExtended, 'Id' | 'Type' | 'SeriesId'>
+): string =>
+  item.Type === 'Episode' && item.SeriesId ? item.SeriesId : item.Id;
+
+export const toInspectorResponse = (
+  title: LibraryTitle,
+  extras: {
+    seasons?: LibrarySeriesSeason[];
+    playUrl?: string;
+    playItemId?: string;
+    subtitle?: string;
+    startPositionTicks?: number;
+    code?: LibraryItemInspectorResponse['code'];
+  } = {}
+): LibraryItemInspectorResponse => ({
+  jellyfinItemId: title.jellyfinItemId,
+  jellyfinSeriesId: title.jellyfinSeriesId,
+  mediaType: title.mediaType,
+  title: title.title,
+  subtitle: extras.subtitle ?? title.subtitle,
+  overview: title.overview,
+  year: title.year,
+  runtimeMinutes: title.runtimeMinutes,
+  genres: title.genres,
+  posterUrl: title.posterUrl,
+  backdropUrl: title.backdropUrl,
+  progressPercent: title.progressPercent,
+  watched: title.watched,
+  inProgress: title.inProgress,
+  startPositionTicks: extras.startPositionTicks ?? title.startPositionTicks,
+  playItemId: extras.playItemId ?? title.playItemId,
+  playUrl: extras.playUrl,
+  mediaUrl: title.mediaUrl,
+  mediaId: title.mediaId,
+  tmdbId: title.tmdbId,
+  status: title.status,
+  seasons: extras.seasons,
+  code: extras.code,
+});
+
+export const getLibraryItemInspector = async (
+  userId: number,
+  jellyfinItemId: string
+): Promise<LibraryItemInspectorResponse> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return {
+      jellyfinItemId,
+      mediaType: 'movie',
+      title: 'Title',
+      code: linked.code,
+    };
+  }
+
+  try {
+    const item = await linked.client.getItemData(jellyfinItemId);
+    if (!item) {
+      return {
+        jellyfinItemId,
+        mediaType: 'movie',
+        title: 'Title',
+        code: 'not_found',
+      };
+    }
+
+    const targetId = resolveInspectorTargetId(item);
+    const target =
+      targetId === item.Id ? item : await linked.client.getItemData(targetId);
+    if (!target) {
+      return {
+        jellyfinItemId: targetId,
+        mediaType: 'tv',
+        title: 'Series',
+        code: 'not_found',
+      };
+    }
+
+    if (target.Type === 'Series') {
+      const [mapped, series] = await Promise.all([
+        mapJellyfinItemsToLibraryTitles([target]),
+        getLibrarySeriesDetail(userId, target.Id),
+      ]);
+      return toInspectorResponse(mapped[0], {
+        seasons: series.seasons,
+        playItemId: series.playItemId,
+        playUrl: series.playUrl,
+        subtitle: series.subtitle,
+        startPositionTicks: series.startPositionTicks,
+        code: series.code,
+      });
+    }
+
+    const mapped = await mapJellyfinItemsToLibraryTitles([target]);
+    const title = mapped[0];
+    return toInspectorResponse(title, {
+      playUrl: title.playItemId ? mediaUrlForItem(title.playItemId) : undefined,
+    });
+  } catch (e) {
+    logger.error('Failed to load library inspector', {
+      label: 'Library',
+      jellyfinItemId,
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return {
+      jellyfinItemId,
+      mediaType: 'movie',
+      title: 'Title',
+      code: 'server_unreachable',
+    };
+  }
+};
+
+const libraryImageCache = new Map<
+  string,
+  { buffer: Buffer; contentType: string; expiresAt: number }
+>();
+
+export const getLibraryItemImage = async (
+  userId: number,
+  jellyfinItemId: string,
+  imageType: 'primary' | 'backdrop'
+): Promise<
+  | { ok: true; buffer: Buffer; contentType: string }
+  | {
+      ok: false;
+      status: number;
+      code?: 'not_linked' | 'unsupported_media_server' | 'not_found';
+    }
+> => {
+  const cacheKey = `${jellyfinItemId}:${imageType}`;
+  const cached = libraryImageCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ok: true, buffer: cached.buffer, contentType: cached.contentType };
+  }
+
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return { ok: false, status: 401, code: linked.code };
+  }
+
+  try {
+    const image = await linked.client.getItemImage(jellyfinItemId, imageType);
+    if (!image) {
+      return { ok: false, status: 404, code: 'not_found' };
+    }
+    libraryImageCache.set(cacheKey, {
+      ...image,
+      expiresAt: Date.now() + 6 * 60 * 60 * 1000,
+    });
+    return { ok: true, ...image };
+  } catch (e) {
+    logger.error('Failed to proxy library image', {
+      label: 'Library',
+      jellyfinItemId,
+      imageType,
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return { ok: false, status: 502 };
   }
 };
 

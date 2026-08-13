@@ -1,5 +1,7 @@
 import {
   buildJellyfinBrowseParams,
+  isJellyfinItemId,
+  jellyfinItemImageRequest,
   libraryTitleDisplayFields,
   listBrowseFromClient,
 } from '@server/lib/libraryBrowse';
@@ -112,7 +114,6 @@ describe('listBrowseFromClient', () => {
     let forwarded: Record<string, string | number | boolean> | undefined;
     const result = await listBrowseFromClient(
       {
-        userId: 'jf-user',
         browseLibraryItems: async (params) => {
           forwarded = params;
           return {
@@ -140,6 +141,7 @@ describe('listBrowseFromClient', () => {
           };
         },
       },
+      'jf-user',
       parseLibraryBrowseQuery({
         genre: ['Sci-Fi'],
         yearFrom: '2020',
@@ -164,5 +166,34 @@ describe('listBrowseFromClient', () => {
     assert.equal(result.results[0].playItemId, 'movie-1');
     assert.equal(result.results[0].mediaId, 42);
     assert.equal(result.results[1].playItemId, undefined);
+  });
+});
+
+describe('jellyfinItemImageRequest', () => {
+  it('maps image types without embedding a token', () => {
+    const primary = jellyfinItemImageRequest(
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'primary'
+    );
+    const backdrop = jellyfinItemImageRequest(
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'backdrop'
+    );
+    assert.equal(
+      primary.path,
+      '/Items/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Images/Primary'
+    );
+    assert.equal(primary.params.maxWidth, 400);
+    assert.equal(
+      backdrop.path,
+      '/Items/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Images/Backdrop'
+    );
+    assert.equal(backdrop.params.maxWidth, 1280);
+    assert.equal(JSON.stringify(primary).includes('Token'), false);
+  });
+
+  it('rejects non-hex item ids', () => {
+    assert.equal(isJellyfinItemId('not-an-id'), false);
+    assert.equal(isJellyfinItemId('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'), true);
   });
 });

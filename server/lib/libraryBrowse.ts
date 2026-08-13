@@ -65,6 +65,25 @@ export const buildJellyfinBrowseParams = (
   return params;
 };
 
+export const JELLYFIN_ITEM_ID_PATTERN = /^[a-f0-9]{32}$/i;
+
+export const isJellyfinItemId = (value: string): boolean =>
+  JELLYFIN_ITEM_ID_PATTERN.test(value);
+
+export const jellyfinItemImageRequest = (
+  jellyfinItemId: string,
+  imageType: 'primary' | 'backdrop'
+): { path: string; params: { maxWidth: number; quality: number } } => {
+  const image = imageType === 'primary' ? 'Primary' : 'Backdrop';
+  return {
+    path: `/Items/${jellyfinItemId}/Images/${image}`,
+    params: {
+      maxWidth: imageType === 'primary' ? 400 : 1280,
+      quality: 90,
+    },
+  };
+};
+
 export const libraryItemImageUrl = (
   jellyfinItemId: string,
   imageType: 'primary' | 'backdrop'
@@ -122,7 +141,6 @@ export const libraryTitleDisplayFields = (item: {
 
 export const listBrowseFromClient = async (
   client: {
-    userId?: string;
     browseLibraryItems: (
       params: Record<string, string | number | boolean>
     ) => Promise<{
@@ -130,10 +148,11 @@ export const listBrowseFromClient = async (
       totalRecordCount: number;
     }>;
   },
+  userId: string,
   query: ParsedLibraryBrowseQuery,
   mapItems: (items: JellyfinLibraryItemExtended[]) => Promise<LibraryTitle[]>
 ): Promise<{ results: LibraryTitle[]; total: number }> => {
-  const params = buildJellyfinBrowseParams(query, client.userId ?? 'Me');
+  const params = buildJellyfinBrowseParams(query, userId);
   const { items, totalRecordCount } = await client.browseLibraryItems(params);
   return {
     results: await mapItems(items),
