@@ -53,6 +53,8 @@ const Trending = () => {
     discoverDefaults
   );
   const filterType: 'movie' | 'tv' = currentMediaType === 'tv' ? 'tv' : 'movie';
+  const genreType: 'movie' | 'tv' | 'all' =
+    currentMediaType === 'all' ? 'all' : filterType;
 
   const activeFilterCount =
     countActiveFilters(preparedFilters) +
@@ -138,6 +140,7 @@ const Trending = () => {
           </div>
           <FilterSlideover
             type={filterType}
+            genreType={genreType}
             capabilities={browseFilterCapabilities}
             showHideWatched
             currentFilters={preparedFilters}

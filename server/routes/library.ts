@@ -174,7 +174,11 @@ libraryRoutes.get<unknown, LibraryFacetsResponse>(
       if (!req.user) {
         return next({ status: 401, message: 'Unauthorized' });
       }
-      const payload = await getLibraryFacetsForUser(req.user.id);
+      const mediaType =
+        req.query.mediaType === 'movie' || req.query.mediaType === 'tv'
+          ? req.query.mediaType
+          : undefined;
+      const payload = await getLibraryFacetsForUser(req.user.id, mediaType);
       return res.status(200).json(payload);
     } catch (e) {
       return next({

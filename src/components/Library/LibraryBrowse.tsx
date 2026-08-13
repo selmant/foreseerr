@@ -111,7 +111,9 @@ const LibraryBrowse = () => {
   };
 
   const { data: facets } = useSWR<LibraryFacetsResponse>(
-    '/api/v1/library/facets'
+    `/api/v1/library/facets${
+      state.mediaType ? `?mediaType=${state.mediaType}` : ''
+    }`
   );
 
   const scopeKey = serializeBrowseApiQuery({ ...state, skip: 0 }).toString();

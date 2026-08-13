@@ -97,6 +97,8 @@ type FilterSlideoverProps = {
   show: boolean;
   onClose: () => void;
   type: 'movie' | 'tv';
+  /** Genre catalog. Mixed lists should pass `all` so movie and TV names both appear. */
+  genreType?: 'movie' | 'tv' | 'all';
   currentFilters: FilterOptions;
   /** Opt-in endpoint-specific filters; shared filters are always shown. */
   capabilities?: FilterCapabilities;
@@ -108,6 +110,7 @@ const FilterSlideover = ({
   show,
   onClose,
   type,
+  genreType,
   currentFilters,
   capabilities = discoverFilterCapabilities,
   showHideWatched = false,
@@ -299,7 +302,7 @@ const FilterSlideover = ({
           {intl.formatMessage(messages.genres)}
         </span>
         <GenreSelector
-          type={type}
+          type={genreType ?? type}
           defaultValue={currentFilters.genre}
           isMulti
           onChange={(value) => {

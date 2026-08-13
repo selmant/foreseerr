@@ -16,6 +16,7 @@ import type {
   PersonResult,
   TvResult,
 } from '@server/models/Search';
+import { expandTmdbGenreIds } from '@server/lib/tmdbGenreEquivalents';
 import {
   hasBrowseQueryFilters,
   needsMdblistBrowseFilters,
@@ -121,11 +122,11 @@ const matchesBrowseFilters = (
   ) {
     return false;
   }
-  if (
-    filters.genreIds.length > 0 &&
-    !filters.genreIds.some((id) => item.genreIds.includes(id))
-  ) {
-    return false;
+  if (filters.genreIds.length > 0) {
+    const wanted = expandTmdbGenreIds(filters.genreIds);
+    if (!item.genreIds.some((id) => wanted.includes(id))) {
+      return false;
+    }
   }
   if (
     filters.language != null &&

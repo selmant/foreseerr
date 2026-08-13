@@ -55,6 +55,8 @@ const TraktDiscoverFilters = ({
       : 'all';
 
   const filterType: 'movie' | 'tv' = currentType === 'tv' ? 'tv' : 'movie';
+  const genreType: 'movie' | 'tv' | 'all' =
+    currentType === 'movie' || currentType === 'tv' ? currentType : 'all';
   const currentSort =
     router.query.sort === 'added' || router.query.sort === 'released'
       ? router.query.sort
@@ -102,6 +104,7 @@ const TraktDiscoverFilters = ({
       </div>
       <FilterSlideover
         type={filterType}
+        genreType={genreType}
         capabilities={browseFilterCapabilities}
         showHideWatched={showHideWatchedFilter}
         showTraktRecommendationFilters={showRecommendationFilters}

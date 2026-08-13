@@ -4,6 +4,7 @@ import {
   jellyfinItemImageRequest,
   libraryTitleDisplayFields,
   listBrowseFromClient,
+  uniqueSortedGenres,
 } from '@server/lib/libraryBrowse';
 import { parseLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
 import assert from 'node:assert/strict';
@@ -204,6 +205,15 @@ describe('listBrowseFromClient', () => {
     assert.equal(result.results[0].playItemId, 'movie-1');
     assert.equal(result.results[0].mediaId, 42);
     assert.equal(result.results[1].playItemId, undefined);
+  });
+});
+
+describe('uniqueSortedGenres', () => {
+  it('trims, de-dupes case-insensitively, and sorts', () => {
+    assert.deepEqual(
+      uniqueSortedGenres([' Drama', 'action', 'Action', '', 'Sci-Fi', null]),
+      ['action', 'Drama', 'Sci-Fi']
+    );
   });
 });
 

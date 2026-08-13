@@ -18,6 +18,28 @@ const WATCHED_FILTER: Record<
   played: 'IsPlayed',
 };
 
+export const uniqueSortedGenres = (
+  names: (string | undefined | null)[]
+): string[] => {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of names) {
+    const name = raw?.trim();
+    if (!name) {
+      continue;
+    }
+    const key = name.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(name);
+  }
+  return unique.sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' })
+  );
+};
+
 export const BROWSE_ITEM_FIELDS =
   'ProviderIds,Overview,Genres,ProductionYear,DateCreated,PremiereDate,RunTimeTicks';
 

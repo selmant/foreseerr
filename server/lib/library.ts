@@ -807,7 +807,8 @@ export const listBrowseLibrary = async (
 };
 
 export const getLibraryFacetsForUser = async (
-  userId: number
+  userId: number,
+  mediaType?: 'movie' | 'tv'
 ): Promise<LibraryFacetsResponse> => {
   const linked = await createUserJellyfinClient(userId);
   if (!linked.ok) {
@@ -815,7 +816,7 @@ export const getLibraryFacetsForUser = async (
   }
 
   try {
-    return await linked.client.getLibraryFacets();
+    return await linked.client.getLibraryFacets(mediaType);
   } catch (e) {
     logger.error('Failed to load library facets', {
       label: 'Library',

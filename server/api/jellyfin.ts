@@ -3,7 +3,10 @@ import ExternalAPI from '@server/api/externalapi';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import availabilitySync from '@server/lib/availabilitySync';
-import { jellyfinItemImageRequest } from '@server/lib/libraryBrowse';
+import {
+  jellyfinItemImageRequest,
+  uniqueSortedGenres,
+} from '@server/lib/libraryBrowse';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { ApiError } from '@server/types/error';
@@ -786,21 +789,60 @@ class JellyfinAPI extends ExternalAPI {
     }
   }
 
-  public async getLibraryGenres(): Promise<string[]> {
+  public async getLibraryGenres(
+    mediaType?: 'movie' | 'tv'
+  ): Promise<string[]> {
+    const include =
+      mediaType === 'movie'
+        ? 'Movie'
+        : mediaType === 'tv'
+          ? 'Series'
+          : 'Movie,Series';
+    const params = {
+      userId: this.userId ?? 'Me',
+      IncludeItemTypes: include,
+      Recursive: true,
+    };
+
+    try {
+      const filters2 = await this.get<{ Genres?: { Name?: string }[] }>(
+        `/Items/Filters2`,
+        { params }
+      );
+      const genres = uniqueSortedGenres(
+        (filters2.Genres ?? []).map((genre) => genre.Name)
+      );
+      if (genres.length) {
+        return genres;
+      }
+    } catch (e) {
+      logger.debug(
+        `Jellyfin Filters2 unavailable, falling back to Filters: ${e.message}`,
+        { label: 'Jellyfin API' }
+      );
+    }
+
+    try {
+      const filters = await this.get<{ Genres?: string[] }>(`/Items/Filters`, {
+        params,
+      });
+      const genres = uniqueSortedGenres(filters.Genres ?? []);
+      if (genres.length) {
+        return genres;
+      }
+    } catch (e) {
+      logger.debug(
+        `Jellyfin Filters unavailable, falling back to Genres: ${e.message}`,
+        { label: 'Jellyfin API' }
+      );
+    }
+
     try {
       const response = await this.get<{ Items?: { Name?: string }[] }>(
         `/Genres`,
-        {
-          params: {
-            userId: this.userId ?? 'Me',
-            IncludeItemTypes: 'Movie,Series',
-            Recursive: true,
-          },
-        }
+        { params }
       );
-      return (response.Items ?? [])
-        .map((item) => item.Name?.trim())
-        .filter((name): name is string => Boolean(name));
+      return uniqueSortedGenres((response.Items ?? []).map((item) => item.Name));
     } catch (e) {
       logger.error(
         `Something went wrong while getting Jellyfin genres: ${e.message}`,
@@ -843,13 +885,13 @@ class JellyfinAPI extends ExternalAPI {
     }
   }
 
-  public async getLibraryFacets(): Promise<{
+  public async getLibraryFacets(mediaType?: 'movie' | 'tv'): Promise<{
     genres: string[];
     yearMin?: number;
     yearMax?: number;
   }> {
     const [genres, yearMin, yearMax] = await Promise.all([
-      this.getLibraryGenres(),
+      this.getLibraryGenres(mediaType),
       this.getLibraryYearBound('Ascending'),
       this.getLibraryYearBound('Descending'),
     ]);

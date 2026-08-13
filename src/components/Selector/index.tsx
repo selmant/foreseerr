@@ -143,8 +143,32 @@ export const CompanySelector = ({
   );
 };
 
+type GenreSelectorType = 'movie' | 'tv' | 'all';
+
 type GenreSelectorProps = (BaseSelectorMultiProps | BaseSelectorSingleProps) & {
-  type: 'movie' | 'tv';
+  type: GenreSelectorType;
+};
+
+const genreEndpoints = (type: GenreSelectorType): ('movie' | 'tv')[] =>
+  type === 'all' ? ['movie', 'tv'] : [type];
+
+const loadTmdbGenres = async (
+  type: GenreSelectorType
+): Promise<{ label: string; value: number }[]> => {
+  const lists = await Promise.all(
+    genreEndpoints(type).map((endpoint) =>
+      axios.get<TmdbGenre[]>(`/api/v1/genres/${endpoint}`)
+    )
+  );
+  const byId = new Map<number, { label: string; value: number }>();
+  for (const response of lists) {
+    for (const genre of response.data) {
+      if (!byId.has(genre.id)) {
+        byId.set(genre.id, { label: genre.name, value: genre.id });
+      }
+    }
+  }
+  return [...byId.values()].sort((a, b) => a.label.localeCompare(b.label));
 };
 
 export const GenreSelector = ({
@@ -165,35 +189,27 @@ export const GenreSelector = ({
         return;
       }
 
-      const genres = defaultValue.split(',');
-
-      const response = await axios.get<TmdbGenre[]>(`/api/v1/genres/${type}`);
-
-      const genreData = genres
-        .filter((genre) => response.data.find((gd) => gd.id === Number(genre)))
-        .map((g) => response.data.find((gd) => gd.id === Number(g)))
-        .map((g) => ({
-          label: g?.name ?? '',
-          value: g?.id ?? 0,
-        }));
-
-      setDefaultDataValue(genreData);
+      const selected = new Set(
+        defaultValue
+          .split(',')
+          .map((part) => Number(part.trim()))
+          .filter((id) => Number.isFinite(id))
+      );
+      const options = await loadTmdbGenres(type);
+      setDefaultDataValue(
+        options.filter((option) => selected.has(option.value))
+      );
     };
 
     loadDefaultGenre();
   }, [defaultValue, type]);
 
   const loadGenreOptions = async (inputValue: string) => {
-    const results = await axios.get<TmdbGenre[]>(`/api/v1/genres/${type}`);
-
-    return results.data
-      .map((result) => ({
-        label: result.name,
-        value: result.id,
-      }))
-      .filter(({ label }) =>
-        label.toLowerCase().includes(inputValue.toLowerCase())
-      );
+    const options = await loadTmdbGenres(type);
+    const query = inputValue.toLowerCase();
+    return query
+      ? options.filter(({ label }) => label.toLowerCase().includes(query))
+      : options;
   };
 
   return (
