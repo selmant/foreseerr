@@ -353,23 +353,27 @@ describe('TVDB Integration', () => {
   });
 
   it('offers episode requests from discover cards', () => {
-    cy.intercept('GET', '/api/v1/discover/tv*', (req) => {
-      req.continue((res) => {
-        const body =
-          typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
-        if (!body?.results?.length) {
-          return;
-        }
-
-        body.results = [
-          {
-            ...body.results[0],
-            mediaInfo: undefined,
-          },
-          ...body.results.slice(1),
-        ];
-        res.send(body);
-      });
+    cy.intercept('GET', '/api/v1/discover/tv*', {
+      page: 1,
+      totalPages: 1,
+      totalResults: 1,
+      results: [
+        {
+          id: 225634,
+          mediaType: 'tv',
+          name: 'Monster',
+          originalName: 'Monster',
+          overview: 'Unrequested series for episode-request UI.',
+          posterPath: '/monster.jpg',
+          firstAirDate: '2024-01-01',
+          voteAverage: 8,
+          voteCount: 10,
+          popularity: 100,
+          genreIds: [],
+          originalLanguage: 'en',
+          originCountry: ['US'],
+        },
+      ],
     }).as('getPopularTv');
     cy.visit(ROUTES.home);
     cy.wait('@getPopularTv');
@@ -602,15 +606,33 @@ describe('TVDB Integration', () => {
   });
 
   it('shows season progress and toggles an episode watched on Trakt', () => {
+    let watchedEpisodeNumbers: number[] = [];
     cy.intercept(
       'GET',
       '/api/v1/media-actions/tv/225634/seasons/1/episodes/status',
-      { available: true, watchedEpisodeNumbers: [] }
+      (req) => {
+        req.reply({ available: true, watchedEpisodeNumbers });
+      }
     ).as('episodeWatchStatus');
     cy.intercept(
       'POST',
       '/api/v1/media-actions/tv/225634/seasons/1/episodes/*/watched',
-      { provider: 'trakt', ok: true, watched: true }
+      (req) => {
+        watchedEpisodeNumbers = [1];
+        req.reply({
+          outcome: 'success',
+          watched: true,
+          providers: [
+            {
+              provider: 'trakt',
+              ok: true,
+              watched: true,
+              rating: null,
+              ratingStars: null,
+            },
+          ],
+        });
+      }
     ).as('markEpisodeWatched');
     cy.intercept('GET', '/api/v1/tv/225634/season/1', episodeSeason).as(
       'season1'
