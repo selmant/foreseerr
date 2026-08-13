@@ -523,7 +523,11 @@ const TitleCard = ({
       type: 'or',
     });
 
-  const libraryPlayId = playItemId || jellyfinItemId || undefined;
+  // Series rows need a concrete episode id; the series Jellyfin id is not playable.
+  const libraryPlayId =
+    mediaType === 'tv'
+      ? playItemId || undefined
+      : playItemId || jellyfinItemId || undefined;
   const showLibraryPlay = Boolean(libraryMode && libraryPlayId);
   const detailHref =
     mediaType === 'movie'

@@ -3,6 +3,7 @@ import ExternalAPI from '@server/api/externalapi';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import availabilitySync from '@server/lib/availabilitySync';
+import { jellyfinItemImageRequest } from '@server/lib/libraryBrowse';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { ApiError } from '@server/types/error';
@@ -134,8 +135,16 @@ export interface JellyfinLibraryItemExtended extends JellyfinLibraryItem {
     PlayedPercentage?: number;
     RunTimeTicks?: number;
     Played?: boolean;
+    LastPlayedDate?: string;
+    IsFavorite?: boolean;
+    UnplayedItemCount?: number;
   };
   RunTimeTicks?: number;
+  ProductionYear?: number;
+  Genres?: string[];
+  PremiereDate?: string;
+  ImageTags?: Record<string, string>;
+  BackdropImageTags?: string[];
 }
 
 type EpisodeReturn<T> = T extends { includeMediaInfo: true }
@@ -748,6 +757,131 @@ class JellyfinAPI extends ExternalAPI {
     } catch (e) {
       logger.error(
         `Something went wrong while searching the Jellyfin server: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  public async browseLibraryItems(
+    params: Record<string, string | number | boolean>
+  ): Promise<{
+    items: JellyfinLibraryItemExtended[];
+    totalRecordCount: number;
+  }> {
+    try {
+      const response = await this.get<JellyfinItemsReponse>(`/Items`, {
+        params,
+      });
+      return {
+        items: response.Items ?? [],
+        totalRecordCount: response.TotalRecordCount ?? 0,
+      };
+    } catch (e) {
+      logger.error(
+        `Something went wrong while browsing the Jellyfin library: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  public async getLibraryGenres(): Promise<string[]> {
+    try {
+      const response = await this.get<{ Items?: { Name?: string }[] }>(
+        `/Genres`,
+        {
+          params: {
+            userId: this.userId ?? 'Me',
+            IncludeItemTypes: 'Movie,Series',
+            Recursive: true,
+          },
+        }
+      );
+      return (response.Items ?? [])
+        .map((item) => item.Name?.trim())
+        .filter((name): name is string => Boolean(name));
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting Jellyfin genres: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  public async getLibraryYearBound(
+    order: 'Ascending' | 'Descending'
+  ): Promise<number | undefined> {
+    try {
+      const response = await this.get<JellyfinItemsReponse>(`/Items`, {
+        params: {
+          userId: this.userId ?? 'Me',
+          IncludeItemTypes: 'Movie,Series',
+          Recursive: true,
+          SortBy: 'PremiereDate',
+          SortOrder: order,
+          Limit: 1,
+          Fields: 'PremiereDate,ProductionYear',
+        },
+      });
+      const item = response.Items?.[0];
+      if (item?.ProductionYear) {
+        return item.ProductionYear;
+      }
+      if (item?.PremiereDate) {
+        const year = new Date(item.PremiereDate).getUTCFullYear();
+        return Number.isFinite(year) ? year : undefined;
+      }
+      return undefined;
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting Jellyfin year bounds: ${e.message}`,
+        { label: 'Jellyfin API', error: e?.response?.status }
+      );
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  public async getLibraryFacets(): Promise<{
+    genres: string[];
+    yearMin?: number;
+    yearMax?: number;
+  }> {
+    const [genres, yearMin, yearMax] = await Promise.all([
+      this.getLibraryGenres(),
+      this.getLibraryYearBound('Ascending'),
+      this.getLibraryYearBound('Descending'),
+    ]);
+    return { genres, yearMin, yearMax };
+  }
+
+  public async getItemImage(
+    jellyfinItemId: string,
+    imageType: 'primary' | 'backdrop'
+  ): Promise<{ buffer: Buffer; contentType: string } | undefined> {
+    const { path, params } = jellyfinItemImageRequest(
+      jellyfinItemId,
+      imageType
+    );
+    try {
+      const response = await this.axios.get<ArrayBuffer>(path, {
+        params,
+        responseType: 'arraybuffer',
+        headers: { Accept: 'image/*' },
+        validateStatus: (status) => status === 200 || status === 404,
+      });
+      if (response.status === 404 || !response.data) {
+        return undefined;
+      }
+      const contentType =
+        typeof response.headers['content-type'] === 'string'
+          ? response.headers['content-type']
+          : 'image/jpeg';
+      return { buffer: Buffer.from(response.data), contentType };
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting a Jellyfin image: ${e.message}`,
         { label: 'Jellyfin API', error: e?.response?.status }
       );
       throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);

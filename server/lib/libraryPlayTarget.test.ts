@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  filterPlayableLibraryTitles,
   resolveSeriesPlayTarget,
   type PlayTargetEpisode,
 } from './libraryPlayTarget';
@@ -112,5 +113,33 @@ describe('resolveSeriesPlayTarget', () => {
 
   it('returns undefined when there are no episodes', () => {
     assert.equal(resolveSeriesPlayTarget('series-1', []), undefined);
+  });
+});
+
+describe('filterPlayableLibraryTitles', () => {
+  it('keeps movies even without playItemId', () => {
+    const movie = {
+      mediaType: 'movie' as const,
+      jellyfinItemId: 'movie-1',
+      title: 'Movie',
+    };
+    assert.deepEqual(filterPlayableLibraryTitles([movie]), [movie]);
+  });
+
+  it('drops series without a resolved episode playItemId', () => {
+    const empty = {
+      mediaType: 'tv' as const,
+      jellyfinItemId: 'series-1',
+      title: 'Empty',
+    };
+    const playable = {
+      mediaType: 'tv' as const,
+      jellyfinItemId: 'series-2',
+      title: 'Playable',
+      playItemId: 'episode-1',
+    };
+    assert.deepEqual(filterPlayableLibraryTitles([empty, playable]), [
+      playable,
+    ]);
   });
 });

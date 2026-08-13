@@ -1911,6 +1911,126 @@ components:
           type: number
         progressPercent:
           type: number
+        startPositionTicks:
+          type: number
+        year:
+          type: number
+        genres:
+          type: array
+          items:
+            type: string
+        watched:
+          type: boolean
+        inProgress:
+          type: boolean
+        addedAt:
+          type: string
+          format: date-time
+        lastPlayedAt:
+          type: string
+          format: date-time
+        posterUrl:
+          type: string
+        backdropUrl:
+          type: string
+        runtimeMinutes:
+          type: number
+        inspectorItemId:
+          type: string
+          description: Movie id, or parent series id for episode rows
+        unplayedItemCount:
+          type: number
+          description: Unplayed episodes remaining on series rows
+    LibraryBrowseResponse:
+      type: object
+      required: [pageInfo, results]
+      properties:
+        pageInfo:
+          $ref: '#/components/schemas/PageInfo'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LibraryTitle'
+        code:
+          type: string
+          enum: [not_linked, server_unreachable, unsupported_media_server]
+    LibraryFacetsResponse:
+      type: object
+      required: [genres]
+      properties:
+        genres:
+          type: array
+          items:
+            type: string
+        yearMin:
+          type: number
+        yearMax:
+          type: number
+        code:
+          type: string
+          enum: [not_linked, server_unreachable, unsupported_media_server]
+    LibraryItemInspectorResponse:
+      type: object
+      required: [jellyfinItemId, mediaType, title]
+      properties:
+        jellyfinItemId:
+          type: string
+        jellyfinSeriesId:
+          type: string
+        mediaType:
+          type: string
+          enum: [movie, tv]
+        title:
+          type: string
+        subtitle:
+          type: string
+        overview:
+          type: string
+        year:
+          type: number
+        runtimeMinutes:
+          type: number
+        genres:
+          type: array
+          items:
+            type: string
+        posterUrl:
+          type: string
+        backdropUrl:
+          type: string
+        progressPercent:
+          type: number
+        watched:
+          type: boolean
+        inProgress:
+          type: boolean
+        startPositionTicks:
+          type: number
+        playItemId:
+          type: string
+        playUrl:
+          type: string
+        mediaUrl:
+          type: string
+        mediaId:
+          type: number
+        tmdbId:
+          type: number
+        status:
+          type: number
+        seasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/LibrarySeriesSeason'
+        code:
+          type: string
+          enum:
+            [
+              not_linked,
+              server_unreachable,
+              unsupported_media_server,
+              not_found,
+            ]
     LibraryShelf:
       type: object
       required: [id, title, items]
@@ -2931,6 +3051,27 @@ components:
         type: number
         example: 10000
       description: Maximum TMDB vote count for post-fetch filtering
+    DiscoverRuntimeGte:
+      in: query
+      name: withRuntimeGte
+      schema:
+        type: number
+        example: 90
+      description: Minimum runtime in minutes, applied post-fetch via TMDB
+    DiscoverRuntimeLte:
+      in: query
+      name: withRuntimeLte
+      schema:
+        type: number
+        example: 180
+      description: Maximum runtime in minutes, applied post-fetch via TMDB
+    DiscoverSeriesStatus:
+      in: query
+      name: status
+      schema:
+        type: string
+        example: 3|4
+      description: Series statuses (0 Returning, 1 Planned, 2 In Production, 3 Ended, 4 Canceled, 5 Pilot), applied post-fetch via TMDB
     DiscoverIgnoreWatched:
       in: query
       name: ignoreWatched
@@ -7566,6 +7707,9 @@ paths:
         - $ref: '#/components/parameters/DiscoverVoteAverageLte'
         - $ref: '#/components/parameters/DiscoverVoteCountGte'
         - $ref: '#/components/parameters/DiscoverVoteCountLte'
+        - $ref: '#/components/parameters/DiscoverRuntimeGte'
+        - $ref: '#/components/parameters/DiscoverRuntimeLte'
+        - $ref: '#/components/parameters/DiscoverSeriesStatus'
         - $ref: '#/components/parameters/DiscoverImdbRatingGte'
         - $ref: '#/components/parameters/DiscoverImdbRatingLte'
         - $ref: '#/components/parameters/DiscoverImdbVotesGte'
@@ -7962,6 +8106,9 @@ paths:
         - $ref: '#/components/parameters/DiscoverVoteAverageLte'
         - $ref: '#/components/parameters/DiscoverVoteCountGte'
         - $ref: '#/components/parameters/DiscoverVoteCountLte'
+        - $ref: '#/components/parameters/DiscoverRuntimeGte'
+        - $ref: '#/components/parameters/DiscoverRuntimeLte'
+        - $ref: '#/components/parameters/DiscoverSeriesStatus'
         - $ref: '#/components/parameters/DiscoverImdbRatingGte'
         - $ref: '#/components/parameters/DiscoverImdbRatingLte'
         - $ref: '#/components/parameters/DiscoverImdbVotesGte'
@@ -9308,6 +9455,155 @@ paths:
                 $ref: '#/components/schemas/LibraryAvailableResponse'
         '401':
           description: Unauthorized
+  /library/browse:
+    get:
+      summary: Browse the authenticated user's Jellyfin-visible catalog
+      description: >
+        Paginated Movie/Series catalog from the linked Jellyfin user view,
+        enriched with Foreseer media mappings. Does not walk series seasons
+        to resolve play targets.
+      tags:
+        - library
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: mediaType
+          schema:
+            type: string
+            enum: [movie, tv]
+        - in: query
+          name: watched
+          schema:
+            type: string
+            enum: [unwatched, inProgress, played]
+        - in: query
+          name: genre
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - in: query
+          name: yearFrom
+          schema:
+            type: number
+        - in: query
+          name: yearTo
+          schema:
+            type: number
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [dateAdded, title, premiereDate, lastPlayed]
+        - in: query
+          name: order
+          schema:
+            type: string
+            enum: [asc, desc]
+        - in: query
+          name: take
+          schema:
+            type: number
+            nullable: true
+            example: 24
+        - in: query
+          name: skip
+          schema:
+            type: number
+            nullable: true
+            example: 0
+      responses:
+        '200':
+          description: Browse page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryBrowseResponse'
+        '401':
+          description: Unauthorized
+  /library/facets:
+    get:
+      summary: Get library browse facets
+      description: Available genres and release-year bounds for the user's catalog.
+      tags:
+        - library
+      responses:
+        '200':
+          description: Facets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryFacetsResponse'
+        '401':
+          description: Unauthorized
+  /library/items/{jellyfinItemId}:
+    get:
+      summary: Get library item inspector payload
+      description: >
+        Unified movie or series inspector. Episode ids resolve to the parent
+        series. Series play targets use next-up/resume only.
+      tags:
+        - library
+      parameters:
+        - in: path
+          name: jellyfinItemId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Inspector payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryItemInspectorResponse'
+        '401':
+          description: Unauthorized
+  /library/items/{jellyfinItemId}/images/{imageType}:
+    get:
+      summary: Proxy a Jellyfin library image
+      description: >
+        Authenticated poster or backdrop proxy using the requesting user's
+        Jellyfin token. The token is never exposed to the client.
+      tags:
+        - library
+      parameters:
+        - in: path
+          name: jellyfinItemId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: imageType
+          required: true
+          schema:
+            type: string
+            enum: [primary, backdrop]
+      responses:
+        '200':
+          description: Image bytes
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Unauthorized
+        '404':
+          description: Image or item not found
   /library/series/{jellyfinSeriesId}:
     get:
       summary: Get Library series panel detail

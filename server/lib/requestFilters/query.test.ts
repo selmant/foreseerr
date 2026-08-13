@@ -24,6 +24,9 @@ describe('parseBrowseQueryFilters', () => {
       genre: '28,35',
       language: 'en',
       primaryReleaseDateGte: '2020-01-01',
+      withRuntimeGte: '90',
+      withRuntimeLte: '120',
+      status: '3|4',
       imdbRatingGte: '7.5',
       imdbRatingLte: '9',
       rtCriticsGte: '80',
@@ -42,6 +45,9 @@ describe('parseBrowseQueryFilters', () => {
     assert.deepEqual(filters.genreIds, [28, 35]);
     assert.equal(filters.language, 'en');
     assert.equal(filters.releaseDateGte, '2020-01-01');
+    assert.equal(filters.runtimeGte, 90);
+    assert.equal(filters.runtimeLte, 120);
+    assert.deepEqual(filters.seriesStatusIds, [3, 4]);
     assert.equal(filters.imdbRatingGte, 7.5);
     assert.equal(filters.imdbRatingLte, 9);
     assert.equal(filters.rtCriticsGte, 80);

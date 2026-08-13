@@ -557,6 +557,23 @@
     @apply bg-gradient-to-br from-indigo-400 to-purple-400 bg-clip-text text-transparent;
   }
 
+  .library-display {
+    font-family: theme('fontFamily.display');
+  }
+
+  .library-sheet {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .library-motion {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+
   /* Chromeless shells (installed PWA + native desktop) keep in-app chrome
      affordances such as the searchbar Back button. Ordinary browser tabs hide
      them because the host already provides navigation chrome. */

@@ -12,6 +12,9 @@ export type BrowseQueryFilters = {
   language: string | null;
   releaseDateGte: string | null;
   releaseDateLte: string | null;
+  runtimeGte: number | null;
+  runtimeLte: number | null;
+  seriesStatusIds: number[];
   imdbRatingGte: number | null;
   imdbRatingLte: number | null;
   imdbVotesGte: number | null;
@@ -57,6 +60,7 @@ export const parseBrowseQueryFilters = (
   const releaseDateLte =
     nullableQueryString(query, 'primaryReleaseDateLte') ??
     nullableQueryString(query, 'firstAirDateLte');
+  const statusRaw = nullableQueryString(query, 'status');
 
   return {
     voteAverageGte: nullableQueryNumber(query, 'voteAverageGte'),
@@ -72,6 +76,14 @@ export const parseBrowseQueryFilters = (
     language: nullableQueryString(query, 'language'),
     releaseDateGte,
     releaseDateLte,
+    runtimeGte: nullableQueryNumber(query, 'withRuntimeGte'),
+    runtimeLte: nullableQueryNumber(query, 'withRuntimeLte'),
+    seriesStatusIds: statusRaw
+      ? statusRaw
+          .split('|')
+          .map((part) => Number(part.trim()))
+          .filter((id) => Number.isInteger(id) && id >= 0 && id <= 5)
+      : [],
     imdbRatingGte: nullableQueryNumber(query, 'imdbRatingGte'),
     imdbRatingLte: nullableQueryNumber(query, 'imdbRatingLte'),
     imdbVotesGte: nullableQueryNumber(query, 'imdbVotesGte'),
@@ -132,7 +144,10 @@ export const needsTmdbBrowseFilters = (filters: BrowseQueryFilters): boolean =>
   filters.genreIds.length > 0 ||
   filters.language != null ||
   filters.releaseDateGte != null ||
-  filters.releaseDateLte != null;
+  filters.releaseDateLte != null ||
+  filters.runtimeGte != null ||
+  filters.runtimeLte != null ||
+  filters.seriesStatusIds.length > 0;
 
 export const hasBrowseQueryFilters = (filters: BrowseQueryFilters): boolean =>
   needsTmdbBrowseFilters(filters) ||

@@ -11,7 +11,10 @@ import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
 import type {
+  LibraryBrowseResponse,
   LibraryEpisode,
+  LibraryFacetsResponse,
+  LibraryItemInspectorResponse,
   LibrarySeasonEpisodesResponse,
   LibrarySeriesDetailResponse,
   LibrarySeriesSeason,
@@ -19,8 +22,17 @@ import type {
   LibraryTitle,
   LibraryWatchNowResponse,
 } from '@server/interfaces/api/libraryInterfaces';
+import {
+  libraryItemImageUrl,
+  libraryTitleDisplayFields,
+  listBrowseFromClient,
+} from '@server/lib/libraryBrowse';
+import type { ParsedLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
 import type { SeriesPlayTarget } from '@server/lib/libraryPlayTarget';
-import { resolveSeriesPlayTarget } from '@server/lib/libraryPlayTarget';
+import {
+  filterPlayableLibraryTitles,
+  resolveSeriesPlayTarget,
+} from '@server/lib/libraryPlayTarget';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { getHostname } from '@server/utils/getHostname';
@@ -242,6 +254,7 @@ export const mapJellyfinItemsToLibraryTitles = async (
       status: media?.status,
       progressPercent: progressFromItem(item),
       startPositionTicks: item.UserData?.PlaybackPositionTicks,
+      ...libraryTitleDisplayFields(item),
     };
   });
 };
@@ -442,11 +455,63 @@ export const buildForgottenRequestsShelf = async (
       title: media.mediaType === MediaType.MOVIE ? 'Movie' : 'Series',
       mediaUrl: request.is4k ? media.mediaUrl4k : media.mediaUrl,
       status: media.status,
+      posterUrl: libraryItemImageUrl(jellyfinItemId, 'primary'),
+      backdropUrl: libraryItemImageUrl(jellyfinItemId, 'backdrop'),
     });
     if (titles.length >= limit) break;
   }
 
   return titles;
+};
+
+export const hydrateForgottenLibraryTitles = (
+  forgotten: LibraryTitle[],
+  jellyfinItems: {
+    Id: string;
+    Type?: string;
+    Name?: string;
+    SeriesName?: string;
+    SeriesId?: string;
+    ParentIndexNumber?: number;
+    IndexNumber?: number;
+    Overview?: string;
+    ProductionYear?: number;
+    Genres?: string[];
+    DateCreated?: string;
+    RunTimeTicks?: number;
+    BackdropImageTags?: string[];
+    UserData?: {
+      Played?: boolean;
+      PlayedPercentage?: number;
+      PlaybackPositionTicks?: number;
+      LastPlayedDate?: string;
+      RunTimeTicks?: number;
+      UnplayedItemCount?: number;
+    };
+  }[]
+): LibraryTitle[] => {
+  const byId = new Map(jellyfinItems.map((item) => [item.Id, item]));
+  return forgotten.map((title) => {
+    const item = byId.get(title.jellyfinItemId);
+    if (!item) {
+      return {
+        ...title,
+        posterUrl:
+          title.posterUrl ??
+          libraryItemImageUrl(title.jellyfinItemId, 'primary'),
+        backdropUrl:
+          title.backdropUrl ??
+          libraryItemImageUrl(title.jellyfinItemId, 'backdrop'),
+      };
+    }
+    return {
+      ...title,
+      title: titleForItem(item as JellyfinLibraryItemExtended),
+      subtitle: subtitleForItem(item as JellyfinLibraryItemExtended),
+      overview: item.Overview ?? title.overview,
+      ...libraryTitleDisplayFields(item),
+    };
+  });
 };
 
 export const buildWatchNowResponse = async (
@@ -508,10 +573,12 @@ export const buildWatchNowResponse = async (
       });
     }
 
-    const recentItems = await enrichSeriesPlayTargets(
-      linked.client,
-      await mapJellyfinItemsToLibraryTitles(latest),
-      { resume, nextUp, resolveMissing: true }
+    const recentItems = filterPlayableLibraryTitles(
+      await enrichSeriesPlayTargets(
+        linked.client,
+        await mapJellyfinItemsToLibraryTitles(latest),
+        { resume, nextUp, resolveMissing: true }
+      )
     );
     if (recentItems.length) {
       shelves.push({
@@ -574,10 +641,27 @@ export const buildWatchNowResponse = async (
     return { shelves: [], code: 'server_unreachable' };
   }
 
-  const forgotten = await enrichSeriesPlayTargets(
-    linked.client,
-    await buildForgottenRequestsShelf(userId, 16),
-    { resolveMissing: true }
+  const forgottenBase = filterPlayableLibraryTitles(
+    await enrichSeriesPlayTargets(
+      linked.client,
+      await buildForgottenRequestsShelf(userId, 16),
+      { resolveMissing: true }
+    )
+  );
+  let forgottenItems: JellyfinLibraryItemExtended[] = [];
+  try {
+    forgottenItems = await linked.client.getItemsData(
+      forgottenBase.map((title) => title.jellyfinItemId)
+    );
+  } catch (e) {
+    logger.debug('Failed to hydrate Ready to Watch items from Jellyfin', {
+      label: 'Library',
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+  }
+  const forgotten = hydrateForgottenLibraryTitles(
+    forgottenBase,
+    forgottenItems
   );
   if (forgotten.length) {
     shelves.push({
@@ -614,10 +698,12 @@ export const listAvailableLibrary = async (options: {
         limit: options.take,
         mediaType: options.mediaType,
       });
-      const mapped = await enrichSeriesPlayTargets(
-        linked.client,
-        await mapJellyfinItemsToLibraryTitles(items),
-        { resolveMissing: true }
+      const mapped = filterPlayableLibraryTitles(
+        await enrichSeriesPlayTargets(
+          linked.client,
+          await mapJellyfinItemsToLibraryTitles(items),
+          { resolveMissing: true }
+        )
       );
       // Keep only items we know are in Foreseer available catalog when possible;
       // still return Jellyfin hits that map so play works.
@@ -674,9 +760,11 @@ export const listAvailableLibrary = async (options: {
   const linked = await createUserJellyfinClient(options.userId);
   if (linked.ok) {
     try {
-      const enriched = await enrichSeriesPlayTargets(linked.client, results, {
-        resolveMissing: true,
-      });
+      const enriched = filterPlayableLibraryTitles(
+        await enrichSeriesPlayTargets(linked.client, results, {
+          resolveMissing: true,
+        })
+      );
       return { results: enriched, total };
     } catch (e) {
       logger.debug('Failed to enrich available library play targets', {
@@ -687,6 +775,216 @@ export const listAvailableLibrary = async (options: {
   }
 
   return { results, total };
+};
+
+export const listBrowseLibrary = async (
+  userId: number,
+  query: ParsedLibraryBrowseQuery
+): Promise<{
+  results: LibraryTitle[];
+  total: number;
+  code?: LibraryBrowseResponse['code'];
+}> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return { results: [], total: 0, code: linked.code };
+  }
+
+  try {
+    return await listBrowseFromClient(
+      linked.client,
+      linked.user.jellyfinUserId ?? 'Me',
+      query,
+      mapJellyfinItemsToLibraryTitles
+    );
+  } catch (e) {
+    logger.error('Failed to browse Jellyfin library', {
+      label: 'Library',
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return { results: [], total: 0, code: 'server_unreachable' };
+  }
+};
+
+export const getLibraryFacetsForUser = async (
+  userId: number
+): Promise<LibraryFacetsResponse> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return { genres: [], code: linked.code };
+  }
+
+  try {
+    return await linked.client.getLibraryFacets();
+  } catch (e) {
+    logger.error('Failed to load library facets', {
+      label: 'Library',
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return { genres: [], code: 'server_unreachable' };
+  }
+};
+
+export const resolveInspectorTargetId = (
+  item: Pick<JellyfinLibraryItemExtended, 'Id' | 'Type' | 'SeriesId'>
+): string =>
+  item.Type === 'Episode' && item.SeriesId ? item.SeriesId : item.Id;
+
+export const toInspectorResponse = (
+  title: LibraryTitle,
+  extras: {
+    seasons?: LibrarySeriesSeason[];
+    playUrl?: string;
+    playItemId?: string;
+    subtitle?: string;
+    startPositionTicks?: number;
+    code?: LibraryItemInspectorResponse['code'];
+  } = {}
+): LibraryItemInspectorResponse => ({
+  jellyfinItemId: title.jellyfinItemId,
+  jellyfinSeriesId: title.jellyfinSeriesId,
+  mediaType: title.mediaType,
+  title: title.title,
+  subtitle: extras.subtitle ?? title.subtitle,
+  overview: title.overview,
+  year: title.year,
+  runtimeMinutes: title.runtimeMinutes,
+  genres: title.genres,
+  posterUrl: title.posterUrl,
+  backdropUrl: title.backdropUrl,
+  progressPercent: title.progressPercent,
+  watched: title.watched,
+  inProgress: title.inProgress,
+  startPositionTicks: extras.startPositionTicks ?? title.startPositionTicks,
+  playItemId: extras.playItemId ?? title.playItemId,
+  playUrl: extras.playUrl,
+  mediaUrl: title.mediaUrl,
+  mediaId: title.mediaId,
+  tmdbId: title.tmdbId,
+  status: title.status,
+  seasons: extras.seasons,
+  code: extras.code,
+});
+
+export const getLibraryItemInspector = async (
+  userId: number,
+  jellyfinItemId: string
+): Promise<LibraryItemInspectorResponse> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return {
+      jellyfinItemId,
+      mediaType: 'movie',
+      title: 'Title',
+      code: linked.code,
+    };
+  }
+
+  try {
+    const item = await linked.client.getItemData(jellyfinItemId);
+    if (!item) {
+      return {
+        jellyfinItemId,
+        mediaType: 'movie',
+        title: 'Title',
+        code: 'not_found',
+      };
+    }
+
+    const targetId = resolveInspectorTargetId(item);
+    const target =
+      targetId === item.Id ? item : await linked.client.getItemData(targetId);
+    if (!target) {
+      return {
+        jellyfinItemId: targetId,
+        mediaType: 'tv',
+        title: 'Series',
+        code: 'not_found',
+      };
+    }
+
+    if (target.Type === 'Series') {
+      const [mapped, series] = await Promise.all([
+        mapJellyfinItemsToLibraryTitles([target]),
+        getLibrarySeriesDetail(userId, target.Id),
+      ]);
+      return toInspectorResponse(mapped[0], {
+        seasons: series.seasons,
+        playItemId: series.playItemId,
+        playUrl: series.playUrl,
+        subtitle: series.subtitle,
+        startPositionTicks: series.startPositionTicks,
+        code: series.code,
+      });
+    }
+
+    const mapped = await mapJellyfinItemsToLibraryTitles([target]);
+    const title = mapped[0];
+    return toInspectorResponse(title, {
+      playUrl: title.playItemId ? mediaUrlForItem(title.playItemId) : undefined,
+    });
+  } catch (e) {
+    logger.error('Failed to load library inspector', {
+      label: 'Library',
+      jellyfinItemId,
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return {
+      jellyfinItemId,
+      mediaType: 'movie',
+      title: 'Title',
+      code: 'server_unreachable',
+    };
+  }
+};
+
+const libraryImageCache = new Map<
+  string,
+  { buffer: Buffer; contentType: string; expiresAt: number }
+>();
+
+export const getLibraryItemImage = async (
+  userId: number,
+  jellyfinItemId: string,
+  imageType: 'primary' | 'backdrop'
+): Promise<
+  | { ok: true; buffer: Buffer; contentType: string }
+  | {
+      ok: false;
+      status: number;
+      code?: 'not_linked' | 'unsupported_media_server' | 'not_found';
+    }
+> => {
+  const cacheKey = `${jellyfinItemId}:${imageType}`;
+  const cached = libraryImageCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ok: true, buffer: cached.buffer, contentType: cached.contentType };
+  }
+
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return { ok: false, status: 401, code: linked.code };
+  }
+
+  try {
+    const image = await linked.client.getItemImage(jellyfinItemId, imageType);
+    if (!image) {
+      return { ok: false, status: 404, code: 'not_found' };
+    }
+    libraryImageCache.set(cacheKey, {
+      ...image,
+      expiresAt: Date.now() + 6 * 60 * 60 * 1000,
+    });
+    return { ok: true, ...image };
+  } catch (e) {
+    logger.error('Failed to proxy library image', {
+      label: 'Library',
+      jellyfinItemId,
+      imageType,
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+    return { ok: false, status: 502 };
+  }
 };
 
 export const getLibrarySeriesDetail = async (

@@ -19,6 +19,10 @@ describe('OpenAPI library contract', () => {
     '/library/watch-now': ['get'],
     '/library/available': ['get'],
     '/library/search': ['get'],
+    '/library/browse': ['get'],
+    '/library/facets': ['get'],
+    '/library/items/{jellyfinItemId}': ['get'],
+    '/library/items/{jellyfinItemId}/images/{imageType}': ['get'],
     '/library/series/{jellyfinSeriesId}': ['get'],
     '/library/series/{jellyfinSeriesId}/seasons/{seasonId}/episodes': ['get'],
     '/media/{mediaId}/servarr/context': ['get'],
@@ -65,6 +69,64 @@ describe('OpenAPI library contract', () => {
       properties: { id: { enum: string[] } };
     };
     assert.ok(shelf.properties.id.enum.includes('recent-episodes'));
+  });
+
+  it('declares browse, facets, inspector, and image schemas', () => {
+    const title = apiDocs.components.schemas.LibraryTitle as {
+      properties: Record<string, unknown>;
+    };
+    for (const field of [
+      'year',
+      'genres',
+      'watched',
+      'inProgress',
+      'addedAt',
+      'lastPlayedAt',
+      'posterUrl',
+      'backdropUrl',
+      'runtimeMinutes',
+      'inspectorItemId',
+      'unplayedItemCount',
+    ]) {
+      assert.ok(title.properties[field], `LibraryTitle missing ${field}`);
+    }
+    assert.ok(apiDocs.components.schemas.LibraryBrowseResponse);
+    assert.ok(apiDocs.components.schemas.LibraryFacetsResponse);
+    assert.ok(apiDocs.components.schemas.LibraryItemInspectorResponse);
+
+    const browse = apiDocs.paths['/library/browse'].get as {
+      parameters: { name: string }[];
+    };
+    const names = browse.parameters.map((parameter) => parameter.name);
+    for (const name of [
+      'q',
+      'mediaType',
+      'watched',
+      'genre',
+      'yearFrom',
+      'yearTo',
+      'sort',
+      'order',
+      'take',
+      'skip',
+    ]) {
+      assert.ok(names.includes(name), `browse missing query ${name}`);
+    }
+    assert.equal(
+      names.includes('density'),
+      false,
+      'density is a client layout flag, not a browse API query'
+    );
+
+    const image = apiDocs.paths[
+      '/library/items/{jellyfinItemId}/images/{imageType}'
+    ].get as {
+      parameters: { name: string; schema?: { enum?: string[] } }[];
+    };
+    const imageType = image.parameters.find(
+      (parameter) => parameter.name === 'imageType'
+    );
+    assert.deepEqual(imageType?.schema?.enum, ['primary', 'backdrop']);
   });
 
   it('documents Arr-only manual import eligibility', () => {

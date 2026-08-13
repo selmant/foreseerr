@@ -292,6 +292,7 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         original_language: string;
         release_date?: string;
         genres?: { id: number }[];
+        runtime?: number;
       }>(
         `/movie/${movieId}`,
         {
@@ -308,6 +309,7 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         original_language: data.original_language,
         release_date: data.release_date || null,
         genre_ids: (data.genres ?? []).map((genre) => genre.id),
+        runtime: data.runtime ?? null,
       };
     } catch (e) {
       throw new Error(
@@ -336,6 +338,8 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         original_language: string;
         first_air_date?: string;
         genres?: { id: number }[];
+        episode_run_time?: number[];
+        status?: string;
       }>(
         `/tv/${tvId}`,
         {
@@ -352,6 +356,8 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         original_language: data.original_language,
         release_date: data.first_air_date || null,
         genre_ids: (data.genres ?? []).map((genre) => genre.id),
+        runtime: data.episode_run_time?.[0] ?? null,
+        status: data.status,
       };
     } catch (e) {
       throw new Error(

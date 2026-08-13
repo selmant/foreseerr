@@ -3,7 +3,9 @@ import {
   countActiveFilters,
   prepareFilterValues,
 } from '@app/components/Discover/constants';
-import FilterSlideover from '@app/components/Discover/FilterSlideover';
+import FilterSlideover, {
+  browseFilterCapabilities,
+} from '@app/components/Discover/FilterSlideover';
 import { mergeFilterDefaults } from '@app/components/Discover/mergeFilterDefaults';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
@@ -100,7 +102,7 @@ const TraktDiscoverFilters = ({
       </div>
       <FilterSlideover
         type={filterType}
-        mode="browse"
+        capabilities={browseFilterCapabilities}
         showHideWatched={showHideWatchedFilter}
         showTraktRecommendationFilters={showRecommendationFilters}
         currentFilters={preparedFilters}

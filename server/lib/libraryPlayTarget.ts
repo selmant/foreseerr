@@ -128,3 +128,13 @@ export const resolveSeriesPlayTarget = (
     subtitle: `Rewatch ${formatSxE(rewatch)}`,
   };
 };
+
+/** Drop series with no resolved playable episode (empty or unresolved). */
+export const filterPlayableLibraryTitles = <
+  T extends { mediaType: 'movie' | 'tv'; playItemId?: string },
+>(
+  titles: T[]
+): T[] =>
+  titles.filter(
+    (title) => title.mediaType !== 'tv' || Boolean(title.playItemId)
+  );

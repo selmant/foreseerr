@@ -74,15 +74,32 @@ const messages = defineMessages('components.Discover.FilterSlideover', {
   includeNoRating: 'Keep titles with missing external ratings',
 });
 
-export type FilterSlideoverMode = 'full' | 'browse';
+type FilterCapability =
+  | 'studio'
+  | 'keywords'
+  | 'certification'
+  | 'watchProviders';
+
+export type FilterCapabilities = ReadonlySet<FilterCapability>;
+
+/** Filters available on TMDB's native Discover endpoints. */
+export const discoverFilterCapabilities: FilterCapabilities = new Set([
+  'studio',
+  'keywords',
+  'certification',
+  'watchProviders',
+]);
+
+/** Filters that can be applied after fetching a third-party browse list. */
+export const browseFilterCapabilities: FilterCapabilities = new Set();
 
 type FilterSlideoverProps = {
   show: boolean;
   onClose: () => void;
   type: 'movie' | 'tv';
   currentFilters: FilterOptions;
-  /** full = Movies/TV discover API filters; browse = shared post-fetch filters */
-  mode?: FilterSlideoverMode;
+  /** Opt-in endpoint-specific filters; shared filters are always shown. */
+  capabilities?: FilterCapabilities;
   showHideWatched?: boolean;
   showTraktRecommendationFilters?: boolean;
 };
@@ -92,7 +109,7 @@ const FilterSlideover = ({
   onClose,
   type,
   currentFilters,
-  mode = 'full',
+  capabilities = discoverFilterCapabilities,
   showHideWatched = false,
   showTraktRecommendationFilters = false,
 }: FilterSlideoverProps) => {
@@ -111,6 +128,8 @@ const FilterSlideover = ({
       : null
   );
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
+  const supports = (capability: FilterCapability) =>
+    capabilities.has(capability);
 
   const dateGte =
     type === 'movie' ? 'primaryReleaseDateGte' : 'firstAirDateGte';
@@ -263,7 +282,7 @@ const FilterSlideover = ({
             </div>
           </div>
         </div>
-        {mode === 'full' && type === 'movie' && (
+        {type === 'movie' && supports('studio') && (
           <>
             <span className="text-lg font-semibold">
               {intl.formatMessage(messages.studio)}
@@ -287,7 +306,7 @@ const FilterSlideover = ({
             updateQueryParams('genre', value?.map((v) => v.value).join(','));
           }}
         />
-        {mode === 'full' && type === 'tv' && (
+        {type === 'tv' && (
           <>
             <span className="text-lg font-semibold">
               {intl.formatMessage(messages.status)}
@@ -304,7 +323,7 @@ const FilterSlideover = ({
             />
           </>
         )}
-        {mode === 'full' && (
+        {supports('keywords') && (
           <>
             <span className="text-lg font-semibold">
               {intl.formatMessage(messages.keywords)}
@@ -345,7 +364,7 @@ const FilterSlideover = ({
             updateQueryParams('language', value);
           }}
         />
-        {mode === 'full' && (
+        {supports('certification') && (
           <>
             <span className="text-lg font-semibold">
               {intl.formatMessage(messages.certification)}
@@ -357,47 +376,49 @@ const FilterSlideover = ({
                 batchUpdateQueryParams(params);
               }}
             />
-            <span className="text-lg font-semibold">
-              {intl.formatMessage(messages.runtime)}
-            </span>
-            <div className="relative z-0">
-              <MultiRangeSlider
-                min={0}
-                max={400}
-                onUpdateMin={(min) => {
-                  updateQueryParams(
-                    'withRuntimeGte',
-                    min !== 0 && Number(currentFilters.withRuntimeLte) !== 400
-                      ? min.toString()
-                      : undefined
-                  );
-                }}
-                onUpdateMax={(max) => {
-                  updateQueryParams(
-                    'withRuntimeLte',
-                    max !== 400 && Number(currentFilters.withRuntimeGte) !== 0
-                      ? max.toString()
-                      : undefined
-                  );
-                }}
-                defaultMaxValue={
-                  currentFilters.withRuntimeLte
-                    ? Number(currentFilters.withRuntimeLte)
-                    : undefined
-                }
-                defaultMinValue={
-                  currentFilters.withRuntimeGte
-                    ? Number(currentFilters.withRuntimeGte)
-                    : undefined
-                }
-                subText={intl.formatMessage(messages.runtimeText, {
-                  minValue: currentFilters.withRuntimeGte ?? 0,
-                  maxValue: currentFilters.withRuntimeLte ?? 400,
-                })}
-              />
-            </div>
           </>
         )}
+        <>
+          <span className="text-lg font-semibold">
+            {intl.formatMessage(messages.runtime)}
+          </span>
+          <div className="relative z-0">
+            <MultiRangeSlider
+              min={0}
+              max={400}
+              onUpdateMin={(min) => {
+                updateQueryParams(
+                  'withRuntimeGte',
+                  min !== 0 && Number(currentFilters.withRuntimeLte) !== 400
+                    ? min.toString()
+                    : undefined
+                );
+              }}
+              onUpdateMax={(max) => {
+                updateQueryParams(
+                  'withRuntimeLte',
+                  max !== 400 && Number(currentFilters.withRuntimeGte) !== 0
+                    ? max.toString()
+                    : undefined
+                );
+              }}
+              defaultMaxValue={
+                currentFilters.withRuntimeLte
+                  ? Number(currentFilters.withRuntimeLte)
+                  : undefined
+              }
+              defaultMinValue={
+                currentFilters.withRuntimeGte
+                  ? Number(currentFilters.withRuntimeGte)
+                  : undefined
+              }
+              subText={intl.formatMessage(messages.runtimeText, {
+                minValue: currentFilters.withRuntimeGte ?? 0,
+                maxValue: currentFilters.withRuntimeLte ?? 400,
+              })}
+            />
+          </div>
+        </>
         <span className="text-lg font-semibold">
           {intl.formatMessage(messages.tmdbuserscore)}
         </span>
@@ -737,7 +758,7 @@ const FilterSlideover = ({
           />
           {intl.formatMessage(messages.includeNoRating)}
         </label>
-        {mode === 'full' && (
+        {supports('watchProviders') && (
           <>
             <span className="text-lg font-semibold">
               {intl.formatMessage(messages.streamingservices)}
