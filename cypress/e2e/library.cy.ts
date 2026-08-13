@@ -271,5 +271,8 @@ describe('Library', () => {
       'not.have.descendants',
       '[data-testid=library-unplayed-pip]'
     );
+    cy.contains('[data-testid=library-poster-card]', 'Dune').find(
+      '[data-testid=library-watched-mark]'
+    );
   });
 });

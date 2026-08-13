@@ -1,10 +1,10 @@
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
-import { showLibraryUnplayedPip } from '@app/components/Library/libraryPosterWatchMark';
+import { libraryWatchMark } from '@app/components/Library/libraryPosterWatchMark';
 import useLibraryPlay from '@app/components/Library/useLibraryPlay';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import defineMessages from '@app/utils/defineMessages';
-import { PlayIcon } from '@heroicons/react/24/solid';
+import { CheckCircleIcon, PlayIcon } from '@heroicons/react/24/solid';
 import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
 import { useIntl } from 'react-intl';
 
@@ -38,11 +38,19 @@ const LibraryPosterCard = ({
   const typeLabel = intl.formatMessage(
     item.mediaType === 'movie' ? messages.movie : messages.series
   );
+  const watchMark = libraryWatchMark(item);
   const showOverviewHover = !isBrowse && !isTouch;
 
   const openInspector = () => {
     onOpen?.(item);
   };
+
+  const posterLabel =
+    watchMark === 'unplayed'
+      ? `${item.title}, unwatched`
+      : watchMark === 'watched'
+        ? `${item.title}, watched`
+        : item.title;
 
   return (
     <article
@@ -55,11 +63,7 @@ const LibraryPosterCard = ({
           type="button"
           onClick={openInspector}
           className="absolute inset-0 z-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400"
-          aria-label={
-            showLibraryUnplayedPip(item)
-              ? `${item.title}, unwatched`
-              : item.title
-          }
+          aria-label={posterLabel}
         >
           {item.posterUrl ? (
             <CachedImage
@@ -67,7 +71,9 @@ const LibraryPosterCard = ({
               src={item.posterUrl}
               alt=""
               fill
-              className="object-cover"
+              className={`object-cover ${
+                watchMark === 'watched' ? 'opacity-70 saturate-50' : ''
+              }`}
               sizes={isBrowse ? '160px' : '176px'}
             />
           ) : null}
@@ -83,12 +89,21 @@ const LibraryPosterCard = ({
             {typeLabel}
           </div>
         ) : null}
-        {showLibraryUnplayedPip(item) ? (
+        {watchMark === 'unplayed' ? (
           <span
             data-testid="library-unplayed-pip"
-            className="pointer-events-none absolute right-2 top-2 z-10 h-2.5 w-2.5 rounded-full bg-indigo-400 shadow ring-2 ring-black/40"
+            className="pointer-events-none absolute -right-3.5 -top-3.5 z-10 h-7 w-7 rotate-45 bg-emerald-400 shadow"
             aria-hidden
           />
+        ) : null}
+        {watchMark === 'watched' ? (
+          <span
+            data-testid="library-watched-mark"
+            className="pointer-events-none absolute right-1.5 top-1.5 z-10 rounded-full bg-black/75 text-white shadow-md ring-1 ring-white/30"
+            aria-hidden
+          >
+            <CheckCircleIcon className="h-5 w-5" />
+          </span>
         ) : null}
         {progress > 0 ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-1 bg-gray-800">

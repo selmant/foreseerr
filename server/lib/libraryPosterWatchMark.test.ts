@@ -1,7 +1,30 @@
 /* eslint-disable no-relative-import-paths/no-relative-import-paths */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { showLibraryUnplayedPip } from '../../src/components/Library/libraryPosterWatchMark';
+import {
+  libraryWatchMark,
+  showLibraryUnplayedPip,
+} from '../../src/components/Library/libraryPosterWatchMark';
+
+describe('libraryWatchMark', () => {
+  it('marks titles with no play state as unplayed', () => {
+    assert.equal(libraryWatchMark({}), 'unplayed');
+    assert.equal(libraryWatchMark({ watched: false }), 'unplayed');
+  });
+
+  it('marks fully played titles as watched', () => {
+    assert.equal(libraryWatchMark({ watched: true }), 'watched');
+  });
+
+  it('prefers in-progress over unplayed and watched', () => {
+    assert.equal(libraryWatchMark({ inProgress: true }), 'progress');
+    assert.equal(libraryWatchMark({ progressPercent: 40 }), 'progress');
+    assert.equal(
+      libraryWatchMark({ watched: true, progressPercent: 40 }),
+      'progress'
+    );
+  });
+});
 
 describe('showLibraryUnplayedPip', () => {
   it('shows for an unwatched title with no progress', () => {
