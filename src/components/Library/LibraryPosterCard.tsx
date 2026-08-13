@@ -115,7 +115,7 @@ const LibraryPosterCard = ({
         {watchMark === 'remaining' && item.unplayedItemCount ? (
           <span
             data-testid="library-remaining-count"
-            className="pointer-events-none absolute right-1.5 top-1.5 z-10 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-emerald-400 px-1.5 text-[11px] font-bold tabular-nums text-black shadow-md"
+            className="pointer-events-none absolute right-1.5 top-1.5 z-10 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-indigo-500 px-1.5 text-[11px] font-bold tabular-nums text-white shadow-md"
             aria-hidden
           >
             {item.unplayedItemCount}
