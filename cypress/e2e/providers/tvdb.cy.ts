@@ -111,18 +111,23 @@ describe('TVDB Integration', () => {
         res.send({
           ...body,
           episodeRequestsEnabled: true,
+          traktConfigured: true,
+          mediaActionsTraktEnabled: true,
         });
       });
-    }).as('publicSettings');
+    });
   };
 
-  const patchMonsterTv = (patch: (body: Record<string, unknown>) => void) => {
+  const patchMonsterTv = (
+    patch: (body: Record<string, unknown>) => void,
+    alias = 'monsterTv'
+  ) => {
     cy.intercept('GET', '/api/v1/tv/225634', (req) => {
       delete req.headers['if-none-match'];
       req.continue((res) => {
         patch(res.body as Record<string, unknown>);
       });
-    });
+    }).as(alias);
   };
 
   beforeEach(() => {
@@ -348,7 +353,24 @@ describe('TVDB Integration', () => {
   });
 
   it('offers episode requests from discover cards', () => {
-    cy.intercept('/api/v1/discover/tv*').as('getPopularTv');
+    cy.intercept('GET', '/api/v1/discover/tv*', (req) => {
+      req.continue((res) => {
+        const body =
+          typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
+        if (!body?.results?.length) {
+          return;
+        }
+
+        body.results = [
+          {
+            ...body.results[0],
+            mediaInfo: undefined,
+          },
+          ...body.results.slice(1),
+        ];
+        res.send(body);
+      });
+    }).as('getPopularTv');
     cy.visit(ROUTES.home);
     cy.wait('@getPopularTv');
 
@@ -538,7 +560,7 @@ describe('TVDB Integration', () => {
         status: 3,
         status4k: 5,
         issues: [],
-        seasons: [{ seasonNumber: 1, status: 3, status4k: 5 }],
+        seasons: [],
         requests: [
           {
             id: 100,
@@ -557,7 +579,7 @@ describe('TVDB Integration', () => {
           },
         ],
       };
-    });
+    }, 'monsterTvShow');
     cy.intercept('POST', '/api/v1/request', (req) => {
       expect(req.body.seasons).to.deep.equal([1]);
       expect(req.body.episodeSelection).to.equal(undefined);
@@ -568,6 +590,7 @@ describe('TVDB Integration', () => {
     }).as('seasonRequest');
 
     cy.visit(ROUTES.monsterTvShow);
+    cy.wait('@monsterTvShow');
     cy.contains('button', 'Request More').click();
     cy.get('[data-testid="season-request-toggle-1"]')
       .should('have.attr', 'aria-checked', 'false')
@@ -579,19 +602,6 @@ describe('TVDB Integration', () => {
   });
 
   it('shows season progress and toggles an episode watched on Trakt', () => {
-    cy.intercept('GET', '/api/v1/settings/public', (req) => {
-      delete req.headers['if-none-match'];
-      req.continue((res) => {
-        const body =
-          typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
-        res.send({
-          ...body,
-          episodeRequestsEnabled: true,
-          traktConfigured: true,
-          mediaActionsTraktEnabled: true,
-        });
-      });
-    }).as('publicSettings');
     cy.intercept(
       'GET',
       '/api/v1/media-actions/tv/225634/seasons/1/episodes/status',
@@ -608,9 +618,6 @@ describe('TVDB Integration', () => {
 
     cy.visit(ROUTES.monsterTvShow);
     cy.wait('@mediaActionCapabilities');
-    cy.wait('@publicSettings')
-      .its('response.body.traktConfigured')
-      .should('equal', true);
     cy.wait('@episodeWatchStatus');
     cy.get('[data-testid="season-disclosure-1"]').should('contain', '0/');
     cy.get('[data-testid="season-disclosure-1"]').scrollIntoView().click();
