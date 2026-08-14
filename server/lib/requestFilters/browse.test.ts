@@ -62,4 +62,34 @@ describe('filterTraktDiscoverItems', () => {
       [1]
     );
   });
+
+  it('treats movie Fantasy as matching TV Sci-Fi & Fantasy', async () => {
+    const tmdb = {
+      getTvBrowseMetadata: async ({ tvId }: { tvId: number }) => ({
+        id: tvId,
+        title: `Series ${tvId}`,
+        vote_average: 8,
+        vote_count: 100,
+        original_language: 'en',
+        release_date: '2020-01-01',
+        genre_ids: tvId === 1 ? [10765] : [18],
+        runtime: 45,
+        status: 'Returning Series',
+      }),
+    };
+
+    const results = await filterTraktDiscoverItems(
+      [
+        { tmdbId: 1, mediaType: 'tv', title: 'Fantasy series' },
+        { tmdbId: 2, mediaType: 'tv', title: 'Drama series' },
+      ],
+      tmdb as never,
+      { genre: '14' }
+    );
+
+    assert.deepEqual(
+      results.map((item) => item.tmdbId),
+      [1]
+    );
+  });
 });
