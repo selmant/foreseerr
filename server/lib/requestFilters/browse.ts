@@ -10,13 +10,13 @@ import {
   fetchCombinedRatings,
 } from '@server/lib/ratings';
 import { getSettings } from '@server/lib/settings';
+import { expandTmdbGenreIds } from '@server/lib/tmdbGenreEquivalents';
 import type {
   CollectionResult,
   MovieResult,
   PersonResult,
   TvResult,
 } from '@server/models/Search';
-import { expandTmdbGenreIds } from '@server/lib/tmdbGenreEquivalents';
 import {
   hasBrowseQueryFilters,
   needsMdblistBrowseFilters,

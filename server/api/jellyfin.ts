@@ -789,9 +789,7 @@ class JellyfinAPI extends ExternalAPI {
     }
   }
 
-  public async getLibraryGenres(
-    mediaType?: 'movie' | 'tv'
-  ): Promise<string[]> {
+  public async getLibraryGenres(mediaType?: 'movie' | 'tv'): Promise<string[]> {
     const include =
       mediaType === 'movie'
         ? 'Movie'
@@ -842,7 +840,9 @@ class JellyfinAPI extends ExternalAPI {
         `/Genres`,
         { params }
       );
-      return uniqueSortedGenres((response.Items ?? []).map((item) => item.Name));
+      return uniqueSortedGenres(
+        (response.Items ?? []).map((item) => item.Name)
+      );
     } catch (e) {
       logger.error(
         `Something went wrong while getting Jellyfin genres: ${e.message}`,
