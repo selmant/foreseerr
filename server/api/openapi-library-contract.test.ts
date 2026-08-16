@@ -145,6 +145,7 @@ describe('OpenAPI library contract', () => {
       description: string;
     };
     assert.match(grab.description, /acknowledgeRejections/);
-    assert.match(grab.description, /override Arr quality rejections/i);
+    assert.match(grab.description, /shouldOverride/i);
+    assert.match(grab.description, /alias-mismatched/i);
   });
 });

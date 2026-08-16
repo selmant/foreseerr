@@ -537,15 +537,6 @@ class SonarrAPI extends ServarrBase<{
     return response.data;
   }
 
-  public async grabRelease(
-    release: Pick<ServarrRelease, 'guid' | 'indexerId'>
-  ) {
-    await this.axios.post('/release', {
-      guid: release.guid,
-      indexerId: release.indexerId,
-    });
-  }
-
   public async getSeriesQueueDetails(
     seriesId: number
   ): Promise<QueueDetailsItem[]> {

@@ -9807,7 +9807,7 @@ paths:
           description: Unauthorized
     post:
       summary: Grab a Servarr release
-      description: 'Grabs a previously returned release token. Quality-rejected releases require `acknowledgeRejections: true`; this explicit confirmation can override Arr quality rejections without changing its profiles. Requires `MANAGE_REQUESTS`.'
+      description: 'Grabs a previously returned release token. Quality-rejected or alias-mismatched releases require `acknowledgeRejections: true`. Foreseer then tells Sonarr/Radarr to grab against the mapped series or movie (`seriesId`/`movieId`, and `shouldOverride` when needed) instead of posting only guid and indexer id. Requires `MANAGE_REQUESTS`.'
       tags:
         - media
       parameters:

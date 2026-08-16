@@ -237,11 +237,46 @@ describe('SonarrAPI interactive management', () => {
     await sonarr.grabRelease({
       guid: 'https://indexer.example/release/123',
       indexerId: 7,
+      seriesId: 1,
     });
 
     assert.deepStrictEqual(post.mock.calls[0].arguments, [
       '/release',
-      { guid: 'https://indexer.example/release/123', indexerId: 7 },
+      {
+        guid: 'https://indexer.example/release/123',
+        indexerId: 7,
+        seriesId: 1,
+      },
+    ]);
+  });
+
+  it('forces a rejected Sonarr grab onto the searched series', async () => {
+    const sonarr = buildSonarr();
+    const post = mock.method(getAxios(sonarr), 'post', async () => ({
+      data: {},
+    }));
+
+    await sonarr.grabRelease({
+      guid: 'https://indexer.example/release/123',
+      indexerId: 7,
+      seriesId: 1,
+      episodeIds: [9, 10],
+      quality: { quality: { name: 'WEBDL-1080p' } },
+      languages: [{ name: 'English' }],
+      shouldOverride: true,
+    });
+
+    assert.deepStrictEqual(post.mock.calls[0].arguments, [
+      '/release',
+      {
+        guid: 'https://indexer.example/release/123',
+        indexerId: 7,
+        seriesId: 1,
+        episodeIds: [9, 10],
+        shouldOverride: true,
+        quality: { quality: { name: 'WEBDL-1080p' } },
+        languages: [{ name: 'English' }],
+      },
     ]);
   });
 

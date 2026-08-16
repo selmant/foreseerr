@@ -168,6 +168,34 @@ describe('RadarrAPI interactive management', () => {
     ]);
   });
 
+  it('forces a rejected Radarr grab onto the searched movie', async () => {
+    const radarr = buildRadarr();
+    const post = mock.method(getAxios(radarr), 'post', async () => ({
+      data: {},
+    }));
+
+    await radarr.grabRelease({
+      guid: 'release-guid',
+      indexerId: 4,
+      movieId: 55,
+      quality: { quality: { name: 'Bluray-1080p' } },
+      languages: [{ name: 'English' }],
+      shouldOverride: true,
+    });
+
+    assert.deepStrictEqual(post.mock.calls[0].arguments, [
+      '/release',
+      {
+        guid: 'release-guid',
+        indexerId: 4,
+        movieId: 55,
+        shouldOverride: true,
+        quality: { quality: { name: 'Bluray-1080p' } },
+        languages: [{ name: 'English' }],
+      },
+    ]);
+  });
+
   it('uses the mapped movie when retrieving manual import candidates', async () => {
     const radarr = buildRadarr();
     const get = mock.method(getAxios(radarr), 'get', async () => ({

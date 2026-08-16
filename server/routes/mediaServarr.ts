@@ -1,4 +1,7 @@
-import type { QueueDetailsItem } from '@server/api/servarr/base';
+import type {
+  QueueDetailsItem,
+  ServarrGrabRequest,
+} from '@server/api/servarr/base';
 import RadarrAPI, {
   type ManualImportCandidate,
   type ServarrRelease,
@@ -9,6 +12,7 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
+import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { Router } from 'express';
 import NodeCache from 'node-cache';
@@ -45,6 +49,8 @@ type Token = {
   externalId: number;
   kind: 'release' | 'import-source' | 'import-candidate' | 'command';
   value: ServarrRelease | ImportCandidate | ImportSource | number;
+  episodeId?: number;
+  seasonNumber?: number;
 };
 
 const parseIs4k = (value: unknown) => value === 'true' || value === true;
@@ -173,6 +179,67 @@ export function canGrabRelease(release: ServarrRelease) {
   return (
     release.downloadAllowed || release.rejected || release.temporarilyRejected
   );
+}
+
+export function releaseGrabRequest(options: {
+  release: ServarrRelease;
+  type: Context['type'];
+  externalId: number;
+  episodeIds?: number[];
+  acknowledgeRejections: boolean;
+}): ServarrGrabRequest {
+  const request: ServarrGrabRequest = {
+    guid: options.release.guid,
+    indexerId: options.release.indexerId,
+  };
+  if (options.type === 'sonarr') request.seriesId = options.externalId;
+  else request.movieId = options.externalId;
+
+  const episodeIds = options.episodeIds?.length
+    ? options.episodeIds
+    : (options.release.mappedEpisodeInfo?.map((episode) => episode.id) ??
+      options.release.episodeIds ??
+      (options.release.episodeId != null
+        ? [options.release.episodeId]
+        : undefined));
+
+  if (
+    options.acknowledgeRejections &&
+    options.release.quality &&
+    options.release.languages &&
+    (options.type === 'radarr' || Boolean(episodeIds?.length))
+  ) {
+    request.shouldOverride = true;
+    request.quality = options.release.quality;
+    request.languages = options.release.languages;
+    if (options.type === 'sonarr') request.episodeIds = episodeIds;
+  }
+
+  return request;
+}
+
+function routeError(error: unknown, fallback = 502) {
+  const assigned = error as {
+    status?: number;
+    message?: string;
+    response?: { status?: number; data?: { message?: string } | string };
+  };
+  if (assigned.status && !assigned.response) {
+    return {
+      status: assigned.status,
+      message: assigned.message ?? 'Request failed.',
+    };
+  }
+  const data = assigned.response?.data;
+  const message =
+    (typeof data === 'string' && data) ||
+    (typeof data === 'object' && data?.message) ||
+    assigned.message ||
+    'Servarr request failed.';
+  return {
+    status: assigned.response?.status ?? fallback,
+    message,
+  };
 }
 
 export function episodeQueueStatus(item: QueueDetailsItem) {
@@ -331,6 +398,8 @@ mediaServarrRoutes.get(
         parseIs4k(req.query.is4k)
       );
       let releases: ServarrRelease[];
+      let episodeId: number | undefined;
+      let seasonNumber: number | undefined;
       if (context.type === 'radarr')
         releases = await (context.client as RadarrAPI).getMovieReleases(
           context.externalId
@@ -339,7 +408,7 @@ mediaServarrRoutes.get(
         req.query.target === 'episode' &&
         Number.isInteger(Number(req.query.episodeId))
       ) {
-        const episodeId = Number(req.query.episodeId);
+        episodeId = Number(req.query.episodeId);
         const episode = (
           await (context.client as SonarrAPI).getEpisodes(context.externalId)
         ).find((item) => item.id === episodeId);
@@ -354,12 +423,13 @@ mediaServarrRoutes.get(
       } else if (
         req.query.target === 'season' &&
         Number.isInteger(Number(req.query.seasonNumber))
-      )
+      ) {
+        seasonNumber = Number(req.query.seasonNumber);
         releases = await (context.client as SonarrAPI).getSeasonReleases(
           context.externalId,
-          Number(req.query.seasonNumber)
+          seasonNumber
         );
-      else
+      } else
         throw Object.assign(
           new Error('Select an episode or season to search.'),
           { status: 400 }
@@ -375,6 +445,8 @@ mediaServarrRoutes.get(
               externalId: context.externalId,
               kind: 'release',
               value: release,
+              episodeId,
+              seasonNumber,
             },
             1500
           ),
@@ -425,14 +497,55 @@ mediaServarrRoutes.post(
           new Error('Confirm the release rejection warnings before grabbing.'),
           { status: 409 }
         );
-      await context.client.grabRelease(release);
+      const acknowledgeRejections = Boolean(req.body.acknowledgeRejections);
+      let episodeIds: number[] | undefined;
+      if (context.type === 'sonarr' && acknowledgeRejections) {
+        if (record.episodeId != null) episodeIds = [record.episodeId];
+        else {
+          const seasonNumber = record.seasonNumber ?? release.seasonNumber;
+          const episodes = await (context.client as SonarrAPI).getEpisodes(
+            context.externalId
+          );
+          episodeIds = episodes
+            .filter((episode) =>
+              seasonNumber == null
+                ? episode.seasonNumber > 0
+                : episode.seasonNumber === seasonNumber
+            )
+            .map((episode) => episode.id);
+        }
+      }
+      const grab = releaseGrabRequest({
+        release,
+        type: context.type,
+        externalId: context.externalId,
+        episodeIds,
+        acknowledgeRejections,
+      });
+      logger.info('Grabbing Servarr release', {
+        label: 'Servarr',
+        mediaId: context.media.id,
+        title: release.title,
+        seriesId: grab.seriesId,
+        movieId: grab.movieId,
+        shouldOverride: grab.shouldOverride === true,
+        rejections: release.rejections,
+      });
+      try {
+        await context.client.grabRelease(grab);
+      } catch (error) {
+        logger.error('Servarr rejected the release grab', {
+          label: 'Servarr',
+          mediaId: context.media.id,
+          title: release.title,
+          errorMessage: routeError(error).message,
+        });
+        throw error;
+      }
       tokens.del(req.body.token);
       return res.json({ accepted: true });
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
-      });
+      next(routeError(error));
     }
   }
 );

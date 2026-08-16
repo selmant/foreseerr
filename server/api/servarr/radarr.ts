@@ -22,6 +22,14 @@ export interface ServarrRelease {
   temporarilyRejected: boolean;
   rejections?: string[];
   downloadAllowed: boolean;
+  languages?: { id?: number; name?: string }[];
+  seriesId?: number;
+  movieId?: number;
+  episodeId?: number;
+  episodeIds?: number[];
+  seasonNumber?: number;
+  fullSeason?: boolean;
+  mappedEpisodeInfo?: { id: number }[];
 }
 
 export interface ManualImportCandidate {
@@ -360,15 +368,6 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
       params: { movieId },
     });
     return response.data;
-  }
-
-  public async grabRelease(
-    release: Pick<ServarrRelease, 'guid' | 'indexerId'>
-  ) {
-    await this.axios.post('/release', {
-      guid: release.guid,
-      indexerId: release.indexerId,
-    });
   }
 
   public async getMovieQueueDetails(

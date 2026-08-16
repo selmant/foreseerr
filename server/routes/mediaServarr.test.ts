@@ -4,6 +4,7 @@ import {
   canGrabRelease,
   episodeQueueStatus,
   isInteractiveImportQueueItem,
+  releaseGrabRequest,
 } from './mediaServarr';
 
 describe('Servarr interactive import eligibility', () => {
@@ -74,6 +75,35 @@ describe('Servarr rejected release override', () => {
 
   it('continues to block an unavailable non-rejected release', () => {
     assert.equal(canGrabRelease(release), false);
+  });
+
+  it('binds a rejected Sonarr grab to the searched series', () => {
+    assert.deepEqual(
+      releaseGrabRequest({
+        release: {
+          ...release,
+          rejected: true,
+          quality: { quality: { name: 'WEBDL-1080p' } },
+          languages: [{ name: 'Chinese' }],
+          rejections: [
+            'Reset matches an alias for series with TVDB ID: 457740',
+          ],
+        },
+        type: 'sonarr',
+        externalId: 1,
+        episodeIds: [9, 10, 11],
+        acknowledgeRejections: true,
+      }),
+      {
+        guid: 'release-guid',
+        indexerId: 1,
+        seriesId: 1,
+        episodeIds: [9, 10, 11],
+        shouldOverride: true,
+        quality: { quality: { name: 'WEBDL-1080p' } },
+        languages: [{ name: 'Chinese' }],
+      }
+    );
   });
 });
 

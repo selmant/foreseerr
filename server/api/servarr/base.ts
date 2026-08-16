@@ -91,6 +91,19 @@ export interface Tag {
   label: string;
 }
 
+/** Fields Sonarr/Radarr accept on POST /release, including forced grabs. */
+export interface ServarrGrabRequest {
+  guid: string;
+  indexerId: number;
+  seriesId?: number;
+  movieId?: number;
+  episodeId?: number;
+  episodeIds?: number[];
+  quality?: unknown;
+  languages?: unknown;
+  shouldOverride?: boolean;
+}
+
 interface QueueResponse<QueueItemAppendT> {
   page: number;
   pageSize: number;
@@ -277,6 +290,23 @@ class ServarrBase<QueueItemAppendT> extends ExternalAPI {
       `/command/${commandId}`
     );
     return response.data;
+  }
+
+  public async grabRelease(release: ServarrGrabRequest): Promise<void> {
+    const body: Record<string, unknown> = {
+      guid: release.guid,
+      indexerId: release.indexerId,
+    };
+    if (release.seriesId != null) body.seriesId = release.seriesId;
+    if (release.movieId != null) body.movieId = release.movieId;
+    if (release.episodeId != null) body.episodeId = release.episodeId;
+    if (release.episodeIds?.length) body.episodeIds = release.episodeIds;
+    if (release.shouldOverride) {
+      body.shouldOverride = true;
+      if (release.quality) body.quality = release.quality;
+      if (release.languages) body.languages = release.languages;
+    }
+    await this.axios.post('/release', body);
   }
 }
 
