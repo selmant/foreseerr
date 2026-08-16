@@ -341,11 +341,6 @@ describe('Trakt settings credential safety', () => {
   });
 
   it('reports a reachable Better Trakt bridge separately from user access', async () => {
-    const jellyfinMock = mock.method(
-      JellyfinAPI.prototype,
-      'getSystemInfo',
-      async () => ({ Id: 'jellyfin-server' })
-    );
     const betterTraktMock = mock.method(axios, 'get', async () => ({
       data: { IsLinked: true, AllowExternalTokenAccess: true },
     }));
@@ -355,13 +350,14 @@ describe('Trakt settings credential safety', () => {
     settings.jellyfin = {
       ...settings.jellyfin,
       ip: 'jellyfin.example.test',
-      apiKey: 'jellyfin-api-key',
+      apiKey: '',
     };
     const user = await getRepository(User).findOneOrFail({
       where: { email: 'admin@seerr.dev' },
     });
     user.jellyfinUserId = 'jellyfin-user-id';
     user.jellyfinAuthToken = 'jellyfin-user-token';
+    user.jellyfinDeviceId = 'jellyfin-device-id';
     await getRepository(User).save(user);
 
     const res = await agent.get('/api/v1/settings/integrations/status');
@@ -372,8 +368,51 @@ describe('Trakt settings credential safety', () => {
     assert.match(res.body.trakt.detail, /ready for all 1 linked users/i);
     assert.equal(res.body.trakt.jellyfin.readiness.readyUsers, 1);
     assert.equal(res.body.trakt.jellyfin.readiness.users[0].state, 'ready');
-    assert.equal(jellyfinMock.mock.calls.length, 1);
     assert.equal(betterTraktMock.mock.calls.length, 1);
+    const [requestUrl, requestConfig] = betterTraktMock.mock.calls[0]
+      .arguments as [string, { headers?: { Authorization?: string } }];
+    assert.match(requestUrl, /\/Trakt\/me$/);
+    assert.match(
+      requestConfig.headers?.Authorization ?? '',
+      /MediaBrowser Client="Foreseerr".*DeviceId="jellyfin-device-id".*Token="jellyfin-user-token"/
+    );
+
+    betterTraktMock.mock.restore();
+  });
+
+  it('does not require the Jellyfin server API key for Better Trakt health', async () => {
+    const jellyfinMock = mock.method(
+      JellyfinAPI.prototype,
+      'getSystemInfo',
+      async () => {
+        throw new Error('server API key should not be used');
+      }
+    );
+    const betterTraktMock = mock.method(axios, 'get', async () => ({
+      data: { IsLinked: true, AllowExternalTokenAccess: true },
+    }));
+    const agent = await loginAsAdmin();
+    const settings = getSettings();
+    settings.trakt = { provider: 'jellyfin', clientId: '', clientSecret: '' };
+    settings.jellyfin = {
+      ...settings.jellyfin,
+      ip: 'jellyfin.example.test',
+      apiKey: 'stale-api-key',
+    };
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    user.jellyfinUserId = 'jellyfin-user-id';
+    user.jellyfinAuthToken = 'jellyfin-user-token';
+    user.jellyfinDeviceId = 'jellyfin-device-id';
+    await getRepository(User).save(user);
+
+    const res = await agent.get('/api/v1/settings/integrations/status');
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.trakt.state, 'healthy');
+    assert.equal(res.body.trakt.jellyfin.readiness.users[0].state, 'ready');
+    assert.equal(jellyfinMock.mock.calls.length, 0);
 
     betterTraktMock.mock.restore();
     jellyfinMock.mock.restore();

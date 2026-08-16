@@ -1,3 +1,4 @@
+import { buildJellyfinAuthorizationHeader } from '@server/api/jellyfin';
 import TraktAPI, {
   TraktReconnectRequiredError,
   TraktRefreshRejectedError,
@@ -70,6 +71,35 @@ type JellyfinTraktTokenResponse = {
   ClientId?: unknown;
 };
 
+export type JellyfinTraktMeResponse = {
+  IsLinked?: unknown;
+  AllowExternalTokenAccess?: unknown;
+};
+
+export async function fetchJellyfinTraktJson<T>(
+  user: Pick<User, 'jellyfinAuthToken' | 'jellyfinDeviceId'>,
+  path: '/Trakt/me' | '/Trakt/me/Token',
+  timeout: number
+): Promise<T> {
+  if (!user.jellyfinAuthToken || !user.jellyfinDeviceId) {
+    throw new TraktJellyfinProviderError(
+      'Link your Jellyfin account to Foreseer before using Better Trakt.'
+    );
+  }
+
+  const response = await axios.get<T>(`${getHostname()}${path}`, {
+    headers: {
+      Authorization: buildJellyfinAuthorizationHeader(
+        user.jellyfinAuthToken,
+        user.jellyfinDeviceId
+      ),
+      Accept: 'application/json',
+    },
+    timeout,
+  });
+  return response.data;
+}
+
 async function getJellyfinTraktToken(
   userId: number
 ): Promise<TraktTokenState & { clientId: string }> {
@@ -80,33 +110,28 @@ async function getJellyfinTraktToken(
     .where('user.id = :userId', { userId })
     .getOne();
 
-  if (!user?.jellyfinUserId || !user.jellyfinAuthToken) {
+  if (
+    !user?.jellyfinUserId ||
+    !user.jellyfinAuthToken ||
+    !user.jellyfinDeviceId
+  ) {
     throw new TraktJellyfinProviderError(
       'Link your Jellyfin account to Foreseer before using Better Trakt.'
     );
   }
 
   try {
-    const response = await axios.get<JellyfinTraktTokenResponse>(
-      `${getHostname()}/Trakt/me/Token`,
-      {
-        headers: {
-          Authorization: `MediaBrowser Token=${user.jellyfinAuthToken}`,
-        },
-        timeout: 10000,
-      }
+    const data = await fetchJellyfinTraktJson<JellyfinTraktTokenResponse>(
+      user,
+      '/Trakt/me/Token',
+      10000
     );
     const accessToken =
-      typeof response.data.AccessToken === 'string'
-        ? response.data.AccessToken.trim()
-        : '';
+      typeof data.AccessToken === 'string' ? data.AccessToken.trim() : '';
     const clientId =
-      typeof response.data.ClientId === 'string'
-        ? response.data.ClientId.trim()
-        : '';
+      typeof data.ClientId === 'string' ? data.ClientId.trim() : '';
     const expiresAt = Math.floor(
-      new Date(String(response.data.AccessTokenExpiration ?? '')).getTime() /
-        1000
+      new Date(String(data.AccessTokenExpiration ?? '')).getTime() / 1000
     );
 
     if (!accessToken || !clientId || !Number.isFinite(expiresAt)) {

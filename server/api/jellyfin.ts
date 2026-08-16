@@ -160,6 +160,29 @@ export interface JellyfinItemsReponse {
   StartIndex: number;
 }
 
+export const buildJellyfinAuthorizationHeader = (
+  authToken?: string | null,
+  deviceId?: string | null
+): string => {
+  const settings = getSettings();
+  const safeDeviceId =
+    deviceId && deviceId.length > 0
+      ? deviceId
+      : Buffer.from('BOT_seerr').toString('base64');
+
+  const version =
+    settings.main.mediaServerType === MediaServerType.EMBY
+      ? '1.0.0'
+      : getAppVersion();
+
+  let authHeaderVal = `MediaBrowser Client="Foreseerr", Device="Foreseerr", DeviceId="${safeDeviceId}", Version="${version}"`;
+  if (authToken) {
+    authHeaderVal += `, Token="${authToken}"`;
+  }
+
+  return authHeaderVal;
+};
+
 class JellyfinAPI extends ExternalAPI {
   private userId?: string;
   private mediaServerType: MediaServerType;
@@ -170,36 +193,20 @@ class JellyfinAPI extends ExternalAPI {
     deviceId?: string | null,
     timeout?: number
   ) {
-    const settings = getSettings();
-    const safeDeviceId =
-      deviceId && deviceId.length > 0
-        ? deviceId
-        : Buffer.from('BOT_seerr').toString('base64');
-
-    const version =
-      settings.main.mediaServerType === MediaServerType.EMBY
-        ? '1.0.0'
-        : getAppVersion();
-
-    let authHeaderVal = `MediaBrowser Client="Foreseerr", Device="Foreseerr", DeviceId="${safeDeviceId}", Version="${version}"`;
-    if (authToken) {
-      authHeaderVal += `, Token="${authToken}"`;
-    }
-
     super(
       jellyfinHost,
       {},
       {
         timeout,
         headers: {
-          Authorization: authHeaderVal,
+          Authorization: buildJellyfinAuthorizationHeader(authToken, deviceId),
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
       }
     );
 
-    this.mediaServerType = settings.main.mediaServerType;
+    this.mediaServerType = getSettings().main.mediaServerType;
   }
 
   public async login(

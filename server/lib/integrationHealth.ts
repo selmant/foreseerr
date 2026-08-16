@@ -1,10 +1,14 @@
-import JellyfinAPI from '@server/api/jellyfin';
 import MdblistAPI from '@server/api/mdblist';
 import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { mapWithConcurrency } from '@server/lib/concurrency';
 import { getSettings } from '@server/lib/settings';
+import {
+  fetchJellyfinTraktJson,
+  type JellyfinTraktMeResponse,
+} from '@server/lib/trakt';
+import logger from '@server/logger';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 
@@ -77,6 +81,9 @@ const notConfigured = (detail: string): IntegrationHealth => ({
 
 const checkDirectTrakt = async (): Promise<IntegrationHealth> => {
   const settings = getSettings();
+  if (settings.trakt.provider === 'jellyfin') {
+    return notConfigured('Direct Trakt is not the active connection method.');
+  }
   if (!settings.trakt.clientId || !settings.trakt.clientSecret) {
     return notConfigured('Trakt application credentials are not configured.');
   }
@@ -101,7 +108,7 @@ const emptyJellyfinReadiness = (): JellyfinTraktReadiness => ({
 const checkJellyfinUserReadiness = async (
   user: User
 ): Promise<JellyfinTraktUserReadiness> => {
-  if (!user.jellyfinAuthToken) {
+  if (!user.jellyfinAuthToken || !user.jellyfinDeviceId) {
     return {
       userId: user.id,
       displayName: user.displayName,
@@ -110,25 +117,27 @@ const checkJellyfinUserReadiness = async (
   }
 
   try {
-    const response = await axios.get<{
-      IsLinked?: unknown;
-      AllowExternalTokenAccess?: unknown;
-    }>(`${getHostname()}/Trakt/me`, {
-      headers: {
-        Authorization: `MediaBrowser Token=${user.jellyfinAuthToken}`,
-      },
-      timeout: 5000,
-    });
+    const data = await fetchJellyfinTraktJson<JellyfinTraktMeResponse>(
+      user,
+      '/Trakt/me',
+      5000
+    );
 
     const state: JellyfinTraktUserState =
-      response.data.IsLinked !== true
+      data.IsLinked !== true
         ? 'needs_trakt_link'
-        : response.data.AllowExternalTokenAccess !== true
+        : data.AllowExternalTokenAccess !== true
           ? 'needs_access'
           : 'ready';
     return { userId: user.id, displayName: user.displayName, state };
   } catch (e) {
     const status = axios.isAxiosError(e) ? e.response?.status : undefined;
+    logger.warn('Better Trakt user readiness check failed', {
+      label: 'Integration Health',
+      userId: user.id,
+      status,
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
     return {
       userId: user.id,
       displayName: user.displayName,
@@ -150,23 +159,39 @@ const checkJellyfinTrakt = async (): Promise<
       readiness: emptyJellyfinReadiness(),
     };
   }
-  if (!settings.jellyfin.apiKey) {
-    return {
-      ...degraded('Jellyfin is configured but its API token is missing.'),
-      readiness: emptyJellyfinReadiness(),
-    };
-  }
 
   try {
-    await new JellyfinAPI(
-      getHostname(),
-      settings.jellyfin.apiKey
-    ).getSystemInfo();
     const users = await getRepository(User)
       .createQueryBuilder('user')
       .addSelect('user.jellyfinAuthToken')
+      .addSelect('user.jellyfinDeviceId')
       .where('user.jellyfinUserId IS NOT NULL')
       .getMany();
+
+    if (users.length === 0) {
+      try {
+        await axios.get(`${getHostname()}/System/Info/Public`, {
+          timeout: 5000,
+        });
+        return {
+          ...degraded(
+            'Jellyfin is reachable, but no Foreseer users are linked to Jellyfin.'
+          ),
+          readiness: emptyJellyfinReadiness(),
+        };
+      } catch (e) {
+        logger.warn('Better Trakt health check could not reach Jellyfin', {
+          label: 'Integration Health',
+          hostname: getHostname(),
+          errorMessage: e instanceof Error ? e.message : 'unknown error',
+        });
+        return {
+          ...degraded(`Foreseer could not reach Jellyfin at ${getHostname()}.`),
+          readiness: emptyJellyfinReadiness(),
+        };
+      }
+    }
+
     const userReadiness = await mapWithConcurrency(
       users,
       4,
@@ -178,18 +203,10 @@ const checkJellyfinTrakt = async (): Promise<
       users: userReadiness,
     };
 
-    if (readiness.eligibleUsers === 0) {
-      return {
-        ...degraded(
-          'Jellyfin is reachable, but no Foreseer users are linked to Jellyfin.'
-        ),
-        readiness,
-      };
-    }
     if (readiness.readyUsers !== readiness.eligibleUsers) {
       return {
         ...degraded(
-          `Jellyfin is reachable. ${readiness.readyUsers} of ${readiness.eligibleUsers} users are ready for Better Trakt.`
+          `${readiness.readyUsers} of ${readiness.eligibleUsers} users are ready for Better Trakt.`
         ),
         readiness,
       };
@@ -200,9 +217,14 @@ const checkJellyfinTrakt = async (): Promise<
       ),
       readiness,
     };
-  } catch {
+  } catch (e) {
+    logger.warn('Better Trakt health check failed', {
+      label: 'Integration Health',
+      hostname: getHostname(),
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
     return {
-      ...degraded('Jellyfin could not be reached with its saved API token.'),
+      ...degraded('Better Trakt could not be checked through Jellyfin.'),
       readiness: emptyJellyfinReadiness(),
     };
   }
