@@ -6,6 +6,9 @@ title: Foreseerr v0.5.1 release notes
 
 - Restores Library Play/Resume in the ordinary browser (overview cards were
   no-ops outside the native desktop host).
+- Sorts Library Continue Watching by last played. Jellyfin Resume ignores
+  `SortBy` and returns items with no `LastPlayedDate` first, so a just-watched
+  title can land last.
 - Loads Library genre facets when Movies or Series is selected.
 - Scopes proxied Jellyfin artwork to the signed-in user.
 - Persists the Jellyfin session when Quick Connect creates a new user, so

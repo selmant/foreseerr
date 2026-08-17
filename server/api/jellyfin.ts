@@ -160,6 +160,25 @@ export interface JellyfinItemsReponse {
   StartIndex: number;
 }
 
+/**
+ * Jellyfin 10.11 Resume (and `/Items?Filters=IsResumable&SortBy=DatePlayed`)
+ * returns items with no LastPlayedDate first; dated items last. SortBy is a
+ * no-op. Continue Watching re-sorts by LastPlayedDate, newest first.
+ */
+export const sortResumeItemsByDatePlayed = (
+  items: JellyfinLibraryItemExtended[]
+): JellyfinLibraryItemExtended[] =>
+  [...items].sort((a, b) => resumePlayedAtMs(b) - resumePlayedAtMs(a));
+
+const resumePlayedAtMs = (item: JellyfinLibraryItemExtended): number => {
+  const raw = item.UserData?.LastPlayedDate;
+  if (!raw) {
+    return 0;
+  }
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export const buildJellyfinAuthorizationHeader = (
   authToken?: string | null,
   deviceId?: string | null
@@ -629,7 +648,7 @@ class JellyfinAPI extends ExternalAPI {
 
   /**
    * Continue Watching / in-progress items, most recently played first.
-   * Jellyfin Resume does not always default to DatePlayed — pass it explicitly.
+   * `/Items/Resume` ignores SortBy, so re-sort by UserData.LastPlayedDate.
    */
   public async getResumeItems(
     limit = 20
@@ -649,7 +668,7 @@ class JellyfinAPI extends ExternalAPI {
           },
         }
       );
-      return response.Items ?? [];
+      return sortResumeItemsByDatePlayed(response.Items ?? []);
     } catch (e) {
       logger.error(
         `Something went wrong while getting resume items from the Jellyfin server: ${e.message}`,
