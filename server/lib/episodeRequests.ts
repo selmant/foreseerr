@@ -101,6 +101,44 @@ export const resolveEpisodeSelection = (
   };
 };
 
+const ongoingEpisodeRequestLocks = new Map<string, Promise<unknown>>();
+
+export const ongoingEpisodeRequestLockKey = (
+  tmdbId: number,
+  is4k: boolean
+): string => `${tmdbId}:${is4k ? '4k' : 'sd'}`;
+
+/**
+ * Serialize concurrent "after"/ongoing episode creates for one series+quality.
+ * Re-check the duplicate inside the lock; this is single-process only.
+ */
+export async function withOngoingEpisodeRequestLock<T>(
+  tmdbId: number,
+  is4k: boolean,
+  task: () => Promise<T>
+): Promise<T> {
+  const key = ongoingEpisodeRequestLockKey(tmdbId, is4k);
+  const previous = ongoingEpisodeRequestLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.then(
+    () => held,
+    () => held
+  );
+  ongoingEpisodeRequestLocks.set(key, queued);
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    release();
+    if (ongoingEpisodeRequestLocks.get(key) === queued) {
+      ongoingEpisodeRequestLocks.delete(key);
+    }
+  }
+}
+
 export const getResolvedTvdbEpisodeSelection = async ({
   tvId,
   language,

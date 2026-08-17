@@ -5,6 +5,7 @@ import {
   libraryWatchMark,
 } from '@app/components/Library/libraryPosterWatchMark';
 import useLibraryPlay from '@app/components/Library/useLibraryPlay';
+import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchContext';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import defineMessages from '@app/utils/defineMessages';
 import { CheckCircleIcon, PlayIcon } from '@heroicons/react/24/solid';
@@ -34,6 +35,7 @@ const LibraryPosterCard = ({
   const intl = useIntl();
   const isTouch = useIsTouch();
   const { playItem } = useLibraryPlay();
+  const batch = useTitleCardBatch();
   const mode = surface ?? (compact ? 'browse' : 'overview');
   const isBrowse = mode === 'browse';
   const progress = item.progressPercent ?? 0;
@@ -41,7 +43,14 @@ const LibraryPosterCard = ({
   const typeLabel = intl.formatMessage(
     item.mediaType === 'movie' ? messages.movie : messages.series
   );
-  const watchMark = libraryWatchMark(item);
+  const actionWatched =
+    item.tmdbId != null
+      ? batch?.getStatus(item.mediaType, item.tmdbId)?.watched
+      : undefined;
+  const watchMark = libraryWatchMark({
+    ...item,
+    watched: Boolean(item.watched) || Boolean(actionWatched),
+  });
   const isSeriesPoster = isLibrarySeriesPoster(item);
   const showProgressBar = progress > 0 && !isSeriesPoster;
   const showOverviewHover = !isBrowse && !isTouch;
@@ -165,12 +174,17 @@ const LibraryPosterCard = ({
               ) : null}
             </button>
             <Button
+              as="a"
+              href={item.mediaUrl}
               buttonType="primary"
               buttonSize="sm"
               className="w-full"
+              data-testid="library-overview-play"
               onClick={(event) => {
-                event.preventDefault();
                 event.stopPropagation();
+                if (!item.mediaUrl) {
+                  event.preventDefault();
+                }
                 void playItem(event, item, onOpen);
               }}
             >

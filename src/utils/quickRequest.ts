@@ -22,6 +22,14 @@ export type QuickEpisodeRequestOptions = {
   tvdbId?: number;
 };
 
+export const tvEpisodeQuotaUnits = 1;
+
+export const isTvQuotaExhausted = (
+  quota?: { limit?: number; remaining?: number; restricted: boolean },
+  units = tvEpisodeQuotaUnits
+): boolean =>
+  Boolean(quota?.limit && (quota.restricted || (quota.remaining ?? 0) < units));
+
 const refreshRequestCaches = () => {
   mutate('/api/v1/request/count');
   mutate('/api/v1/request?filter=all&take=10&sort=modified&skip=0');

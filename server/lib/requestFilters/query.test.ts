@@ -44,7 +44,8 @@ describe('parseBrowseQueryFilters', () => {
     assert.equal(filters.voteCountGte, 100);
     assert.deepEqual(filters.genreIds, [28, 35]);
     assert.equal(filters.language, 'en');
-    assert.equal(filters.releaseDateGte, '2020-01-01');
+    assert.equal(filters.movieReleaseDateGte, '2020-01-01');
+    assert.equal(filters.tvFirstAirDateGte, null);
     assert.equal(filters.runtimeGte, 90);
     assert.equal(filters.runtimeLte, 120);
     assert.deepEqual(filters.seriesStatusIds, [3, 4]);
@@ -67,5 +68,15 @@ describe('parseBrowseQueryFilters', () => {
     const tmdbOnly = parseBrowseQueryFilters({ voteAverageGte: '7' });
     assert.equal(needsTmdbBrowseFilters(tmdbOnly), true);
     assert.equal(needsMdblistBrowseFilters(tmdbOnly), false);
+  });
+
+  it('keeps movie and series date bounds separate', () => {
+    const filters = parseBrowseQueryFilters({
+      primaryReleaseDateGte: '2020-01-01',
+      firstAirDateGte: '2010-01-01',
+    });
+    assert.equal(filters.movieReleaseDateGte, '2020-01-01');
+    assert.equal(filters.tvFirstAirDateGte, '2010-01-01');
+    assert.equal(needsTmdbBrowseFilters(filters), true);
   });
 });

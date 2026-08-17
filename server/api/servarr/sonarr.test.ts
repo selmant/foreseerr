@@ -295,7 +295,7 @@ describe('SonarrAPI interactive management', () => {
 
     assert.deepStrictEqual(get.mock.calls[0].arguments, [
       '/queue',
-      { params: { includeEpisode: true } },
+      { params: { page: 1, pageSize: 250, includeEpisode: true } },
     ]);
     assert.deepStrictEqual(queue, [
       { seriesId: 9, episodeId: 31, episode: { id: 31 } },

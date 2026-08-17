@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe('TraktAPI rate limit gating', () => {
-  it('opens a shared circuit on 429 and blocks later requests', async () => {
+  it('opens a per-client circuit on 429 without blocking other tokens', async () => {
     const api = makeApi();
     const client = rawClient(api);
     let calls = 0;
@@ -63,17 +63,28 @@ describe('TraktAPI rate limit gating', () => {
     );
 
     const second = makeApi('user-token-bbbbbbbb');
-    rawClient(second).defaults.adapter = async () => {
-      throw new Error('should not hit network while circuit open');
+    let secondCalls = 0;
+    rawClient(second).defaults.adapter = async (config) => {
+      secondCalls += 1;
+      return jsonResponse(config, 200, [{ type: 'show' }]);
     };
+
+    const otherUser = await (
+      second as unknown as {
+        getAuthenticated: (path: string) => Promise<unknown>;
+      }
+    ).getAuthenticated('/users/me/lists/other');
+    assert.deepEqual(otherUser, [{ type: 'show' }]);
+    assert.equal(calls, 1);
+    assert.equal(secondCalls, 1);
 
     await assert.rejects(
       () =>
         (
-          second as unknown as {
+          api as unknown as {
             getAuthenticated: (path: string) => Promise<unknown>;
           }
-        ).getAuthenticated('/users/me/lists/other'),
+        ).getAuthenticated('/users/me/lists/retry'),
       TraktRateLimitedError
     );
     assert.equal(calls, 1);
@@ -129,5 +140,27 @@ describe('TraktAPI rate limit gating', () => {
     );
     assert.equal(authCalls, 1);
     assert.equal(publicCalls, 0);
+  });
+
+  it('flushes watched GET cache after episode history writes', async () => {
+    const api = makeApi();
+    const client = rawClient(api);
+    const calls: string[] = [];
+    client.defaults.adapter = async (config) => {
+      calls.push(`${String(config.method).toLowerCase()}:${config.url}`);
+      if (String(config.method).toLowerCase() === 'post') {
+        return jsonResponse(config, 200, { added: { episodes: 1 } });
+      }
+      return jsonResponse(config, 200, [{ show: { ids: { tmdb: 1399 } } }]);
+    };
+
+    await api.getSyncWatched('tv');
+    await api.getSyncWatched('tv');
+    assert.equal(calls.filter((call) => call.startsWith('get:')).length, 1);
+
+    await api.addEpisodeToHistory(1399, 1, 1);
+
+    await api.getSyncWatched('tv');
+    assert.equal(calls.filter((call) => call.startsWith('get:')).length, 2);
   });
 });

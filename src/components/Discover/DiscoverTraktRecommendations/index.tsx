@@ -4,6 +4,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters';
 import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
 import useDiscover from '@app/hooks/useDiscover';
+import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
@@ -20,6 +21,7 @@ const messages = defineMessages(
     title: 'Trakt Recommendations',
     linkAccount:
       'Link your Trakt account in Linked Accounts to browse personalized recommendations.',
+    linkedAccounts: 'Linked Accounts',
   }
 );
 
@@ -50,6 +52,7 @@ const DiscoverTraktRecommendations = () => {
     traktStatus?.connected ? '/api/v1/discover/trakt/recommendations' : '',
     prepareTraktDiscoverOptions(router.query)
   );
+  useRegisterHideWatchedRevalidation(mutate);
 
   if (!settings.currentSettings.traktConfigured) {
     return <ErrorPage statusCode={404} />;
@@ -68,7 +71,7 @@ const DiscoverTraktRecommendations = () => {
             href="/profile/settings/linked-accounts"
             className="mt-4 inline-block text-white underline"
           >
-            Linked Accounts
+            {intl.formatMessage(messages.linkedAccounts)}
           </Link>
         </div>
       </>

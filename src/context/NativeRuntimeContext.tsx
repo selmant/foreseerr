@@ -25,6 +25,13 @@ export type NativeRuntimeState =
   | 'degraded'
   | 'playing';
 
+/** Native play.item is only safe after this user's Jellyfin session is ready. */
+export const canAdmitNativePlay = (state: NativeRuntimeState): boolean =>
+  state === 'ready' || state === 'playing';
+
+export const canQueueNativePlay = (state: NativeRuntimeState): boolean =>
+  state === 'probing' || state === 'authenticating';
+
 export interface NativePlayTarget {
   provider: 'jellyfin' | 'emby' | 'plex' | 'trailer';
   itemId?: string;
@@ -113,8 +120,7 @@ export const NativeRuntimeProvider = ({
     if (
       previousUserId.current !== undefined &&
       previousUserId.current !== userId &&
-      isUsableForeseerNative(host) &&
-      host.capabilities.includes('session-reset')
+      isUsableForeseerNative(host)
     ) {
       host.send({ type: 'session.clear', id: createRequestId() });
       activePlayRequestId.current = undefined;
@@ -169,9 +175,7 @@ export const NativeRuntimeProvider = ({
     const clearActivePlay = () => {
       activePlayRequestId.current = undefined;
       window.clearTimeout(activePlayTimeout.current);
-      setState((current) =>
-        current === 'playing' || current === 'degraded' ? 'ready' : current
-      );
+      setState((current) => (current === 'playing' ? 'ready' : current));
     };
 
     const onNativeEvent = (event: Event) => {
@@ -291,12 +295,14 @@ export const NativeRuntimeProvider = ({
         if (target.provider !== 'jellyfin' || !target.itemId) {
           return false;
         }
-        if (state === 'probing' || state === 'authenticating') {
+        if (canQueueNativePlay(state)) {
           queuedPlayTarget.current = target;
           return true;
         }
-        // ready: normal path. playing/degraded: allow retry after Back/timeout races.
-        if (state === 'ready' || state === 'playing' || state === 'degraded') {
+        // ready: normal path. playing: retry after Back/timeout races.
+        // degraded: previous native session may still be live after a failed
+        // re-auth / user switch — do not admit play.item until ready.
+        if (canAdmitNativePlay(state)) {
           return admitPlay(target);
         }
         return false;

@@ -94,6 +94,8 @@ export const jellyfinEpisodeActions = {
       } else {
         await client.markUnplayed(episode.Id);
       }
+      invalidateJellyfinStatusCache(userId);
+      setCachedJellyfinWatched(userId, episode.Id, watched);
       return true;
     } catch {
       return false;
@@ -344,7 +346,7 @@ export class JellyfinMediaActionProvider implements MediaActionProvider {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _options: RateOptions
   ): Promise<MediaActionStatus> {
-    return emptyStatus();
+    throw new Error('Jellyfin does not support rating writes');
   }
 
   private async getClient(userId: number) {

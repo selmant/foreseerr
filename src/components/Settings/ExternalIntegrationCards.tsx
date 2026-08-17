@@ -16,7 +16,7 @@ const messages = defineMessages(
   {
     trakt: 'Trakt',
     traktDescription:
-      'Personalized discovery, watchlists, watched status, and ratings.',
+      'Personalized discovery, watchlists, and ratings. Watched status also comes from Jellyfin.',
     mdblist: 'MDBList',
     mdblistDescription:
       'IMDb, Rotten Tomatoes, Metacritic, and Trakt community ratings.',

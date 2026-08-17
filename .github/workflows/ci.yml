@@ -91,7 +91,7 @@ jobs:
     name: Lint & Test Build
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    container: node:22.22.2-alpine3.23@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+    container: node:22.23.2-alpine3.23@sha256:46825fbbd4e996a78b7a2cdc08d75e38a5a505bdab95dcda55605359bf124bc6
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -139,7 +139,7 @@ jobs:
     name: Unit Tests
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    container: node:22.22.2-alpine3.23@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+    container: node:22.23.2-alpine3.23@sha256:46825fbbd4e996a78b7a2cdc08d75e38a5a505bdab95dcda55605359bf124bc6
     permissions:
       checks: write
     steps:
@@ -184,7 +184,7 @@ jobs:
     name: Migration Tests
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    container: node:22.22.2-alpine3.23@sha256:8ea2348b068a9544dae7317b4f3aafcdc032df1647bb7d768a05a5cad1a7683f
+    container: node:22.23.2-alpine3.23@sha256:46825fbbd4e996a78b7a2cdc08d75e38a5a505bdab95dcda55605359bf124bc6
     services:
       postgres:
         image: postgres:16-alpine
@@ -238,7 +238,7 @@ jobs:
       - name: Run upgrade-matrix tests (SQLite + PostgreSQL)
         env:
           CI: true
-        run: pnpm test server/migration/upgradeMatrix.sqlite.test.ts server/migration/upgradeMatrix.postgres.test.ts
+        run: pnpm test server/migration/upgradeMatrix.sqlite.test.ts server/migration/upgradeMatrix.postgres.test.ts server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts server/migration/upgradeMatrix.foreseerrStable.postgres.test.ts
 
   helm-lint:
     name: Helm Lint

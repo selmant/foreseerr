@@ -1,10 +1,9 @@
 import type { TraktListEntry } from '@server/api/trakt/interfaces';
 import { getSettings } from '@server/lib/settings';
 import {
-  TraktNotConfiguredError,
-  TraktNotLinkedError,
   createTraktUserClient,
   getTraktAppCredentials,
+  traktAvailabilityFromError,
 } from '@server/lib/trakt';
 import { invalidateUserSyncCache, warmUserSyncCache } from './syncCache';
 
@@ -40,13 +39,7 @@ async function isAvailable(userId: number): Promise<boolean> {
     await createTraktUserClient(userId);
     return true;
   } catch (error) {
-    if (
-      error instanceof TraktNotConfiguredError ||
-      error instanceof TraktNotLinkedError
-    ) {
-      return false;
-    }
-    throw error;
+    return traktAvailabilityFromError(error);
   }
 }
 

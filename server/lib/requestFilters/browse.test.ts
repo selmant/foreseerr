@@ -92,4 +92,49 @@ describe('filterTraktDiscoverItems', () => {
       [1]
     );
   });
+
+  it('applies movie and series date defaults independently', async () => {
+    const tmdb = {
+      getMovieBrowseMetadata: async ({ movieId }: { movieId: number }) => ({
+        id: movieId,
+        title: `Movie ${movieId}`,
+        vote_average: 8,
+        vote_count: 100,
+        original_language: 'en',
+        release_date: movieId === 1 ? '2021-01-01' : '2015-01-01',
+        genre_ids: [],
+        runtime: 120,
+      }),
+      getTvBrowseMetadata: async ({ tvId }: { tvId: number }) => ({
+        id: tvId,
+        title: `Series ${tvId}`,
+        vote_average: 8,
+        vote_count: 100,
+        original_language: 'en',
+        release_date: tvId === 2 ? '2012-01-01' : '2005-01-01',
+        genre_ids: [],
+        runtime: 45,
+        status: 'Ended',
+      }),
+    };
+
+    const results = await filterTraktDiscoverItems(
+      [
+        { tmdbId: 1, mediaType: 'movie', title: 'New movie' },
+        { tmdbId: 3, mediaType: 'movie', title: 'Old movie' },
+        { tmdbId: 2, mediaType: 'tv', title: 'Matching series' },
+        { tmdbId: 4, mediaType: 'tv', title: 'Old series' },
+      ],
+      tmdb as never,
+      {
+        primaryReleaseDateGte: '2020-01-01',
+        firstAirDateGte: '2010-01-01',
+      }
+    );
+
+    assert.deepEqual(
+      results.map((item) => item.tmdbId).sort((a, b) => a - b),
+      [1, 2]
+    );
+  });
 });

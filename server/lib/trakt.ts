@@ -48,6 +48,21 @@ export class TraktAccountAlreadyLinkedError extends Error {
   }
 }
 
+export function isTraktUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof TraktNotConfiguredError ||
+    error instanceof TraktNotLinkedError ||
+    error instanceof TraktJellyfinProviderError
+  );
+}
+
+export function traktAvailabilityFromError(error: unknown): false {
+  if (isTraktUnavailableError(error)) {
+    return false;
+  }
+  throw error;
+}
+
 export function getTraktAppCredentials(): {
   clientId: string;
   clientSecret: string;

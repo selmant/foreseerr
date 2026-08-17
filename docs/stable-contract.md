@@ -12,13 +12,13 @@ At the first stable release, Foreseerr supports upgrading in place from:
 
 1. **A fresh Foreseerr installation.** No prior data; migrations run from an empty database.
 2. **An upstream Seerr database (SQLite or PostgreSQL)**, validated against the synced Seerr commit `bd491c7e7ecf7d249da532f8fe9b82456ed6e42e`. Foreseerr's migration history continues directly from this commit's schema.
-3. **A previous stable Foreseerr release**, starting with `v0.1.0`. The frozen migration cutoff is `FORESEERR_V0_1_0_LAST_MIGRATION_TIMESTAMP` in `server/migration/foreseerrStableBaseline.ts`; coverage is in `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts`.
+3. **A previous stable Foreseerr release**, starting with `v0.1.0`. The frozen migration cutoff is `FORESEERR_V0_1_0_LAST_MIGRATION_TIMESTAMP` in `server/migration/foreseerrStableBaseline.ts`; coverage is in `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts` and `upgradeMatrix.foreseerrStable.postgres.test.ts`.
 
 Automated coverage:
 
 - `pnpm check:migrations` — fresh-install matrix for both engines (`server/migration/*` + `scripts/check-migrations.ts`), asserting key indexes/foreign keys exist, not just that the migration runner exits 0.
 - `server/migration/upgradeMatrix.sqlite.test.ts` / `.postgres.test.ts` — upgrade-from-Seerr-baseline matrix, asserting users/settings/requests/media/service config survive the upgrade, not just that migrations run.
-- `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts` — upgrade-from-Foreseerr-`v0.1.0` matrix (identity while HEAD is still `v0.1.0`; meaningful once later releases add migrations).
+- `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts` / `.postgres.test.ts` — upgrade-from-Foreseerr-`v0.1.0` matrix (identity while HEAD is still on that cutoff’s schema; meaningful once later releases add migrations).
 
 Alpha builds (`0.1.0-alpha.x`) are explicitly **not** part of the supported-upgrade guarantee above; see [Backups → Upgrading and downgrading](/using-seerr/backups) and [`docs/release-notes-0.1.0.md`](/release-notes-0.1.0).
 

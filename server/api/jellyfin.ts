@@ -504,7 +504,8 @@ class JellyfinAPI extends ExternalAPI {
           ids: uniqueIds.join(','),
           userId: this.userId ?? 'Me',
           EnableUserData: true,
-          fields: 'ProviderIds,MediaSources,Width,Height,IsHD,DateCreated',
+          fields:
+            'ProviderIds,MediaSources,Width,Height,IsHD,DateCreated,Overview,Genres,ProductionYear,RunTimeTicks',
         },
       });
 
@@ -573,6 +574,35 @@ class JellyfinAPI extends ExternalAPI {
     } catch (e) {
       logger.error(
         `Something went wrong while getting the list of episodes from the Jellyfin server: ${e.message}`,
+        { label: 'Jellyfin API', error: e.response?.status }
+      );
+
+      throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
+    }
+  }
+
+  /** All non-virtual episodes for a series in one request (no per-season N+1). */
+  public async getSeriesEpisodes(
+    seriesID: string
+  ): Promise<JellyfinLibraryItemExtended[]> {
+    try {
+      const episodeResponse = await this.get<JellyfinItemsReponse>(
+        `/Shows/${seriesID}/Episodes`,
+        {
+          params: {
+            userId: this.userId ?? 'Me',
+            EnableUserData: true,
+            Fields: 'ProviderIds,Overview,ProductionYear',
+          },
+        }
+      );
+
+      return (episodeResponse.Items ?? []).filter(
+        (item) => item.LocationType !== 'Virtual'
+      );
+    } catch (e) {
+      logger.error(
+        `Something went wrong while getting series episodes from the Jellyfin server: ${e.message}`,
         { label: 'Jellyfin API', error: e.response?.status }
       );
 
@@ -748,7 +778,11 @@ class JellyfinAPI extends ExternalAPI {
   /** Search Movies/Series in libraries visible to the authenticated user. */
   public async searchLibraryItems(
     query: string,
-    options: { limit?: number; mediaType?: 'movie' | 'tv' } = {}
+    options: {
+      limit?: number;
+      startIndex?: number;
+      mediaType?: 'movie' | 'tv';
+    } = {}
   ): Promise<JellyfinLibraryItemExtended[]> {
     try {
       const include =
@@ -761,6 +795,7 @@ class JellyfinAPI extends ExternalAPI {
         params: {
           SearchTerm: query,
           Recursive: true,
+          StartIndex: Math.max(0, options.startIndex ?? 0),
           Limit: options.limit ?? 20,
           Fields: 'ProviderIds,Overview',
           IncludeItemTypes: include,
@@ -799,6 +834,40 @@ class JellyfinAPI extends ExternalAPI {
       );
       throw new ApiError(e.response?.status, ApiErrorCode.InvalidAuthToken);
     }
+  }
+
+  public async getPlayedLibraryItems(
+    options: { limit?: number } = {}
+  ): Promise<JellyfinLibraryItemExtended[]> {
+    const pageSize = 250;
+    const maxItems = options.limit ?? 5000;
+    const items: JellyfinLibraryItemExtended[] = [];
+    let startIndex = 0;
+
+    while (items.length < maxItems) {
+      const take = Math.min(pageSize, maxItems - items.length);
+      const page = await this.browseLibraryItems({
+        userId: this.userId ?? 'Me',
+        Recursive: true,
+        IncludeItemTypes: 'Movie,Series',
+        Filters: 'IsPlayed',
+        Fields: 'ProviderIds',
+        EnableUserData: true,
+        StartIndex: startIndex,
+        Limit: take,
+      });
+      items.push(...page.items);
+      if (
+        page.items.length === 0 ||
+        items.length >= page.totalRecordCount ||
+        page.items.length < take
+      ) {
+        break;
+      }
+      startIndex += page.items.length;
+    }
+
+    return items;
   }
 
   public async getLibraryGenres(mediaType?: 'movie' | 'tv'): Promise<string[]> {
@@ -865,15 +934,22 @@ class JellyfinAPI extends ExternalAPI {
   }
 
   public async getLibraryYearBound(
-    order: 'Ascending' | 'Descending'
+    order: 'Ascending' | 'Descending',
+    mediaType?: 'movie' | 'tv'
   ): Promise<number | undefined> {
+    const include =
+      mediaType === 'movie'
+        ? 'Movie'
+        : mediaType === 'tv'
+          ? 'Series'
+          : 'Movie,Series';
     try {
       const response = await this.get<JellyfinItemsReponse>(`/Items`, {
         params: {
           userId: this.userId ?? 'Me',
-          IncludeItemTypes: 'Movie,Series',
+          IncludeItemTypes: include,
           Recursive: true,
-          SortBy: 'PremiereDate',
+          SortBy: 'ProductionYear',
           SortOrder: order,
           Limit: 1,
           Fields: 'PremiereDate,ProductionYear',
@@ -904,8 +980,8 @@ class JellyfinAPI extends ExternalAPI {
   }> {
     const [genres, yearMin, yearMax] = await Promise.all([
       this.getLibraryGenres(mediaType),
-      this.getLibraryYearBound('Ascending'),
-      this.getLibraryYearBound('Descending'),
+      this.getLibraryYearBound('Ascending', mediaType),
+      this.getLibraryYearBound('Descending', mediaType),
     ]);
     return { genres, yearMin, yearMax };
   }

@@ -35,6 +35,7 @@ import {
 import { enrichResultsWithRatings } from '@server/lib/ratings';
 import { traktExtendedForBrowseQuery } from '@server/lib/requestFilters';
 import { getSettings } from '@server/lib/settings';
+import { toTmdbDiscoverGenres } from '@server/lib/tmdbGenreEquivalents';
 import {
   TraktNotConfiguredError,
   TraktNotLinkedError,
@@ -375,7 +376,7 @@ discoverRoutes.get('/movies', async (req, res, next) => {
           sortBy: query.sortBy as SortOptions,
           language: req.locale ?? query.language,
           originalLanguage: query.language,
-          genre: query.genre,
+          genre: toTmdbDiscoverGenres(query.genre, 'movie'),
           studio: query.studio,
           primaryReleaseDateLte: query.primaryReleaseDateLte
             ? new Date(query.primaryReleaseDateLte).toISOString().split('T')[0]
@@ -737,7 +738,7 @@ discoverRoutes.get('/tv', async (req, res, next) => {
           page: upstreamPage,
           sortBy: query.sortBy as SortOptions,
           language: req.locale ?? query.language,
-          genre: query.genre,
+          genre: toTmdbDiscoverGenres(query.genre, 'tv'),
           network: query.network ? Number(query.network) : undefined,
           firstAirDateLte: query.firstAirDateLte
             ? new Date(query.firstAirDateLte).toISOString().split('T')[0]

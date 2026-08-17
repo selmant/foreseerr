@@ -52,9 +52,12 @@ const messages = defineMessages(
     discoversettingsTip:
       'These filters apply on Discover pages when you have not set a session override. Clearing filters in Discover turns them off until you open a new browser session.',
     hideWatched: 'Hide watched',
+    hideWatchedTip:
+      'Uses Jellyfin and Trakt watch history when either is available.',
     hideCollected: 'Hide collected',
     hideWatchlisted: 'Hide watchlisted',
     traktOptions: 'Trakt',
+    watchedOptions: 'Watched',
     releaseDate: 'Movie release date',
     firstAirDate: 'Series first air date',
     from: 'From',
@@ -209,12 +212,41 @@ const UserDiscoverSettings = () => {
       <div className="section space-y-6">
         <div>
           <div className="mb-2 text-lg font-semibold text-gray-100">
+            {intl.formatMessage(messages.watchedOptions)}
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                className="rounded border-gray-500 bg-gray-800 text-indigo-500"
+                checked={draft.ignoreWatched === true}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setBool('ignoreWatched', true);
+                  } else {
+                    setDraft((prev) => {
+                      const next = { ...prev };
+                      delete next.ignoreWatched;
+                      return next;
+                    });
+                  }
+                }}
+              />
+              {intl.formatMessage(messages.hideWatched)}
+            </label>
+            <p className="text-xs text-gray-400">
+              {intl.formatMessage(messages.hideWatchedTip)}
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-lg font-semibold text-gray-100">
             {intl.formatMessage(messages.traktOptions)}
           </div>
           <div className="flex flex-col gap-2">
             {(
               [
-                ['ignoreWatched', messages.hideWatched],
                 ['ignoreCollected', messages.hideCollected],
                 ['ignoreWatchlisted', messages.hideWatchlisted],
               ] as const

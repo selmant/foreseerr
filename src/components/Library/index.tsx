@@ -4,8 +4,10 @@ import PageTitle from '@app/components/Common/PageTitle';
 import LibraryInspector from '@app/components/Library/LibraryInspector';
 import LibraryModeNav from '@app/components/Library/LibraryModeNav';
 import LibraryPlayCard from '@app/components/Library/LibraryPlayCard';
+import { libraryMediaActionRefs } from '@app/components/Library/libraryPosterWatchMark';
 import ManageSlideOver from '@app/components/ManageSlideOver';
 import Slider from '@app/components/Slider';
+import { TitleCardBatchProvider } from '@app/components/TitleCard/TitleCardBatchContext';
 import defineMessages from '@app/utils/defineMessages';
 import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
 import type {
@@ -70,11 +72,18 @@ const Library = () => {
     if (watchNow?.code === 'server_unreachable') {
       return intl.formatMessage(messages.serverUnreachable);
     }
+    if (watchNowError && !watchNow?.shelves.length) {
+      return intl.formatMessage(messages.serverUnreachable);
+    }
     if (watchNow && !watchNow.shelves.length && !watchNowError) {
       return intl.formatMessage(messages.emptyShelves);
     }
     return null;
   })();
+
+  const batchRefs = libraryMediaActionRefs(
+    (watchNow?.shelves ?? []).flatMap((shelf) => shelf.items)
+  );
 
   return (
     <>
@@ -99,33 +108,35 @@ const Library = () => {
             </p>
           ) : null}
 
-          {(watchNow?.shelves ?? []).map((shelf) => (
-            <div
-              key={shelf.id}
-              className={shelf.id === 'continue' ? 'mb-10' : 'mb-8'}
-            >
-              <div className="slider-header">
-                <div className="slider-title">
-                  <span className="library-display uppercase">
-                    {shelf.title}
-                  </span>
+          <TitleCardBatchProvider refs={batchRefs}>
+            {(watchNow?.shelves ?? []).map((shelf) => (
+              <div
+                key={shelf.id}
+                className={shelf.id === 'continue' ? 'mb-10' : 'mb-8'}
+              >
+                <div className="slider-header">
+                  <div className="slider-title">
+                    <span className="library-display uppercase">
+                      {shelf.title}
+                    </span>
+                  </div>
                 </div>
+                <Slider
+                  sliderKey={`library-${shelf.id}`}
+                  isLoading={false}
+                  items={shelf.items.map((item) => (
+                    <LibraryPlayCard
+                      key={`${shelf.id}-${item.jellyfinItemId}`}
+                      item={item}
+                      variant={shelf.id === 'continue' ? 'resume' : 'poster'}
+                      surface="overview"
+                      onOpen={setInspectorItem}
+                    />
+                  ))}
+                />
               </div>
-              <Slider
-                sliderKey={`library-${shelf.id}`}
-                isLoading={false}
-                items={shelf.items.map((item) => (
-                  <LibraryPlayCard
-                    key={`${shelf.id}-${item.jellyfinItemId}`}
-                    item={item}
-                    variant={shelf.id === 'continue' ? 'resume' : 'poster'}
-                    surface="overview"
-                    onOpen={setInspectorItem}
-                  />
-                ))}
-              />
-            </div>
-          ))}
+            ))}
+          </TitleCardBatchProvider>
         </>
       )}
 

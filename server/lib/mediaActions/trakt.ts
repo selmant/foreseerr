@@ -1,9 +1,9 @@
 import { getSettings } from '@server/lib/settings';
 import {
   TraktNotConfiguredError,
-  TraktNotLinkedError,
   createTraktUserClient,
   getTraktAppCredentials,
+  traktAvailabilityFromError,
 } from '@server/lib/trakt';
 import { providerRatingToStars, ratingStarsToProvider } from './score';
 import {
@@ -60,10 +60,7 @@ export class TraktMediaActionProvider implements MediaActionProvider {
       await createTraktUserClient(userId);
       return true;
     } catch (e) {
-      if (e instanceof TraktNotLinkedError) {
-        return false;
-      }
-      throw e;
+      return traktAvailabilityFromError(e);
     }
   }
 

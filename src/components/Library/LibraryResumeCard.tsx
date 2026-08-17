@@ -62,10 +62,16 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
           <p className="truncate text-sm text-gray-400">{item.subtitle}</p>
         ) : null}
         <Button
+          as="a"
+          href={item.mediaUrl}
           buttonType="primary"
           buttonSize="sm"
           className="min-h-11"
+          data-testid="library-resume-play"
           onClick={(event) => {
+            if (!item.mediaUrl) {
+              event.preventDefault();
+            }
             void playItem(event, item, onOpen);
           }}
         >

@@ -91,6 +91,7 @@ const messages = defineMessages('components.TitleCard', {
   movieError: 'Could not request. Opening the full request form.',
   play: 'Play',
   manage: 'Manage in {service}',
+  moreRequestOptions: 'More request options',
 });
 
 const TitleCard = ({
@@ -928,7 +929,9 @@ const TitleCard = ({
                         disabled={isQuickRequesting}
                         aria-expanded={showTvMenu}
                         aria-haspopup="menu"
-                        aria-label="More request options"
+                        aria-label={intl.formatMessage(
+                          messages.moreRequestOptions
+                        )}
                         className="button-md relative z-40 inline-flex h-7 items-center justify-center rounded-r-md border border-l-0 border-indigo-500 bg-indigo-600/80 px-2 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={toggleTvMenu}
                         onMouseDown={(e) => {

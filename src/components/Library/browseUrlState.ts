@@ -70,6 +70,18 @@ export const serializeBrowseApiQuery = (
   state: LibraryBrowsePageState
 ): URLSearchParams => serializeLibraryBrowseQuery(state);
 
+/** Keep a typed-but-not-yet-debounced search when Movies/Unwatched patch. */
+export const mergeBrowsePatch = (
+  state: LibraryBrowsePageState,
+  patch: Partial<ParsedLibraryBrowseQuery>,
+  pendingQuery: string
+): LibraryBrowsePageState => ({
+  ...state,
+  ...patch,
+  q: patch.q !== undefined ? patch.q : pendingQuery.trim() || undefined,
+  skip: 0,
+});
+
 export const LIBRARY_SCROLL_KEY = 'foreseer.library.browse.scroll';
 
 export const storeBrowseScroll = (scrollY: number) => {

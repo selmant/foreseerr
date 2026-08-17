@@ -4,6 +4,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters';
 import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
 import useDiscover from '@app/hooks/useDiscover';
+import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import useSettings from '@app/hooks/useSettings';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -36,6 +37,7 @@ const DiscoverTraktList = () => {
     url ? '/api/v1/discover/trakt/list' : '',
     prepareTraktDiscoverOptions(router.query, ['url', 'sort'])
   );
+  useRegisterHideWatchedRevalidation(mutate);
 
   if (!settings.currentSettings.traktConfigured) {
     return <ErrorPage statusCode={404} />;

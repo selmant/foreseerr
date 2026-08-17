@@ -2,7 +2,7 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import useToasts from '@app/hooks/useToasts';
 import axios from 'axios';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Select, { type StylesConfig } from 'react-select';
 
 type Episode = {
@@ -69,6 +69,9 @@ type Candidate = {
   complete: boolean;
 };
 type GrabFeedback = { kind: 'success' | 'error'; message: string };
+
+const MANUAL_IMPORT_POLL_MS = 2000;
+const MANUAL_IMPORT_POLL_DEADLINE_MS = 5 * 60 * 1000;
 
 const formatSize = (size: number) =>
   `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
@@ -163,6 +166,10 @@ const ServarrPanel = ({
   >({});
   const [mode, setMode] = useState<'move' | 'copy'>('move');
   const [importStatus, setImportStatus] = useState<string>();
+  const importPollRef = useRef<{
+    timeoutId?: number;
+    cancelled: boolean;
+  }>({ cancelled: false });
   const episodes = useMemo(
     () => context?.seasons?.flatMap((season) => season.episodes) ?? [],
     [context]
@@ -253,6 +260,22 @@ const ServarrPanel = ({
       .finally(() => setLoading(false));
     void refreshImportSources();
   }, [is4k, mediaId, refreshImportSources]);
+
+  useEffect(() => {
+    setReleases([]);
+    setGrabFeedback(undefined);
+  }, [target, episodeId, seasonNumber]);
+
+  useEffect(() => {
+    const poll = importPollRef.current;
+    poll.cancelled = false;
+    return () => {
+      poll.cancelled = true;
+      if (poll.timeoutId != null) {
+        window.clearTimeout(poll.timeoutId);
+      }
+    };
+  }, []);
 
   const search = async () => {
     setLoading(true);
@@ -429,11 +452,23 @@ const ServarrPanel = ({
       setImportWorkflowOpen(false);
       void refreshImportSources();
       onChanged();
+      const startedAt = Date.now();
       const poll = async () => {
+        const pollState = importPollRef.current;
+        if (pollState.cancelled) {
+          return;
+        }
+        if (Date.now() - startedAt > MANUAL_IMPORT_POLL_DEADLINE_MS) {
+          setError('Manual import status check timed out.');
+          return;
+        }
         try {
           const status = await axios.get<{ status: string; message?: string }>(
             `/api/v1/media/${mediaId}/servarr/commands/${response.data.commandToken}?is4k=${is4k}`
           );
+          if (pollState.cancelled) {
+            return;
+          }
           setImportStatus(status.data.status);
           if (['completed', 'failed', 'aborted'].includes(status.data.status)) {
             if (status.data.status === 'completed') {
@@ -446,12 +481,18 @@ const ServarrPanel = ({
             } else setError(status.data.message ?? 'Manual import failed.');
             return;
           }
-          window.setTimeout(poll, 2000);
+          pollState.timeoutId = window.setTimeout(() => {
+            void poll();
+          }, MANUAL_IMPORT_POLL_MS);
         } catch {
-          setError('Unable to read manual import status.');
+          if (!pollState.cancelled) {
+            setError('Unable to read manual import status.');
+          }
         }
       };
-      window.setTimeout(poll, 2000);
+      importPollRef.current.timeoutId = window.setTimeout(() => {
+        void poll();
+      }, MANUAL_IMPORT_POLL_MS);
     } catch (err) {
       setError(
         axios.isAxiosError(err)
@@ -644,7 +685,7 @@ const ServarrPanel = ({
             Choose an Arr import source
           </div>
           <p className="text-gray-300">
-            Foreseer asks {context.service.name} to scan the selected download;
+            Foreseerr asks {context.service.name} to scan the selected download;
             it does not inspect your filesystem itself.
           </p>
           <select

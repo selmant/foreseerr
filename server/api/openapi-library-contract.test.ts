@@ -118,6 +118,14 @@ describe('OpenAPI library contract', () => {
       'density is a client layout flag, not a browse API query'
     );
 
+    const facets = apiDocs.paths['/library/facets'].get as {
+      parameters: { name: string }[];
+    };
+    assert.ok(
+      facets.parameters?.some((parameter) => parameter.name === 'mediaType'),
+      'facets missing query mediaType'
+    );
+
     const image = apiDocs.paths[
       '/library/items/{jellyfinItemId}/images/{imageType}'
     ].get as {

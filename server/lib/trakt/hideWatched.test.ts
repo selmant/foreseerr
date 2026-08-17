@@ -10,9 +10,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   buildWatchedIdSets,
+  buildWatchedIdSetsFromJellyfinItems,
   filterWatchedMixedBrowseResults,
   filterWatchedTraktItems,
   isWatchedInSets,
+  unionWatchedIdSets,
 } from './hideWatched';
 
 describe('hideWatched', () => {
@@ -93,6 +95,37 @@ describe('hideWatched', () => {
         after
       ).map((i) => i.tmdbId),
       [999]
+    );
+  });
+
+  it('unions Jellyfin played titles with Trakt watched ids', () => {
+    const traktSets = buildWatchedIdSets(snapshot);
+    const jellyfinSets = buildWatchedIdSetsFromJellyfinItems([
+      {
+        Type: 'Movie',
+        ProviderIds: { Tmdb: '42' },
+      } as never,
+      {
+        Type: 'Series',
+        ProviderIds: { TheMovieDb: '1396' },
+      } as never,
+    ]);
+    const combined = unionWatchedIdSets(traktSets, jellyfinSets);
+
+    assert.equal(isWatchedInSets(combined, 'movie', 550), true);
+    assert.equal(isWatchedInSets(combined, 'movie', 42), true);
+    assert.equal(isWatchedInSets(combined, 'tv', 1399), true);
+    assert.equal(isWatchedInSets(combined, 'tv', 1396), true);
+    assert.deepEqual(
+      filterWatchedMixedBrowseResults(
+        [
+          { id: 550, mediaType: 'movie' },
+          { id: 42, mediaType: 'movie' },
+          { id: 7, mediaType: 'movie' },
+        ],
+        combined
+      ).map((item) => item.id),
+      [7]
     );
   });
 });

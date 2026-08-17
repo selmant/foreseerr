@@ -28,12 +28,21 @@ describe('hydrateForgottenLibraryTitles', () => {
           Type: 'Movie',
           Name: 'Dune',
           ProductionYear: 2021,
+          Overview: 'Arrakis.',
+          Genres: ['Sci-Fi'],
+          BackdropImageTags: ['tag'],
         },
       ]
     );
     assert.equal(out.title, 'Dune');
     assert.equal(out.year, 2021);
+    assert.equal(out.overview, 'Arrakis.');
+    assert.deepEqual(out.genres, ['Sci-Fi']);
     assert.equal(out.posterUrl, '/api/v1/library/items/movie-1/images/primary');
+    assert.equal(
+      out.backdropUrl,
+      '/api/v1/library/items/movie-1/images/backdrop'
+    );
     assert.equal(out.mediaId, 9);
     assert.equal(out.tmdbId, 42);
   });

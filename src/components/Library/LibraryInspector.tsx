@@ -34,8 +34,10 @@ const messages = defineMessages('components.Library.LibraryInspector', {
   watched: 'Watched',
   emptySeason: 'No episodes in this season.',
   loadFailed: 'Could not load this title. Try again.',
+  notFound: 'This title is no longer in your library.',
   notLinked: 'Link your Jellyfin account to inspect library titles.',
   unreachable: 'Could not reach Jellyfin.',
+  unsupported: 'Library inspector requires a Jellyfin media server.',
   seasons: 'Season',
 });
 
@@ -65,7 +67,11 @@ const LibraryInspector = ({
   const inspectorId =
     item?.inspectorItemId ?? item?.jellyfinSeriesId ?? item?.jellyfinItemId;
 
-  const { data, error } = useSWR<LibraryItemInspectorResponse>(
+  const {
+    data,
+    error,
+    mutate: mutateInspector,
+  } = useSWR<LibraryItemInspectorResponse>(
     show && inspectorId ? `/api/v1/library/items/${inspectorId}` : null
   );
 
@@ -105,14 +111,20 @@ const LibraryInspector = ({
       ? `/api/v1/library/series/${seriesId}/seasons/${selectedSeasonId}/episodes`
       : '';
 
+  const inspectorKey =
+    show && inspectorId ? `/api/v1/library/items/${inspectorId}` : '';
+
   useEffect(() => {
-    if (!episodesKey) {
+    if (!inspectorKey) {
       return undefined;
     }
     return registerLibraryShelfRevalidator(async () => {
-      await mutateEpisodes();
+      await Promise.all([
+        mutateInspector(),
+        episodesKey ? mutateEpisodes() : Promise.resolve(),
+      ]);
     });
-  }, [episodesKey, mutateEpisodes]);
+  }, [episodesKey, inspectorKey, mutateEpisodes, mutateInspector]);
 
   useEffect(() => {
     setEpisodeWatchOverrides(new Map());
@@ -167,6 +179,11 @@ const LibraryInspector = ({
         ? `/tv/${tmdbId}`
         : undefined;
   const artwork = data?.backdropUrl || data?.posterUrl || item?.backdropUrl;
+  const inspectorErrorStatus = (
+    error as { response?: { status?: number } } | undefined
+  )?.response?.status;
+  const inspectorNotFound =
+    data?.code === 'not_found' || inspectorErrorStatus === 404;
 
   return ReactDOM.createPortal(
     <Fragment>
@@ -217,17 +234,29 @@ const LibraryInspector = ({
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
-              {error || data?.code === 'server_unreachable' ? (
+              {data?.code === 'not_linked' ? (
+                <p className="text-sm text-gray-300">
+                  {intl.formatMessage(messages.notLinked)}
+                </p>
+              ) : data?.code === 'unsupported_media_server' ? (
+                <p className="text-sm text-gray-300">
+                  {intl.formatMessage(messages.unsupported)}
+                </p>
+              ) : inspectorNotFound ? (
+                <p
+                  className="text-sm text-red-400"
+                  role="alert"
+                  aria-live="polite"
+                >
+                  {intl.formatMessage(messages.notFound)}
+                </p>
+              ) : error || data?.code === 'server_unreachable' ? (
                 <p
                   className="text-sm text-red-400"
                   role="alert"
                   aria-live="polite"
                 >
                   {intl.formatMessage(messages.unreachable)}
-                </p>
-              ) : data?.code === 'not_linked' ? (
-                <p className="text-sm text-gray-300">
-                  {intl.formatMessage(messages.notLinked)}
                 </p>
               ) : !data ? (
                 <LoadingSpinner />

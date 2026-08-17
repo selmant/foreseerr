@@ -10,8 +10,10 @@ export type BrowseQueryFilters = {
   voteCountLte: number | null;
   genreIds: number[];
   language: string | null;
-  releaseDateGte: string | null;
-  releaseDateLte: string | null;
+  movieReleaseDateGte: string | null;
+  movieReleaseDateLte: string | null;
+  tvFirstAirDateGte: string | null;
+  tvFirstAirDateLte: string | null;
   runtimeGte: number | null;
   runtimeLte: number | null;
   seriesStatusIds: number[];
@@ -54,12 +56,16 @@ export const parseBrowseQueryFilters = (
   query: QueryInput
 ): BrowseQueryFilters => {
   const genreRaw = nullableQueryString(query, 'genre');
-  const releaseDateGte =
-    nullableQueryString(query, 'primaryReleaseDateGte') ??
-    nullableQueryString(query, 'firstAirDateGte');
-  const releaseDateLte =
-    nullableQueryString(query, 'primaryReleaseDateLte') ??
-    nullableQueryString(query, 'firstAirDateLte');
+  const movieReleaseDateGte = nullableQueryString(
+    query,
+    'primaryReleaseDateGte'
+  );
+  const movieReleaseDateLte = nullableQueryString(
+    query,
+    'primaryReleaseDateLte'
+  );
+  const tvFirstAirDateGte = nullableQueryString(query, 'firstAirDateGte');
+  const tvFirstAirDateLte = nullableQueryString(query, 'firstAirDateLte');
   const statusRaw = nullableQueryString(query, 'status');
 
   return {
@@ -74,8 +80,10 @@ export const parseBrowseQueryFilters = (
           .filter((id) => Number.isFinite(id))
       : [],
     language: nullableQueryString(query, 'language'),
-    releaseDateGte,
-    releaseDateLte,
+    movieReleaseDateGte,
+    movieReleaseDateLte,
+    tvFirstAirDateGte,
+    tvFirstAirDateLte,
     runtimeGte: nullableQueryNumber(query, 'withRuntimeGte'),
     runtimeLte: nullableQueryNumber(query, 'withRuntimeLte'),
     seriesStatusIds: statusRaw
@@ -143,8 +151,10 @@ export const needsTmdbBrowseFilters = (filters: BrowseQueryFilters): boolean =>
   filters.voteCountLte != null ||
   filters.genreIds.length > 0 ||
   filters.language != null ||
-  filters.releaseDateGte != null ||
-  filters.releaseDateLte != null ||
+  filters.movieReleaseDateGte != null ||
+  filters.movieReleaseDateLte != null ||
+  filters.tvFirstAirDateGte != null ||
+  filters.tvFirstAirDateLte != null ||
   filters.runtimeGte != null ||
   filters.runtimeLte != null ||
   filters.seriesStatusIds.length > 0;

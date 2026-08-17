@@ -196,6 +196,15 @@ describe('POST /auth/jellyfin/quickconnect/initiate', () => {
     assert.strictEqual(initiateQCMock.mock.callCount(), 1);
   });
 
+  it('returns 403 when the media server is Emby', async () => {
+    getSettings().main.mediaServerType = MediaServerType.EMBY;
+
+    const res = await request(app).post('/auth/jellyfin/quickconnect/initiate');
+
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(initiateQCMock.mock.callCount(), 0);
+  });
+
   it('returns 500 when Jellyfin API fails', async () => {
     initiateQCMock.mock.mockImplementation(async () => {
       throw new Error('Connection refused');
@@ -234,6 +243,17 @@ describe('GET /auth/jellyfin/quickconnect/check', () => {
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.authenticated, false);
     assert.strictEqual(checkQCMock.mock.callCount(), 1);
+  });
+
+  it('returns 403 when the media server is Emby', async () => {
+    getSettings().main.mediaServerType = MediaServerType.EMBY;
+
+    const res = await request(app)
+      .get('/auth/jellyfin/quickconnect/check')
+      .query({ secret: 'abc123def456abc123def456' });
+
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(checkQCMock.mock.callCount(), 0);
   });
 
   it('returns authenticated: true when authorized', async () => {
@@ -436,47 +456,31 @@ describe('POST /auth/jellyfin/quickconnect/authenticate', () => {
     const userRepo = getRepository(User);
     const newUser = await userRepo.findOne({
       where: { jellyfinUserId: 'jf-brand-new-user' },
+      select: {
+        id: true,
+        jellyfinUsername: true,
+        jellyfinAuthToken: true,
+        userType: true,
+      },
     });
     assert.ok(newUser);
     assert.strictEqual(newUser.jellyfinUsername, 'brandnewuser');
     assert.strictEqual(newUser.userType, UserType.JELLYFIN);
+    assert.strictEqual(newUser.jellyfinAuthToken, 'new-user-token');
 
     const meRes = await agent.get('/auth/me');
     assert.strictEqual(meRes.status, 200);
   });
 
-  it('sets userType to EMBY when media server is Emby', async () => {
-    const settings = getSettings();
-    settings.main.mediaServerType = MediaServerType.EMBY;
-    settings.main.newPlexLogin = true;
+  it('returns 403 when the media server is Emby', async () => {
+    getSettings().main.mediaServerType = MediaServerType.EMBY;
 
-    authenticateQCMock.mock.mockImplementation(async () => ({
-      User: {
-        Id: 'emby-new-user',
-        Name: 'embyuser',
-        ServerId: 'server-1',
-        Policy: { IsAdministrator: false },
-      },
-      AccessToken: 'emby-token',
-    }));
-
-    const agent = request.agent(app);
-    const res = await agent
+    const res = await request(app)
       .post('/auth/jellyfin/quickconnect/authenticate')
       .send({ secret: 'abc123def456abc123def456' });
 
-    assert.strictEqual(res.status, 200);
-
-    const meRes = await agent.get('/auth/me');
-    assert.strictEqual(meRes.status, 200);
-    assert.strictEqual(meRes.body.jellyfinUsername, 'embyuser');
-
-    const userRepo = getRepository(User);
-    const user = await userRepo.findOne({
-      where: { jellyfinUserId: 'emby-new-user' },
-    });
-    assert.ok(user);
-    assert.strictEqual(user.userType, UserType.EMBY);
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(authenticateQCMock.mock.callCount(), 0);
   });
 
   it('applies default permissions to newly created users', async () => {

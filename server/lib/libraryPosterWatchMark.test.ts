@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  libraryMediaActionRefs,
   libraryWatchMark,
   showLibraryUnplayedPip,
 } from '../../src/components/Library/libraryPosterWatchMark';
@@ -83,5 +84,17 @@ describe('showLibraryUnplayedPip', () => {
   it('hides when in progress so the bar is the only mark', () => {
     assert.equal(showLibraryUnplayedPip({ inProgress: true }), false);
     assert.equal(showLibraryUnplayedPip({ progressPercent: 40 }), false);
+  });
+});
+
+describe('libraryMediaActionRefs', () => {
+  it('keeps titles with a tmdb id for any-provider watch status', () => {
+    assert.deepEqual(
+      libraryMediaActionRefs([
+        { mediaType: 'movie', tmdbId: 1, title: 'Dune', year: 2021 },
+        { mediaType: 'tv', title: 'No id' },
+      ]),
+      [{ mediaType: 'movie', tmdbId: 1, title: 'Dune', year: 2021 }]
+    );
   });
 });

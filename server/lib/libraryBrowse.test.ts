@@ -4,6 +4,7 @@ import {
   jellyfinItemImageRequest,
   libraryTitleDisplayFields,
   listBrowseFromClient,
+  productionYearsFilter,
   uniqueSortedGenres,
 } from '@server/lib/libraryBrowse';
 import { parseLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
@@ -60,8 +61,11 @@ describe('buildJellyfinBrowseParams', () => {
       'u'
     );
     assert.equal(params.Genres, 'Action,Drama');
-    assert.equal(params.MinPremiereDate, '1990-01-01');
-    assert.equal(params.MaxPremiereDate, '2024-12-31');
+    assert.equal(params.MinPremiereDate, undefined);
+    assert.equal(params.MaxPremiereDate, undefined);
+    assert.equal(params.Years, productionYearsFilter(1990, 2024));
+    assert.equal(String(params.Years).startsWith('1990,'), true);
+    assert.equal(String(params.Years).endsWith(',2024'), true);
   });
 
   it('omits empty search and default movie+series include', () => {
@@ -198,13 +202,28 @@ describe('listBrowseFromClient', () => {
     );
 
     assert.equal(forwarded?.Genres, 'Sci-Fi');
-    assert.equal(forwarded?.MinPremiereDate, '2020-01-01');
+    assert.equal(forwarded?.Years, productionYearsFilter(2020, undefined));
+    assert.equal(forwarded?.MinPremiereDate, undefined);
     assert.equal(forwarded?.StartIndex, 10);
     assert.equal(forwarded?.Limit, 10);
     assert.equal(result.total, 2);
     assert.equal(result.results[0].playItemId, 'movie-1');
     assert.equal(result.results[0].mediaId, 42);
     assert.equal(result.results[1].playItemId, undefined);
+  });
+});
+
+describe('productionYearsFilter', () => {
+  it('omits years when neither bound is set', () => {
+    assert.equal(productionYearsFilter(), undefined);
+  });
+
+  it('lists inclusive ProductionYear values', () => {
+    assert.equal(productionYearsFilter(2020, 2022), '2020,2021,2022');
+  });
+
+  it('swaps inverted bounds', () => {
+    assert.equal(productionYearsFilter(2022, 2020), '2020,2021,2022');
   });
 });
 

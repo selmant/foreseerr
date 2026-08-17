@@ -9,10 +9,9 @@ import {
   hasBrowseQueryFilters,
   parseBrowseQueryFilters,
 } from '@server/lib/requestFilters';
-import { TraktNotLinkedError, createTraktUserClient } from '@server/lib/trakt';
 import {
   filterWatchedTraktItems,
-  loadWatchedIdSets,
+  loadCombinedWatchedIdSets,
 } from '@server/lib/trakt/hideWatched';
 import { paginateSortedTraktItems } from '@server/lib/trakt/mixedPagination';
 import type { Request } from 'express';
@@ -56,15 +55,8 @@ export async function filterTraktDiscoverPageItems(
     options.user?.id &&
     parseTruthyQuery(options.query?.ignoreWatched)
   ) {
-    try {
-      const trakt = await createTraktUserClient(options.user.id);
-      const watchedSets = await loadWatchedIdSets(options.user.id, trakt);
-      filtered = filterWatchedTraktItems(filtered, watchedSets);
-    } catch (e) {
-      if (!(e instanceof TraktNotLinkedError)) {
-        throw e;
-      }
-    }
+    const watchedSets = await loadCombinedWatchedIdSets(options.user.id);
+    filtered = filterWatchedTraktItems(filtered, watchedSets);
   }
 
   return filtered;

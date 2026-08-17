@@ -53,9 +53,12 @@ const messages = defineMessages('components.Discover.FilterSlideover', {
   status: 'Status',
   certification: 'Content Rating',
   hideWatched: 'Hide watched',
+  hideWatchedTip:
+    'Uses Jellyfin and Trakt watch history when either is available.',
   hideCollected: 'Hide collected',
   hideWatchlisted: 'Hide watchlisted',
   traktOptions: 'Trakt',
+  watchedOptions: 'Watched',
   externalRatings: 'External ratings (MDBList)',
   externalRatingsTip:
     'Requires an MDBList API key in Settings. Full-range sliders are off.',
@@ -124,9 +127,7 @@ const FilterSlideover = ({
   const { data: traktStatus } = useSWR<{
     connected: boolean;
   }>(
-    (showHideWatched || showTraktRecommendationFilters) &&
-      currentSettings.traktConfigured &&
-      user
+    showTraktRecommendationFilters && currentSettings.traktConfigured && user
       ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
       : null
   );
@@ -176,64 +177,67 @@ const FilterSlideover = ({
       onClose={() => onClose()}
     >
       <div className="flex flex-col space-y-4">
-        {(showHideWatched || showTraktRecommendationFilters) &&
-          traktStatus?.connected && (
-            <div>
-              <div className="mb-2 text-lg font-semibold">
-                {intl.formatMessage(messages.traktOptions)}
-              </div>
-              <div className="flex flex-col gap-2">
-                {showHideWatched && (
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-                    <input
-                      type="checkbox"
-                      className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-                      checked={ignoreWatched}
-                      onChange={(e) =>
-                        updateQueryParams(
-                          'ignoreWatched',
-                          e.target.checked ? 'true' : 'false'
-                        )
-                      }
-                    />
-                    {intl.formatMessage(messages.hideWatched)}
-                  </label>
-                )}
-                {showTraktRecommendationFilters && (
-                  <>
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-                      <input
-                        type="checkbox"
-                        className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-                        checked={ignoreCollected}
-                        onChange={(e) =>
-                          updateQueryParams(
-                            'ignoreCollected',
-                            e.target.checked ? 'true' : 'false'
-                          )
-                        }
-                      />
-                      {intl.formatMessage(messages.hideCollected)}
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-                      <input
-                        type="checkbox"
-                        className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-                        checked={ignoreWatchlisted}
-                        onChange={(e) =>
-                          updateQueryParams(
-                            'ignoreWatchlisted',
-                            e.target.checked ? 'true' : 'false'
-                          )
-                        }
-                      />
-                      {intl.formatMessage(messages.hideWatchlisted)}
-                    </label>
-                  </>
-                )}
-              </div>
+        {showHideWatched && (
+          <div>
+            <div className="mb-2 text-lg font-semibold">
+              {intl.formatMessage(messages.watchedOptions)}
             </div>
-          )}
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                className="rounded border-gray-500 bg-gray-800 text-indigo-500"
+                checked={ignoreWatched}
+                onChange={(e) =>
+                  updateQueryParams(
+                    'ignoreWatched',
+                    e.target.checked ? 'true' : 'false'
+                  )
+                }
+              />
+              {intl.formatMessage(messages.hideWatched)}
+            </label>
+            <p className="mt-1 text-xs text-gray-400">
+              {intl.formatMessage(messages.hideWatchedTip)}
+            </p>
+          </div>
+        )}
+        {showTraktRecommendationFilters && traktStatus?.connected && (
+          <div>
+            <div className="mb-2 text-lg font-semibold">
+              {intl.formatMessage(messages.traktOptions)}
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
+                <input
+                  type="checkbox"
+                  className="rounded border-gray-500 bg-gray-800 text-indigo-500"
+                  checked={ignoreCollected}
+                  onChange={(e) =>
+                    updateQueryParams(
+                      'ignoreCollected',
+                      e.target.checked ? 'true' : 'false'
+                    )
+                  }
+                />
+                {intl.formatMessage(messages.hideCollected)}
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
+                <input
+                  type="checkbox"
+                  className="rounded border-gray-500 bg-gray-800 text-indigo-500"
+                  checked={ignoreWatchlisted}
+                  onChange={(e) =>
+                    updateQueryParams(
+                      'ignoreWatchlisted',
+                      e.target.checked ? 'true' : 'false'
+                    )
+                  }
+                />
+                {intl.formatMessage(messages.hideWatchlisted)}
+              </label>
+            </div>
+          </div>
+        )}
         <div>
           <div className="mb-2 text-lg font-semibold">
             {intl.formatMessage(

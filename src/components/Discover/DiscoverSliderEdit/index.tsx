@@ -28,7 +28,7 @@ import { useDrag, useDrop } from 'react-aria';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverSliderEdit', {
-  deletesuccess: 'Sucessfully deleted slider.',
+  deletesuccess: 'Successfully deleted slider.',
   deletefail: 'Failed to delete slider.',
   remove: 'Remove',
   enable: 'Toggle Visibility',

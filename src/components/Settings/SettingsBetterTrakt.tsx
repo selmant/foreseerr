@@ -11,22 +11,22 @@ import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Settings.SettingsBetterTrakt', {
   description:
-    'Foreseer uses each linked Jellyfin user’s Better Trakt connection. The plugin keeps refresh tokens inside Jellyfin and shares only short-lived access tokens.',
+    'Foreseerr uses each linked Jellyfin user’s Better Trakt connection. The plugin keeps refresh tokens inside Jellyfin and shares only short-lived access tokens.',
   setup: 'Before switching',
   plugin: 'Install Better Trakt 1000.2026.731.3 or newer in Jellyfin.',
   pluginLink: 'Open Better Trakt releases',
   user: 'Each user links Trakt from the Better Trakt settings in Jellyfin.',
   admin:
-    'A Jellyfin administrator enables external token access for each Foreseer user.',
+    'A Jellyfin administrator enables external token access for each Foreseerr user.',
   readiness: 'User readiness',
   readinessSummary:
     '{ready} of {eligible} linked {eligible, plural, one {user is} other {users are}} ready',
   noEligibleUsers:
-    'No Foreseer users are linked to Jellyfin yet. Users can finish setup from their Linked Accounts page after this method is active.',
+    'No Foreseerr users are linked to Jellyfin yet. Users can finish setup from their Linked Accounts page after this method is active.',
   ready: 'Ready',
   needsSessionRefresh: 'Refresh Jellyfin sign-in',
   needsTraktLink: 'Link Trakt in Better Trakt',
-  needsAccess: 'Allow Foreseer access in Jellyfin',
+  needsAccess: 'Allow Foreseerr access in Jellyfin',
   unavailable: 'Better Trakt unavailable',
   serverWide:
     'This method is configured once for the server, but readiness is checked separately for each Jellyfin user.',

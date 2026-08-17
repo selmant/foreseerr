@@ -80,18 +80,39 @@ class EpisodeRequestSync {
   ) {
     const settings = getSettings();
     const media = request.media;
-    const serviceId = request.is4k ? media.serviceId4k : media.serviceId;
-    const externalId = request.is4k
+    const mediaServiceId = request.is4k ? media.serviceId4k : media.serviceId;
+    const mediaExternalId = request.is4k
       ? media.externalServiceId4k
       : media.externalServiceId;
     const server =
       settings.sonarr.find((item) => item.id === request.serverId) ??
-      settings.sonarr.find((item) => item.id === serviceId) ??
+      settings.sonarr.find((item) => item.id === mediaServiceId) ??
       settings.sonarr.find(
         (item) => item.isDefault && item.is4k === request.is4k
       );
 
-    if (!server || !externalId) {
+    if (!server) {
+      return undefined;
+    }
+
+    const api = new SonarrAPI({
+      apiKey: server.apiKey,
+      url: SonarrAPI.buildUrl(server, '/api/v3'),
+    });
+    let externalId = mediaExternalId;
+    if (mediaServiceId !== server.id) {
+      if (!media.tvdbId) {
+        return undefined;
+      }
+      const series = (await api.getSeries()).find(
+        (item) => item.tvdbId === media.tvdbId
+      );
+      if (!series) {
+        return undefined;
+      }
+      externalId = series.id;
+    }
+    if (!externalId) {
       return undefined;
     }
     const key = `${server.id}:${externalId}`;
@@ -100,10 +121,6 @@ class EpisodeRequestSync {
       return cached;
     }
 
-    const api = new SonarrAPI({
-      apiKey: server.apiKey,
-      url: SonarrAPI.buildUrl(server, '/api/v3'),
-    });
     const [series, episodes] = await Promise.all([
       api.getSeriesById(externalId),
       api.getEpisodes(externalId),

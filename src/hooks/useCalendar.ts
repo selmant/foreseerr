@@ -4,6 +4,7 @@ import type {
   CalendarScope,
   CalendarSource,
 } from '@server/interfaces/api/calendarInterfaces';
+import { toCalendarDateKey } from '@server/lib/releases/calendarDateKey';
 import useSWR from 'swr';
 
 export interface CalendarQuery {
@@ -26,8 +27,8 @@ const calendarKey = ({
   includeEpisodes = true,
 }: CalendarQuery) => {
   const parameters = new URLSearchParams({
-    start: start.toISOString(),
-    end: end.toISOString(),
+    start: toCalendarDateKey(start),
+    end: toCalendarDateKey(end),
     scope,
     includeEpisodes: String(includeEpisodes),
   });

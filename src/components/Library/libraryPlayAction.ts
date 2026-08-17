@@ -18,3 +18,21 @@ export const handleLibraryPlayClick = (
   }
   return false;
 };
+
+/**
+ * After an async inspector lookup we already preventDefault, so the browser
+ * will not follow href. Send the user to Jellyfin when native play is denied.
+ */
+export const shouldNavigatePlayFallback = (
+  nativeAdmitted: boolean,
+  alreadyPreventedDefault: boolean,
+  fallbackUrl: string
+): boolean =>
+  !nativeAdmitted && alreadyPreventedDefault && Boolean(fallbackUrl);
+
+export const navigatePlayFallback = (fallbackUrl: string): void => {
+  if (typeof window === 'undefined' || !fallbackUrl) {
+    return;
+  }
+  window.location.assign(fallbackUrl);
+};

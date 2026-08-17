@@ -113,6 +113,9 @@ interface QueueResponse<QueueItemAppendT> {
   records: (QueueItem & QueueItemAppendT)[];
 }
 
+const QUEUE_PAGE_SIZE = 250;
+const QUEUE_MAX_PAGES = 40;
+
 /**
  * Arr GET /manualimport treats seriesId/movieId as "scan the library folder".
  * That 500s when the folder does not exist yet. Queue-based interactive import
@@ -222,16 +225,29 @@ class ServarrBase<QueueItemAppendT> extends ExternalAPI {
 
   public getQueue = async (): Promise<(QueueItem & QueueItemAppendT)[]> => {
     try {
-      const response = await this.axios.get<QueueResponse<QueueItemAppendT>>(
-        `/queue`,
-        {
-          params: {
-            includeEpisode: true,
-          },
+      const records: (QueueItem & QueueItemAppendT)[] = [];
+      for (let page = 1; page <= QUEUE_MAX_PAGES; page += 1) {
+        const response = await this.axios.get<QueueResponse<QueueItemAppendT>>(
+          `/queue`,
+          {
+            params: {
+              page,
+              pageSize: QUEUE_PAGE_SIZE,
+              includeEpisode: true,
+            },
+          }
+        );
+        const pageRecords = response.data.records ?? [];
+        records.push(...pageRecords);
+        const totalRecords = response.data.totalRecords ?? records.length;
+        if (
+          records.length >= totalRecords ||
+          pageRecords.length < QUEUE_PAGE_SIZE
+        ) {
+          break;
         }
-      );
-
-      return response.data.records;
+      }
+      return records;
     } catch (e) {
       throw new Error(
         `[${this.apiName}] Failed to retrieve queue: ${e.message}`,

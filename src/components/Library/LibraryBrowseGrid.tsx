@@ -1,4 +1,6 @@
 import LibraryPlayCard from '@app/components/Library/LibraryPlayCard';
+import { libraryMediaActionRefs } from '@app/components/Library/libraryPosterWatchMark';
+import { TitleCardBatchProvider } from '@app/components/TitleCard/TitleCardBatchContext';
 import defineMessages from '@app/utils/defineMessages';
 import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
 import type { LibraryDensity } from '@server/lib/libraryBrowseQuery';
@@ -35,6 +37,7 @@ const LibraryBrowseGrid = ({
 }: LibraryBrowseGridProps) => {
   const intl = useIntl();
   const minWidth = density === 'compact' ? '7.5rem' : '10rem';
+  const batchRefs = libraryMediaActionRefs(items);
 
   if (error) {
     return (
@@ -62,7 +65,7 @@ const LibraryBrowseGrid = ({
   }
 
   return (
-    <>
+    <TitleCardBatchProvider refs={batchRefs}>
       <div
         className={`grid ${density === 'compact' ? 'gap-2' : 'gap-4'}`}
         style={{
@@ -93,7 +96,7 @@ const LibraryBrowseGrid = ({
           {intl.formatMessage(messages.end)}
         </p>
       ) : null}
-    </>
+    </TitleCardBatchProvider>
   );
 };
 

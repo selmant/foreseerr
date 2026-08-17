@@ -1,9 +1,6 @@
 import type { RadarrMovieOptions } from '@server/api/servarr/radarr';
 import RadarrAPI from '@server/api/servarr/radarr';
-import type {
-  AddSeriesOptions,
-  SonarrSeries,
-} from '@server/api/servarr/sonarr';
+import type { AddSeriesOptions } from '@server/api/servarr/sonarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import TheMovieDb from '@server/api/themoviedb';
 import {
@@ -20,6 +17,10 @@ import SeasonRequest from '@server/entity/SeasonRequest';
 import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { getSettings } from '@server/lib/settings';
+import {
+  resolveSonarrSeriesRouting,
+  shouldShortCircuitAvailableTvRequest,
+} from '@server/lib/sonarrRequestRouting';
 import logger from '@server/logger';
 import { isEqual, truncate } from 'lodash';
 import type {
@@ -523,9 +524,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           throw new Error('Media data not found');
         }
 
-        if (
-          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
-        ) {
+        if (shouldShortCircuitAvailableTvRequest(entity, media)) {
           logger.warn('Media already exists, marking request as COMPLETED', {
             label: 'Media Request',
             requestId: entity.id,
@@ -600,32 +599,15 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           url: SonarrAPI.buildUrl(sonarrSettings, '/api/v3'),
         });
 
-        let seriesType: SonarrSeries['seriesType'] = 'standard';
-
-        if (mediaIsAnime) {
-          seriesType = sonarrSettings.animeSeriesType ?? 'anime';
-        }
-
-        let rootFolder =
-          seriesType === 'anime' && sonarrSettings.activeAnimeDirectory
-            ? sonarrSettings.activeAnimeDirectory
-            : sonarrSettings.activeDirectory;
-        let qualityProfile =
-          seriesType === 'anime' && sonarrSettings.activeAnimeProfileId
-            ? sonarrSettings.activeAnimeProfileId
-            : sonarrSettings.activeProfileId;
-        let languageProfile =
-          seriesType === 'anime' && sonarrSettings.activeAnimeLanguageProfileId
-            ? sonarrSettings.activeAnimeLanguageProfileId
-            : sonarrSettings.activeLanguageProfileId;
-        let tags =
-          seriesType === 'anime'
-            ? sonarrSettings.animeTags
-              ? [...sonarrSettings.animeTags]
-              : []
-            : sonarrSettings.tags
-              ? [...sonarrSettings.tags]
-              : [];
+        const routing = resolveSonarrSeriesRouting(
+          sonarrSettings,
+          mediaIsAnime
+        );
+        const seriesType = routing.seriesType;
+        let rootFolder = routing.rootFolder;
+        let qualityProfile = routing.qualityProfile;
+        let languageProfile = routing.languageProfile;
+        let tags = routing.tags;
 
         if (
           entity.rootFolder &&

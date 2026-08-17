@@ -217,7 +217,13 @@ When adding new UI text, please try to adhere to the following guidelines:
 
 ## Translation
 
-We use [Weblate](https://translate.seerr.dev/projects/seerr/seerr-frontend/) for our translations, and your help with localizing Seerr would be greatly appreciated! If your language is not listed below, please [open a feature request](/../../issues/new/choose).
+Upstream Seerr still hosts [Weblate](https://translate.seerr.dev/projects/seerr/seerr-frontend/) for shared strings. Foreseerr has **not** stood up a separate Weblate project.
+
+Roughly ~492 Foreseerr-only message keys exist in `src/i18n/locale/en.json` and are English-only across the other locale files. The UI still works because `react-intl` falls back to each message’s `defaultMessage`. When you add or change UI copy:
+
+1. Use `defineMessages` / `intl.formatMessage` with a clear `defaultMessage` (do not hardcode English in JSX).
+2. Run `pnpm i18n:extract` and commit `src/i18n/locale/en.json`.
+3. Do **not** invent translations for other locales unless you are updating Weblate-backed Seerr-shared keys; leave non-`en` files alone for Foreseerr-only keys so they keep falling back to English.
 
 <a href="https://translate.seerr.dev/engage/seerr/"><img src="https://translate.seerr.dev/widget/seerr/multi-auto.svg" alt="Translation status" /></a>
 

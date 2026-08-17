@@ -2,6 +2,7 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
+import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -26,9 +27,11 @@ const DiscoverTvGenre = () => {
     fetchMore,
     error,
     firstResultData,
+    mutate,
   } = useDiscover<TvResult, { genre: { id: number; name: string } }>(
     `/api/v1/discover/tv/genre/${router.query.genreId}`
   );
+  useRegisterHideWatchedRevalidation(mutate);
 
   if (error) {
     return <ErrorPage statusCode={500} />;

@@ -11,9 +11,11 @@ import { ApiError } from '@server/types/error';
 import express, { type Express } from 'express';
 import session from 'express-session';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import request from 'supertest';
-import desktopRoutes from './desktop';
+import desktopRoutes, { resetDesktopAuthRateLimitsForTests } from './desktop';
 
 let app: Express;
 let apiApp: Express;
@@ -60,6 +62,7 @@ after(() => {
 setupTestDb();
 
 beforeEach(async () => {
+  resetDesktopAuthRateLimitsForTests();
   const settings = getSettings();
   settings.main.mediaServerType = MediaServerType.JELLYFIN;
   settings.jellyfin.serverId = 'server-1';
@@ -248,6 +251,33 @@ describe('desktop auth tickets', () => {
     }
   });
 
+  it('allows retrying a ticket after Jellyfin bootstrap fails', async () => {
+    JellyfinAPI.prototype.getUser = async () => {
+      throw new ApiError(503, ApiErrorCode.InvalidAuthToken);
+    };
+    const verifier = 'r'.repeat(43);
+    const challenge = await import('node:crypto').then(({ createHash }) =>
+      createHash('sha256').update(verifier).digest('hex')
+    );
+    const issued = await request(app)
+      .post('/desktop/auth-tickets')
+      .send({ challenge, protocolVersion: 1 });
+    assert.strictEqual(issued.status, 201);
+
+    const failed = await request(app)
+      .post('/desktop/auth-tickets/redeem')
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+    assert.strictEqual(failed.status, 503);
+    assert.strictEqual(failed.body.code, 'server_unreachable');
+
+    JellyfinAPI.prototype.getUser = async () => validLinkedIdentity();
+    const redeemed = await request(app)
+      .post('/desktop/auth-tickets/redeem')
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+    assert.strictEqual(redeemed.status, 200);
+    assert.strictEqual(redeemed.body.userId, 'user-1');
+  });
+
   it('rejects an HTTP Jellyfin bootstrap URL by default', async () => {
     getSettings().jellyfin.externalHostname = 'http://jellyfin.example.test';
     const verifier = 'h'.repeat(43);
@@ -264,5 +294,14 @@ describe('desktop auth tickets', () => {
       .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
     assert.strictEqual(redeemed.status, 500);
     assert.strictEqual(redeemed.body.accessToken, undefined);
+  });
+
+  it('exempts cookie-less ticket redeem from CSRF', () => {
+    const serverSource = readFileSync(join(__dirname, '../index.ts'), 'utf8');
+    assert.match(serverSource, /ignoreRequest:/);
+    assert.match(
+      serverSource,
+      /req\.path === '\/api\/v1\/desktop\/auth-tickets\/redeem'/
+    );
   });
 });

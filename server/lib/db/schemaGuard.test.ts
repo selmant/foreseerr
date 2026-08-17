@@ -65,4 +65,56 @@ describe('assertSupportedDatabaseSchema', () => {
 
     await assert.doesNotReject(() => assertSupportedDatabaseSchema(dataSource));
   });
+
+  it('resolves when Postgres reports the migrations relation is missing', async () => {
+    const dataSource = {
+      migrations: [{ name: 'InitialMigration123' }],
+      query: async () => {
+        throw Object.assign(new Error('relation "migrations" does not exist'), {
+          driverError: {
+            code: '42P01',
+            message: 'relation "migrations" does not exist',
+          },
+        });
+      },
+    } as unknown as DataSource;
+
+    await assert.doesNotReject(() => assertSupportedDatabaseSchema(dataSource));
+  });
+
+  it('refuses to start when the migrations table is unreadable', async () => {
+    const permission = Object.assign(
+      new Error('permission denied for table migrations'),
+      {
+        driverError: {
+          code: '42501',
+          message: 'permission denied for table migrations',
+        },
+      }
+    );
+    const permissionSource = {
+      migrations: [{ name: 'InitialMigration123' }],
+      query: async () => {
+        throw permission;
+      },
+    } as unknown as DataSource;
+
+    await assert.rejects(
+      () => assertSupportedDatabaseSchema(permissionSource),
+      permission
+    );
+
+    const connection = new Error('connect ECONNREFUSED 127.0.0.1:5432');
+    const connectionSource = {
+      migrations: [{ name: 'InitialMigration123' }],
+      query: async () => {
+        throw connection;
+      },
+    } as unknown as DataSource;
+
+    await assert.rejects(
+      () => assertSupportedDatabaseSchema(connectionSource),
+      connection
+    );
+  });
 });

@@ -26,6 +26,7 @@ const messages = defineMessages('components.Library.LibrarySeriesPanel', {
   play: 'Play',
   emptySeason: 'No episodes in this season.',
   loadFailed: 'Could not load seasons. Try again.',
+  notFound: 'This series is no longer in your library.',
   notLinked: 'Link your Jellyfin account to browse episodes.',
   unreachable: 'Could not reach Jellyfin.',
 });
@@ -59,12 +60,15 @@ const LibrarySeriesPanel = ({
     Map<string, boolean>
   >(new Map());
 
-  const { data: series, error: seriesError } =
-    useSWR<LibrarySeriesDetailResponse>(
-      show && jellyfinSeriesId
-        ? `/api/v1/library/series/${jellyfinSeriesId}`
-        : null
-    );
+  const {
+    data: series,
+    error: seriesError,
+    mutate: mutateSeries,
+  } = useSWR<LibrarySeriesDetailResponse>(
+    show && jellyfinSeriesId
+      ? `/api/v1/library/series/${jellyfinSeriesId}`
+      : null
+  );
 
   useEffect(() => {
     if (!series?.seasons?.length) {
@@ -104,20 +108,33 @@ const LibrarySeriesPanel = ({
       ? `/api/v1/library/series/${jellyfinSeriesId}/seasons/${selectedSeasonId}/episodes`
       : '';
 
+  const seriesKey =
+    show && jellyfinSeriesId
+      ? `/api/v1/library/series/${jellyfinSeriesId}`
+      : '';
+
   useEffect(() => {
-    if (!episodesKey) {
+    if (!seriesKey && !episodesKey) {
       return undefined;
     }
     return registerLibraryShelfRevalidator(async () => {
-      await mutateEpisodes();
+      await Promise.all([
+        seriesKey ? mutateSeries() : Promise.resolve(),
+        episodesKey ? mutateEpisodes() : Promise.resolve(),
+      ]);
     });
-  }, [episodesKey, mutateEpisodes]);
+  }, [episodesKey, mutateEpisodes, mutateSeries, seriesKey]);
 
   const title = series?.title || seedTitle || 'Series';
   const tmdbId = series?.tmdbId ?? seedTmdbId;
   const playItemId = series?.playItemId || seedPlayItemId;
   const playSubtitle = series?.subtitle || seedSubtitle;
   const statusCode = series?.code ?? episodes?.code;
+  const seriesErrorStatus = (
+    seriesError as { response?: { status?: number } } | undefined
+  )?.response?.status;
+  const seriesNotFound =
+    statusCode === 'not_found' || seriesErrorStatus === 404;
   const { data: managedTitle } = useSWR<TvDetails>(
     show && tmdbId && hasPermission(Permission.MANAGE_REQUESTS)
       ? `/api/v1/tv/${tmdbId}`
@@ -145,6 +162,10 @@ const LibrarySeriesPanel = ({
       {statusCode === 'not_linked' ? (
         <p className="text-sm text-gray-300">
           {intl.formatMessage(messages.notLinked)}
+        </p>
+      ) : seriesNotFound ? (
+        <p className="text-sm text-red-400">
+          {intl.formatMessage(messages.notFound)}
         </p>
       ) : statusCode === 'server_unreachable' || seriesError ? (
         <p className="text-sm text-red-400">

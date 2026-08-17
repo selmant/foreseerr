@@ -1,4 +1,4 @@
-import calendarRoutes from '@server/routes/calendar';
+import calendarRoutes, { parseRange } from '@server/routes/calendar';
 import express from 'express';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -22,5 +22,17 @@ describe('calendar query errors', () => {
 
     assert.equal(response.status, 400);
     assert.match(response.body.message, /start and end are required/i);
+  });
+});
+
+describe('calendar range parsing', () => {
+  it('treats date-only query keys as UTC midnight bounds', () => {
+    const range = parseRange({
+      start: '2026-08-01',
+      end: '2026-09-12',
+    });
+
+    assert.equal(range.start.toISOString(), '2026-08-01T00:00:00.000Z');
+    assert.equal(range.end.toISOString(), '2026-09-12T00:00:00.000Z');
   });
 });

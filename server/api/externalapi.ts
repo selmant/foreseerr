@@ -174,6 +174,18 @@ class ExternalAPI {
     this.cache?.del(cacheKey);
   }
 
+  protected removeCacheByEndpointPrefix(endpoint: string): void {
+    if (!this.cache) {
+      return;
+    }
+    const prefix = `${this.baseUrl}${endpoint}`;
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.cache.del(key);
+      }
+    }
+  }
+
   protected serializeCacheKey(
     endpoint: string,
     options?: Record<string, unknown>

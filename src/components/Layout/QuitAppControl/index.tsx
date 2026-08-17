@@ -7,8 +7,8 @@ import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Layout.QuitAppControl', {
-  quit: 'Quit Foreseer',
-  quitTitle: 'Quit Foreseer?',
+  quit: 'Quit Foreseerr',
+  quitTitle: 'Quit Foreseerr?',
   quitDescription:
     'This closes the desktop app. You can open it again anytime.',
   quitConfirm: 'Quit',

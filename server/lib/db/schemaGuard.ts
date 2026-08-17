@@ -1,6 +1,36 @@
 import logger from '@server/logger';
 import type { DataSource } from 'typeorm';
 
+const collectErrorMessages = (error: unknown): string[] => {
+  const messages: string[] = [];
+  if (error instanceof Error && error.message) {
+    messages.push(error.message);
+  } else if (typeof error === 'string') {
+    messages.push(error);
+  }
+  const driverError = (error as { driverError?: { message?: string } })
+    ?.driverError;
+  if (driverError?.message) {
+    messages.push(driverError.message);
+  }
+  return messages;
+};
+
+/**
+ * Only a missing `migrations` table is boot-ok (fresh database). Permission,
+ * connection, and any other read errors must fail closed.
+ */
+export const isMissingMigrationsTableError = (error: unknown): boolean => {
+  const message = collectErrorMessages(error).join(' ');
+  if (!/migrations/i.test(message)) {
+    return false;
+  }
+  return (
+    /no such table/i.test(message) ||
+    /relation .+ does not exist/i.test(message)
+  );
+};
+
 /**
  * Detects a database that was migrated by a newer version of Foreseerr than
  * this one recognizes, and refuses to continue rather than running against
@@ -34,10 +64,16 @@ export async function assertSupportedDatabaseSchema(
   let executedMigrations: { name: string }[];
   try {
     executedMigrations = await dataSource.query('SELECT name FROM migrations');
-  } catch {
-    // The migrations table doesn't exist yet (e.g. a brand-new database
-    // that hasn't been migrated). Nothing to compare against.
-    return;
+  } catch (error) {
+    if (isMissingMigrationsTableError(error)) {
+      // Brand-new database that hasn't been migrated yet.
+      return;
+    }
+    logger.error('Failed to read the migrations table; refusing to start.', {
+      label: 'Database',
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
 
   const unknownMigrations = executedMigrations

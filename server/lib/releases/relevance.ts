@@ -26,7 +26,7 @@ type RelevantOccurrence = Pick<
   'id' | 'mediaId' | 'mediaType' | 'is4k' | 'seasonNumber' | 'tvdbId'
 >;
 
-const relevanceReason = (
+export const getRequestRelevanceReason = (
   occurrence: RelevantOccurrence,
   request: MediaRequest
 ): ReleaseRelevanceReason | undefined => {
@@ -51,6 +51,9 @@ const relevanceReason = (
     )
   ) {
     return 'requested_season';
+  }
+  if (request.episodeSelectionType || request.episodes.length > 0) {
+    return undefined;
   }
   // A series request remains relevant to the user when a later season first
   // appears in Sonarr, even if that season was not automatically requested.
@@ -86,7 +89,7 @@ export async function getReleaseRelevanceMap(
     const relevant = (
       requestsByMedia.get(`${occurrence.mediaId}:${occurrence.is4k}`) ?? []
     ).flatMap((request) => {
-      const reason = relevanceReason(occurrence, request);
+      const reason = getRequestRelevanceReason(occurrence, request);
       return reason
         ? [
             {

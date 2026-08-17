@@ -48,7 +48,7 @@ const messages = defineMessages('components.Discover', {
   updatesuccess: 'Updated discover customization settings.',
   updatefailed:
     'Something went wrong updating the discover customization settings.',
-  resetsuccess: 'Sucessfully reset discover customization settings.',
+  resetsuccess: 'Successfully reset discover customization settings.',
   resetfailed:
     'Something went wrong resetting the discover customization settings.',
   customizediscover: 'Customize Discover',

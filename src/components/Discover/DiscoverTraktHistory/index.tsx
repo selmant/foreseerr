@@ -18,6 +18,7 @@ const messages = defineMessages('components.Discover.DiscoverTraktHistory', {
   title: 'Trakt History',
   linkAccount:
     'Link your Trakt account in Linked Accounts to browse your watch history.',
+  linkedAccounts: 'Linked Accounts',
 });
 
 const DiscoverTraktHistory = () => {
@@ -65,7 +66,7 @@ const DiscoverTraktHistory = () => {
             href="/profile/settings/linked-accounts"
             className="mt-4 inline-block text-white underline"
           >
-            Linked Accounts
+            {intl.formatMessage(messages.linkedAccounts)}
           </Link>
         </div>
       </>

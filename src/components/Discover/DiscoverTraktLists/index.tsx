@@ -13,6 +13,7 @@ const messages = defineMessages('components.Discover.DiscoverTraktLists', {
   title: 'Your Trakt Lists',
   yourLists: 'Your Lists',
   linkAccount: 'Link your Trakt account to browse your personal lists.',
+  linkedAccounts: 'Linked Accounts',
   items: '{count} items',
   watchlist: 'Watchlist',
   likedLists: 'Liked Lists',
@@ -63,7 +64,7 @@ const DiscoverTraktLists = () => {
             href="/profile/settings/linked-accounts"
             className="mt-4 inline-block text-white underline"
           >
-            Linked Accounts
+            {intl.formatMessage(messages.linkedAccounts)}
           </Link>
         </div>
       </>

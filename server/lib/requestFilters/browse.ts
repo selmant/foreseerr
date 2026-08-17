@@ -135,13 +135,21 @@ const matchesBrowseFilters = (
     return false;
   }
   const releaseDate = item.releaseDate ?? null;
-  if (filters.releaseDateGte != null) {
-    if (!releaseDate || releaseDate < filters.releaseDateGte) {
+  const dateGte =
+    item.mediaType === 'tv'
+      ? filters.tvFirstAirDateGte
+      : filters.movieReleaseDateGte;
+  const dateLte =
+    item.mediaType === 'tv'
+      ? filters.tvFirstAirDateLte
+      : filters.movieReleaseDateLte;
+  if (dateGte != null) {
+    if (!releaseDate || releaseDate < dateGte) {
       return false;
     }
   }
-  if (filters.releaseDateLte != null) {
-    if (!releaseDate || releaseDate > filters.releaseDateLte) {
+  if (dateLte != null) {
+    if (!releaseDate || releaseDate > dateLte) {
       return false;
     }
   }

@@ -155,4 +155,97 @@ describe('episode request synchronization', () => {
       )
     );
   });
+
+  it('looks up the series on the request Sonarr when media IDs belong to another server', async (t: TestContext) => {
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    const media = await getRepository(Media).save(
+      new Media({
+        tmdbId: 9002,
+        tvdbId: 8002,
+        mediaType: MediaType.TV,
+        status: MediaStatus.PROCESSING,
+        status4k: MediaStatus.UNKNOWN,
+        serviceId: 0,
+        externalServiceId: 55,
+      })
+    );
+    const created = await getRepository(MediaRequest).save(
+      new MediaRequest({
+        media,
+        requestedBy: user,
+        type: MediaType.TV,
+        status: MediaRequestStatus.APPROVED,
+        is4k: false,
+        serverId: 1,
+        seasons: [],
+        episodeSelectionType: 'after',
+        episodeStartTvdbId: 201,
+        tvQuotaUnits: 1,
+        episodes: [
+          new EpisodeRequest({
+            tvdbId: 201,
+            seasonNumber: 1,
+            episodeNumber: 1,
+            status: MediaRequestStatus.APPROVED,
+          }),
+        ],
+      })
+    );
+
+    const sonarrServer = {
+      name: 'Test Sonarr',
+      hostname: '127.0.0.1',
+      port: 8989,
+      apiKey: 'test',
+      useSsl: false,
+      activeProfileId: 1,
+      activeProfileName: 'Any',
+      activeDirectory: '/tv',
+      tags: [],
+      is4k: false,
+      isDefault: false,
+      syncEnabled: true,
+      preventSearch: false,
+      tagRequests: false,
+      overrideRule: [],
+      enableSeasonFolders: true,
+      monitorNewItems: 'all' as const,
+      seriesType: 'standard' as const,
+      animeSeriesType: 'anime' as const,
+    };
+    getSettings().sonarr = [
+      { ...sonarrServer, id: 0, isDefault: true },
+      { ...sonarrServer, id: 1, hostname: '10.0.0.2' },
+    ];
+
+    t.mock.method(SonarrAPI.prototype, 'getSeries', async () => [
+      { id: 99, tvdbId: 8002 },
+    ]);
+    const getSeriesById = t.mock.method(
+      SonarrAPI.prototype,
+      'getSeriesById',
+      async (id: number) => ({ id, status: 'continuing' }) as SonarrSeries
+    );
+    t.mock.method(SonarrAPI.prototype, 'getEpisodes', async () => [
+      sonarrEpisode(3, 201, 1, false),
+    ]);
+    t.mock.method(
+      SonarrAPI.prototype,
+      'monitorEpisodes',
+      async () => undefined
+    );
+    t.mock.method(SonarrAPI.prototype, 'searchEpisodes', async () => undefined);
+
+    await episodeRequestSync.run();
+    const updated = await getRepository(MediaRequest).findOneByOrFail({
+      id: created.id,
+    });
+    assert.equal(updated.status, MediaRequestStatus.APPROVED);
+    assert.deepEqual(
+      getSeriesById.mock.calls.map((call) => call.arguments[0]),
+      [99]
+    );
+  });
 });

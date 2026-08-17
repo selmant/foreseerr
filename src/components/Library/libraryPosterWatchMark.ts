@@ -46,3 +46,24 @@ export const libraryWatchMark = (item: {
 export const showLibraryUnplayedPip = (
   item: Parameters<typeof libraryWatchMark>[0]
 ): boolean => libraryWatchMark(item) === 'unplayed';
+
+export const libraryMediaActionRefs = (
+  items: {
+    mediaType: 'movie' | 'tv';
+    tmdbId?: number;
+    title?: string;
+    year?: number;
+  }[]
+) =>
+  items.flatMap((item) =>
+    item.tmdbId
+      ? [
+          {
+            mediaType: item.mediaType,
+            tmdbId: item.tmdbId,
+            title: item.title,
+            year: item.year,
+          },
+        ]
+      : []
+  );

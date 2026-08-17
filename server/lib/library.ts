@@ -28,6 +28,10 @@ import {
   listBrowseFromClient,
 } from '@server/lib/libraryBrowse';
 import type { ParsedLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
+import {
+  getCachedLibraryImage,
+  setCachedLibraryImage,
+} from '@server/lib/libraryImageCache';
 import type { SeriesPlayTarget } from '@server/lib/libraryPlayTarget';
 import {
   filterPlayableLibraryTitles,
@@ -36,6 +40,35 @@ import {
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { getHostname } from '@server/utils/getHostname';
+
+const JELLYFIN_LIBRARY_TIMEOUT_MS = 15_000;
+const PLAY_TARGET_CONCURRENCY = 4;
+
+const mapLimit = async <T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>
+): Promise<R[]> => {
+  if (items.length === 0) {
+    return [];
+  }
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workerCount = Math.min(limit, items.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await mapper(items[index]);
+      }
+    })
+  );
+  return results;
+};
+
+const settledValue = <T>(result: PromiseSettledResult<T>, fallback: T): T =>
+  result.status === 'fulfilled' ? result.value : fallback;
 
 export const findLinkedJellyfinUser = (userId: number) =>
   getRepository(User)
@@ -72,7 +105,8 @@ export const createUserJellyfinClient = async (
   const client = new JellyfinAPI(
     getHostname(),
     user.jellyfinAuthToken,
-    user.jellyfinDeviceId
+    user.jellyfinDeviceId,
+    JELLYFIN_LIBRARY_TIMEOUT_MS
   );
   client.setUserId(user.jellyfinUserId);
   return { ok: true, client, user };
@@ -307,18 +341,7 @@ const resumeBySeriesId = (
 const fetchAllSeriesEpisodes = async (
   client: JellyfinAPI,
   seriesId: string
-): Promise<JellyfinLibraryItemExtended[]> => {
-  const seasons = await client.getSeasons(seriesId);
-  const episodes: JellyfinLibraryItemExtended[] = [];
-  for (const season of seasons ?? []) {
-    if (!season?.Id) continue;
-    const seasonEpisodes = await client.getEpisodes(seriesId, season.Id);
-    for (const episode of seasonEpisodes ?? []) {
-      episodes.push(episode as JellyfinLibraryItemExtended);
-    }
-  }
-  return episodes;
-};
+): Promise<JellyfinLibraryItemExtended[]> => client.getSeriesEpisodes(seriesId);
 
 /** Attach playItemId for series rows using resume/next-up, then optional full resolve. */
 export const enrichSeriesPlayTargets = async (
@@ -344,70 +367,79 @@ export const enrichSeriesPlayTargets = async (
   const resumeMap = resumeBySeriesId(resume);
   const nextUpMap = nextUpBySeriesId(nextUp);
 
-  const enriched: LibraryTitle[] = [];
-  for (const title of titles) {
+  const withQuickTarget = titles.map((title) => {
     if (title.mediaType !== 'tv' || title.playItemId) {
-      enriched.push(title);
-      continue;
+      return title;
     }
 
     const seriesId = title.jellyfinSeriesId ?? title.jellyfinItemId;
     const resumeHit = resumeMap.get(seriesId);
     if (resumeHit) {
-      enriched.push(
-        applyPlayTarget(
-          { ...title, jellyfinSeriesId: seriesId },
-          resolveSeriesPlayTarget(seriesId, [resumeHit], [resumeHit])
-        )
+      return applyPlayTarget(
+        { ...title, jellyfinSeriesId: seriesId },
+        resolveSeriesPlayTarget(seriesId, [resumeHit], [resumeHit])
       );
-      continue;
     }
 
     const nextHit = nextUpMap.get(seriesId);
     if (nextHit) {
-      enriched.push(
-        applyPlayTarget(
-          { ...title, jellyfinSeriesId: seriesId },
-          {
-            playItemId: nextHit.Id,
-            subtitle: `Up next ${
-              nextHit.ParentIndexNumber != null && nextHit.IndexNumber != null
-                ? `S${nextHit.ParentIndexNumber}E${nextHit.IndexNumber}`
-                : nextHit.Name || 'Episode'
-            }`,
-            progressPercent: progressFromItem(nextHit),
-            startPositionTicks: nextHit.UserData?.PlaybackPositionTicks,
-          }
-        )
+      return applyPlayTarget(
+        { ...title, jellyfinSeriesId: seriesId },
+        {
+          playItemId: nextHit.Id,
+          subtitle: `Up next ${
+            nextHit.ParentIndexNumber != null && nextHit.IndexNumber != null
+              ? `S${nextHit.ParentIndexNumber}E${nextHit.IndexNumber}`
+              : nextHit.Name || 'Episode'
+          }`,
+          progressPercent: progressFromItem(nextHit),
+          startPositionTicks: nextHit.UserData?.PlaybackPositionTicks,
+        }
       );
-      continue;
     }
 
-    if (!options.resolveMissing) {
-      enriched.push({ ...title, jellyfinSeriesId: seriesId });
-      continue;
-    }
+    return { ...title, jellyfinSeriesId: seriesId };
+  });
 
-    try {
-      const episodes = await fetchAllSeriesEpisodes(client, seriesId);
-      const target = resolveSeriesPlayTarget(
-        seriesId,
-        episodes,
-        resume.filter((e) => e.SeriesId === seriesId)
-      );
-      enriched.push(
-        applyPlayTarget({ ...title, jellyfinSeriesId: seriesId }, target)
-      );
-    } catch (e) {
-      logger.debug('Failed to resolve series play target', {
-        label: 'Library',
-        seriesId,
-        errorMessage: e instanceof Error ? e.message : String(e),
-      });
-      enriched.push({ ...title, jellyfinSeriesId: seriesId });
-    }
+  if (!options.resolveMissing) {
+    return withQuickTarget;
   }
 
+  const missing = withQuickTarget
+    .map((title, index) => ({ title, index }))
+    .filter(({ title }) => title.mediaType === 'tv' && !title.playItemId);
+
+  const resolved = await mapLimit(
+    missing,
+    PLAY_TARGET_CONCURRENCY,
+    async ({ title }) => {
+      const seriesId = title.jellyfinSeriesId ?? title.jellyfinItemId;
+      try {
+        const episodes = await fetchAllSeriesEpisodes(client, seriesId);
+        const target = resolveSeriesPlayTarget(
+          seriesId,
+          episodes,
+          resume.filter((e) => e.SeriesId === seriesId)
+        );
+        return applyPlayTarget(
+          { ...title, jellyfinSeriesId: seriesId },
+          target
+        );
+      } catch (e) {
+        logger.debug('Failed to resolve series play target', {
+          label: 'Library',
+          seriesId,
+          errorMessage: e instanceof Error ? e.message : String(e),
+        });
+        return { ...title, jellyfinSeriesId: seriesId };
+      }
+    }
+  );
+
+  const enriched = [...withQuickTarget];
+  resolved.forEach((title, index) => {
+    enriched[missing[index].index] = title;
+  });
   return enriched;
 };
 
@@ -523,47 +555,74 @@ export const buildWatchNowResponse = async (
   }
 
   const shelves: LibraryShelf[] = [];
+  const settings = getSettings();
+  const tvLibraryIds = (settings.jellyfin.libraries ?? [])
+    .filter((lib) => lib.enabled && lib.type === 'show')
+    .map((lib) => lib.id)
+    .filter(Boolean);
 
-  try {
-    const settings = getSettings();
-    const tvLibraryIds = (settings.jellyfin.libraries ?? [])
-      .filter((lib) => lib.enabled && lib.type === 'show')
-      .map((lib) => lib.id)
-      .filter(Boolean);
+  const sourceResults = await Promise.allSettled([
+    linked.client.getResumeItems(16),
+    linked.client.getUserLatestItems(16),
+    linked.client.getNextUpEpisodes(48),
+    ...(tvLibraryIds.length
+      ? tvLibraryIds.map((id) => linked.client.getUserLatestEpisodes(32, id))
+      : [linked.client.getUserLatestEpisodes(32)]),
+  ]);
 
-    const [resume, latest, nextUp, ...latestEpisodeBatches] = await Promise.all(
-      [
-        linked.client.getResumeItems(16),
-        linked.client.getUserLatestItems(16),
-        linked.client.getNextUpEpisodes(48),
-        ...(tvLibraryIds.length
-          ? tvLibraryIds.map((id) =>
-              linked.client.getUserLatestEpisodes(32, id)
-            )
-          : [linked.client.getUserLatestEpisodes(32)]),
-      ]
-    );
+  const jellyfinSourcesFailed = sourceResults
+    .slice(0, 3)
+    .some((result) => result.status === 'rejected');
+  if (jellyfinSourcesFailed) {
+    logger.error('Failed to load some Jellyfin watch-now sources', {
+      label: 'Library',
+      errorMessage: sourceResults
+        .filter(
+          (result): result is PromiseRejectedResult =>
+            result.status === 'rejected'
+        )
+        .map((result) => result.reason)
+        .map((reason) =>
+          reason instanceof Error ? reason.message : String(reason)
+        )
+        .join('; '),
+    });
+  }
 
-    const latestEpisodeBySeries = new Map<
-      string,
-      JellyfinLibraryItemExtended
-    >();
-    for (const batch of latestEpisodeBatches) {
-      for (const item of batch) {
-        const key = item.SeriesId ?? item.Id;
-        if (!latestEpisodeBySeries.has(key)) {
-          latestEpisodeBySeries.set(key, item);
-        }
+  const resume = settledValue(
+    sourceResults[0],
+    [] as JellyfinLibraryItemExtended[]
+  );
+  const latest = settledValue(
+    sourceResults[1],
+    [] as JellyfinLibraryItemExtended[]
+  );
+  const nextUp = settledValue(
+    sourceResults[2],
+    [] as JellyfinLibraryItemExtended[]
+  );
+  const latestEpisodeBatches = sourceResults
+    .slice(3)
+    .flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+
+  const latestEpisodeBySeries = new Map<string, JellyfinLibraryItemExtended>();
+  for (const batch of latestEpisodeBatches) {
+    for (const item of batch) {
+      const key = item.SeriesId ?? item.Id;
+      if (!latestEpisodeBySeries.has(key)) {
+        latestEpisodeBySeries.set(key, item);
       }
     }
-    const latestEpisodes = [...latestEpisodeBySeries.values()]
-      .sort((a, b) => {
-        const da = a.DateCreated ? Date.parse(a.DateCreated) : 0;
-        const db = b.DateCreated ? Date.parse(b.DateCreated) : 0;
-        return db - da;
-      })
-      .slice(0, 16);
+  }
+  const latestEpisodes = [...latestEpisodeBySeries.values()]
+    .sort((a, b) => {
+      const da = a.DateCreated ? Date.parse(a.DateCreated) : 0;
+      const db = b.DateCreated ? Date.parse(b.DateCreated) : 0;
+      return db - da;
+    })
+    .slice(0, 16);
 
+  try {
     const continueItems = await mapJellyfinItemsToLibraryTitles(resume);
     if (continueItems.length) {
       shelves.push({
@@ -572,7 +631,14 @@ export const buildWatchNowResponse = async (
         items: continueItems,
       });
     }
+  } catch (e) {
+    logger.error('Failed to map Continue Watching shelf', {
+      label: 'Library',
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+  }
 
+  try {
     const recentItems = filterPlayableLibraryTitles(
       await enrichSeriesPlayTargets(
         linked.client,
@@ -587,7 +653,14 @@ export const buildWatchNowResponse = async (
         items: recentItems,
       });
     }
+  } catch (e) {
+    logger.error('Failed to map Recently Added shelf', {
+      label: 'Library',
+      errorMessage: e instanceof Error ? e.message : String(e),
+    });
+  }
 
+  try {
     const recentEpisodeItems =
       await mapJellyfinItemsToLibraryTitles(latestEpisodes);
 
@@ -634,41 +707,51 @@ export const buildWatchNowResponse = async (
       });
     }
   } catch (e) {
-    logger.error('Failed to load Jellyfin watch-now shelves', {
+    logger.error('Failed to map Recently Added Episodes shelf', {
       label: 'Library',
       errorMessage: e instanceof Error ? e.message : String(e),
     });
-    return { shelves: [], code: 'server_unreachable' };
   }
 
-  const forgottenBase = filterPlayableLibraryTitles(
-    await enrichSeriesPlayTargets(
-      linked.client,
-      await buildForgottenRequestsShelf(userId, 16),
-      { resolveMissing: true }
-    )
-  );
-  let forgottenItems: JellyfinLibraryItemExtended[] = [];
   try {
-    forgottenItems = await linked.client.getItemsData(
-      forgottenBase.map((title) => title.jellyfinItemId)
+    const forgottenBase = filterPlayableLibraryTitles(
+      await enrichSeriesPlayTargets(
+        linked.client,
+        await buildForgottenRequestsShelf(userId, 16),
+        { resume, nextUp, resolveMissing: true }
+      )
     );
+    let forgottenItems: JellyfinLibraryItemExtended[] = [];
+    try {
+      forgottenItems = await linked.client.getItemsData(
+        forgottenBase.map((title) => title.jellyfinItemId)
+      );
+    } catch (e) {
+      logger.debug('Failed to hydrate Ready to Watch items from Jellyfin', {
+        label: 'Library',
+        errorMessage: e instanceof Error ? e.message : String(e),
+      });
+    }
+    const forgotten = hydrateForgottenLibraryTitles(
+      forgottenBase,
+      forgottenItems
+    );
+    if (forgotten.length) {
+      shelves.push({
+        id: 'forgotten',
+        title: 'Ready to Watch',
+        items: forgotten,
+      });
+    }
   } catch (e) {
-    logger.debug('Failed to hydrate Ready to Watch items from Jellyfin', {
+    logger.error('Failed to load Ready to Watch shelf', {
       label: 'Library',
       errorMessage: e instanceof Error ? e.message : String(e),
     });
   }
-  const forgotten = hydrateForgottenLibraryTitles(
-    forgottenBase,
-    forgottenItems
-  );
-  if (forgotten.length) {
-    shelves.push({
-      id: 'forgotten',
-      title: 'Ready to Watch',
-      items: forgotten,
-    });
+
+  if (!shelves.length && jellyfinSourcesFailed) {
+    return { shelves: [], code: 'server_unreachable' };
   }
 
   return { shelves };
@@ -696,6 +779,7 @@ export const listAvailableLibrary = async (options: {
     try {
       const items = await linked.client.searchLibraryItems(query, {
         limit: options.take,
+        startIndex: options.skip,
         mediaType: options.mediaType,
       });
       const mapped = filterPlayableLibraryTitles(
@@ -939,11 +1023,6 @@ export const getLibraryItemInspector = async (
   }
 };
 
-const libraryImageCache = new Map<
-  string,
-  { buffer: Buffer; contentType: string; expiresAt: number }
->();
-
 export const getLibraryItemImage = async (
   userId: number,
   jellyfinItemId: string,
@@ -956,10 +1035,9 @@ export const getLibraryItemImage = async (
       code?: 'not_linked' | 'unsupported_media_server' | 'not_found';
     }
 > => {
-  const cacheKey = `${jellyfinItemId}:${imageType}`;
-  const cached = libraryImageCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return { ok: true, buffer: cached.buffer, contentType: cached.contentType };
+  const cached = getCachedLibraryImage(userId, jellyfinItemId, imageType);
+  if (cached) {
+    return { ok: true, ...cached };
   }
 
   const linked = await createUserJellyfinClient(userId);
@@ -972,10 +1050,7 @@ export const getLibraryItemImage = async (
     if (!image) {
       return { ok: false, status: 404, code: 'not_found' };
     }
-    libraryImageCache.set(cacheKey, {
-      ...image,
-      expiresAt: Date.now() + 6 * 60 * 60 * 1000,
-    });
+    setCachedLibraryImage(userId, jellyfinItemId, imageType, image);
     return { ok: true, ...image };
   } catch (e) {
     logger.error('Failed to proxy library image', {
@@ -1033,8 +1108,7 @@ export const getLibrarySeriesDetail = async (
         }
       : undefined;
 
-    // Prefer NextUp/resume only on open. Do not walk every season here —
-    // that N+1 path can stall the panel; season episode list covers Play.
+    // NextUp/resume first; one episode-list request covers completed-series rewatch.
     const resumeHit = resume.find(
       (e) =>
         e.SeriesId === jellyfinSeriesId &&
@@ -1049,6 +1123,26 @@ export const getLibrarySeriesDetail = async (
         [resumeHit],
         [resumeHit]
       );
+    }
+
+    if (!playTarget) {
+      try {
+        const episodes = await fetchAllSeriesEpisodes(
+          linked.client,
+          jellyfinSeriesId
+        );
+        playTarget = resolveSeriesPlayTarget(
+          jellyfinSeriesId,
+          episodes,
+          resume.filter((episode) => episode.SeriesId === jellyfinSeriesId)
+        );
+      } catch (e) {
+        logger.debug('Failed to resolve series rewatch target', {
+          label: 'Library',
+          jellyfinSeriesId,
+          errorMessage: e instanceof Error ? e.message : String(e),
+        });
+      }
     }
 
     const mediaRows = await resolveMediaRows([

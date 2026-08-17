@@ -37,7 +37,7 @@ const messages = defineMessages(
     errorUnknown: 'An unknown error occurred',
     deleteFailed: 'Unable to delete linked account.',
     betterTraktEnabled:
-      'Trakt is provided through Better Trakt in Jellyfin. Link your Jellyfin account here, then link Trakt and enable Foreseer access in the Jellyfin plugin.',
+      'Trakt is provided through Better Trakt in Jellyfin. Link your Jellyfin account here, then link Trakt and enable Foreseerr access in the Jellyfin plugin.',
     betterTraktSessionRefresh:
       'Your Jellyfin session needs to be refreshed before Better Trakt can be used. Choose “Refresh Jellyfin Session” from Link Account and sign in again.',
     refreshJellyfinSession: 'Refresh Jellyfin Session',

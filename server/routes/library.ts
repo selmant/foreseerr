@@ -237,6 +237,9 @@ libraryRoutes.get<{ jellyfinItemId: string }, LibraryItemInspectorResponse>(
       if (!req.user) {
         return next({ status: 401, message: 'Unauthorized' });
       }
+      if (!isJellyfinItemId(req.params.jellyfinItemId)) {
+        return next({ status: 404, message: 'Not found' });
+      }
       const payload = await getLibraryItemInspector(
         req.user.id,
         req.params.jellyfinItemId
@@ -257,6 +260,9 @@ libraryRoutes.get<{ jellyfinSeriesId: string }, LibrarySeriesDetailResponse>(
     try {
       if (!req.user) {
         return next({ status: 401, message: 'Unauthorized' });
+      }
+      if (!isJellyfinItemId(req.params.jellyfinSeriesId)) {
+        return next({ status: 404, message: 'Not found' });
       }
       const payload = await getLibrarySeriesDetail(
         req.user.id,
@@ -282,6 +288,12 @@ libraryRoutes.get<
     try {
       if (!req.user) {
         return next({ status: 401, message: 'Unauthorized' });
+      }
+      if (
+        !isJellyfinItemId(req.params.jellyfinSeriesId) ||
+        !isJellyfinItemId(req.params.seasonId)
+      ) {
+        return next({ status: 404, message: 'Not found' });
       }
       const payload = await getLibrarySeasonEpisodes(
         req.user.id,

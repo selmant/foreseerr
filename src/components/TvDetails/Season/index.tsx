@@ -12,7 +12,10 @@ import {
   writeSucceeded,
   type MediaActionWriteResponse,
 } from '@app/utils/mediaActions';
-import { quickRequestTvEpisodes } from '@app/utils/quickRequest';
+import {
+  isTvQuotaExhausted,
+  quickRequestTvEpisodes,
+} from '@app/utils/quickRequest';
 import {
   ArrowDownTrayIcon,
   CheckCircleIcon as CheckCircleOutline,
@@ -24,6 +27,7 @@ import {
 import { CheckCircleIcon as CheckCircleSolid } from '@heroicons/react/24/solid';
 import { MediaRequestStatus } from '@server/constants/media';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
+import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
 import type { SeasonWithEpisodes } from '@server/models/Tv';
 import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
@@ -38,6 +42,7 @@ const messages = defineMessages('components.TvDetails.Season', {
   requested: 'Requested',
   requestSuccess: '<strong>{episode}</strong> requested successfully!',
   requestError: 'Quick request failed. Opening request options.',
+  quotaReached: 'Request quota reached. Opening request options.',
   pendingApproval: 'Awaiting approval',
   available: 'Available',
   failed: 'Failed',
@@ -129,9 +134,12 @@ const Season = ({
   const intl = useIntl();
   const { data: capabilities } = useMediaActionCapabilities();
   const { addToast } = useToasts();
-  const { hasPermission } = useUser();
+  const { user, hasPermission } = useUser();
   const { data, error, mutate } = useSWR<SeasonWithEpisodes>(
     `/api/v1/tv/${tvId}/season/${seasonNumber}`
+  );
+  const { data: quota } = useSWR<QuotaResponse>(
+    user ? `/api/v1/user/${user.id}/quota` : null
   );
   const [requestingEpisodeId, setRequestingEpisodeId] = useState<
     number | undefined
@@ -205,6 +213,15 @@ const Season = ({
       return;
     }
     setRequestingEpisodeId(episodeId);
+    if (isTvQuotaExhausted(quota?.tv)) {
+      addToast(intl.formatMessage(messages.quotaReached), {
+        appearance: 'warning',
+        autoDismiss: true,
+      });
+      setFallbackSelection({ type: 'single', episodeTvdbId: episodeId });
+      setRequestingEpisodeId(undefined);
+      return;
+    }
     try {
       const request = await quickRequestTvEpisodes({
         tmdbId: tvId,

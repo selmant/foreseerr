@@ -18,6 +18,25 @@ const WATCHED_FILTER: Record<
   played: 'IsPlayed',
 };
 
+/** Match displayed ProductionYear, not premiere-date year. */
+export const productionYearsFilter = (
+  yearFrom?: number,
+  yearTo?: number
+): string | undefined => {
+  if (yearFrom == null && yearTo == null) {
+    return undefined;
+  }
+  const rawStart = yearFrom ?? 1900;
+  const rawEnd = yearTo ?? new Date().getUTCFullYear() + 1;
+  const start = Math.min(rawStart, rawEnd);
+  const end = Math.max(rawStart, rawEnd);
+  const years: number[] = [];
+  for (let year = start; year <= end; year += 1) {
+    years.push(year);
+  }
+  return years.join(',');
+};
+
 export const uniqueSortedGenres = (
   names: (string | undefined | null)[]
 ): string[] => {
@@ -77,11 +96,9 @@ export const buildJellyfinBrowseParams = (
     // are OR'd by the server (same as the native library UI).
     params.Genres = query.genre.join(',');
   }
-  if (query.yearFrom != null) {
-    params.MinPremiereDate = `${query.yearFrom}-01-01`;
-  }
-  if (query.yearTo != null) {
-    params.MaxPremiereDate = `${query.yearTo}-12-31`;
+  const years = productionYearsFilter(query.yearFrom, query.yearTo);
+  if (years) {
+    params.Years = years;
   }
 
   return params;

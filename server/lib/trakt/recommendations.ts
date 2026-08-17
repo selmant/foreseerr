@@ -10,7 +10,7 @@ import cacheManager from '@server/lib/cache';
 import { filterTraktMediaTypeChunk } from '@server/lib/trakt/animeFilter';
 import {
   filterWatchedTraktItems,
-  loadWatchedIdSets,
+  loadCombinedWatchedIdSets,
   type WatchedIdSets,
 } from '@server/lib/trakt/hideWatched';
 
@@ -229,7 +229,7 @@ async function visibleFromKept(
   if (!ignoreWatched) {
     return kept;
   }
-  const sets = watchedSets ?? (await loadWatchedIdSets(userId, trakt));
+  const sets = watchedSets ?? (await loadCombinedWatchedIdSets(userId, trakt));
   return filterWatchedTraktItems(kept, sets);
 }
 
@@ -255,7 +255,7 @@ export async function getTraktRecommendationPage(
   const pool = getOrCreatePool(cacheKey, raw, options.mediaType);
 
   const watchedSets = options.ignoreWatched
-    ? await loadWatchedIdSets(userId, trakt)
+    ? await loadCombinedWatchedIdSets(userId, trakt)
     : undefined;
 
   // Classify until we have enough *visible* (unwatched) items for this page.

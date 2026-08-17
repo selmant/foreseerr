@@ -29,16 +29,16 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
   trakt: 'Trakt',
   traktConnection: 'Trakt connection',
   description:
-    'Choose the single server-wide method Foreseer uses for every user’s Trakt activity.',
+    'Choose the single server-wide method Foreseerr uses for every user’s Trakt activity.',
   connectionMethod: 'Connection method',
-  connectionMethodHint: 'This choice applies to every Foreseer user.',
+  connectionMethodHint: 'This choice applies to every Foreseerr user.',
   activeMethod: 'Active method',
   directProvider: 'Direct Trakt app',
   directProviderDescription:
-    'Foreseer connects to Trakt directly. Each user authorizes this server’s Trakt application.',
+    'Foreseerr connects to Trakt directly. Each user authorizes this server’s Trakt application.',
   jellyfinProvider: 'Better Trakt via Jellyfin',
   jellyfinProviderDescription:
-    'Foreseer uses each linked Jellyfin user’s Better Trakt connection and permissions.',
+    'Foreseerr uses each linked Jellyfin user’s Better Trakt connection and permissions.',
   currentMethod: 'Current method',
   configureBelow: 'Configure below',
   checkedAt: 'Checked {time}',
@@ -48,11 +48,11 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
   actionRequired: 'Action required',
   notConfigured: 'Not configured',
   unknown: 'Status unavailable',
-  statusFailure: 'Foreseer could not check the integration status.',
-  settingsFailure: 'Foreseer could not load the saved Trakt settings.',
+  statusFailure: 'Foreseerr could not check the integration status.',
+  settingsFailure: 'Foreseerr could not load the saved Trakt settings.',
   directSetup: 'Direct application setup',
   directSetupDescription:
-    'Create a Trakt application, then enter its credentials below. Each Foreseer user will authorize it separately.',
+    'Create a Trakt application, then enter its credentials below. Each Foreseerr user will authorize it separately.',
   createAppTip:
     'Create an API app at <TraktAppLink>trakt.tv/oauth/applications</TraktAppLink>. Set its redirect URI to urn:ietf:wg:oauth:2.0:oob.',
   clientId: 'Client ID',
@@ -68,9 +68,9 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
   behavior: 'Shared behavior',
   behaviorDescription:
     'These controls apply whichever Trakt connection method is active.',
-  actionsEnabled: 'Allow watched and rating actions',
+  actionsEnabled: 'Allow Trakt watched and rating actions',
   actionsEnabledTip:
-    'Linked users can mark titles watched or unwatched and rate them from Foreseer.',
+    'This only controls Trakt. Jellyfin watched status still works when the user is linked to Jellyfin.',
   toastSettingsSuccess: 'Trakt settings saved successfully.',
   toastSettingsFailure: 'Unable to save Trakt settings.',
   toastActionsSuccess: 'Trakt action settings updated.',
@@ -78,13 +78,13 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
   toastHealthFailure: 'Unable to check the Trakt connection.',
   directSwitchTitle: 'Switch to Direct Trakt?',
   directSwitchDescription:
-    'Foreseer will stop using Better Trakt. Jellyfin connections remain intact, but each Foreseer user must authorize this Direct Trakt application.',
+    'Foreseerr will stop using Better Trakt. Jellyfin connections remain intact, but each Foreseerr user must authorize this Direct Trakt application.',
   disconnectConfirmTitle: 'Replace Direct Trakt credentials?',
   disconnectConfirmDescription:
     'Replacing these credentials will disconnect {count, plural, one {# linked Trakt account} other {# linked Trakt accounts}}. Those users must authorize the application again.',
   betterSwitchTitle: 'Switch to Better Trakt?',
   betterSwitchDescription:
-    'Foreseer will permanently remove the saved Direct Trakt Client ID, Client Secret, and {count, plural, one {# linked Direct account} other {# linked Direct accounts}}. Users must be ready in Better Trakt.',
+    'Foreseerr will permanently remove the saved Direct Trakt Client ID, Client Secret, and {count, plural, one {# linked Direct account} other {# linked Direct accounts}}. Users must be ready in Better Trakt.',
   switchBetter: 'Switch to Better Trakt',
 });
 

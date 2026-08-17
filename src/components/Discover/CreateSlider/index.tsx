@@ -39,6 +39,8 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   customTraktList: 'Use: {value}',
   traktListNotLinked:
     'Search finds public lists. Link Trakt to also include your personal lists.',
+  liked: 'liked',
+  yours: 'yours',
   addsuccess: 'Created new slider and saved discover customization settings.',
   addfail: 'Failed to create new slider.',
   editsuccess: 'Edited slider and saved discover customization settings.',
@@ -359,7 +361,9 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
           if (query && !list.name.toLowerCase().includes(query)) {
             continue;
           }
-          const ownerLabel = list.isLiked ? 'liked' : 'yours';
+          const ownerLabel = list.isLiked
+            ? intl.formatMessage(messages.liked)
+            : intl.formatMessage(messages.yours);
           addOption(
             `${list.name} · ${ownerLabel} (${list.itemCount})`,
             formatTraktListReference(
@@ -666,8 +670,21 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                     let title = values.title;
 
                     if (!title?.trim() && label) {
+                      const ownerPattern = [
+                        intl.formatMessage(messages.yours),
+                        intl.formatMessage(messages.liked),
+                      ]
+                        .map((value) =>
+                          value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                        )
+                        .join('|');
                       const titleFromList = label
-                        .replace(/\s+·\s+(?:yours|liked)\s+\(\d+\)$/, '')
+                        .replace(
+                          new RegExp(
+                            `\\s+·\\s+(?:${ownerPattern})\\s+\\(\\d+\\)$`
+                          ),
+                          ''
+                        )
                         .replace(/\s+·\s+[\w.-]+\s+\(\d+\)$/, '')
                         .replace(/\s+\(\d+\)$/, '');
                       if (titleFromList) {

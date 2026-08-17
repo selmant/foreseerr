@@ -8,10 +8,9 @@ import {
   hasBrowseQueryFilters,
   parseBrowseQueryFilters,
 } from '@server/lib/requestFilters';
-import { createTraktUserClient } from '@server/lib/trakt';
 import {
   filterWatchedMixedBrowseResults,
-  loadWatchedIdSets,
+  loadCombinedWatchedIdSets,
 } from '@server/lib/trakt/hideWatched';
 import logger from '@server/logger';
 import type {
@@ -79,17 +78,8 @@ async function filterDiscoverPageResults<T extends BrowseResult>(
     return filtered;
   }
 
-  try {
-    const trakt = await createTraktUserClient(user.id);
-    const watchedSets = await loadWatchedIdSets(user.id, trakt);
-    return filterWatchedMixedBrowseResults(filtered, watchedSets);
-  } catch (e) {
-    logger.debug('Skipping watched-title filtering', {
-      label: 'API',
-      errorMessage: e instanceof Error ? e.message : 'unknown error',
-    });
-    return filtered;
-  }
+  const watchedSets = await loadCombinedWatchedIdSets(user.id);
+  return filterWatchedMixedBrowseResults(filtered, watchedSets);
 }
 
 /** Post-fetch browse filters for routes that return a single upstream TMDB page. */

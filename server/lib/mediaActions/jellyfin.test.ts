@@ -42,3 +42,15 @@ describe('Jellyfin media-action status batching', () => {
     assert.deepEqual(result.entries, calls[1]);
   });
 });
+
+describe('JellyfinMediaActionProvider.rate', () => {
+  it('rejects direct rating writes instead of returning a successful empty status', async () => {
+    const { JellyfinMediaActionProvider } = await import('./jellyfin');
+    const provider = new JellyfinMediaActionProvider();
+    await assert.rejects(
+      () =>
+        provider.rate(1, { mediaType: 'movie', tmdbId: 1 }, { ratingStars: 4 }),
+      /does not support rating/
+    );
+  });
+});

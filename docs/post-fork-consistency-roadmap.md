@@ -1,22 +1,28 @@
 # Post-Fork Feature Consistency Roadmap
 
-Status: implemented and re-audited  
-Audit date: 2026-08-12  
-Audited range: Seerr baseline `bd491c7e7ecf7d249da532f8fe9b82456ed6e42e` through Foreseerr `develop` `82b6c832` (140 commits)
+Status: **superseded as a live bug inventory** (kept as a decision record)  
+Original audit date: 2026-08-12  
+Audited range: Seerr baseline `bd491c7e7ecf7d249da532f8fe9b82456ed6e42e` through Foreseerr `develop` `82b6c832` (140 commits)  
+Superseded: 2026-08-17 by post-fork hardening Waves 1–3 on `fix/post-fork-hardening` (app `v0.5.0` + Library browse/inspector and later fixes)
 
 ## Implementation status
 
-The actionable P0–P2 findings in this roadmap were resolved or given an
-explicit supported deployment constraint, then re-audited on 2026-08-12. The
-completed work includes shared title-action state and cache
-invalidation, per-user and per-title provider capabilities, explicit partial
-write outcomes, movie/TV detail controls, direct Jellyfin Library episode
-actions, shared rating badges, bounded Jellyfin batch reads, OpenAPI parity,
-desktop protocol parity, and the documented Servarr deployment constraint.
+The original P0–P2 media-action consistency work from this roadmap shipped and
+was re-audited on 2026-08-12 (shared title-action state, capabilities, partial
+outcomes, detail/Library controls, rating badges, Servarr deployment
+constraint, etc.).
 
-The release gates now cover TypeScript, ESLint, Prettier, the complete server
-test suite, and the production Next.js build. The sections below remain as the
-decision record and acceptance criteria for regression review.
+**Do not treat the matrix or “Missing / Read-only / Trakt-gated” rows below as
+current product state.** After that audit, Library v0.5 and hardening Waves
+1–2 closed most of the remaining user-visible gaps (browser Play fallback,
+QC token persistence, Trakt/Jellyfin hide-watched, episode-request Sonarr
+path, calendar/relevance, Servarr queue paging, Discover genre/dates,
+settings copy that implied Trakt-only watched status, and more). Remaining
+P3 residue (docs/CI/i18n strategy, leftover upstream cherry-picks) lives in
+the hardening plan, not in this file.
+
+Sections below remain as the historical decision record and acceptance
+criteria for regression review.
 
 ## Purpose
 
@@ -375,15 +381,16 @@ topology.
 ## Cross-surface regression matrix
 
 Every future user-facing media capability should be reviewed against this
-matrix before release:
+matrix before release. Cells reflect **post-hardening intent** (2026-08), not
+the original Aug 12 audit snapshot.
 
 | Capability | Poster | Movie detail | TV detail | Season/episode | Library | Calendar | Mobile/touch | Native shell |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | External ratings | Yes | Yes | Yes | N/A | Through reused cards | No | Verify | Verify |
-| Personal rating | Yes today | Missing | Missing | Not scoped | Missing | Not scoped | Verify | Verify |
-| Title watched/unwatched | Yes, Trakt-gated | Missing | Missing | Episode control present but contract-broken | Read-only episode state | No | Verify | Verify |
+| Personal rating | Yes (Trakt when linked) | Yes | Yes | Not scoped | Via cards / detail | Not scoped | Verify | Verify |
+| Title watched/unwatched | Yes (Trakt and/or Jellyfin) | Yes | Yes | Episode writes + status | Overview + inspector + episode actions | No | Verify | Verify |
 | Request movie/season/episode | Yes | Yes | Yes | Yes | Owned media; normally unnecessary | Via details | Verify | Verify |
-| Play owned media | Library cards | Yes | Yes | Library episodes | Yes | Via details | Verify | Yes |
+| Play owned media | Library cards (browser + native) | Yes | Yes | Library episodes | Yes | Via details | Verify | Yes (ready session only) |
 | Servarr management | Library card path | Yes | Yes | Through parent manage view | Yes | Yes | Verify admin controls | Verify links |
 
 For a new capability, `N/A` must be an explicit product decision; it should not

@@ -8,6 +8,7 @@ import LibraryInspector from '@app/components/Library/LibraryInspector';
 import LibraryModeNav from '@app/components/Library/LibraryModeNav';
 import {
   browseStateFromQuery,
+  mergeBrowsePatch,
   restoreBrowseScroll,
   serializeBrowseApiQuery,
   serializeBrowseState,
@@ -103,7 +104,7 @@ const LibraryBrowse = () => {
     void router.replace(
       {
         pathname: '/library/browse',
-        query: paramsFromState({ ...state, ...patch, skip: 0 }),
+        query: paramsFromState(mergeBrowsePatch(state, patch, searchInput)),
       },
       undefined,
       { shallow: true }

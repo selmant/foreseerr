@@ -18,7 +18,7 @@ type CalendarScope = 'mine' | 'all';
 const readSingle = (value: unknown) =>
   typeof value === 'string' ? value : undefined;
 
-const parseRange = (query: Record<string, unknown>) => {
+export const parseRange = (query: Record<string, unknown>) => {
   const startValue = readSingle(query.start);
   const endValue = readSingle(query.end);
   if (!startValue || !endValue) {

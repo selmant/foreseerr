@@ -67,4 +67,11 @@ describe('toInspectorResponse', () => {
     assert.equal(payload.playItemId, 'ep-1');
     assert.equal(payload.seasons?.length, 1);
   });
+
+  it('preserves not_found so the inspector can render an error', () => {
+    const payload = toInspectorResponse(movieTitle({ title: 'Title' }), {
+      code: 'not_found',
+    });
+    assert.equal(payload.code, 'not_found');
+  });
 });

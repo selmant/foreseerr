@@ -35,8 +35,8 @@ const TRAKT_CIRCUIT_FALLBACK_SECONDS = 60;
 /** Trakt currently caps sync collection pages at 250 items. */
 export const TRAKT_SYNC_PAGE_SIZE = 250;
 
-/** Shared across TraktAPI instances so one 429 cools down the whole process. */
-let traktCircuitOpenUntilMs = 0;
+/** Shared across TraktAPI instances, scoped per token or app client. */
+const traktCircuitOpenUntilMs = new Map<string, number>();
 
 export class TraktRateLimitedError extends Error {
   public readonly retryAfterSeconds: number;
@@ -66,31 +66,43 @@ export class TraktReconnectRequiredError extends Error {
   }
 }
 
-/** Test helper — clear process-wide Trakt rate-limit circuit. */
+/** Test helper — clear per-client Trakt rate-limit circuits. */
 export const resetTraktRateLimitState = (): void => {
-  traktCircuitOpenUntilMs = 0;
+  traktCircuitOpenUntilMs.clear();
 };
 
-const remainingCircuitSeconds = (): number =>
-  Math.max(0, Math.ceil((traktCircuitOpenUntilMs - Date.now()) / 1000));
+const remainingCircuitSeconds = (circuitKey: string): number =>
+  Math.max(
+    0,
+    Math.ceil(
+      ((traktCircuitOpenUntilMs.get(circuitKey) ?? 0) - Date.now()) / 1000
+    )
+  );
 
-const assertTraktCircuitClosed = (): void => {
-  const remaining = remainingCircuitSeconds();
+const assertTraktCircuitClosed = (circuitKey: string): void => {
+  const remaining = remainingCircuitSeconds(circuitKey);
   if (remaining > 0) {
     throw new TraktRateLimitedError(remaining);
   }
 };
 
-const openTraktCircuit = (retryAfterSeconds: number): void => {
+const openTraktCircuit = (
+  circuitKey: string,
+  retryAfterSeconds: number
+): void => {
   const seconds = Math.max(
     TRAKT_CIRCUIT_FALLBACK_SECONDS,
     Math.ceil(retryAfterSeconds || TRAKT_CIRCUIT_FALLBACK_SECONDS)
   );
   const openUntil = Date.now() + seconds * 1000;
-  if (openUntil > traktCircuitOpenUntilMs) {
-    traktCircuitOpenUntilMs = openUntil;
+  const current = traktCircuitOpenUntilMs.get(circuitKey) ?? 0;
+  if (openUntil > current) {
+    traktCircuitOpenUntilMs.set(circuitKey, openUntil);
     logger.warn('Trakt circuit opened after rate limit', {
       label: 'Trakt API',
+      circuitKey: circuitKey.startsWith('token:')
+        ? `token:…${circuitKey.slice(-8)}`
+        : circuitKey,
       retryAfterSeconds: seconds,
       nextProbeAt: new Date(openUntil).toISOString(),
     });
@@ -156,6 +168,20 @@ class TraktAPI extends ExternalAPI {
     this.rawAxios.interceptors.request.use(proxyRequestInterceptor);
   }
 
+  private circuitKey(): string {
+    if (this.accessToken) {
+      return `token:${this.accessToken}`;
+    }
+    return `client:${this.clientId || 'public'}`;
+  }
+
+  public invalidateWatchedGetCache(): void {
+    this.removeCacheByEndpointPrefix('/sync/watched/shows');
+    this.removeCacheByEndpointPrefix('/sync/watched/movies');
+    this.removeCacheByEndpointPrefix('/sync/ratings/shows');
+    this.removeCacheByEndpointPrefix('/sync/ratings/movies');
+  }
+
   protected async get<T>(
     endpoint: string,
     config?: {
@@ -164,7 +190,7 @@ class TraktAPI extends ExternalAPI {
     },
     ttl?: number
   ): Promise<T> {
-    assertTraktCircuitClosed();
+    assertTraktCircuitClosed(this.circuitKey());
     try {
       return await super.get<T>(endpoint, config, ttl);
     } catch (e) {
@@ -176,10 +202,13 @@ class TraktAPI extends ExternalAPI {
         const retryAfter = this.parseRetryAfter(
           this.headerValue(headers, 'retry-after')
         );
-        openTraktCircuit(retryAfter || TRAKT_CIRCUIT_FALLBACK_SECONDS);
+        openTraktCircuit(
+          this.circuitKey(),
+          retryAfter || TRAKT_CIRCUIT_FALLBACK_SECONDS
+        );
         throw new TraktRateLimitedError(
           retryAfter ||
-            remainingCircuitSeconds() ||
+            remainingCircuitSeconds(this.circuitKey()) ||
             TRAKT_CIRCUIT_FALLBACK_SECONDS
         );
       }
@@ -948,7 +977,14 @@ class TraktAPI extends ExternalAPI {
     endpoint: string,
     data: unknown
   ): Promise<T> {
-    return this.requestWithRetry<T>('POST', endpoint, { data });
+    const result = await this.requestWithRetry<T>('POST', endpoint, { data });
+    if (
+      endpoint.startsWith('/sync/history') ||
+      endpoint.startsWith('/sync/ratings')
+    ) {
+      this.invalidateWatchedGetCache();
+    }
+    return result;
   }
 
   private async getAuthenticated<T>(
@@ -980,7 +1016,7 @@ class TraktAPI extends ExternalAPI {
         endpoint,
         errorMessage: e instanceof Error ? e.message : 'unknown error',
       });
-      assertTraktCircuitClosed();
+      assertTraktCircuitClosed(this.circuitKey());
       return this.get<T>(endpoint, config, TRAKT_GET_CACHE_TTL_SECONDS);
     }
   }
@@ -1013,7 +1049,7 @@ class TraktAPI extends ExternalAPI {
     retryRateLimit = true
   ): Promise<T> {
     await this.ensureFreshToken();
-    assertTraktCircuitClosed();
+    assertTraktCircuitClosed(this.circuitKey());
 
     const cacheConfig =
       method === 'GET' ? this.authCacheConfig(config) : undefined;
@@ -1067,10 +1103,13 @@ class TraktAPI extends ExternalAPI {
             false
           );
         }
-        openTraktCircuit(retryAfter || TRAKT_CIRCUIT_FALLBACK_SECONDS);
+        openTraktCircuit(
+          this.circuitKey(),
+          retryAfter || TRAKT_CIRCUIT_FALLBACK_SECONDS
+        );
         throw new TraktRateLimitedError(
           retryAfter ||
-            remainingCircuitSeconds() ||
+            remainingCircuitSeconds(this.circuitKey()) ||
             TRAKT_CIRCUIT_FALLBACK_SECONDS
         );
       }

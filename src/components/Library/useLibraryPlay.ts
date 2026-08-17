@@ -1,4 +1,8 @@
-import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
+import {
+  handleLibraryPlayClick,
+  navigatePlayFallback,
+  shouldNavigatePlayFallback,
+} from '@app/components/Library/libraryPlayAction';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import type {
   LibraryItemInspectorResponse,
@@ -19,8 +23,13 @@ const useLibraryPlay = () => {
       let itemId = item.playItemId;
       let fallbackUrl = item.mediaUrl ?? '';
       let label = item.subtitle || item.title;
+      let alreadyPreventedDefault = false;
 
       if (!itemId && item.mediaType === 'tv') {
+        // Inspector lookup is async; stop the overview <a href> until we know
+        // the concrete episode URL.
+        event.preventDefault();
+        alreadyPreventedDefault = true;
         const inspectorId =
           item.inspectorItemId ?? item.jellyfinSeriesId ?? item.jellyfinItemId;
         try {
@@ -45,13 +54,26 @@ const useLibraryPlay = () => {
         fallbackUrl = item.mediaUrl ?? '';
       }
 
-      return handleLibraryPlayClick(event, play, {
+      const admitted = handleLibraryPlayClick(event, play, {
         provider: 'jellyfin',
         itemId,
         fallbackUrl,
         label,
         quality: 'standard',
       });
+
+      if (
+        shouldNavigatePlayFallback(
+          admitted,
+          alreadyPreventedDefault,
+          fallbackUrl
+        )
+      ) {
+        navigatePlayFallback(fallbackUrl);
+        return true;
+      }
+
+      return admitted;
     },
     [play]
   );

@@ -5,6 +5,7 @@ import type { TvdbEpisodeCatalog } from '@server/api/tvdb/interfaces';
 import {
   parseEpisodeSelection,
   resolveEpisodeSelection,
+  withOngoingEpisodeRequestLock,
 } from './episodeRequests';
 
 const catalog: TvdbEpisodeCatalog = {
@@ -95,5 +96,32 @@ describe('TVDB episode selection resolver', () => {
         startEpisodeTvdbId: Number.MAX_SAFE_INTEGER,
       })
     );
+  });
+});
+
+describe('withOngoingEpisodeRequestLock', () => {
+  it('runs tasks for the same series one at a time', async () => {
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const first = withOngoingEpisodeRequestLock(42, false, async () => {
+      order.push('first-start');
+      await firstGate;
+      order.push('first-end');
+    });
+    const second = withOngoingEpisodeRequestLock(42, false, async () => {
+      order.push('second');
+    });
+
+    while (!order.includes('first-start')) {
+      await Promise.resolve();
+    }
+    assert.deepEqual(order, ['first-start']);
+    releaseFirst();
+    await Promise.all([first, second]);
+    assert.deepEqual(order, ['first-start', 'first-end', 'second']);
   });
 });

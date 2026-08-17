@@ -772,7 +772,7 @@ components:
       properties:
         available:
           type: boolean
-          description: Whether Trakt episode actions are available for the current user
+          description: Whether any linked provider can read or write episode watched status for the current user
         watchedEpisodeNumbers:
           type: array
           items:
@@ -9005,7 +9005,7 @@ paths:
   /media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/status:
     get:
       summary: Get episode watched status for a TV season
-      description: Returns one batched set of watched episode numbers from Trakt for the current user.
+      description: Returns one batched set of watched episode numbers from linked providers (Trakt and/or Jellyfin) for the current user.
       tags:
         - media
       parameters:
@@ -9080,7 +9080,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EpisodeWatchWriteResult'
         '502':
-          description: Trakt episode actions are unavailable
+          description: Episode watched actions are unavailable
           content:
             application/json:
               schema:
@@ -9136,7 +9136,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/EpisodeWatchWriteResult'
         '502':
-          description: Trakt episode actions are unavailable
+          description: Episode watched actions are unavailable
           content:
             application/json:
               schema:
@@ -9442,6 +9442,12 @@ paths:
             nullable: true
             example: 20
         - in: query
+          name: skip
+          schema:
+            type: number
+            nullable: true
+            example: 0
+        - in: query
           name: mediaType
           schema:
             type: string
@@ -9532,6 +9538,12 @@ paths:
       description: Available genres and release-year bounds for the user's catalog.
       tags:
         - library
+      parameters:
+        - in: query
+          name: mediaType
+          schema:
+            type: string
+            enum: [movie, tv]
       responses:
         '200':
           description: Facets
@@ -9546,7 +9558,8 @@ paths:
       summary: Get library item inspector payload
       description: >
         Unified movie or series inspector. Episode ids resolve to the parent
-        series. Series play targets use next-up/resume only.
+        series. Series play targets use next-up/resume, then first episode for
+        rewatch.
       tags:
         - library
       parameters:

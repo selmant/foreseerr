@@ -66,6 +66,11 @@ const allowRequest = (key: string) => {
   return true;
 };
 
+/** Test-only: reset in-memory redeem/issue rate windows between cases. */
+export const resetDesktopAuthRateLimitsForTests = () => {
+  requests.clear();
+};
+
 const cleanupExpiredTickets = async () => {
   await getRepository(DesktopAuthTicket)
     .createQueryBuilder()
@@ -193,20 +198,6 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
     return res.status(401).json({ code: 'session_expired' });
   }
 
-  // Consume atomically so two native workers cannot redeem the same ticket.
-  const result = await repository
-    .createQueryBuilder()
-    .update(DesktopAuthTicket)
-    .set({ consumedAt: new Date() })
-    .where('id = :id AND "consumedAt" IS NULL AND "expiresAt" > :now', {
-      id: record.id,
-      now: new Date(),
-    })
-    .execute();
-  if (result.affected !== 1) {
-    return res.status(409).json({ code: 'ticket_used' });
-  }
-
   try {
     const user = await findLinkedUser(record.userId);
     const settings = getSettings();
@@ -240,6 +231,22 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
     if (linkedIdentity.Id !== user.jellyfinUserId || !linkedIdentity.ServerId) {
       return res.status(401).json({ code: 'token_invalid' });
     }
+
+    // Consume only after Jellyfin bootstrap succeeds so a transient failure
+    // can retry the same ticket within its TTL.
+    const result = await repository
+      .createQueryBuilder()
+      .update(DesktopAuthTicket)
+      .set({ consumedAt: new Date() })
+      .where('id = :id AND "consumedAt" IS NULL AND "expiresAt" > :now', {
+        id: record.id,
+        now: new Date(),
+      })
+      .execute();
+    if (result.affected !== 1) {
+      return res.status(409).json({ code: 'ticket_used' });
+    }
+
     return res.status(200).json({
       serverUrl,
       serverId: linkedIdentity.ServerId,
