@@ -274,7 +274,7 @@ const ServarrPanel = ({
     } catch (err) {
       setError(
         axios.isAxiosError(err)
-          ? err.response?.data?.message
+          ? (err.response?.data?.message ?? 'Release search failed.')
           : 'Release search failed.'
       );
     } finally {
@@ -338,7 +338,7 @@ const ServarrPanel = ({
       setEpisodeMappings({});
     } catch (err) {
       const message = axios.isAxiosError(err)
-        ? err.response?.data?.message
+        ? (err.response?.data?.message ?? 'Unable to scan this import source.')
         : 'Unable to scan this import source.';
       setError(message);
       if (axios.isAxiosError(err) && err.response?.status === 409) {

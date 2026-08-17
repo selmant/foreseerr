@@ -1,6 +1,6 @@
 import logger from '@server/logger';
 import type { AxiosResponse } from 'axios';
-import ServarrBase, { type QueueDetailsItem } from './base';
+import ServarrBase, { manualImportQuery, type QueueDetailsItem } from './base';
 import type { ManualImportCandidate, ServarrRelease } from './radarr';
 
 export interface SonarrSeason {
@@ -554,14 +554,14 @@ class SonarrAPI extends ServarrBase<{
   }
 
   public async getManualImportCandidates(params: {
-    seriesId: number;
+    seriesId?: number;
     folder?: string;
     downloadId?: string;
   }): Promise<ManualImportCandidate[]> {
     const response = await this.axios.get<ManualImportCandidate[]>(
       '/manualimport',
       {
-        params: { ...params, filterExistingFiles: true },
+        params: manualImportQuery(params),
       }
     );
     return response.data;

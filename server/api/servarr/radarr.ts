@@ -1,6 +1,6 @@
 import logger from '@server/logger';
 import type { AxiosResponse } from 'axios';
-import ServarrBase, { type QueueDetailsItem } from './base';
+import ServarrBase, { manualImportQuery, type QueueDetailsItem } from './base';
 
 export interface ServarrRelease {
   guid: string;
@@ -383,14 +383,14 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
   }
 
   public async getManualImportCandidates(params: {
-    movieId: number;
+    movieId?: number;
     folder?: string;
     downloadId?: string;
   }): Promise<ManualImportCandidate[]> {
     const response = await this.axios.get<ManualImportCandidate[]>(
       '/manualimport',
       {
-        params: { ...params, filterExistingFiles: true },
+        params: manualImportQuery(params),
       }
     );
     return response.data;

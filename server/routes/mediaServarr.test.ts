@@ -1,3 +1,4 @@
+import { manualImportQuery } from '@server/api/servarr/base';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
@@ -5,6 +6,7 @@ import {
   episodeQueueStatus,
   isInteractiveImportQueueItem,
   releaseGrabRequest,
+  routeError,
 } from './mediaServarr';
 
 describe('Servarr interactive import eligibility', () => {
@@ -135,6 +137,46 @@ describe('Sonarr episode queue status', () => {
     assert.equal(
       episodeQueueStatus({ title: 'Episode', status: 'completed' }),
       undefined
+    );
+  });
+});
+
+describe('Arr manual import query', () => {
+  it('omits seriesId so Arr scans the completed download, not the library path', () => {
+    assert.deepEqual(
+      manualImportQuery({
+        seriesId: 8,
+        folder: '/downloads/example',
+        downloadId: 'download-id',
+      }),
+      {
+        folder: '/downloads/example',
+        downloadId: 'download-id',
+        filterExistingFiles: true,
+      }
+    );
+  });
+});
+
+describe('Servarr route errors', () => {
+  it('surfaces Arr response messages instead of the axios status text', () => {
+    assert.deepEqual(
+      routeError({
+        message: 'Request failed with status code 500',
+        status: 500,
+        response: {
+          status: 500,
+          data: {
+            message:
+              "Could not find a part of the path '/data/tv/Chillin' in My 30s after Getting Fired from the Demon King's Army'.",
+          },
+        },
+      }),
+      {
+        status: 500,
+        message:
+          "Could not find a part of the path '/data/tv/Chillin' in My 30s after Getting Fired from the Demon King's Army'.",
+      }
     );
   });
 });

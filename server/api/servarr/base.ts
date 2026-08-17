@@ -113,6 +113,30 @@ interface QueueResponse<QueueItemAppendT> {
   records: (QueueItem & QueueItemAppendT)[];
 }
 
+/**
+ * Arr GET /manualimport treats seriesId/movieId as "scan the library folder".
+ * That 500s when the folder does not exist yet. Queue-based interactive import
+ * must send downloadId/folder instead so Arr inspects the completed download.
+ */
+export function manualImportQuery(params: {
+  seriesId?: number;
+  movieId?: number;
+  folder?: string;
+  downloadId?: string;
+}): Record<string, string | number | boolean> {
+  const query: Record<string, string | number | boolean> = {
+    filterExistingFiles: true,
+  };
+  if (params.downloadId || params.folder) {
+    if (params.folder) query.folder = params.folder;
+    if (params.downloadId) query.downloadId = params.downloadId;
+    return query;
+  }
+  if (params.seriesId != null) query.seriesId = params.seriesId;
+  if (params.movieId != null) query.movieId = params.movieId;
+  return query;
+}
+
 class ServarrBase<QueueItemAppendT> extends ExternalAPI {
   static buildUrl(settings: DVRSettings, path?: string): string {
     return `${settings.useSsl ? 'https' : 'http'}://${settings.hostname}:${

@@ -210,6 +210,30 @@ describe('RadarrAPI interactive management', () => {
     ]);
   });
 
+  it('scans the completed download instead of the movie library folder', async () => {
+    const radarr = buildRadarr();
+    const get = mock.method(getAxios(radarr), 'get', async () => ({
+      data: [],
+    }));
+
+    await radarr.getManualImportCandidates({
+      movieId: 12,
+      folder: '/downloads/example',
+      downloadId: 'download-id',
+    });
+
+    assert.deepStrictEqual(get.mock.calls[0].arguments, [
+      '/manualimport',
+      {
+        params: {
+          folder: '/downloads/example',
+          downloadId: 'download-id',
+          filterExistingFiles: true,
+        },
+      },
+    ]);
+  });
+
   it('asks Radarr to reprocess candidates before importing them', async () => {
     const radarr = buildRadarr();
     const post = mock.method(getAxios(radarr), 'post', async () => ({

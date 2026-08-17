@@ -218,7 +218,7 @@ export function releaseGrabRequest(options: {
   return request;
 }
 
-function routeError(error: unknown, fallback = 502) {
+export function routeError(error: unknown, fallback = 502) {
   const assigned = error as {
     status?: number;
     message?: string;
@@ -380,10 +380,7 @@ mediaServarrRoutes.get(
         })),
       });
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
-      });
+      next(routeError(error));
     }
   }
 );
@@ -463,10 +460,7 @@ mediaServarrRoutes.get(
         })),
       });
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
-      });
+      next(routeError(error));
     }
   }
 );
@@ -580,10 +574,7 @@ mediaServarrRoutes.get(
         })),
       });
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
-      });
+      next(routeError(error));
     }
   }
 );
@@ -614,12 +605,10 @@ mediaServarrRoutes.post(
       const candidates =
         context.type === 'radarr'
           ? await (context.client as RadarrAPI).getManualImportCandidates({
-              movieId: context.externalId,
               folder: source.folder,
               downloadId: source.downloadId,
             })
           : await (context.client as SonarrAPI).getManualImportCandidates({
-              seriesId: context.externalId,
               folder: source.folder,
               downloadId: source.downloadId,
             });
@@ -630,10 +619,11 @@ mediaServarrRoutes.post(
         ),
       });
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
+      logger.error('Servarr manual import scan failed', {
+        label: 'Servarr',
+        errorMessage: routeError(error).message,
       });
+      next(routeError(error));
     }
   }
 );
@@ -705,10 +695,7 @@ mediaServarrRoutes.post(
         )
       );
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
-      });
+      next(routeError(error));
     }
   }
 );
@@ -732,12 +719,10 @@ mediaServarrRoutes.get(
           const candidates =
             context.type === 'radarr'
               ? await (client as RadarrAPI).getManualImportCandidates({
-                  movieId: context.externalId,
                   folder: source.folder,
                   downloadId: source.downloadId,
                 })
               : await (client as SonarrAPI).getManualImportCandidates({
-                  seriesId: context.externalId,
                   folder: source.folder,
                   downloadId: source.downloadId,
                 });
@@ -760,10 +745,7 @@ mediaServarrRoutes.get(
           ),
       });
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
-      });
+      next(routeError(error));
     }
   }
 );
@@ -878,10 +860,7 @@ mediaServarrRoutes.post(
         status: command.status,
       });
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
-      });
+      next(routeError(error));
     }
   }
 );
@@ -910,10 +889,7 @@ mediaServarrRoutes.get(
         endedAt: command.ended,
       });
     } catch (error) {
-      next({
-        status: (error as { status?: number }).status ?? 502,
-        message: (error as Error).message,
-      });
+      next(routeError(error));
     }
   }
 );

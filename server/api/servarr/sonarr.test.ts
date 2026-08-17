@@ -302,7 +302,7 @@ describe('SonarrAPI interactive management', () => {
     ]);
   });
 
-  it('passes queue download context through to manual import discovery', async () => {
+  it('scans the completed download instead of the series library folder', async () => {
     const sonarr = buildSonarr();
     const get = mock.method(getAxios(sonarr), 'get', async () => ({
       data: [],
@@ -318,12 +318,25 @@ describe('SonarrAPI interactive management', () => {
       '/manualimport',
       {
         params: {
-          seriesId: 9,
           folder: '/downloads/example',
           downloadId: 'download-id',
           filterExistingFiles: true,
         },
       },
+    ]);
+  });
+
+  it('scans the series library folder when no download source is provided', async () => {
+    const sonarr = buildSonarr();
+    const get = mock.method(getAxios(sonarr), 'get', async () => ({
+      data: [],
+    }));
+
+    await sonarr.getManualImportCandidates({ seriesId: 9 });
+
+    assert.deepStrictEqual(get.mock.calls[0].arguments, [
+      '/manualimport',
+      { params: { seriesId: 9, filterExistingFiles: true } },
     ]);
   });
 
