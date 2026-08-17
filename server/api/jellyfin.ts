@@ -597,7 +597,10 @@ class JellyfinAPI extends ExternalAPI {
     }
   }
 
-  /** Continue Watching / in-progress items for the authenticated user. */
+  /**
+   * Continue Watching / in-progress items, most recently played first.
+   * Jellyfin Resume does not always default to DatePlayed — pass it explicitly.
+   */
   public async getResumeItems(
     limit = 20
   ): Promise<JellyfinLibraryItemExtended[]> {
@@ -611,6 +614,8 @@ class JellyfinAPI extends ExternalAPI {
             Fields: 'ProviderIds,Overview',
             IncludeItemTypes: 'Movie,Episode',
             EnableUserData: true,
+            SortBy: 'DatePlayed',
+            SortOrder: 'Descending',
           },
         }
       );
