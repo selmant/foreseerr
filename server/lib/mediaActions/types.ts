@@ -1,6 +1,6 @@
 export type MediaActionMediaType = 'movie' | 'tv';
 
-export type MediaActionProviderId = 'trakt' | 'jellyfin';
+export type MediaActionProviderId = 'trakt' | 'jellyfin' | 'anilist';
 
 export interface MediaActionOperationCapabilities {
   readWatched: boolean;
@@ -23,6 +23,14 @@ export const JELLYFIN_MEDIA_ACTION_CAPABILITIES: MediaActionOperationCapabilitie
     writeWatched: true,
     readRating: false,
     writeRating: false,
+  };
+
+export const ANILIST_MEDIA_ACTION_CAPABILITIES: MediaActionOperationCapabilities =
+  {
+    readWatched: true,
+    writeWatched: true,
+    readRating: true,
+    writeRating: true,
   };
 
 export type MediaActionOperationCapability =

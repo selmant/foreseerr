@@ -655,12 +655,41 @@ components:
           type: boolean
           description: Required when switching from Direct Trakt to Better Trakt
           example: false
+    AniListSettings:
+      type: object
+      properties:
+        clientId:
+          type: string
+          example: 'your-anilist-client-id'
+        clientSecret:
+          type: string
+          description: Masked on GET responses when configured
+          example: '********'
+        configured:
+          type: boolean
+          example: true
+        actionsEnabled:
+          type: boolean
+          description: Whether AniList is enabled as a media-actions provider
+          example: true
+        redirectUrl:
+          type: string
+          example: 'https://anilist.co/api/v2/oauth/pin'
+        linkedAccountCount:
+          type: integer
+          example: 0
+        confirmDisconnectLinkedAccounts:
+          type: boolean
+          example: false
+        clearCredentials:
+          type: boolean
+          example: false
     MediaActionProviderResult:
       type: object
       properties:
         provider:
           type: string
-          enum: [trakt, jellyfin]
+          enum: [trakt, jellyfin, anilist]
         ok:
           type: boolean
         watched:
@@ -739,7 +768,7 @@ components:
       properties:
         id:
           type: string
-          enum: [trakt, jellyfin]
+          enum: [trakt, jellyfin, anilist]
         linked:
           type: boolean
         capabilities:
@@ -1108,6 +1137,10 @@ components:
           type: boolean
           description: Whether admin Trakt API credentials are configured
           example: false
+        anilistConfigured:
+          type: boolean
+          description: Whether admin AniList API credentials are configured
+          example: false
         mediaActionsTraktEnabled:
           type: boolean
           description: Whether Trakt is enabled for watched/unwatched/rate fan-out
@@ -1115,6 +1148,10 @@ components:
         mediaActionsJellyfinEnabled:
           type: boolean
           description: Whether Jellyfin is enabled as a media-actions watched provider
+          example: true
+        mediaActionsAnilistEnabled:
+          type: boolean
+          description: Whether AniList is enabled for watched/unwatched/rate fan-out
           example: true
         mdblistConfigured:
           type: boolean
@@ -3872,7 +3909,7 @@ paths:
   /settings/integrations/status:
     get:
       summary: Check integration health
-      description: Checks whether configured Trakt and MDBList integrations are currently reachable.
+      description: Checks whether configured Trakt, MDBList, and AniList integrations are currently reachable.
       tags:
         - settings
       responses:
@@ -3907,6 +3944,56 @@ paths:
       responses:
         '200':
           description: Trakt media actions updated
+  /settings/anilist:
+    get:
+      summary: Get AniList settings
+      description: Retrieves current AniList application credentials (secret masked).
+      tags:
+        - settings
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AniListSettings'
+    post:
+      summary: Update AniList settings
+      description: Updates AniList application Client ID and Client Secret. The developer app Redirect URL must be https://anilist.co/api/v2/oauth/pin.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AniListSettings'
+      responses:
+        '200':
+          description: Values were successfully updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AniListSettings'
+  /settings/anilist/actions:
+    post:
+      summary: Enable or disable AniList media actions
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - actionsEnabled
+              properties:
+                actionsEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: AniList media actions updated
   /settings/mdblist:
     get:
       summary: Get MDBList settings
@@ -6711,6 +6798,84 @@ paths:
           description: Device code expired
         '500':
           description: Server error
+  /user/{userId}/settings/linked-accounts/anilist:
+    get:
+      summary: Get AniList link status for a user
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: AniList link status returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected:
+                    type: boolean
+                  expired:
+                    type: boolean
+                  username:
+                    type: string
+                    nullable: true
+                  authorizeUrl:
+                    type: string
+                    nullable: true
+        '401':
+          description: Unauthorized
+    post:
+      summary: Link AniList with a PIN authorization code
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+      responses:
+        '200':
+          description: AniList account linked
+        '400':
+          description: Invalid request or AniList not configured
+        '401':
+          description: Unauthorized
+        '409':
+          description: AniList account already linked
+        '500':
+          description: Server error
+    delete:
+      summary: Unlink AniList account for a user
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '204':
+          description: AniList account unlinked
+        '401':
+          description: Unauthorized
   /user/{userId}/settings/notifications:
     get:
       summary: Get notification settings for a user
@@ -8127,6 +8292,109 @@ paths:
       responses:
         '200':
           description: Trakt list items returned
+  /discover/anilist/trending:
+    get:
+      summary: Get AniList trending anime mapped to TMDB.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList trending anime returned
+  /discover/anilist/season:
+    get:
+      summary: Get AniList current-season anime mapped to TMDB.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList seasonal anime returned
+  /discover/anilist/watching:
+    get:
+      summary: Get the authenticated user's AniList currently watching list.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList watching list returned
+        '404':
+          description: AniList account not linked
+  /discover/anilist/planning:
+    get:
+      summary: Get the authenticated user's AniList planning list.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList planning list returned
+        '404':
+          description: AniList account not linked
+  /discover/anilist/completed:
+    get:
+      summary: Get the authenticated user's AniList completed list.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList completed list returned
+        '404':
+          description: AniList account not linked
+  /discover/anilist/lists:
+    get:
+      summary: List the authenticated user's AniList anime lists.
+      tags:
+        - search
+      responses:
+        '200':
+          description: AniList lists returned
+  /discover/anilist/list:
+    get:
+      summary: Get an AniList anime list by name.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList list items returned
   /discover/watchlist:
     get:
       summary: Get the Plex watchlist.

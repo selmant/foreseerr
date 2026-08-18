@@ -92,6 +92,12 @@ export const sliderTitles = defineMessages('components.Discover', {
   traktwatchlist: 'Trakt Watchlist',
   traktlist: 'Trakt List',
   trakthistory: 'Trakt History',
+  anilisttrending: 'AniList Trending',
+  anilistseason: 'AniList This Season',
+  anilistwatching: 'AniList Watching',
+  anilistplanning: 'AniList Planning',
+  anilistcompleted: 'AniList Completed',
+  anilistlist: 'AniList List',
 });
 
 export const QueryFilterOptions = z.object({

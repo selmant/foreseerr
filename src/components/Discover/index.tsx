@@ -3,6 +3,9 @@ import ConfirmButton from '@app/components/Common/ConfirmButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
+import AnilistListSlider from '@app/components/Discover/AnilistListSlider';
+import AnilistSlider from '@app/components/Discover/AnilistSlider';
+import AnilistUserSlider from '@app/components/Discover/AnilistUserSlider';
 import CreateSlider from '@app/components/Discover/CreateSlider';
 import DiscoverSliderEdit from '@app/components/Discover/DiscoverSliderEdit';
 import MovieGenreSlider from '@app/components/Discover/MovieGenreSlider';
@@ -415,6 +418,44 @@ const Discover = () => {
                 sliderKey={`custom-slider-${slider.id}`}
                 title={slider.title ?? ''}
                 url={slider.data ?? ''}
+              />
+            );
+            break;
+          case DiscoverSliderType.ANILIST_TRENDING:
+            sliderComponent = (
+              <AnilistSlider
+                title={intl.formatMessage(sliderTitles.anilisttrending)}
+                endpoint="/api/v1/discover/anilist/trending"
+                linkUrl="/discover/anilist/trending"
+                sliderKey="anilist-trending"
+              />
+            );
+            break;
+          case DiscoverSliderType.ANILIST_SEASON:
+            sliderComponent = (
+              <AnilistSlider
+                title={intl.formatMessage(sliderTitles.anilistseason)}
+                endpoint="/api/v1/discover/anilist/season"
+                linkUrl="/discover/anilist/season"
+                sliderKey="anilist-season"
+              />
+            );
+            break;
+          case DiscoverSliderType.ANILIST_WATCHING:
+            sliderComponent = <AnilistUserSlider list="watching" />;
+            break;
+          case DiscoverSliderType.ANILIST_PLANNING:
+            sliderComponent = <AnilistUserSlider list="planning" />;
+            break;
+          case DiscoverSliderType.ANILIST_COMPLETED:
+            sliderComponent = <AnilistUserSlider list="completed" />;
+            break;
+          case DiscoverSliderType.ANILIST_LIST:
+            sliderComponent = (
+              <AnilistListSlider
+                sliderKey={`custom-slider-${slider.id}`}
+                title={slider.title ?? ''}
+                name={slider.data ?? ''}
               />
             );
             break;

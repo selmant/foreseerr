@@ -102,6 +102,18 @@ export class UserSettings {
   @Column({ type: 'varchar', nullable: true, unique: true })
   public traktUserId?: string;
 
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public anilistAccessToken?: string;
+
+  @Column({ type: 'bigint', nullable: true, select: false })
+  public anilistTokenExpiresAt?: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  public anilistUsername?: string;
+
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  public anilistUserId?: string;
+
   @Column({
     type: 'text',
     nullable: true,

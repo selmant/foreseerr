@@ -1,8 +1,10 @@
+import { AnilistMediaActionProvider } from './anilist';
 import { MediaActionDispatcher } from './dispatcher';
 import { JellyfinMediaActionProvider } from './jellyfin';
 import { TraktMediaActionProvider } from './trakt';
 import type { MediaActionProvider } from './types';
 
+export { AnilistMediaActionProvider } from './anilist';
 export { getMediaActionCapabilities } from './capabilities';
 export type {
   MediaActionCapabilitiesResponse,
@@ -28,6 +30,7 @@ export function getDefaultMediaActionProviders(): MediaActionProvider[] {
     defaultProviders = [
       new TraktMediaActionProvider(),
       new JellyfinMediaActionProvider(),
+      new AnilistMediaActionProvider(),
     ];
   }
   return defaultProviders;

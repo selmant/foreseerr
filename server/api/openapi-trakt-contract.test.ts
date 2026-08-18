@@ -17,6 +17,8 @@ describe('OpenAPI Trakt contract', () => {
   const requiredPaths: Record<string, string[]> = {
     '/settings/trakt': ['get', 'post'],
     '/settings/trakt/actions': ['post'],
+    '/settings/anilist': ['get', 'post'],
+    '/settings/anilist/actions': ['post'],
     '/settings/integrations/status': ['get'],
     '/settings/integrations/status/refresh': ['post'],
     '/user/{userId}/settings/linked-accounts/trakt': ['get', 'delete'],
@@ -27,7 +29,18 @@ describe('OpenAPI Trakt contract', () => {
     '/discover/trakt/history': ['get'],
     '/discover/trakt/lists': ['get'],
     '/discover/trakt/lists/search': ['get'],
-    '/discover/trakt/list': ['get'],
+    '/user/{userId}/settings/linked-accounts/anilist': [
+      'get',
+      'post',
+      'delete',
+    ],
+    '/discover/anilist/trending': ['get'],
+    '/discover/anilist/season': ['get'],
+    '/discover/anilist/watching': ['get'],
+    '/discover/anilist/planning': ['get'],
+    '/discover/anilist/completed': ['get'],
+    '/discover/anilist/lists': ['get'],
+    '/discover/anilist/list': ['get'],
   };
 
   for (const [path, methods] of Object.entries(requiredPaths)) {

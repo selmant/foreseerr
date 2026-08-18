@@ -1,12 +1,15 @@
+import AnilistLogo from '@app/assets/services/anilist.svg';
+import MdblistLogo from '@app/assets/services/mdblist.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import Badge from '@app/components/Common/Badge';
 import Modal from '@app/components/Common/Modal';
+import SettingsAnilist from '@app/components/Settings/SettingsAnilist';
 import SettingsMdblist from '@app/components/Settings/SettingsMdblist';
 import SettingsTrakt from '@app/components/Settings/SettingsTrakt';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
-import { PencilIcon, StarIcon } from '@heroicons/react/24/solid';
+import { PencilIcon } from '@heroicons/react/24/solid';
 import { Fragment, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -20,6 +23,9 @@ const messages = defineMessages(
     mdblist: 'MDBList',
     mdblistDescription:
       'IMDb, Rotten Tomatoes, Metacritic, and Trakt community ratings.',
+    anilist: 'AniList',
+    anilistDescription:
+      'Anime discovery, seasonal charts, and personal AniList watched status and scores.',
     configured: 'Configured',
     notConfigured: 'Not configured',
     connected: 'Reachable',
@@ -28,12 +34,13 @@ const messages = defineMessages(
     edit: 'Edit',
     editTrakt: 'Configure Trakt',
     editMdblist: 'Configure MDBList',
+    editAnilist: 'Configure AniList',
     statusUnavailable: 'Status unavailable',
     checkedAt: 'Checked {time}',
   }
 );
 
-type Integration = 'trakt' | 'mdblist';
+type Integration = 'trakt' | 'mdblist' | 'anilist';
 
 type IntegrationHealth = {
   state: 'not_configured' | 'healthy' | 'degraded';
@@ -44,6 +51,7 @@ type IntegrationHealth = {
 type IntegrationHealthResponse = {
   trakt: IntegrationHealth & { provider: 'direct' | 'jellyfin' };
   mdblist: IntegrationHealth;
+  anilist: IntegrationHealth;
 };
 
 const ExternalIntegrationCards = () => {
@@ -70,7 +78,15 @@ const ExternalIntegrationCards = () => {
       description: intl.formatMessage(messages.mdblistDescription),
       health: health?.mdblist,
       configured: settings.currentSettings.mdblistConfigured,
-      icon: <StarIcon className="h-10 w-10 text-amber-400" />,
+      icon: <MdblistLogo className="h-10 w-10" />,
+    },
+    {
+      id: 'anilist' as const,
+      name: intl.formatMessage(messages.anilist),
+      description: intl.formatMessage(messages.anilistDescription),
+      health: health?.anilist,
+      configured: settings.currentSettings.anilistConfigured,
+      icon: <AnilistLogo className="h-10 w-10" />,
     },
   ];
 
@@ -182,6 +198,17 @@ const ExternalIntegrationCards = () => {
           dialogClass="sm:max-w-4xl"
         >
           <SettingsMdblist onSave={() => setEditing(null)} />
+        </Modal>
+      </Transition>
+
+      <Transition as={Fragment} show={editing === 'anilist'}>
+        <Modal
+          title={intl.formatMessage(messages.editAnilist)}
+          onCancel={() => setEditing(null)}
+          backgroundClickable={false}
+          dialogClass="sm:max-w-4xl"
+        >
+          <SettingsAnilist onSave={() => setEditing(null)} />
         </Modal>
       </Transition>
     </>

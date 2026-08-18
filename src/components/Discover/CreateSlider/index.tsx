@@ -39,6 +39,9 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   customTraktList: 'Use: {value}',
   traktListNotLinked:
     'Search finds public lists. Link Trakt to also include your personal lists.',
+  searchAnilistLists: 'Choose one of your AniList lists…',
+  anilistListNotLinked:
+    'Link AniList in Linked Accounts to pick from your anime lists.',
   liked: 'liked',
   yours: 'yours',
   addsuccess: 'Created new slider and saved discover customization settings.',
@@ -233,6 +236,11 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         case DiscoverSliderType.TRAKT_LIST:
           loadDefaultTraktList();
           break;
+        case DiscoverSliderType.ANILIST_LIST:
+          if (slider.data) {
+            setDefaultDataValue([{ label: slider.data, value: slider.data }]);
+          }
+          break;
       }
     }
   }, [slider]);
@@ -379,6 +387,28 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
     return options;
   };
 
+  const loadAnilistListOptions = async (inputValue: string) => {
+    const input = inputValue.trim().toLowerCase();
+    try {
+      const { data } = await axios.get<{
+        results: {
+          name: string;
+          status: string | null;
+          isCustomList: boolean;
+          itemCount: number;
+        }[];
+      }>('/api/v1/discover/anilist/lists');
+      return data.results
+        .filter((list) => !input || list.name.toLowerCase().includes(input))
+        .map((list) => ({
+          label: `${list.name} (${list.itemCount})`,
+          value: list.name,
+        }));
+    } catch {
+      return [];
+    }
+  };
+
   const options: CreateOption[] = [
     {
       type: DiscoverSliderType.TMDB_MOVIE_KEYWORD,
@@ -454,11 +484,22 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
       dataPlaceholderText: intl.formatMessage(messages.providetraktlisturl),
     },
+    {
+      type: DiscoverSliderType.ANILIST_LIST,
+      title: intl.formatMessage(sliderTitles.anilistlist),
+      dataUrl: '/api/v1/discover/anilist/list',
+      params: 'name=$value',
+      titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
+      dataPlaceholderText: intl.formatMessage(messages.searchAnilistLists),
+    },
   ];
 
   const visibleOptions = options.filter((option) => {
     if (option.type === DiscoverSliderType.TRAKT_LIST) {
       return settings.currentSettings.traktConfigured;
+    }
+    if (option.type === DiscoverSliderType.ANILIST_LIST) {
+      return settings.currentSettings.anilistConfigured;
     }
 
     return true;
@@ -706,6 +747,45 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                 />
                 <p className="text-sm text-gray-400">
                   {intl.formatMessage(messages.traktListNotLinked)}
+                </p>
+              </div>
+            );
+            break;
+          case DiscoverSliderType.ANILIST_LIST:
+            dataInput = (
+              <div className="space-y-3">
+                <AsyncSelect
+                  key={`anilist-list-select-${defaultDataValue}`}
+                  inputId="anilist-list-picker"
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  defaultValue={defaultDataValue?.[0]}
+                  defaultOptions
+                  cacheOptions
+                  loadOptions={loadAnilistListOptions}
+                  placeholder={intl.formatMessage(messages.searchAnilistLists)}
+                  noOptionsMessage={() =>
+                    intl.formatMessage(messages.nooptions)
+                  }
+                  onChange={(value) => {
+                    const listValue = value?.value?.toString() ?? '';
+                    const label = value?.label?.toString() ?? '';
+                    let title = values.title;
+                    if (!title?.trim() && label) {
+                      title = label.replace(/\s+\(\d+\)$/, '');
+                    }
+                    setValues(
+                      (currentValues) => ({
+                        ...currentValues,
+                        data: listValue,
+                        title,
+                      }),
+                      true
+                    );
+                  }}
+                />
+                <p className="text-sm text-gray-400">
+                  {intl.formatMessage(messages.anilistListNotLinked)}
                 </p>
               </div>
             );

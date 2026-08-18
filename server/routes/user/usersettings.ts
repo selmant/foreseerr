@@ -1,3 +1,4 @@
+import AnilistAPI from '@server/api/anilist';
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import TraktAPI from '@server/api/trakt';
@@ -12,9 +13,19 @@ import type {
   UserSettingsNotificationsResponse,
 } from '@server/interfaces/api/userSettingsInterfaces';
 import {
+  AnilistAccountAlreadyLinkedError,
+  AnilistNotConfiguredError,
+  assertAnilistAccountAvailable,
+  clearUserAnilistCredentials,
+  getAnilistAppCredentials,
+  getUserAnilistSettings,
+  isAnilistTokenExpired,
+} from '@server/lib/anilist';
+import {
   parseDiscoverFilterDefaults,
   type DiscoverFilterDefaults,
 } from '@server/lib/discover/filterDefaults';
+import { invalidateUserAnilistSyncCache } from '@server/lib/mediaActions/anilistSyncCache';
 import { invalidateUserSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
@@ -860,6 +871,113 @@ userSettingsRoutes.delete<{ id: string }>(
       }
 
       await clearUserTraktCredentials(userSettings.id, foreseerrUserId);
+
+      return res.status(204).send();
+    } catch (e) {
+      next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.get<{ id: string }>(
+  '/linked-accounts/anilist',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const settings = await getUserAnilistSettings(Number(req.params.id));
+      const connected = Boolean(
+        settings?.anilistAccessToken &&
+        !isAnilistTokenExpired(settings.anilistTokenExpiresAt)
+      );
+      return res.status(200).json({
+        connected,
+        expired: Boolean(
+          settings?.anilistAccessToken &&
+          isAnilistTokenExpired(settings.anilistTokenExpiresAt)
+        ),
+        username: connected ? (settings?.anilistUsername ?? null) : null,
+        authorizeUrl: (() => {
+          try {
+            const { clientId } = getAnilistAppCredentials();
+            return AnilistAPI.buildAuthorizeUrl(clientId);
+          } catch {
+            return null;
+          }
+        })(),
+      });
+    } catch (e) {
+      next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/anilist',
+  isOwnProfile(),
+  async (req, res) => {
+    try {
+      const { clientId, clientSecret } = getAnilistAppCredentials();
+      const code = String(req.body.code ?? '').trim();
+      if (!code) {
+        return res.status(400).json({ message: 'code is required' });
+      }
+
+      const tokens = await AnilistAPI.exchangePinCode(
+        clientId,
+        clientSecret,
+        code
+      );
+      const authenticated = new AnilistAPI({
+        accessToken: tokens.accessToken,
+      });
+      const viewer = await authenticated.getViewer();
+      const foreseerrUserId = Number(req.params.id);
+      const anilistUserId = String(viewer.id);
+
+      await assertAnilistAccountAvailable(anilistUserId, foreseerrUserId);
+
+      const userSettings = await ensureUserSettings(foreseerrUserId);
+      userSettings.anilistAccessToken = tokens.accessToken;
+      userSettings.anilistTokenExpiresAt = String(tokens.expiresAt);
+      userSettings.anilistUsername = viewer.name;
+      userSettings.anilistUserId = anilistUserId;
+      await getRepository(UserSettings).save(userSettings);
+      invalidateUserAnilistSyncCache(foreseerrUserId);
+
+      return res.status(200).json({
+        status: 'authorized',
+        username: viewer.name,
+      });
+    } catch (e) {
+      if (e instanceof AnilistAccountAlreadyLinkedError) {
+        return res.status(409).json({ message: e.message });
+      }
+      if (e instanceof AnilistNotConfiguredError) {
+        return res.status(400).json({ message: e.message });
+      }
+      logger.error('Failed to complete AniList authorization', {
+        label: 'API',
+        errorMessage: e instanceof Error ? e.message : 'unknown error',
+      });
+      return res.status(500).json({
+        message: 'Unable to complete AniList authorization.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.delete<{ id: string }>(
+  '/linked-accounts/anilist',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const foreseerrUserId = Number(req.params.id);
+      const userSettings = await getUserAnilistSettings(foreseerrUserId);
+      if (!userSettings) {
+        return res.status(204).send();
+      }
+
+      await clearUserAnilistCredentials(userSettings.id, foreseerrUserId);
 
       return res.status(204).send();
     } catch (e) {

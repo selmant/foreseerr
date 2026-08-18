@@ -26,6 +26,12 @@ export enum DiscoverSliderType {
   TRAKT_WATCHLIST,
   TRAKT_LIST,
   TRAKT_HISTORY,
+  ANILIST_TRENDING,
+  ANILIST_SEASON,
+  ANILIST_WATCHING,
+  ANILIST_PLANNING,
+  ANILIST_COMPLETED,
+  ANILIST_LIST,
 }
 
 export const defaultSliders: Partial<DiscoverSlider>[] = [
@@ -118,5 +124,35 @@ export const defaultSliders: Partial<DiscoverSlider>[] = [
     enabled: true,
     isBuiltIn: true,
     order: 14,
+  },
+  {
+    type: DiscoverSliderType.ANILIST_TRENDING,
+    enabled: true,
+    isBuiltIn: true,
+    order: 15,
+  },
+  {
+    type: DiscoverSliderType.ANILIST_SEASON,
+    enabled: true,
+    isBuiltIn: true,
+    order: 16,
+  },
+  {
+    type: DiscoverSliderType.ANILIST_WATCHING,
+    enabled: true,
+    isBuiltIn: true,
+    order: 17,
+  },
+  {
+    type: DiscoverSliderType.ANILIST_PLANNING,
+    enabled: true,
+    isBuiltIn: true,
+    order: 18,
+  },
+  {
+    type: DiscoverSliderType.ANILIST_COMPLETED,
+    enabled: true,
+    isBuiltIn: true,
+    order: 19,
   },
 ];

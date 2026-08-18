@@ -1,3 +1,4 @@
+import { ANILIST_OAUTH_PIN_REDIRECT } from '@server/api/anilist/interfaces';
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexAPI from '@server/api/plexapi';
 import PlexTvAPI from '@server/api/plextv';
@@ -15,6 +16,10 @@ import type {
   SettingsAboutResponse,
 } from '@server/interfaces/api/settingsInterfaces';
 import { scheduledJobs } from '@server/job/schedule';
+import {
+  countLinkedAnilistAccounts,
+  disconnectAllAnilistLinks,
+} from '@server/lib/anilist';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
@@ -22,6 +27,7 @@ import {
   clearIntegrationHealthCache,
   getIntegrationHealth,
 } from '@server/lib/integrationHealth';
+import { clearAnilistSyncCache } from '@server/lib/mediaActions/anilistSyncCache';
 import { clearSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
 import { clearMdblistProviderState } from '@server/lib/ratings';
@@ -546,6 +552,7 @@ settingsRoutes.post('/trakt/actions', async (req, res, next) => {
       providers: {
         trakt: req.body.actionsEnabled,
         jellyfin: settings.mediaActions.providers.jellyfin,
+        anilist: settings.mediaActions.providers.anilist,
       },
     };
     await settings.save();
@@ -642,6 +649,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
       providers: {
         trakt: req.body.actionsEnabled !== false,
         jellyfin: settings.mediaActions.providers.jellyfin,
+        anilist: settings.mediaActions.providers.anilist,
       },
     };
     await settings.save();
@@ -787,6 +795,128 @@ settingsRoutes.post('/mdblist', async (req, res, next) => {
     return next({
       status: 500,
       message: 'Unable to save MDBList settings.',
+    });
+  }
+});
+
+const anilistSettingsResponse = async () => {
+  const settings = getSettings();
+  return {
+    clientId: settings.anilist.clientId,
+    clientSecret: settings.anilist.clientSecret ? '********' : '',
+    configured: Boolean(
+      settings.anilist.clientId && settings.anilist.clientSecret
+    ),
+    actionsEnabled: settings.mediaActions.providers.anilist !== false,
+    redirectUrl: ANILIST_OAUTH_PIN_REDIRECT,
+    linkedAccountCount: await countLinkedAnilistAccounts(),
+  };
+};
+
+settingsRoutes.get('/anilist', async (_req, res) => {
+  res.status(200).json(await anilistSettingsResponse());
+});
+
+settingsRoutes.post('/anilist/actions', async (req, res, next) => {
+  if (typeof req.body.actionsEnabled !== 'boolean') {
+    return next({
+      status: 400,
+      message: 'actionsEnabled must be a boolean.',
+    });
+  }
+
+  try {
+    const settings = getSettings();
+    settings.mediaActions = {
+      providers: {
+        trakt: settings.mediaActions.providers.trakt,
+        jellyfin: settings.mediaActions.providers.jellyfin,
+        anilist: req.body.actionsEnabled,
+      },
+    };
+    await settings.save();
+    return res.status(200).json({ actionsEnabled: req.body.actionsEnabled });
+  } catch (e) {
+    logger.error('Unable to update AniList action settings', {
+      label: 'Settings',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    return next({ status: 500, message: 'Unable to update AniList actions.' });
+  }
+});
+
+settingsRoutes.post('/anilist', async (req, res, next) => {
+  const settings = getSettings();
+
+  try {
+    const previousClientId = settings.anilist.clientId;
+    const previousClientSecret = settings.anilist.clientSecret;
+    let clientId = String(req.body.clientId ?? '').trim();
+    let clientSecret = String(req.body.clientSecret ?? '').trim();
+
+    if (!clientSecret || clientSecret === '********') {
+      clientSecret = settings.anilist.clientSecret;
+    }
+
+    const clearing =
+      req.body.clearCredentials === true || (!clientId && !clientSecret);
+    if (clearing) {
+      clientId = '';
+      clientSecret = '';
+    }
+
+    if (!clearing && (!clientId || !clientSecret)) {
+      return res.status(400).json({
+        message: 'An AniList Client ID and Client Secret are required.',
+      });
+    }
+
+    const credentialsChanging =
+      previousClientId !== clientId || previousClientSecret !== clientSecret;
+
+    if (credentialsChanging && !clearing) {
+      const linkedAccountCount = await countLinkedAnilistAccounts();
+      if (
+        linkedAccountCount > 0 &&
+        req.body.confirmDisconnectLinkedAccounts !== true
+      ) {
+        return res.status(400).json({
+          message:
+            'Changing AniList credentials will disconnect all linked user accounts. Set confirmDisconnectLinkedAccounts to true to proceed.',
+          linkedAccountCount,
+        });
+      }
+    }
+
+    settings.anilist = { clientId, clientSecret };
+    settings.mediaActions = {
+      providers: {
+        trakt: settings.mediaActions.providers.trakt,
+        jellyfin: settings.mediaActions.providers.jellyfin,
+        anilist: req.body.actionsEnabled !== false,
+      },
+    };
+    await settings.save();
+    clearIntegrationHealthCache();
+
+    if (credentialsChanging) {
+      const disconnectedAccountCount = await disconnectAllAnilistLinks();
+      clearAnilistSyncCache();
+      logger.info('Disconnected AniList accounts after credential change', {
+        label: 'Settings',
+        disconnectedAccountCount,
+      });
+    }
+
+    return res.status(200).json(await anilistSettingsResponse());
+  } catch (e) {
+    logger.error('Unable to save AniList settings', {
+      label: 'API',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    return next({
+      status: 500,
+      message: 'Unable to save AniList settings.',
     });
   }
 });

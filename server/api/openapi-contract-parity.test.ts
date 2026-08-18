@@ -81,6 +81,8 @@ describe('OpenAPI contract parity', () => {
     const requiredClientKeys: (keyof PublicSettingsResponse)[] = [
       'mediaActionsTraktEnabled',
       'mediaActionsJellyfinEnabled',
+      'mediaActionsAnilistEnabled',
+      'anilistConfigured',
     ];
 
     for (const key of requiredClientKeys) {

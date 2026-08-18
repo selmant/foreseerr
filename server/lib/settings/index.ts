@@ -76,10 +76,16 @@ export interface TraktSettings {
   clientSecret: string;
 }
 
+export interface AniListSettings {
+  clientId: string;
+  clientSecret: string;
+}
+
 export interface MediaActionsSettings {
   providers: {
     trakt: boolean;
     jellyfin: boolean;
+    anilist: boolean;
   };
 }
 
@@ -246,8 +252,10 @@ interface FullPublicSettings extends PublicSettings {
   versionCheck: boolean;
   plexClientIdentifier: string;
   traktConfigured: boolean;
+  anilistConfigured: boolean;
   mediaActionsTraktEnabled: boolean;
   mediaActionsJellyfinEnabled: boolean;
+  mediaActionsAnilistEnabled: boolean;
   mdblistConfigured: boolean;
   ratingBadges: RatingBadgeSettings;
 }
@@ -416,6 +424,7 @@ export interface AllSettings {
   jellyfin: JellyfinSettings;
   tautulli: TautulliSettings;
   trakt: TraktSettings;
+  anilist: AniListSettings;
   mediaActions: MediaActionsSettings;
   mdblist: MdbListSettings;
   radarr: RadarrSettings[];
@@ -495,10 +504,15 @@ class Settings {
         clientId: '',
         clientSecret: '',
       },
+      anilist: {
+        clientId: '',
+        clientSecret: '',
+      },
       mediaActions: {
         providers: {
           trakt: true,
           jellyfin: true,
+          anilist: true,
         },
       },
       mdblist: {
@@ -742,11 +756,31 @@ class Settings {
     );
   }
 
+  get anilist(): AniListSettings {
+    if (!this.data.anilist) {
+      this.data.anilist = { clientId: '', clientSecret: '' };
+    }
+    return this.data.anilist;
+  }
+
+  set anilist(data: AniListSettings) {
+    this.data.anilist = mergeSettings(
+      this.data.anilist ?? { clientId: '', clientSecret: '' },
+      data
+    );
+  }
+
   get mediaActions(): MediaActionsSettings {
     if (!this.data.mediaActions) {
-      this.data.mediaActions = { providers: { trakt: true, jellyfin: true } };
+      this.data.mediaActions = {
+        providers: { trakt: true, jellyfin: true, anilist: true },
+      };
     } else if (!this.data.mediaActions.providers) {
-      this.data.mediaActions.providers = { trakt: true, jellyfin: true };
+      this.data.mediaActions.providers = {
+        trakt: true,
+        jellyfin: true,
+        anilist: true,
+      };
     } else {
       if (this.data.mediaActions.providers.trakt === undefined) {
         this.data.mediaActions.providers.trakt = true;
@@ -754,13 +788,18 @@ class Settings {
       if (this.data.mediaActions.providers.jellyfin === undefined) {
         this.data.mediaActions.providers.jellyfin = true;
       }
+      if (this.data.mediaActions.providers.anilist === undefined) {
+        this.data.mediaActions.providers.anilist = true;
+      }
     }
     return this.data.mediaActions;
   }
 
   set mediaActions(data: MediaActionsSettings) {
     this.data.mediaActions = mergeSettings(
-      this.data.mediaActions ?? { providers: { trakt: true, jellyfin: true } },
+      this.data.mediaActions ?? {
+        providers: { trakt: true, jellyfin: true, anilist: true },
+      },
       data
     );
   }
@@ -879,10 +918,15 @@ class Settings {
         this.trakt.provider === 'jellyfin'
           ? Boolean(this.data.jellyfin?.ip)
           : Boolean(this.data.trakt?.clientId && this.data.trakt?.clientSecret),
+      anilistConfigured: Boolean(
+        this.data.anilist?.clientId && this.data.anilist?.clientSecret
+      ),
       mediaActionsTraktEnabled:
         this.data.mediaActions?.providers?.trakt !== false,
       mediaActionsJellyfinEnabled:
         this.data.mediaActions?.providers?.jellyfin !== false,
+      mediaActionsAnilistEnabled:
+        this.data.mediaActions?.providers?.anilist !== false,
       mdblistConfigured: Boolean(this.data.mdblist?.apiKey?.trim()),
       ratingBadges: {
         showTmdb:

@@ -1,7 +1,16 @@
 import type { JellyfinLibraryItemExtended } from '@server/api/jellyfin';
 import type TraktAPI from '@server/api/trakt';
 import type { TraktMediaItem } from '@server/api/trakt/interfaces';
+import {
+  createAnilistUserClient,
+  getUserAnilistSettings,
+  isAnilistUnavailableError,
+} from '@server/lib/anilist';
 import { createUserJellyfinClient } from '@server/lib/library';
+import {
+  isAnilistWatchedStatus,
+  warmUserAnilistSyncCache,
+} from '@server/lib/mediaActions/anilistSyncCache';
 import {
   warmUserSyncCache,
   type UserSyncSnapshot,
@@ -161,13 +170,52 @@ export async function loadJellyfinWatchedIdSets(
   }
 }
 
+export async function loadAnilistWatchedIdSets(
+  userId: number
+): Promise<WatchedIdSets> {
+  try {
+    const client = await createAnilistUserClient(userId);
+    const settings = await getUserAnilistSettings(userId);
+    const anilistUserId = Number(settings?.anilistUserId);
+    if (!Number.isFinite(anilistUserId) || anilistUserId <= 0) {
+      return emptyWatchedIdSets();
+    }
+    const snapshot = await warmUserAnilistSyncCache(
+      client,
+      userId,
+      anilistUserId
+    );
+    const sets = emptyWatchedIdSets();
+    for (const entry of snapshot.entries) {
+      if (!isAnilistWatchedStatus(entry.status)) {
+        continue;
+      }
+      if (entry.mediaType === 'movie') {
+        sets.movie.add(entry.tmdbId);
+      } else {
+        sets.tv.add(entry.tmdbId);
+      }
+    }
+    return sets;
+  } catch (e) {
+    if (!isAnilistUnavailableError(e)) {
+      logger.debug('Skipping AniList watched-title filtering', {
+        label: 'API',
+        errorMessage: e instanceof Error ? e.message : 'unknown error',
+      });
+    }
+    return emptyWatchedIdSets();
+  }
+}
+
 export async function loadCombinedWatchedIdSets(
   userId: number,
   trakt?: TraktAPI
 ): Promise<WatchedIdSets> {
-  const [traktSets, jellyfinSets] = await Promise.all([
+  const [traktSets, jellyfinSets, anilistSets] = await Promise.all([
     loadTraktWatchedIdSets(userId, trakt),
     loadJellyfinWatchedIdSets(userId),
+    loadAnilistWatchedIdSets(userId),
   ]);
-  return unionWatchedIdSets(traktSets, jellyfinSets);
+  return unionWatchedIdSets(traktSets, jellyfinSets, anilistSets);
 }

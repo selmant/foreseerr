@@ -1,3 +1,7 @@
+import AnilistAPI, {
+  AnilistAuthError,
+  AnilistRateLimitedError,
+} from '@server/api/anilist';
 import PlexTvAPI from '@server/api/plextv';
 import type { SortOptions } from '@server/api/themoviedb';
 import TheMovieDb from '@server/api/themoviedb';
@@ -22,6 +26,21 @@ import type {
   WatchlistItem,
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
+import {
+  AnilistNotConfiguredError,
+  AnilistNotLinkedError,
+  createAnilistAppClient,
+  createAnilistUserClient,
+  getUserAnilistSettings,
+} from '@server/lib/anilist';
+import {
+  collectUserListItems,
+  listUserAniListLists,
+  mapAnilistMediaList,
+  matchesListName,
+  paginateItems,
+  toWatchlistItems,
+} from '@server/lib/anilist/discover';
 import {
   applyDiscoverFilterDefaultsToQuery,
   safeParseDiscoverFilterDefaults,
@@ -62,7 +81,7 @@ import {
 } from '@server/models/Search';
 import { mapNetwork } from '@server/models/Tv';
 import { isCollection, isMovie, isPerson } from '@server/utils/typeHelpers';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { Router } from 'express';
 import { sortBy } from 'lodash';
 import { z } from 'zod';
@@ -192,6 +211,47 @@ const handleTraktRouteError = (
   });
   return next({ status: 500, message: fallbackMessage });
 };
+
+const handleAnilistRouteError = (
+  e: unknown,
+  next: (err?: unknown) => void,
+  fallbackMessage: string
+) => {
+  if (e instanceof AnilistNotConfiguredError) {
+    return next({ status: 400, message: e.message });
+  }
+  if (e instanceof AnilistNotLinkedError) {
+    return next({ status: 404, message: e.message });
+  }
+  if (e instanceof AnilistAuthError) {
+    return next({ status: 401, message: e.message });
+  }
+  if (e instanceof AnilistRateLimitedError) {
+    return next({
+      status: 429,
+      message: e.message,
+      retryAfter: e.retryAfterSeconds,
+    });
+  }
+  logger.error(fallbackMessage, {
+    label: 'API',
+    errorMessage: e instanceof Error ? e.message : 'unknown error',
+  });
+  return next({ status: 500, message: fallbackMessage });
+};
+
+async function requireAnilistUser(userId: number): Promise<{
+  client: AnilistAPI;
+  anilistUserId: number;
+}> {
+  const client = await createAnilistUserClient(userId);
+  const settings = await getUserAnilistSettings(userId);
+  const anilistUserId = Number(settings?.anilistUserId);
+  if (!Number.isFinite(anilistUserId) || anilistUserId <= 0) {
+    throw new AnilistNotLinkedError();
+  }
+  return { client, anilistUserId };
+}
 
 function parseTraktMediaTypeQuery(value: unknown): TraktBrowseMediaType {
   if (value === 'movie' || value === 'tv' || value === 'anime') {
@@ -1716,6 +1776,148 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
       next,
       'Unable to retrieve Trakt public list.'
     );
+  }
+});
+
+discoverRoutes.get('/anilist/trending', async (req, res, next) => {
+  try {
+    createAnilistAppClient();
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const client = new AnilistAPI();
+    const mediaPage = await client.getTrending(page);
+    const mapped = await mapAnilistMediaList(mediaPage.media);
+    return res.status(200).json({
+      page,
+      hasMore: Boolean(mediaPage.pageInfo.hasNextPage),
+      results: toWatchlistItems(mapped),
+    } satisfies WatchlistResponse);
+  } catch (e) {
+    return handleAnilistRouteError(
+      e,
+      next,
+      'Unable to retrieve AniList trending anime.'
+    );
+  }
+});
+
+discoverRoutes.get('/anilist/season', async (req, res, next) => {
+  try {
+    createAnilistAppClient();
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const client = new AnilistAPI();
+    const mediaPage = await client.getSeason(page);
+    const mapped = await mapAnilistMediaList(mediaPage.media);
+    return res.status(200).json({
+      page,
+      hasMore: Boolean(mediaPage.pageInfo.hasNextPage),
+      results: toWatchlistItems(mapped),
+    } satisfies WatchlistResponse);
+  } catch (e) {
+    return handleAnilistRouteError(
+      e,
+      next,
+      'Unable to retrieve AniList seasonal anime.'
+    );
+  }
+});
+
+async function anilistUserListRoute(
+  req: Request,
+  res: Response,
+  next: (err?: unknown) => void,
+  matcher: Parameters<typeof collectUserListItems>[2]
+) {
+  try {
+    if (!req.user?.id) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const { client, anilistUserId } = await requireAnilistUser(req.user.id);
+    const items = await collectUserListItems(client, anilistUserId, matcher);
+    const paged = paginateItems(items, page);
+    return res.status(200).json({
+      page: paged.page,
+      hasMore: paged.hasMore,
+      results: toWatchlistItems(paged.results),
+    } satisfies WatchlistResponse);
+  } catch (e) {
+    return handleAnilistRouteError(e, next, 'Unable to retrieve AniList list.');
+  }
+}
+
+discoverRoutes.get('/anilist/watching', (req, res, next) =>
+  anilistUserListRoute(
+    req,
+    res,
+    next,
+    (list) =>
+      list.status === 'CURRENT' || list.name.toLowerCase() === 'watching'
+  )
+);
+
+discoverRoutes.get('/anilist/planning', (req, res, next) =>
+  anilistUserListRoute(
+    req,
+    res,
+    next,
+    (list) =>
+      list.status === 'PLANNING' || list.name.toLowerCase() === 'planning'
+  )
+);
+
+discoverRoutes.get('/anilist/completed', (req, res, next) =>
+  anilistUserListRoute(
+    req,
+    res,
+    next,
+    (list) =>
+      list.status === 'COMPLETED' || list.name.toLowerCase() === 'completed'
+  )
+);
+
+discoverRoutes.get('/anilist/lists', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+    const { client, anilistUserId } = await requireAnilistUser(req.user.id);
+    const results = await listUserAniListLists(client, anilistUserId);
+    return res.status(200).json({ results });
+  } catch (e) {
+    return handleAnilistRouteError(
+      e,
+      next,
+      'Unable to retrieve AniList lists.'
+    );
+  }
+});
+
+discoverRoutes.get('/anilist/list', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return next({ status: 401, message: 'Unauthorized' });
+    }
+    const name = String(req.query.name ?? req.query.url ?? '').trim();
+    if (!name) {
+      return next({
+        status: 400,
+        message: 'name query parameter is required',
+      });
+    }
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const { client, anilistUserId } = await requireAnilistUser(req.user.id);
+    const items = await collectUserListItems(client, anilistUserId, (list) =>
+      matchesListName(list, name)
+    );
+    const paged = paginateItems(items, page);
+    return res.status(200).json({
+      page: paged.page,
+      hasMore: paged.hasMore,
+      results: toWatchlistItems(paged.results),
+      title: name,
+    });
+  } catch (e) {
+    return handleAnilistRouteError(e, next, 'Unable to retrieve AniList list.');
   }
 });
 

@@ -1,3 +1,4 @@
+import AnilistLogo from '@app/assets/services/anilist.svg';
 import EmbyLogo from '@app/assets/services/emby-icon-only.svg';
 import JellyfinLogo from '@app/assets/services/jellyfin-icon.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
@@ -6,6 +7,7 @@ import Alert from '@app/components/Common/Alert';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import Dropdown from '@app/components/Common/Dropdown';
 import PageTitle from '@app/components/Common/PageTitle';
+import LinkAnilistModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkAnilistModal';
 import LinkJellyfinQuickConnectModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkJellyfinQuickConnectModal';
 import LinkTraktModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkTraktModal';
 import useSettings from '@app/hooks/useSettings';
@@ -51,6 +53,7 @@ enum LinkedAccountType {
   Jellyfin = 'Jellyfin',
   Emby = 'Emby',
   Trakt = 'Trakt',
+  Anilist = 'AniList',
 }
 
 type LinkedAccount = {
@@ -71,6 +74,15 @@ const UserLinkedAccountsSettings = () => {
   const { data: passwordInfo } = useSWR<{ hasPassword: boolean }>(
     user ? `/api/v1/user/${user?.id}/settings/password` : null
   );
+  const { data: anilistStatus, mutate: revalidateAnilist } = useSWR<{
+    connected: boolean;
+    expired?: boolean;
+    username: string | null;
+  }>(
+    user && settings.currentSettings.anilistConfigured
+      ? `/api/v1/user/${user.id}/settings/linked-accounts/anilist`
+      : null
+  );
   const { data: traktStatus, mutate: revalidateTrakt } = useSWR<{
     provider: 'direct' | 'jellyfin';
     connected: boolean;
@@ -85,6 +97,7 @@ const UserLinkedAccountsSettings = () => {
   const [showJellyfinQuickConnectModal, setShowJellyfinQuickConnectModal] =
     useState(false);
   const [showTraktModal, setShowTraktModal] = useState(false);
+  const [showAnilistModal, setShowAnilistModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const applicationName = settings.currentSettings.applicationTitle;
@@ -116,8 +129,13 @@ const UserLinkedAccountsSettings = () => {
         type: LinkedAccountType.Trakt,
         username: traktStatus.username,
       });
+    if (anilistStatus?.connected && anilistStatus.username)
+      accounts.push({
+        type: LinkedAccountType.Anilist,
+        username: anilistStatus.username,
+      });
     return accounts;
-  }, [user, traktStatus]);
+  }, [user, traktStatus, anilistStatus]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -187,6 +205,13 @@ const UserLinkedAccountsSettings = () => {
         traktStatus?.provider === 'jellyfin' ||
         accounts.some((a) => a.type === LinkedAccountType.Trakt),
     },
+    {
+      name: 'AniList',
+      action: () => setShowAnilistModal(true),
+      hide:
+        !settings.currentSettings.anilistConfigured ||
+        accounts.some((a) => a.type === LinkedAccountType.Anilist),
+    },
   ].filter((l) => !l.hide);
 
   const deleteRequest = async (account: string) => {
@@ -201,6 +226,9 @@ const UserLinkedAccountsSettings = () => {
     await revalidateUser();
     if (account === 'trakt') {
       await revalidateTrakt();
+    }
+    if (account === 'anilist') {
+      await revalidateAnilist();
     }
   };
 
@@ -251,6 +279,13 @@ const UserLinkedAccountsSettings = () => {
       return (
         <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800 p-2">
           <TraktLogo className="w-9" />
+        </div>
+      );
+    }
+    if (type === LinkedAccountType.Anilist) {
+      return (
+        <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800 p-2">
+          <AnilistLogo className="w-9" />
         </div>
       );
     }
@@ -307,7 +342,8 @@ const UserLinkedAccountsSettings = () => {
                 </div>
               </div>
               <div className="flex-grow" />
-              {(acct.type === LinkedAccountType.Trakt
+              {(acct.type === LinkedAccountType.Trakt ||
+              acct.type === LinkedAccountType.Anilist
                 ? currentUser?.id === user?.id ||
                   hasPermission(Permission.MANAGE_USERS)
                 : enableMediaServerUnlink) && (
@@ -318,7 +354,9 @@ const UserLinkedAccountsSettings = () => {
                         ? 'plex'
                         : acct.type === LinkedAccountType.Trakt
                           ? 'trakt'
-                          : 'jellyfin'
+                          : acct.type === LinkedAccountType.Anilist
+                            ? 'anilist'
+                            : 'jellyfin'
                     );
                   }}
                   confirmText={intl.formatMessage(globalMessages.areyousure)}
@@ -372,6 +410,15 @@ const UserLinkedAccountsSettings = () => {
         onSave={() => {
           setShowTraktModal(false);
           void revalidateTrakt();
+        }}
+      />
+
+      <LinkAnilistModal
+        show={showAnilistModal}
+        onClose={() => setShowAnilistModal(false)}
+        onSave={() => {
+          setShowAnilistModal(false);
+          void revalidateAnilist();
         }}
       />
     </>

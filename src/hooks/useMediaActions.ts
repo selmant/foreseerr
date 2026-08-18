@@ -16,7 +16,7 @@ export interface MediaActionCapabilitiesResponse {
   tv: { watched: boolean; rating: boolean };
   episode: { watched: boolean; rating: boolean };
   providers: {
-    id: 'trakt' | 'jellyfin';
+    id: 'trakt' | 'jellyfin' | 'anilist';
     linked: boolean;
     capabilities: {
       readWatched: boolean;

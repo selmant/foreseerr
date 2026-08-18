@@ -12,7 +12,8 @@ export type AvailableCacheIds =
   | 'plextv'
   | 'plexwatchlist'
   | 'tvdb'
-  | 'trakt';
+  | 'trakt'
+  | 'anilist';
 
 const DEFAULT_TTL = 300;
 const DEFAULT_CHECK_PERIOD = 120;
@@ -82,6 +83,10 @@ class CacheManager {
       checkPeriod: 60 * 30,
     }),
     trakt: new Cache('trakt', 'Trakt API', {
+      stdTtl: 300,
+      checkPeriod: 60,
+    }),
+    anilist: new Cache('anilist', 'AniList API', {
       stdTtl: 300,
       checkPeriod: 60,
     }),

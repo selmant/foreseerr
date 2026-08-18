@@ -212,6 +212,18 @@ const DiscoverSliderEdit = ({
         return slider.title || intl.formatMessage(sliderTitles.traktlist);
       case DiscoverSliderType.TRAKT_HISTORY:
         return intl.formatMessage(sliderTitles.trakthistory);
+      case DiscoverSliderType.ANILIST_TRENDING:
+        return intl.formatMessage(sliderTitles.anilisttrending);
+      case DiscoverSliderType.ANILIST_SEASON:
+        return intl.formatMessage(sliderTitles.anilistseason);
+      case DiscoverSliderType.ANILIST_WATCHING:
+        return intl.formatMessage(sliderTitles.anilistwatching);
+      case DiscoverSliderType.ANILIST_PLANNING:
+        return intl.formatMessage(sliderTitles.anilistplanning);
+      case DiscoverSliderType.ANILIST_COMPLETED:
+        return intl.formatMessage(sliderTitles.anilistcompleted);
+      case DiscoverSliderType.ANILIST_LIST:
+        return slider.title || intl.formatMessage(sliderTitles.anilistlist);
       default:
         return 'Unknown Slider';
     }
@@ -289,6 +301,9 @@ const DiscoverSliderEdit = ({
             <Tag iconSvg={<MagnifyingGlassIcon />}>{slider.data}</Tag>
           )}
           {slider.type === DiscoverSliderType.TRAKT_LIST && slider.data && (
+            <Tag>{slider.data}</Tag>
+          )}
+          {slider.type === DiscoverSliderType.ANILIST_LIST && slider.data && (
             <Tag>{slider.data}</Tag>
           )}
         </div>

@@ -1,3 +1,4 @@
+import AnilistAPI from '@server/api/anilist';
 import MdblistAPI from '@server/api/mdblist';
 import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
@@ -50,6 +51,7 @@ export interface TraktIntegrationHealth extends IntegrationHealth {
 export interface IntegrationHealthResponse {
   trakt: TraktIntegrationHealth;
   mdblist: IntegrationHealth;
+  anilist: IntegrationHealth;
 }
 
 let cachedHealth: {
@@ -243,6 +245,22 @@ const checkMdblist = async (): Promise<IntegrationHealth> => {
   }
 };
 
+const checkAnilist = async (): Promise<IntegrationHealth> => {
+  if (
+    !getSettings().anilist.clientId?.trim() ||
+    !getSettings().anilist.clientSecret?.trim()
+  ) {
+    return notConfigured('AniList application credentials are not configured.');
+  }
+
+  try {
+    await new AnilistAPI().ping();
+    return healthy('AniList GraphQL API is reachable.');
+  } catch {
+    return degraded('AniList GraphQL API could not be reached.');
+  }
+};
+
 export const getIntegrationHealth =
   async (): Promise<IntegrationHealthResponse> => {
     if (cachedHealth && cachedHealth.expiresAt > Date.now()) {
@@ -251,15 +269,17 @@ export const getIntegrationHealth =
 
     const provider =
       getSettings().trakt.provider === 'jellyfin' ? 'jellyfin' : 'direct';
-    const [direct, jellyfin, mdblist] = await Promise.all([
+    const [direct, jellyfin, mdblist, anilist] = await Promise.all([
       checkDirectTrakt(),
       checkJellyfinTrakt(),
       checkMdblist(),
+      checkAnilist(),
     ]);
     const active = provider === 'jellyfin' ? jellyfin : direct;
     const value: IntegrationHealthResponse = {
       trakt: { provider, ...active, direct, jellyfin },
       mdblist,
+      anilist,
     };
 
     cachedHealth = { value, expiresAt: Date.now() + HEALTH_CHECK_TTL_MS };
