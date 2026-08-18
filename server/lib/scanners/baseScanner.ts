@@ -8,6 +8,10 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import MediaRequest from '@server/entity/MediaRequest';
 import Season from '@server/entity/Season';
+import {
+  SCAN_ITEM_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import AsyncLock from '@server/utils/asyncLock';
@@ -770,10 +774,8 @@ class BaseScanner<T> {
     processFn: (items: T) => Promise<void>,
     items: T[]
   ) {
-    await Promise.all(
-      items.map(async (item) => {
-        await processFn(item);
-      })
+    await mapWithConcurrency(items, SCAN_ITEM_CONCURRENCY, (item) =>
+      processFn(item)
     );
   }
 

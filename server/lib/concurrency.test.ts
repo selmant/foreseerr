@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mapWithConcurrency } from './concurrency';
+import { SCAN_ITEM_CONCURRENCY, mapWithConcurrency } from './concurrency';
 
 describe('mapWithConcurrency', () => {
   it('preserves order and respects concurrency', async () => {
@@ -23,5 +23,12 @@ describe('mapWithConcurrency', () => {
   it('returns empty array for empty input', async () => {
     const results = await mapWithConcurrency([], 5, async (item) => item);
     assert.deepEqual(results, []);
+  });
+});
+
+describe('SCAN_ITEM_CONCURRENCY', () => {
+  it('stays well under the default Postgres pool of 10', () => {
+    assert.ok(SCAN_ITEM_CONCURRENCY >= 1);
+    assert.ok(SCAN_ITEM_CONCURRENCY < 10);
   });
 });

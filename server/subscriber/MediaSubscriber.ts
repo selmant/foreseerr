@@ -71,45 +71,45 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
           if (request.episodes?.length) {
             continue;
           }
-          const allSeasonResults = await Promise.all(
-            request.seasons.map(async (requestSeason) => {
-              const matchingSeason = event.seasons.find(
-                (mediaSeason) =>
-                  mediaSeason.seasonNumber === requestSeason.seasonNumber
-              );
-              const matchingOldSeason = databaseEvent.seasons.find(
-                (oldSeason) =>
-                  oldSeason.seasonNumber === requestSeason.seasonNumber
-              );
+          const allSeasonResults: boolean[] = [];
+          for (const requestSeason of request.seasons) {
+            const matchingSeason = event.seasons.find(
+              (mediaSeason) =>
+                mediaSeason.seasonNumber === requestSeason.seasonNumber
+            );
+            const matchingOldSeason = databaseEvent.seasons.find(
+              (oldSeason) =>
+                oldSeason.seasonNumber === requestSeason.seasonNumber
+            );
 
-              if (!matchingSeason) {
-                return false;
-              }
+            if (!matchingSeason) {
+              allSeasonResults.push(false);
+              continue;
+            }
 
-              const currentSeasonStatus =
-                matchingSeason[request.is4k ? 'status4k' : 'status'];
-              const previousSeasonStatus =
-                matchingOldSeason?.[request.is4k ? 'status4k' : 'status'];
+            const currentSeasonStatus =
+              matchingSeason[request.is4k ? 'status4k' : 'status'];
+            const previousSeasonStatus =
+              matchingOldSeason?.[request.is4k ? 'status4k' : 'status'];
 
-              const hasStatusChanged =
-                currentSeasonStatus !== previousSeasonStatus;
+            const hasStatusChanged =
+              currentSeasonStatus !== previousSeasonStatus;
 
-              const shouldUpdate =
-                (hasStatusChanged ||
-                  requestSeason.status === MediaRequestStatus.COMPLETED) &&
-                (currentSeasonStatus === MediaStatus.AVAILABLE ||
-                  currentSeasonStatus === MediaStatus.DELETED);
+            const shouldUpdate =
+              (hasStatusChanged ||
+                requestSeason.status === MediaRequestStatus.COMPLETED) &&
+              (currentSeasonStatus === MediaStatus.AVAILABLE ||
+                currentSeasonStatus === MediaStatus.DELETED);
 
-              if (shouldUpdate) {
-                requestSeason.status = MediaRequestStatus.COMPLETED;
-                await seasonRequestRepository.save(requestSeason);
+            if (shouldUpdate) {
+              requestSeason.status = MediaRequestStatus.COMPLETED;
+              await seasonRequestRepository.save(requestSeason);
+              allSeasonResults.push(true);
+              continue;
+            }
 
-                return true;
-              }
-
-              return false;
-            })
-          );
+            allSeasonResults.push(false);
+          }
 
           const allSeasonsReady = allSeasonResults.every((result) => result);
           shouldComplete = allSeasonsReady;

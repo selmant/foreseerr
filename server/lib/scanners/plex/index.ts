@@ -11,6 +11,10 @@ import type {
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import cacheManager from '@server/lib/cache';
+import {
+  SCAN_ITEM_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import type {
   MediaIds,
   ProcessableSeason,
@@ -186,10 +190,8 @@ class PlexScanner
       return;
     }
 
-    await Promise.all(
-      response.items.map(async (item) => {
-        await this.processItem(item);
-      })
+    await mapWithConcurrency(response.items, SCAN_ITEM_CONCURRENCY, (item) =>
+      this.processItem(item)
     );
 
     if (response.items.length < this.protectedBundleSize) {
