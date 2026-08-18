@@ -249,8 +249,16 @@ class AnilistAPI extends ExternalAPI {
   }
 
   async ping(): Promise<void> {
-    await this.graphql<{ Page: { pageInfo: { currentPage?: number } } }>(
-      `query { Page(page: 1, perPage: 1) { pageInfo { currentPage } } }`,
+    // AniList rejects Page queries that only ask for pageInfo ("No field provided").
+    await this.graphql<{
+      Page: { pageInfo: { currentPage?: number }; media: { id: number }[] };
+    }>(
+      `query {
+        Page(page: 1, perPage: 1) {
+          pageInfo { currentPage }
+          media { id }
+        }
+      }`,
       {},
       PUBLIC_PAGE_CACHE_TTL_SECONDS
     );

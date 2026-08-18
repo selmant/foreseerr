@@ -256,7 +256,11 @@ const checkAnilist = async (): Promise<IntegrationHealth> => {
   try {
     await new AnilistAPI().ping();
     return healthy('AniList GraphQL API is reachable.');
-  } catch {
+  } catch (e) {
+    logger.warn('AniList health check failed', {
+      label: 'Integration Health',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
     return degraded('AniList GraphQL API could not be reached.');
   }
 };
