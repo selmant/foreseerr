@@ -133,6 +133,9 @@ make users choose one global recommendation provider.
 
 ### MDBList
 
+**Shipped:** public-list pinning as custom Discover sliders, plus the existing
+rating badges/filters, using the instance API key.
+
 MDBList is likely the lowest-cost new source because Foreseerr already has an
 API key setting, health checks, ratings, TMDB identity handling, and list-like
 interfaces. MDBList recently exposed personalized recommendation lists as
@@ -252,6 +255,11 @@ Sources:
 - [TMDB API FAQ](https://developer.themoviedb.org/docs/faq)
 
 ### AniList, MyAnimeList, and Jikan
+
+**Shipped:** AniList catalog Discover rows (trending, this season, popular, top
+100, next season), linked watching/planning/completed and named lists, TMDB
+mapping, and optional watched/score sync. Personalized AniList-to-AniList
+recommendation ranking is still future work.
 
 AniList exposes community-created title-to-title recommendations, not a
 ready-made personalized recommendation feed. Its personal history, scores,

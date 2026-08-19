@@ -21,7 +21,7 @@ const messages = defineMessages('components.Settings.SettingsMdblist', {
   mdblist: 'MDBList',
   mdblistSettings: 'MDBList Settings',
   mdblistSettingsDescription:
-    'Configure an MDBList API key to show aggregated IMDb, Rotten Tomatoes, Metacritic, and Trakt rating badges on title cards and media details.',
+    'Configure an MDBList API key for aggregated rating badges and to pin public MDBList lists as custom Discover sliders.',
   apiKey: 'API Key',
   createAppTip:
     'Get a free API key at <MdbListLink>mdblist.com/preferences</MdbListLink>.',

@@ -2,7 +2,7 @@
 <img src="./public/logo_full.svg" alt="Foreseerr" style="margin: 20px 0;">
 </p>
 
-**Foreseerr** is a personal fork of [Seerr](https://github.com/seerr-team/seerr) that folds SuggestArr-style discovery and media workflows into the app itself — Trakt browse, richer ratings, and more — without running a separate suggestion sidecar.
+**Foreseerr** is a personal fork of [Seerr](https://github.com/seerr-team/seerr) that folds SuggestArr-style discovery and media workflows into the app itself — Trakt, AniList, and MDBList browse, richer ratings, and more — without running a separate suggestion sidecar.
 
 It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex / Emby), and Radarr/Sonarr support. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 
@@ -27,7 +27,7 @@ behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
 for installation and release compatibility.
 
 > [!NOTE]
-> Foreseerr `v0.5.1` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, and `v0.5.0` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
+> Foreseerr `v0.6.0` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, and `v0.5.x` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
 
 ## Current Features (from Seerr)
 
@@ -38,16 +38,17 @@ for installation and release compatibility.
 - Library scans, granular permissions, notification agents, watchlist & blocklist.
 - Mobile-friendly UI.
 
-## Foreseerr roadmap
+## Foreseerr extras (on top of Seerr)
 
-Near-term additions on top of Seerr (see the Foreseerr master plan):
+Shipped on top of Seerr (requests stay manual; no scheduled auto-request bot):
 
-- Trakt browse (recommendations, lists, watchlist) with manual requests
-- Multi-source rating badges
-- Trakt watched / unwatched / user score actions
-- Further SuggestArr parity as Discover/settings — not auto-request jobs by default
+- **Trakt Discover** — recommendations, watchlist, history, and pin public or personal lists
+- **AniList Discover** — trending, this season, popular, top 100, next season; linked watching / planning / completed and custom lists
+- **MDBList** — IMDb / RT / Metacritic / Trakt community badges and filters, plus pin public lists as custom Discover rows
+- Watched / unwatched / score actions (Trakt, optional AniList, Jellyfin where linked)
+- Further SuggestArr-style Discover and settings work — not LLM recommendations
 
-AI / LLM recommendation features are explicitly out of scope unless reopened.
+See [Discover](docs/using-seerr/discover.md) and [Integrations](docs/using-seerr/settings/integrations.md).
 
 ## Installation
 
@@ -71,7 +72,7 @@ docker run -d \
   --restart unless-stopped \
   -p 5055:5055 \
   -v "$(pwd)/foreseerr-config:/app/config" \
-  ghcr.io/selmant/foreseerr:v0.5.1
+  ghcr.io/selmant/foreseerr:v0.6.0
 ```
 
 Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
@@ -85,7 +86,7 @@ The equivalent production-style Compose service is:
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/foreseerr:v0.5.1
+    image: ghcr.io/selmant/foreseerr:v0.6.0
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -103,7 +104,7 @@ sudo chown -R 1000:1000 foreseerr-config
 docker compose up -d
 ```
 
-The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.5.1`) or a stable alias (`latest`, `v0`, `v0.5`) rather than `develop`.
+The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.6.0`) or a stable alias (`latest`, `v0`, `v0.6`) rather than `develop`.
 
 > Older pulls used `ghcr.io/selmant/seerr`. Point compose/CLI at `ghcr.io/selmant/foreseerr` going forward.
 

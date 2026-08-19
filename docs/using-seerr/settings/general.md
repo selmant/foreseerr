@@ -40,6 +40,10 @@ Set the default display language for Foreseerr. Users can override this setting 
 
 These settings filter content shown on the "Discover" home page based on regional availability and original language, respectively. The Streaming Region filters the available streaming providers on the media page. Users can override these global settings by configuring these same options in their user settings.
 
+Trakt, AniList, and MDBList rows are configured under
+[Integrations](integrations.md). Slider layout is covered in
+[Discover](../discover.md).
+
 ## Blocklist Region and Blocklist Language
 
 These settings control the region and language used specifically for blocklist content scanning. The "Process Blocklisted Tags" job uses these settings to determine which content to scan for blocklisting, independent of the general Discover settings.

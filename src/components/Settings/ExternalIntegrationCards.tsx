@@ -22,10 +22,10 @@ const messages = defineMessages(
       'Personalized discovery, watchlists, and ratings. Watched status also comes from Jellyfin.',
     mdblist: 'MDBList',
     mdblistDescription:
-      'IMDb, Rotten Tomatoes, Metacritic, and Trakt community ratings.',
+      'IMDb, Rotten Tomatoes, Metacritic, and Trakt community ratings, plus public list pinning on Discover.',
     anilist: 'AniList',
     anilistDescription:
-      'Anime discovery, seasonal charts, and personal AniList watched status and scores.',
+      'Anime catalog rows (trending, season, popular, top, next season), personal lists, and watched/score sync.',
     configured: 'Configured',
     notConfigured: 'Not configured',
     connected: 'Reachable',

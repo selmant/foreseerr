@@ -1,0 +1,68 @@
+---
+title: Integrations
+description: Configure Trakt, AniList, and MDBList for Discover and ratings.
+sidebar_position: 5
+---
+
+# Integrations
+
+Optional discovery sources live under **Settings → Integrations** (also during
+the setup wizard). Health checks show whether each service is reachable.
+
+These are separate from Radarr/Sonarr. For request servers, see
+[Services](services.md).
+
+## Trakt
+
+Trakt powers personalized Discover rows and watched/rating actions.
+
+1. Create an API app at [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications).
+2. Enter the client ID and secret in **Settings → Integrations → Trakt**.
+3. Each user links their own account in **Linked Accounts** with a device code
+   (`trakt.tv/activate`).
+
+Once linked, Discover can show recommendations, watchlist, and history. Admins
+can pin public or personal Trakt lists as custom sliders. See
+[Discover](../discover.md#trakt).
+
+Jellyfin watched state can still appear when Trakt is not linked. Direct Trakt
+vs Better Trakt (Jellyfin plugin) is chosen in the same settings card.
+
+## AniList
+
+AniList powers anime catalog rows, personal anime lists, and optional watched /
+score sync for mapped titles.
+
+1. Create an API client at
+   [anilist.co/settings/developer](https://anilist.co/settings/developer).
+2. Set the redirect URL to `https://anilist.co/api/v2/oauth/pin` (Foreseerr
+   shows this value on the AniList settings card).
+3. Enter the client ID and secret.
+4. Each user authorizes that app in **Linked Accounts** and pastes the PIN.
+
+Catalog rows (trending, this season, popular, top 100, next season) use the
+app credentials only. Watching / planning / completed and custom named lists
+require a linked account. See [Discover](../discover.md#anilist).
+
+Enable **Allow AniList watched and rating actions** if marking anime watched or
+rated in Foreseerr should also update the linked AniList account.
+
+## MDBList
+
+MDBList uses **one shared API key** for the whole instance (not per-user
+OAuth).
+
+1. Get a free key at
+   [mdblist.com/preferences](https://mdblist.com/preferences).
+2. Paste it in **Settings → Integrations → MDBList**.
+3. Choose which rating sources appear on posters and detail pages.
+
+The same key also lets admins pin **public MDBList lists** as custom Discover
+sliders (search by name, or paste a list URL / `username/slug` / id). See
+[Discover](../discover.md#mdblist).
+
+Free keys are limited (about 1,000 requests per day). Rating badges and list
+browse share that quota. Foreseerr caches list search and list pages so Discover
+does not refetch on every scroll.
+
+MDBList “My Lists” and personalized recommendation lists are not supported yet.

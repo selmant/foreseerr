@@ -1,6 +1,6 @@
 # Foreseerr Feature Announcement Fact Sheet
 
-Updated: 2026-08-12
+Updated: 2026-08-19
 
 ## Important subreddit note
 
@@ -38,10 +38,19 @@ the fallback whenever native playback is not available.
 - Discover-page rows, filters, sorting, anime handling, and hide-watched
   behavior.
 
-### Ratings and personal media actions
+### AniList
+
+- Admin AniList API app; per-user PIN linking.
+- Public catalog rows: trending, this season, popular, top 100, next season.
+- Linked rows: watching, planning, completed, and custom named lists.
+- Titles mapped to TMDB; optional watched/score sync to AniList.
+
+### Ratings and MDBList lists
 
 - Consolidated external rating badges, including IMDb, Rotten Tomatoes,
   Metacritic, TMDB, Trakt, and MDBList sources where configured.
+- Pin public MDBList lists as custom Discover sliders (search or paste URL /
+  username/slug / id), using the same instance API key as badges.
 - Personal watched/unwatched actions and ratings on movie and TV cards.
 - The same personal actions on movie and TV detail pages.
 - Shared watched-state handling across card grids, details, seasons, and

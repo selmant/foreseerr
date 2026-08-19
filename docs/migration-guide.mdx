@@ -63,7 +63,7 @@ For Docker Compose, the service can be changed from Seerr to Foreseerr while kee
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/foreseerr:v0.5.1
+    image: ghcr.io/selmant/foreseerr:v0.6.0
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -88,7 +88,7 @@ This is a different setup. Use a new config directory and, when using PostgreSQL
 ```yaml
 services:
   foreseerr-test:
-    image: ghcr.io/selmant/foreseerr:v0.5.1
+    image: ghcr.io/selmant/foreseerr:v0.6.0
     container_name: foreseerr-test
     init: true
     restart: unless-stopped

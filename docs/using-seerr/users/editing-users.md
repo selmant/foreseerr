@@ -60,3 +60,10 @@ Users can configure their personal notification settings here. Please see [Notif
 ## Permissions
 
 Users cannot modify their own permissions. Users with the **Manage Users** permission can manage permissions of other users, except those of users with the **Admin** permission.
+
+## Linked Accounts
+
+Trakt and AniList are linked from the user's own profile (**Settings → Linked
+Accounts**), not from this admin edit form. An admin must configure the apps
+first under [Integrations](/using-seerr/settings/integrations). MDBList uses a
+single instance API key and is not linked per user.
