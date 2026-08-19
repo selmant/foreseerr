@@ -17,6 +17,8 @@ describe('OpenAPI MDBList ratings contract', () => {
 
   const requiredPaths: Record<string, string[]> = {
     '/settings/mdblist': ['get', 'post'],
+    '/discover/mdblist/lists/search': ['get'],
+    '/discover/mdblist/list': ['get'],
   };
 
   for (const [path, methods] of Object.entries(requiredPaths)) {

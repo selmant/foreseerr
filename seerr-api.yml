@@ -8320,6 +8320,48 @@ paths:
       responses:
         '200':
           description: AniList seasonal anime returned
+  /discover/anilist/popular:
+    get:
+      summary: Get AniList all-time popular anime mapped to TMDB.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList popular anime returned
+  /discover/anilist/top:
+    get:
+      summary: Get AniList top-rated anime mapped to TMDB.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList top-rated anime returned
+  /discover/anilist/next-season:
+    get:
+      summary: Get AniList next-season anime mapped to TMDB.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+      responses:
+        '200':
+          description: AniList next-season anime returned
   /discover/anilist/watching:
     get:
       summary: Get the authenticated user's AniList currently watching list.
@@ -8395,6 +8437,47 @@ paths:
       responses:
         '200':
           description: AniList list items returned
+  /discover/mdblist/lists/search:
+    get:
+      summary: Search public MDBList lists
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching public MDBList lists
+        '400':
+          description: MDBList is not configured
+  /discover/mdblist/list:
+    get:
+      summary: Browse an MDBList public list by URL, username/slug, or list id.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: url
+          required: true
+          schema:
+            type: string
+            example: https://mdblist.com/lists/linaspurinis/top-watched-movies-of-the-week
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+      responses:
+        '200':
+          description: MDBList list items returned
+        '400':
+          description: MDBList is not configured or the list reference is invalid
+        '404':
+          description: MDBList list not found
   /discover/watchlist:
     get:
       summary: Get the Plex watchlist.

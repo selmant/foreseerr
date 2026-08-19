@@ -219,6 +219,12 @@ const DiscoverSliderEdit = ({
         return intl.formatMessage(sliderTitles.anilisttrending);
       case DiscoverSliderType.ANILIST_SEASON:
         return intl.formatMessage(sliderTitles.anilistseason);
+      case DiscoverSliderType.ANILIST_POPULAR:
+        return intl.formatMessage(sliderTitles.anilistpopular);
+      case DiscoverSliderType.ANILIST_TOP:
+        return intl.formatMessage(sliderTitles.anilisttop);
+      case DiscoverSliderType.ANILIST_NEXT_SEASON:
+        return intl.formatMessage(sliderTitles.anilistnextseason);
       case DiscoverSliderType.ANILIST_WATCHING:
         return intl.formatMessage(sliderTitles.anilistwatching);
       case DiscoverSliderType.ANILIST_PLANNING:
@@ -227,6 +233,8 @@ const DiscoverSliderEdit = ({
         return intl.formatMessage(sliderTitles.anilistcompleted);
       case DiscoverSliderType.ANILIST_LIST:
         return slider.title || intl.formatMessage(sliderTitles.anilistlist);
+      case DiscoverSliderType.MDBLIST_LIST:
+        return slider.title || intl.formatMessage(sliderTitles.mdblistlist);
       default:
         return 'Unknown Slider';
     }
@@ -315,6 +323,11 @@ const DiscoverSliderEdit = ({
           )}
           {slider.type === DiscoverSliderType.ANILIST_LIST && slider.data && (
             <Tag iconSvg={<SliderSourceMark source="anilist" />}>
+              {slider.data}
+            </Tag>
+          )}
+          {slider.type === DiscoverSliderType.MDBLIST_LIST && slider.data && (
+            <Tag iconSvg={<SliderSourceMark source="mdblist" />}>
               {slider.data}
             </Tag>
           )}

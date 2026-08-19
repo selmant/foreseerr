@@ -15,6 +15,9 @@ import useSWR from 'swr';
 const messages = defineMessages('components.Discover.DiscoverAnilist', {
   trending: 'AniList Trending',
   season: 'AniList This Season',
+  popular: 'AniList Popular',
+  top: 'AniList Top 100',
+  nextSeason: 'AniList Next Season',
   watching: 'AniList Watching',
   planning: 'AniList Planning',
   completed: 'AniList Completed',
@@ -25,7 +28,16 @@ const messages = defineMessages('components.Discover.DiscoverAnilist', {
 });
 
 type DiscoverAnilistPageProps = {
-  kind: 'trending' | 'season' | 'watching' | 'planning' | 'completed' | 'list';
+  kind:
+    | 'trending'
+    | 'season'
+    | 'popular'
+    | 'top'
+    | 'nextSeason'
+    | 'watching'
+    | 'planning'
+    | 'completed'
+    | 'list';
   endpoint: string;
   requiresLink?: boolean;
 };

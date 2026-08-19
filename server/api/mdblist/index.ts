@@ -2,9 +2,39 @@ import ExternalAPI from '@server/api/externalapi';
 import cacheManager from '@server/lib/cache';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
+import {
+  MdblistListNotFoundError,
+  MdblistNotConfiguredError,
+  MdblistUnavailableError,
+  collectMdblistListItems,
+  mapMdblistListItems,
+  mapMdblistPublicLists,
+  normalizeMdblistListMetadata,
+  parseMdblistListRef,
+  type MdblistDiscoverItem,
+  type MdblistListItemPayload,
+  type MdblistListItemsPayload,
+  type MdblistListMetadata,
+  type MdblistListRef,
+  type MdblistPublicList,
+} from './lists';
 import { parseMdblistRatings } from './parse';
 import type { MdblistMediaPayload, ParsedMdblistRatings } from './types';
 
+export {
+  MdblistListNotFoundError,
+  MdblistNotConfiguredError,
+  MdblistUnavailableError,
+  formatMdblistListReference,
+  mapMdblistListItems,
+  mapMdblistPublicLists,
+  parseMdblistListRef,
+} from './lists';
+export type {
+  MdblistDiscoverItem,
+  MdblistListRef,
+  MdblistPublicList,
+} from './lists';
 export { parseMdblistRatings } from './parse';
 export type { ParsedMdblistRatings } from './types';
 
@@ -107,6 +137,8 @@ const recordMdblistMetric = (
 export const MDBLIST_HOT_RATINGS_TTL_SECONDS = 86400;
 export const MDBLIST_WARM_RATINGS_TTL_SECONDS = 86400 * 7;
 export const MDBLIST_COLD_RATINGS_TTL_SECONDS = 86400 * 30;
+export const MDBLIST_LIST_SEARCH_TTL_SECONDS = 15 * 60;
+export const MDBLIST_LIST_ITEMS_TTL_SECONDS = 60 * 60;
 
 export interface MdblistBatchRatingsItem {
   tmdbId: number;
@@ -456,6 +488,158 @@ class MdblistAPI extends ExternalAPI {
       if (!results.has(item.tmdbId)) results.set(item.tmdbId, null);
     }
     return results;
+  }
+
+  public async searchLists(query: string): Promise<MdblistPublicList[]> {
+    if (!this.apiKey) {
+      throw new MdblistNotConfiguredError();
+    }
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    return this.queueRequest(async () => {
+      const payload = await this.queuedGet<unknown>(
+        '/lists/search',
+        { params: { query: trimmed } },
+        MDBLIST_LIST_SEARCH_TTL_SECONDS,
+        'search lists'
+      );
+      return mapMdblistPublicLists(payload);
+    });
+  }
+
+  public async getListItems(
+    refInput: string,
+    options: { limit: number; offset: number }
+  ): Promise<{
+    title: string;
+    items: MdblistDiscoverItem[];
+    hasMore: boolean;
+  }> {
+    if (!this.apiKey) {
+      throw new MdblistNotConfiguredError();
+    }
+
+    const ref = parseMdblistListRef(refInput);
+    const limit = Math.max(1, options.limit);
+    const offset = Math.max(0, options.offset);
+
+    return this.queueRequest(async () => {
+      const metadata = await this.fetchListMetadata(ref);
+      const title =
+        metadata[0]?.name ||
+        (ref.kind === 'slug' ? ref.slug : String(ref.listId));
+      const payload = await this.fetchListItemsPayload(ref, limit, offset);
+      const rawCount = collectMdblistListItems(payload).length;
+
+      return {
+        title,
+        items: mapMdblistListItems(payload),
+        hasMore: rawCount >= limit,
+      };
+    });
+  }
+
+  private listPath(ref: MdblistListRef): string {
+    if (ref.kind === 'id') {
+      return `/lists/${ref.listId}`;
+    }
+    return `/lists/${encodeURIComponent(ref.username)}/${encodeURIComponent(
+      ref.slug
+    )}`;
+  }
+
+  private async fetchListMetadata(
+    ref: MdblistListRef
+  ): Promise<MdblistListMetadata[]> {
+    try {
+      const payload = await this.queuedGet<unknown>(
+        this.listPath(ref),
+        undefined,
+        MDBLIST_LIST_ITEMS_TTL_SECONDS,
+        'list metadata'
+      );
+      return normalizeMdblistListMetadata(payload);
+    } catch (e) {
+      if (e instanceof MdblistListNotFoundError) {
+        throw e;
+      }
+      logger.debug('MDBList list metadata unavailable', {
+        label: 'MDBList',
+        ref,
+        errorMessage: e instanceof Error ? e.message : String(e),
+      });
+      return [];
+    }
+  }
+
+  private async fetchListItemsPayload(
+    ref: MdblistListRef,
+    limit: number,
+    offset: number
+  ): Promise<MdblistListItemsPayload | MdblistListItemPayload[]> {
+    return this.queuedGet<MdblistListItemsPayload | MdblistListItemPayload[]>(
+      `${this.listPath(ref)}/items`,
+      { params: { limit, offset } },
+      MDBLIST_LIST_ITEMS_TTL_SECONDS,
+      'list items'
+    );
+  }
+
+  private async queuedGet<T>(
+    endpoint: string,
+    config: { params?: Record<string, unknown> } | undefined,
+    ttl: number,
+    context: string
+  ): Promise<T> {
+    const circuitSlot = this.acquireCircuitSlot();
+    if (circuitSlot === 'blocked') {
+      throw new MdblistUnavailableError();
+    }
+
+    const cached = this.getCached<T>(endpoint, config);
+    if (cached !== undefined) {
+      recordMdblistMetric('cacheHits');
+      if (circuitSlot === 'probe') this.closeCircuit();
+      return cached;
+    }
+
+    try {
+      recordMdblistMetric('singleFetches');
+      const data = await this.get<T>(endpoint, config, ttl);
+      if (circuitSlot === 'probe') this.closeCircuit();
+      return data;
+    } catch (e) {
+      const status = (e as { response?: { status?: number } })?.response
+        ?.status;
+
+      if (isQuotaExceeded(e)) {
+        this.openCircuit(getRetryAfterMs(e));
+        throw new MdblistUnavailableError('MDBList daily quota exceeded');
+      }
+
+      if (circuitSlot === 'probe') {
+        this.openCircuit();
+      }
+
+      recordMdblistMetric('failures');
+      logger.debug(`MDBList ${context} unavailable`, {
+        label: 'MDBList',
+        endpoint,
+        errorMessage: e instanceof Error ? e.message : String(e),
+      });
+
+      if (status === 404) {
+        throw new MdblistListNotFoundError();
+      }
+
+      throw new MdblistUnavailableError(
+        e instanceof Error ? e.message : `Unable to ${context}`
+      );
+    }
   }
 }
 

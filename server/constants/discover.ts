@@ -32,6 +32,10 @@ export enum DiscoverSliderType {
   ANILIST_PLANNING,
   ANILIST_COMPLETED,
   ANILIST_LIST,
+  ANILIST_POPULAR,
+  ANILIST_TOP,
+  ANILIST_NEXT_SEASON,
+  MDBLIST_LIST,
 }
 
 export const defaultSliders: Partial<DiscoverSlider>[] = [
@@ -138,21 +142,39 @@ export const defaultSliders: Partial<DiscoverSlider>[] = [
     order: 16,
   },
   {
-    type: DiscoverSliderType.ANILIST_WATCHING,
+    type: DiscoverSliderType.ANILIST_POPULAR,
     enabled: true,
     isBuiltIn: true,
     order: 17,
   },
   {
-    type: DiscoverSliderType.ANILIST_PLANNING,
+    type: DiscoverSliderType.ANILIST_TOP,
     enabled: true,
     isBuiltIn: true,
     order: 18,
   },
   {
-    type: DiscoverSliderType.ANILIST_COMPLETED,
+    type: DiscoverSliderType.ANILIST_NEXT_SEASON,
     enabled: true,
     isBuiltIn: true,
     order: 19,
+  },
+  {
+    type: DiscoverSliderType.ANILIST_WATCHING,
+    enabled: true,
+    isBuiltIn: true,
+    order: 20,
+  },
+  {
+    type: DiscoverSliderType.ANILIST_PLANNING,
+    enabled: true,
+    isBuiltIn: true,
+    order: 21,
+  },
+  {
+    type: DiscoverSliderType.ANILIST_COMPLETED,
+    enabled: true,
+    isBuiltIn: true,
+    order: 22,
   },
 ];

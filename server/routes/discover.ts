@@ -2,6 +2,12 @@ import AnilistAPI, {
   AnilistAuthError,
   AnilistRateLimitedError,
 } from '@server/api/anilist';
+import MdblistAPI, {
+  MdblistListNotFoundError,
+  MdblistNotConfiguredError,
+  MdblistUnavailableError,
+  type MdblistDiscoverItem,
+} from '@server/api/mdblist';
 import PlexTvAPI from '@server/api/plextv';
 import type { SortOptions } from '@server/api/themoviedb';
 import TheMovieDb from '@server/api/themoviedb';
@@ -90,6 +96,15 @@ const mapTraktItems = (items: TraktMediaItem[]): WatchlistItem[] =>
   items.map((item) => ({
     id: item.tmdbId,
     ratingKey: `trakt-${item.mediaType}-${item.tmdbId}`,
+    tmdbId: item.tmdbId,
+    mediaType: item.mediaType,
+    title: item.title,
+  }));
+
+const mapMdblistItems = (items: MdblistDiscoverItem[]): WatchlistItem[] =>
+  items.map((item) => ({
+    id: item.tmdbId,
+    ratingKey: `mdblist-${item.mediaType}-${item.tmdbId}`,
     tmdbId: item.tmdbId,
     mediaType: item.mediaType,
     title: item.title,
@@ -204,6 +219,34 @@ const handleTraktRouteError = (
       message: e.message,
       retryAfter: e.retryAfterSeconds,
     });
+  }
+  logger.error(fallbackMessage, {
+    label: 'API',
+    errorMessage: e instanceof Error ? e.message : 'unknown error',
+  });
+  return next({ status: 500, message: fallbackMessage });
+};
+
+const handleMdblistRouteError = (
+  e: unknown,
+  next: (err?: unknown) => void,
+  fallbackMessage: string
+) => {
+  if (e instanceof MdblistNotConfiguredError) {
+    return next({ status: 400, message: e.message });
+  }
+  if (e instanceof MdblistListNotFoundError) {
+    return next({ status: 404, message: e.message });
+  }
+  if (e instanceof MdblistUnavailableError) {
+    const quota = /quota/i.test(e.message);
+    return next({
+      status: quota ? 429 : 503,
+      message: e.message,
+    });
+  }
+  if (e instanceof Error && /list (url|reference)/i.test(e.message)) {
+    return next({ status: 400, message: e.message });
   }
   logger.error(fallbackMessage, {
     label: 'API',
@@ -1779,12 +1822,21 @@ discoverRoutes.get('/trakt/list', async (req, res, next) => {
   }
 });
 
-discoverRoutes.get('/anilist/trending', async (req, res, next) => {
+async function anilistPublicPageRoute(
+  req: Request,
+  res: Response,
+  next: (err?: unknown) => void,
+  fetchPage: (
+    client: AnilistAPI,
+    page: number
+  ) => Promise<Awaited<ReturnType<AnilistAPI['getTrending']>>>,
+  errorMessage: string
+) {
   try {
     createAnilistAppClient();
     const page = req.query.page ? Number(req.query.page) : 1;
     const client = new AnilistAPI();
-    const mediaPage = await client.getTrending(page);
+    const mediaPage = await fetchPage(client, page);
     const mapped = await mapAnilistMediaList(mediaPage.media);
     return res.status(200).json({
       page,
@@ -1792,34 +1844,59 @@ discoverRoutes.get('/anilist/trending', async (req, res, next) => {
       results: toWatchlistItems(mapped),
     } satisfies WatchlistResponse);
   } catch (e) {
-    return handleAnilistRouteError(
-      e,
-      next,
-      'Unable to retrieve AniList trending anime.'
-    );
+    return handleAnilistRouteError(e, next, errorMessage);
   }
-});
+}
 
-discoverRoutes.get('/anilist/season', async (req, res, next) => {
-  try {
-    createAnilistAppClient();
-    const page = req.query.page ? Number(req.query.page) : 1;
-    const client = new AnilistAPI();
-    const mediaPage = await client.getSeason(page);
-    const mapped = await mapAnilistMediaList(mediaPage.media);
-    return res.status(200).json({
-      page,
-      hasMore: Boolean(mediaPage.pageInfo.hasNextPage),
-      results: toWatchlistItems(mapped),
-    } satisfies WatchlistResponse);
-  } catch (e) {
-    return handleAnilistRouteError(
-      e,
-      next,
-      'Unable to retrieve AniList seasonal anime.'
-    );
-  }
-});
+discoverRoutes.get('/anilist/trending', (req, res, next) =>
+  anilistPublicPageRoute(
+    req,
+    res,
+    next,
+    (client, page) => client.getTrending(page),
+    'Unable to retrieve AniList trending anime.'
+  )
+);
+
+discoverRoutes.get('/anilist/season', (req, res, next) =>
+  anilistPublicPageRoute(
+    req,
+    res,
+    next,
+    (client, page) => client.getSeason(page),
+    'Unable to retrieve AniList seasonal anime.'
+  )
+);
+
+discoverRoutes.get('/anilist/popular', (req, res, next) =>
+  anilistPublicPageRoute(
+    req,
+    res,
+    next,
+    (client, page) => client.getPopular(page),
+    'Unable to retrieve AniList popular anime.'
+  )
+);
+
+discoverRoutes.get('/anilist/top', (req, res, next) =>
+  anilistPublicPageRoute(
+    req,
+    res,
+    next,
+    (client, page) => client.getTop(page),
+    'Unable to retrieve AniList top anime.'
+  )
+);
+
+discoverRoutes.get('/anilist/next-season', (req, res, next) =>
+  anilistPublicPageRoute(
+    req,
+    res,
+    next,
+    (client, page) => client.getNextSeason(page),
+    'Unable to retrieve AniList next-season anime.'
+  )
+);
 
 async function anilistUserListRoute(
   req: Request,
@@ -1889,6 +1966,59 @@ discoverRoutes.get('/anilist/lists', async (req, res, next) => {
       next,
       'Unable to retrieve AniList lists.'
     );
+  }
+});
+
+discoverRoutes.get('/mdblist/lists/search', async (req, res, next) => {
+  try {
+    const mdblist = MdblistAPI.getInstance();
+    if (!mdblist.isConfigured()) {
+      throw new MdblistNotConfiguredError();
+    }
+
+    const query = String(req.query.query ?? '').trim();
+    if (!query) {
+      return res.status(200).json({ results: [] });
+    }
+
+    const results = await mdblist.searchLists(query);
+    return res.status(200).json({ results });
+  } catch (e) {
+    return handleMdblistRouteError(e, next, 'Unable to search MDBList lists.');
+  }
+});
+
+discoverRoutes.get('/mdblist/list', async (req, res, next) => {
+  try {
+    const mdblist = MdblistAPI.getInstance();
+    if (!mdblist.isConfigured()) {
+      throw new MdblistNotConfiguredError();
+    }
+
+    const url = String(req.query.url ?? '').trim();
+    if (!url) {
+      return next({
+        status: 400,
+        message: 'url query parameter is required',
+      });
+    }
+
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const itemsPerPage = 20;
+    const offset = Math.max(0, (page - 1) * itemsPerPage);
+    const { title, items, hasMore } = await mdblist.getListItems(url, {
+      limit: itemsPerPage,
+      offset,
+    });
+
+    return res.status(200).json({
+      page,
+      hasMore,
+      results: mapMdblistItems(items),
+      title,
+    } satisfies WatchlistResponse & { title: string });
+  } catch (e) {
+    return handleMdblistRouteError(e, next, 'Unable to retrieve MDBList list.');
   }
 });
 

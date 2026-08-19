@@ -1,11 +1,21 @@
 import AnilistLogo from '@app/assets/services/anilist.svg';
+import MdblistLogo from '@app/assets/services/mdblist.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import { DiscoverSliderType } from '@server/constants/discover';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode, SVGProps } from 'react';
 
-export type DiscoverSliderSource = 'trakt' | 'anilist';
+export type DiscoverSliderSource = 'trakt' | 'anilist' | 'mdblist';
+
+const SOURCE_MARKS: Record<
+  DiscoverSliderSource,
+  { Logo: ComponentType<SVGProps<SVGSVGElement>>; label: string }
+> = {
+  trakt: { Logo: TraktLogo, label: 'Trakt' },
+  anilist: { Logo: AnilistLogo, label: 'AniList' },
+  mdblist: { Logo: MdblistLogo, label: 'MDBList' },
+};
 
 export const getDiscoverSliderSource = (
   type?: DiscoverSliderType
@@ -18,11 +28,16 @@ export const getDiscoverSliderSource = (
       return 'trakt';
     case DiscoverSliderType.ANILIST_TRENDING:
     case DiscoverSliderType.ANILIST_SEASON:
+    case DiscoverSliderType.ANILIST_POPULAR:
+    case DiscoverSliderType.ANILIST_TOP:
+    case DiscoverSliderType.ANILIST_NEXT_SEASON:
     case DiscoverSliderType.ANILIST_WATCHING:
     case DiscoverSliderType.ANILIST_PLANNING:
     case DiscoverSliderType.ANILIST_COMPLETED:
     case DiscoverSliderType.ANILIST_LIST:
       return 'anilist';
+    case DiscoverSliderType.MDBLIST_LIST:
+      return 'mdblist';
     default:
       return undefined;
   }
@@ -37,9 +52,7 @@ const SliderSourceMark = ({
   source,
   className = 'h-5 w-5',
 }: SliderSourceMarkProps) => {
-  const isTrakt = source === 'trakt';
-  const Logo = isTrakt ? TraktLogo : AnilistLogo;
-  const label = isTrakt ? 'Trakt' : 'AniList';
+  const { Logo, label } = SOURCE_MARKS[source];
 
   return (
     <span

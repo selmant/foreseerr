@@ -8,6 +8,7 @@ import AnilistSlider from '@app/components/Discover/AnilistSlider';
 import AnilistUserSlider from '@app/components/Discover/AnilistUserSlider';
 import CreateSlider from '@app/components/Discover/CreateSlider';
 import DiscoverSliderEdit from '@app/components/Discover/DiscoverSliderEdit';
+import MdblistListSlider from '@app/components/Discover/MdblistListSlider';
 import MovieGenreSlider from '@app/components/Discover/MovieGenreSlider';
 import NetworkSlider from '@app/components/Discover/NetworkSlider';
 import PlexWatchlistSlider from '@app/components/Discover/PlexWatchlistSlider';
@@ -441,6 +442,36 @@ const Discover = () => {
               />
             );
             break;
+          case DiscoverSliderType.ANILIST_POPULAR:
+            sliderComponent = (
+              <AnilistSlider
+                title={intl.formatMessage(sliderTitles.anilistpopular)}
+                endpoint="/api/v1/discover/anilist/popular"
+                linkUrl="/discover/anilist/popular"
+                sliderKey="anilist-popular"
+              />
+            );
+            break;
+          case DiscoverSliderType.ANILIST_TOP:
+            sliderComponent = (
+              <AnilistSlider
+                title={intl.formatMessage(sliderTitles.anilisttop)}
+                endpoint="/api/v1/discover/anilist/top"
+                linkUrl="/discover/anilist/top"
+                sliderKey="anilist-top"
+              />
+            );
+            break;
+          case DiscoverSliderType.ANILIST_NEXT_SEASON:
+            sliderComponent = (
+              <AnilistSlider
+                title={intl.formatMessage(sliderTitles.anilistnextseason)}
+                endpoint="/api/v1/discover/anilist/next-season"
+                linkUrl="/discover/anilist/next-season"
+                sliderKey="anilist-next-season"
+              />
+            );
+            break;
           case DiscoverSliderType.ANILIST_WATCHING:
             sliderComponent = <AnilistUserSlider list="watching" />;
             break;
@@ -456,6 +487,15 @@ const Discover = () => {
                 sliderKey={`custom-slider-${slider.id}`}
                 title={slider.title ?? ''}
                 name={slider.data ?? ''}
+              />
+            );
+            break;
+          case DiscoverSliderType.MDBLIST_LIST:
+            sliderComponent = (
+              <MdblistListSlider
+                sliderKey={`custom-slider-${slider.id}`}
+                title={slider.title ?? ''}
+                url={slider.data ?? ''}
               />
             );
             break;

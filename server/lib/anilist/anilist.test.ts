@@ -112,4 +112,19 @@ describe('AniList OAuth helpers', () => {
       year: 2026,
     });
   });
+
+  it('resolves the next AniList season from the current one', () => {
+    assert.deepEqual(AnilistAPI.nextSeason(new Date('2026-01-15')), {
+      season: 'SPRING',
+      year: 2026,
+    });
+    assert.deepEqual(AnilistAPI.nextSeason(new Date('2026-08-18')), {
+      season: 'FALL',
+      year: 2026,
+    });
+    assert.deepEqual(AnilistAPI.nextSeason(new Date('2026-11-02')), {
+      season: 'WINTER',
+      year: 2027,
+    });
+  });
 });

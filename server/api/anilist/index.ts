@@ -248,6 +248,23 @@ class AnilistAPI extends ExternalAPI {
     return { season: 'FALL', year };
   }
 
+  static nextSeason(now = new Date()): {
+    season: AnilistMediaSeason;
+    year: number;
+  } {
+    const current = AnilistAPI.currentSeason(now);
+    if (current.season === 'WINTER') {
+      return { season: 'SPRING', year: current.year };
+    }
+    if (current.season === 'SPRING') {
+      return { season: 'SUMMER', year: current.year };
+    }
+    if (current.season === 'SUMMER') {
+      return { season: 'FALL', year: current.year };
+    }
+    return { season: 'WINTER', year: current.year + 1 };
+  }
+
   async ping(): Promise<void> {
     // AniList rejects Page queries that only ask for pageInfo ("No field provided").
     await this.graphql<{
@@ -277,6 +294,23 @@ class AnilistAPI extends ExternalAPI {
       sort: 'POPULARITY_DESC',
       season: current.season,
       seasonYear: current.year,
+    });
+  }
+
+  async getPopular(page = 1): Promise<AnilistMediaPage> {
+    return this.getMediaPage(page, { sort: 'POPULARITY_DESC' });
+  }
+
+  async getTop(page = 1): Promise<AnilistMediaPage> {
+    return this.getMediaPage(page, { sort: 'SCORE_DESC' });
+  }
+
+  async getNextSeason(page = 1): Promise<AnilistMediaPage> {
+    const next = AnilistAPI.nextSeason();
+    return this.getMediaPage(page, {
+      sort: 'POPULARITY_DESC',
+      season: next.season,
+      seasonYear: next.year,
     });
   }
 

@@ -144,3 +144,116 @@ describe('MdblistAPI batch ratings', () => {
     assert.equal(batchCalls, 1);
   });
 });
+
+describe('MdblistAPI public lists', () => {
+  it('searches lists and caches the query', async () => {
+    const api = new MdblistAPI('test-api-key');
+    const client = (api as unknown as { axios: AxiosInstance }).axios;
+    let searchCalls = 0;
+
+    client.defaults.adapter = async (config) => {
+      searchCalls += 1;
+      assert.match(String(config.url), /\/lists\/search$/);
+      assert.equal(config.params?.query, 'horror');
+      return {
+        data: [
+          {
+            id: 9_800_001,
+            name: 'Horror',
+            slug: 'horror',
+            user_name: 'hdlists',
+            mediatype: 'movie',
+            items: 12,
+            likes: 4,
+          },
+        ],
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      } as AxiosResponse;
+    };
+
+    const first = await api.searchLists('horror');
+    const second = await api.searchLists('horror');
+
+    assert.equal(searchCalls, 1);
+    assert.equal(first.length, 1);
+    assert.equal(first[0].name, 'Horror');
+    assert.equal(first[0].username, 'hdlists');
+    assert.deepEqual(second, first);
+  });
+
+  it('fetches list items with offset/limit in the cache key', async () => {
+    const api = new MdblistAPI('test-api-key');
+    const client = (api as unknown as { axios: AxiosInstance }).axios;
+    const itemCalls: { limit?: number; offset?: number }[] = [];
+
+    client.defaults.adapter = async (config) => {
+      const url = String(config.url);
+      if (url.endsWith('/items')) {
+        itemCalls.push({
+          limit: Number(config.params?.limit),
+          offset: Number(config.params?.offset),
+        });
+        const offset = Number(config.params?.offset) || 0;
+        return {
+          data: {
+            movies: [
+              {
+                id: 9_800_100 + offset,
+                rank: offset + 1,
+                title: `Title ${offset}`,
+                mediatype: 'movie',
+                ids: { tmdb: 9_800_100 + offset },
+              },
+            ],
+            shows: [],
+          },
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+        } as AxiosResponse;
+      }
+
+      return {
+        data: [
+          {
+            id: 9_800_010,
+            name: 'Custom List',
+            slug: 'custom-list',
+            user_name: 'tester',
+          },
+        ],
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+      } as AxiosResponse;
+    };
+
+    const pageOne = await api.getListItems('9800010', {
+      limit: 20,
+      offset: 0,
+    });
+    const pageOneCached = await api.getListItems('9800010', {
+      limit: 20,
+      offset: 0,
+    });
+    const pageTwo = await api.getListItems('9800010', {
+      limit: 20,
+      offset: 20,
+    });
+
+    assert.deepEqual(itemCalls, [
+      { limit: 20, offset: 0 },
+      { limit: 20, offset: 20 },
+    ]);
+    assert.equal(pageOne.title, 'Custom List');
+    assert.equal(pageOne.items[0]?.tmdbId, 9_800_100);
+    assert.equal(pageOneCached.items[0]?.tmdbId, 9_800_100);
+    assert.equal(pageTwo.items[0]?.tmdbId, 9_800_120);
+    assert.equal(pageOne.hasMore, false);
+  });
+});

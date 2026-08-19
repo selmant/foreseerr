@@ -1,5 +1,6 @@
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
+import MdblistListSlider from '@app/components/Discover/MdblistListSlider';
 import TraktListSlider from '@app/components/Discover/TraktListSlider';
 import { sliderTitles } from '@app/components/Discover/constants';
 import MediaSlider from '@app/components/MediaSlider';
@@ -42,6 +43,11 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   searchAnilistLists: 'Choose one of your AniList lists…',
   anilistListNotLinked:
     'Link AniList in Linked Accounts to pick from your anime lists.',
+  providemdblistlisturl: 'Paste an MDBList URL, username/list-slug, or list id',
+  searchMdblistLists: 'Search public MDBList lists…',
+  customMdblistList: 'Use: {value}',
+  mdblistListRequiresKey:
+    'MDBList must be configured in Settings to pin public lists.',
   liked: 'liked',
   yours: 'yours',
   addsuccess: 'Created new slider and saved discover customization settings.',
@@ -97,6 +103,28 @@ const formatTraktListReference = (list: TraktListOption): string => {
   }
   return `${list.username}/${slug}`;
 };
+
+interface MdblistListOption {
+  id: number;
+  slug: string;
+  name: string;
+  username: string;
+  itemCount: number;
+  likes?: number;
+}
+
+const formatMdblistListReference = (list: MdblistListOption): string => {
+  if (list.username && list.slug) {
+    return `${list.username}/${list.slug}`;
+  }
+  return String(list.id);
+};
+
+const looksLikeMdblistListReference = (value: string): boolean =>
+  value.includes('mdblist.com') ||
+  value.startsWith('http') ||
+  /^[\w-]+\/[\w-]+/.test(value) ||
+  /^\d+$/.test(value);
 
 const looksLikeTraktListReference = (value: string): boolean =>
   value.includes('trakt.tv') ||
@@ -235,6 +263,11 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
           break;
         case DiscoverSliderType.TRAKT_LIST:
           loadDefaultTraktList();
+          break;
+        case DiscoverSliderType.MDBLIST_LIST:
+          if (slider.data) {
+            setDefaultDataValue([{ label: slider.data, value: slider.data }]);
+          }
           break;
         case DiscoverSliderType.ANILIST_LIST:
           if (slider.data) {
@@ -387,6 +420,51 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
     return options;
   };
 
+  const loadMdblistListOptions = async (inputValue: string) => {
+    const input = inputValue.trim();
+    const options: { label: string; value: string }[] = [];
+    const seen = new Set<string>();
+
+    const addOption = (label: string, value: string) => {
+      if (!value || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      options.push({ label, value });
+    };
+
+    if (input && looksLikeMdblistListReference(input)) {
+      addOption(
+        intl.formatMessage(messages.customMdblistList, { value: input }),
+        input
+      );
+    }
+
+    if (
+      settings.currentSettings.mdblistConfigured &&
+      input.length >= 2 &&
+      !input.startsWith('http')
+    ) {
+      try {
+        const { data } = await axios.get<{ results: MdblistListOption[] }>(
+          '/api/v1/discover/mdblist/lists/search',
+          { params: { query: input } }
+        );
+
+        for (const list of data.results) {
+          const label = list.username
+            ? `${list.name} · ${list.username} (${list.itemCount})`
+            : `${list.name} (${list.itemCount})`;
+          addOption(label, formatMdblistListReference(list));
+        }
+      } catch {
+        // Public search is optional when MDBList is not configured.
+      }
+    }
+
+    return options;
+  };
+
   const loadAnilistListOptions = async (inputValue: string) => {
     const input = inputValue.trim().toLowerCase();
     try {
@@ -492,6 +570,14 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
       dataPlaceholderText: intl.formatMessage(messages.searchAnilistLists),
     },
+    {
+      type: DiscoverSliderType.MDBLIST_LIST,
+      title: intl.formatMessage(sliderTitles.mdblistlist),
+      dataUrl: '/api/v1/discover/mdblist/list',
+      params: 'url=$value',
+      titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
+      dataPlaceholderText: intl.formatMessage(messages.providemdblistlisturl),
+    },
   ];
 
   const visibleOptions = options.filter((option) => {
@@ -500,6 +586,9 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
     }
     if (option.type === DiscoverSliderType.ANILIST_LIST) {
       return settings.currentSettings.anilistConfigured;
+    }
+    if (option.type === DiscoverSliderType.MDBLIST_LIST) {
+      return settings.currentSettings.mdblistConfigured;
     }
 
     return true;
@@ -790,6 +879,54 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
               </div>
             );
             break;
+          case DiscoverSliderType.MDBLIST_LIST:
+            dataInput = (
+              <div className="space-y-3">
+                <AsyncSelect
+                  key={`mdblist-list-select-${defaultDataValue}`}
+                  inputId="mdblist-list-picker"
+                  className="react-select-container"
+                  classNamePrefix="react-select"
+                  defaultValue={defaultDataValue?.[0]}
+                  defaultOptions
+                  cacheOptions
+                  loadOptions={loadMdblistListOptions}
+                  placeholder={intl.formatMessage(messages.searchMdblistLists)}
+                  noOptionsMessage={({ inputValue }) =>
+                    inputValue.length < 2
+                      ? intl.formatMessage(messages.starttyping)
+                      : intl.formatMessage(messages.nooptions)
+                  }
+                  onChange={(value) => {
+                    const listValue = value?.value?.toString() ?? '';
+                    const label = value?.label?.toString() ?? '';
+                    let title = values.title;
+
+                    if (!title?.trim() && / · |\(\d+\)$/.test(label)) {
+                      const titleFromList = label
+                        .replace(/\s+·\s+[\w.-]+\s+\(\d+\)$/, '')
+                        .replace(/\s+\(\d+\)$/, '');
+                      if (titleFromList) {
+                        title = titleFromList;
+                      }
+                    }
+
+                    setValues(
+                      (currentValues) => ({
+                        ...currentValues,
+                        data: listValue,
+                        title,
+                      }),
+                      true
+                    );
+                  }}
+                />
+                <p className="text-sm text-gray-400">
+                  {intl.formatMessage(messages.mdblistListRequiresKey)}
+                </p>
+              </div>
+            );
+            break;
           default:
             dataInput = (
               <Field
@@ -865,6 +1002,13 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
               <div className="relative py-4">
                 {activeOption.type === DiscoverSliderType.TRAKT_LIST ? (
                   <TraktListSlider
+                    sliderKey={`preview-${values.title}`}
+                    title={values.title}
+                    url={values.data ?? ''}
+                    hideTitle
+                  />
+                ) : activeOption.type === DiscoverSliderType.MDBLIST_LIST ? (
+                  <MdblistListSlider
                     sliderKey={`preview-${values.title}`}
                     title={values.title}
                     url={values.data ?? ''}
