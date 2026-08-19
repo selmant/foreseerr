@@ -1,6 +1,7 @@
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover from '@app/hooks/useDiscover';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
@@ -68,7 +69,11 @@ const DiscoverAnilistPage = ({
       <>
         <PageTitle title={intl.formatMessage(messages[kind])} />
         <div className="mb-5 mt-1">
-          <Header>{intl.formatMessage(messages[kind])}</Header>
+          <Header>
+            <SliderSourceTitle source="anilist">
+              {intl.formatMessage(messages[kind])}
+            </SliderSourceTitle>
+          </Header>
         </div>
         <div className="text-center text-gray-400">
           <p>{intl.formatMessage(messages.linkAccount)}</p>
@@ -91,7 +96,11 @@ const DiscoverAnilistPage = ({
     <>
       <PageTitle title={intl.formatMessage(messages[kind])} />
       <div className="mb-5 mt-1">
-        <Header>{intl.formatMessage(messages[kind])}</Header>
+        <Header>
+          <SliderSourceTitle source="anilist">
+            {intl.formatMessage(messages[kind])}
+          </SliderSourceTitle>
+        </Header>
       </div>
       <ListView
         plexItems={titles}

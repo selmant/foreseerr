@@ -117,8 +117,12 @@
     @apply transition duration-300 hover:text-white;
   }
 
-  a.slider-title svg {
+  a.slider-title > svg {
     @apply ml-2 h-6 w-6;
+  }
+
+  a.slider-title > span:first-child {
+    @apply mr-2;
   }
 
   .media-page {

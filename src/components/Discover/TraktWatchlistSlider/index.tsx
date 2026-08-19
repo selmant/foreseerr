@@ -1,11 +1,10 @@
+import { DiscoverSliderTitle } from '@app/components/Discover/SliderSourceMark';
 import Slider from '@app/components/Slider';
 import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
@@ -44,12 +43,9 @@ const TraktWatchlistSlider = () => {
 
   return (
     <>
-      <div className="slider-header">
-        <Link href="/discover/trakt/watchlist" className="slider-title">
-          <span>{intl.formatMessage(messages.traktwatchlist)}</span>
-          <ArrowRightCircleIcon />
-        </Link>
-      </div>
+      <DiscoverSliderTitle href="/discover/trakt/watchlist" source="trakt">
+        {intl.formatMessage(messages.traktwatchlist)}
+      </DiscoverSliderTitle>
       <Slider
         sliderKey="trakt-watchlist"
         isLoading={!watchlistItems}

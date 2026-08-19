@@ -1,6 +1,7 @@
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters';
 import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
 import useDiscover from '@app/hooks/useDiscover';
@@ -58,7 +59,11 @@ const DiscoverTraktHistory = () => {
       <>
         <PageTitle title={intl.formatMessage(messages.title)} />
         <div className="mb-5 mt-1">
-          <Header>{intl.formatMessage(messages.title)}</Header>
+          <Header>
+            <SliderSourceTitle source="trakt">
+              {intl.formatMessage(messages.title)}
+            </SliderSourceTitle>
+          </Header>
         </div>
         <div className="text-center text-gray-400">
           <p>{intl.formatMessage(messages.linkAccount)}</p>
@@ -81,7 +86,11 @@ const DiscoverTraktHistory = () => {
     <>
       <PageTitle title={intl.formatMessage(messages.title)} />
       <div className="mb-5 mt-1 flex flex-col justify-between lg:flex-row lg:items-end">
-        <Header>{intl.formatMessage(messages.title)}</Header>
+        <Header>
+          <SliderSourceTitle source="trakt">
+            {intl.formatMessage(messages.title)}
+          </SliderSourceTitle>
+        </Header>
         <TraktDiscoverFilters showHideWatchedFilter={false} />
       </div>
       <ListView

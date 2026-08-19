@@ -4,6 +4,9 @@ import Tag from '@app/components/Common/Tag';
 import Tooltip from '@app/components/Common/Tooltip';
 import CompanyTag from '@app/components/CompanyTag';
 import CreateSlider from '@app/components/Discover/CreateSlider';
+import SliderSourceMark, {
+  getDiscoverSliderSource,
+} from '@app/components/Discover/SliderSourceMark';
 import { sliderTitles } from '@app/components/Discover/constants';
 import GenreTag from '@app/components/GenreTag';
 import KeywordTag from '@app/components/KeywordTag';
@@ -229,6 +232,8 @@ const DiscoverSliderEdit = ({
     }
   };
 
+  const sliderSource = getDiscoverSliderSource(slider.type);
+
   return (
     <div
       key={`discover-slider-${slider.id}-editing`}
@@ -255,8 +260,11 @@ const DiscoverSliderEdit = ({
           className={`${slider.data ? 'mb-4' : 'mb-0'} flex space-x-2 md:mb-0`}
         >
           {allowHtml5Drag && <Bars3Icon className="h-6 w-6" />}
-          <div className="w-7/12 truncate md:w-full">
-            {getSliderTitle(slider)}
+          <div className="flex min-w-0 items-center gap-2">
+            {sliderSource && <SliderSourceMark source={sliderSource} />}
+            <div className="w-7/12 truncate md:w-full">
+              {getSliderTitle(slider)}
+            </div>
           </div>
         </div>
         <div
@@ -301,10 +309,14 @@ const DiscoverSliderEdit = ({
             <Tag iconSvg={<MagnifyingGlassIcon />}>{slider.data}</Tag>
           )}
           {slider.type === DiscoverSliderType.TRAKT_LIST && slider.data && (
-            <Tag>{slider.data}</Tag>
+            <Tag iconSvg={<SliderSourceMark source="trakt" />}>
+              {slider.data}
+            </Tag>
           )}
           {slider.type === DiscoverSliderType.ANILIST_LIST && slider.data && (
-            <Tag>{slider.data}</Tag>
+            <Tag iconSvg={<SliderSourceMark source="anilist" />}>
+              {slider.data}
+            </Tag>
           )}
         </div>
         <div className="flex items-center space-x-2">

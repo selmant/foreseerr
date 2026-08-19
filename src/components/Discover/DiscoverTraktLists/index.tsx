@@ -1,6 +1,7 @@
 import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
+import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
@@ -56,7 +57,11 @@ const DiscoverTraktLists = () => {
       <>
         <PageTitle title={intl.formatMessage(messages.title)} />
         <div className="mb-5 mt-1">
-          <Header>{intl.formatMessage(messages.title)}</Header>
+          <Header>
+            <SliderSourceTitle source="trakt">
+              {intl.formatMessage(messages.title)}
+            </SliderSourceTitle>
+          </Header>
         </div>
         <div className="text-center text-gray-400">
           <p>{intl.formatMessage(messages.linkAccount)}</p>
@@ -83,7 +88,11 @@ const DiscoverTraktLists = () => {
     <>
       <PageTitle title={intl.formatMessage(messages.title)} />
       <div className="mb-5 mt-1">
-        <Header>{intl.formatMessage(messages.title)}</Header>
+        <Header>
+          <SliderSourceTitle source="trakt">
+            {intl.formatMessage(messages.title)}
+          </SliderSourceTitle>
+        </Header>
       </div>
       {[
         {

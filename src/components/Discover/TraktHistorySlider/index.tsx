@@ -1,11 +1,10 @@
+import { DiscoverSliderTitle } from '@app/components/Discover/SliderSourceMark';
 import Slider from '@app/components/Slider';
 import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import Link from 'next/link';
 import { useEffect } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -65,12 +64,9 @@ const TraktHistorySlider = ({
   return (
     <>
       {!hideTitle && (
-        <div className="slider-header">
-          <Link href="/discover/trakt/history" className="slider-title">
-            <span>{displayTitle}</span>
-            <ArrowRightCircleIcon />
-          </Link>
-        </div>
+        <DiscoverSliderTitle href="/discover/trakt/history" source="trakt">
+          {displayTitle}
+        </DiscoverSliderTitle>
       )}
       <Slider
         sliderKey={sliderKey}
