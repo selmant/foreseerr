@@ -99,3 +99,19 @@ export function nextAnilistProgress(
   }
   return null;
 }
+
+export function watchedEpisodesFromProgress(
+  progress: number,
+  seasonEpisodeCount: number,
+  episodeOffset = 0
+): number[] {
+  const start = Math.max(0, episodeOffset);
+  const count = Math.min(
+    Math.max(0, progress),
+    Math.max(0, seasonEpisodeCount - start)
+  );
+  if (count < 1) {
+    return [];
+  }
+  return Array.from({ length: count }, (_, index) => start + index + 1);
+}

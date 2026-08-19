@@ -5,6 +5,7 @@ import {
   anilistProgressForEpisode,
   nextAnilistProgress,
   watchedEpisodeNumbersForSeason,
+  watchedEpisodesFromProgress,
 } from './anilistEpisodeProgress';
 
 const twoSeasons = [
@@ -46,5 +47,17 @@ describe('AniList episode progress mapping', () => {
     assert.equal(nextAnilistProgress(10, 10, true), null);
     assert.equal(nextAnilistProgress(10, 10, false), 9);
     assert.equal(nextAnilistProgress(10, 8, false), null);
+  });
+
+  it('maps AniList progress onto TMDB episode numbers with a cour offset', () => {
+    assert.deepEqual(
+      watchedEpisodesFromProgress(10, 25),
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    );
+    assert.deepEqual(
+      watchedEpisodesFromProgress(5, 25, 13),
+      [14, 15, 16, 17, 18]
+    );
+    assert.deepEqual(watchedEpisodesFromProgress(0, 25), []);
   });
 });

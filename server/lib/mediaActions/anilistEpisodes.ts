@@ -4,26 +4,31 @@ import {
   createAnilistUserClient,
   getUserAnilistSettings,
 } from '@server/lib/anilist';
-import anilistIdMapping from '@server/lib/anilist/mapping';
+import anilistIdMapping, {
+  fribbSeasonCandidates,
+  pickFribbSeasonEntry,
+} from '@server/lib/anilist/mapping';
 import { AnilistMediaActionProvider } from './anilist';
 import {
   absoluteEpisodeNumber,
   anilistProgressForEpisode,
   nextAnilistProgress,
   watchedEpisodeNumbersForSeason,
+  watchedEpisodesFromProgress,
   type TmdbSeasonCount,
 } from './anilistEpisodeProgress';
 import {
-  lookupAnilistItemStatus,
+  lookupAnilistEntryByAnilistId,
   patchUserAnilistSyncItem,
   warmUserAnilistSyncCache,
+  type AnilistSyncEntry,
 } from './anilistSyncCache';
 
 const anilistProvider = new AnilistMediaActionProvider();
 
-async function resolveAnilistId(tmdbShowId: number): Promise<number | null> {
+async function seasonEntries(tmdbShowId: number) {
   await anilistIdMapping.sync();
-  return anilistIdMapping.getAnilistId('tv', tmdbShowId) ?? null;
+  return anilistIdMapping.getAnilistSeasonEntries('tv', tmdbShowId);
 }
 
 async function getClientContext(userId: number) {
@@ -45,6 +50,16 @@ function seasonsFromTmdb(show: {
   }));
 }
 
+function catalogOffset(
+  mapping: {
+    offsetTmdb: number;
+    offsetTvdb: number;
+  },
+  catalog: 'tmdb' | 'tvdb'
+): number {
+  return catalog === 'tvdb' ? mapping.offsetTvdb : mapping.offsetTmdb;
+}
+
 export const anilistEpisodeActions = {
   isAvailable(userId: number): Promise<boolean> {
     return anilistProvider.isAvailable(userId);
@@ -59,8 +74,9 @@ export const anilistEpisodeActions = {
       return { available: false, watchedEpisodeNumbers: [] };
     }
     try {
-      const anilistId = await resolveAnilistId(tmdbShowId);
-      if (!anilistId) {
+      const entries = await seasonEntries(tmdbShowId);
+      const candidates = fribbSeasonCandidates(entries, seasonNumber);
+      if (candidates.entries.length === 0) {
         return { available: false, watchedEpisodeNumbers: [] };
       }
       const { client, anilistUserId } = await getClientContext(userId);
@@ -69,20 +85,53 @@ export const anilistEpisodeActions = {
         userId,
         anilistUserId
       );
-      const current = lookupAnilistItemStatus(snapshot, 'tv', tmdbShowId);
-      const progress = current.entry?.progress ?? 0;
-      if (progress <= 0) {
-        return { available: true, watchedEpisodeNumbers: [] };
+      if (candidates.mode === 'absolute') {
+        const mapping = candidates.entries[0];
+        const entry = lookupAnilistEntryByAnilistId(
+          snapshot,
+          mapping.anilistId
+        );
+        const progress = entry?.progress ?? 0;
+        if (progress <= 0) {
+          return { available: true, watchedEpisodeNumbers: [] };
+        }
+        const show = await new TheMovieDb().getTvShow({ tvId: tmdbShowId });
+        return {
+          available: true,
+          watchedEpisodeNumbers: watchedEpisodeNumbersForSeason(
+            seasonsFromTmdb(show),
+            seasonNumber,
+            progress,
+            entry?.episodeCount
+          ),
+        };
       }
+
       const show = await new TheMovieDb().getTvShow({ tvId: tmdbShowId });
+      const season = seasonsFromTmdb(show).find(
+        (item) => item.seasonNumber === seasonNumber
+      );
+      const watched = new Set<number>();
+      for (const mapping of candidates.entries) {
+        const entry = lookupAnilistEntryByAnilistId(
+          snapshot,
+          mapping.anilistId
+        );
+        const progress = entry?.progress ?? 0;
+        if (progress <= 0) {
+          continue;
+        }
+        for (const episode of watchedEpisodesFromProgress(
+          progress,
+          season?.episodeCount ?? progress,
+          catalogOffset(mapping, candidates.catalog)
+        )) {
+          watched.add(episode);
+        }
+      }
       return {
         available: true,
-        watchedEpisodeNumbers: watchedEpisodeNumbersForSeason(
-          seasonsFromTmdb(show),
-          seasonNumber,
-          progress,
-          current.entry?.episodeCount
-        ),
+        watchedEpisodeNumbers: [...watched].sort((left, right) => left - right),
       };
     } catch {
       return { available: false, watchedEpisodeNumbers: [] };
@@ -99,19 +148,13 @@ export const anilistEpisodeActions = {
     if (!(await anilistProvider.isAvailable(userId))) {
       return 'skipped';
     }
-    const anilistId = await resolveAnilistId(tmdbShowId);
-    if (!anilistId) {
+    if (seasonNumber < 1 || episodeNumber < 1) {
       return 'skipped';
     }
 
-    const show = await new TheMovieDb().getTvShow({ tvId: tmdbShowId });
-    const seasons = seasonsFromTmdb(show);
-    const absolute = absoluteEpisodeNumber(
-      seasons,
-      seasonNumber,
-      episodeNumber
-    );
-    if (absolute == null) {
+    const entries = await seasonEntries(tmdbShowId);
+    const picked = pickFribbSeasonEntry(entries, seasonNumber, episodeNumber);
+    if (!picked) {
       return 'skipped';
     }
 
@@ -121,47 +164,98 @@ export const anilistEpisodeActions = {
       userId,
       anilistUserId
     );
-    const current = lookupAnilistItemStatus(snapshot, 'tv', tmdbShowId);
-    let episodeCount = current.entry?.episodeCount ?? null;
+    const current = lookupAnilistEntryByAnilistId(
+      snapshot,
+      picked.mapping.anilistId
+    );
+    let episodeCount = current?.episodeCount ?? null;
     if (episodeCount == null) {
-      const media = await client.getMedia(anilistId);
+      const media = await client.getMedia(picked.mapping.anilistId);
       episodeCount = media?.episodes ?? null;
     }
-    const target = anilistProgressForEpisode(
-      absolute,
-      episodeCount,
-      episodeNumber
-    );
-    if (target == null) {
+
+    let target = picked.progress;
+    if (picked.mode === 'absolute') {
+      const show = await new TheMovieDb().getTvShow({ tvId: tmdbShowId });
+      const absolute = absoluteEpisodeNumber(
+        seasonsFromTmdb(show),
+        seasonNumber,
+        episodeNumber
+      );
+      if (absolute == null) {
+        return 'skipped';
+      }
+      const mapped = anilistProgressForEpisode(
+        absolute,
+        episodeCount,
+        episodeNumber
+      );
+      if (mapped == null) {
+        return 'skipped';
+      }
+      target = mapped;
+    } else if (
+      episodeCount != null &&
+      episodeCount > 0 &&
+      target > episodeCount
+    ) {
       return 'skipped';
     }
 
-    const currentProgress = current.entry?.progress ?? 0;
-    const next = nextAnilistProgress(currentProgress, target, watched);
-    if (next == null) {
-      return watched ? true : 'skipped';
-    }
-    if (next <= 0 && !current.entry?.listEntryId) {
-      return 'skipped';
-    }
-
-    const completed =
-      episodeCount != null && episodeCount > 0 && next >= episodeCount;
-    const status = next <= 0 ? 'PLANNING' : completed ? 'COMPLETED' : 'CURRENT';
-    const saved = await client.saveMediaListEntry({
-      mediaId: anilistId,
-      status,
-      progress: Math.max(0, next),
-    });
-
-    patchUserAnilistSyncItem(userId, 'tv', tmdbShowId, {
-      watched: completed,
-      status,
-      progress: Math.max(0, next),
+    return writeProgress({
+      client,
+      userId,
+      tmdbShowId,
+      anilistId: picked.mapping.anilistId,
+      current,
       episodeCount,
-      anilistId,
-      listEntryId: saved?.id ?? current.entry?.listEntryId ?? null,
+      target,
+      watched,
     });
-    return true;
   },
 };
+
+async function writeProgress(options: {
+  client: Awaited<ReturnType<typeof createAnilistUserClient>>;
+  userId: number;
+  tmdbShowId: number;
+  anilistId: number;
+  current: AnilistSyncEntry | null;
+  episodeCount: number | null;
+  target: number;
+  watched: boolean;
+}): Promise<boolean | 'skipped'> {
+  const currentProgress = options.current?.progress ?? 0;
+  const next = nextAnilistProgress(
+    currentProgress,
+    options.target,
+    options.watched
+  );
+  if (next == null) {
+    return options.watched ? true : 'skipped';
+  }
+  if (next <= 0 && !options.current?.listEntryId) {
+    return 'skipped';
+  }
+
+  const completed =
+    options.episodeCount != null &&
+    options.episodeCount > 0 &&
+    next >= options.episodeCount;
+  const status = next <= 0 ? 'PLANNING' : completed ? 'COMPLETED' : 'CURRENT';
+  const saved = await options.client.saveMediaListEntry({
+    mediaId: options.anilistId,
+    status,
+    progress: Math.max(0, next),
+  });
+
+  patchUserAnilistSyncItem(options.userId, 'tv', options.tmdbShowId, {
+    watched: completed,
+    status,
+    progress: Math.max(0, next),
+    episodeCount: options.episodeCount,
+    anilistId: options.anilistId,
+    listEntryId: saved?.id ?? options.current?.listEntryId ?? null,
+  });
+  return true;
+}

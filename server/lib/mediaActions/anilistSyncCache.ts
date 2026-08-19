@@ -131,8 +131,10 @@ function applyPatchToEntries(
   patch: PendingPatch
 ): AnilistSyncEntry[] {
   const key = entryKey(patch.mediaType, patch.tmdbId);
-  const index = entries.findIndex(
-    (entry) => entryKey(entry.mediaType, entry.tmdbId) === key
+  const index = entries.findIndex((entry) =>
+    patch.update.anilistId != null
+      ? entry.anilistId === patch.update.anilistId
+      : entryKey(entry.mediaType, entry.tmdbId) === key
   );
   const current = index >= 0 ? entries[index] : null;
   const watched =
@@ -216,6 +218,16 @@ export function patchUserAnilistSyncItem(
   }
 }
 
+export function lookupAnilistEntryByAnilistId(
+  snapshot: AnilistUserSnapshot,
+  anilistId: number
+): AnilistSyncEntry | null {
+  return (
+    snapshot.entries.find((item) => item.anilistId === Number(anilistId)) ??
+    null
+  );
+}
+
 export function lookupAnilistItemStatus(
   snapshot: AnilistUserSnapshot,
   mediaType: 'movie' | 'tv',
@@ -253,7 +265,7 @@ async function fetchSnapshot(
       if (!mapped) {
         continue;
       }
-      const key = entryKey(mapped.mediaType, mapped.tmdbId);
+      const key = String(anilistId);
       if (seen.has(key)) {
         continue;
       }
