@@ -53,6 +53,10 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
       }
       throw e;
     }
+    const userSettings = await getUserAnilistSettings(userId);
+    if (userSettings?.mediaActionsAnilistEnabled === false) {
+      return false;
+    }
     try {
       await createAnilistUserClient(userId);
       return true;

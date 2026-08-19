@@ -16,16 +16,20 @@ const messages = defineMessages('components.Settings', {
 const SettingsBadge = ({
   badgeType,
   className,
+  tooltip,
 }: {
   badgeType: 'advanced' | 'experimental' | 'restartRequired';
   className?: string;
+  tooltip?: string;
 }) => {
   const intl = useIntl();
 
   switch (badgeType) {
     case 'advanced':
       return (
-        <Tooltip content={intl.formatMessage(messages.advancedTooltip)}>
+        <Tooltip
+          content={tooltip ?? intl.formatMessage(messages.advancedTooltip)}
+        >
           <Badge badgeType="danger" className={className}>
             {intl.formatMessage(globalMessages.advanced)}
           </Badge>
@@ -33,15 +37,21 @@ const SettingsBadge = ({
       );
     case 'experimental':
       return (
-        <Tooltip content={intl.formatMessage(messages.experimentalTooltip)}>
-          <Badge badgeType="warning">
+        <Tooltip
+          content={tooltip ?? intl.formatMessage(messages.experimentalTooltip)}
+        >
+          <Badge badgeType="warning" className={className}>
             {intl.formatMessage(globalMessages.experimental)}
           </Badge>
         </Tooltip>
       );
     case 'restartRequired':
       return (
-        <Tooltip content={intl.formatMessage(messages.restartrequiredTooltip)}>
+        <Tooltip
+          content={
+            tooltip ?? intl.formatMessage(messages.restartrequiredTooltip)
+          }
+        >
           <Badge badgeType="primary" className={className}>
             {intl.formatMessage(globalMessages.restartRequired)}
           </Badge>

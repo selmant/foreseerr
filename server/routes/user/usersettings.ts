@@ -64,6 +64,91 @@ import { canMakePermissionsChange } from '.';
 
 const userSettingsRoutes = Router({ mergeParams: true });
 
+function userActionsEnabled(value?: boolean | null): boolean {
+  return value !== false;
+}
+
+async function getTraktLinkedAccountPayload(userId: number) {
+  const settings = await getUserTraktSettings(userId);
+  const actionsEnabled = userActionsEnabled(settings?.mediaActionsTraktEnabled);
+  if (isJellyfinTraktProvider()) {
+    const user = await getRepository(User)
+      .createQueryBuilder('user')
+      .addSelect('user.jellyfinAuthToken')
+      .where('user.id = :userId', { userId })
+      .getOne();
+    const connected = Boolean(user?.jellyfinUserId && user.jellyfinAuthToken);
+    return {
+      provider: 'jellyfin' as const,
+      connected,
+      needsJellyfinSessionRefresh: Boolean(
+        user?.jellyfinUserId && !user.jellyfinAuthToken
+      ),
+      username: connected ? (user?.jellyfinUsername ?? 'Jellyfin') : null,
+      actionsEnabled,
+    };
+  }
+  const connected = Boolean(
+    settings?.traktAccessToken && settings.traktRefreshToken
+  );
+  return {
+    provider: 'direct' as const,
+    connected,
+    username: connected ? (settings?.traktUsername ?? null) : null,
+    actionsEnabled,
+  };
+}
+
+function getAnilistAuthorizeUrl(): string | null {
+  try {
+    const { clientId } = getAnilistAppCredentials();
+    return AnilistAPI.buildAuthorizeUrl(clientId);
+  } catch {
+    return null;
+  }
+}
+
+async function getAnilistLinkedAccountPayload(userId: number) {
+  const settings = await getUserAnilistSettings(userId);
+  const connected = Boolean(
+    settings?.anilistAccessToken &&
+    !isAnilistTokenExpired(settings.anilistTokenExpiresAt)
+  );
+  return {
+    connected,
+    expired: Boolean(
+      settings?.anilistAccessToken &&
+      isAnilistTokenExpired(settings.anilistTokenExpiresAt)
+    ),
+    username: connected ? (settings?.anilistUsername ?? null) : null,
+    authorizeUrl: getAnilistAuthorizeUrl(),
+    actionsEnabled: userActionsEnabled(settings?.mediaActionsAnilistEnabled),
+  };
+}
+
+async function patchLinkedAccountActions(
+  userId: number,
+  actorId: number | undefined,
+  field: 'mediaActionsTraktEnabled' | 'mediaActionsAnilistEnabled',
+  actionsEnabled: unknown
+): Promise<{ status: number; message?: string }> {
+  if (userId === 1 && actorId !== 1) {
+    return {
+      status: 403,
+      message: "You do not have permission to modify this user's settings.",
+    };
+  }
+  if (typeof actionsEnabled !== 'boolean') {
+    return { status: 400, message: 'actionsEnabled must be a boolean.' };
+  }
+  const userSettings = await ensureUserSettings(userId);
+  await getRepository(UserSettings).update(
+    { id: userSettings.id },
+    { [field]: actionsEnabled }
+  );
+  return { status: 200 };
+}
+
 userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
   '/main',
   isOwnProfileOrAdmin(),
@@ -640,34 +725,35 @@ userSettingsRoutes.get<{ id: string }>(
   isOwnProfileOrAdmin(),
   async (req, res, next) => {
     try {
-      const settings = await getUserTraktSettings(Number(req.params.id));
-      if (isJellyfinTraktProvider()) {
-        const user = await getRepository(User)
-          .createQueryBuilder('user')
-          .addSelect('user.jellyfinAuthToken')
-          .where('user.id = :userId', { userId: Number(req.params.id) })
-          .getOne();
-        const connected = Boolean(
-          user?.jellyfinUserId && user.jellyfinAuthToken
-        );
-        return res.status(200).json({
-          provider: 'jellyfin',
-          connected,
-          needsJellyfinSessionRefresh: Boolean(
-            user?.jellyfinUserId && !user.jellyfinAuthToken
-          ),
-          username: connected ? (user?.jellyfinUsername ?? 'Jellyfin') : null,
-        });
-      }
-      const connected = Boolean(
-        settings?.traktAccessToken && settings.traktRefreshToken
-      );
-      return res.status(200).json({
-        provider: 'direct',
-        connected,
-        username: connected ? (settings?.traktUsername ?? null) : null,
-      });
+      return res
+        .status(200)
+        .json(await getTraktLinkedAccountPayload(Number(req.params.id)));
     } catch (e) {
+      next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.patch<{ id: string }>(
+  '/linked-accounts/trakt',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const userId = Number(req.params.id);
+      const result = await patchLinkedAccountActions(
+        userId,
+        req.user?.id,
+        'mediaActionsTraktEnabled',
+        req.body.actionsEnabled
+      );
+      if (result.status !== 200) {
+        return next(result);
+      }
+      return res.status(200).json(await getTraktLinkedAccountPayload(userId));
+    } catch (e) {
+      if (e instanceof Error && e.message === 'User not found') {
+        return next({ status: 404, message: e.message });
+      }
       next({ status: 500, message: e.message });
     }
   }
@@ -884,28 +970,35 @@ userSettingsRoutes.get<{ id: string }>(
   isOwnProfileOrAdmin(),
   async (req, res, next) => {
     try {
-      const settings = await getUserAnilistSettings(Number(req.params.id));
-      const connected = Boolean(
-        settings?.anilistAccessToken &&
-        !isAnilistTokenExpired(settings.anilistTokenExpiresAt)
-      );
-      return res.status(200).json({
-        connected,
-        expired: Boolean(
-          settings?.anilistAccessToken &&
-          isAnilistTokenExpired(settings.anilistTokenExpiresAt)
-        ),
-        username: connected ? (settings?.anilistUsername ?? null) : null,
-        authorizeUrl: (() => {
-          try {
-            const { clientId } = getAnilistAppCredentials();
-            return AnilistAPI.buildAuthorizeUrl(clientId);
-          } catch {
-            return null;
-          }
-        })(),
-      });
+      return res
+        .status(200)
+        .json(await getAnilistLinkedAccountPayload(Number(req.params.id)));
     } catch (e) {
+      next({ status: 500, message: e.message });
+    }
+  }
+);
+
+userSettingsRoutes.patch<{ id: string }>(
+  '/linked-accounts/anilist',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const userId = Number(req.params.id);
+      const result = await patchLinkedAccountActions(
+        userId,
+        req.user?.id,
+        'mediaActionsAnilistEnabled',
+        req.body.actionsEnabled
+      );
+      if (result.status !== 200) {
+        return next(result);
+      }
+      return res.status(200).json(await getAnilistLinkedAccountPayload(userId));
+    } catch (e) {
+      if (e instanceof Error && e.message === 'User not found') {
+        return next({ status: 404, message: e.message });
+      }
       next({ status: 500, message: e.message });
     }
   }

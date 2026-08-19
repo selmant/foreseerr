@@ -7,6 +7,7 @@ import Alert from '@app/components/Common/Alert';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import Dropdown from '@app/components/Common/Dropdown';
 import PageTitle from '@app/components/Common/PageTitle';
+import SettingsBadge from '@app/components/Settings/SettingsBadge';
 import LinkAnilistModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkAnilistModal';
 import LinkJellyfinQuickConnectModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkJellyfinQuickConnectModal';
 import LinkTraktModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkTraktModal';
@@ -15,7 +16,7 @@ import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import PlexOAuth from '@app/utils/plex';
-import { TrashIcon } from '@heroicons/react/24/solid';
+import { CheckIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
 import axios from 'axios';
 import { useRouter } from 'next/router';
@@ -43,6 +44,17 @@ const messages = defineMessages(
     betterTraktSessionRefresh:
       'Your Jellyfin session needs to be refreshed before Better Trakt can be used. Choose “Refresh Jellyfin Session” from Link Account and sign in again.',
     refreshJellyfinSession: 'Refresh Jellyfin Session',
+    watchTrackers: 'Watch trackers',
+    watchTrackersHint:
+      'Choose which linked services receive watched status and ratings from {applicationName}.',
+    traktWatchHint:
+      'Updates your Trakt history and ratings when you mark titles watched here.',
+    anilistWatchHint:
+      'Updates your AniList list and scores when you mark anime watched here.',
+    anilistExperimentalTooltip:
+      'Anime seasons and episodes do not always match TMDB one-to-one, so watches can land on the wrong AniList title or be skipped.',
+    linkAccountToEnable: 'Link this account to enable watch sync.',
+    updateFailed: 'Unable to update watch tracker settings.',
   }
 );
 
@@ -61,6 +73,59 @@ type LinkedAccount = {
   username: string;
 };
 
+const WatchTrackerSwitch = ({
+  enabled,
+  disabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={enabled}
+    disabled={disabled}
+    onClick={() => {
+      if (!disabled) {
+        onToggle();
+      }
+    }}
+    className={`${
+      enabled ? 'bg-indigo-600' : 'bg-gray-700'
+    } relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring ${
+      disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+    }`}
+  >
+    <span
+      aria-hidden="true"
+      className={`${
+        enabled ? 'translate-x-5' : 'translate-x-0'
+      } relative inline-block h-5 w-5 rounded-full bg-white shadow transition duration-200 ease-in-out`}
+    >
+      <span
+        className={`${
+          enabled
+            ? 'opacity-0 duration-100 ease-out'
+            : 'opacity-100 duration-200 ease-in'
+        } absolute inset-0 flex h-full w-full items-center justify-center transition-opacity`}
+      >
+        <XMarkIcon className="h-3 w-3 text-gray-400" />
+      </span>
+      <span
+        className={`${
+          enabled
+            ? 'opacity-100 duration-200 ease-in'
+            : 'opacity-0 duration-100 ease-out'
+        } absolute inset-0 flex h-full w-full items-center justify-center transition-opacity`}
+      >
+        <CheckIcon className="h-3 w-3 text-indigo-600" />
+      </span>
+    </span>
+  </button>
+);
+
 const UserLinkedAccountsSettings = () => {
   const intl = useIntl();
   const settings = useSettings();
@@ -78,6 +143,7 @@ const UserLinkedAccountsSettings = () => {
     connected: boolean;
     expired?: boolean;
     username: string | null;
+    actionsEnabled?: boolean;
   }>(
     user && settings.currentSettings.anilistConfigured
       ? `/api/v1/user/${user.id}/settings/linked-accounts/anilist`
@@ -88,6 +154,7 @@ const UserLinkedAccountsSettings = () => {
     connected: boolean;
     needsJellyfinSessionRefresh?: boolean;
     username: string | null;
+    actionsEnabled?: boolean;
   }>(
     user && settings.currentSettings.traktConfigured
       ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
@@ -228,6 +295,30 @@ const UserLinkedAccountsSettings = () => {
       await revalidateTrakt();
     }
     if (account === 'anilist') {
+      await revalidateAnilist();
+    }
+  };
+
+  const updateActionsEnabled = async (
+    account: 'trakt' | 'anilist',
+    actionsEnabled: boolean
+  ) => {
+    if (!user) {
+      return;
+    }
+    setError(null);
+    try {
+      await axios.patch(
+        `/api/v1/user/${user.id}/settings/linked-accounts/${account}`,
+        { actionsEnabled }
+      );
+    } catch {
+      setError(intl.formatMessage(messages.updateFailed));
+    }
+
+    if (account === 'trakt') {
+      await revalidateTrakt();
+    } else {
       await revalidateAnilist();
     }
   };
@@ -373,6 +464,82 @@ const UserLinkedAccountsSettings = () => {
           <h3 className="text-lg font-semibold text-gray-400">
             {intl.formatMessage(messages.noLinkedAccounts)}
           </h3>
+        </div>
+      )}
+
+      {(settings.currentSettings.traktConfigured ||
+        settings.currentSettings.anilistConfigured) && (
+        <div className="mt-10">
+          <h3 className="heading">
+            {intl.formatMessage(messages.watchTrackers)}
+          </h3>
+          <h6 className="description">
+            {intl.formatMessage(messages.watchTrackersHint, {
+              applicationName,
+            })}
+          </h6>
+          <ul className="mt-4 space-y-3">
+            {settings.currentSettings.traktConfigured && (
+              <li className="flex items-center gap-4 overflow-hidden rounded-lg bg-gray-800/50 px-4 py-4 shadow ring-1 ring-gray-700 sm:px-6">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-bold text-gray-200">
+                    Trakt
+                  </div>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {intl.formatMessage(
+                      traktStatus?.connected
+                        ? messages.traktWatchHint
+                        : messages.linkAccountToEnable
+                    )}
+                  </p>
+                </div>
+                <WatchTrackerSwitch
+                  enabled={traktStatus?.actionsEnabled !== false}
+                  disabled={!traktStatus?.connected}
+                  onToggle={() => {
+                    void updateActionsEnabled(
+                      'trakt',
+                      traktStatus?.actionsEnabled === false
+                    );
+                  }}
+                />
+              </li>
+            )}
+            {settings.currentSettings.anilistConfigured && (
+              <li className="flex items-center gap-4 overflow-hidden rounded-lg bg-gray-800/50 px-4 py-4 shadow ring-1 ring-gray-700 sm:px-6">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="truncate text-sm font-bold text-gray-200">
+                      AniList
+                    </div>
+                    <SettingsBadge
+                      badgeType="experimental"
+                      tooltip={intl.formatMessage(
+                        messages.anilistExperimentalTooltip
+                      )}
+                    />
+                  </div>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {intl.formatMessage(
+                      anilistStatus?.connected
+                        ? messages.anilistWatchHint
+                        : messages.linkAccountToEnable
+                    )}
+                  </p>
+                </div>
+                <WatchTrackerSwitch
+                  enabled={anilistStatus?.actionsEnabled !== false}
+                  disabled={!anilistStatus?.connected}
+                  onToggle={() => {
+                    void updateActionsEnabled(
+                      'anilist',
+                      anilistStatus?.actionsEnabled === false
+                    );
+                  }}
+                />
+              </li>
+            )}
+          </ul>
         </div>
       )}
 

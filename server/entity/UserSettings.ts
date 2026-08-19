@@ -114,6 +114,12 @@ export class UserSettings {
   @Column({ type: 'varchar', nullable: true, unique: true })
   public anilistUserId?: string;
 
+  @Column({ nullable: true })
+  public mediaActionsTraktEnabled?: boolean;
+
+  @Column({ nullable: true })
+  public mediaActionsAnilistEnabled?: boolean;
+
   @Column({
     type: 'text',
     nullable: true,

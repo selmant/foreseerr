@@ -1,11 +1,7 @@
 import type { TraktListEntry } from '@server/api/trakt/interfaces';
-import { getSettings } from '@server/lib/settings';
-import {
-  createTraktUserClient,
-  getTraktAppCredentials,
-  traktAvailabilityFromError,
-} from '@server/lib/trakt';
+import { createTraktUserClient } from '@server/lib/trakt';
 import { invalidateUserSyncCache, warmUserSyncCache } from './syncCache';
+import { TraktMediaActionProvider } from './trakt';
 
 export interface TraktEpisodeSeasonStatus {
   available: boolean;
@@ -30,17 +26,10 @@ export function findWatchedEpisodeNumbers(
   ).sort((a, b) => a - b);
 }
 
+const traktProvider = new TraktMediaActionProvider();
+
 async function isAvailable(userId: number): Promise<boolean> {
-  if (getSettings().mediaActions?.providers?.trakt === false) {
-    return false;
-  }
-  try {
-    getTraktAppCredentials();
-    await createTraktUserClient(userId);
-    return true;
-  } catch (error) {
-    return traktAvailabilityFromError(error);
-  }
+  return traktProvider.isAvailable(userId);
 }
 
 export const traktEpisodeActions = {

@@ -4,6 +4,7 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
+import SettingsBadge from '@app/components/Settings/SettingsBadge';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
@@ -32,6 +33,8 @@ const messages = defineMessages('components.Settings.SettingsAnilist', {
   actionsEnabled: 'Allow AniList watched and rating actions',
   actionsEnabledTip:
     'When enabled, marking anime watched or rated in Foreseerr also updates the linked AniList account.',
+  anilistExperimentalTooltip:
+    'Anime seasons and episodes do not always match TMDB one-to-one, so watches can land on the wrong AniList title or be skipped.',
   toastSettingsSuccess: 'AniList settings saved successfully.',
   toastSettingsFailure: 'Unable to save AniList settings.',
   toastActionsSuccess: 'AniList action settings updated.',
@@ -251,8 +254,14 @@ const SettingsAnilist = ({ onSave }: SettingsAnilistProps) => {
                 }}
               />
               <label htmlFor="anilist-actions-enabled" className="ml-2">
-                <span className="block text-sm font-medium text-gray-200">
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-200">
                   {intl.formatMessage(messages.actionsEnabled)}
+                  <SettingsBadge
+                    badgeType="experimental"
+                    tooltip={intl.formatMessage(
+                      messages.anilistExperimentalTooltip
+                    )}
+                  />
                 </span>
                 <span className="text-xs text-gray-400">
                   {intl.formatMessage(messages.actionsEnabledTip)}

@@ -4,6 +4,7 @@ import TraktLogo from '@app/assets/services/trakt.svg';
 import Badge from '@app/components/Common/Badge';
 import Modal from '@app/components/Common/Modal';
 import SettingsAnilist from '@app/components/Settings/SettingsAnilist';
+import SettingsBadge from '@app/components/Settings/SettingsBadge';
 import SettingsMdblist from '@app/components/Settings/SettingsMdblist';
 import SettingsTrakt from '@app/components/Settings/SettingsTrakt';
 import useSettings from '@app/hooks/useSettings';
@@ -26,6 +27,8 @@ const messages = defineMessages(
     anilist: 'AniList',
     anilistDescription:
       'Anime catalog rows (trending, season, popular, top, next season), personal lists, and watched/score sync.',
+    anilistExperimentalTooltip:
+      'Anime seasons and episodes do not always match TMDB one-to-one, so watches can land on the wrong AniList title or be skipped.',
     configured: 'Configured',
     notConfigured: 'Not configured',
     connected: 'Reachable',
@@ -129,6 +132,14 @@ const ExternalIntegrationCards = () => {
                     <h3 className="font-medium leading-5 text-white">
                       {integration.name}
                     </h3>
+                    {integration.id === 'anilist' && (
+                      <SettingsBadge
+                        badgeType="experimental"
+                        tooltip={intl.formatMessage(
+                          messages.anilistExperimentalTooltip
+                        )}
+                      />
+                    )}
                     <Badge badgeType={badgeType}>
                       {intl.formatMessage(badgeMessage)}
                     </Badge>

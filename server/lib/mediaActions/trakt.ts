@@ -3,6 +3,8 @@ import {
   TraktNotConfiguredError,
   createTraktUserClient,
   getTraktAppCredentials,
+  getUserTraktSettings,
+  isJellyfinTraktProvider,
   traktAvailabilityFromError,
 } from '@server/lib/trakt';
 import { providerRatingToStars, ratingStarsToProvider } from './score';
@@ -48,13 +50,19 @@ export class TraktMediaActionProvider implements MediaActionProvider {
     if (settings.mediaActions?.providers?.trakt === false) {
       return false;
     }
-    try {
-      getTraktAppCredentials();
-    } catch (e) {
-      if (e instanceof TraktNotConfiguredError) {
-        return false;
+    if (!isJellyfinTraktProvider()) {
+      try {
+        getTraktAppCredentials();
+      } catch (e) {
+        if (e instanceof TraktNotConfiguredError) {
+          return false;
+        }
+        throw e;
       }
-      throw e;
+    }
+    const userSettings = await getUserTraktSettings(userId);
+    if (userSettings?.mediaActionsTraktEnabled === false) {
+      return false;
     }
     try {
       await createTraktUserClient(userId);

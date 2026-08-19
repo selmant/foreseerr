@@ -6683,8 +6683,57 @@ paths:
                   username:
                     type: string
                     nullable: true
+                  actionsEnabled:
+                    type: boolean
+                    description: When false, watched and rating actions are not sent to Trakt. Missing or true means enabled.
         '401':
           description: Unauthorized
+    patch:
+      summary: Update Trakt watch-sync preference for a user
+      description: Enables or disables watched and rating fan-out to Trakt for this user without unlinking the account. Users can only update their own preference unless they have `MANAGE_USERS`.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - actionsEnabled
+              properties:
+                actionsEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Trakt link status returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                    enum: [direct, jellyfin]
+                  connected:
+                    type: boolean
+                  username:
+                    type: string
+                    nullable: true
+                  actionsEnabled:
+                    type: boolean
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
     delete:
       summary: Unlink Trakt account for a user
       description: Removes Trakt OAuth tokens for a specific user. Requires `MANAGE_USERS` permission if editing other users.
@@ -6827,8 +6876,59 @@ paths:
                   authorizeUrl:
                     type: string
                     nullable: true
+                  actionsEnabled:
+                    type: boolean
+                    description: When false, watched and rating actions are not sent to AniList. Missing or true means enabled.
         '401':
           description: Unauthorized
+    patch:
+      summary: Update AniList watch-sync preference for a user
+      description: Enables or disables watched and rating fan-out to AniList for this user without unlinking the account. Users can only update their own preference unless they have `MANAGE_USERS`.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - actionsEnabled
+              properties:
+                actionsEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: AniList link status returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected:
+                    type: boolean
+                  expired:
+                    type: boolean
+                  username:
+                    type: string
+                    nullable: true
+                  authorizeUrl:
+                    type: string
+                    nullable: true
+                  actionsEnabled:
+                    type: boolean
+        '400':
+          description: Invalid request
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
     post:
       summary: Link AniList with a PIN authorization code
       tags:

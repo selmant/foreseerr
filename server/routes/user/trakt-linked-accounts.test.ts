@@ -164,6 +164,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       provider: 'direct',
       connected: false,
       username: null,
+      actionsEnabled: true,
     });
   });
 
@@ -191,6 +192,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       connected: true,
       needsJellyfinSessionRefresh: false,
       username: 'jellyfin-user',
+      actionsEnabled: true,
     });
     assert.equal(
       JSON.stringify(status.body).includes('jellyfin-access-token'),
@@ -386,6 +388,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       provider: 'direct',
       connected: true,
       username: 'trakt-user',
+      actionsEnabled: true,
     });
 
     const settings = await getRepository(UserSettings)
@@ -546,6 +549,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       provider: 'direct',
       connected: false,
       username: null,
+      actionsEnabled: true,
     });
   });
 
@@ -660,6 +664,7 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       provider: 'direct',
       connected: false,
       username: null,
+      actionsEnabled: true,
     });
   });
 
@@ -676,5 +681,147 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
 
     assert.equal(res.status, 400);
     assert.match(res.body.message ?? '', /not configured/i);
+  });
+
+  it('GET defaults actionsEnabled to true and PATCH persists the toggle without unlinking', async () => {
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    let settings = await getRepository(UserSettings).findOne({
+      where: { user: { id: user.id } },
+    });
+    if (!settings) {
+      settings = new UserSettings({ user });
+    }
+    settings.traktAccessToken = 'access-keep';
+    settings.traktRefreshToken = 'refresh-keep';
+    settings.traktUsername = 'trakt-user';
+    await getRepository(UserSettings).save(settings);
+
+    const path = `/api/v1/user/${user.id}/settings/linked-accounts/trakt`;
+
+    const initial = await agent.get(path);
+    assert.equal(initial.status, 200);
+    assert.equal(initial.body.actionsEnabled, true);
+    assert.equal(initial.body.connected, true);
+
+    const disabled = await agent.patch(path).send({ actionsEnabled: false });
+    assert.equal(disabled.status, 200, JSON.stringify(disabled.body));
+    assert.equal(disabled.body.actionsEnabled, false);
+    assert.equal(disabled.body.connected, true);
+    assert.equal(disabled.body.username, 'trakt-user');
+
+    const afterDisable = await agent.get(path);
+    assert.equal(afterDisable.body.actionsEnabled, false);
+    assert.equal(afterDisable.body.connected, true);
+
+    const enabled = await agent.patch(path).send({ actionsEnabled: true });
+    assert.equal(enabled.status, 200);
+    assert.equal(enabled.body.actionsEnabled, true);
+
+    const saved = await getRepository(UserSettings)
+      .createQueryBuilder('settings')
+      .addSelect('settings.traktAccessToken')
+      .addSelect('settings.traktRefreshToken')
+      .leftJoin('settings.user', 'user')
+      .where('user.id = :id', { id: user.id })
+      .getOneOrFail();
+    assert.equal(saved.mediaActionsTraktEnabled, true);
+    assert.equal(saved.traktAccessToken, 'access-keep');
+    assert.equal(saved.traktRefreshToken, 'refresh-keep');
+  });
+
+  it('rejects unauthenticated PATCH with cookie security (not path-not-found)', async () => {
+    const res = await request(app)
+      .patch('/api/v1/user/1/settings/linked-accounts/trakt')
+      .send({ actionsEnabled: false });
+
+    assert.notEqual(
+      res.body?.message,
+      'not found',
+      'OpenAPI must register this path; got validator not-found'
+    );
+    assert.equal(res.status, 401, JSON.stringify(res.body));
+  });
+
+  it('rejects PATCH without a boolean actionsEnabled', async () => {
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+
+    const res = await agent
+      .patch(`/api/v1/user/${user.id}/settings/linked-accounts/trakt`)
+      .send({});
+
+    assert.equal(res.status, 400);
+  });
+});
+
+describe('AniList linked-accounts actionsEnabled', () => {
+  it('GET defaults actionsEnabled to true and PATCH persists the toggle', async () => {
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    getSettings().anilist = {
+      clientId: 'anilist-client-id',
+      clientSecret: 'anilist-client-secret',
+    };
+    const path = `/api/v1/user/${user.id}/settings/linked-accounts/anilist`;
+
+    const initial = await agent.get(path);
+    assert.equal(initial.status, 200, JSON.stringify(initial.body));
+    assert.equal(initial.body.connected, false);
+    assert.equal(initial.body.actionsEnabled, true);
+    assert.equal(typeof initial.body.authorizeUrl, 'string');
+
+    let settings = await getRepository(UserSettings).findOne({
+      where: { user: { id: user.id } },
+    });
+    if (!settings) {
+      settings = new UserSettings({ user });
+    }
+    settings.anilistAccessToken = 'anilist-keep';
+    settings.anilistUsername = 'anilist-user';
+    settings.anilistUserId = '99';
+    await getRepository(UserSettings).save(settings);
+
+    const linked = await agent.get(path);
+    assert.equal(linked.body.connected, true);
+    assert.equal(linked.body.actionsEnabled, true);
+
+    const disabled = await agent.patch(path).send({ actionsEnabled: false });
+    assert.equal(disabled.status, 200, JSON.stringify(disabled.body));
+    assert.equal(disabled.body.actionsEnabled, false);
+    assert.equal(disabled.body.connected, true);
+    assert.equal(disabled.body.username, 'anilist-user');
+
+    const afterDisable = await agent.get(path);
+    assert.equal(afterDisable.body.actionsEnabled, false);
+    assert.equal(afterDisable.body.connected, true);
+
+    const enabled = await agent.patch(path).send({ actionsEnabled: true });
+    assert.equal(enabled.status, 200);
+    assert.equal(enabled.body.actionsEnabled, true);
+
+    const saved = await getRepository(UserSettings)
+      .createQueryBuilder('settings')
+      .addSelect('settings.anilistAccessToken')
+      .leftJoin('settings.user', 'user')
+      .where('user.id = :id', { id: user.id })
+      .getOneOrFail();
+    assert.equal(saved.mediaActionsAnilistEnabled, true);
+    assert.equal(saved.anilistAccessToken, 'anilist-keep');
+  });
+
+  it('rejects unauthenticated PATCH with cookie security (not path-not-found)', async () => {
+    const res = await request(app)
+      .patch('/api/v1/user/1/settings/linked-accounts/anilist')
+      .send({ actionsEnabled: false });
+
+    assert.notEqual(res.body?.message, 'not found');
+    assert.equal(res.status, 401, JSON.stringify(res.body));
   });
 });

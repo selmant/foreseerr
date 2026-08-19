@@ -58,4 +58,64 @@ describe('AnilistMediaActionProvider', () => {
     assert.equal(status.rating, 8);
     assert.equal(status.ratingStars, 4);
   });
+
+  it('isAvailable is false when the admin disables AniList actions', async () => {
+    const settingsLib = await import('@server/lib/settings');
+    mock.method(settingsLib, 'getSettings', () => ({
+      mediaActions: { providers: { anilist: false } },
+    }));
+    const anilist = await import('@server/lib/anilist');
+    const createClient = mock.method(
+      anilist,
+      'createAnilistUserClient',
+      async () => ({}) as never
+    );
+
+    const provider = new AnilistMediaActionProvider();
+    assert.equal(await provider.isAvailable(1), false);
+    assert.equal(createClient.mock.calls.length, 0);
+  });
+
+  it('isAvailable is false when the user disables AniList watch sync', async () => {
+    const settingsLib = await import('@server/lib/settings');
+    mock.method(settingsLib, 'getSettings', () => ({
+      mediaActions: { providers: { anilist: true } },
+    }));
+    const anilist = await import('@server/lib/anilist');
+    mock.method(anilist, 'getAnilistAppCredentials', () => ({
+      clientId: 'id',
+      clientSecret: 'secret',
+    }));
+    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+      mediaActionsAnilistEnabled: false,
+    }));
+    const createClient = mock.method(
+      anilist,
+      'createAnilistUserClient',
+      async () => ({}) as never
+    );
+
+    const provider = new AnilistMediaActionProvider();
+    assert.equal(await provider.isAvailable(7), false);
+    assert.equal(createClient.mock.calls.length, 0);
+  });
+
+  it('isAvailable is true when the user toggle is missing and the account is linked', async () => {
+    const settingsLib = await import('@server/lib/settings');
+    mock.method(settingsLib, 'getSettings', () => ({
+      mediaActions: { providers: { anilist: true } },
+    }));
+    const anilist = await import('@server/lib/anilist');
+    mock.method(anilist, 'getAnilistAppCredentials', () => ({
+      clientId: 'id',
+      clientSecret: 'secret',
+    }));
+    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+      mediaActionsAnilistEnabled: null,
+    }));
+    mock.method(anilist, 'createAnilistUserClient', async () => ({}) as never);
+
+    const provider = new AnilistMediaActionProvider();
+    assert.equal(await provider.isAvailable(7), true);
+  });
 });

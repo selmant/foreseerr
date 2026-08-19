@@ -21,7 +21,7 @@ describe('OpenAPI Trakt contract', () => {
     '/settings/anilist/actions': ['post'],
     '/settings/integrations/status': ['get'],
     '/settings/integrations/status/refresh': ['post'],
-    '/user/{userId}/settings/linked-accounts/trakt': ['get', 'delete'],
+    '/user/{userId}/settings/linked-accounts/trakt': ['get', 'patch', 'delete'],
     '/user/{userId}/settings/linked-accounts/trakt/device/code': ['post'],
     '/user/{userId}/settings/linked-accounts/trakt/device/token': ['post'],
     '/discover/trakt/recommendations': ['get'],
@@ -31,6 +31,7 @@ describe('OpenAPI Trakt contract', () => {
     '/discover/trakt/lists/search': ['get'],
     '/user/{userId}/settings/linked-accounts/anilist': [
       'get',
+      'patch',
       'post',
       'delete',
     ],
