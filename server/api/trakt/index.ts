@@ -34,6 +34,8 @@ const TRAKT_GET_CACHE_TTL_SECONDS = 300;
 const TRAKT_CIRCUIT_FALLBACK_SECONDS = 60;
 /** Trakt currently caps sync collection pages at 250 items. */
 export const TRAKT_SYNC_PAGE_SIZE = 250;
+/** `extended=progress` is capped at 100 items per page. */
+export const TRAKT_SYNC_PROGRESS_PAGE_SIZE = 100;
 
 /** Shared across TraktAPI instances, scoped per token or app client. */
 const traktCircuitOpenUntilMs = new Map<string, number>();
@@ -572,7 +574,9 @@ class TraktAPI extends ExternalAPI {
       mediaType === 'movie' ? '/sync/watched/movies' : '/sync/watched/shows';
     return this.getAllSyncPages(
       path,
-      mediaType === 'tv' ? { extended: 'progress' } : undefined
+      mediaType === 'tv'
+        ? { extended: 'progress', limit: TRAKT_SYNC_PROGRESS_PAGE_SIZE }
+        : undefined
     );
   }
 
@@ -589,6 +593,8 @@ class TraktAPI extends ExternalAPI {
     params: Record<string, string | number> = {}
   ): Promise<TraktListEntry[]> {
     const items: TraktListEntry[] = [];
+    const limit =
+      Number(params.limit) > 0 ? Number(params.limit) : TRAKT_SYNC_PAGE_SIZE;
     let page = 1;
 
     while (true) {
@@ -596,12 +602,14 @@ class TraktAPI extends ExternalAPI {
         params: {
           ...params,
           page,
-          limit: TRAKT_SYNC_PAGE_SIZE,
+          limit,
         },
       });
-      items.push(...(batch || []));
-
-      if (!batch || batch.length < TRAKT_SYNC_PAGE_SIZE) {
+      if (!batch || batch.length === 0) {
+        return items;
+      }
+      items.push(...batch);
+      if (batch.length < limit) {
         return items;
       }
       page += 1;

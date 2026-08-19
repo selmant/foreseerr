@@ -1,4 +1,4 @@
-import TraktAPI, { TRAKT_SYNC_PAGE_SIZE } from '@server/api/trakt';
+import TraktAPI, { TRAKT_SYNC_PROGRESS_PAGE_SIZE } from '@server/api/trakt';
 import cacheManager from '@server/lib/cache';
 import type { AxiosInstance, AxiosResponse } from 'axios';
 import assert from 'node:assert/strict';
@@ -41,9 +41,12 @@ describe('TraktAPI watched sync pagination', () => {
       const page = Number(config.params?.page);
       const data =
         page === 1
-          ? Array.from({ length: TRAKT_SYNC_PAGE_SIZE }, (_, index) => ({
-              show: { ids: { tmdb: index + 1 } },
-            }))
+          ? Array.from(
+              { length: TRAKT_SYNC_PROGRESS_PAGE_SIZE },
+              (_, index) => ({
+                show: { ids: { tmdb: index + 1 } },
+              })
+            )
           : [
               {
                 show: { ids: { tmdb: 233742 } },
@@ -55,14 +58,14 @@ describe('TraktAPI watched sync pagination', () => {
 
     const watched = await api.getSyncWatched('tv');
 
-    assert.equal(watched.length, TRAKT_SYNC_PAGE_SIZE + 1);
+    assert.equal(watched.length, TRAKT_SYNC_PROGRESS_PAGE_SIZE + 1);
     assert.deepEqual(requests, [
       {
         path: '/sync/watched/shows',
         params: {
           extended: 'progress',
           page: 1,
-          limit: TRAKT_SYNC_PAGE_SIZE,
+          limit: TRAKT_SYNC_PROGRESS_PAGE_SIZE,
         },
       },
       {
@@ -70,9 +73,40 @@ describe('TraktAPI watched sync pagination', () => {
         params: {
           extended: 'progress',
           page: 2,
-          limit: TRAKT_SYNC_PAGE_SIZE,
+          limit: TRAKT_SYNC_PROGRESS_PAGE_SIZE,
         },
       },
     ]);
+  });
+
+  it('keeps paging when a progress page is full at Trakt’s 100-item cap', async () => {
+    const api = makeApi();
+    const pages: number[] = [];
+    rawClient(api).defaults.adapter = async (config) => {
+      const page = Number(config.params?.page);
+      pages.push(page);
+      if (page === 1) {
+        return jsonResponse(
+          config,
+          Array.from({ length: TRAKT_SYNC_PROGRESS_PAGE_SIZE }, (_, index) => ({
+            show: { ids: { tmdb: index + 1 } },
+          }))
+        );
+      }
+      if (page === 2) {
+        return jsonResponse(config, [
+          {
+            show: { ids: { tmdb: 65942 } },
+            seasons: [{ number: 4, episodes: [{ number: 10, plays: 1 }] }],
+          },
+        ]);
+      }
+      return jsonResponse(config, []);
+    };
+
+    const watched = await api.getSyncWatched('tv');
+
+    assert.deepEqual(pages, [1, 2]);
+    assert.equal(watched.at(-1)?.show?.ids?.tmdb, 65942);
   });
 });
