@@ -21,9 +21,10 @@ Trakt powers personalized Discover rows and watched/rating actions.
 3. Each user links their own account in **Linked Accounts** with a device code
    (`trakt.tv/activate`).
 
-Once linked, Discover can show recommendations, watchlist, and history. Admins
-can pin public or personal Trakt lists as custom sliders. See
-[Discover](../discover.md#trakt).
+Once linked, Discover can show recommendations, watchlist, and history. Watched
+and rating sync is on by default; users can turn it off under **Linked Accounts
+→ Watch trackers** without unlinking. Admins can pin public or personal Trakt
+lists as custom sliders. See [Discover](../discover.md#trakt).
 
 Jellyfin watched state can still appear when Trakt is not linked. Direct Trakt
 vs Better Trakt (Jellyfin plugin) is chosen in the same settings card.
@@ -44,8 +45,13 @@ Catalog rows (trending, this season, popular, top 100, next season) use the
 app credentials only. Watching / planning / completed and custom named lists
 require a linked account. See [Discover](../discover.md#anilist).
 
-Enable **Allow AniList watched and rating actions** if marking anime watched or
-rated in Foreseerr should also update the linked AniList account.
+Watched and rating sync is **on by default** once the account is linked. Admins
+can turn it off instance-wide with **Allow AniList watched and rating actions**.
+Each user can also turn it off under **Linked Accounts → Watch trackers**
+without unlinking.
+
+AniList season mapping is experimental: TMDB seasons and episodes are not always
+1:1 with AniList, so a watch can land on the wrong title or be skipped.
 
 ## MDBList
 
