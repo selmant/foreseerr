@@ -113,7 +113,7 @@ describe('episode request synchronization', () => {
 
     let seriesStatus = 'continuing';
     let episodes = [
-      sonarrEpisode(1, 101, 1, true),
+      { ...sonarrEpisode(1, 101, 1, true), monitored: false },
       sonarrEpisode(2, 102, 2, false),
     ];
     t.mock.method(

@@ -123,6 +123,7 @@ export interface AddSeriesOptions {
 interface EpisodeSelectionRetryOptions {
   attempts?: number;
   delayMs?: number;
+  waitForAddOptions?: boolean;
 }
 
 const NEW_SERIES_EPISODE_ATTEMPTS = 30;
@@ -221,17 +222,20 @@ class SonarrAPI extends ServarrBase<{
     try {
       const series = await this.getSeriesByTvdbId(options.tvdbid);
 
-      // If the series already exists, we will simply just update it
       if (series.id) {
-        series.monitored = options.monitored ?? series.monitored;
-        series.tags = options.tags
-          ? Array.from(new Set([...series.tags, ...options.tags]))
-          : series.tags;
-        series.seasons = this.buildSeasonList(options.seasons, series.seasons);
+        const existing = await this.getSeriesById(series.id);
 
         const newSeriesResponse = await this.axios.put<SonarrSeries>(
           '/series',
-          series
+          {
+            ...existing,
+            monitored: options.monitored ?? existing.monitored,
+            tags: options.tags
+              ? Array.from(new Set([...existing.tags, ...options.tags]))
+              : existing.tags,
+            seasons: this.buildSeasonList(options.seasons, existing.seasons),
+            addOptions: undefined,
+          }
         );
 
         if (newSeriesResponse.data.id) {
@@ -351,6 +355,7 @@ class SonarrAPI extends ServarrBase<{
           {
             attempts: NEW_SERIES_EPISODE_ATTEMPTS,
             delayMs: NEW_SERIES_EPISODE_RETRY_DELAY_MS,
+            waitForAddOptions: true,
           }
         );
       }
@@ -596,6 +601,10 @@ class SonarrAPI extends ServarrBase<{
     let episodes: EpisodeResult[] = [];
     let unresolved = tvdbEpisodeIds;
 
+    if (retryOptions.waitForAddOptions) {
+      await this.waitForConsumedAddOptions(seriesId, retryOptions);
+    }
+
     for (let attempt = 1; attempt <= attempts; attempt++) {
       episodes = (await this.getEpisodes(seriesId)).filter((episode) =>
         wanted.has(episode.tvdbId)
@@ -643,6 +652,39 @@ class SonarrAPI extends ServarrBase<{
     }
 
     return episodes;
+  }
+
+  private async waitForConsumedAddOptions(
+    seriesId: number,
+    retryOptions: EpisodeSelectionRetryOptions
+  ): Promise<void> {
+    const attempts = Math.max(1, retryOptions.attempts ?? 1);
+    const delayMs = Math.max(0, retryOptions.delayMs ?? 0);
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const pending = Boolean((await this.getSeriesById(seriesId)).addOptions);
+      if (!pending) {
+        return;
+      }
+      if (attempt === attempts) {
+        logger.warn('Sonarr is still applying add-time monitoring options.', {
+          label: 'Sonarr',
+          seriesId,
+          attempts,
+        });
+        return;
+      }
+      logger.debug(
+        'Waiting for Sonarr to finish add-time monitoring options.',
+        {
+          label: 'Sonarr',
+          seriesId,
+          attempt,
+          attempts,
+        }
+      );
+      await delay(delayMs);
+    }
   }
 
   private buildSeasonList(

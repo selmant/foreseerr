@@ -150,6 +150,7 @@ class EpisodeRequestSync {
       context.episodes.map((episode) => [episode.tvdbId, episode])
     );
 
+    const additionTvdbIds = new Set<number>();
     if (request.episodeSelectionType === 'after') {
       const boundary = byTvdbId.get(request.episodeStartTvdbId ?? -1);
       if (!boundary) {
@@ -184,6 +185,9 @@ class EpisodeRequestSync {
           )
         );
         request.episodes.push(...saved);
+        for (const episode of additions) {
+          additionTvdbIds.add(episode.tvdbId);
+        }
       }
     }
 
@@ -196,6 +200,10 @@ class EpisodeRequestSync {
       if (!episode) {
         continue;
       }
+      const isNewFutureEpisode = additionTvdbIds.has(child.tvdbId);
+      if (isNewFutureEpisode && !episode.monitored) {
+        unmonitored.push(episode.id);
+      }
       if (episode.hasFile) {
         if (child.status !== MediaRequestStatus.COMPLETED) {
           child.status = MediaRequestStatus.COMPLETED;
@@ -203,10 +211,8 @@ class EpisodeRequestSync {
         }
         continue;
       }
-      if (!episode.monitored) {
-        unmonitored.push(episode.id);
-      }
       if (
+        (isNewFutureEpisode || episode.monitored) &&
         !context.preventSearch &&
         !child.searchTriggeredAt &&
         (!episode.airDateUtc || new Date(episode.airDateUtc).getTime() <= now)

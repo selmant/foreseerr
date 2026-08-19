@@ -84,4 +84,30 @@ describe('Sonarr exact episode selection', () => {
     );
     assert.equal(getEpisodes.mock.callCount(), 3);
   });
+
+  it('waits for Sonarr addOptions to finish before monitoring a new series', async () => {
+    const api = new SonarrAPI({ apiKey: 'test', url: 'http://127.0.0.1' });
+    let seriesLookups = 0;
+    const getSeriesById = mock.method(api, 'getSeriesById', async () => {
+      seriesLookups += 1;
+      return seriesLookups < 2
+        ? { addOptions: { ignoreEpisodesWithFiles: true, monitor: 'none' } }
+        : {};
+    });
+    mock.method(api, 'getEpisodes', async () => [
+      episode({ id: 1, tvdbId: 101 }),
+      episode({ id: 2, tvdbId: 102 }),
+    ]);
+    const monitor = mock.method(api, 'monitorEpisodes', async () => undefined);
+    mock.method(api, 'searchEpisodes', async () => undefined);
+
+    await api.applyEpisodeSelection(9, [101, 102], true, {
+      attempts: 3,
+      delayMs: 0,
+      waitForAddOptions: true,
+    });
+
+    assert.equal(getSeriesById.mock.callCount(), 2);
+    assert.deepEqual(monitor.mock.calls[0].arguments[0], [1, 2]);
+  });
 });

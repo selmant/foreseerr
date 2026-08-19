@@ -364,3 +364,57 @@ describe('SonarrAPI interactive management', () => {
     ]);
   });
 });
+
+describe('SonarrAPI addSeries existing', () => {
+  afterEach(() => mock.restoreAll());
+
+  it('updates the library series instead of the lookup add template', async () => {
+    const sonarr = buildSonarr();
+    mock.method(SonarrAPI.prototype, 'getSeriesByTvdbId', async () => ({
+      id: 9,
+      title: 'Lookup Re:Zero',
+      tags: [],
+      seasons: [{ seasonNumber: 1, monitored: false }],
+      addOptions: { ignoreEpisodesWithFiles: true, monitor: 'none' },
+    }));
+    mock.method(sonarr, 'getSeriesById', async () => ({
+      id: 9,
+      title: 'Re:Zero',
+      tags: [7],
+      seasons: [{ seasonNumber: 1, monitored: true }],
+      monitored: true,
+      addOptions: { ignoreEpisodesWithFiles: true },
+    }));
+    const put = mock.method(
+      getAxios(sonarr),
+      'put',
+      async (_url: string, body: { title: string }) => ({
+        data: { id: 9, title: body.title },
+      })
+    );
+    mock.method(sonarr, 'applyEpisodeSelection', async () => []);
+
+    await sonarr.addSeries({
+      tvdbid: 305123,
+      title: 'Re:Zero',
+      profileId: 1,
+      seasons: [],
+      seasonFolder: true,
+      rootFolderPath: '/anime',
+      seriesType: 'anime',
+      episodeTvdbIds: [101],
+      searchNow: true,
+      tags: [8],
+    });
+
+    const body = put.mock.calls[0].arguments[1] as {
+      title: string;
+      tags: number[];
+      addOptions?: unknown;
+    };
+    assert.equal(put.mock.calls[0].arguments[0], '/series');
+    assert.equal(body.title, 'Re:Zero');
+    assert.deepEqual(body.tags, [7, 8]);
+    assert.equal(body.addOptions, undefined);
+  });
+});
