@@ -6667,6 +6667,12 @@ paths:
           required: true
           schema:
             type: number
+        - in: query
+          name: includePluginStatus
+          required: false
+          schema:
+            type: boolean
+          description: When true, Better Trakt plugin readiness is included as `pluginState`.
       responses:
         '200':
           description: Trakt link status returned
@@ -6680,6 +6686,17 @@ paths:
                     enum: [direct, jellyfin]
                   connected:
                     type: boolean
+                  needsJellyfinSessionRefresh:
+                    type: boolean
+                  pluginState:
+                    type: string
+                    enum:
+                      - ready
+                      - needs_session_refresh
+                      - needs_trakt_link
+                      - needs_access
+                      - unavailable
+                      - needs_jellyfin
                   username:
                     type: string
                     nullable: true

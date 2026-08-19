@@ -91,6 +91,17 @@ export type JellyfinTraktMeResponse = {
   AllowExternalTokenAccess?: unknown;
 };
 
+export type JellyfinTraktUserState =
+  | 'ready'
+  | 'needs_session_refresh'
+  | 'needs_trakt_link'
+  | 'needs_access'
+  | 'unavailable';
+
+export type JellyfinTraktPluginState =
+  | JellyfinTraktUserState
+  | 'needs_jellyfin';
+
 export async function fetchJellyfinTraktJson<T>(
   user: Pick<User, 'jellyfinAuthToken' | 'jellyfinDeviceId'>,
   path: '/Trakt/me' | '/Trakt/me/Token',
@@ -113,6 +124,40 @@ export async function fetchJellyfinTraktJson<T>(
     timeout,
   });
   return response.data;
+}
+
+export async function resolveJellyfinTraktUserState(
+  user: Pick<User, 'id' | 'jellyfinAuthToken' | 'jellyfinDeviceId'>
+): Promise<JellyfinTraktUserState> {
+  if (!user.jellyfinAuthToken || !user.jellyfinDeviceId) {
+    return 'needs_session_refresh';
+  }
+
+  try {
+    const data = await fetchJellyfinTraktJson<JellyfinTraktMeResponse>(
+      user,
+      '/Trakt/me',
+      5000
+    );
+    if (data.IsLinked !== true) {
+      return 'needs_trakt_link';
+    }
+    if (data.AllowExternalTokenAccess !== true) {
+      return 'needs_access';
+    }
+    return 'ready';
+  } catch (e) {
+    const status = axios.isAxiosError(e) ? e.response?.status : undefined;
+    logger.warn('Better Trakt user readiness check failed', {
+      label: 'Trakt API',
+      userId: user.id,
+      status,
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    return status === 401 || status === 403
+      ? 'needs_session_refresh'
+      : 'unavailable';
+  }
 }
 
 async function getJellyfinTraktToken(

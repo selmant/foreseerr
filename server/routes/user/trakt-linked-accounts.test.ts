@@ -15,6 +15,7 @@ import { checkUser } from '@server/middleware/auth';
 import authRoutes from '@server/routes/auth';
 import userRoutes from '@server/routes/user';
 import { setupTestDb } from '@server/test/db';
+import axios from 'axios';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import express from 'express';
@@ -203,6 +204,73 @@ describe('Trakt linked-accounts routes (OpenAPI + handlers)', () => {
       `/api/v1/user/${user.id}/settings/linked-accounts/trakt/device/code`
     );
     assert.equal(deviceCode.status, 409);
+  });
+
+  it('includes Better Trakt plugin status when requested', async () => {
+    const betterTraktMock = mock.method(axios, 'get', async () => ({
+      data: { IsLinked: true, AllowExternalTokenAccess: true },
+    }));
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    user.jellyfinUserId = 'jellyfin-user-1';
+    user.jellyfinUsername = 'jellyfin-user';
+    user.jellyfinAuthToken = 'jellyfin-access-token';
+    user.jellyfinDeviceId = 'jellyfin-device-id';
+    await getRepository(User).save(user);
+    getSettings().trakt = {
+      provider: 'jellyfin',
+      clientId: '',
+      clientSecret: '',
+    };
+
+    const status = await agent.get(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt?includePluginStatus=true`
+    );
+
+    assert.equal(status.status, 200, JSON.stringify(status.body));
+    assert.deepEqual(status.body, {
+      provider: 'jellyfin',
+      connected: true,
+      needsJellyfinSessionRefresh: false,
+      pluginState: 'ready',
+      username: 'jellyfin-user',
+      actionsEnabled: true,
+    });
+    assert.equal(betterTraktMock.mock.calls.length, 1);
+
+    betterTraktMock.mock.restore();
+  });
+
+  it('reports Better Trakt plugin states that still need setup', async () => {
+    const betterTraktMock = mock.method(axios, 'get', async () => ({
+      data: { IsLinked: true, AllowExternalTokenAccess: false },
+    }));
+    const agent = await loginAsAdmin();
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    user.jellyfinUserId = 'jellyfin-user-1';
+    user.jellyfinUsername = 'jellyfin-user';
+    user.jellyfinAuthToken = 'jellyfin-access-token';
+    user.jellyfinDeviceId = 'jellyfin-device-id';
+    await getRepository(User).save(user);
+    getSettings().trakt = {
+      provider: 'jellyfin',
+      clientId: '',
+      clientSecret: '',
+    };
+
+    const status = await agent.get(
+      `/api/v1/user/${user.id}/settings/linked-accounts/trakt?includePluginStatus=true`
+    );
+
+    assert.equal(status.status, 200, JSON.stringify(status.body));
+    assert.equal(status.body.pluginState, 'needs_access');
+    assert.equal(status.body.connected, true);
+
+    betterTraktMock.mock.restore();
   });
 
   it('POST device/code returns Trakt device payload', async () => {

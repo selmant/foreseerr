@@ -4,6 +4,7 @@ import JellyfinLogo from '@app/assets/services/jellyfin-icon.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import Alert from '@app/components/Common/Alert';
+import Badge from '@app/components/Common/Badge';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import Dropdown from '@app/components/Common/Dropdown';
 import PageTitle from '@app/components/Common/PageTitle';
@@ -39,10 +40,16 @@ const messages = defineMessages(
     plexErrorExists: 'This account is already linked to a Plex user',
     errorUnknown: 'An unknown error occurred',
     deleteFailed: 'Unable to delete linked account.',
+    betterTrakt: 'Better Trakt',
     betterTraktEnabled:
       'Trakt is provided through Better Trakt in Jellyfin. Link your Jellyfin account here, then link Trakt and enable Foreseerr access in the Jellyfin plugin.',
     betterTraktSessionRefresh:
       'Your Jellyfin session needs to be refreshed before Better Trakt can be used. Choose “Refresh Jellyfin Session” from Link Account and sign in again.',
+    betterTraktNeedsRefresh: 'Refresh your Jellyfin session',
+    betterTraktNeedsLink: 'Link Trakt in Better Trakt',
+    betterTraktNeedsAccess: 'Allow Foreseerr access in Jellyfin',
+    betterTraktNeedsJellyfin: 'Link your Jellyfin account first',
+    betterTraktUnavailable: 'Better Trakt unavailable',
     refreshJellyfinSession: 'Refresh Jellyfin Session',
     watchTrackers: 'Watch trackers',
     watchTrackersHint:
@@ -71,6 +78,14 @@ enum LinkedAccountType {
 type LinkedAccount = {
   type: LinkedAccountType;
   username: string;
+  viaPlugin?: boolean;
+  pluginState?:
+    | 'ready'
+    | 'needs_session_refresh'
+    | 'needs_trakt_link'
+    | 'needs_access'
+    | 'unavailable'
+    | 'needs_jellyfin';
 };
 
 const WatchTrackerSwitch = ({
@@ -153,11 +168,18 @@ const UserLinkedAccountsSettings = () => {
     provider: 'direct' | 'jellyfin';
     connected: boolean;
     needsJellyfinSessionRefresh?: boolean;
+    pluginState?:
+      | 'ready'
+      | 'needs_session_refresh'
+      | 'needs_trakt_link'
+      | 'needs_access'
+      | 'unavailable'
+      | 'needs_jellyfin';
     username: string | null;
     actionsEnabled?: boolean;
   }>(
     user && settings.currentSettings.traktConfigured
-      ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
+      ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt?includePluginStatus=true`
       : null
   );
   const [showJellyfinModal, setShowJellyfinModal] = useState(false);
@@ -187,15 +209,19 @@ const UserLinkedAccountsSettings = () => {
         type: LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
-    if (
-      traktStatus?.provider === 'direct' &&
-      traktStatus.connected &&
-      traktStatus.username
-    )
+    if (traktStatus?.provider === 'jellyfin') {
+      accounts.push({
+        type: LinkedAccountType.Trakt,
+        username: traktStatus.username ?? '',
+        viaPlugin: true,
+        pluginState: traktStatus.pluginState,
+      });
+    } else if (traktStatus?.connected && traktStatus.username) {
       accounts.push({
         type: LinkedAccountType.Trakt,
         username: traktStatus.username,
       });
+    }
     if (anilistStatus?.connected && anilistStatus.username)
       accounts.push({
         type: LinkedAccountType.Anilist,
@@ -383,6 +409,29 @@ const UserLinkedAccountsSettings = () => {
     return <JellyfinLogo />;
   };
 
+  const pluginAccountReady = (acct: LinkedAccount) =>
+    acct.pluginState === 'ready' ||
+    (!acct.pluginState && Boolean(acct.username));
+
+  const pluginAccountLabel = (acct: LinkedAccount) => {
+    switch (acct.pluginState) {
+      case 'needs_session_refresh':
+        return intl.formatMessage(messages.betterTraktNeedsRefresh);
+      case 'needs_trakt_link':
+        return intl.formatMessage(messages.betterTraktNeedsLink);
+      case 'needs_access':
+        return intl.formatMessage(messages.betterTraktNeedsAccess);
+      case 'needs_jellyfin':
+        return intl.formatMessage(messages.betterTraktNeedsJellyfin);
+      case 'unavailable':
+        return intl.formatMessage(messages.betterTraktUnavailable);
+      default:
+        return (
+          acct.username || intl.formatMessage(messages.betterTraktNeedsLink)
+        );
+    }
+  };
+
   return (
     <>
       <PageTitle
@@ -425,37 +474,51 @@ const UserLinkedAccountsSettings = () => {
             >
               <div className="w-12">{renderAccountLogo(acct.type)}</div>
               <div>
-                <div className="truncate text-sm font-bold text-gray-300">
-                  {acct.type}
+                <div className="flex items-center gap-2">
+                  <div className="truncate text-sm font-bold text-gray-300">
+                    {acct.type}
+                  </div>
+                  {acct.viaPlugin && (
+                    <Badge badgeType="light">
+                      {intl.formatMessage(messages.betterTrakt)}
+                    </Badge>
+                  )}
                 </div>
-                <div className="text-xl font-semibold text-white">
-                  {acct.username}
-                </div>
+                {acct.viaPlugin && !pluginAccountReady(acct) ? (
+                  <div className="text-sm text-gray-400">
+                    {pluginAccountLabel(acct)}
+                  </div>
+                ) : (
+                  <div className="text-xl font-semibold text-white">
+                    {acct.viaPlugin ? pluginAccountLabel(acct) : acct.username}
+                  </div>
+                )}
               </div>
               <div className="flex-grow" />
-              {(acct.type === LinkedAccountType.Trakt ||
-              acct.type === LinkedAccountType.Anilist
-                ? currentUser?.id === user?.id ||
-                  hasPermission(Permission.MANAGE_USERS)
-                : enableMediaServerUnlink) && (
-                <ConfirmButton
-                  onClick={() => {
-                    deleteRequest(
-                      acct.type === LinkedAccountType.Plex
-                        ? 'plex'
-                        : acct.type === LinkedAccountType.Trakt
-                          ? 'trakt'
-                          : acct.type === LinkedAccountType.Anilist
-                            ? 'anilist'
-                            : 'jellyfin'
-                    );
-                  }}
-                  confirmText={intl.formatMessage(globalMessages.areyousure)}
-                >
-                  <TrashIcon />
-                  <span>{intl.formatMessage(globalMessages.delete)}</span>
-                </ConfirmButton>
-              )}
+              {!acct.viaPlugin &&
+                (acct.type === LinkedAccountType.Trakt ||
+                acct.type === LinkedAccountType.Anilist
+                  ? currentUser?.id === user?.id ||
+                    hasPermission(Permission.MANAGE_USERS)
+                  : enableMediaServerUnlink) && (
+                  <ConfirmButton
+                    onClick={() => {
+                      deleteRequest(
+                        acct.type === LinkedAccountType.Plex
+                          ? 'plex'
+                          : acct.type === LinkedAccountType.Trakt
+                            ? 'trakt'
+                            : acct.type === LinkedAccountType.Anilist
+                              ? 'anilist'
+                              : 'jellyfin'
+                      );
+                    }}
+                    confirmText={intl.formatMessage(globalMessages.areyousure)}
+                  >
+                    <TrashIcon />
+                    <span>{intl.formatMessage(globalMessages.delete)}</span>
+                  </ConfirmButton>
+                )}
             </li>
           ))}
         </ul>

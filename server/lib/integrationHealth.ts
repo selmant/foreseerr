@@ -6,8 +6,8 @@ import { User } from '@server/entity/User';
 import { mapWithConcurrency } from '@server/lib/concurrency';
 import { getSettings } from '@server/lib/settings';
 import {
-  fetchJellyfinTraktJson,
-  type JellyfinTraktMeResponse,
+  resolveJellyfinTraktUserState,
+  type JellyfinTraktUserState,
 } from '@server/lib/trakt';
 import logger from '@server/logger';
 import { getHostname } from '@server/utils/getHostname';
@@ -23,12 +23,7 @@ export interface IntegrationHealth {
   checkedAt: string | null;
 }
 
-export type JellyfinTraktUserState =
-  | 'ready'
-  | 'needs_session_refresh'
-  | 'needs_trakt_link'
-  | 'needs_access'
-  | 'unavailable';
+export type { JellyfinTraktUserState };
 
 export interface JellyfinTraktUserReadiness {
   userId: number;
@@ -109,47 +104,11 @@ const emptyJellyfinReadiness = (): JellyfinTraktReadiness => ({
 
 const checkJellyfinUserReadiness = async (
   user: User
-): Promise<JellyfinTraktUserReadiness> => {
-  if (!user.jellyfinAuthToken || !user.jellyfinDeviceId) {
-    return {
-      userId: user.id,
-      displayName: user.displayName,
-      state: 'needs_session_refresh',
-    };
-  }
-
-  try {
-    const data = await fetchJellyfinTraktJson<JellyfinTraktMeResponse>(
-      user,
-      '/Trakt/me',
-      5000
-    );
-
-    const state: JellyfinTraktUserState =
-      data.IsLinked !== true
-        ? 'needs_trakt_link'
-        : data.AllowExternalTokenAccess !== true
-          ? 'needs_access'
-          : 'ready';
-    return { userId: user.id, displayName: user.displayName, state };
-  } catch (e) {
-    const status = axios.isAxiosError(e) ? e.response?.status : undefined;
-    logger.warn('Better Trakt user readiness check failed', {
-      label: 'Integration Health',
-      userId: user.id,
-      status,
-      errorMessage: e instanceof Error ? e.message : 'unknown error',
-    });
-    return {
-      userId: user.id,
-      displayName: user.displayName,
-      state:
-        status === 401 || status === 403
-          ? 'needs_session_refresh'
-          : 'unavailable',
-    };
-  }
-};
+): Promise<JellyfinTraktUserReadiness> => ({
+  userId: user.id,
+  displayName: user.displayName,
+  state: await resolveJellyfinTraktUserState(user),
+});
 
 const checkJellyfinTrakt = async (): Promise<
   IntegrationHealth & { readiness: JellyfinTraktReadiness }

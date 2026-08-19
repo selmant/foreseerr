@@ -38,6 +38,8 @@ import {
   ensureUserSettings,
   getUserTraktSettings,
   isJellyfinTraktProvider,
+  resolveJellyfinTraktUserState,
+  type JellyfinTraktPluginState,
 } from '@server/lib/trakt';
 import {
   TRAKT_DEVICE_SLOW_DOWN_SECONDS,
@@ -68,18 +70,29 @@ function userActionsEnabled(value?: boolean | null): boolean {
   return value !== false;
 }
 
-async function getTraktLinkedAccountPayload(userId: number) {
+async function getTraktLinkedAccountPayload(
+  userId: number,
+  options: { includePluginStatus?: boolean } = {}
+) {
   const settings = await getUserTraktSettings(userId);
   const actionsEnabled = userActionsEnabled(settings?.mediaActionsTraktEnabled);
   if (isJellyfinTraktProvider()) {
     const user = await getRepository(User)
       .createQueryBuilder('user')
       .addSelect('user.jellyfinAuthToken')
+      .addSelect('user.jellyfinDeviceId')
       .where('user.id = :userId', { userId })
       .getOne();
     const connected = Boolean(user?.jellyfinUserId && user.jellyfinAuthToken);
-    return {
-      provider: 'jellyfin' as const,
+    const payload: {
+      provider: 'jellyfin';
+      connected: boolean;
+      needsJellyfinSessionRefresh: boolean;
+      pluginState?: JellyfinTraktPluginState;
+      username: string | null;
+      actionsEnabled: boolean;
+    } = {
+      provider: 'jellyfin',
       connected,
       needsJellyfinSessionRefresh: Boolean(
         user?.jellyfinUserId && !user.jellyfinAuthToken
@@ -87,6 +100,14 @@ async function getTraktLinkedAccountPayload(userId: number) {
       username: connected ? (user?.jellyfinUsername ?? 'Jellyfin') : null,
       actionsEnabled,
     };
+    if (options.includePluginStatus) {
+      payload.pluginState = !user?.jellyfinUserId
+        ? 'needs_jellyfin'
+        : await resolveJellyfinTraktUserState(user);
+      payload.needsJellyfinSessionRefresh =
+        payload.pluginState === 'needs_session_refresh';
+    }
+    return payload;
   }
   const connected = Boolean(
     settings?.traktAccessToken && settings.traktRefreshToken
@@ -725,9 +746,13 @@ userSettingsRoutes.get<{ id: string }>(
   isOwnProfileOrAdmin(),
   async (req, res, next) => {
     try {
-      return res
-        .status(200)
-        .json(await getTraktLinkedAccountPayload(Number(req.params.id)));
+      const includePluginStatus =
+        String(req.query.includePluginStatus) === 'true';
+      return res.status(200).json(
+        await getTraktLinkedAccountPayload(Number(req.params.id), {
+          includePluginStatus,
+        })
+      );
     } catch (e) {
       next({ status: 500, message: e.message });
     }
