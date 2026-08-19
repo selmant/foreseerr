@@ -9,6 +9,7 @@ import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { invalidateMediaActionCaches } from '@app/utils/mediaActionInvalidation';
 import {
+  failedProviderLabels,
   writeSucceeded,
   type MediaActionWriteResponse,
 } from '@app/utils/mediaActions';
@@ -51,8 +52,7 @@ const messages = defineMessages('components.TvDetails.Season', {
   markUnwatched: 'Mark unwatched',
   watched: 'Watched',
   watchActionError: 'Could not update this episode. Try again.',
-  watchActionPartial:
-    'Updated on one provider, but another provider could not be synchronized.',
+  watchActionPartial: 'Updated, but {providers} could not be synchronized.',
   seasonWatched: 'Watched',
   seasonWatchProgress: '{watched}/{total} watched',
 });
@@ -295,10 +295,16 @@ const Season = ({
         seasonNumber,
       });
       if (response.data.outcome === 'partial') {
-        addToast(intl.formatMessage(messages.watchActionPartial), {
-          appearance: 'warning',
-          autoDismiss: true,
-        });
+        addToast(
+          intl.formatMessage(messages.watchActionPartial, {
+            providers:
+              failedProviderLabels(response.data.providers) || 'a provider',
+          }),
+          {
+            appearance: 'warning',
+            autoDismiss: true,
+          }
+        );
       }
     } catch {
       await mutateWatchStatus(previous, false);

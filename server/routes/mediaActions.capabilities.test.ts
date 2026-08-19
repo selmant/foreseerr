@@ -1,10 +1,12 @@
 import {
+  ANILIST_MEDIA_ACTION_CAPABILITIES,
   JELLYFIN_MEDIA_ACTION_CAPABILITIES,
   TRAKT_MEDIA_ACTION_CAPABILITIES,
   getDefaultMediaActionProviders,
   getMediaActionCapabilities,
   type MediaActionProvider,
 } from '@server/lib/mediaActions';
+import { anilistEpisodeActions } from '@server/lib/mediaActions/anilistEpisodes';
 import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
 import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
 import { getSettings } from '@server/lib/settings';
@@ -70,6 +72,16 @@ const jellyfinEpisodeAvailableMock = mock.method(
   'isAvailable',
   async () => false
 );
+const anilistAvailableMock = mock.method(
+  getDefaultMediaActionProviders()[2],
+  'isAvailable',
+  async () => false
+);
+const anilistEpisodeAvailableMock = mock.method(
+  anilistEpisodeActions,
+  'isAvailable',
+  async () => false
+);
 
 before(() => {
   app = createApp();
@@ -94,8 +106,10 @@ describe('media-actions capabilities', () => {
   beforeEach(() => {
     traktAvailableMock.mock.mockImplementation(async () => true);
     jellyfinAvailableMock.mock.mockImplementation(async () => false);
+    anilistAvailableMock.mock.mockImplementation(async () => false);
     traktEpisodeAvailableMock.mock.mockImplementation(async () => true);
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => false);
+    anilistEpisodeAvailableMock.mock.mockImplementation(async () => false);
   });
 
   it('requires an authenticated user', async () => {
@@ -111,7 +125,7 @@ describe('media-actions capabilities', () => {
     assert.deepEqual(res.body.movie, { watched: true, rating: true });
     assert.deepEqual(res.body.tv, { watched: true, rating: true });
     assert.deepEqual(res.body.episode, { watched: true, rating: false });
-    assert.equal(res.body.providers.length, 2);
+    assert.equal(res.body.providers.length, 3);
     assert.deepEqual(res.body.providers[0], {
       id: 'trakt',
       linked: true,
@@ -121,6 +135,11 @@ describe('media-actions capabilities', () => {
       id: 'jellyfin',
       linked: false,
       capabilities: JELLYFIN_MEDIA_ACTION_CAPABILITIES,
+    });
+    assert.deepEqual(res.body.providers[2], {
+      id: 'anilist',
+      linked: false,
+      capabilities: ANILIST_MEDIA_ACTION_CAPABILITIES,
     });
   });
 
@@ -226,6 +245,7 @@ describe('getMediaActionCapabilities unit matrix', () => {
 
     traktEpisodeAvailableMock.mock.mockImplementation(async () => false);
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
+    anilistEpisodeAvailableMock.mock.mockImplementation(async () => false);
 
     const capabilities = await getMediaActionCapabilities(1, providers);
 

@@ -7,6 +7,7 @@ import {
   mediaActionSeasonStatusKey,
 } from '@app/utils/mediaActionInvalidation';
 import {
+  failedProviderLabels,
   writeSucceeded,
   type MediaActionWriteResponse,
 } from '@app/utils/mediaActions';
@@ -25,8 +26,7 @@ const messages = defineMessages(
     watched: 'Watched',
     notWatched: 'Not watched',
     actionFailed: 'Could not update episode watch status.',
-    actionPartial:
-      'Updated on one provider, but another provider could not be synchronized.',
+    actionPartial: 'Updated, but {providers} could not be synchronized.',
   }
 );
 
@@ -78,10 +78,16 @@ const LibraryEpisodeWatchToggle = ({
         throw new Error('Episode watch update failed');
       }
       if (response.data.outcome === 'partial') {
-        addToast(intl.formatMessage(messages.actionPartial), {
-          appearance: 'warning',
-          autoDismiss: true,
-        });
+        addToast(
+          intl.formatMessage(messages.actionPartial, {
+            providers:
+              failedProviderLabels(response.data.providers) || 'a provider',
+          }),
+          {
+            appearance: 'warning',
+            autoDismiss: true,
+          }
+        );
       }
       await globalMutate(episodesKey);
       await invalidateMediaActionCaches({

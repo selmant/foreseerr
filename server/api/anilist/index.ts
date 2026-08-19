@@ -31,6 +31,7 @@ const MEDIA_FIELDS = `
   idMal
   title { romaji english native }
   format
+  episodes
   seasonYear
   startDate { year }
 `;
@@ -74,6 +75,7 @@ const MEDIA_LIST_COLLECTION_QUERY = `
         entries {
           id
           status
+          progress
           score(format: POINT_10)
           scoreRaw: score(format: POINT_100)
           media { ${MEDIA_FIELDS} }
@@ -83,15 +85,28 @@ const MEDIA_LIST_COLLECTION_QUERY = `
   }
 `;
 
+const MEDIA_QUERY = `
+  query Media($id: Int) {
+    Media(id: $id) { ${MEDIA_FIELDS} }
+  }
+`;
+
 const SAVE_MEDIA_LIST_ENTRY_MUTATION = `
   mutation SaveMediaListEntry(
     $mediaId: Int
     $status: MediaListStatus
     $scoreRaw: Int
+    $progress: Int
   ) {
-    SaveMediaListEntry(mediaId: $mediaId, status: $status, scoreRaw: $scoreRaw) {
+    SaveMediaListEntry(
+      mediaId: $mediaId
+      status: $status
+      scoreRaw: $scoreRaw
+      progress: $progress
+    ) {
       id
       status
+      progress
       score(format: POINT_10)
       scoreRaw: score(format: POINT_100)
       media { ${MEDIA_FIELDS} }
@@ -337,10 +352,20 @@ class AnilistAPI extends ExternalAPI {
     };
   }
 
+  async getMedia(id: number): Promise<AnilistMedia | null> {
+    const data = await this.graphql<{ Media: AnilistMedia | null }>(
+      MEDIA_QUERY,
+      { id },
+      0
+    );
+    return data.Media ?? null;
+  }
+
   async saveMediaListEntry(options: {
     mediaId: number;
     status?: AnilistMediaListStatus;
     scoreRaw?: number | null;
+    progress?: number | null;
   }): Promise<AnilistMediaListEntry> {
     const variables: Record<string, unknown> = { mediaId: options.mediaId };
     if (options.status) {
@@ -348,6 +373,9 @@ class AnilistAPI extends ExternalAPI {
     }
     if (options.scoreRaw != null) {
       variables.scoreRaw = options.scoreRaw;
+    }
+    if (options.progress != null) {
+      variables.progress = options.progress;
     }
     const data = await this.graphql<{
       SaveMediaListEntry: AnilistMediaListEntry;

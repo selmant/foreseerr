@@ -1,3 +1,4 @@
+import { anilistEpisodeActions } from './anilistEpisodes';
 import { getDefaultMediaActionProviders } from './index';
 import { jellyfinEpisodeActions } from './jellyfin';
 import { traktEpisodeActions } from './traktEpisodes';
@@ -46,9 +47,14 @@ export async function getMediaActionCapabilities(
     }))
   );
 
-  const [traktEpisodeAvailable, jellyfinEpisodeAvailable] = await Promise.all([
+  const [
+    traktEpisodeAvailable,
+    jellyfinEpisodeAvailable,
+    anilistEpisodeAvailable,
+  ] = await Promise.all([
     traktEpisodeActions.isAvailable(userId),
     jellyfinEpisodeActions.isAvailable(userId),
+    anilistEpisodeActions.isAvailable(userId),
   ]);
 
   const titleWatched = anyCapability(providerCapabilities, 'writeWatched');
@@ -64,7 +70,10 @@ export async function getMediaActionCapabilities(
       rating: titleRating,
     },
     episode: {
-      watched: traktEpisodeAvailable || jellyfinEpisodeAvailable,
+      watched:
+        traktEpisodeAvailable ||
+        jellyfinEpisodeAvailable ||
+        anilistEpisodeAvailable,
       rating: false,
     },
     providers: providerCapabilities,

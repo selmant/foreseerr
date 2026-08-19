@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 // eslint-disable-next-line no-relative-import-paths/no-relative-import-paths
-import { writeSucceeded } from '../../../src/utils/mediaActions';
+import {
+  failedProviderLabels,
+  writeSucceeded,
+} from '../../../src/utils/mediaActions';
 
 const provider = (ok: boolean) => ({
   provider: 'trakt',
@@ -46,6 +49,16 @@ describe('client media-action write outcome handling', () => {
     assert.equal(
       writeSucceeded({ outcome: 'success', watched: true, providers: [] }),
       false
+    );
+  });
+
+  it('names failed providers for partial episode toasts', () => {
+    assert.equal(
+      failedProviderLabels([
+        { ...provider(true), provider: 'trakt' },
+        { ...provider(false), provider: 'anilist' },
+      ]),
+      'AniList'
     );
   });
 });

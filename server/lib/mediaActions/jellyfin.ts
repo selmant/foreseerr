@@ -67,27 +67,27 @@ export const jellyfinEpisodeActions = {
     seasonNumber: number,
     episodeNumber: number,
     watched: boolean
-  ): Promise<boolean> {
+  ): Promise<boolean | 'skipped'> {
     const client = await getJellyfinEpisodeClient(userId);
-    if (!client) return false;
+    if (!client) return 'skipped';
 
     const mediaRepository = getRepository(Media);
     const media = await mediaRepository.findOne({
       where: { tmdbId: tmdbShowId, mediaType: MediaType.TV },
     });
     const seriesId = media?.jellyfinMediaId ?? media?.jellyfinMediaId4k;
-    if (!seriesId) return false;
+    if (!seriesId) return 'skipped';
 
     try {
       const seasons = await client.getSeasons(seriesId);
       const season = seasons.find((s) => s.IndexNumber === seasonNumber);
-      if (!season) return false;
+      if (!season) return 'skipped';
 
       const episodes = await client.getEpisodes(seriesId, season.Id, {
         includeMediaInfo: true,
       });
       const episode = episodes.find((e) => e.IndexNumber === episodeNumber);
-      if (!episode) return false;
+      if (!episode) return 'skipped';
 
       if (watched) {
         await client.markPlayed(episode.Id);

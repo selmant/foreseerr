@@ -40,6 +40,7 @@ export interface AnilistMedia {
   idMal?: number | null;
   title?: AnilistTitle | null;
   format?: AnilistMediaFormat | null;
+  episodes?: number | null;
   seasonYear?: number | null;
   startDate?: { year?: number | null } | null;
 }
@@ -60,6 +61,7 @@ export interface AnilistMediaPage {
 export interface AnilistMediaListEntry {
   id: number;
   status?: AnilistMediaListStatus | null;
+  progress?: number | null;
   score?: number | null;
   scoreRaw?: number | null;
   media?: AnilistMedia | null;

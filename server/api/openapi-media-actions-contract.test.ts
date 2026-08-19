@@ -64,11 +64,11 @@ describe('OpenAPI media-actions contract', () => {
     assert.ok(schema.properties?.providers?.items);
   });
 
-  it('includes jellyfin in MediaActionProviderResult provider enum', () => {
+  it('includes trakt, jellyfin, and anilist in MediaActionProviderResult provider enum', () => {
     const providerEnum =
       apiDocs.components.schemas.MediaActionProviderResult.properties?.provider
         ?.enum;
-    assert.deepEqual(providerEnum, ['trakt', 'jellyfin']);
+    assert.deepEqual(providerEnum, ['trakt', 'jellyfin', 'anilist']);
   });
 
   it('documents title-specific action availability', () => {

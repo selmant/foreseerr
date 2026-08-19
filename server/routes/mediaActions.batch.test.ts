@@ -2,6 +2,7 @@ import {
   getMediaActionDispatcher,
   type MediaActionAggregate,
 } from '@server/lib/mediaActions';
+import { anilistEpisodeActions } from '@server/lib/mediaActions/anilistEpisodes';
 import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
 import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
 import { getSettings } from '@server/lib/settings';
@@ -111,6 +112,21 @@ const jellyfinSetItemWatchedMock = mock.method(
   'setItemWatched',
   async () => false
 );
+const anilistEpisodeAvailableMock = mock.method(
+  anilistEpisodeActions,
+  'isAvailable',
+  async () => false
+);
+const anilistSetEpisodeWatchedMock = mock.method(
+  anilistEpisodeActions,
+  'setWatched',
+  async () => 'skipped' as const
+);
+const anilistGetSeasonStatusMock = mock.method(
+  anilistEpisodeActions,
+  'getSeasonStatus',
+  async () => ({ available: false, watchedEpisodeNumbers: [] })
+);
 
 before(() => {
   app = createApp();
@@ -190,6 +206,15 @@ describe('episode media actions', () => {
     jellyfinSetEpisodeWatchedMock.mock.resetCalls();
     jellyfinSetItemWatchedMock.mock.mockImplementation(async () => false);
     jellyfinSetItemWatchedMock.mock.resetCalls();
+    anilistEpisodeAvailableMock.mock.mockImplementation(async () => false);
+    anilistSetEpisodeWatchedMock.mock.mockImplementation(
+      async () => 'skipped' as const
+    );
+    anilistSetEpisodeWatchedMock.mock.resetCalls();
+    anilistGetSeasonStatusMock.mock.mockImplementation(async () => ({
+      available: false,
+      watchedEpisodeNumbers: [],
+    }));
   });
 
   it('requires an authenticated user', async () => {
@@ -273,6 +298,71 @@ describe('episode media actions', () => {
         ratingStars: null,
       },
     ]);
+  });
+
+  it('does not treat a missing Jellyfin library episode as a failed provider', async () => {
+    jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
+    jellyfinSetEpisodeWatchedMock.mock.mockImplementation(
+      async () => 'skipped' as const
+    );
+    const agent = await loginAsAdmin();
+
+    const res = await agent
+      .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
+      .send({});
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.outcome, 'success');
+    assert.deepEqual(
+      res.body.providers.map(
+        (provider: { provider: string }) => provider.provider
+      ),
+      ['trakt']
+    );
+  });
+
+  it('writes AniList episode progress when the show is mapped', async () => {
+    anilistEpisodeAvailableMock.mock.mockImplementation(async () => true);
+    anilistSetEpisodeWatchedMock.mock.mockImplementation(async () => true);
+    const agent = await loginAsAdmin();
+
+    const res = await agent
+      .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
+      .send({});
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.outcome, 'success');
+    assert.deepEqual(
+      res.body.providers.map(
+        (provider: { provider: string }) => provider.provider
+      ),
+      ['trakt', 'anilist']
+    );
+    assert.deepEqual(
+      anilistSetEpisodeWatchedMock.mock.calls[0]?.arguments.slice(1),
+      [42, 1, 2, true]
+    );
+  });
+
+  it('skips AniList when the title has no anime mapping', async () => {
+    anilistEpisodeAvailableMock.mock.mockImplementation(async () => true);
+    anilistSetEpisodeWatchedMock.mock.mockImplementation(
+      async () => 'skipped' as const
+    );
+    const agent = await loginAsAdmin();
+
+    const res = await agent
+      .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
+      .send({});
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.outcome, 'success');
+    assert.deepEqual(
+      res.body.providers.map(
+        (provider: { provider: string }) => provider.provider
+      ),
+      ['trakt']
+    );
   });
 
   it('uses a direct Jellyfin episode identity supplied by Library', async () => {

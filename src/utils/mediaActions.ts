@@ -13,6 +13,24 @@ export interface MediaActionWriteResponse {
   providers: MediaActionProviderResult[];
 }
 
+export const MEDIA_ACTION_PROVIDER_LABELS: Record<string, string> = {
+  trakt: 'Trakt',
+  jellyfin: 'Jellyfin',
+  anilist: 'AniList',
+};
+
+export function failedProviderLabels(
+  providers: MediaActionProviderResult[]
+): string {
+  return providers
+    .filter((provider) => !provider.ok)
+    .map(
+      (provider) =>
+        MEDIA_ACTION_PROVIDER_LABELS[provider.provider] ?? provider.provider
+    )
+    .join(', ');
+}
+
 /** True when at least one provider applied the write (success or partial). */
 export function writeSucceeded(response: MediaActionWriteResponse): boolean {
   if (response.outcome === 'failure') {

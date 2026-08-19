@@ -12,6 +12,9 @@ export interface AnilistSyncEntry {
   status: AnilistMediaListStatus | null;
   /** Provider-native 1–10 score. */
   rating: number | null;
+  /** Watched episode watermark for TV/anime list entries. */
+  progress?: number | null;
+  episodeCount?: number | null;
 }
 
 export interface AnilistUserSnapshot {
@@ -25,6 +28,8 @@ export interface AnilistSyncItemPatch {
   listEntryId?: number | null;
   status?: AnilistMediaListStatus | null;
   anilistId?: number;
+  progress?: number | null;
+  episodeCount?: number | null;
 }
 
 interface PendingPatch {
@@ -159,6 +164,14 @@ function applyPatchToEntries(
     mediaType: patch.mediaType,
     status: watched ? (status ?? 'COMPLETED') : status,
     rating,
+    progress:
+      patch.update.progress !== undefined
+        ? patch.update.progress
+        : (current?.progress ?? null),
+    episodeCount:
+      patch.update.episodeCount !== undefined
+        ? patch.update.episodeCount
+        : (current?.episodeCount ?? null),
   };
 
   if (patch.update.watched === false && patch.update.listEntryId === null) {
@@ -256,6 +269,8 @@ async function fetchSnapshot(
           (listEntry.score != null && listEntry.score > 0
             ? Math.max(1, Math.min(10, Math.round(listEntry.score)))
             : null),
+        progress: listEntry.progress ?? 0,
+        episodeCount: listEntry.media?.episodes ?? null,
       });
     }
   }
