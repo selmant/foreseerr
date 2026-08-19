@@ -14,10 +14,14 @@ import { setupTestDb } from '@server/test/db';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import express from 'express';
+import * as OpenApiValidator from 'express-openapi-validator';
 import session from 'express-session';
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { before, beforeEach, describe, it, mock } from 'node:test';
 import request from 'supertest';
+
+const API_SPEC_PATH = join(__dirname, '../../seerr-api.yml');
 
 let app: Express;
 
@@ -32,18 +36,27 @@ function createApp() {
       saveUninitialized: false,
     })
   );
+  app.use(
+    OpenApiValidator.middleware({
+      apiSpec: API_SPEC_PATH,
+      validateRequests: true,
+    })
+  );
   app.use(checkUser);
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/media-actions', mediaActionsRoutes);
   app.use(
     (
-      err: { status?: number; message?: string },
+      err: { status?: number; message?: string; errors?: unknown },
       _req: express.Request,
       res: express.Response,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _next: express.NextFunction
     ) => {
-      res.status(err.status || 500).json({ message: err.message });
+      res.status(err.status || 500).json({
+        message: err.message,
+        errors: err.errors,
+      });
     }
   );
   return app;
@@ -138,7 +151,7 @@ describe('media-actions status-batch bounds', () => {
       .send({ items });
 
     assert.equal(res.status, 400);
-    assert.match(res.body.message ?? '', /at most 100/i);
+    assert.match(res.body.message ?? '', /100/);
     assert.equal(getStatusesMock.mock.calls.length, 0);
   });
 
@@ -208,9 +221,9 @@ describe('episode media actions', () => {
 
   it('marks an episode watched using validated show and episode coordinates', async () => {
     const agent = await loginAsAdmin();
-    const res = await agent.post(
-      '/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched'
-    );
+    const res = await agent
+      .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
+      .send({});
 
     assert.equal(res.status, 200);
     assert.equal(res.body.outcome, 'success');
@@ -228,15 +241,26 @@ describe('episode media actions', () => {
     ]);
   });
 
+  it('rejects a watched POST with no JSON content type', async () => {
+    const agent = await loginAsAdmin();
+    const res = await agent.post(
+      '/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched'
+    );
+
+    assert.equal(res.status, 415);
+    assert.match(res.body.message ?? '', /unsupported media type/i);
+    assert.equal(setEpisodeWatchedMock.mock.calls.length, 0);
+  });
+
   it('succeeds when Jellyfin is the only enabled episode provider', async () => {
     traktEpisodeAvailableMock.mock.mockImplementation(async () => false);
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
     jellyfinSetEpisodeWatchedMock.mock.mockImplementation(async () => true);
     const agent = await loginAsAdmin();
 
-    const res = await agent.post(
-      '/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched'
-    );
+    const res = await agent
+      .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
+      .send({});
 
     assert.equal(res.status, 200);
     assert.equal(res.body.outcome, 'success');
@@ -278,9 +302,9 @@ describe('episode media actions', () => {
     });
     const agent = await loginAsAdmin();
 
-    const res = await agent.post(
-      '/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched'
-    );
+    const res = await agent
+      .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
+      .send({});
 
     assert.equal(res.status, 207);
     assert.equal(res.body.outcome, 'partial');
@@ -295,9 +319,11 @@ describe('episode media actions', () => {
     const pathResult = await agent.get(
       '/api/v1/media-actions/tv/not-a-number/seasons/1/episodes/status'
     );
-    const coordinateResult = await agent.post(
-      "/api/v1/media-actions/tv/42/seasons/1/episodes/1'%20OR%201=1--/watched"
-    );
+    const coordinateResult = await agent
+      .post(
+        "/api/v1/media-actions/tv/42/seasons/1/episodes/1'%20OR%201=1--/watched"
+      )
+      .send({});
 
     assert.equal(pathResult.status, 400);
     assert.equal(coordinateResult.status, 400);

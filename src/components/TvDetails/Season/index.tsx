@@ -282,7 +282,8 @@ const Season = ({
     try {
       const action = wasWatched ? 'unwatched' : 'watched';
       const response = await axios.post<MediaActionWriteResponse>(
-        `/api/v1/media-actions/tv/${tvId}/seasons/${seasonNumber}/episodes/${episodeNumber}/${action}`
+        `/api/v1/media-actions/tv/${tvId}/seasons/${seasonNumber}/episodes/${episodeNumber}/${action}`,
+        {}
       );
       if (!writeSucceeded(response.data)) {
         throw new Error('Episode watch update failed');
