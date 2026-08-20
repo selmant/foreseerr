@@ -4,6 +4,10 @@ import fs from 'fs/promises';
 import path from 'path';
 
 const migrationsDir = path.join(__dirname, 'migrations');
+const migrationFilePattern = /^\d{4}_.+\.(?:js|ts)$/;
+
+export const isSettingsMigrationFile = (file: string): boolean =>
+  migrationFilePattern.test(file) && !file.includes('.test.');
 
 /**
  * Detects a settings.json produced by a newer Foreseerr version than this
@@ -65,9 +69,11 @@ export const runMigrations = async (
   delete (migrated as { requestRouting?: unknown }).requestRouting;
   delete (migrated as { requestFilters?: unknown }).requestFilters;
 
+  // Only numbered migration modules are executable. This directory also
+  // contains shared helpers such as `types.ts`, which compile to JavaScript
+  // in production but do not export a default migration function.
   const migrations = (await fs.readdir(migrationsDir)).filter(
-    (file) =>
-      (file.endsWith('.js') || file.endsWith('.ts')) && !file.includes('.test.')
+    isSettingsMigrationFile
   );
   const knownMigrationNames = migrations.map((file) =>
     file.replace(/\.(js|ts)$/, '')

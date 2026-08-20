@@ -11,7 +11,10 @@
  */
 import type { AllSettings } from '@server/lib/settings';
 import Settings from '@server/lib/settings';
-import { runMigrations } from '@server/lib/settings/migrator';
+import {
+  isSettingsMigrationFile,
+  runMigrations,
+} from '@server/lib/settings/migrator';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -120,6 +123,17 @@ describe('Settings migrator: upstream baseline compatibility', () => {
     tmpDirs.push(dir);
     return join(dir, 'settings.json');
   }
+
+  it('executes only numbered migration modules', () => {
+    assert.equal(isSettingsMigrationFile('0013_increase_timeout.ts'), true);
+    assert.equal(isSettingsMigrationFile('0013_increase_timeout.js'), true);
+    assert.equal(isSettingsMigrationFile('types.ts'), false);
+    assert.equal(isSettingsMigrationFile('helpers.js'), false);
+    assert.equal(
+      isSettingsMigrationFile('0013_increase_timeout.test.ts'),
+      false
+    );
+  });
 
   it('migrates an upstream-shaped settings.json and preserves existing data', async () => {
     const settingsPath = tempSettingsPath();
