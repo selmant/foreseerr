@@ -8,6 +8,7 @@ import type {
 import { getRepository } from '@server/datasource';
 import DiscoverSlider from '@server/entity/DiscoverSlider';
 import type { StatusResponse } from '@server/interfaces/api/settingsInterfaces';
+import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -33,7 +34,7 @@ import blocklistRoutes from './blocklist';
 import calendarRoutes from './calendar';
 import collectionRoutes from './collection';
 import desktopRoutes from './desktop';
-import discoverRoutes, { createTmdbWithRegionLanguage } from './discover';
+import discoverRoutes from './discover';
 import issueRoutes from './issue';
 import issueCommentRoutes from './issueComment';
 import libraryRoutes from './library';

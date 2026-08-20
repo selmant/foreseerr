@@ -1,13 +1,10 @@
 import TheMovieDb from '@server/api/themoviedb';
-import {
-  AnilistNotLinkedError,
-  createAnilistUserClient,
-  getUserAnilistSettings,
-} from '@server/lib/anilist';
+import type { createAnilistUserClient } from '@server/lib/anilist';
 import anilistIdMapping, {
   fribbSeasonCandidates,
   pickFribbSeasonEntry,
 } from '@server/lib/anilist/mapping';
+import { getAnilistUserContext } from '@server/lib/anilist/userContext';
 import { AnilistMediaActionProvider } from './anilist';
 import {
   absoluteEpisodeNumber,
@@ -32,13 +29,7 @@ async function seasonEntries(tmdbShowId: number) {
 }
 
 async function getClientContext(userId: number) {
-  const client = await createAnilistUserClient(userId);
-  const settings = await getUserAnilistSettings(userId);
-  const anilistUserId = Number(settings?.anilistUserId);
-  if (!Number.isFinite(anilistUserId) || anilistUserId <= 0) {
-    throw new AnilistNotLinkedError();
-  }
-  return { client, anilistUserId };
+  return getAnilistUserContext(userId);
 }
 
 function seasonsFromTmdb(show: {

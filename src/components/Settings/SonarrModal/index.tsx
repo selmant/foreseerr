@@ -1,6 +1,10 @@
 import Modal from '@app/components/Common/Modal';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import type { SonarrTestResponse } from '@app/components/Settings/SettingsServices';
+import {
+  useServarrConnectionTest,
+  type ServarrConnectionTestInput,
+} from '@app/hooks/useServarrConnectionTest';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
@@ -9,7 +13,7 @@ import { Transition } from '@headlessui/react';
 import type { SonarrSettings } from '@server/lib/settings';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useIntl } from 'react-intl';
 import type { OnChangeValue } from 'react-select';
 import Select from 'react-select';
@@ -105,15 +109,63 @@ interface SonarrModalProps {
 
 const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
   const intl = useIntl();
-  const initialLoad = useRef(false);
   const { addToast } = useToasts();
-  const [isValidated, setIsValidated] = useState(sonarr ? true : false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResponse, setTestResponse] = useState<SonarrTestResponse>({
+  const initialResponse: SonarrTestResponse = {
     profiles: [],
     rootFolders: [],
     languageProfiles: null,
     tags: [],
+  };
+
+  const requestConnectionTest = useCallback(
+    async ({
+      hostname,
+      port,
+      apiKey,
+      baseUrl,
+      useSsl = false,
+    }: ServarrConnectionTestInput) => {
+      const response = await axios.post<SonarrTestResponse>(
+        '/api/v1/settings/sonarr/test',
+        {
+          hostname,
+          apiKey,
+          port: Number(port),
+          baseUrl,
+          useSsl,
+        }
+      );
+      return response.data;
+    },
+    []
+  );
+
+  const onTestSuccess = useCallback(() => {
+    addToast(intl.formatMessage(messages.toastSonarrTestSuccess), {
+      appearance: 'success',
+      autoDismiss: true,
+    });
+  }, [addToast, intl]);
+
+  const onTestFailure = useCallback(() => {
+    addToast(intl.formatMessage(messages.toastSonarrTestFailure), {
+      appearance: 'error',
+      autoDismiss: true,
+    });
+  }, [addToast, intl]);
+
+  const {
+    isValidated,
+    isTesting,
+    testResponse,
+    testConnection,
+    invalidateValidation,
+  } = useServarrConnectionTest({
+    initialValidated: Boolean(sonarr),
+    initialResponse,
+    request: requestConnectionTest,
+    onSuccess: onTestSuccess,
+    onFailure: onTestFailure,
   });
 
   const SonarrSettingsSchema = Yup.object().shape({
@@ -163,57 +215,6 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
         (value) => !value || !value.endsWith('/')
       ),
   });
-
-  const testConnection = useCallback(
-    async ({
-      hostname,
-      port,
-      apiKey,
-      baseUrl,
-      useSsl = false,
-    }: {
-      hostname: string;
-      port: number;
-      apiKey: string;
-      baseUrl?: string;
-      useSsl?: boolean;
-    }) => {
-      setIsTesting(true);
-      try {
-        const response = await axios.post<SonarrTestResponse>(
-          '/api/v1/settings/sonarr/test',
-          {
-            hostname,
-            apiKey,
-            port: Number(port),
-            baseUrl,
-            useSsl,
-          }
-        );
-
-        setIsValidated(true);
-        setTestResponse(response.data);
-        if (initialLoad.current) {
-          addToast(intl.formatMessage(messages.toastSonarrTestSuccess), {
-            appearance: 'success',
-            autoDismiss: true,
-          });
-        }
-      } catch {
-        setIsValidated(false);
-        if (initialLoad.current) {
-          addToast(intl.formatMessage(messages.toastSonarrTestFailure), {
-            appearance: 'error',
-            autoDismiss: true,
-          });
-        }
-      } finally {
-        setIsTesting(false);
-        initialLoad.current = true;
-      }
-    },
-    [addToast, intl]
-  );
 
   useEffect(() => {
     if (sonarr) {
@@ -429,7 +430,7 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                         data-lpignore="true"
                         data-bwignore="true"
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          setIsValidated(false);
+                          invalidateValidation();
                           setFieldValue('name', e.target.value);
                         }}
                       />
@@ -457,7 +458,7 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                         type="text"
                         inputMode="url"
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          setIsValidated(false);
+                          invalidateValidation();
                           setFieldValue('hostname', e.target.value);
                         }}
                         className="rounded-r-only"
@@ -483,7 +484,7 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                       inputMode="numeric"
                       className="short"
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                        setIsValidated(false);
+                        invalidateValidation();
                         setFieldValue('port', e.target.value);
                       }}
                     />
@@ -504,7 +505,7 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                       id="ssl"
                       name="ssl"
                       onChange={() => {
-                        setIsValidated(false);
+                        invalidateValidation();
                         setFieldValue('ssl', !values.ssl);
                       }}
                     />
@@ -525,7 +526,7 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                         id="apiKey"
                         name="apiKey"
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          setIsValidated(false);
+                          invalidateValidation();
                           setFieldValue('apiKey', e.target.value);
                         }}
                       />
@@ -552,7 +553,7 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                         type="text"
                         inputMode="url"
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          setIsValidated(false);
+                          invalidateValidation();
                           setFieldValue('baseUrl', e.target.value);
                         }}
                       />

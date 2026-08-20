@@ -12,6 +12,11 @@ import {
   SCAN_ITEM_CONCURRENCY,
   mapWithConcurrency,
 } from '@server/lib/concurrency';
+import {
+  nextSeasonStatus,
+  rollupShowStatus,
+  type ProcessableSeason,
+} from '@server/lib/scanners/seasonStatus';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import AsyncLock from '@server/utils/asyncLock';
@@ -53,14 +58,7 @@ interface ProcessOptions {
   hasFile?: boolean;
 }
 
-export interface ProcessableSeason {
-  seasonNumber: number;
-  totalEpisodes: number;
-  episodes: number;
-  episodes4k: number;
-  is4kOverride?: boolean;
-  processing?: boolean;
-}
+export type { ProcessableSeason } from '@server/lib/scanners/seasonStatus';
 
 class BaseScanner<T> {
   private bundleSize;
@@ -347,67 +345,40 @@ class BaseScanner<T> {
         }
 
         if (existingSeason) {
-          // Here we update seasons if they already exist.
-          // If the season is already marked as available, we
-          // force it to stay available (to avoid competing scanners)
-          existingSeason.status =
-            (season.totalEpisodes === season.episodes && season.episodes > 0) ||
-            existingSeason.status === MediaStatus.AVAILABLE
-              ? MediaStatus.AVAILABLE
-              : season.episodes > 0
-                ? MediaStatus.PARTIALLY_AVAILABLE
-                : !season.is4kOverride &&
-                    season.processing &&
-                    existingSeason.status !== MediaStatus.DELETED
-                  ? MediaStatus.PROCESSING
-                  : !season.is4kOverride &&
-                      !season.processing &&
-                      season.episodes === 0 &&
-                      existingSeason.status === MediaStatus.PROCESSING
-                    ? MediaStatus.UNKNOWN
-                    : existingSeason.status;
-
-          // Same thing here, except we only do updates if 4k is enabled
-          existingSeason.status4k =
-            (this.enable4kShow &&
-              season.episodes4k === season.totalEpisodes &&
-              season.episodes4k > 0) ||
-            existingSeason.status4k === MediaStatus.AVAILABLE
-              ? MediaStatus.AVAILABLE
-              : this.enable4kShow && season.episodes4k > 0
-                ? MediaStatus.PARTIALLY_AVAILABLE
-                : season.is4kOverride &&
-                    season.processing &&
-                    existingSeason.status4k !== MediaStatus.DELETED
-                  ? MediaStatus.PROCESSING
-                  : season.is4kOverride &&
-                      !season.processing &&
-                      season.episodes4k === 0 &&
-                      existingSeason.status4k === MediaStatus.PROCESSING
-                    ? MediaStatus.UNKNOWN
-                    : existingSeason.status4k;
+          existingSeason.status = nextSeasonStatus({
+            previous: existingSeason.status,
+            totalEpisodes: season.totalEpisodes,
+            availableEpisodes: season.episodes,
+            canBeAvailable: true,
+            processingForQuality: !season.is4kOverride,
+            processing: season.processing,
+          });
+          existingSeason.status4k = nextSeasonStatus({
+            previous: existingSeason.status4k,
+            totalEpisodes: season.totalEpisodes,
+            availableEpisodes: season.episodes4k,
+            canBeAvailable: this.enable4kShow,
+            processingForQuality: Boolean(season.is4kOverride),
+            processing: season.processing,
+          });
         } else {
           newSeasons.push(
             new Season({
               seasonNumber: season.seasonNumber,
-              status:
-                season.totalEpisodes === season.episodes && season.episodes > 0
-                  ? MediaStatus.AVAILABLE
-                  : season.episodes > 0
-                    ? MediaStatus.PARTIALLY_AVAILABLE
-                    : !season.is4kOverride && season.processing
-                      ? MediaStatus.PROCESSING
-                      : MediaStatus.UNKNOWN,
-              status4k:
-                this.enable4kShow &&
-                season.totalEpisodes === season.episodes4k &&
-                season.episodes4k > 0
-                  ? MediaStatus.AVAILABLE
-                  : this.enable4kShow && season.episodes4k > 0
-                    ? MediaStatus.PARTIALLY_AVAILABLE
-                    : season.is4kOverride && season.processing
-                      ? MediaStatus.PROCESSING
-                      : MediaStatus.UNKNOWN,
+              status: nextSeasonStatus({
+                totalEpisodes: season.totalEpisodes,
+                availableEpisodes: season.episodes,
+                canBeAvailable: true,
+                processingForQuality: !season.is4kOverride,
+                processing: season.processing,
+              }),
+              status4k: nextSeasonStatus({
+                totalEpisodes: season.totalEpisodes,
+                availableEpisodes: season.episodes4k,
+                canBeAvailable: this.enable4kShow,
+                processingForQuality: Boolean(season.is4kOverride),
+                processing: season.processing,
+              }),
             })
           );
         }
@@ -472,100 +443,37 @@ class BaseScanner<T> {
             externalServiceSlug;
         }
 
-        const nonSpecialSeasons = media.seasons.filter(
-          (s) => s.seasonNumber !== 0
-        );
-
-        // DB-only seasons block the rollup unless UNKNOWN (orphan placeholders
-        // can never be revisited by a scan and would pin the show forever).
-        const countsTowardsRollup = (
-          s: Season,
-          statusKey: 'status' | 'status4k'
-        ): boolean => {
-          const scannedSeason = seasons.find(
-            (season) => season.seasonNumber === s.seasonNumber
-          );
-
-          if (scannedSeason) {
-            return scannedSeason.totalEpisodes > 0;
-          }
-
-          return s[statusKey] !== MediaStatus.UNKNOWN;
-        };
-
-        const standardSeasonsForRollup = nonSpecialSeasons.filter((s) =>
-          countsTowardsRollup(s, 'status')
-        );
-        const isAllStandardSeasonsAvailable =
-          standardSeasonsForRollup.length > 0 &&
-          standardSeasonsForRollup.every(
-            (s) => s.status === MediaStatus.AVAILABLE
-          );
-
-        const seasons4kForRollup = nonSpecialSeasons.filter((s) =>
-          countsTowardsRollup(s, 'status4k')
-        );
-        const isAll4kSeasonsAvailable =
-          seasons4kForRollup.length > 0 &&
-          seasons4kForRollup.every((s) => s.status4k === MediaStatus.AVAILABLE);
-
-        media.status = isAllStandardSeasonsAvailable
-          ? MediaStatus.AVAILABLE
-          : media.seasons.some(
-                (season) =>
-                  season.status === MediaStatus.PARTIALLY_AVAILABLE ||
-                  season.status === MediaStatus.AVAILABLE
-              )
-            ? MediaStatus.PARTIALLY_AVAILABLE
-            : (!seasons.length && media.status !== MediaStatus.DELETED) ||
-                media.seasons.some(
-                  (season) => season.status === MediaStatus.PROCESSING
-                )
-              ? MediaStatus.PROCESSING
-              : media.status === MediaStatus.DELETED
-                ? MediaStatus.DELETED
-                : MediaStatus.UNKNOWN;
-        media.status4k =
-          isAll4kSeasonsAvailable && this.enable4kShow
-            ? MediaStatus.AVAILABLE
-            : this.enable4kShow &&
-                media.seasons.some(
-                  (season) =>
-                    season.status4k === MediaStatus.PARTIALLY_AVAILABLE ||
-                    season.status4k === MediaStatus.AVAILABLE
-                )
-              ? MediaStatus.PARTIALLY_AVAILABLE
-              : (!seasons.length && media.status4k !== MediaStatus.DELETED) ||
-                  media.seasons.some(
-                    (season) => season.status4k === MediaStatus.PROCESSING
-                  )
-                ? MediaStatus.PROCESSING
-                : media.status4k === MediaStatus.DELETED
-                  ? MediaStatus.DELETED
-                  : MediaStatus.UNKNOWN;
+        media.status = rollupShowStatus({
+          seasons: media.seasons,
+          scannedSeasons: seasons,
+          statusKey: 'status',
+          previous: media.status,
+          enabled: true,
+        });
+        media.status4k = rollupShowStatus({
+          seasons: media.seasons,
+          scannedSeasons: seasons,
+          statusKey: 'status4k',
+          previous: media.status4k,
+          enabled: this.enable4kShow,
+        });
         await mediaRepository.save(media);
         this.log(`Updating existing title: ${title}`);
       } else {
-        // For new media, check actual newSeasons objects instead of scanner
-        // input to determine overall availability status
-        const nonSpecialNewSeasons = newSeasons.filter(
-          (s) => s.seasonNumber !== 0
-        );
-
-        const newSeasonsForRollup = nonSpecialNewSeasons.filter(
-          (s) =>
-            (seasons.find((season) => season.seasonNumber === s.seasonNumber)
-              ?.totalEpisodes ?? 0) > 0
-        );
-        const isAllStandardSeasonsAvailable =
-          newSeasonsForRollup.length > 0 &&
-          newSeasonsForRollup.every((s) => s.status === MediaStatus.AVAILABLE);
-
-        const isAll4kSeasonsAvailable =
-          newSeasonsForRollup.length > 0 &&
-          newSeasonsForRollup.every(
-            (s) => s.status4k === MediaStatus.AVAILABLE
-          );
+        const status = rollupShowStatus({
+          seasons: newSeasons,
+          scannedSeasons: seasons,
+          statusKey: 'status',
+          previous: undefined,
+          enabled: true,
+        });
+        const status4k = rollupShowStatus({
+          seasons: newSeasons,
+          scannedSeasons: seasons,
+          statusKey: 'status4k',
+          previous: undefined,
+          enabled: this.enable4kShow,
+        });
 
         const newMedia = new Media({
           mediaType: MediaType.TV,
@@ -611,34 +519,8 @@ class BaseScanner<T> {
             )
               ? jellyfinMediaId
               : undefined,
-          status: isAllStandardSeasonsAvailable
-            ? MediaStatus.AVAILABLE
-            : newSeasons.some(
-                  (season) =>
-                    season.status === MediaStatus.PARTIALLY_AVAILABLE ||
-                    season.status === MediaStatus.AVAILABLE
-                )
-              ? MediaStatus.PARTIALLY_AVAILABLE
-              : newSeasons.some(
-                    (season) => season.status === MediaStatus.PROCESSING
-                  )
-                ? MediaStatus.PROCESSING
-                : MediaStatus.UNKNOWN,
-          status4k:
-            isAll4kSeasonsAvailable && this.enable4kShow
-              ? MediaStatus.AVAILABLE
-              : this.enable4kShow &&
-                  newSeasons.some(
-                    (season) =>
-                      season.status4k === MediaStatus.PARTIALLY_AVAILABLE ||
-                      season.status4k === MediaStatus.AVAILABLE
-                  )
-                ? MediaStatus.PARTIALLY_AVAILABLE
-                : newSeasons.some(
-                      (season) => season.status4k === MediaStatus.PROCESSING
-                    )
-                  ? MediaStatus.PROCESSING
-                  : MediaStatus.UNKNOWN,
+          status,
+          status4k,
         });
         await mediaRepository.save(newMedia);
         this.log(`Saved ${title}`);

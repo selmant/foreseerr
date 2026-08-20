@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import ReleaseOccurrence from '@server/entity/ReleaseOccurrence';
+import { selectPrimaryRadarrDates } from '@server/lib/calendar/repository';
 import {
   normalizeRadarrMovie,
   normalizeSonarrEpisode,
@@ -11,7 +12,6 @@ import {
   parseProviderDate,
 } from '@server/lib/releases/sync';
 import type { DVRSettings } from '@server/lib/settings';
-import { selectPrimaryRadarrDates } from '@server/routes/calendar';
 
 describe('release calendar date normalization', () => {
   const server = {

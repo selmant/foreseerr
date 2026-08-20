@@ -4,10 +4,11 @@ import type { ParsedUrlQuery } from 'querystring';
 
 export function prepareTraktDiscoverOptions(
   query: ParsedUrlQuery,
-  extraKeys: string[] = []
+  extraKeys: string[] = [],
+  userId?: number
 ): Record<string, string> {
   const options: Record<string, string> = {
-    ...discoverDefaultsRequestExtras(),
+    ...discoverDefaultsRequestExtras(userId),
   };
 
   if (query.type === 'movie' || query.type === 'tv' || query.type === 'anime') {

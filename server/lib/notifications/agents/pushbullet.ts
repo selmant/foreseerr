@@ -1,9 +1,9 @@
 import { IssueStatus, IssueTypeName } from '@server/constants/issue';
-import { MediaStatus } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { getIntl } from '@server/i18n';
 import globalMessages from '@server/i18n/globalMessages';
+import { requestNotificationStatus } from '@server/lib/notifications/requestStatus';
 import type { NotificationAgentPushbullet } from '@server/lib/settings';
 import { NotificationAgentKey, getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -57,31 +57,7 @@ class PushbulletAgent
     if (payload.request) {
       body += `\n\n${intl.formatMessage(globalMessages.requestedBy)}: ${payload.request.requestedBy.displayName}`;
 
-      let status = '';
-      switch (type) {
-        case Notification.MEDIA_AUTO_REQUESTED:
-          status =
-            payload.media?.status === MediaStatus.PENDING
-              ? intl.formatMessage(globalMessages.pendingApproval)
-              : intl.formatMessage(globalMessages.processing);
-          break;
-        case Notification.MEDIA_PENDING:
-          status = intl.formatMessage(globalMessages.pendingApproval);
-          break;
-        case Notification.MEDIA_APPROVED:
-        case Notification.MEDIA_AUTO_APPROVED:
-          status = intl.formatMessage(globalMessages.processing);
-          break;
-        case Notification.MEDIA_AVAILABLE:
-          status = intl.formatMessage(globalMessages.available);
-          break;
-        case Notification.MEDIA_DECLINED:
-          status = intl.formatMessage(globalMessages.declined);
-          break;
-        case Notification.MEDIA_FAILED:
-          status = intl.formatMessage(globalMessages.failed);
-          break;
-      }
+      const status = requestNotificationStatus(type, payload, intl);
 
       if (status) {
         body += `\n${intl.formatMessage(globalMessages.requestStatus)}: ${status}`;

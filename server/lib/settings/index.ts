@@ -882,18 +882,30 @@ class Settings {
       series4kEnabled: this.data.sonarr.some(
         (sonarr) => sonarr.is4k && sonarr.isDefault
       ),
-      movieInstantRequestEnabled:
-        this.data.radarr.find((radarr) => !radarr.is4k && radarr.isDefault)
-          ?.enableInstantRequests !== false,
-      movie4kInstantRequestEnabled:
-        this.data.radarr.find((radarr) => radarr.is4k && radarr.isDefault)
-          ?.enableInstantRequests !== false,
-      seriesInstantRequestEnabled:
-        this.data.sonarr.find((sonarr) => !sonarr.is4k && sonarr.isDefault)
-          ?.enableInstantRequests !== false,
-      series4kInstantRequestEnabled:
-        this.data.sonarr.find((sonarr) => sonarr.is4k && sonarr.isDefault)
-          ?.enableInstantRequests !== false,
+      movieInstantRequestEnabled: (() => {
+        const server = this.data.radarr.find(
+          (radarr) => !radarr.is4k && radarr.isDefault
+        );
+        return server != null && server.enableInstantRequests !== false;
+      })(),
+      movie4kInstantRequestEnabled: (() => {
+        const server = this.data.radarr.find(
+          (radarr) => radarr.is4k && radarr.isDefault
+        );
+        return server != null && server.enableInstantRequests !== false;
+      })(),
+      seriesInstantRequestEnabled: (() => {
+        const server = this.data.sonarr.find(
+          (sonarr) => !sonarr.is4k && sonarr.isDefault
+        );
+        return server != null && server.enableInstantRequests !== false;
+      })(),
+      series4kInstantRequestEnabled: (() => {
+        const server = this.data.sonarr.find(
+          (sonarr) => sonarr.is4k && sonarr.isDefault
+        );
+        return server != null && server.enableInstantRequests !== false;
+      })(),
       discoverRegion: this.data.main.discoverRegion,
       streamingRegion: this.data.main.streamingRegion,
       originalLanguage: this.data.main.originalLanguage,

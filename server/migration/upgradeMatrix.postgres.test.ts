@@ -92,6 +92,15 @@ describe('Upgrade matrix: upstream Seerr baseline -> current schema (PostgreSQL)
         'unique partial index on traktUserId should exist after upgrade'
       );
 
+      const ongoingEpisodeRequestIndex = await upgradedDataSource.query(
+        `SELECT indexname FROM pg_indexes WHERE indexname = 'IDX_media_request_active_ongoing_episode'`
+      );
+      assert.equal(
+        ongoingEpisodeRequestIndex.length,
+        1,
+        'unique partial index on active ongoing episode requests should exist after upgrade'
+      );
+
       const mediaRequestForeignKeys = await upgradedDataSource.query(`
         SELECT confrelid::regclass::text AS referenced_table
         FROM pg_constraint

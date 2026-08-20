@@ -9,48 +9,17 @@ import {
 import { anilistEpisodeActions } from '@server/lib/mediaActions/anilistEpisodes';
 import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
 import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
-import { getSettings } from '@server/lib/settings';
-import { checkUser } from '@server/middleware/auth';
-import authRoutes from '@server/routes/auth';
-import mediaActionsRoutes from '@server/routes/mediaActions';
 import { setupTestDb } from '@server/test/db';
-import cookieParser from 'cookie-parser';
+import {
+  createMediaActionsTestApp,
+  loginAsAdmin,
+} from '@server/test/mediaActionsTestUtils';
 import type { Express } from 'express';
-import express from 'express';
-import session from 'express-session';
 import assert from 'node:assert/strict';
 import { before, beforeEach, describe, it, mock } from 'node:test';
 import request from 'supertest';
 
 let app: Express;
-
-function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use(cookieParser());
-  app.use(
-    session({
-      secret: 'test-secret',
-      resave: false,
-      saveUninitialized: false,
-    })
-  );
-  app.use(checkUser);
-  app.use('/api/v1/auth', authRoutes);
-  app.use('/api/v1/media-actions', mediaActionsRoutes);
-  app.use(
-    (
-      err: { status?: number; message?: string },
-      _req: express.Request,
-      res: express.Response,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _next: express.NextFunction
-    ) => {
-      res.status(err.status || 500).json({ message: err.message });
-    }
-  );
-  return app;
-}
 
 const traktAvailableMock = mock.method(
   getDefaultMediaActionProviders()[0],
@@ -84,23 +53,10 @@ const anilistEpisodeAvailableMock = mock.method(
 );
 
 before(() => {
-  app = createApp();
+  app = createMediaActionsTestApp();
 });
 
 setupTestDb();
-
-async function loginAsAdmin() {
-  const agent = request.agent(app);
-  const settings = getSettings();
-  settings.main.localLogin = true;
-  settings.main.applicationUrl = 'http://localhost:5055';
-
-  const res = await agent
-    .post('/api/v1/auth/local')
-    .send({ email: 'admin@seerr.dev', password: 'test1234' });
-  assert.equal(res.status, 200, JSON.stringify(res.body));
-  return agent;
-}
 
 describe('media-actions capabilities', () => {
   beforeEach(() => {
@@ -118,7 +74,7 @@ describe('media-actions capabilities', () => {
   });
 
   it('reports Trakt-only capabilities', async () => {
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
     const res = await agent.get('/api/v1/media-actions/capabilities');
 
     assert.equal(res.status, 200);
@@ -148,7 +104,7 @@ describe('media-actions capabilities', () => {
     jellyfinAvailableMock.mock.mockImplementation(async () => true);
     traktEpisodeAvailableMock.mock.mockImplementation(async () => false);
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent.get('/api/v1/media-actions/capabilities');
 
@@ -163,7 +119,7 @@ describe('media-actions capabilities', () => {
   it('reports both-provider capabilities', async () => {
     jellyfinAvailableMock.mock.mockImplementation(async () => true);
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent.get('/api/v1/media-actions/capabilities');
 
@@ -179,7 +135,7 @@ describe('media-actions capabilities', () => {
     jellyfinAvailableMock.mock.mockImplementation(async () => false);
     traktEpisodeAvailableMock.mock.mockImplementation(async () => false);
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => false);
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent.get('/api/v1/media-actions/capabilities');
 

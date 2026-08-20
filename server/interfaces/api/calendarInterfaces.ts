@@ -1,3 +1,5 @@
+import type { MediaRequestStatus } from '@server/constants/media';
+
 export type CalendarScope = 'mine' | 'all';
 export type CalendarMediaType = 'movie' | 'tv';
 export type CalendarSource = 'sonarr' | 'radarr';
@@ -13,6 +15,7 @@ export interface CalendarItem {
   id: string | number;
   mediaType: CalendarMediaType;
   source: CalendarSource;
+  sourceServerId?: number;
   title: string;
   subtitle?: string | null;
   seasonNumber?: number | null;
@@ -32,6 +35,7 @@ export interface CalendarItem {
     | 'approved'
     | 'processing'
     | 'available'
+    | MediaRequestStatus
     | string
     | null;
   requestedQuality?: '4k' | 'standard' | string | null;

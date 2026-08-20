@@ -2,10 +2,10 @@ import JellyfinAPI from '@server/api/jellyfin';
 import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
-import type { AllSettings } from '@server/lib/settings';
 import { getHostname } from '@server/utils/getHostname';
+import { asAllSettings, type MigrationSettings } from './types';
 
-const migrateApiTokens = async (settings: any): Promise<AllSettings> => {
+const migrateApiTokens = async (settings: MigrationSettings) => {
   const mediaServerType = settings.main.mediaServerType;
   if (
     !settings.jellyfin?.apiKey &&
@@ -19,7 +19,7 @@ const migrateApiTokens = async (settings: any): Promise<AllSettings> => {
       order: { id: 'ASC' },
     });
     if (!admin) {
-      return settings;
+      return asAllSettings(settings);
     }
     const jellyfinClient = new JellyfinAPI(
       getHostname(settings.jellyfin),
@@ -36,7 +36,7 @@ const migrateApiTokens = async (settings: any): Promise<AllSettings> => {
       );
     }
   }
-  return settings;
+  return asAllSettings(settings);
 };
 
 export default migrateApiTokens;

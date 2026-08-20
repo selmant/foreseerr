@@ -1,6 +1,6 @@
-import type { AllSettings } from '@server/lib/settings';
+import { asAllSettings, type MigrationSettings } from './types';
 
-const removeLunaSeaSetting = (settings: any): AllSettings => {
+const removeLunaSeaSetting = (settings: MigrationSettings) => {
   if (
     settings.notifications &&
     settings.notifications.agents &&
@@ -8,7 +8,7 @@ const removeLunaSeaSetting = (settings: any): AllSettings => {
   ) {
     delete settings.notifications.agents.lunasea;
   }
-  return settings;
+  return asAllSettings(settings);
 };
 
 export default removeLunaSeaSetting;

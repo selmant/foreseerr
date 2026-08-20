@@ -76,7 +76,7 @@ mediaRoutes.get('/', async (req, res, next) => {
             });
           }
 
-          return sub.groupBy('sub.tmdbId');
+          return sub.groupBy('sub.tmdbId').addGroupBy('sub.mediaType');
         },
         'dedup',
         'media.id = dedup.maxid'

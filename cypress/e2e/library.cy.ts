@@ -28,21 +28,7 @@ describe('Library', () => {
     cy.viewport(1280, 800);
     cy.loginAsAdmin();
     cy.intercept('GET', '/api/v1/media-actions/capabilities', {
-      movie: { watched: true, rating: true },
-      tv: { watched: true, rating: true },
-      episode: { watched: true, rating: false },
-      providers: [
-        {
-          id: 'trakt',
-          linked: true,
-          capabilities: {
-            readWatched: true,
-            writeWatched: true,
-            readRating: true,
-            writeRating: true,
-          },
-        },
-      ],
+      fixture: 'media-action-capabilities.json',
     }).as('capabilities');
     cy.intercept('GET', '/api/v1/media-actions/**/status', (req) => {
       const isMovie = req.url.includes('/movie/');
@@ -207,6 +193,10 @@ describe('Library', () => {
     cy.get('[role=dialog]').should('contain', 'Play');
     cy.get('[role=dialog]').should('contain', 'Rate');
     cy.get('[role=dialog]').should('contain', 'Mark watched');
+    cy.get('[role=dialog]').contains('button', 'Manage').click();
+    cy.contains('h2', 'Manage Movie').should('be.visible');
+    cy.get('button[aria-label="Close panel"]').click();
+    cy.get('[role=dialog]').should('not.exist');
   });
 
   it('opens a series inspector with season episodes', () => {

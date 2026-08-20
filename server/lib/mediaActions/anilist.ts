@@ -1,12 +1,12 @@
 import {
   AnilistNotConfiguredError,
-  AnilistNotLinkedError,
   anilistAvailabilityFromError,
   createAnilistUserClient,
   getAnilistAppCredentials,
   getUserAnilistSettings,
 } from '@server/lib/anilist';
 import anilistIdMapping from '@server/lib/anilist/mapping';
+import { getAnilistUserContext } from '@server/lib/anilist/userContext';
 import { getSettings } from '@server/lib/settings';
 import {
   lookupAnilistItemStatus,
@@ -22,7 +22,10 @@ import {
   type MediaActionStatus,
   type MediaItemRef,
   type RateOptions,
+  type UnmarkWatchedOptions,
 } from './types';
+
+export const ANILIST_NOT_MAPPED_ERROR = 'No AniList mapping for item';
 
 function toStatus(watched: boolean, rating: number | null): MediaActionStatus {
   return {
@@ -34,6 +37,10 @@ function toStatus(watched: boolean, rating: number | null): MediaActionStatus {
 
 function emptyStatus(): MediaActionStatus {
   return toStatus(false, null);
+}
+
+function unmappedStatus(): MediaActionStatus {
+  return { ...emptyStatus(), error: ANILIST_NOT_MAPPED_ERROR };
 }
 
 export class AnilistMediaActionProvider implements MediaActionProvider {
@@ -71,7 +78,7 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
   ): Promise<MediaActionStatus> {
     const mapped = await this.resolveMappedItem(item);
     if (!mapped) {
-      return emptyStatus();
+      return unmappedStatus();
     }
     const { client, anilistUserId } = await this.getClientContext(userId);
     const snapshot = await warmUserAnilistSyncCache(
@@ -100,7 +107,11 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
       userId,
       anilistUserId
     );
+    await anilistIdMapping.sync();
     return items.map((item) => {
+      if (!anilistIdMapping.getAnilistId(item.mediaType, item.tmdbId)) {
+        return { ...item, ...unmappedStatus() };
+      }
       const status = lookupAnilistItemStatus(
         snapshot,
         item.mediaType,
@@ -120,7 +131,7 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
   ): Promise<MediaActionStatus> {
     const mapped = await this.resolveMappedItem(item);
     if (!mapped) {
-      return emptyStatus();
+      return unmappedStatus();
     }
 
     const { client, anilistUserId } = await this.getClientContext(userId);
@@ -159,11 +170,12 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
 
   async unmarkWatched(
     userId: number,
-    item: MediaItemRef
+    item: MediaItemRef,
+    options: UnmarkWatchedOptions = {}
   ): Promise<MediaActionStatus> {
     const mapped = await this.resolveMappedItem(item);
     if (!mapped) {
-      return emptyStatus();
+      return unmappedStatus();
     }
 
     const { client, anilistUserId } = await this.getClientContext(userId);
@@ -178,19 +190,36 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
       item.tmdbId
     );
     const entryId = current.entry?.listEntryId;
-    if (entryId) {
+    let saved: Awaited<ReturnType<typeof client.saveMediaListEntry>> | null =
+      null;
+    if (entryId && options.removeRating) {
       await client.deleteMediaListEntry(entryId);
+    } else if (entryId) {
+      // AniList stores watched state in the list status. Move the entry back
+      // to planning while retaining its score and list membership unless the
+      // caller explicitly asks to remove the rating.
+      saved = await client.saveMediaListEntry({
+        mediaId: mapped.anilistId,
+        status: 'PLANNING',
+        ...(current.rating != null
+          ? { scoreRaw: providerRatingToScoreRaw(current.rating) }
+          : {}),
+      });
     }
+
+    const rating = options.removeRating ? null : current.rating;
 
     patchUserAnilistSyncItem(userId, item.mediaType, item.tmdbId, {
       watched: false,
-      status: null,
-      rating: null,
+      status: saved?.status ?? (options.removeRating ? null : 'PLANNING'),
+      rating,
       anilistId: mapped.anilistId,
-      listEntryId: null,
+      // A default unwatch with no existing list entry must not create a
+      // synthetic planning entry in the optimistic cache.
+      listEntryId: saved?.id ?? entryId ?? null,
     });
 
-    return emptyStatus();
+    return toStatus(false, rating);
   }
 
   async rate(
@@ -200,7 +229,7 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
   ): Promise<MediaActionStatus> {
     const mapped = await this.resolveMappedItem(item);
     if (!mapped) {
-      return emptyStatus();
+      return unmappedStatus();
     }
 
     const { client, anilistUserId } = await this.getClientContext(userId);
@@ -236,13 +265,7 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
     client: Awaited<ReturnType<typeof createAnilistUserClient>>;
     anilistUserId: number;
   }> {
-    const client = await createAnilistUserClient(userId);
-    const settings = await getUserAnilistSettings(userId);
-    const anilistUserId = Number(settings?.anilistUserId);
-    if (!Number.isFinite(anilistUserId) || anilistUserId <= 0) {
-      throw new AnilistNotLinkedError();
-    }
-    return { client, anilistUserId };
+    return getAnilistUserContext(userId);
   }
 
   private async resolveMappedItem(

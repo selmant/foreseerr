@@ -1,7 +1,7 @@
 import { MediaServerType } from '@server/constants/server';
-import type { AllSettings } from '@server/lib/settings';
+import { asAllSettings, type MigrationSettings } from './types';
 
-const migrateHostname = (settings: any): AllSettings => {
+const migrateHostname = (settings: MigrationSettings) => {
   const oldMediaServerType = settings.main.mediaServerType;
   if (
     oldMediaServerType === MediaServerType.JELLYFIN &&
@@ -10,7 +10,7 @@ const migrateHostname = (settings: any): AllSettings => {
     settings.main.mediaServerType = MediaServerType.EMBY;
   }
 
-  return settings;
+  return asAllSettings(settings);
 };
 
 export default migrateHostname;

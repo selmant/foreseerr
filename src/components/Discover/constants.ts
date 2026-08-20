@@ -151,6 +151,74 @@ export const QueryFilterOptions = z.object({
 
 export type FilterOptions = z.infer<typeof QueryFilterOptions>;
 
+export type DiscoverRangeSpec = {
+  id:
+    | 'imdbRating'
+    | 'imdbVotes'
+    | 'rtCritics'
+    | 'rtAudience'
+    | 'metacritic'
+    | 'traktRating';
+  keyGte: keyof FilterOptions;
+  keyLte: keyof FilterOptions;
+  min: number;
+  max: number;
+  step?: number;
+};
+
+/** Shared range semantics for the Discover page and saved user defaults. */
+export const discoverRangeFilters = [
+  {
+    id: 'imdbRating',
+    keyGte: 'imdbRatingGte',
+    keyLte: 'imdbRatingLte',
+    min: 1,
+    max: 10,
+    step: 0.1,
+  },
+  {
+    id: 'imdbVotes',
+    keyGte: 'imdbVotesGte',
+    keyLte: 'imdbVotesLte',
+    min: 0,
+    max: 100000,
+  },
+  {
+    id: 'rtCritics',
+    keyGte: 'rtCriticsGte',
+    keyLte: 'rtCriticsLte',
+    min: 0,
+    max: 100,
+  },
+  {
+    id: 'rtAudience',
+    keyGte: 'rtAudienceGte',
+    keyLte: 'rtAudienceLte',
+    min: 0,
+    max: 100,
+  },
+  {
+    id: 'metacritic',
+    keyGte: 'metacriticGte',
+    keyLte: 'metacriticLte',
+    min: 0,
+    max: 100,
+  },
+  {
+    id: 'traktRating',
+    keyGte: 'traktRatingGte',
+    keyLte: 'traktRatingLte',
+    min: 1,
+    max: 10,
+    step: 0.1,
+  },
+] as const satisfies readonly DiscoverRangeSpec[];
+
+export const formatDiscoverRangeValue = (
+  value: number,
+  spec: DiscoverRangeSpec
+): string => (spec.step != null ? value.toFixed(1) : value.toString());
+
 export const prepareFilterValues = (
   inputValues: ParsedUrlQuery
 ): FilterOptions => {

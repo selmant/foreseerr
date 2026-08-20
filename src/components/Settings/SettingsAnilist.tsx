@@ -80,6 +80,7 @@ const SettingsAnilist = ({ onSave }: SettingsAnilistProps) => {
     null
   );
   const [clearing, setClearing] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
 
   const save = async (
     values: AnilistFormValues,
@@ -273,21 +274,9 @@ const SettingsAnilist = ({ onSave }: SettingsAnilistProps) => {
                 buttonType="danger"
                 type="button"
                 disabled={clearing}
-                onClick={async () => {
-                  setClearing(true);
-                  try {
-                    await save(values, true, true);
-                  } catch {
-                    addToast(
-                      intl.formatMessage(messages.toastSettingsFailure),
-                      {
-                        appearance: 'error',
-                        autoDismiss: true,
-                      }
-                    );
-                  } finally {
-                    setClearing(false);
-                  }
+                onClick={() => {
+                  setPendingValues(values);
+                  setClearConfirmOpen(true);
                 }}
               >
                 {intl.formatMessage(messages.clearCredentials)}
@@ -323,6 +312,41 @@ const SettingsAnilist = ({ onSave }: SettingsAnilistProps) => {
           }}
         >
           {intl.formatMessage(messages.disconnectConfirmDescription, {
+            count: data.linkedAccountCount ?? 0,
+          })}
+        </Modal>
+      </Transition>
+
+      <Transition as={Fragment} show={clearConfirmOpen}>
+        <Modal
+          title={intl.formatMessage(messages.clearConfirmTitle)}
+          okButtonType="danger"
+          okText={intl.formatMessage(messages.clearCredentials)}
+          onCancel={() => {
+            setClearConfirmOpen(false);
+            setPendingValues(null);
+          }}
+          onOk={async () => {
+            if (!pendingValues) {
+              setClearConfirmOpen(false);
+              return;
+            }
+            setClearing(true);
+            try {
+              await save(pendingValues, true, true);
+              setClearConfirmOpen(false);
+              setPendingValues(null);
+            } catch {
+              addToast(intl.formatMessage(messages.toastSettingsFailure), {
+                appearance: 'error',
+                autoDismiss: true,
+              });
+            } finally {
+              setClearing(false);
+            }
+          }}
+        >
+          {intl.formatMessage(messages.clearConfirmDescription, {
             count: data.linkedAccountCount ?? 0,
           })}
         </Modal>

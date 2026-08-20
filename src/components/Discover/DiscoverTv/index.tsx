@@ -16,6 +16,7 @@ import useDiscover from '@app/hooks/useDiscover';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
+import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import { BarsArrowDownIcon, FunnelIcon } from '@heroicons/react/24/solid';
@@ -53,11 +54,13 @@ const SortOptions: Record<string, TMDBSortOptions> = {
 const DiscoverTv = () => {
   const intl = useIntl();
   const router = useRouter();
+  const { user } = useUser();
   const [showFilters, setShowFilters] = useState(false);
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const preparedFilters = mergeFilterDefaults(
     prepareFilterValues(router.query),
-    discoverDefaults
+    discoverDefaults,
+    user?.id
   );
   const updateQueryParams = useUpdateQueryParams({});
   const activeFilterCount =
@@ -79,7 +82,7 @@ const DiscoverTv = () => {
     mutate,
   } = useDiscover<TvResult, never, FilterOptions>('/api/v1/discover/tv', {
     ...preparedFilters,
-    ...discoverDefaultsRequestExtras(),
+    ...discoverDefaultsRequestExtras(user?.id),
   });
 
   useRegisterHideWatchedRevalidation(mutate, hideWatched);

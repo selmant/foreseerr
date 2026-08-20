@@ -9,6 +9,7 @@ import FilterSlideover, {
 import { mergeFilterDefaults } from '@app/components/Discover/mergeFilterDefaults';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
+import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { CircleStackIcon, FunnelIcon } from '@heroicons/react/24/solid';
@@ -39,12 +40,14 @@ const TraktDiscoverFilters = ({
 }: TraktDiscoverFiltersProps) => {
   const intl = useIntl();
   const router = useRouter();
+  const { user } = useUser();
   const updateQueryParams = useUpdateQueryParams({});
   const [showFilters, setShowFilters] = useState(false);
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const preparedFilters = mergeFilterDefaults(
     prepareFilterValues(router.query),
-    discoverDefaults
+    discoverDefaults,
+    user?.id
   );
 
   const currentType: TraktMediaType =

@@ -1,12 +1,12 @@
-import type { AllSettings } from '@server/lib/settings';
+import { asAllSettings, type MigrationSettings } from './types';
 
-const migrateNetworkSettings = (settings: any): AllSettings => {
+const migrateNetworkSettings = (settings: MigrationSettings) => {
   if (settings.network) {
-    return settings;
+    return asAllSettings(settings);
   }
   const newSettings = { ...settings };
   newSettings.network = {
-    ...settings.network,
+    ...(settings.network ?? {}),
     csrfProtection: settings.main.csrfProtection ?? false,
     trustProxy: settings.main.trustProxy ?? false,
     forceIpv4First: settings.main.forceIpv4First ?? false,
@@ -25,7 +25,7 @@ const migrateNetworkSettings = (settings: any): AllSettings => {
   delete settings.main.trustProxy;
   delete settings.main.forceIpv4First;
   delete settings.main.proxy;
-  return newSettings;
+  return asAllSettings(newSettings);
 };
 
 export default migrateNetworkSettings;

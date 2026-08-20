@@ -1,4 +1,9 @@
 import NotificationType from '@app/components/NotificationTypeSelector/NotificationType';
+import {
+  ALL_NOTIFICATIONS,
+  hasNotificationType,
+  Notification,
+} from '@app/components/NotificationTypeSelector/notificationTypes';
 import useSettings from '@app/hooks/useSettings';
 import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -72,53 +77,7 @@ const messages = defineMessages('components.NotificationTypeSelector', {
     'Get notified when a relevant release date moves or is withdrawn.',
 });
 
-export const hasNotificationType = (
-  types: Notification | Notification[],
-  value: number
-): boolean => {
-  let total: number;
-
-  // If we are not checking any notifications, bail out and return true
-  if (types === 0) {
-    return true;
-  }
-
-  if (Array.isArray(types)) {
-    // Combine all notification values into one
-    total = types.reduce((a, v) => a + v, 0);
-  } else {
-    total = types;
-  }
-
-  // Test notifications don't need to be enabled
-  if (!(value & Notification.TEST_NOTIFICATION)) {
-    value += Notification.TEST_NOTIFICATION;
-  }
-
-  return !!(value & total);
-};
-
-export enum Notification {
-  NONE = 0,
-  MEDIA_PENDING = 2,
-  MEDIA_APPROVED = 4,
-  MEDIA_AVAILABLE = 8,
-  MEDIA_FAILED = 16,
-  TEST_NOTIFICATION = 32,
-  MEDIA_DECLINED = 64,
-  MEDIA_AUTO_APPROVED = 128,
-  ISSUE_CREATED = 256,
-  ISSUE_COMMENT = 512,
-  ISSUE_RESOLVED = 1024,
-  ISSUE_REOPENED = 2048,
-  MEDIA_AUTO_REQUESTED = 4096,
-  NEW_SEASON = 16384,
-  RELEASE_DATE_CHANGED = 32768,
-}
-
-export const ALL_NOTIFICATIONS = Object.values(Notification)
-  .filter((v) => !isNaN(Number(v)))
-  .reduce((a, v) => a + Number(v), 0);
+export { ALL_NOTIFICATIONS, hasNotificationType, Notification };
 
 export interface NotificationItem {
   id: string;

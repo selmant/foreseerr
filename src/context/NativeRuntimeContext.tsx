@@ -218,14 +218,7 @@ export const NativeRuntimeProvider = ({
               setState('degraded');
             }
           })
-          .catch((error) => {
-            const status = error?.response?.status;
-            const code = error?.response?.data?.code;
-            console.error(
-              '[ForeseerNative] auth-tickets failed',
-              status ?? 'network',
-              code ?? error?.message ?? 'unknown'
-            );
+          .catch(() => {
             authInFlight = false;
             authRequestId = undefined;
             queuedPlayTarget.current = undefined;

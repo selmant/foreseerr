@@ -1,5 +1,4 @@
 import type {
-  LibraryAvailableResponse,
   LibraryBrowseResponse,
   LibraryFacetsResponse,
   LibraryItemInspectorResponse,
@@ -19,9 +18,73 @@ import {
 } from '@server/lib/library';
 import { isJellyfinItemId } from '@server/lib/libraryBrowse';
 import { parseLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 
 const libraryRoutes = Router();
+
+function parseAvailableQuery(query: Record<string, unknown>) {
+  const mediaType =
+    query.mediaType === 'movie' || query.mediaType === 'tv'
+      ? query.mediaType
+      : undefined;
+  return {
+    take: Math.min(Math.max(Number(query.take) || 20, 1), 50),
+    skip: Math.max(Number(query.skip) || 0, 0),
+    mediaType: mediaType as 'movie' | 'tv' | undefined,
+  };
+}
+
+function availablePage(
+  results: unknown[],
+  total: number,
+  take: number,
+  skip: number
+) {
+  return {
+    pageInfo: {
+      pages: Math.ceil(total / take) || 1,
+      pageSize: take,
+      results: total,
+      page: Math.floor(skip / take) + 1,
+    },
+    results,
+  };
+}
+
+function listAvailableRoute(options: {
+  requireQuery: boolean;
+  failureMessage: string;
+}): RequestHandler {
+  return async (req, res, next) => {
+    try {
+      if (!req.user) {
+        return next({ status: 401, message: 'Unauthorized' });
+      }
+      const { take, skip, mediaType } = parseAvailableQuery(req.query);
+      const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+      if (options.requireQuery && !query) {
+        return res.status(200).json(availablePage([], 0, take, skip));
+      }
+      const response = await listAvailableLibrary({
+        take,
+        skip,
+        mediaType,
+        query: query || undefined,
+        userId: req.user.id,
+      });
+      return res.status(200).json({
+        ...availablePage(response.results, response.total, take, skip),
+        ...(response.code ? { code: response.code } : {}),
+      });
+    } catch (error) {
+      return next({
+        status: 500,
+        message:
+          error instanceof Error ? error.message : options.failureMessage,
+      });
+    }
+  };
+}
 
 libraryRoutes.get<unknown, LibraryWatchNowResponse>(
   '/watch-now',
@@ -42,95 +105,20 @@ libraryRoutes.get<unknown, LibraryWatchNowResponse>(
   }
 );
 
-libraryRoutes.get<unknown, LibraryAvailableResponse>(
+libraryRoutes.get(
   '/available',
-  async (req, res, next) => {
-    try {
-      if (!req.user) {
-        return next({ status: 401, message: 'Unauthorized' });
-      }
-      const take = Math.min(Math.max(Number(req.query.take) || 20, 1), 50);
-      const skip = Math.max(Number(req.query.skip) || 0, 0);
-      const mediaType =
-        req.query.mediaType === 'movie' || req.query.mediaType === 'tv'
-          ? req.query.mediaType
-          : undefined;
-      const query = typeof req.query.q === 'string' ? req.query.q : undefined;
-
-      const { results, total, code } = await listAvailableLibrary({
-        take,
-        skip,
-        mediaType,
-        query,
-        userId: req.user.id,
-      });
-
-      return res.status(200).json({
-        pageInfo: {
-          pages: Math.ceil(total / take) || 1,
-          pageSize: take,
-          results: total,
-          page: Math.floor(skip / take) + 1,
-        },
-        results,
-        ...(code ? { code } : {}),
-      });
-    } catch (e) {
-      return next({
-        status: 500,
-        message:
-          e instanceof Error ? e.message : 'Failed to load available library',
-      });
-    }
-  }
+  listAvailableRoute({
+    requireQuery: false,
+    failureMessage: 'Failed to load available library',
+  })
 );
 
-libraryRoutes.get<unknown, LibraryAvailableResponse>(
+libraryRoutes.get(
   '/search',
-  async (req, res, next) => {
-    try {
-      if (!req.user) {
-        return next({ status: 401, message: 'Unauthorized' });
-      }
-      const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-      if (!q) {
-        return res.status(200).json({
-          pageInfo: { pages: 1, pageSize: 20, results: 0, page: 1 },
-          results: [],
-        });
-      }
-      const take = Math.min(Math.max(Number(req.query.take) || 20, 1), 50);
-      const skip = Math.max(Number(req.query.skip) || 0, 0);
-      const mediaType =
-        req.query.mediaType === 'movie' || req.query.mediaType === 'tv'
-          ? req.query.mediaType
-          : undefined;
-
-      const { results, total, code } = await listAvailableLibrary({
-        take,
-        skip,
-        mediaType,
-        query: q,
-        userId: req.user.id,
-      });
-
-      return res.status(200).json({
-        pageInfo: {
-          pages: Math.ceil(total / take) || 1,
-          pageSize: take,
-          results: total,
-          page: Math.floor(skip / take) + 1,
-        },
-        results,
-        ...(code ? { code } : {}),
-      });
-    } catch (e) {
-      return next({
-        status: 500,
-        message: e instanceof Error ? e.message : 'Failed to search library',
-      });
-    }
-  }
+  listAvailableRoute({
+    requireQuery: true,
+    failureMessage: 'Failed to search library',
+  })
 );
 
 libraryRoutes.get<unknown, LibraryBrowseResponse>(

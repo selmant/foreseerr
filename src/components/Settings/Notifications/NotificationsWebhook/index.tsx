@@ -432,7 +432,10 @@ const NotificationsWebhook = () => {
               <div className="form-input-area">
                 <div className="space-y-2">
                   {values.customHeaders.map(
-                    (header: { key: string; value: string }, index: number) => (
+                    (
+                      _header: { key: string; value: string },
+                      index: number
+                    ) => (
                       <div key={index} className="flex gap-2">
                         <div className="flex-1">
                           <div className="form-input-field">

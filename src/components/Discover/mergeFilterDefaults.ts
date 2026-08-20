@@ -3,23 +3,26 @@ import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults
 
 const SESSION_CLEARED_KEY = 'seerr-discover-defaults-cleared';
 
-export const areDiscoverDefaultsCleared = (): boolean => {
+const sessionClearedKey = (userId?: number): string =>
+  `${SESSION_CLEARED_KEY}:${userId ?? 'anonymous'}`;
+
+export const areDiscoverDefaultsCleared = (userId?: number): boolean => {
   if (typeof window === 'undefined') {
     return false;
   }
   try {
-    return window.sessionStorage.getItem(SESSION_CLEARED_KEY) === '1';
+    return window.sessionStorage.getItem(sessionClearedKey(userId)) === '1';
   } catch {
     return false;
   }
 };
 
-export const markDiscoverDefaultsCleared = (): void => {
+export const markDiscoverDefaultsCleared = (userId?: number): void => {
   if (typeof window === 'undefined') {
     return;
   }
   try {
-    window.sessionStorage.setItem(SESSION_CLEARED_KEY, '1');
+    window.sessionStorage.setItem(sessionClearedKey(userId), '1');
   } catch {
     // ignore quota / private mode
   }
@@ -37,14 +40,17 @@ const boolToQuery = (value: boolean): 'true' | 'false' =>
  * When the user clears Discover filters for the session, API requests must
  * tell the server not to re-apply saved defaults.
  */
-export const discoverDefaultsRequestExtras = (): Record<string, string> =>
-  areDiscoverDefaultsCleared() ? { ignoreDiscoverDefaults: 'true' } : {};
+export const discoverDefaultsRequestExtras = (
+  userId?: number
+): Record<string, string> =>
+  areDiscoverDefaultsCleared(userId) ? { ignoreDiscoverDefaults: 'true' } : {};
 
 export const mergeFilterDefaults = (
   filters: FilterOptions,
-  defaults: DiscoverFilterDefaults | null | undefined
+  defaults: DiscoverFilterDefaults | null | undefined,
+  userId?: number
 ): FilterOptions => {
-  if (!defaults || areDiscoverDefaultsCleared()) {
+  if (!defaults || areDiscoverDefaultsCleared(userId)) {
     return filters;
   }
 

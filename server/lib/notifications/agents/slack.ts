@@ -1,6 +1,7 @@
 import { IssueStatus, IssueTypeName } from '@server/constants/issue';
 import { getIntl } from '@server/i18n';
 import globalMessages from '@server/i18n/globalMessages';
+import { requestNotificationStatus } from '@server/lib/notifications/requestStatus';
 import type { NotificationAgentSlack } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -78,25 +79,7 @@ class SlackAgent
         text: `*${intl.formatMessage(globalMessages.requestedBy)}*\n${payload.request.requestedBy.displayName}`,
       });
 
-      let status = '';
-      switch (type) {
-        case Notification.MEDIA_PENDING:
-          status = intl.formatMessage(globalMessages.pendingApproval);
-          break;
-        case Notification.MEDIA_APPROVED:
-        case Notification.MEDIA_AUTO_APPROVED:
-          status = intl.formatMessage(globalMessages.processing);
-          break;
-        case Notification.MEDIA_AVAILABLE:
-          status = intl.formatMessage(globalMessages.available);
-          break;
-        case Notification.MEDIA_DECLINED:
-          status = intl.formatMessage(globalMessages.declined);
-          break;
-        case Notification.MEDIA_FAILED:
-          status = intl.formatMessage(globalMessages.failed);
-          break;
-      }
+      const status = requestNotificationStatus(type, payload, intl);
 
       if (status) {
         fields.push({

@@ -5,11 +5,14 @@ import {
   writeHttpStatus,
   type MediaActionAggregate,
   type MediaActionMediaType,
-  type MediaActionProviderId,
   type MediaActionProviderResult,
   type MediaItemRef,
 } from '@server/lib/mediaActions';
 import { anilistEpisodeActions } from '@server/lib/mediaActions/anilistEpisodes';
+import {
+  episodeWriteAggregate,
+  episodeWriteResult,
+} from '@server/lib/mediaActions/episodeWrite';
 import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
 import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
 import logger from '@server/logger';
@@ -139,62 +142,6 @@ function parseEpisodePath(
     tmdbId: tmdbId.data,
     seasonNumber: seasonNumber.data,
     ...(episodeNumber ? { episodeNumber: episodeNumber.data } : {}),
-  };
-}
-
-function episodeWriteResult(
-  provider: MediaActionProviderId,
-  watched: boolean,
-  write: Promise<boolean | 'skipped'>
-): Promise<MediaActionProviderResult | null> {
-  return write
-    .then((result) => {
-      if (result === 'skipped') {
-        return null;
-      }
-      return {
-        provider,
-        ok: result,
-        watched: result ? watched : !watched,
-        rating: null,
-        ratingStars: null,
-        ...(result ? {} : { error: `${provider} episode update was rejected` }),
-      };
-    })
-    .catch(
-      (error): MediaActionProviderResult => ({
-        provider,
-        ok: false,
-        watched: !watched,
-        rating: null,
-        ratingStars: null,
-        error: error instanceof Error ? error.message : 'unknown error',
-      })
-    );
-}
-
-function episodeWriteAggregate(
-  tmdbId: number,
-  watched: boolean,
-  providers: MediaActionProviderResult[]
-): MediaActionAggregate {
-  const writeSucceeded = providers.some((provider) => provider.ok);
-  return {
-    tmdbId,
-    mediaType: 'tv',
-    watched,
-    rating: null,
-    ratingStars: null,
-    providers,
-    actions: {
-      watched: writeSucceeded
-        ? { available: true }
-        : {
-            available: false,
-            reason: providers.length === 0 ? 'no_provider' : 'provider_error',
-          },
-      rating: { available: false, reason: 'unsupported' },
-    },
   };
 }
 
@@ -355,11 +302,9 @@ const setEpisodeWatched =
       );
       const outcome = classifyWriteOutcome(aggregate);
 
-      return res.status(writeHttpStatus(outcome)).json({
-        outcome,
-        watched: aggregate.watched,
-        providers: aggregate.providers,
-      });
+      return res
+        .status(writeHttpStatus(outcome))
+        .json(toResponse({ ...aggregate, outcome }, true));
     } catch (error) {
       return handleActionError(
         error,
@@ -420,11 +365,9 @@ const setJellyfinItemWatched =
         : [];
       const aggregate = episodeWriteAggregate(0, watched, providers);
       const outcome = classifyWriteOutcome(aggregate);
-      return res.status(writeHttpStatus(outcome)).json({
-        outcome,
-        watched,
-        providers,
-      });
+      return res
+        .status(writeHttpStatus(outcome))
+        .json(toResponse({ ...aggregate, outcome }, true));
     } catch (error) {
       return handleActionError(
         error,

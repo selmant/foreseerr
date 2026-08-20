@@ -546,184 +546,192 @@ export const hydrateForgottenLibraryTitles = (
   });
 };
 
-export const buildWatchNowResponse = async (
-  userId: number
-): Promise<LibraryWatchNowResponse> => {
-  const linked = await createUserJellyfinClient(userId);
-  if (!linked.ok) {
-    return { shelves: [], code: linked.code };
-  }
+interface WatchNowSources {
+  resume: JellyfinLibraryItemExtended[];
+  latest: JellyfinLibraryItemExtended[];
+  nextUp: JellyfinLibraryItemExtended[];
+  latestEpisodes: JellyfinLibraryItemExtended[];
+  failed: boolean;
+}
 
-  const shelves: LibraryShelf[] = [];
-  const settings = getSettings();
-  const tvLibraryIds = (settings.jellyfin.libraries ?? [])
-    .filter((lib) => lib.enabled && lib.type === 'show')
-    .map((lib) => lib.id)
-    .filter(Boolean);
+interface WatchNowShelfResult {
+  shelf?: LibraryShelf;
+  failed: boolean;
+}
 
-  const sourceResults = await Promise.allSettled([
-    linked.client.getResumeItems(16),
-    linked.client.getUserLatestItems(16),
-    linked.client.getNextUpEpisodes(48),
+const loadWatchNowSources = async (
+  client: JellyfinAPI,
+  tvLibraryIds: string[]
+): Promise<WatchNowSources> => {
+  const results = await Promise.allSettled([
+    client.getResumeItems(16),
+    client.getUserLatestItems(16),
+    client.getNextUpEpisodes(48),
     ...(tvLibraryIds.length
-      ? tvLibraryIds.map((id) => linked.client.getUserLatestEpisodes(32, id))
-      : [linked.client.getUserLatestEpisodes(32)]),
+      ? tvLibraryIds.map((id) => client.getUserLatestEpisodes(32, id))
+      : [client.getUserLatestEpisodes(32)]),
   ]);
-
-  const jellyfinSourcesFailed = sourceResults
-    .slice(0, 3)
-    .some((result) => result.status === 'rejected');
-  if (jellyfinSourcesFailed) {
+  const failed = results.some((result) => result.status === 'rejected');
+  if (failed) {
     logger.error('Failed to load some Jellyfin watch-now sources', {
       label: 'Library',
-      errorMessage: sourceResults
+      errorMessage: results
         .filter(
           (result): result is PromiseRejectedResult =>
             result.status === 'rejected'
         )
-        .map((result) => result.reason)
-        .map((reason) =>
-          reason instanceof Error ? reason.message : String(reason)
+        .map((result) =>
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason)
         )
         .join('; '),
     });
   }
 
-  const resume = settledValue(
-    sourceResults[0],
-    [] as JellyfinLibraryItemExtended[]
-  );
-  const latest = settledValue(
-    sourceResults[1],
-    [] as JellyfinLibraryItemExtended[]
-  );
-  const nextUp = settledValue(
-    sourceResults[2],
-    [] as JellyfinLibraryItemExtended[]
-  );
-  const latestEpisodeBatches = sourceResults
-    .slice(3)
-    .flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
-
   const latestEpisodeBySeries = new Map<string, JellyfinLibraryItemExtended>();
-  for (const batch of latestEpisodeBatches) {
-    for (const item of batch) {
+  results.slice(3).forEach((result) => {
+    if (result.status !== 'fulfilled') return;
+    result.value.forEach((item) => {
       const key = item.SeriesId ?? item.Id;
-      if (!latestEpisodeBySeries.has(key)) {
-        latestEpisodeBySeries.set(key, item);
-      }
-    }
-  }
-  const latestEpisodes = [...latestEpisodeBySeries.values()]
-    .sort((a, b) => {
-      const da = a.DateCreated ? Date.parse(a.DateCreated) : 0;
-      const db = b.DateCreated ? Date.parse(b.DateCreated) : 0;
-      return db - da;
-    })
-    .slice(0, 16);
+      if (!latestEpisodeBySeries.has(key)) latestEpisodeBySeries.set(key, item);
+    });
+  });
 
+  return {
+    resume: settledValue(results[0], []),
+    latest: settledValue(results[1], []),
+    nextUp: settledValue(results[2], []),
+    latestEpisodes: [...latestEpisodeBySeries.values()]
+      .sort((a, b) => {
+        const da = a.DateCreated ? Date.parse(a.DateCreated) : 0;
+        const db = b.DateCreated ? Date.parse(b.DateCreated) : 0;
+        return db - da;
+      })
+      .slice(0, 16),
+    failed,
+  };
+};
+
+const buildContinueWatchingShelf = async (
+  resume: JellyfinLibraryItemExtended[]
+): Promise<WatchNowShelfResult> => {
   try {
-    const continueItems = await mapJellyfinItemsToLibraryTitles(resume);
-    if (continueItems.length) {
-      shelves.push({
-        id: 'continue',
-        title: 'Continue Watching',
-        items: continueItems,
-      });
-    }
+    const items = await mapJellyfinItemsToLibraryTitles(resume);
+    return {
+      shelf: items.length
+        ? { id: 'continue', title: 'Continue Watching', items }
+        : undefined,
+      failed: false,
+    };
   } catch (e) {
     logger.error('Failed to map Continue Watching shelf', {
       label: 'Library',
       errorMessage: e instanceof Error ? e.message : String(e),
     });
+    return { failed: true };
   }
+};
 
+const buildRecentlyAddedShelf = async (
+  client: JellyfinAPI,
+  latest: JellyfinLibraryItemExtended[],
+  resume: JellyfinLibraryItemExtended[],
+  nextUp: JellyfinLibraryItemExtended[]
+): Promise<WatchNowShelfResult> => {
   try {
-    const recentItems = filterPlayableLibraryTitles(
+    const items = filterPlayableLibraryTitles(
       await enrichSeriesPlayTargets(
-        linked.client,
+        client,
         await mapJellyfinItemsToLibraryTitles(latest),
         { resume, nextUp, resolveMissing: true }
       )
     );
-    if (recentItems.length) {
-      shelves.push({
-        id: 'recent',
-        title: 'Recently Added',
-        items: recentItems,
-      });
-    }
+    return {
+      shelf: items.length
+        ? { id: 'recent', title: 'Recently Added', items }
+        : undefined,
+      failed: false,
+    };
   } catch (e) {
     logger.error('Failed to map Recently Added shelf', {
       label: 'Library',
       errorMessage: e instanceof Error ? e.message : String(e),
     });
+    return { failed: true };
   }
+};
 
+const buildRecentlyAddedEpisodesShelf = async (
+  client: JellyfinAPI,
+  latestEpisodes: JellyfinLibraryItemExtended[]
+): Promise<WatchNowShelfResult> => {
   try {
-    const recentEpisodeItems =
-      await mapJellyfinItemsToLibraryTitles(latestEpisodes);
-
-    const missingTmdb = recentEpisodeItems.filter(
+    const items = await mapJellyfinItemsToLibraryTitles(latestEpisodes);
+    const missingTmdb = items.filter(
       (item) => !item.tmdbId && item.jellyfinSeriesId
     );
-    if (missingTmdb.length > 0) {
+    if (missingTmdb.length) {
       const seriesIds = [
         ...new Set(missingTmdb.map((item) => item.jellyfinSeriesId!)),
       ];
       const seriesItems = await Promise.allSettled(
-        seriesIds.map((id) => linked.client.getItemData(id))
+        seriesIds.map((id) => client.getItemData(id))
       );
       const tmdbBySeriesId = new Map<string, number>();
-      for (let i = 0; i < seriesIds.length; i++) {
-        const result = seriesItems[i];
-        if (result.status === 'fulfilled' && result.value) {
-          const raw =
-            result.value.ProviderIds?.Tmdb ??
-            result.value.ProviderIds?.TheMovieDb;
-          if (raw) {
-            const n = Number(raw);
-            if (Number.isFinite(n) && n > 0) {
-              tmdbBySeriesId.set(seriesIds[i], n);
-            }
-          }
+      seriesItems.forEach((result, index) => {
+        if (result.status !== 'fulfilled' || !result.value) return;
+        const raw =
+          result.value.ProviderIds?.Tmdb ??
+          result.value.ProviderIds?.TheMovieDb;
+        const tmdbId = raw ? Number(raw) : NaN;
+        if (Number.isFinite(tmdbId) && tmdbId > 0) {
+          tmdbBySeriesId.set(seriesIds[index], tmdbId);
         }
-      }
-      for (const item of recentEpisodeItems) {
+      });
+      items.forEach((item) => {
         if (!item.tmdbId && item.jellyfinSeriesId) {
-          const resolved = tmdbBySeriesId.get(item.jellyfinSeriesId);
-          if (resolved) {
-            item.tmdbId = resolved;
-          }
+          const tmdbId = tmdbBySeriesId.get(item.jellyfinSeriesId);
+          if (tmdbId) item.tmdbId = tmdbId;
         }
-      }
-    }
-
-    if (recentEpisodeItems.length) {
-      shelves.push({
-        id: 'recent-episodes',
-        title: 'Recently Added Episodes',
-        items: recentEpisodeItems,
       });
     }
+    return {
+      shelf: items.length
+        ? {
+            id: 'recent-episodes',
+            title: 'Recently Added Episodes',
+            items,
+          }
+        : undefined,
+      failed: false,
+    };
   } catch (e) {
     logger.error('Failed to map Recently Added Episodes shelf', {
       label: 'Library',
       errorMessage: e instanceof Error ? e.message : String(e),
     });
+    return { failed: true };
   }
+};
 
+const buildForgottenShelf = async (
+  userId: number,
+  client: JellyfinAPI,
+  resume: JellyfinLibraryItemExtended[],
+  nextUp: JellyfinLibraryItemExtended[]
+): Promise<WatchNowShelfResult> => {
   try {
     const forgottenBase = filterPlayableLibraryTitles(
       await enrichSeriesPlayTargets(
-        linked.client,
+        client,
         await buildForgottenRequestsShelf(userId, 16),
         { resume, nextUp, resolveMissing: true }
       )
     );
     let forgottenItems: JellyfinLibraryItemExtended[] = [];
     try {
-      forgottenItems = await linked.client.getItemsData(
+      forgottenItems = await client.getItemsData(
         forgottenBase.map((title) => title.jellyfinItemId)
       );
     } catch (e) {
@@ -732,25 +740,54 @@ export const buildWatchNowResponse = async (
         errorMessage: e instanceof Error ? e.message : String(e),
       });
     }
-    const forgotten = hydrateForgottenLibraryTitles(
-      forgottenBase,
-      forgottenItems
-    );
-    if (forgotten.length) {
-      shelves.push({
-        id: 'forgotten',
-        title: 'Ready to Watch',
-        items: forgotten,
-      });
-    }
+    const items = hydrateForgottenLibraryTitles(forgottenBase, forgottenItems);
+    return {
+      shelf: items.length
+        ? { id: 'forgotten', title: 'Ready to Watch', items }
+        : undefined,
+      failed: false,
+    };
   } catch (e) {
     logger.error('Failed to load Ready to Watch shelf', {
       label: 'Library',
       errorMessage: e instanceof Error ? e.message : String(e),
     });
+    return { failed: true };
+  }
+};
+
+export const buildWatchNowResponse = async (
+  userId: number
+): Promise<LibraryWatchNowResponse> => {
+  const linked = await createUserJellyfinClient(userId);
+  if (!linked.ok) {
+    return { shelves: [], code: linked.code };
   }
 
-  if (!shelves.length && jellyfinSourcesFailed) {
+  const settings = getSettings();
+  const tvLibraryIds = (settings.jellyfin.libraries ?? [])
+    .filter((lib) => lib.enabled && lib.type === 'show')
+    .map((lib) => lib.id)
+    .filter(Boolean);
+
+  const sources = await loadWatchNowSources(linked.client, tvLibraryIds);
+  const { resume, latest, nextUp, latestEpisodes } = sources;
+  const shelves: LibraryShelf[] = [];
+
+  const shelfResults = await Promise.all([
+    buildContinueWatchingShelf(resume),
+    buildRecentlyAddedShelf(linked.client, latest, resume, nextUp),
+    buildRecentlyAddedEpisodesShelf(linked.client, latestEpisodes),
+    buildForgottenShelf(userId, linked.client, resume, nextUp),
+  ]);
+  shelves.push(
+    ...shelfResults.flatMap((result) => (result.shelf ? [result.shelf] : []))
+  );
+
+  if (
+    !shelves.length &&
+    (sources.failed || shelfResults.some((r) => r.failed))
+  ) {
     return { shelves: [], code: 'server_unreachable' };
   }
 

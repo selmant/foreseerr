@@ -1,11 +1,11 @@
-import type { AllSettings } from '@server/lib/settings';
+import { asAllSettings, type MigrationSettings } from './types';
 
-const migrateRegionSetting = (settings: any): AllSettings => {
+const migrateRegionSetting = (settings: MigrationSettings) => {
   if (
     settings.main.discoverRegion !== undefined &&
     settings.main.streamingRegion !== undefined
   ) {
-    return settings;
+    return asAllSettings(settings);
   }
 
   const oldRegion = settings.main.region;
@@ -18,7 +18,7 @@ const migrateRegionSetting = (settings: any): AllSettings => {
   }
   delete settings.main.region;
 
-  return settings;
+  return asAllSettings(settings);
 };
 
 export default migrateRegionSetting;

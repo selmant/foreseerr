@@ -34,7 +34,6 @@ const messages = defineMessages('components.RequestButton', {
   requestall4k: 'Request All in 4K',
   selectseasons: 'Select Seasons…',
   selectseasons4k: 'Select Seasons in 4K…',
-  // Reserved for a future single-episode request flow
   requestepisodes: 'Request Episodes…',
   requestepisodes4k: 'Request Episodes in 4K…',
   season1Success: 'Season 1 requested successfully!',

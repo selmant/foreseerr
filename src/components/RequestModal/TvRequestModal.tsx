@@ -356,7 +356,7 @@ const TvRequestModal = ({
     }
   };
 
-  const getAllSeasons = (): number[] => {
+  const getAllSeasons = useCallback((): number[] => {
     let allSeasons = (data?.seasons ?? []).filter(
       (season) => season.episodeCount !== 0
     );
@@ -364,9 +364,9 @@ const TvRequestModal = ({
       allSeasons = allSeasons.filter((season) => season.seasonNumber > 0);
     }
     return allSeasons.map((season) => season.seasonNumber);
-  };
+  }, [data?.seasons, settings.currentSettings.enableSpecialEpisodes]);
 
-  const getAllRequestedSeasons = (): number[] => {
+  const getAllRequestedSeasons = useCallback((): number[] => {
     const activeRequests = (data?.mediaInfo?.requests ?? []).filter(
       (request) =>
         request.is4k === is4k &&
@@ -400,7 +400,12 @@ const TvRequestModal = ({
       .map((season) => season.seasonNumber);
 
     return [...requestedSeasons, ...availableSeasons];
-  };
+  }, [
+    data?.mediaInfo?.requests,
+    data?.mediaInfo?.seasons,
+    editingSeasons,
+    is4k,
+  ]);
 
   useEffect(() => {
     if (initialSeasonSelection !== 'all') {
@@ -417,7 +422,14 @@ const TvRequestModal = ({
       getAllSeasons().filter((season) => !requested.includes(season))
     );
     setDidApplyInitialSelection(true);
-  }, [data, didApplyInitialSelection, editRequest, initialSeasonSelection]);
+  }, [
+    data,
+    didApplyInitialSelection,
+    editRequest,
+    getAllRequestedSeasons,
+    getAllSeasons,
+    initialSeasonSelection,
+  ]);
 
   const isSelectedSeason = (seasonNumber: number): boolean =>
     selectedSeasons.includes(seasonNumber);

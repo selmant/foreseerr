@@ -6,7 +6,6 @@ import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
 import {
   Column,
   Entity,
-  In,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -15,8 +14,6 @@ import {
 class DiscoverSlider {
   public static async bootstrapSliders(): Promise<void> {
     const sliderRepository = getRepository(DiscoverSlider);
-    const builtInTypes = defaultSliders.map((slider) => slider.type);
-
     for (const slider of defaultSliders) {
       const existingBuiltIn = await sliderRepository.findOne({
         where: {
@@ -34,21 +31,9 @@ class DiscoverSlider {
       }
     }
 
-    const duplicateCustomSliders = await sliderRepository.find({
-      where: {
-        type: In(builtInTypes),
-        isBuiltIn: false,
-      },
-    });
-
-    for (const duplicate of duplicateCustomSliders) {
-      logger.info('Removing duplicate custom discovery slider', {
-        label: 'Discover Slider',
-        sliderId: duplicate.id,
-        type: duplicate.type,
-      });
-      await sliderRepository.delete(duplicate.id);
-    }
+    // Custom rows are administrator configuration, even when their type
+    // currently matches a built-in slider. Keep them intact so adding a new
+    // built-in type cannot delete a user's slider during startup.
   }
 
   @PrimaryGeneratedColumn()

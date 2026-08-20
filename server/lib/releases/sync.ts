@@ -144,7 +144,7 @@ class ReleaseCalendarSync {
         apiKey: server.apiKey,
         url: RadarrAPI.buildUrl(server, '/api/v3'),
       });
-      return (await api.getCalendar(start, end)).flatMap((movie) =>
+      return (await api.getCalendar(start, end, true)).flatMap((movie) =>
         normalizeRadarrMovie(movie, server)
       );
     }
@@ -153,7 +153,7 @@ class ReleaseCalendarSync {
       apiKey: server.apiKey,
       url: SonarrAPI.buildUrl(server, '/api/v3'),
     });
-    return (await api.getCalendar(start, end)).flatMap((episode) =>
+    return (await api.getCalendar(start, end, true)).flatMap((episode) =>
       normalizeSonarrEpisode(episode, server)
     );
   }

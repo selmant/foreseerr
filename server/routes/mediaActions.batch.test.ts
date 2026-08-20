@@ -5,18 +5,13 @@ import {
 import { anilistEpisodeActions } from '@server/lib/mediaActions/anilistEpisodes';
 import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
 import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
-import { getSettings } from '@server/lib/settings';
-import { checkUser } from '@server/middleware/auth';
-import authRoutes from '@server/routes/auth';
-import mediaActionsRoutes, {
-  STATUS_BATCH_MAX_ITEMS,
-} from '@server/routes/mediaActions';
+import { STATUS_BATCH_MAX_ITEMS } from '@server/routes/mediaActions';
 import { setupTestDb } from '@server/test/db';
-import cookieParser from 'cookie-parser';
+import {
+  createMediaActionsTestApp,
+  loginAsAdmin,
+} from '@server/test/mediaActionsTestUtils';
 import type { Express } from 'express';
-import express from 'express';
-import * as OpenApiValidator from 'express-openapi-validator';
-import session from 'express-session';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { before, beforeEach, describe, it, mock } from 'node:test';
@@ -27,40 +22,7 @@ const API_SPEC_PATH = join(__dirname, '../../seerr-api.yml');
 let app: Express;
 
 function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use(cookieParser());
-  app.use(
-    session({
-      secret: 'test-secret',
-      resave: false,
-      saveUninitialized: false,
-    })
-  );
-  app.use(
-    OpenApiValidator.middleware({
-      apiSpec: API_SPEC_PATH,
-      validateRequests: true,
-    })
-  );
-  app.use(checkUser);
-  app.use('/api/v1/auth', authRoutes);
-  app.use('/api/v1/media-actions', mediaActionsRoutes);
-  app.use(
-    (
-      err: { status?: number; message?: string; errors?: unknown },
-      _req: express.Request,
-      res: express.Response,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _next: express.NextFunction
-    ) => {
-      res.status(err.status || 500).json({
-        message: err.message,
-        errors: err.errors,
-      });
-    }
-  );
-  return app;
+  return createMediaActionsTestApp(API_SPEC_PATH);
 }
 
 const getStatusesMock = mock.method(
@@ -134,26 +96,13 @@ before(() => {
 
 setupTestDb();
 
-async function loginAsAdmin() {
-  const agent = request.agent(app);
-  const settings = getSettings();
-  settings.main.localLogin = true;
-  settings.main.applicationUrl = 'http://localhost:5055';
-
-  const res = await agent
-    .post('/api/v1/auth/local')
-    .send({ email: 'admin@seerr.dev', password: 'test1234' });
-  assert.equal(res.status, 200, JSON.stringify(res.body));
-  return agent;
-}
-
 describe('media-actions status-batch bounds', () => {
   beforeEach(() => {
     getStatusesMock.mock.resetCalls();
   });
 
   it('rejects batches larger than the configured cap', async () => {
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
     const items = Array.from(
       { length: STATUS_BATCH_MAX_ITEMS + 1 },
       (_, i) => ({
@@ -172,7 +121,7 @@ describe('media-actions status-batch bounds', () => {
   });
 
   it('deduplicates identical media references before provider work', async () => {
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
     const res = await agent.post('/api/v1/media-actions/status-batch').send({
       items: [
         { mediaType: 'movie', tmdbId: 42 },
@@ -227,7 +176,7 @@ describe('episode media actions', () => {
   });
 
   it('returns one batched watched-state payload for a season', async () => {
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
     const res = await agent.get(
       '/api/v1/media-actions/tv/42/seasons/1/episodes/status'
     );
@@ -245,7 +194,7 @@ describe('episode media actions', () => {
   });
 
   it('marks an episode watched using validated show and episode coordinates', async () => {
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
     const res = await agent
       .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
       .send({});
@@ -267,7 +216,7 @@ describe('episode media actions', () => {
   });
 
   it('rejects a watched POST with no JSON content type', async () => {
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
     const res = await agent.post(
       '/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched'
     );
@@ -281,7 +230,7 @@ describe('episode media actions', () => {
     traktEpisodeAvailableMock.mock.mockImplementation(async () => false);
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
     jellyfinSetEpisodeWatchedMock.mock.mockImplementation(async () => true);
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent
       .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
@@ -305,7 +254,7 @@ describe('episode media actions', () => {
     jellyfinSetEpisodeWatchedMock.mock.mockImplementation(
       async () => 'skipped' as const
     );
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent
       .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
@@ -324,7 +273,7 @@ describe('episode media actions', () => {
   it('writes AniList episode progress when the show is mapped', async () => {
     anilistEpisodeAvailableMock.mock.mockImplementation(async () => true);
     anilistSetEpisodeWatchedMock.mock.mockImplementation(async () => true);
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent
       .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
@@ -349,7 +298,7 @@ describe('episode media actions', () => {
     anilistSetEpisodeWatchedMock.mock.mockImplementation(
       async () => 'skipped' as const
     );
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent
       .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
@@ -369,7 +318,7 @@ describe('episode media actions', () => {
     traktEpisodeAvailableMock.mock.mockImplementation(async () => false);
     jellyfinEpisodeAvailableMock.mock.mockImplementation(async () => true);
     jellyfinSetItemWatchedMock.mock.mockImplementation(async () => true);
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent
       .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
@@ -390,7 +339,7 @@ describe('episode media actions', () => {
     setEpisodeWatchedMock.mock.mockImplementation(async () => {
       throw new Error('Trakt unavailable');
     });
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
 
     const res = await agent
       .post('/api/v1/media-actions/tv/42/seasons/1/episodes/2/watched')
@@ -405,7 +354,7 @@ describe('episode media actions', () => {
   });
 
   it('rejects malformed and out-of-range episode identifiers', async () => {
-    const agent = await loginAsAdmin();
+    const agent = await loginAsAdmin(app);
     const pathResult = await agent.get(
       '/api/v1/media-actions/tv/not-a-number/seasons/1/episodes/status'
     );

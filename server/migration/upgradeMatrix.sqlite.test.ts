@@ -75,6 +75,15 @@ describe('Upgrade matrix: upstream Seerr baseline -> current schema (SQLite)', (
         'unique partial index on traktUserId should exist after upgrade'
       );
 
+      const ongoingEpisodeRequestIndex = await upgradedDataSource.query(
+        `SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'IDX_media_request_active_ongoing_episode'`
+      );
+      assert.equal(
+        ongoingEpisodeRequestIndex.length,
+        1,
+        'unique partial index on active ongoing episode requests should exist after upgrade'
+      );
+
       const mediaRequestForeignKeys: { table: string }[] =
         await upgradedDataSource.query(
           `PRAGMA foreign_key_list('media_request')`

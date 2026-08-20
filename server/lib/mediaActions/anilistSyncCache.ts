@@ -1,6 +1,7 @@
 import type AnilistAPI from '@server/api/anilist';
 import type { AnilistMediaListStatus } from '@server/api/anilist/interfaces';
 import anilistIdMapping from '@server/lib/anilist/mapping';
+import { UserSnapshotCache } from './userSnapshotCache';
 
 const DEFAULT_TTL_SECONDS = 7200;
 
@@ -38,33 +39,11 @@ interface PendingPatch {
   update: AnilistSyncItemPatch;
 }
 
-const cache = new Map<string, AnilistUserSnapshot>();
-const inflight = new Map<string, Promise<AnilistUserSnapshot>>();
+const snapshots = new UserSnapshotCache<AnilistUserSnapshot>();
 const pendingPatches = new Map<string, PendingPatch[]>();
-let globalCacheGeneration = 0;
-const userCacheGenerations = new Map<string, number>();
 
 function cacheKey(userId: number): string {
-  return String(userId);
-}
-
-function bumpUserCacheGeneration(userId: number): number {
-  const key = cacheKey(userId);
-  const next = (userCacheGenerations.get(key) ?? 0) + 1;
-  userCacheGenerations.set(key, next);
-  return next;
-}
-
-function isCacheGenerationStale(
-  userId: number,
-  userGenerationAtStart: number,
-  globalGenerationAtStart: number
-): boolean {
-  const key = cacheKey(userId);
-  return (
-    globalCacheGeneration !== globalGenerationAtStart ||
-    (userCacheGenerations.get(key) ?? 0) !== userGenerationAtStart
-  );
+  return snapshots.key(userId);
 }
 
 function emptySnapshot(): AnilistUserSnapshot {
@@ -72,17 +51,13 @@ function emptySnapshot(): AnilistUserSnapshot {
 }
 
 export function invalidateUserAnilistSyncCache(userId: number): void {
-  bumpUserCacheGeneration(userId);
+  snapshots.invalidateUser(userId);
   const key = cacheKey(userId);
-  cache.delete(key);
-  inflight.delete(key);
   pendingPatches.delete(key);
 }
 
 export function clearAnilistSyncCache(): void {
-  globalCacheGeneration += 1;
-  cache.clear();
-  inflight.clear();
+  snapshots.clear();
   pendingPatches.clear();
 }
 
@@ -90,13 +65,13 @@ export function seedUserAnilistSyncCache(
   userId: number,
   snapshot: AnilistUserSnapshot
 ): void {
-  cache.set(cacheKey(userId), snapshot);
+  snapshots.set(userId, snapshot);
 }
 
 export function getUserAnilistSnapshot(
   userId: number
 ): AnilistUserSnapshot | undefined {
-  return cache.get(cacheKey(userId));
+  return snapshots.get(userId);
 }
 
 function isExpired(snapshot: AnilistUserSnapshot, ttlSeconds: number): boolean {
@@ -192,15 +167,90 @@ function applyPendingPatches(
   snapshot: AnilistUserSnapshot,
   userId: number
 ): AnilistUserSnapshot {
-  const patches = pendingPatches.get(cacheKey(userId)) ?? [];
+  const key = cacheKey(userId);
+  const patches = pendingPatches.get(key) ?? [];
   if (patches.length === 0) {
     return snapshot;
   }
+
+  const remaining: PendingPatch[] = [];
   let entries = snapshot.entries;
   for (const patch of patches) {
-    entries = applyPatchToEntries(entries, patch);
+    if (!patchIsReflected(entries, patch)) {
+      remaining.push(patch);
+      entries = applyPatchToEntries(entries, patch);
+    }
+  }
+  if (remaining.length) {
+    pendingPatches.set(key, remaining);
+  } else {
+    pendingPatches.delete(key);
   }
   return { ...snapshot, entries };
+}
+
+function patchIsReflected(
+  entries: AnilistSyncEntry[],
+  patch: PendingPatch
+): boolean {
+  const entry = entries.find((item) =>
+    patch.update.anilistId != null
+      ? item.anilistId === patch.update.anilistId
+      : entryKey(item.mediaType, item.tmdbId) ===
+        entryKey(patch.mediaType, patch.tmdbId)
+  );
+  const update = patch.update;
+  if (
+    update.watched !== undefined &&
+    isAnilistWatchedStatus(entry?.status) !== update.watched
+  ) {
+    return false;
+  }
+  if (
+    update.rating !== undefined &&
+    (entry?.rating ?? null) !== update.rating
+  ) {
+    return false;
+  }
+  if (
+    update.listEntryId !== undefined &&
+    (entry?.listEntryId ?? null) !== update.listEntryId
+  ) {
+    return false;
+  }
+  if (
+    update.status !== undefined &&
+    (entry?.status ?? null) !== update.status
+  ) {
+    return false;
+  }
+  if (
+    update.progress !== undefined &&
+    (entry?.progress ?? null) !== update.progress
+  ) {
+    return false;
+  }
+  if (
+    update.episodeCount !== undefined &&
+    (entry?.episodeCount ?? null) !== update.episodeCount
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function coalescePending(patches: PendingPatch[]): PendingPatch[] {
+  const byKey = new Map<string, PendingPatch>();
+  for (const patch of patches) {
+    const key = entryKey(patch.mediaType, patch.tmdbId);
+    const previous = byKey.get(key);
+    byKey.set(key, {
+      mediaType: patch.mediaType,
+      tmdbId: patch.tmdbId,
+      update: { ...previous?.update, ...patch.update },
+    });
+  }
+  return [...byKey.values()];
 }
 
 export function patchUserAnilistSyncItem(
@@ -211,10 +261,13 @@ export function patchUserAnilistSyncItem(
 ): void {
   const key = cacheKey(userId);
   const existing = pendingPatches.get(key) ?? [];
-  pendingPatches.set(key, [...existing, { mediaType, tmdbId, update }]);
-  const snapshot = cache.get(key);
+  pendingPatches.set(
+    key,
+    coalescePending([...existing, { mediaType, tmdbId, update }])
+  );
+  const snapshot = snapshots.get(userId);
   if (snapshot) {
-    cache.set(key, applyPendingPatches(snapshot, userId));
+    snapshots.set(userId, applyPendingPatches(snapshot, userId));
   }
 }
 
@@ -247,7 +300,6 @@ export function lookupAnilistItemStatus(
 
 async function fetchSnapshot(
   client: AnilistAPI,
-  userId: number,
   anilistUserId: number
 ): Promise<AnilistUserSnapshot> {
   await anilistIdMapping.sync();
@@ -296,40 +348,34 @@ export async function warmUserAnilistSyncCache(
   anilistUserId: number,
   ttlSeconds = DEFAULT_TTL_SECONDS
 ): Promise<AnilistUserSnapshot> {
-  const key = cacheKey(userId);
-  const cached = cache.get(key);
+  const cached = snapshots.get(userId);
   if (cached && !isExpired(cached, ttlSeconds)) {
-    return applyPendingPatches(cached, userId);
+    const snapshot = applyPendingPatches(cached, userId);
+    snapshots.set(userId, snapshot);
+    return snapshot;
   }
 
-  const existingInflight = inflight.get(key);
+  const existingInflight = snapshots.getInflight(userId);
   if (existingInflight) {
     const snapshot = await existingInflight;
     return applyPendingPatches(snapshot, userId);
   }
 
-  const userGenerationAtStart = userCacheGenerations.get(key) ?? 0;
-  const globalGenerationAtStart = globalCacheGeneration;
-  const pending = fetchSnapshot(client, userId, anilistUserId)
+  const generationAtStart = snapshots.generation(userId);
+  const pending = fetchSnapshot(client, anilistUserId)
     .then((snapshot) => {
-      if (
-        isCacheGenerationStale(
-          userId,
-          userGenerationAtStart,
-          globalGenerationAtStart
-        )
-      ) {
-        return cache.get(key) ?? emptySnapshot();
+      if (snapshots.isStale(userId, generationAtStart)) {
+        return snapshots.get(userId) ?? emptySnapshot();
       }
-      cache.set(key, snapshot);
-      pendingPatches.delete(key);
-      return snapshot;
+      const patched = applyPendingPatches(snapshot, userId);
+      snapshots.set(userId, patched);
+      return patched;
     })
     .finally(() => {
-      inflight.delete(key);
+      snapshots.clearInflight(userId);
     });
 
-  inflight.set(key, pending);
+  snapshots.setInflight(userId, pending);
   const snapshot = await pending;
   return applyPendingPatches(snapshot, userId);
 }

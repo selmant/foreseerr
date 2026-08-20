@@ -2,7 +2,10 @@ import Button from '@app/components/Common/Button';
 import MultiRangeSlider from '@app/components/Common/MultiRangeSlider';
 import SlideOver from '@app/components/Common/SlideOver';
 import type { FilterOptions } from '@app/components/Discover/constants';
-import { countActiveFilters } from '@app/components/Discover/constants';
+import {
+  countActiveFilters,
+  discoverRangeFilters,
+} from '@app/components/Discover/constants';
 import {
   areDiscoverDefaultsCleared,
   markDiscoverDefaultsCleared,
@@ -134,13 +137,14 @@ const FilterSlideover = ({
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const supports = (capability: FilterCapability) =>
     capabilities.has(capability);
+  const hasExternalRatingFilters = discoverRangeFilters.length > 0;
 
   const dateGte =
     type === 'movie' ? 'primaryReleaseDateGte' : 'firstAirDateGte';
   const dateLte =
     type === 'movie' ? 'primaryReleaseDateLte' : 'firstAirDateLte';
 
-  const defaultsActive = !areDiscoverDefaultsCleared();
+  const defaultsActive = !areDiscoverDefaultsCleared(user?.id);
   const ignoreWatched =
     currentFilters.ignoreWatched === 'true' ||
     (currentFilters.ignoreWatched !== 'false' &&
@@ -505,16 +509,18 @@ const FilterSlideover = ({
             })}
           />
         </div>
-        <div>
-          <div className="mb-1 text-lg font-semibold">
-            {intl.formatMessage(messages.externalRatings)}
+        {hasExternalRatingFilters && (
+          <div>
+            <div className="mb-1 text-lg font-semibold">
+              {intl.formatMessage(messages.externalRatings)}
+            </div>
+            {currentSettings.mdblistConfigured && (
+              <p className="mb-3 text-sm text-gray-400">
+                {intl.formatMessage(messages.externalRatingsTip)}
+              </p>
+            )}
           </div>
-          {currentSettings.mdblistConfigured && (
-            <p className="mb-3 text-sm text-gray-400">
-              {intl.formatMessage(messages.externalRatingsTip)}
-            </p>
-          )}
-        </div>
+        )}
         <span className="text-lg font-semibold">
           {intl.formatMessage(messages.imdbScore)}
         </span>
@@ -799,7 +805,7 @@ const FilterSlideover = ({
             className="w-full"
             disabled={activeCount === 0}
             onClick={() => {
-              markDiscoverDefaultsCleared();
+              markDiscoverDefaultsCleared(user?.id);
               const copyCurrent = Object.assign({}, currentFilters);
               (
                 Object.keys(copyCurrent) as (keyof typeof currentFilters)[]

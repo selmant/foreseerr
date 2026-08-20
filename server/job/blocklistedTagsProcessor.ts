@@ -8,13 +8,13 @@ import { MediaType } from '@server/constants/media';
 import dataSource from '@server/datasource';
 import { Blocklist } from '@server/entity/Blocklist';
 import Media from '@server/entity/Media';
+import { createTmdbWithBlocklistSettings } from '@server/lib/discover/tmdb';
 import type {
   RunnableScanner,
   StatusBase,
 } from '@server/lib/scanners/baseScanner';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
-import { createTmdbWithBlocklistSettings } from '@server/routes/discover';
 import type { EntityManager } from 'typeorm';
 
 const TMDB_API_DELAY_MS = 250;

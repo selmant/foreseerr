@@ -2,16 +2,15 @@ import CachedImage from '@app/components/Common/CachedImage';
 import { SmallLoadingSpinner } from '@app/components/Common/LoadingSpinner';
 import Tooltip from '@app/components/Common/Tooltip';
 import RegionSelector from '@app/components/RegionSelector';
-import { encodeURIExtraParams } from '@app/hooks/useDiscover';
+import {
+  loadCompanyOptions,
+  loadKeywordOptions,
+} from '@app/components/Selector/tmdbSearchOptions';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowDownIcon, ArrowUpIcon } from '@heroicons/react/20/solid';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
-import type {
-  TmdbCompanySearchResponse,
-  TmdbGenre,
-  TmdbKeywordSearchResponse,
-} from '@server/api/themoviedb/interfaces';
+import type { TmdbGenre } from '@server/api/themoviedb/interfaces';
 import type { UserResultsResponse } from '@server/interfaces/api/userInterfaces';
 import type {
   Keyword,
@@ -63,6 +62,41 @@ type BaseSelectorSingleProps = {
   onChange: (value: SingleValue<SingleVal> | null) => void;
 };
 
+function handleSelectorChange(
+  isMulti: true,
+  onChange: (value: MultiValue<SingleVal> | null) => void,
+  value: MultiValue<SingleVal> | SingleValue<SingleVal> | null
+): void;
+function handleSelectorChange(
+  isMulti: false | undefined,
+  onChange: (value: SingleValue<SingleVal> | null) => void,
+  value: MultiValue<SingleVal> | SingleValue<SingleVal> | null
+): void;
+function handleSelectorChange(
+  isMulti: boolean | undefined,
+  onChange:
+    | ((value: MultiValue<SingleVal> | null) => void)
+    | ((value: SingleValue<SingleVal> | null) => void),
+  value: MultiValue<SingleVal> | SingleValue<SingleVal> | null
+): void;
+function handleSelectorChange(
+  isMulti: boolean | undefined,
+  onChange:
+    | ((value: MultiValue<SingleVal> | null) => void)
+    | ((value: SingleValue<SingleVal> | null) => void),
+  value: MultiValue<SingleVal> | SingleValue<SingleVal> | null
+): void {
+  if (isMulti) {
+    (onChange as (value: MultiValue<SingleVal> | null) => void)(
+      Array.isArray(value) ? value : value ? [value] : null
+    );
+  } else {
+    (onChange as (value: SingleValue<SingleVal> | null) => void)(
+      Array.isArray(value) ? (value[0] ?? null) : value
+    );
+  }
+}
+
 export const CompanySelector = ({
   defaultValue,
   isMulti,
@@ -97,26 +131,6 @@ export const CompanySelector = ({
     loadDefaultCompany();
   }, [defaultValue]);
 
-  const loadCompanyOptions = async (inputValue: string) => {
-    if (inputValue === '') {
-      return [];
-    }
-
-    const results = await axios.get<TmdbCompanySearchResponse>(
-      '/api/v1/search/company',
-      {
-        params: {
-          query: encodeURIExtraParams(inputValue),
-        },
-      }
-    );
-
-    return results.data.results.map((result) => ({
-      label: result.name,
-      value: result.id,
-    }));
-  };
-
   return (
     <AsyncSelect
       key={`company-selector-${defaultDataValue}`}
@@ -136,8 +150,7 @@ export const CompanySelector = ({
       loadOptions={loadCompanyOptions}
       placeholder={intl.formatMessage(messages.searchStudios)}
       onChange={(value) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onChange(value as any);
+        handleSelectorChange(isMulti === true, onChange, value);
       }}
     />
   );
@@ -225,8 +238,7 @@ export const GenreSelector = ({
       loadOptions={loadGenreOptions}
       placeholder={intl.formatMessage(messages.searchGenres)}
       onChange={(value) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onChange(value as any);
+        handleSelectorChange(isMulti === true, onChange, value);
       }}
     />
   );
@@ -296,8 +308,7 @@ export const StatusSelector = ({
       loadOptions={loadStatusOptions}
       placeholder={intl.formatMessage(messages.searchStatus)}
       onChange={(value) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onChange(value as any);
+        handleSelectorChange(isMulti === true, onChange, value);
       }}
     />
   );
@@ -345,22 +356,6 @@ export const KeywordSelector = ({
     loadDefaultKeywords();
   }, [defaultValue, isMulti]);
 
-  const loadKeywordOptions = async (inputValue: string) => {
-    const results = await axios.get<TmdbKeywordSearchResponse>(
-      '/api/v1/search/keyword',
-      {
-        params: {
-          query: encodeURIExtraParams(inputValue),
-        },
-      }
-    );
-
-    return results.data.results.map((result) => ({
-      label: result.name,
-      value: result.id,
-    }));
-  };
-
   return (
     <AsyncSelect
       inputId="data"
@@ -378,8 +373,7 @@ export const KeywordSelector = ({
       placeholder={intl.formatMessage(messages.searchKeywords)}
       onChange={(value) => {
         setSelectedValue(value);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onChange(value as any);
+        handleSelectorChange(isMulti === true, onChange, value);
       }}
     />
   );
@@ -642,8 +636,7 @@ export const UserSelector = ({
       loadOptions={loadUserOptions}
       placeholder={intl.formatMessage(messages.searchUsers)}
       onChange={(value) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onChange(value as any);
+        handleSelectorChange(isMulti === true, onChange, value);
       }}
     />
   );

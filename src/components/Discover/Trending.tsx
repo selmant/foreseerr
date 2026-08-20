@@ -16,6 +16,7 @@ import {
 import useDiscover from '@app/hooks/useDiscover';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
+import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -44,13 +45,15 @@ type TimeWindow = 'day' | 'week';
 const Trending = () => {
   const intl = useIntl();
   const router = useRouter();
+  const { user } = useUser();
   const [currentMediaType, setCurrentMediaType] = useState<MediaType>('all');
   const [currentTimeWindow, setCurrentTimeWindow] = useState<TimeWindow>('day');
   const [showFilters, setShowFilters] = useState(false);
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const preparedFilters = mergeFilterDefaults(
     prepareFilterValues(router.query),
-    discoverDefaults
+    discoverDefaults,
+    user?.id
   );
   const filterType: 'movie' | 'tv' = currentMediaType === 'tv' ? 'tv' : 'movie';
   const genreType: 'movie' | 'tv' | 'all' =
@@ -79,7 +82,7 @@ const Trending = () => {
       mediaType: currentMediaType,
       timeWindow: currentTimeWindow,
       ...preparedFilters,
-      ...discoverDefaultsRequestExtras(),
+      ...discoverDefaultsRequestExtras(user?.id),
     }
   );
 

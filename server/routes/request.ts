@@ -1,11 +1,12 @@
 import RadarrAPI from '@server/api/servarr/radarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
+import TheMovieDb from '@server/api/themoviedb';
 import {
   MediaRequestStatus,
   MediaStatus,
   MediaType,
 } from '@server/constants/media';
-import { getRepository } from '@server/datasource';
+import dataSource, { getRepository } from '@server/datasource';
 import EpisodeRequest from '@server/entity/EpisodeRequest';
 import Media from '@server/entity/Media';
 import {
@@ -17,6 +18,7 @@ import {
   NoSeasonsAvailableError,
   QuotaRestrictedError,
   RequestPermissionError,
+  isOngoingEpisodeRequestConflict,
 } from '@server/entity/MediaRequest';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import { User } from '@server/entity/User';
@@ -25,7 +27,9 @@ import type {
   RequestResultsResponse,
 } from '@server/interfaces/api/requestInterfaces';
 import {
+  episodeRequestsAvailable,
   getResolvedTvdbEpisodeSelection,
+  ongoingEpisodeRequestLockKey,
   parseEpisodeSelection,
 } from '@server/lib/episodeRequests';
 import { Permission } from '@server/lib/permissions';
@@ -485,9 +489,21 @@ requestRoutes.put<{ requestId: string }>(
         return next({ status: 404, message: 'Request not found.' });
       }
 
+      const mediaType = (req.body.mediaType ??
+        request.media.mediaType) as MediaType;
+      if (
+        req.body.mediaType &&
+        req.body.mediaType !== request.media.mediaType
+      ) {
+        return next({
+          status: 400,
+          message: 'A request cannot change its media type.',
+        });
+      }
+
       if (
         (request.requestedBy.id !== req.user?.id ||
-          (req.body.mediaType !== 'tv' &&
+          (mediaType !== MediaType.TV &&
             !req.user?.hasPermission(Permission.REQUEST_ADVANCED))) &&
         !req.user?.hasPermission(Permission.MANAGE_REQUESTS)
       ) {
@@ -517,7 +533,7 @@ requestRoutes.put<{ requestId: string }>(
         });
       }
 
-      if (req.body.mediaType === MediaType.MOVIE) {
+      if (mediaType === MediaType.MOVIE) {
         request.serverId = req.body.serverId;
         request.profileId = req.body.profileId;
         request.rootFolder = req.body.rootFolder;
@@ -525,7 +541,7 @@ requestRoutes.put<{ requestId: string }>(
         request.requestedBy = requestUser as User;
 
         await requestRepository.save(request);
-      } else if (req.body.mediaType === MediaType.TV) {
+      } else if (mediaType === MediaType.TV) {
         const mediaRepository = getRepository(Media);
         request.serverId = req.body.serverId;
         request.profileId = req.body.profileId;
@@ -535,6 +551,17 @@ requestRoutes.put<{ requestId: string }>(
         request.requestedBy = requestUser as User;
 
         if (request.episodeSelectionType || req.body.episodeSelection) {
+          const settings = getSettings();
+          const tmdbMedia = await new TheMovieDb().getTvShow({
+            tvId: request.media.tmdbId,
+          });
+          if (!episodeRequestsAvailable(settings, tmdbMedia)) {
+            return next({
+              status: 400,
+              message:
+                'Episode requests require partial requests and the TVDB metadata provider.',
+            });
+          }
           if (!req.body.episodeSelection || req.body.seasons !== undefined) {
             return next({
               status: 400,
@@ -569,9 +596,6 @@ requestRoutes.put<{ requestId: string }>(
             return next({ status: 403, message: 'Series Quota exceeded.' });
           }
 
-          await getRepository(EpisodeRequest).delete({
-            request: { id: request.id },
-          });
           request.episodes = resolved.episodes.map(
             (episode) =>
               new EpisodeRequest({
@@ -588,7 +612,27 @@ requestRoutes.put<{ requestId: string }>(
           request.episodeStartTvdbId = resolved.startTvdbId;
           request.episodeEndTvdbId = resolved.endTvdbId;
           request.tvQuotaUnits = resolved.quotaUnits;
-          await requestRepository.save(request);
+          request.ongoingEpisodeRequestKey =
+            resolved.type === 'after'
+              ? ongoingEpisodeRequestLockKey(request.media.tmdbId, request.is4k)
+              : undefined;
+          try {
+            await dataSource.transaction(async (manager) => {
+              await manager.getRepository(EpisodeRequest).delete({
+                request: { id: request.id },
+              });
+              await manager.getRepository(MediaRequest).save(request);
+            });
+          } catch (error) {
+            if (isOngoingEpisodeRequestConflict(error)) {
+              return next({
+                status: 409,
+                message:
+                  'An ongoing episode request already exists for this series.',
+              });
+            }
+            throw error;
+          }
           return res.status(200).json(request);
         }
 
@@ -659,6 +703,7 @@ requestRoutes.put<{ requestId: string }>(
         }
 
         request.tvQuotaUnits = filteredSeasons.length;
+        request.ongoingEpisodeRequestKey = undefined;
 
         await requestRepository.save(request);
       }
@@ -723,6 +768,12 @@ requestRoutes.post<{
 
       return res.status(200).json(request);
     } catch (e) {
+      if (isOngoingEpisodeRequestConflict(e)) {
+        return next({
+          status: 409,
+          message: 'An ongoing episode request already exists for this series.',
+        });
+      }
       logger.error('Error processing request retry', {
         label: 'Media Request',
         message: e.message,
@@ -767,6 +818,12 @@ requestRoutes.post<{
 
       return res.status(200).json(request);
     } catch (e) {
+      if (isOngoingEpisodeRequestConflict(e)) {
+        return next({
+          status: 409,
+          message: 'An ongoing episode request already exists for this series.',
+        });
+      }
       logger.error('Error processing request update', {
         label: 'Media Request',
         message: e.message,

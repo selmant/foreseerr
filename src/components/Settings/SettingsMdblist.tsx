@@ -1,3 +1,4 @@
+import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
@@ -117,6 +118,15 @@ const SettingsMdblist = ({ onSave }: SettingsMdblistProps) => {
 
   if (!data && !error) {
     return <LoadingSpinner />;
+  }
+
+  if (error || !data) {
+    return (
+      <Alert
+        type="error"
+        title={intl.formatMessage(messages.toastSettingsFailure)}
+      />
+    );
   }
 
   return (

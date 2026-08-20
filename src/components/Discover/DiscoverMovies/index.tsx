@@ -16,6 +16,7 @@ import useDiscover from '@app/hooks/useDiscover';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
+import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import { BarsArrowDownIcon, FunnelIcon } from '@heroicons/react/24/solid';
@@ -53,12 +54,14 @@ const SortOptions: Record<string, TMDBSortOptions> = {
 const DiscoverMovies = () => {
   const intl = useIntl();
   const router = useRouter();
+  const { user } = useUser();
   const updateQueryParams = useUpdateQueryParams({});
 
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const preparedFilters = mergeFilterDefaults(
     prepareFilterValues(router.query),
-    discoverDefaults
+    discoverDefaults,
+    user?.id
   );
   const activeFilterCount =
     countActiveFilters(preparedFilters) +
@@ -79,7 +82,7 @@ const DiscoverMovies = () => {
     mutate,
   } = useDiscover<MovieResult, unknown, FilterOptions>(
     '/api/v1/discover/movies',
-    { ...preparedFilters, ...discoverDefaultsRequestExtras() }
+    { ...preparedFilters, ...discoverDefaultsRequestExtras(user?.id) }
   );
   const [showFilters, setShowFilters] = useState(false);
   useRegisterHideWatchedRevalidation(mutate, hideWatched);

@@ -209,6 +209,34 @@ const LibraryInspector = ({
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 onClose();
+                return;
+              }
+              if (event.key !== 'Tab') {
+                return;
+              }
+
+              const focusable = Array.from(
+                panelRef.current?.querySelectorAll<HTMLElement>(
+                  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                ) ?? []
+              );
+              if (!focusable.length) {
+                event.preventDefault();
+                panelRef.current?.focus();
+                return;
+              }
+
+              const first = focusable[0];
+              const last = focusable[focusable.length - 1];
+              if (document.activeElement === panelRef.current) {
+                event.preventDefault();
+                (event.shiftKey ? last : first).focus();
+              } else if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
               }
             }}
             className="library-sheet library-motion absolute inset-x-0 bottom-0 flex max-h-[92vh] flex-col overflow-hidden rounded-t-2xl bg-library-navy ring-1 ring-gray-700 sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[32rem] sm:rounded-none"

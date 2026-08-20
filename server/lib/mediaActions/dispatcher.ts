@@ -27,8 +27,10 @@ function unavailableReason(
     return providers.length > 0 ? 'unsupported' : 'no_provider';
   }
   if (
-    matching.every(
-      (provider) => provider.error === 'No Jellyfin mapping for item'
+    matching.every((provider) =>
+      ['No Jellyfin mapping for item', 'No AniList mapping for item'].includes(
+        provider.error ?? ''
+      )
     )
   ) {
     return 'not_mapped';

@@ -173,6 +173,16 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
       ? e.response.data.message
       : fallback;
 
+  const invalidateActionSettings = async () => {
+    await Promise.all([
+      globalMutate('/api/v1/settings/public'),
+      globalMutate(
+        (key) =>
+          typeof key === 'string' && key.startsWith('/api/v1/media-actions/')
+      ),
+    ]);
+  };
+
   const credentialsChanging = (values: TraktFormValues) => {
     if (!data) return false;
     const secretUnchanged = values.clientSecret.trim() === '';
@@ -217,6 +227,7 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
         appearance: 'success',
       });
       await Promise.all([mutateSettings(), mutateHealth()]);
+      await invalidateActionSettings();
       setViewedProvider(null);
       onSave?.();
     } catch (e) {
@@ -242,7 +253,7 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
         appearance: 'success',
       });
       await Promise.all([mutateSettings(), mutateHealth()]);
-      await globalMutate('/api/v1/settings/public');
+      await invalidateActionSettings();
       setViewedProvider(null);
       onSave?.();
     } catch (e) {
@@ -264,6 +275,7 @@ const SettingsTrakt = ({ onSave }: SettingsTraktProps) => {
         data ? { ...data, actionsEnabled } : undefined,
         false
       );
+      await invalidateActionSettings();
       addToast(intl.formatMessage(messages.toastActionsSuccess), {
         autoDismiss: true,
         appearance: 'success',

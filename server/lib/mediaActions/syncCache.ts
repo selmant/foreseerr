@@ -1,5 +1,6 @@
 import TraktAPI from '@server/api/trakt';
 import type { TraktListEntry } from '@server/api/trakt/interfaces';
+import { UserSnapshotCache } from './userSnapshotCache';
 
 const DEFAULT_TTL_SECONDS = 7200;
 
@@ -23,34 +24,12 @@ interface PendingPatch {
   update: SyncItemPatch;
 }
 
-const cache = new Map<string, UserSyncSnapshot>();
-const inflight = new Map<string, Promise<UserSyncSnapshot>>();
+const snapshots = new UserSnapshotCache<UserSyncSnapshot>();
 /** Local mutations applied on top of Trakt fetches until Trakt reflects them. */
 const pendingPatches = new Map<string, PendingPatch[]>();
-let globalCacheGeneration = 0;
-const userCacheGenerations = new Map<string, number>();
 
 function cacheKey(userId: number): string {
-  return String(userId);
-}
-
-function bumpUserCacheGeneration(userId: number): number {
-  const key = cacheKey(userId);
-  const next = (userCacheGenerations.get(key) ?? 0) + 1;
-  userCacheGenerations.set(key, next);
-  return next;
-}
-
-function isCacheGenerationStale(
-  userId: number,
-  userGenerationAtStart: number,
-  globalGenerationAtStart: number
-): boolean {
-  const key = cacheKey(userId);
-  return (
-    globalCacheGeneration !== globalGenerationAtStart ||
-    (userCacheGenerations.get(key) ?? 0) !== userGenerationAtStart
-  );
+  return snapshots.key(userId);
 }
 
 function emptySnapshot(): UserSyncSnapshot {
@@ -64,17 +43,13 @@ function emptySnapshot(): UserSyncSnapshot {
 }
 
 export function invalidateUserSyncCache(userId: number): void {
-  bumpUserCacheGeneration(userId);
+  snapshots.invalidateUser(userId);
   const key = cacheKey(userId);
-  cache.delete(key);
-  inflight.delete(key);
   pendingPatches.delete(key);
 }
 
 export function clearSyncCache(): void {
-  globalCacheGeneration += 1;
-  cache.clear();
-  inflight.clear();
+  snapshots.clear();
   pendingPatches.clear();
 }
 
@@ -83,13 +58,13 @@ export function seedUserSyncCache(
   userId: number,
   snapshot: UserSyncSnapshot
 ): void {
-  cache.set(cacheKey(userId), snapshot);
+  snapshots.set(userId, snapshot);
 }
 
 export function getUserSyncSnapshot(
   userId: number
 ): UserSyncSnapshot | undefined {
-  return cache.get(cacheKey(userId));
+  return snapshots.get(userId);
 }
 
 /** Test helper — inspect pending local patches for a user. */
@@ -257,10 +232,10 @@ export function patchUserSyncItem(
   update: SyncItemPatch
 ): void {
   const key = cacheKey(userId);
-  let snapshot = cache.get(key);
+  let snapshot = snapshots.get(userId);
   if (!snapshot) {
     snapshot = emptySnapshot();
-    cache.set(key, snapshot);
+    snapshots.set(userId, snapshot);
   }
 
   applyPatchToSnapshot(snapshot, mediaType, tmdbId, update);
@@ -305,41 +280,31 @@ export async function warmUserSyncCache(
   ttlSeconds = DEFAULT_TTL_SECONDS
 ): Promise<UserSyncSnapshot> {
   const key = cacheKey(userId);
-  const userGenerationAtStart = userCacheGenerations.get(key) ?? 0;
-  const globalGenerationAtStart = globalCacheGeneration;
+  const generationAtStart = snapshots.generation(userId);
 
-  const existing = cache.get(key);
+  const existing = snapshots.get(userId);
   if (
     existing &&
     !isExpired(existing, ttlSeconds) &&
-    !isCacheGenerationStale(
-      userId,
-      userGenerationAtStart,
-      globalGenerationAtStart
-    )
+    !snapshots.isStale(userId, generationAtStart)
   ) {
     applyPendingPatches(key, existing);
     return existing;
   }
 
-  const pending = inflight.get(key);
+  const pending = snapshots.getInflight(userId);
   if (pending) {
     return pending;
   }
 
   const load = (async (): Promise<UserSyncSnapshot> => {
-    const generationAtFetchStart = userCacheGenerations.get(key) ?? 0;
-    const globalAtFetchStart = globalCacheGeneration;
+    const generationAtFetchStart = snapshots.generation(userId);
 
-    const cached = cache.get(key);
+    const cached = snapshots.get(userId);
     if (
       cached &&
       !isExpired(cached, ttlSeconds) &&
-      !isCacheGenerationStale(
-        userId,
-        generationAtFetchStart,
-        globalAtFetchStart
-      )
+      !snapshots.isStale(userId, generationAtFetchStart)
     ) {
       applyPendingPatches(key, cached);
       return cached;
@@ -361,24 +326,22 @@ export async function warmUserSyncCache(
       fetchedAt: Date.now() / 1000,
     };
 
-    if (
-      isCacheGenerationStale(userId, generationAtFetchStart, globalAtFetchStart)
-    ) {
+    if (snapshots.isStale(userId, generationAtFetchStart)) {
       return snapshot;
     }
 
     // Re-apply local mark/unmark/rate that Trakt has not caught up with yet,
     // and avoid clobbering patches applied while this fetch was in flight.
     applyPendingPatches(key, snapshot);
-    cache.set(key, snapshot);
+    snapshots.set(userId, snapshot);
     return snapshot;
   })();
 
-  inflight.set(key, load);
+  snapshots.setInflight(userId, load);
   try {
     return await load;
   } finally {
-    inflight.delete(key);
+    snapshots.clearInflight(userId);
   }
 }
 

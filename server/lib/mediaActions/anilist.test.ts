@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
-import { AnilistMediaActionProvider } from './anilist';
+import {
+  ANILIST_NOT_MAPPED_ERROR,
+  AnilistMediaActionProvider,
+} from './anilist';
 import {
   clearAnilistSyncCache,
   seedUserAnilistSyncCache,
@@ -10,7 +13,7 @@ const movie = { mediaType: 'movie' as const, tmdbId: 128 };
 const tv = { mediaType: 'tv' as const, tmdbId: 26209 };
 
 describe('AnilistMediaActionProvider', () => {
-  it('no-ops writes for titles without an AniList mapping', async () => {
+  it('reports unmapped writes as unavailable', async () => {
     const mapping = await import('@server/lib/anilist/mapping');
     mock.method(mapping.default, 'sync', async () => undefined);
     mock.method(mapping.default, 'getAnilistId', () => undefined);
@@ -21,8 +24,10 @@ describe('AnilistMediaActionProvider', () => {
 
     assert.equal(marked.watched, false);
     assert.equal(marked.rating, null);
+    assert.equal(marked.error, ANILIST_NOT_MAPPED_ERROR);
     assert.equal(rated.watched, false);
     assert.equal(rated.rating, null);
+    assert.equal(rated.error, ANILIST_NOT_MAPPED_ERROR);
   });
 
   it('reads completed list entries as watched with a 1–10 score', async () => {
@@ -57,6 +62,155 @@ describe('AnilistMediaActionProvider', () => {
     assert.equal(status.watched, true);
     assert.equal(status.rating, 8);
     assert.equal(status.ratingStars, 4);
+  });
+
+  it('preserves the AniList entry and rating when unwatching by default', async () => {
+    clearAnilistSyncCache();
+    seedUserAnilistSyncCache(7, {
+      fetchedAt: Date.now() / 1000,
+      entries: [
+        {
+          anilistId: 164,
+          listEntryId: 99,
+          tmdbId: 128,
+          mediaType: 'movie',
+          status: 'COMPLETED',
+          rating: 8,
+        },
+      ],
+    });
+
+    const mapping = await import('@server/lib/anilist/mapping');
+    mock.method(mapping.default, 'sync', async () => undefined);
+    mock.method(mapping.default, 'getAnilistId', () => 164);
+
+    const saveMediaListEntry = mock.fn(
+      async (_options: {
+        mediaId: number;
+        status?: string;
+        scoreRaw?: number;
+      }) => {
+        void _options;
+        return { id: 99, status: 'PLANNING' as const };
+      }
+    );
+    const deleteMediaListEntry = mock.fn(async (_entryId: number) => {
+      void _entryId;
+      return true;
+    });
+    const anilist = await import('@server/lib/anilist');
+    mock.method(
+      anilist,
+      'createAnilistUserClient',
+      async () => ({ saveMediaListEntry, deleteMediaListEntry }) as never
+    );
+    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+      anilistUserId: '12',
+    }));
+
+    const provider = new AnilistMediaActionProvider();
+    const status = await provider.unmarkWatched(7, movie);
+
+    assert.equal(status.watched, false);
+    assert.equal(status.rating, 8);
+    assert.deepEqual(saveMediaListEntry.mock.calls[0].arguments[0], {
+      mediaId: 164,
+      status: 'PLANNING',
+      scoreRaw: 80,
+    });
+    assert.equal(deleteMediaListEntry.mock.calls.length, 0);
+  });
+
+  it('removes the AniList entry only when unwatching with removeRating', async () => {
+    clearAnilistSyncCache();
+    seedUserAnilistSyncCache(7, {
+      fetchedAt: Date.now() / 1000,
+      entries: [
+        {
+          anilistId: 164,
+          listEntryId: 99,
+          tmdbId: 128,
+          mediaType: 'movie',
+          status: 'COMPLETED',
+          rating: 8,
+        },
+      ],
+    });
+
+    const mapping = await import('@server/lib/anilist/mapping');
+    mock.method(mapping.default, 'sync', async () => undefined);
+    mock.method(mapping.default, 'getAnilistId', () => 164);
+
+    const saveMediaListEntry = mock.fn(
+      async (_options: {
+        mediaId: number;
+        status?: string;
+        scoreRaw?: number;
+      }) => {
+        void _options;
+        return { id: 99, status: 'PLANNING' as const };
+      }
+    );
+    const deleteMediaListEntry = mock.fn(async (_entryId: number) => {
+      void _entryId;
+      return true;
+    });
+    const anilist = await import('@server/lib/anilist');
+    mock.method(
+      anilist,
+      'createAnilistUserClient',
+      async () => ({ saveMediaListEntry, deleteMediaListEntry }) as never
+    );
+    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+      anilistUserId: '12',
+    }));
+
+    const provider = new AnilistMediaActionProvider();
+    const status = await provider.unmarkWatched(7, movie, {
+      removeRating: true,
+    });
+
+    assert.equal(status.watched, false);
+    assert.equal(status.rating, null);
+    assert.equal(saveMediaListEntry.mock.calls.length, 0);
+    assert.deepEqual(deleteMediaListEntry.mock.calls[0].arguments, [99]);
+  });
+
+  it('does not add an AniList entry when default-unwatching an absent item', async () => {
+    clearAnilistSyncCache();
+    seedUserAnilistSyncCache(7, {
+      fetchedAt: Date.now() / 1000,
+      entries: [],
+    });
+
+    const mapping = await import('@server/lib/anilist/mapping');
+    mock.method(mapping.default, 'sync', async () => undefined);
+    mock.method(mapping.default, 'getAnilistId', () => 164);
+
+    const saveMediaListEntry = mock.fn(async () => ({
+      id: 99,
+      status: 'PLANNING' as const,
+    }));
+    const anilist = await import('@server/lib/anilist');
+    mock.method(
+      anilist,
+      'createAnilistUserClient',
+      async () => ({ saveMediaListEntry }) as never
+    );
+    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+      anilistUserId: '12',
+    }));
+
+    const provider = new AnilistMediaActionProvider();
+    const status = await provider.unmarkWatched(7, movie);
+
+    assert.equal(status.watched, false);
+    assert.equal(status.rating, null);
+    assert.equal(saveMediaListEntry.mock.calls.length, 0);
+    assert.deepEqual(
+      (await import('./anilistSyncCache')).getUserAnilistSnapshot(7)?.entries,
+      []
+    );
   });
 
   it('isAvailable is false when the admin disables AniList actions', async () => {

@@ -2,9 +2,13 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import MultiRangeSlider from '@app/components/Common/MultiRangeSlider';
 import PageTitle from '@app/components/Common/PageTitle';
-import { genreColorMap } from '@app/components/Discover/constants';
+import {
+  discoverRangeFilters,
+  formatDiscoverRangeValue,
+} from '@app/components/Discover/constants';
 import LanguageSelector from '@app/components/LanguageSelector';
 import { GenreSelector } from '@app/components/Selector';
+import { useDiscoverFilterDraft } from '@app/components/UserProfile/UserSettings/UserDiscoverSettings/filterState';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
@@ -16,33 +20,9 @@ import Datepicker from '@seerr-team/react-tailwindcss-datepicker';
 import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
 import axios from 'axios';
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
-
-const TV_GENRE_IDS = new Set(
-  [10759, 10762, 10763, 10764, 10765, 10766, 10767, 10768].filter(
-    (id) => id in genreColorMap
-  )
-);
-
-const splitGenreDefaults = (genre?: string) => {
-  const movie: string[] = [];
-  const tv: string[] = [];
-  if (!genre) {
-    return { movie: '', tv: '' };
-  }
-  for (const part of genre.split(',')) {
-    const id = part.trim();
-    if (!id) continue;
-    if (TV_GENRE_IDS.has(Number(id))) {
-      tv.push(id);
-    } else {
-      movie.push(id);
-    }
-  }
-  return { movie: movie.join(','), tv: tv.join(',') };
-};
 
 const messages = defineMessages(
   'components.UserProfile.UserSettings.UserDiscoverSettings',
@@ -90,20 +70,14 @@ const messages = defineMessages(
   }
 );
 
-const mergeGenreIds = (
-  current: string | undefined,
-  next: string | undefined
-) => {
-  const parts = new Set<string>();
-  for (const raw of [current, next]) {
-    if (!raw) continue;
-    for (const part of raw.split(',')) {
-      const id = part.trim();
-      if (id) parts.add(id);
-    }
-  }
-  return parts.size ? Array.from(parts).join(',') : undefined;
-};
+const rangeMessageKeys = {
+  imdbRating: { label: 'imdbScore', text: 'imdbScoreText' },
+  imdbVotes: { label: 'imdbVotes', text: 'imdbVotesText' },
+  rtCritics: { label: 'rtCritics', text: 'rtCriticsText' },
+  rtAudience: { label: 'rtAudience', text: 'rtAudienceText' },
+  metacritic: { label: 'metacritic', text: 'metacriticText' },
+  traktRating: { label: 'traktScore', text: 'traktScoreText' },
+} as const;
 
 const UserDiscoverSettings = () => {
   const intl = useIntl();
@@ -118,35 +92,18 @@ const UserDiscoverSettings = () => {
   } = useSWR<DiscoverFilterDefaults>(
     user ? `/api/v1/user/${user.id}/settings/discover` : null
   );
-  const [draft, setDraft] = useState<DiscoverFilterDefaults>({});
-  const [movieGenres, setMovieGenres] = useState('');
-  const [tvGenres, setTvGenres] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-
-  useEffect(() => {
-    if (data) {
-      setDraft(data);
-      const split = splitGenreDefaults(data.genre);
-      setMovieGenres(split.movie);
-      setTvGenres(split.tv);
-    }
-  }, [data]);
-
-  useEffect(() => {
-    const genre = mergeGenreIds(movieGenres, tvGenres);
-    setDraft((prev) => {
-      if ((prev.genre ?? '') === (genre ?? '')) {
-        return prev;
-      }
-      const next = { ...prev };
-      if (genre) {
-        next.genre = genre;
-      } else {
-        delete next.genre;
-      }
-      return next;
-    });
-  }, [movieGenres, tvGenres]);
+  const {
+    draft,
+    movieGenres,
+    tvGenres,
+    setDraft,
+    setMovieGenres,
+    setTvGenres,
+    setBool,
+    setString,
+    reset,
+  } = useDiscoverFilterDraft(data);
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -155,22 +112,6 @@ const UserDiscoverSettings = () => {
   if (!user || error) {
     return <ErrorPage statusCode={500} />;
   }
-
-  const setBool = (key: keyof DiscoverFilterDefaults, value: boolean) => {
-    setDraft((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const setString = (key: keyof DiscoverFilterDefaults, value?: string) => {
-    setDraft((prev) => {
-      const next = { ...prev };
-      if (value == null || value === '') {
-        delete next[key];
-      } else {
-        (next as Record<string, string | boolean>)[key] = value;
-      }
-      return next;
-    });
-  };
 
   const save = async (payload: DiscoverFilterDefaults) => {
     setIsSaving(true);
@@ -488,63 +429,10 @@ const UserDiscoverSettings = () => {
           {intl.formatMessage(messages.externalRatings)}
         </div>
 
-        {(
-          [
-            {
-              keyGte: 'imdbRatingGte',
-              keyLte: 'imdbRatingLte',
-              label: messages.imdbScore,
-              text: messages.imdbScoreText,
-              min: 1,
-              max: 10,
-              step: 0.1,
-            },
-            {
-              keyGte: 'imdbVotesGte',
-              keyLte: 'imdbVotesLte',
-              label: messages.imdbVotes,
-              text: messages.imdbVotesText,
-              min: 0,
-              max: 100000,
-            },
-            {
-              keyGte: 'rtCriticsGte',
-              keyLte: 'rtCriticsLte',
-              label: messages.rtCritics,
-              text: messages.rtCriticsText,
-              min: 0,
-              max: 100,
-            },
-            {
-              keyGte: 'rtAudienceGte',
-              keyLte: 'rtAudienceLte',
-              label: messages.rtAudience,
-              text: messages.rtAudienceText,
-              min: 0,
-              max: 100,
-            },
-            {
-              keyGte: 'metacriticGte',
-              keyLte: 'metacriticLte',
-              label: messages.metacritic,
-              text: messages.metacriticText,
-              min: 0,
-              max: 100,
-            },
-            {
-              keyGte: 'traktRatingGte',
-              keyLte: 'traktRatingLte',
-              label: messages.traktScore,
-              text: messages.traktScoreText,
-              min: 1,
-              max: 10,
-              step: 0.1,
-            },
-          ] as const
-        ).map((slider) => (
+        {discoverRangeFilters.map((slider) => (
           <div key={slider.keyGte}>
             <span className="text-lg font-semibold">
-              {intl.formatMessage(slider.label)}
+              {intl.formatMessage(messages[rangeMessageKeys[slider.id].label])}
             </span>
             <div className="relative z-0">
               <MultiRangeSlider
@@ -567,9 +455,7 @@ const UserDiscoverSettings = () => {
                   setString(
                     slider.keyGte,
                     !atMin && !atMax
-                      ? 'step' in slider
-                        ? min.toFixed(1)
-                        : min.toString()
+                      ? formatDiscoverRangeValue(min, slider)
                       : undefined
                   );
                 }}
@@ -579,16 +465,17 @@ const UserDiscoverSettings = () => {
                   setString(
                     slider.keyLte,
                     !atMax && !atMin
-                      ? 'step' in slider
-                        ? max.toFixed(1)
-                        : max.toString()
+                      ? formatDiscoverRangeValue(max, slider)
                       : undefined
                   );
                 }}
-                subText={intl.formatMessage(slider.text, {
-                  minValue: draft[slider.keyGte] ?? String(slider.min),
-                  maxValue: draft[slider.keyLte] ?? String(slider.max),
-                })}
+                subText={intl.formatMessage(
+                  messages[rangeMessageKeys[slider.id].text],
+                  {
+                    minValue: draft[slider.keyGte] ?? String(slider.min),
+                    maxValue: draft[slider.keyLte] ?? String(slider.max),
+                  }
+                )}
               />
             </div>
           </div>
@@ -631,9 +518,7 @@ const UserDiscoverSettings = () => {
             buttonType="default"
             disabled={isSaving}
             onClick={() => {
-              setDraft({});
-              setMovieGenres('');
-              setTvGenres('');
+              reset();
               void save({});
             }}
           >

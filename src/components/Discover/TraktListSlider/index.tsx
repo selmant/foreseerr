@@ -1,13 +1,7 @@
-import { DiscoverSliderTitle } from '@app/components/Discover/SliderSourceMark';
-import Slider from '@app/components/Slider';
-import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
+import TraktSlider from '@app/components/Discover/TraktSlider';
 import { encodeURIExtraParams } from '@app/hooks/useDiscover';
-import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import { useEffect } from 'react';
 import { useIntl } from 'react-intl';
-import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover.TraktListSlider', {
   empty: 'No items found for this Trakt list.',
@@ -29,53 +23,21 @@ const TraktListSlider = ({
   onNewTitles,
 }: TraktListSliderProps) => {
   const intl = useIntl();
-  const settings = useSettings();
-
-  const { data, error } = useSWR<{
-    results: WatchlistItem[];
-  }>(
-    settings.currentSettings.traktConfigured && url
-      ? `/api/v1/discover/trakt/list?url=${encodeURIExtraParams(url)}`
-      : null,
-    { revalidateOnMount: true }
-  );
-
-  useEffect(() => {
-    if (onNewTitles) {
-      onNewTitles(data?.results.length ?? 0);
-    }
-  }, [data?.results.length, onNewTitles]);
-
-  if (!settings.currentSettings.traktConfigured || !url || error) {
-    return null;
-  }
 
   return (
-    <>
-      {!hideTitle && (
-        <DiscoverSliderTitle
-          href={`/discover/trakt/list?url=${encodeURIComponent(url)}`}
-          source="trakt"
-        >
-          {title}
-        </DiscoverSliderTitle>
-      )}
-      <Slider
-        sliderKey={sliderKey}
-        isLoading={!data}
-        isEmpty={!!data && data.results.length === 0}
-        emptyMessage={intl.formatMessage(messages.empty)}
-        items={data?.results.map((item) => (
-          <TmdbTitleCard
-            id={item.tmdbId}
-            key={`trakt-list-slider-item-${item.ratingKey}`}
-            tmdbId={item.tmdbId}
-            type={item.mediaType}
-            ratings={item.ratings}
-          />
-        ))}
-      />
-    </>
+    <TraktSlider
+      title={title}
+      href={`/discover/trakt/list?url=${encodeURIComponent(url)}`}
+      endpoint={
+        url
+          ? `/api/v1/discover/trakt/list?url=${encodeURIExtraParams(url)}`
+          : null
+      }
+      sliderKey={sliderKey}
+      emptyMessage={intl.formatMessage(messages.empty)}
+      hideTitle={hideTitle}
+      onNewTitles={onNewTitles}
+    />
   );
 };
 

@@ -93,11 +93,14 @@ export function useMediaActions({
     ? mediaActionStatusKey(mediaType, tmdbId)
     : null;
 
-  const { data: swrData, isLoading: swrLoading } =
-    useSWR<MediaActionStatusResponse>(statusKey, {
-      isPaused: () => deferStatusFetch,
-      revalidateOnFocus: false,
-    });
+  const {
+    data: swrData,
+    error: statusError,
+    isLoading: swrLoading,
+  } = useSWR<MediaActionStatusResponse>(statusKey, {
+    isPaused: () => deferStatusFetch,
+    revalidateOnFocus: false,
+  });
 
   const [busy, setBusy] = useState(false);
 
@@ -107,7 +110,11 @@ export function useMediaActions({
   const canWatch =
     globallyCanWatch && (data?.actions?.watched.available ?? true);
   const canRate = globallyCanRate && (data?.actions?.rating.available ?? true);
-  const actionsEnabled = actionsConfigured && (!data || canWatch || canRate);
+  // A failed status read must not look like a usable, unwatched title. Writes
+  // require a status payload and would otherwise fail after an enabled control
+  // has already been rendered.
+  const actionsEnabled =
+    actionsConfigured && !statusError && (!data || canWatch || canRate);
   const statusPending =
     actionsConfigured && !data && (deferStatusFetch || swrLoading);
 
@@ -186,6 +193,7 @@ export function useMediaActions({
     canWatch,
     canRate,
     data,
+    statusError,
     statusPending,
     busy,
     toggleWatched,

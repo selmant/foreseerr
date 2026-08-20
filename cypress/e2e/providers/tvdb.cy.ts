@@ -1,4 +1,5 @@
 describe('TVDB Integration', () => {
+  let originalMetadataSettings: { anime: string; tv: string };
   // Constants for routes and selectors
   const ROUTES = {
     home: '/',
@@ -78,25 +79,12 @@ describe('TVDB Integration', () => {
     return cy.wait('@saveMetadata');
   };
 
-  const interceptMediaActionCapabilities = () => {
-    cy.intercept('GET', '/api/v1/media-actions/capabilities', {
-      movie: { watched: true, rating: true },
-      tv: { watched: true, rating: true },
-      episode: { watched: true, rating: false },
-      providers: [
-        {
-          id: 'trakt',
-          linked: true,
-          capabilities: {
-            readWatched: true,
-            writeWatched: true,
-            readRating: true,
-            writeRating: true,
-          },
-        },
-      ],
-    }).as('mediaActionCapabilities');
-  };
+  const interceptMediaActionCapabilities = () =>
+    cy
+      .intercept('GET', '/api/v1/media-actions/capabilities', {
+        fixture: 'media-action-capabilities.json',
+      })
+      .as('mediaActionCapabilities');
 
   const patchMonsterTv = (
     patch: (body: Record<string, unknown>) => void,
@@ -109,6 +97,23 @@ describe('TVDB Integration', () => {
       });
     }).as(alias);
   };
+
+  before(() => {
+    cy.login(Cypress.env('ADMIN_EMAIL'), Cypress.env('ADMIN_PASSWORD'));
+    cy.request('/api/v1/settings/metadatas').then(({ body }) => {
+      originalMetadataSettings = body;
+    });
+  });
+
+  after(() => {
+    cy.request({
+      method: 'PUT',
+      url: '/api/v1/settings/metadatas',
+      body: originalMetadataSettings,
+    })
+      .its('status')
+      .should('eq', 200);
+  });
 
   beforeEach(() => {
     // Perform login

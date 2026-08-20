@@ -2,11 +2,23 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { TvdbEpisodeCatalog } from '@server/api/tvdb/interfaces';
+import { MetadataProviderType, type AllSettings } from '@server/lib/settings';
 import {
+  episodeRequestsAvailable,
   parseEpisodeSelection,
   resolveEpisodeSelection,
   withOngoingEpisodeRequestLock,
 } from './episodeRequests';
+
+const episodeRequestSettings = (
+  tv: MetadataProviderType,
+  anime: MetadataProviderType,
+  partialRequestsEnabled = true
+): Pick<AllSettings, 'main' | 'metadataSettings'> =>
+  ({
+    main: { partialRequestsEnabled },
+    metadataSettings: { tv, anime },
+  }) as Pick<AllSettings, 'main' | 'metadataSettings'>;
 
 const catalog: TvdbEpisodeCatalog = {
   tvdbSeriesId: 42,
@@ -20,6 +32,45 @@ const catalog: TvdbEpisodeCatalog = {
 };
 
 describe('TVDB episode selection resolver', () => {
+  it('uses the anime metadata provider when checking episode availability', () => {
+    const anime = {
+      genres: [{ id: 16 }],
+      original_language: 'ja',
+    };
+
+    assert.equal(
+      episodeRequestsAvailable(
+        episodeRequestSettings(
+          MetadataProviderType.TVDB,
+          MetadataProviderType.TMDB
+        ),
+        anime
+      ),
+      false
+    );
+    assert.equal(
+      episodeRequestsAvailable(
+        episodeRequestSettings(
+          MetadataProviderType.TMDB,
+          MetadataProviderType.TVDB
+        ),
+        anime
+      ),
+      true
+    );
+    assert.equal(
+      episodeRequestsAvailable(
+        episodeRequestSettings(
+          MetadataProviderType.TVDB,
+          MetadataProviderType.TVDB,
+          false
+        ),
+        anime
+      ),
+      false
+    );
+  });
+
   it('resolves one episode and one quota season', () => {
     const result = resolveEpisodeSelection(
       { type: 'single', episodeTvdbId: 12 },

@@ -4,6 +4,11 @@ import type {
   TvdbEpisodeCatalogItem,
 } from '@server/api/tvdb/interfaces';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
+import {
+  isAnimeMedia,
+  type AnimeDetectionInput,
+} from '@server/lib/anime/detect';
+import { MetadataProviderType, type AllSettings } from '@server/lib/settings';
 import { z } from 'zod';
 
 const episodeId = z.number().int().positive().max(2_147_483_647);
@@ -29,6 +34,20 @@ export interface ResolvedEpisodeSelection {
   episodes: TvdbEpisodeCatalogItem[];
   quotaUnits: number;
 }
+
+/**
+ * Episode requests rely on the TVDB catalog. Anime titles can be configured
+ * with a distinct metadata provider, so their provider selection must be
+ * evaluated using the same detection as the request-creation flow.
+ */
+export const episodeRequestsAvailable = (
+  settings: Pick<AllSettings, 'main' | 'metadataSettings'>,
+  media: AnimeDetectionInput
+): boolean =>
+  settings.main.partialRequestsEnabled &&
+  (isAnimeMedia(media)
+    ? settings.metadataSettings.anime
+    : settings.metadataSettings.tv) === MetadataProviderType.TVDB;
 
 export const parseEpisodeSelection = (input: unknown): EpisodeSelection =>
   episodeSelectionSchema.parse(input);

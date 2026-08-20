@@ -22,15 +22,27 @@ const mediaServarrRoutes = Router();
 /** Process-local operation tokens; see docs/servarr-interactive-operations.md */
 const tokens = new NodeCache({ stdTTL: 900, checkperiod: 120 });
 
-type Context = {
+type ContextBase = {
   media: Media;
   is4k: boolean;
-  type: 'radarr' | 'sonarr';
   externalId: number;
-  client: RadarrAPI | SonarrAPI;
   serviceName: string;
   nativeUrl?: string;
 };
+/**
+ * Keep the Arr client tied to the service type. The route used to carry a
+ * broad client union and recover it with assertions at every destructive
+ * operation, making a movie/series mix-up easy to introduce.
+ */
+type RadarrContext = ContextBase & {
+  type: 'radarr';
+  client: RadarrAPI;
+};
+type SonarrContext = ContextBase & {
+  type: 'sonarr';
+  client: SonarrAPI;
+};
+type Context = RadarrContext | SonarrContext;
 type ImportSource = {
   kind: 'queue';
   label: string;
@@ -41,17 +53,32 @@ type ImportCandidate = {
   candidate: ManualImportCandidate;
   source: ImportSource;
 };
-type Token = {
+type TokenBase = {
   userId: number;
   mediaId: number;
   is4k: boolean;
   type: Context['type'];
   externalId: number;
-  kind: 'release' | 'import-source' | 'import-candidate' | 'command';
-  value: ServarrRelease | ImportCandidate | ImportSource | number;
   episodeId?: number;
   seasonNumber?: number;
 };
+type ReleaseToken = TokenBase & { kind: 'release'; value: ServarrRelease };
+type ImportSourceToken = TokenBase & {
+  kind: 'import-source';
+  value: ImportSource;
+};
+type ImportCandidateToken = TokenBase & {
+  kind: 'import-candidate';
+  value: ImportCandidate;
+};
+type CommandToken = TokenBase & { kind: 'command'; value: number };
+type Token =
+  | ReleaseToken
+  | ImportSourceToken
+  | ImportCandidateToken
+  | CommandToken;
+type TokenKind = Token['kind'];
+type TokenByKind<K extends TokenKind> = Extract<Token, { kind: K }>;
 
 const parseIs4k = (value: unknown) => value === 'true' || value === true;
 const safeExternalUrl = (value?: string) => {
@@ -127,12 +154,12 @@ async function resolveContext(
   };
 }
 
-function getToken(
+function getToken<K extends TokenKind>(
   token: string,
   context: Context,
   userId: number,
-  kind?: Token['kind']
-): Token {
+  kind: K
+): TokenByKind<K> {
   const record = tokens.get<Token>(token);
   if (
     !record ||
@@ -148,7 +175,7 @@ function getToken(
       { status: 409 }
     );
   }
-  return record;
+  return record as TokenByKind<K>;
 }
 
 const protectedRoute = isAuthenticated(Permission.MANAGE_REQUESTS);
@@ -263,9 +290,10 @@ function importSourceFor(item: QueueDetailsItem): ImportSource {
 }
 
 async function getImportQueue(context: Context): Promise<QueueDetailsItem[]> {
-  return context.type === 'radarr'
-    ? (context.client as RadarrAPI).getMovieQueueDetails(context.externalId)
-    : (context.client as SonarrAPI).getSeriesQueueDetails(context.externalId);
+  if (context.type === 'radarr') {
+    return context.client.getMovieQueueDetails(context.externalId);
+  }
+  return context.client.getSeriesQueueDetails(context.externalId);
 }
 
 async function assertCurrentImportSource(
@@ -341,7 +369,7 @@ mediaServarrRoutes.get(
           service: { type: context.type, name: context.serviceName },
           nativeUrl: context.nativeUrl,
         });
-      const sonarr = context.client as SonarrAPI;
+      const sonarr = context.client;
       const [series, episodes, queue] = await Promise.all([
         sonarr.getSeriesById(context.externalId),
         sonarr.getEpisodes(context.externalId),
@@ -398,31 +426,27 @@ mediaServarrRoutes.get(
       let episodeId: number | undefined;
       let seasonNumber: number | undefined;
       if (context.type === 'radarr')
-        releases = await (context.client as RadarrAPI).getMovieReleases(
-          context.externalId
-        );
+        releases = await context.client.getMovieReleases(context.externalId);
       else if (
         req.query.target === 'episode' &&
         Number.isInteger(Number(req.query.episodeId))
       ) {
         episodeId = Number(req.query.episodeId);
         const episode = (
-          await (context.client as SonarrAPI).getEpisodes(context.externalId)
+          await context.client.getEpisodes(context.externalId)
         ).find((item) => item.id === episodeId);
         if (!episode)
           throw Object.assign(
             new Error('Episode does not belong to this series.'),
             { status: 400 }
           );
-        releases = await (context.client as SonarrAPI).getEpisodeReleases(
-          episodeId
-        );
+        releases = await context.client.getEpisodeReleases(episodeId);
       } else if (
         req.query.target === 'season' &&
         Number.isInteger(Number(req.query.seasonNumber))
       ) {
         seasonNumber = Number(req.query.seasonNumber);
-        releases = await (context.client as SonarrAPI).getSeasonReleases(
+        releases = await context.client.getSeasonReleases(
           context.externalId,
           seasonNumber
         );
@@ -475,7 +499,7 @@ mediaServarrRoutes.post(
         parseIs4k(req.body.is4k)
       );
       const record = getToken(req.body.token, context, req.user!.id, 'release');
-      const release = record.value as ServarrRelease;
+      const release = record.value;
       if (!canGrabRelease(release))
         throw Object.assign(
           new Error(
@@ -497,9 +521,7 @@ mediaServarrRoutes.post(
         if (record.episodeId != null) episodeIds = [record.episodeId];
         else {
           const seasonNumber = record.seasonNumber ?? release.seasonNumber;
-          const episodes = await (context.client as SonarrAPI).getEpisodes(
-            context.externalId
-          );
+          const episodes = await context.client.getEpisodes(context.externalId);
           episodeIds = episodes
             .filter((episode) =>
               seasonNumber == null
@@ -600,15 +622,15 @@ mediaServarrRoutes.post(
         context,
         req.user!.id,
         'import-source'
-      ).value as ImportSource;
+      ).value;
       await assertCurrentImportSource(context, source);
       const candidates =
         context.type === 'radarr'
-          ? await (context.client as RadarrAPI).getManualImportCandidates({
+          ? await context.client.getManualImportCandidates({
               folder: source.folder,
               downloadId: source.downloadId,
             })
-          : await (context.client as SonarrAPI).getManualImportCandidates({
+          : await context.client.getManualImportCandidates({
               folder: source.folder,
               downloadId: source.downloadId,
             });
@@ -658,12 +680,12 @@ mediaServarrRoutes.post(
         context,
         req.user!.id,
         'import-candidate'
-      ).value as ImportCandidate;
+      ).value;
       await assertCurrentImportSource(context, importCandidate.source);
       const validEpisodes = new Set(
-        (
-          await (context.client as SonarrAPI).getEpisodes(context.externalId)
-        ).map((episode) => episode.id)
+        (await context.client.getEpisodes(context.externalId)).map(
+          (episode) => episode.id
+        )
       );
       const episodeIds = [...new Set(req.body.episodeIds as number[])];
       if (episodeIds.some((id) => !validEpisodes.has(id)))
@@ -671,15 +693,14 @@ mediaServarrRoutes.post(
           new Error('Every selected episode must belong to this series.'),
           { status: 400 }
         );
-      const [reprocessed] = await (
-        context.client as SonarrAPI
-      ).reprocessManualImportCandidates([
-        {
-          ...importCandidate.candidate,
-          seriesId: context.externalId,
-          episodeIds,
-        },
-      ]);
+      const [reprocessed] =
+        await context.client.reprocessManualImportCandidates([
+          {
+            ...importCandidate.candidate,
+            seriesId: context.externalId,
+            episodeIds,
+          },
+        ]);
       if (!reprocessed)
         throw Object.assign(
           new Error('Sonarr did not return a rematched import candidate.'),
@@ -709,7 +730,6 @@ mediaServarrRoutes.get(
         Number(req.params.id),
         parseIs4k(req.query.is4k)
       );
-      const client = context.client;
       const sources = (await getImportQueue(context))
         .filter(isInteractiveImportQueueItem)
         .slice(0, 20)
@@ -718,11 +738,11 @@ mediaServarrRoutes.get(
         sources.map(async (source) => {
           const candidates =
             context.type === 'radarr'
-              ? await (client as RadarrAPI).getManualImportCandidates({
+              ? await context.client.getManualImportCandidates({
                   folder: source.folder,
                   downloadId: source.downloadId,
                 })
-              : await (client as SonarrAPI).getManualImportCandidates({
+              : await context.client.getManualImportCandidates({
                   folder: source.folder,
                   downloadId: source.downloadId,
                 });
@@ -778,8 +798,7 @@ mediaServarrRoutes.post(
         );
       const importCandidates: ImportCandidate[] = selected.map(
         (token: string) =>
-          getToken(token, context, req.user!.id, 'import-candidate')
-            .value as ImportCandidate
+          getToken(token, context, req.user!.id, 'import-candidate').value
       );
       await Promise.all(
         importCandidates.map(({ source }) =>
@@ -816,9 +835,9 @@ mediaServarrRoutes.post(
         });
       else {
         const valid = new Set(
-          (
-            await (context.client as SonarrAPI).getEpisodes(context.externalId)
-          ).map((episode) => episode.id)
+          (await context.client.getEpisodes(context.externalId)).map(
+            (episode) => episode.id
+          )
         );
         files.forEach((file, index) => {
           const ids =
@@ -879,7 +898,7 @@ mediaServarrRoutes.get(
         context,
         req.user!.id,
         'command'
-      ).value as number;
+      ).value;
       const command = await context.client.getCommand(commandId);
       return res.json({
         status: command.status?.toLowerCase() ?? 'unknown',

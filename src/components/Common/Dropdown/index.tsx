@@ -19,6 +19,7 @@ const DropdownItem = ({
   buttonType = 'primary',
   href,
   onClick,
+  className: suppliedClassName,
   ...props
 }: DropdownItemProps) => {
   const className = [
@@ -26,6 +27,7 @@ const DropdownItem = ({
     buttonType === 'ghost'
       ? 'bg-transparent from-indigo-600 to-purple-600 hover:bg-gradient-to-br focus:border-gray-500'
       : 'bg-indigo-600 hover:bg-indigo-500 focus:border-indigo-700',
+    suppliedClassName,
   ].join(' ');
 
   // Prefer a real button for onClick-only items so Headless UI / browsers
@@ -39,6 +41,7 @@ const DropdownItem = ({
           onClick={
             onClick as unknown as ButtonHTMLAttributes<HTMLButtonElement>['onClick']
           }
+          {...(props as ButtonHTMLAttributes<HTMLButtonElement>)}
         >
           {children}
         </button>

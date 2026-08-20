@@ -1,0 +1,17 @@
+{
+  "movie": { "watched": true, "rating": true },
+  "tv": { "watched": true, "rating": true },
+  "episode": { "watched": true, "rating": false },
+  "providers": [
+    {
+      "id": "trakt",
+      "linked": true,
+      "capabilities": {
+        "readWatched": true,
+        "writeWatched": true,
+        "readRating": true,
+        "writeRating": true
+      }
+    }
+  ]
+}
