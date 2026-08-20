@@ -3254,11 +3254,21 @@ paths:
         - in: query
           name: start
           required: true
-          schema: { type: string, format: date-time }
+          description: Inclusive range start. YYYY-MM-DD keys are UTC midnight.
+          schema:
+            anyOf:
+              - { type: string, format: date }
+              - { type: string, format: date-time }
+            example: '2026-08-01'
         - in: query
           name: end
           required: true
-          schema: { type: string, format: date-time }
+          description: Exclusive range end. YYYY-MM-DD keys are UTC midnight.
+          schema:
+            anyOf:
+              - { type: string, format: date }
+              - { type: string, format: date-time }
+            example: '2026-09-12'
         - in: query
           name: scope
           schema: { type: string, enum: [mine, all], default: mine }
