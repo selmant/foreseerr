@@ -149,12 +149,13 @@ export const startJobs = (): void => {
     });
   }
 
-  // Run full radarr scan every 24 hours
+  // Run Radarr scan every 15 minutes so imported files become Available
+  // without waiting for the daily Jellyfin full library scan.
   scheduledJobs.push({
     id: 'radarr-scan',
     name: 'Radarr Scan',
     type: 'process',
-    interval: 'hours',
+    interval: 'minutes',
     cronSchedule: jobs['radarr-scan'].schedule,
     job: schedule.scheduleJob(jobs['radarr-scan'].schedule, () => {
       logger.info('Starting scheduled job: Radarr Scan', { label: 'Jobs' });
@@ -196,12 +197,11 @@ export const startJobs = (): void => {
     cancelFn: () => releaseCalendarSync.cancel(),
   });
 
-  // Run full sonarr scan every 24 hours
   scheduledJobs.push({
     id: 'sonarr-scan',
     name: 'Sonarr Scan',
     type: 'process',
-    interval: 'hours',
+    interval: 'minutes',
     cronSchedule: jobs['sonarr-scan'].schedule,
     job: schedule.scheduleJob(jobs['sonarr-scan'].schedule, () => {
       logger.info('Starting scheduled job: Sonarr Scan', { label: 'Jobs' });

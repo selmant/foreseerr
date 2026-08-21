@@ -480,16 +480,27 @@ class JellyfinAPI extends ExternalAPI {
 
   public async getRecentlyAdded(id: string): Promise<JellyfinLibraryItem[]> {
     try {
-      const endpoint =
-        this.mediaServerType === MediaServerType.JELLYFIN
-          ? `/Items/Latest`
-          : `/Users/${this.userId}/Items/Latest`;
-      const itemResponse = await this.get<any>(
-        `${endpoint}?Limit=12&ParentId=${id}${
-          this.mediaServerType === MediaServerType.JELLYFIN
-            ? `&userId=${this.userId ?? 'Me'}`
-            : ''
-        }`
+      // /Items/Latest?Limit=12 drops new imports as soon as 12 newer titles
+      // exist. SortBy=DateCreated matches Discover and Plex's addedAt window.
+      // Files that preserve an old mtime still need Radarr/Sonarr hasFile scans.
+      if (this.mediaServerType === MediaServerType.JELLYFIN) {
+        const itemResponse = await this.get<JellyfinItemsReponse>(`/Items`, {
+          params: {
+            userId: this.userId ?? 'Me',
+            ParentId: id,
+            IncludeItemTypes: 'Movie,Series',
+            Recursive: true,
+            SortBy: 'DateCreated',
+            SortOrder: 'Descending',
+            Limit: 100,
+            Fields: 'ProviderIds,DateCreated',
+          },
+        });
+        return itemResponse.Items ?? [];
+      }
+
+      const itemResponse = await this.get<JellyfinLibraryItem[]>(
+        `/Users/${this.userId}/Items/Latest?Limit=100&ParentId=${id}`
       );
 
       return itemResponse;

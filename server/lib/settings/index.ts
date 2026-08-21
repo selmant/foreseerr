@@ -649,10 +649,10 @@ class Settings {
           schedule: '0 0 5 * * *',
         },
         'radarr-scan': {
-          schedule: '0 0 4 * * *',
+          schedule: '0 */15 * * * *',
         },
         'sonarr-scan': {
-          schedule: '0 30 4 * * *',
+          schedule: '0 */15 * * * *',
         },
         'availability-sync': {
           schedule: '0 0 5 * * *',
