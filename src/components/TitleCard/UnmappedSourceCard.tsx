@@ -25,6 +25,7 @@ const SOURCE_MARKS: Record<
 const messages = defineMessages('components.TitleCard.UnmappedSourceCard', {
   unmapped: 'Couldn’t map to TMDB',
   notFoundOnTmdb: 'Not found on TMDB',
+  ribbon: 'Unmapped',
   openOriginal: 'Open original',
   hide: 'Hide',
 });
@@ -68,7 +69,7 @@ const UnmappedSourceCard = ({
           {image ? (
             <CachedImage
               type="avatar"
-              className="absolute inset-0 h-full w-full opacity-40"
+              className="absolute inset-0 h-full w-full opacity-55"
               alt=""
               src={image}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -79,7 +80,15 @@ const UnmappedSourceCard = ({
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/70 to-transparent" />
 
-          <div className="absolute left-0 right-0 flex items-center justify-between p-2">
+          <span
+            data-testid="unmapped-ribbon"
+            className="pointer-events-none absolute -right-12 top-5 z-50 w-[9.5rem] rotate-45 bg-amber-400 py-1 text-center text-[10px] font-extrabold uppercase tracking-[0.2em] text-gray-950 shadow"
+            aria-hidden
+          >
+            {intl.formatMessage(messages.ribbon)}
+          </span>
+
+          <div className="absolute left-0 right-0 flex items-center p-2">
             <div
               className={`z-40 rounded-full shadow ${
                 type === 'movie' ? 'bg-blue-500' : 'bg-purple-600'
@@ -92,7 +101,7 @@ const UnmappedSourceCard = ({
               </div>
             </div>
             <span
-              className="z-40 inline-flex h-5 w-5 items-center justify-center"
+              className="z-40 ml-1.5 inline-flex h-5 w-5 items-center justify-center drop-shadow"
               title={label}
               aria-label={label}
             >
