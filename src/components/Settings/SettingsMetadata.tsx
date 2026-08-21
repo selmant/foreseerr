@@ -13,7 +13,7 @@ import axios from 'axios';
 import { Form, Formik } from 'formik';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 
 const messages = defineMessages('components.Settings', {
   metadataProviderSettings: 'Metadata Providers',
@@ -154,6 +154,8 @@ const SettingsMetadata = () => {
         tv: values.tv,
         anime: values.anime,
       });
+
+      await mutate('/api/v1/settings/public');
 
       // Update metadata provider status if available
       if (response.data.tests) {

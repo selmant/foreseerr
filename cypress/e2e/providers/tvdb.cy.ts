@@ -366,11 +366,10 @@ describe('TVDB Integration', () => {
     cy.get('@discoverCard')
       .find('[data-testid="title-card-title"]')
       .should('contain', 'Monster');
+    cy.get('@discoverCard').trigger('mouseover');
     cy.get('@discoverCard')
-      .find('button[aria-label="More request options"]')
-      .should('be.visible')
-      .click();
-    cy.get('[data-testid="title-card-request-episodes"]').should('be.visible');
+      .find('[data-testid="title-card-request-episodes"]')
+      .should('be.visible');
   });
 
   it('quick-requests one episode from the detail episode list', () => {

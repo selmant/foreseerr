@@ -273,6 +273,7 @@ describe('Library', () => {
         {
           ...seriesItem,
           unplayedItemCount: 12,
+          availableEpisodeCount: 24,
         },
       ],
     }).as('browseRemaining');
