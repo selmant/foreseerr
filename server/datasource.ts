@@ -1,3 +1,7 @@
+import {
+  sourceEntityFiles,
+  sourceSubscriberFiles,
+} from '@server/utils/typeormGlobs';
 import fs from 'fs';
 import type { TlsOptions } from 'tls';
 import type { DataSourceOptions, EntityTarget, Repository } from 'typeorm';
@@ -53,9 +57,7 @@ const testConfig: DataSourceOptions = {
   synchronize: true,
   dropSchema: true,
   logging: boolFromEnv('DB_LOG_QUERIES'),
-  entities: ['server/entity/**/*.ts'],
   migrations: ['server/migration/sqlite/**/*.ts'],
-  subscribers: ['server/subscriber/**/*.ts'],
 };
 
 const devConfig: DataSourceOptions = {
@@ -67,9 +69,7 @@ const devConfig: DataSourceOptions = {
   migrationsRun: false,
   logging: boolFromEnv('DB_LOG_QUERIES'),
   enableWAL: true,
-  entities: ['server/entity/**/*.ts'],
   migrations: ['server/migration/sqlite/**/*.ts'],
-  subscribers: ['server/subscriber/**/*.ts'],
 };
 
 const prodConfig: DataSourceOptions = {
@@ -100,9 +100,7 @@ const postgresDevConfig: DataSourceOptions = {
   synchronize: false,
   migrationsRun: true,
   logging: boolFromEnv('DB_LOG_QUERIES'),
-  entities: ['server/entity/**/*.ts'],
   migrations: ['server/migration/postgres/**/*.ts'],
-  subscribers: ['server/subscriber/**/*.ts'],
 };
 
 const postgresProdConfig: DataSourceOptions = {
@@ -126,13 +124,21 @@ const postgresProdConfig: DataSourceOptions = {
 
 export const isPgsql = process.env.DB_TYPE === 'postgres';
 
+function withSourceOrmFiles(config: DataSourceOptions): DataSourceOptions {
+  return {
+    ...config,
+    entities: sourceEntityFiles(),
+    subscribers: sourceSubscriberFiles(),
+  };
+}
+
 function getDataSource(): DataSourceOptions {
   if (process.env.NODE_ENV === 'test') {
-    return testConfig;
+    return withSourceOrmFiles(testConfig);
   } else if (process.env.NODE_ENV === 'production') {
     return isPgsql ? postgresProdConfig : prodConfig;
   } else {
-    return isPgsql ? postgresDevConfig : devConfig;
+    return withSourceOrmFiles(isPgsql ? postgresDevConfig : devConfig);
   }
 }
 

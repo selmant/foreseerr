@@ -31,10 +31,11 @@ import Media from '@server/entity/Media';
 import MediaRequest from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
+import { sourceEntityFiles } from '@server/utils/typeormGlobs';
 import assert from 'node:assert/strict';
 import type { DataSource } from 'typeorm';
 
-export const ENTITIES_GLOB = ['server/entity/**/*.ts'];
+export const ENTITIES_GLOB = sourceEntityFiles();
 
 export interface SeededIds {
   adminUserId: number;

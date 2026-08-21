@@ -16,12 +16,13 @@
  * engine, each in its own process (see the `check:migrations` script in
  * package.json).
  */
+import { sourceEntityFiles } from '@server/utils/typeormGlobs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DataSource } from 'typeorm';
 
-const ENTITIES_GLOB = ['server/entity/**/*.ts'];
+const ENTITIES = sourceEntityFiles();
 
 async function runMigrations(
   label: string,
@@ -100,7 +101,7 @@ async function checkSqliteMigrations(): Promise<void> {
     database,
     synchronize: false,
     logging: false,
-    entities: ENTITIES_GLOB,
+    entities: ENTITIES,
     migrations: ['server/migration/sqlite/**/*.ts'],
   });
 
@@ -131,7 +132,7 @@ async function checkPostgresMigrations(): Promise<void> {
     database,
     synchronize: false,
     logging: false,
-    entities: ENTITIES_GLOB,
+    entities: ENTITIES,
     migrations: ['server/migration/postgres/**/*.ts'],
   });
 
