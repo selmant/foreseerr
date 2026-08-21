@@ -19,6 +19,7 @@ import cacheManager from '@server/lib/cache';
 import {
   mergeAndPaginateTraktItems,
   paginateSortedTraktItems,
+  traktItemKey,
   type TraktPaginatedItems,
 } from '@server/lib/trakt/mixedPagination';
 import logger from '@server/logger';
@@ -894,7 +895,7 @@ class TraktAPI extends ExternalAPI {
       }
 
       for (const entry of batch) {
-        const key = `${entry.mediaType}:${entry.tmdbId}`;
+        const key = traktItemKey(entry);
         if (seen.has(key)) {
           continue;
         }
@@ -1228,7 +1229,7 @@ class TraktAPI extends ExternalAPI {
       }
 
       for (const entry of batch) {
-        const key = `${entry.mediaType}:${entry.tmdbId}`;
+        const key = traktItemKey(entry);
         if (seen.has(key)) {
           continue;
         }
@@ -1264,7 +1265,21 @@ class TraktAPI extends ExternalAPI {
     item: TraktMediaObject | undefined,
     mediaType: 'movie' | 'tv'
   ): TraktMediaItem | null {
-    if (!item?.ids?.tmdb) {
+    if (!item) {
+      return null;
+    }
+    const tmdbRaw = Number(item.ids?.tmdb);
+    const tmdbId =
+      Number.isFinite(tmdbRaw) && tmdbRaw > 0 ? tmdbRaw : undefined;
+    const slug = item.ids?.slug?.trim() || undefined;
+    const traktRaw = Number(item.ids?.trakt);
+    const traktId =
+      Number.isFinite(traktRaw) && traktRaw > 0 ? traktRaw : undefined;
+    const imdbId = item.ids?.imdb?.trim() || undefined;
+    const tvdbRaw = Number(item.ids?.tvdb);
+    const tvdbId =
+      Number.isFinite(tvdbRaw) && tvdbRaw > 0 ? tvdbRaw : undefined;
+    if (!tmdbId && !slug && !traktId) {
       return null;
     }
     const communityRating =
@@ -1272,10 +1287,15 @@ class TraktAPI extends ExternalAPI {
         ? Number(item.rating)
         : undefined;
     return {
-      tmdbId: Number(item.ids.tmdb),
+      ...(tmdbId ? { tmdbId } : {}),
       mediaType,
-      title: item.title || item.name || '',
+      title:
+        item.title || item.name || slug || (traktId ? String(traktId) : ''),
       year: item.year,
+      ...(slug ? { traktSlug: slug } : {}),
+      ...(traktId ? { traktId } : {}),
+      ...(imdbId ? { imdbId } : {}),
+      ...(tvdbId ? { tvdbId } : {}),
       ...(communityRating != null
         ? { traktCommunityRating: communityRating }
         : {}),
@@ -1287,11 +1307,13 @@ class TraktAPI extends ExternalAPI {
     mediaType: 'movie' | 'tv'
   ): TraktMediaItem[] {
     const items: TraktMediaItem[] = [];
-    const seen = new Set<number>();
+    const seen = new Set<string>();
     for (const entry of payload || []) {
       const normalized = this.normalizeMediaItem(entry, mediaType);
-      if (!normalized || seen.has(normalized.tmdbId)) continue;
-      seen.add(normalized.tmdbId);
+      if (!normalized) continue;
+      const key = traktItemKey(normalized);
+      if (seen.has(key)) continue;
+      seen.add(key);
       items.push(normalized);
     }
     return items;
@@ -1310,7 +1332,7 @@ class TraktAPI extends ExternalAPI {
         normalized = this.normalizeMediaItem(entry.show, 'tv');
       }
       if (!normalized) continue;
-      const key = `${normalized.mediaType}:${normalized.tmdbId}`;
+      const key = traktItemKey(normalized);
       if (seen.has(key)) continue;
       seen.add(key);
       const media = entry.movie || entry.show;

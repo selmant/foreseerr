@@ -133,7 +133,7 @@ describe('filterTraktDiscoverItems', () => {
     );
 
     assert.deepEqual(
-      results.map((item) => item.tmdbId).sort((a, b) => a - b),
+      results.map((item) => item.tmdbId).sort((a, b) => (a ?? 0) - (b ?? 0)),
       [1, 2]
     );
   });

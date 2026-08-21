@@ -3,6 +3,11 @@ import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { Watchlist } from '@server/entity/Watchlist';
 import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
+import {
+  hasDiscoverTmdbId,
+  omitUnmappedDiscoverItems,
+  shouldHideUnmappedFromQuery,
+} from '@server/lib/discover/unmapped';
 import { enrichResultsWithRatings } from '@server/lib/ratings';
 import { Router } from 'express';
 
@@ -44,14 +49,19 @@ plexDiscoverRoutes.get<unknown, WatchlistResponse>('/', async (req, res) => {
   const watchlist = await new PlexTvAPI(activeUser.plexToken).getWatchlist({
     offset,
   });
-  const results = await enrichResultsWithRatings(
-    watchlist.items.map((item) => ({
-      id: item.tmdbId,
-      ratingKey: item.ratingKey,
-      title: item.title,
-      mediaType: item.type === 'show' ? ('tv' as const) : ('movie' as const),
-      tmdbId: item.tmdbId,
-    }))
+  const results = omitUnmappedDiscoverItems(
+    await enrichResultsWithRatings(
+      watchlist.items.map((item) => ({
+        id: hasDiscoverTmdbId(item.tmdbId) ? item.tmdbId : 0,
+        ratingKey: item.ratingKey,
+        title: item.title,
+        mediaType: item.type === 'show' ? ('tv' as const) : ('movie' as const),
+        ...(hasDiscoverTmdbId(item.tmdbId) ? { tmdbId: item.tmdbId } : {}),
+        source: 'plex' as const,
+        sourceId: item.ratingKey,
+      }))
+    ),
+    shouldHideUnmappedFromQuery(req.query)
   );
   return res.json({
     page,

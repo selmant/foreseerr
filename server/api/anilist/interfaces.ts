@@ -43,6 +43,10 @@ export interface AnilistMedia {
   episodes?: number | null;
   seasonYear?: number | null;
   startDate?: { year?: number | null } | null;
+  coverImage?: {
+    large?: string | null;
+    medium?: string | null;
+  } | null;
 }
 
 export interface AnilistPageInfo {
@@ -96,9 +100,10 @@ export interface AnilistTokenState {
 
 export interface AnilistDiscoverItem {
   anilistId: number;
-  tmdbId: number;
+  tmdbId?: number;
   mediaType: 'movie' | 'tv';
   title: string;
+  image?: string;
 }
 
 export interface AnilistListSummary {

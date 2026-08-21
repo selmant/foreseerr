@@ -4,13 +4,19 @@ export interface GenreSliderItem {
   backdrops: string[];
 }
 
+export type DiscoverItemSource = 'trakt' | 'anilist' | 'mdblist' | 'plex';
+
 export interface WatchlistItem {
   id: number;
   ratingKey: string;
-  tmdbId: number;
+  tmdbId?: number;
   mediaType: 'movie' | 'tv';
   title: string;
   ratings?: RatingResponse | null;
+  source?: DiscoverItemSource;
+  sourceUrl?: string;
+  sourceId?: string;
+  image?: string;
 }
 
 export interface WatchlistResponse {

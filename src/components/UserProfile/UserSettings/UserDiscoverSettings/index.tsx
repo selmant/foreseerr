@@ -9,6 +9,10 @@ import {
 import LanguageSelector from '@app/components/LanguageSelector';
 import { GenreSelector } from '@app/components/Selector';
 import { useDiscoverFilterDraft } from '@app/components/UserProfile/UserSettings/UserDiscoverSettings/filterState';
+import {
+  clearHiddenUnmappedTitles,
+  hiddenUnmappedCount,
+} from '@app/hooks/useHiddenUnmappedTitles';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
@@ -20,7 +24,7 @@ import Datepicker from '@seerr-team/react-tailwindcss-datepicker';
 import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
 import axios from 'axios';
 import { useRouter } from 'next/router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
@@ -34,6 +38,10 @@ const messages = defineMessages(
     hideWatched: 'Hide watched',
     hideWatchedTip:
       'Uses Jellyfin and Trakt watch history when either is available.',
+    hideUnmapped: 'Hide unmapped titles',
+    hideUnmappedTip:
+      'Hide titles from Trakt, AniList, MDBList, or Plex that could not be mapped to TMDB.',
+    clearHiddenUnmapped: 'Show hidden unmapped titles again',
     hideCollected: 'Hide collected',
     hideWatchlisted: 'Hide watchlisted',
     traktOptions: 'Trakt',
@@ -93,6 +101,7 @@ const UserDiscoverSettings = () => {
     user ? `/api/v1/user/${user.id}/settings/discover` : null
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [hiddenCount, setHiddenCount] = useState(0);
   const {
     draft,
     movieGenres,
@@ -104,6 +113,10 @@ const UserDiscoverSettings = () => {
     setString,
     reset,
   } = useDiscoverFilterDraft(data);
+
+  useEffect(() => {
+    setHiddenCount(hiddenUnmappedCount(user?.id));
+  }, [user?.id]);
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -178,6 +191,48 @@ const UserDiscoverSettings = () => {
             <p className="text-xs text-gray-400">
               {intl.formatMessage(messages.hideWatchedTip)}
             </p>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-lg font-semibold text-gray-100">
+            {intl.formatMessage(messages.hideUnmapped)}
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                className="rounded border-gray-500 bg-gray-800 text-indigo-500"
+                checked={draft.hideUnmapped === true}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setBool('hideUnmapped', true);
+                  } else {
+                    setDraft((prev) => {
+                      const next = { ...prev };
+                      delete next.hideUnmapped;
+                      return next;
+                    });
+                  }
+                }}
+              />
+              {intl.formatMessage(messages.hideUnmapped)}
+            </label>
+            <p className="text-xs text-gray-400">
+              {intl.formatMessage(messages.hideUnmappedTip)}
+            </p>
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                className="w-fit text-sm text-indigo-400 hover:text-indigo-300 hover:underline"
+                onClick={() => {
+                  clearHiddenUnmappedTitles(user.id);
+                  setHiddenCount(0);
+                }}
+              >
+                {intl.formatMessage(messages.clearHiddenUnmapped)}
+              </button>
+            )}
           </div>
         </div>
 

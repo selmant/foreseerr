@@ -76,6 +76,7 @@ describe('OpenAPI request filter contract', () => {
       assert.ok(parameterNames.includes('ignoreDiscoverDefaults'));
       assert.ok(parameterNames.includes('ignoreCollected'));
       assert.ok(parameterNames.includes('ignoreWatchlisted'));
+      assert.ok(parameterNames.includes('hideUnmapped'));
     }
   });
 });

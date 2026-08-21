@@ -23,6 +23,9 @@ export function prepareTraktDiscoverOptions(
   ) {
     options.ignoreWatchlisted = query.ignoreWatchlisted;
   }
+  if (query.hideUnmapped === 'true' || query.hideUnmapped === 'false') {
+    options.hideUnmapped = query.hideUnmapped;
+  }
   if (query.ignoreWatched === 'true') {
     options.ignoreWatched = 'true';
   } else if (query.ignoreWatched === 'false') {
@@ -43,7 +46,8 @@ export function prepareTraktDiscoverOptions(
       value &&
       key !== 'ignoreWatched' &&
       key !== 'ignoreCollected' &&
-      key !== 'ignoreWatchlisted'
+      key !== 'ignoreWatchlisted' &&
+      key !== 'hideUnmapped'
     ) {
       options[key] = value;
     }

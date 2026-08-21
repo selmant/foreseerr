@@ -11,10 +11,24 @@ import {
 } from '@server/lib/anilist/discover';
 import { getAnilistUserContext } from '@server/lib/anilist/userContext';
 import { handleAnilistDiscoverRouteError } from '@server/lib/discover/providerErrors';
+import {
+  omitUnmappedDiscoverItems,
+  shouldHideUnmappedFromQuery,
+} from '@server/lib/discover/unmapped';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 
 const anilistDiscoverRoutes = Router();
+
+function anilistResults(
+  items: Parameters<typeof toWatchlistItems>[0],
+  query: Request['query']
+) {
+  return omitUnmappedDiscoverItems(
+    toWatchlistItems(items),
+    shouldHideUnmappedFromQuery(query)
+  );
+}
 
 async function publicPage(
   req: Request,
@@ -34,7 +48,7 @@ async function publicPage(
     return res.status(200).json({
       page,
       hasMore: Boolean(mediaPage.pageInfo.hasNextPage),
-      results: toWatchlistItems(mapped),
+      results: anilistResults(mapped, req.query),
     } satisfies WatchlistResponse);
   } catch (error) {
     return handleAnilistDiscoverRouteError(error, next, errorMessage);
@@ -96,7 +110,7 @@ async function userList(
     return res.status(200).json({
       page: paged.page,
       hasMore: paged.hasMore,
-      results: toWatchlistItems(paged.results),
+      results: anilistResults(paged.results, req.query),
     } satisfies WatchlistResponse);
   } catch (error) {
     return handleAnilistDiscoverRouteError(
@@ -168,7 +182,7 @@ anilistDiscoverRoutes.get('/list', async (req, res, next) => {
     return res.status(200).json({
       page: paged.page,
       hasMore: paged.hasMore,
-      results: toWatchlistItems(paged.results),
+      results: anilistResults(paged.results, req.query),
       title: name,
     });
   } catch (error) {

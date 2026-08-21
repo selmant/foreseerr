@@ -1,6 +1,8 @@
 import { DiscoverSliderTitle } from '@app/components/Discover/SliderSourceMark';
 import Slider from '@app/components/Slider';
-import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
+import TmdbTitleCard, {
+  watchlistTitleCardProps,
+} from '@app/components/TitleCard/TmdbTitleCard';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
@@ -75,11 +77,8 @@ const TraktSlider = ({
         emptyMessage={emptyMessage}
         items={data?.results.map((item) => (
           <TmdbTitleCard
-            id={item.tmdbId}
             key={`${sliderKey}-item-${item.ratingKey}`}
-            tmdbId={item.tmdbId}
-            type={item.mediaType}
-            ratings={item.ratings}
+            {...watchlistTitleCardProps(item)}
           />
         ))}
       />

@@ -7,18 +7,38 @@ import type {
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import { handleMdblistDiscoverRouteError } from '@server/lib/discover/providerErrors';
+import {
+  hasDiscoverTmdbId,
+  imdbSourceUrl,
+  omitUnmappedDiscoverItems,
+  shouldHideUnmappedFromQuery,
+  tmdbSourceUrl,
+} from '@server/lib/discover/unmapped';
 import { Router } from 'express';
 
 const mdblistDiscoverRoutes = Router();
 
 const mapItems = (items: MdblistDiscoverItem[]): WatchlistItem[] =>
-  items.map((item) => ({
-    id: item.tmdbId,
-    ratingKey: `mdblist-${item.mediaType}-${item.tmdbId}`,
-    tmdbId: item.tmdbId,
-    mediaType: item.mediaType,
-    title: item.title,
-  }));
+  items.map((item) => {
+    const sourceId = hasDiscoverTmdbId(item.tmdbId)
+      ? String(item.tmdbId)
+      : item.imdbId || item.title;
+    const sourceUrl = item.imdbId
+      ? imdbSourceUrl(item.imdbId)
+      : hasDiscoverTmdbId(item.tmdbId)
+        ? tmdbSourceUrl(item.mediaType, item.tmdbId)
+        : undefined;
+    return {
+      id: item.tmdbId ?? 0,
+      ratingKey: `mdblist-${item.mediaType}-${sourceId}`,
+      ...(hasDiscoverTmdbId(item.tmdbId) ? { tmdbId: item.tmdbId } : {}),
+      mediaType: item.mediaType,
+      title: item.title,
+      source: 'mdblist' as const,
+      sourceId,
+      ...(sourceUrl ? { sourceUrl } : {}),
+    };
+  });
 
 mdblistDiscoverRoutes.get('/lists/search', async (req, res, next) => {
   try {
@@ -52,7 +72,10 @@ mdblistDiscoverRoutes.get('/list', async (req, res, next) => {
     return res.status(200).json({
       page,
       hasMore,
-      results: mapItems(items),
+      results: omitUnmappedDiscoverItems(
+        mapItems(items),
+        shouldHideUnmappedFromQuery(req.query)
+      ),
       title,
     } satisfies WatchlistResponse & { title: string });
   } catch (error) {

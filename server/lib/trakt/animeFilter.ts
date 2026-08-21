@@ -18,6 +18,9 @@ async function hasAnimeKeyword(
   tmdb: TheMovieDb,
   item: TraktMediaItem
 ): Promise<boolean> {
+  if (!item.tmdbId || item.tmdbId <= 0) {
+    return false;
+  }
   const cache = cacheManager.getCache('tmdb');
   const cacheKey = `anime-keyword:${item.mediaType}:${item.tmdbId}`;
   const cached = cache.data.get<boolean>(cacheKey);

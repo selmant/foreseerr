@@ -5,6 +5,7 @@ import {
   EXTERNAL_ENRICHMENT_CONCURRENCY,
   mapWithConcurrency,
 } from '@server/lib/concurrency';
+import { hasDiscoverTmdbId } from '@server/lib/discover/unmapped';
 import {
   fetchBatchCombinedRatings,
   fetchCombinedRatings,
@@ -348,8 +349,10 @@ export const filterTraktDiscoverItems = async (
 
   const needTmdb = needsTmdbBrowseFilters(filters);
   const mdblistConfigured = Boolean(getSettings().mdblist?.apiKey?.trim());
-  const itemsNeedingMdblist = items.filter((item) =>
-    needsMdblistFetchForItem(filters, item.traktCommunityRating)
+  const itemsNeedingMdblist = items.filter(
+    (item): item is TraktMediaItem & { tmdbId: number } =>
+      hasDiscoverTmdbId(item.tmdbId) &&
+      needsMdblistFetchForItem(filters, item.traktCommunityRating)
   );
 
   const ratingsByKey = new Map<string, RatingResponse | null>();
@@ -371,6 +374,10 @@ export const filterTraktDiscoverItems = async (
     items,
     EXTERNAL_ENRICHMENT_CONCURRENCY,
     async (item): Promise<TraktMediaItem | null> => {
+      const tmdbId = item.tmdbId;
+      if (!hasDiscoverTmdbId(tmdbId)) {
+        return null;
+      }
       let voteAverage = 0;
       let voteCount = 0;
       let releaseDate: string | null =
@@ -385,7 +392,7 @@ export const filterTraktDiscoverItems = async (
         try {
           if (item.mediaType === 'movie') {
             const movie = await tmdb.getMovieBrowseMetadata({
-              movieId: item.tmdbId,
+              movieId: tmdbId,
             });
             voteAverage = movie.vote_average;
             voteCount = movie.vote_count;
@@ -396,7 +403,7 @@ export const filterTraktDiscoverItems = async (
             title = movie.title;
           } else {
             const show = await tmdb.getTvBrowseMetadata({
-              tvId: item.tmdbId,
+              tvId: tmdbId,
             });
             voteAverage = show.vote_average;
             voteCount = show.vote_count;
@@ -418,7 +425,7 @@ export const filterTraktDiscoverItems = async (
       }
 
       if (needsMdblistFetchForItem(filters, item.traktCommunityRating)) {
-        const cached = ratingsByKey.get(`${item.mediaType}:${item.tmdbId}`);
+        const cached = ratingsByKey.get(`${item.mediaType}:${tmdbId}`);
         if (cached !== undefined) {
           external = {
             ...externalRatingsFromResponse(cached),
@@ -433,7 +440,7 @@ export const filterTraktDiscoverItems = async (
             const fetched = externalRatingsFromResponse(
               await fetchCombinedRatings({
                 mediaType: item.mediaType,
-                tmdbId: item.tmdbId,
+                tmdbId,
                 title,
                 year:
                   releaseYearFromDate(releaseDate) ?? item.year ?? undefined,

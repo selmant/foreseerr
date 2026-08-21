@@ -355,8 +355,6 @@ class PlexTvAPI extends ExternalAPI {
 
             return {
               ratingKey: metadata.ratingKey,
-              // This should always be set? But I guess it also cannot be?
-              // We will filter out the 0's afterwards
               tmdbId: tmdbString ? Number(tmdbString.id.split('//')[1]) : 0,
               tvdbId: tvdbString
                 ? Number(tvdbString.id.split('//')[1])
@@ -369,7 +367,7 @@ class PlexTvAPI extends ExternalAPI {
       );
 
       const filteredList = watchlistDetails.filter(
-        (detail) => detail?.tmdbId
+        (detail) => detail != null
       ) as PlexWatchlistItem[];
 
       return {

@@ -1,5 +1,7 @@
 import Slider from '@app/components/Slider';
-import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
+import TmdbTitleCard, {
+  watchlistTitleCardProps,
+} from '@app/components/TitleCard/TmdbTitleCard';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
@@ -63,11 +65,8 @@ const PlexWatchlistSlider = () => {
         })}
         items={watchlistItems?.results.map((item) => (
           <TmdbTitleCard
-            id={item.tmdbId}
             key={`watchlist-slider-item-${item.ratingKey}`}
-            tmdbId={item.tmdbId}
-            type={item.mediaType}
-            ratings={item.ratings}
+            {...watchlistTitleCardProps(item)}
             isAddedToWatchlist={true}
           />
         ))}

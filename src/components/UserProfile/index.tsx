@@ -4,7 +4,9 @@ import PageTitle from '@app/components/Common/PageTitle';
 import ProgressCircle from '@app/components/Common/ProgressCircle';
 import RequestCard from '@app/components/RequestCard';
 import Slider from '@app/components/Slider';
-import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
+import TmdbTitleCard, {
+  watchlistTitleCardProps,
+} from '@app/components/TitleCard/TmdbTitleCard';
 import ProfileHeader from '@app/components/UserProfile/ProfileHeader';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
@@ -366,11 +368,8 @@ const UserProfile = () => {
               })}
               items={watchlistItems?.results.map((item) => (
                 <TmdbTitleCard
-                  id={item.tmdbId}
                   key={`watchlist-slider-item-${item.ratingKey}`}
-                  tmdbId={item.tmdbId}
-                  type={item.mediaType}
-                  ratings={item.ratings}
+                  {...watchlistTitleCardProps(item)}
                 />
               ))}
             />

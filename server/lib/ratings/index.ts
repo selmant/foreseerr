@@ -265,6 +265,7 @@ export const fetchBatchCombinedRatings = async (
 
 type RatingResult = {
   id: number;
+  tmdbId?: number;
   mediaType?: string;
   title?: string;
   name?: string;
@@ -272,6 +273,13 @@ type RatingResult = {
   firstAirDate?: string | null;
   ratings?: RatingResponse | null;
 };
+
+function ratingResultTmdbId(result: RatingResult): number | undefined {
+  if (result.tmdbId != null) {
+    return result.tmdbId > 0 ? result.tmdbId : undefined;
+  }
+  return result.id > 0 ? result.id : undefined;
+}
 
 /** Merge external ratings into the same result objects that carry posters. */
 export const enrichResultsWithRatings = async <T extends RatingResult>(
@@ -282,11 +290,15 @@ export const enrichResultsWithRatings = async <T extends RatingResult>(
     return results;
   }
 
-  const candidates = results.filter(
-    (result) =>
-      (result.mediaType === 'movie' || result.mediaType === 'tv') &&
-      (!options?.skipExisting || result.ratings === undefined)
-  );
+  const candidates = results.filter((result) => {
+    if (result.mediaType !== 'movie' && result.mediaType !== 'tv') {
+      return false;
+    }
+    if (options?.skipExisting && result.ratings !== undefined) {
+      return false;
+    }
+    return ratingResultTmdbId(result) != null;
+  });
   if (!candidates.length || !getSettings().mdblist?.apiKey?.trim()) {
     return results;
   }
@@ -297,7 +309,7 @@ export const enrichResultsWithRatings = async <T extends RatingResult>(
         result.mediaType === 'movie' ? result.releaseDate : result.firstAirDate;
       return {
         mediaType: result.mediaType as 'movie' | 'tv',
-        tmdbId: result.id,
+        tmdbId: ratingResultTmdbId(result) as number,
         title: result.title ?? result.name,
         releaseDate,
         year: releaseDate ? Number(String(releaseDate).slice(0, 4)) : undefined,
@@ -308,12 +320,17 @@ export const enrichResultsWithRatings = async <T extends RatingResult>(
     batch.map((item) => [`${item.mediaType}:${item.tmdbId}`, item.ratings])
   );
 
-  return results.map((result) =>
-    result.mediaType === 'movie' || result.mediaType === 'tv'
-      ? {
-          ...result,
-          ratings: ratingsByKey.get(`${result.mediaType}:${result.id}`) ?? null,
-        }
-      : result
-  );
+  return results.map((result) => {
+    const tmdbId = ratingResultTmdbId(result);
+    if (
+      (result.mediaType !== 'movie' && result.mediaType !== 'tv') ||
+      tmdbId == null
+    ) {
+      return result;
+    }
+    return {
+      ...result,
+      ratings: ratingsByKey.get(`${result.mediaType}:${tmdbId}`) ?? null,
+    };
+  });
 };

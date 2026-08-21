@@ -102,9 +102,15 @@ describe('mapMdblistListItems', () => {
     ]);
   });
 
-  it('drops items without a TMDB id', () => {
+  it('keeps items without a TMDB id when a title is present', () => {
     const items = mapMdblistListItems({
-      movies: [{ title: 'Unknown', mediatype: 'movie', ids: {} }],
+      movies: [
+        {
+          title: 'Unknown',
+          mediatype: 'movie',
+          ids: { imdb: 'tt1234567' },
+        },
+      ],
       shows: [{ id: 253941, title: 'The Paper', mediatype: 'show' }],
     });
 
@@ -114,6 +120,12 @@ describe('mapMdblistListItems', () => {
         mediaType: 'tv',
         title: 'The Paper',
         rank: undefined,
+      },
+      {
+        mediaType: 'movie',
+        title: 'Unknown',
+        rank: undefined,
+        imdbId: 'tt1234567',
       },
     ]);
   });

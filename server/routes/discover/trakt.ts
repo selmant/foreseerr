@@ -19,6 +19,12 @@ import {
   filterTraktDiscoverPageItems,
   needsTraktDiscoverPostFilters,
 } from '@server/lib/discover/traktDiscoverPagination';
+import {
+  hasDiscoverTmdbId,
+  omitUnmappedDiscoverItems,
+  shouldHideUnmappedFromQuery,
+  traktSourceUrl,
+} from '@server/lib/discover/unmapped';
 import { enrichResultsWithRatings } from '@server/lib/ratings';
 import { traktExtendedForBrowseQuery } from '@server/lib/requestFilters';
 import {
@@ -42,13 +48,25 @@ import { Router } from 'express';
 const traktDiscoverRoutes = Router();
 
 const mapTraktItems = (items: TraktMediaItem[]): WatchlistItem[] =>
-  items.map((item) => ({
-    id: item.tmdbId,
-    ratingKey: `trakt-${item.mediaType}-${item.tmdbId}`,
-    tmdbId: item.tmdbId,
-    mediaType: item.mediaType,
-    title: item.title,
-  }));
+  items.map((item) => {
+    const sourceId =
+      item.traktSlug ||
+      (item.traktId ? String(item.traktId) : undefined) ||
+      (hasDiscoverTmdbId(item.tmdbId) ? String(item.tmdbId) : item.title);
+    const permalink = item.traktSlug || item.traktId;
+    return {
+      id: item.tmdbId ?? item.traktId ?? 0,
+      ratingKey: `trakt-${item.mediaType}-${sourceId}`,
+      ...(hasDiscoverTmdbId(item.tmdbId) ? { tmdbId: item.tmdbId } : {}),
+      mediaType: item.mediaType,
+      title: item.title,
+      source: 'trakt' as const,
+      sourceId,
+      ...(permalink
+        ? { sourceUrl: traktSourceUrl(item.mediaType, permalink) }
+        : {}),
+    };
+  });
 
 interface MapFilteredTraktItemsOptions {
   user?: User;
@@ -72,10 +90,13 @@ const mapFilteredTraktItems = async (
         skipWatchedFilter: options.skipWatchedFilter,
       });
 
-  return enrichResultsWithRatings(mapTraktItems(filtered), {
-    query: options.query,
-    skipExisting: true,
-  });
+  return omitUnmappedDiscoverItems(
+    await enrichResultsWithRatings(mapTraktItems(filtered), {
+      query: options.query,
+      skipExisting: true,
+    }),
+    shouldHideUnmappedFromQuery(options.query ?? {})
+  );
 };
 
 async function resolveTraktDiscoverPage(options: {

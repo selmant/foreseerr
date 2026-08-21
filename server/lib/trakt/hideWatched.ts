@@ -106,9 +106,12 @@ export function filterWatchedTraktItems(
   items: TraktMediaItem[],
   sets: WatchedIdSets
 ): TraktMediaItem[] {
-  return items.filter(
-    (item) => !isWatchedInSets(sets, item.mediaType, item.tmdbId)
-  );
+  return items.filter((item) => {
+    if (!item.tmdbId || item.tmdbId <= 0) {
+      return true;
+    }
+    return !isWatchedInSets(sets, item.mediaType, item.tmdbId);
+  });
 }
 
 export function filterWatchedMixedBrowseResults<

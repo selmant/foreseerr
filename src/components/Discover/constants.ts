@@ -132,6 +132,7 @@ export const QueryFilterOptions = z.object({
   ignoreWatched: z.enum(['true', 'false']).optional(),
   ignoreCollected: z.string().optional(),
   ignoreWatchlisted: z.string().optional(),
+  hideUnmapped: z.enum(['true', 'false']).optional(),
   /** MDBList extras — rating ranges (unset = off) */
   imdbRatingGte: z.string().optional(),
   imdbRatingLte: z.string().optional(),
@@ -338,6 +339,10 @@ export const prepareFilterValues = (
     filterValues.ignoreWatchlisted = values.ignoreWatchlisted;
   }
 
+  if (values.hideUnmapped) {
+    filterValues.hideUnmapped = values.hideUnmapped;
+  }
+
   if (values.imdbRatingGte) {
     filterValues.imdbRatingGte = values.imdbRatingGte;
   }
@@ -464,6 +469,7 @@ export const countActiveFilters = (filterValues: FilterOptions): number => {
   delete clonedFilters.ignoreWatched;
   delete clonedFilters.ignoreCollected;
   delete clonedFilters.ignoreWatchlisted;
+  delete clonedFilters.hideUnmapped;
 
   if (clonedFilters.includeNoRating === 'false') {
     totalCount += 1;

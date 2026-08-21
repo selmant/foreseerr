@@ -63,8 +63,23 @@ function defaultTimestamp(item: TraktMediaItem): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-function itemKey(item: TraktMediaItem): string {
-  return `${item.mediaType}:${item.tmdbId}`;
+export function traktItemKey(item: {
+  mediaType: 'movie' | 'tv';
+  tmdbId?: number;
+  traktSlug?: string;
+  traktId?: number;
+  title?: string;
+}): string {
+  if (item.tmdbId && item.tmdbId > 0) {
+    return `${item.mediaType}:tmdb:${item.tmdbId}`;
+  }
+  if (item.traktSlug) {
+    return `${item.mediaType}:slug:${item.traktSlug}`;
+  }
+  if (item.traktId && item.traktId > 0) {
+    return `${item.mediaType}:trakt:${item.traktId}`;
+  }
+  return `${item.mediaType}:title:${item.title ?? ''}`;
 }
 
 /**
@@ -84,7 +99,7 @@ export function mergeAndPaginateTraktItems(
   const merged: TraktMediaItem[] = [];
   const seen = new Set<string>();
   const pushUnique = (item: TraktMediaItem) => {
-    const key = itemKey(item);
+    const key = traktItemKey(item);
     if (seen.has(key)) {
       return;
     }

@@ -1,3 +1,5 @@
+import { hasDiscoverTmdbId } from '@server/lib/discover/unmapped';
+
 export class MdblistNotConfiguredError extends Error {
   constructor(message = 'MDBList API key is not configured') {
     super(message);
@@ -46,10 +48,11 @@ export interface MdblistPublicList {
 }
 
 export interface MdblistDiscoverItem {
-  tmdbId: number;
+  tmdbId?: number;
   mediaType: 'movie' | 'tv';
   title: string;
   rank?: number;
+  imdbId?: string;
 }
 
 export interface MdblistListItemPayload {
@@ -167,19 +170,22 @@ const toMediaType = (value: string | undefined): 'movie' | 'tv' | undefined => {
 export const mapMdblistListItem = (
   item: MdblistListItemPayload
 ): MdblistDiscoverItem | null => {
-  const tmdbId = Number(item.ids?.tmdb ?? item.id);
-  if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
+  const tmdbRaw = Number(item.ids?.tmdb ?? item.id);
+  const tmdbId = Number.isFinite(tmdbRaw) && tmdbRaw > 0 ? tmdbRaw : undefined;
+  const imdbId = item.ids?.imdb?.trim() || undefined;
+  const title = item.title?.trim() || (tmdbId ? String(tmdbId) : imdbId) || '';
+  if (!title) {
     return null;
   }
 
   const mediaType = toMediaType(item.mediatype ?? item.type) ?? 'movie';
-  const title = item.title?.trim() || String(tmdbId);
 
   return {
-    tmdbId,
+    ...(hasDiscoverTmdbId(tmdbId) ? { tmdbId } : {}),
     mediaType,
     title,
     rank: Number.isFinite(item.rank) ? Number(item.rank) : undefined,
+    ...(imdbId ? { imdbId } : {}),
   };
 };
 

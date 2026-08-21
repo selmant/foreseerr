@@ -34,6 +34,7 @@ const MEDIA_FIELDS = `
   episodes
   seasonYear
   startDate { year }
+  coverImage { large medium }
 `;
 
 const PAGE_MEDIA_QUERY = `

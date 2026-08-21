@@ -60,6 +60,9 @@ const messages = defineMessages('components.Discover.FilterSlideover', {
     'Uses Jellyfin and Trakt watch history when either is available.',
   hideCollected: 'Hide collected',
   hideWatchlisted: 'Hide watchlisted',
+  hideUnmapped: 'Hide unmapped titles',
+  hideUnmappedTip:
+    'Hide titles from Trakt, AniList, MDBList, or Plex that could not be mapped to TMDB.',
   traktOptions: 'Trakt',
   watchedOptions: 'Watched',
   externalRatings: 'External ratings (MDBList)',
@@ -109,6 +112,7 @@ type FilterSlideoverProps = {
   /** Opt-in endpoint-specific filters; shared filters are always shown. */
   capabilities?: FilterCapabilities;
   showHideWatched?: boolean;
+  showHideUnmapped?: boolean;
   showTraktRecommendationFilters?: boolean;
 };
 
@@ -120,6 +124,7 @@ const FilterSlideover = ({
   currentFilters,
   capabilities = discoverFilterCapabilities,
   showHideWatched = false,
+  showHideUnmapped = false,
   showTraktRecommendationFilters = false,
 }: FilterSlideoverProps) => {
   const intl = useIntl();
@@ -160,12 +165,22 @@ const FilterSlideover = ({
     (currentFilters.ignoreWatchlisted !== 'false' &&
       defaultsActive &&
       discoverDefaults?.ignoreWatchlisted === true);
+  const hideUnmapped =
+    currentFilters.hideUnmapped === 'true' ||
+    (currentFilters.hideUnmapped !== 'false' &&
+      defaultsActive &&
+      discoverDefaults?.hideUnmapped === true);
 
   const activeCount =
     countActiveFilters(currentFilters) +
     (showHideWatched &&
     (currentFilters.ignoreWatched === 'true' ||
       currentFilters.ignoreWatched === 'false')
+      ? 1
+      : 0) +
+    (showHideUnmapped &&
+    (currentFilters.hideUnmapped === 'true' ||
+      currentFilters.hideUnmapped === 'false')
       ? 1
       : 0) +
     (showTraktRecommendationFilters && ignoreCollected ? 1 : 0) +
@@ -202,6 +217,27 @@ const FilterSlideover = ({
             </label>
             <p className="mt-1 text-xs text-gray-400">
               {intl.formatMessage(messages.hideWatchedTip)}
+            </p>
+          </div>
+        )}
+        {showHideUnmapped && (
+          <div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                className="rounded border-gray-500 bg-gray-800 text-indigo-500"
+                checked={hideUnmapped}
+                onChange={(e) =>
+                  updateQueryParams(
+                    'hideUnmapped',
+                    e.target.checked ? 'true' : 'false'
+                  )
+                }
+              />
+              {intl.formatMessage(messages.hideUnmapped)}
+            </label>
+            <p className="mt-1 text-xs text-gray-400">
+              {intl.formatMessage(messages.hideUnmappedTip)}
             </p>
           </div>
         )}
@@ -817,6 +853,7 @@ const FilterSlideover = ({
                 ignoreWatched: 'false',
                 ignoreCollected: 'false',
                 ignoreWatchlisted: 'false',
+                hideUnmapped: 'false',
               });
               onClose();
             }}

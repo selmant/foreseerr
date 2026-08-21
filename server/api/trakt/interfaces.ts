@@ -45,10 +45,14 @@ export type TraktFetchMediaType = 'movie' | 'tv' | 'all';
 export type TraktListSortBy = 'added' | 'released';
 
 export interface TraktMediaItem {
-  tmdbId: number;
+  tmdbId?: number;
   mediaType: 'movie' | 'tv';
   title: string;
   year?: number;
+  traktSlug?: string;
+  traktId?: number;
+  imdbId?: string;
+  tvdbId?: number;
   /** Community rating from Trakt extended=full payloads */
   traktCommunityRating?: number;
   /** Trakt list metadata used for app-side list sorting. */

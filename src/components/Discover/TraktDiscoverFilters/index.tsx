@@ -77,6 +77,10 @@ const TraktDiscoverFilters = ({
       : 0) +
     (showRecommendationFilters && preparedFilters.ignoreWatchlisted === 'true'
       ? 1
+      : 0) +
+    (preparedFilters.hideUnmapped === 'true' ||
+    preparedFilters.hideUnmapped === 'false'
+      ? 1
       : 0);
 
   return (
@@ -110,6 +114,7 @@ const TraktDiscoverFilters = ({
         genreType={genreType}
         capabilities={browseFilterCapabilities}
         showHideWatched={showHideWatchedFilter}
+        showHideUnmapped
         showTraktRecommendationFilters={showRecommendationFilters}
         currentFilters={preparedFilters}
         onClose={() => setShowFilters(false)}

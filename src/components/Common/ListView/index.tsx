@@ -4,7 +4,9 @@ import {
   TitleCardBatchProvider,
   type TitleCardBatchRef,
 } from '@app/components/TitleCard/TitleCardBatchContext';
-import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
+import TmdbTitleCard, {
+  watchlistTitleCardProps,
+} from '@app/components/TitleCard/TmdbTitleCard';
 import { Permission, useUser } from '@app/hooks/useUser';
 import useVerticalScroll from '@app/hooks/useVerticalScroll';
 import globalMessages from '@app/i18n/globalMessages';
@@ -72,11 +74,13 @@ const ListView = ({
     }
     for (const title of plexItems ?? []) {
       if (title.mediaType === 'movie' || title.mediaType === 'tv') {
-        refs.push({
-          mediaType: title.mediaType,
-          tmdbId: title.tmdbId,
-          title: title.title,
-        });
+        if (title.tmdbId && title.tmdbId > 0) {
+          refs.push({
+            mediaType: title.mediaType,
+            tmdbId: title.tmdbId,
+            title: title.title,
+          });
+        }
       }
     }
     return refs;
@@ -94,10 +98,7 @@ const ListView = ({
           return (
             <li key={`${title.ratingKey}-${index}`}>
               <TmdbTitleCard
-                id={title.tmdbId}
-                tmdbId={title.tmdbId}
-                type={title.mediaType}
-                ratings={title.ratings}
+                {...watchlistTitleCardProps(title)}
                 isAddedToWatchlist={true}
                 canExpand
                 mutateParent={mutateParent}

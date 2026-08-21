@@ -9,6 +9,10 @@ import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import anilistIdMapping, {
   anilistFormatToMediaType,
 } from '@server/lib/anilist/mapping';
+import {
+  anilistSourceUrl,
+  hasDiscoverTmdbId,
+} from '@server/lib/discover/unmapped';
 
 const STATUS_LIST_NAMES: Record<AnilistMediaListStatus, string> = {
   CURRENT: 'Watching',
@@ -28,6 +32,14 @@ export function anilistMediaTitle(media?: AnilistMedia | null): string {
   );
 }
 
+function anilistCoverImage(media: AnilistMedia): string | undefined {
+  return (
+    media.coverImage?.large?.trim() ||
+    media.coverImage?.medium?.trim() ||
+    undefined
+  );
+}
+
 export async function mapAnilistMedia(
   media: AnilistMedia
 ): Promise<AnilistDiscoverItem | null> {
@@ -36,14 +48,22 @@ export async function mapAnilistMedia(
   }
   await anilistIdMapping.sync();
   const mapped = anilistIdMapping.getFromAnilistId(media.id);
+  const title = anilistMediaTitle(media) || `AniList ${media.id}`;
+  const image = anilistCoverImage(media);
   if (!mapped) {
-    return null;
+    return {
+      anilistId: media.id,
+      mediaType: anilistFormatToMediaType(media.format),
+      title,
+      ...(image ? { image } : {}),
+    };
   }
   return {
     anilistId: media.id,
     tmdbId: mapped.tmdbId,
     mediaType: mapped.mediaType ?? anilistFormatToMediaType(media.format),
-    title: anilistMediaTitle(media),
+    title,
+    ...(image ? { image } : {}),
   };
 }
 
@@ -57,11 +77,18 @@ export async function mapAnilistMediaList(
     if (!item) {
       continue;
     }
-    const key = `${item.mediaType}:${item.tmdbId}`;
-    if (seen.has(key)) {
+    const anilistKey = `anilist:${item.anilistId}`;
+    if (seen.has(anilistKey)) {
       continue;
     }
-    seen.add(key);
+    seen.add(anilistKey);
+    if (hasDiscoverTmdbId(item.tmdbId)) {
+      const tmdbKey = `${item.mediaType}:${item.tmdbId}`;
+      if (seen.has(tmdbKey)) {
+        continue;
+      }
+      seen.add(tmdbKey);
+    }
     mapped.push(item);
   }
   return mapped;
@@ -71,11 +98,15 @@ export function toWatchlistItems(
   items: AnilistDiscoverItem[]
 ): WatchlistItem[] {
   return items.map((item) => ({
-    id: item.tmdbId,
+    id: hasDiscoverTmdbId(item.tmdbId) ? item.tmdbId : item.anilistId,
     ratingKey: `anilist-${item.anilistId}`,
-    tmdbId: item.tmdbId,
+    ...(hasDiscoverTmdbId(item.tmdbId) ? { tmdbId: item.tmdbId } : {}),
     mediaType: item.mediaType,
     title: item.title,
+    source: 'anilist' as const,
+    sourceId: String(item.anilistId),
+    sourceUrl: anilistSourceUrl(item.anilistId),
+    ...(item.image ? { image: item.image } : {}),
   }));
 }
 

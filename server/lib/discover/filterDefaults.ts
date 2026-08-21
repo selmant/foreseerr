@@ -11,6 +11,7 @@ export const DiscoverFilterDefaultsSchema = z
     ignoreWatched: z.boolean().optional(),
     ignoreCollected: z.boolean().optional(),
     ignoreWatchlisted: z.boolean().optional(),
+    hideUnmapped: z.boolean().optional(),
     includeNoRating: z.boolean().optional(),
     language: optionalString,
     primaryReleaseDateGte: optionalString,
@@ -45,6 +46,7 @@ const BOOLEAN_KEYS = [
   'ignoreWatched',
   'ignoreCollected',
   'ignoreWatchlisted',
+  'hideUnmapped',
   'includeNoRating',
 ] as const;
 

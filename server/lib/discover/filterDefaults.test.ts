@@ -11,10 +11,12 @@ describe('discover filter defaults', () => {
   it('parses valid defaults and rejects unknown keys', () => {
     const parsed = parseDiscoverFilterDefaults({
       ignoreWatched: true,
+      hideUnmapped: true,
       voteAverageGte: '7',
       genre: '28,18',
     });
     assert.equal(parsed.ignoreWatched, true);
+    assert.equal(parsed.hideUnmapped, true);
     assert.equal(parsed.voteAverageGte, '7');
     assert.equal(parsed.genre, '28,18');
 
@@ -47,11 +49,13 @@ describe('discover filter defaults', () => {
       {
         ignoreWatched: true,
         includeNoRating: false,
+        hideUnmapped: true,
         voteAverageGte: '7.0',
       }
     );
     assert.equal(merged.ignoreWatched, 'true');
     assert.equal(merged.includeNoRating, 'false');
+    assert.equal(merged.hideUnmapped, 'true');
     assert.equal(merged.voteAverageGte, '7.0');
     assert.equal(merged.page, '1');
   });

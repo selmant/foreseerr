@@ -75,6 +75,12 @@ export const mergeFilterDefaults = (
     merged.ignoreWatchlisted = boolToQuery(defaults.ignoreWatchlisted);
   }
   if (
+    merged.hideUnmapped == null &&
+    typeof defaults.hideUnmapped === 'boolean'
+  ) {
+    merged.hideUnmapped = boolToQuery(defaults.hideUnmapped);
+  }
+  if (
     merged.includeNoRating == null &&
     typeof defaults.includeNoRating === 'boolean'
   ) {

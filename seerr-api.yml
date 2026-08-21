@@ -232,6 +232,8 @@ components:
           type: boolean
         ignoreWatchlisted:
           type: boolean
+        hideUnmapped:
+          type: boolean
         includeNoRating:
           type: boolean
         language:
@@ -3138,6 +3140,15 @@ components:
       schema:
         type: boolean
       description: Hide titles already present in the user's watchlist.
+    DiscoverHideUnmapped:
+      in: query
+      name: hideUnmapped
+      schema:
+        type: boolean
+      description: >
+        Hide titles from third-party Discover sources that could not be mapped
+        to TMDB. When omitted, the user's Discover filter defaults (hideUnmapped)
+        are used.
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -7271,6 +7282,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreCollected'
         - $ref: '#/components/parameters/DiscoverIgnoreWatchlisted'
         - in: query
@@ -7614,6 +7626,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreCollected'
         - $ref: '#/components/parameters/DiscoverIgnoreWatchlisted'
         - in: query
@@ -7962,6 +7975,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreCollected'
         - $ref: '#/components/parameters/DiscoverIgnoreWatchlisted'
         - in: query
@@ -8204,6 +8218,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
       responses:
         '200':
           description: Trakt recommendations returned
@@ -8252,6 +8267,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
       responses:
         '200':
           description: Trakt watchlist returned. Exact totals are omitted; use hasMore for continuation.
@@ -8315,6 +8331,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
       responses:
         '200':
           description: Trakt history returned. Exact totals are omitted; use hasMore for continuation.
@@ -8419,6 +8436,7 @@ paths:
         - $ref: '#/components/parameters/DiscoverIncludeNoRating'
         - $ref: '#/components/parameters/DiscoverIgnoreWatched'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
       responses:
         '200':
           description: Trakt list items returned
@@ -8433,6 +8451,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList trending anime returned
@@ -8447,6 +8467,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList seasonal anime returned
@@ -8461,6 +8483,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList popular anime returned
@@ -8475,6 +8499,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList top-rated anime returned
@@ -8489,6 +8515,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList next-season anime returned
@@ -8503,6 +8531,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList watching list returned
@@ -8519,6 +8549,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList planning list returned
@@ -8535,6 +8567,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList completed list returned
@@ -8564,6 +8598,8 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList list items returned
@@ -8601,6 +8637,8 @@ paths:
             type: number
             example: 1
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: MDBList list items returned
@@ -8620,6 +8658,8 @@ paths:
             type: number
             example: 1
             default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: Watchlist data returned
@@ -8647,6 +8687,15 @@ paths:
                         type:
                           type: string
                         title:
+                          type: string
+                        source:
+                          type: string
+                          enum: [trakt, anilist, mdblist, plex]
+                        sourceUrl:
+                          type: string
+                        sourceId:
+                          type: string
+                        image:
                           type: string
   /request:
     get:
