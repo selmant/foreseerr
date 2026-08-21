@@ -43,15 +43,15 @@ const LibraryPosterCard = ({
   const typeLabel = intl.formatMessage(
     item.mediaType === 'movie' ? messages.movie : messages.series
   );
+  const isSeriesPoster = isLibrarySeriesPoster(item);
   const actionWatched =
-    item.tmdbId != null
+    !isSeriesPoster && item.tmdbId != null
       ? batch?.getStatus(item.mediaType, item.tmdbId)?.watched
       : undefined;
   const watchMark = libraryWatchMark({
     ...item,
     watched: Boolean(item.watched) || Boolean(actionWatched),
   });
-  const isSeriesPoster = isLibrarySeriesPoster(item);
   const showProgressBar = progress > 0 && !isSeriesPoster;
   const showOverviewHover = !isBrowse && !isTouch;
 
@@ -64,9 +64,11 @@ const LibraryPosterCard = ({
       ? `${item.title}, unwatched`
       : watchMark === 'watched'
         ? `${item.title}, watched`
-        : watchMark === 'remaining' && item.unplayedItemCount
+        : watchMark === 'partial' && item.unplayedItemCount
           ? `${item.title}, ${item.unplayedItemCount} unwatched episodes`
-          : item.title;
+          : watchMark === 'unavailable'
+            ? `${item.title}, no episodes currently available`
+            : item.title;
 
   return (
     <article
@@ -121,7 +123,7 @@ const LibraryPosterCard = ({
             <CheckCircleIcon className="h-5 w-5" />
           </span>
         ) : null}
-        {watchMark === 'remaining' && item.unplayedItemCount ? (
+        {watchMark === 'partial' && item.unplayedItemCount ? (
           <span
             data-testid="library-remaining-count"
             className="pointer-events-none absolute right-1.5 top-1.5 z-10 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-indigo-500 px-1.5 text-[11px] font-bold tabular-nums text-white shadow-md"

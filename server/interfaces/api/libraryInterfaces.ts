@@ -55,6 +55,8 @@ export interface LibraryTitle {
   inspectorItemId?: string;
   /** Unplayed episodes remaining. Set on series rows from Jellyfin UserData. */
   unplayedItemCount?: number;
+  /** Episodes currently present in the Jellyfin library. Set on series rows. */
+  availableEpisodeCount?: number;
 }
 
 export interface LibraryShelf {

@@ -60,7 +60,7 @@ export const uniqueSortedGenres = (
 };
 
 export const BROWSE_ITEM_FIELDS =
-  'ProviderIds,Overview,Genres,ProductionYear,DateCreated,PremiereDate,RunTimeTicks';
+  'ProviderIds,Overview,Genres,ProductionYear,DateCreated,PremiereDate,RunTimeTicks,RecursiveItemCount';
 
 export const buildJellyfinBrowseParams = (
   query: ParsedLibraryBrowseQuery,
@@ -144,6 +144,7 @@ export const libraryTitleDisplayFields = (item: {
   DateCreated?: string;
   RunTimeTicks?: number;
   BackdropImageTags?: string[];
+  RecursiveItemCount?: number;
   UserData?: {
     Played?: boolean;
     PlayedPercentage?: number;
@@ -166,6 +167,7 @@ export const libraryTitleDisplayFields = (item: {
   const unplayedItemCount = isSeries
     ? item.UserData?.UnplayedItemCount
     : undefined;
+  const availableEpisodeCount = isSeries ? item.RecursiveItemCount : undefined;
 
   return {
     year: item.ProductionYear,
@@ -184,6 +186,7 @@ export const libraryTitleDisplayFields = (item: {
     inspectorItemId:
       item.Type === 'Episode' && item.SeriesId ? item.SeriesId : item.Id,
     ...(unplayedItemCount != null ? { unplayedItemCount } : {}),
+    ...(availableEpisodeCount != null ? { availableEpisodeCount } : {}),
   };
 };
 

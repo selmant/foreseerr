@@ -1978,6 +1978,9 @@ components:
         unplayedItemCount:
           type: number
           description: Unplayed episodes remaining on series rows
+        availableEpisodeCount:
+          type: number
+          description: Episodes currently present in the library on series rows
     LibraryBrowseResponse:
       type: object
       required: [pageInfo, results]

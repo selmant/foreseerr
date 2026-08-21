@@ -1,8 +1,9 @@
 export type LibraryWatchMark =
+  | 'unavailable'
   | 'unplayed'
   | 'watched'
   | 'progress'
-  | 'remaining';
+  | 'partial';
 
 export const isLibrarySeriesPoster = (item: {
   mediaType?: 'movie' | 'tv';
@@ -21,15 +22,34 @@ export const libraryWatchMark = (item: {
   inProgress?: boolean;
   progressPercent?: number;
   unplayedItemCount?: number;
+  availableEpisodeCount?: number;
   lastPlayedAt?: string;
 }): LibraryWatchMark => {
   if (isLibrarySeriesPoster(item)) {
-    if (item.watched || item.unplayedItemCount === 0) {
-      return 'watched';
+    const available = item.availableEpisodeCount;
+    const unplayed = item.unplayedItemCount;
+
+    // A series shell can remain after its episodes are removed by another
+    // application. It is not a completed series; there is simply nothing
+    // currently available to play.
+    if (available === 0) {
+      return 'unavailable';
     }
-    if (item.unplayedItemCount != null && item.unplayedItemCount > 0) {
-      return 'remaining';
+
+    if (available != null && unplayed != null) {
+      if (unplayed === 0) {
+        return 'watched';
+      }
+      if (unplayed >= available) {
+        return 'unplayed';
+      }
+      return 'partial';
     }
+
+    // Older Jellyfin versions may omit aggregate counts. Do not let an
+    // external show-level status turn a partially watched series into a
+    // completed one in that case.
+    if (item.watched) return 'watched';
     return 'unplayed';
   }
 

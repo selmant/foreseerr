@@ -32,6 +32,7 @@ describe('buildJellyfinBrowseParams', () => {
     assert.equal(params.Limit, 12);
     assert.equal(params.userId, 'user-1');
     assert.equal(params.Recursive, true);
+    assert.match(String(params.Fields), /RecursiveItemCount/);
   });
 
   it('maps unwatched and played filters', () => {
@@ -135,10 +136,11 @@ describe('libraryTitleDisplayFields', () => {
     );
   });
 
-  it('exposes unplayed episode count on series without treating completion as resume', () => {
+  it('exposes the live series episode counts without treating completion as resume', () => {
     const fields = libraryTitleDisplayFields({
       Id: 'series-1',
       Type: 'Series',
+      RecursiveItemCount: 24,
       UserData: {
         Played: false,
         PlayedPercentage: 40,
@@ -149,6 +151,7 @@ describe('libraryTitleDisplayFields', () => {
     assert.equal(fields.watched, false);
     assert.equal(fields.inProgress, false);
     assert.equal(fields.unplayedItemCount, 12);
+    assert.equal(fields.availableEpisodeCount, 24);
   });
 });
 

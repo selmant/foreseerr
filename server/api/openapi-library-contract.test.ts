@@ -87,6 +87,7 @@ describe('OpenAPI library contract', () => {
       'runtimeMinutes',
       'inspectorItemId',
       'unplayedItemCount',
+      'availableEpisodeCount',
     ]) {
       assert.ok(title.properties[field], `LibraryTitle missing ${field}`);
     }

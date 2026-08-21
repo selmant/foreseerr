@@ -32,30 +32,49 @@ describe('libraryWatchMark', () => {
     jellyfinSeriesId: 'series-1',
   };
 
-  it('uses remaining count whenever a series still has unplayed episodes', () => {
+  it('marks a series as unplayed when every available episode is unplayed', () => {
     assert.equal(
       libraryWatchMark({
         ...series,
+        availableEpisodeCount: 12,
         unplayedItemCount: 12,
-        progressPercent: 40,
       }),
-      'remaining'
-    );
-    assert.equal(
-      libraryWatchMark({
-        ...series,
-        unplayedItemCount: 24,
-      }),
-      'remaining'
+      'unplayed'
     );
   });
 
-  it('marks a series with no remaining episodes as watched', () => {
+  it('marks a series with some remaining episodes as partially watched', () => {
     assert.equal(
-      libraryWatchMark({ ...series, unplayedItemCount: 0 }),
+      libraryWatchMark({
+        ...series,
+        availableEpisodeCount: 24,
+        unplayedItemCount: 12,
+      }),
+      'partial'
+    );
+  });
+
+  it('marks a series with no remaining available episodes as watched', () => {
+    assert.equal(
+      libraryWatchMark({
+        ...series,
+        availableEpisodeCount: 24,
+        unplayedItemCount: 0,
+      }),
       'watched'
     );
-    assert.equal(libraryWatchMark({ ...series, watched: true }), 'watched');
+  });
+
+  it('does not mistake an empty library series for a watched series', () => {
+    assert.equal(
+      libraryWatchMark({
+        ...series,
+        availableEpisodeCount: 0,
+        unplayedItemCount: 0,
+        watched: true,
+      }),
+      'unavailable'
+    );
   });
 
   it('keeps episode rows on episode play state, not series remaining', () => {

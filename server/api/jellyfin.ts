@@ -148,6 +148,7 @@ export interface JellyfinLibraryItemExtended extends JellyfinLibraryItem {
   PremiereDate?: string;
   ImageTags?: Record<string, string>;
   BackdropImageTags?: string[];
+  RecursiveItemCount?: number;
 }
 
 type EpisodeReturn<T> = T extends { includeMediaInfo: true }
