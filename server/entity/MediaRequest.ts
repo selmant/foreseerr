@@ -949,18 +949,20 @@ export class MediaRequest {
     Object.assign(this, init);
   }
 
+  /** Prefer the already-attached relation; a pool lookup cannot see uncommitted rows. */
+  private mediaFromThisRequest(): Media | null {
+    return this.media?.id ? this.media : null;
+  }
+
   @AfterInsert()
   public async notifyNewRequest(): Promise<void> {
     if (this.status === MediaRequestStatus.PENDING) {
-      const mediaRepository = getRepository(Media);
-      const media = await mediaRepository.findOne({
-        where: { id: this.media.id },
-      });
+      const media = this.mediaFromThisRequest();
       if (!media) {
         logger.error('Media data not found', {
           label: 'Media Request',
           requestId: this.id,
-          mediaId: this.media.id,
+          mediaId: this.media?.id,
         });
         return;
       }
@@ -989,15 +991,12 @@ export class MediaRequest {
       this.status === MediaRequestStatus.APPROVED ||
       this.status === MediaRequestStatus.DECLINED
     ) {
-      const mediaRepository = getRepository(Media);
-      const media = await mediaRepository.findOne({
-        where: { id: this.media.id },
-      });
+      const media = this.mediaFromThisRequest();
       if (!media) {
         logger.error('Media data not found', {
           label: 'Media Request',
           requestId: this.id,
-          mediaId: this.media.id,
+          mediaId: this.media?.id,
         });
         return;
       }

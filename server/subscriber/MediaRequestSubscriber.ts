@@ -42,6 +42,25 @@ const sanitizeDisplayName = (displayName: string): string => {
     .replace(/^-|-$/g, '');
 };
 
+/**
+ * Repositories bound to the current subscriber transaction.
+ * `getRepository()` uses a different pool connection and cannot see
+ * uncommitted Media rows created in `MediaRequest.persistPlan()`.
+ */
+const subscriberRepos = (manager?: EntityManager) => ({
+  media: manager ? manager.getRepository(Media) : getRepository(Media),
+  request: manager
+    ? manager.getRepository(MediaRequest)
+    : getRepository(MediaRequest),
+  season: manager ? manager.getRepository(Season) : getRepository(Season),
+  seasonRequest: manager
+    ? manager.getRepository(SeasonRequest)
+    : getRepository(SeasonRequest),
+  episodeRequest: manager
+    ? manager.getRepository(EpisodeRequest)
+    : getRepository(EpisodeRequest),
+});
+
 @EventSubscriber()
 export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRequest> {
   private async notifyAvailableMovie(
@@ -201,13 +220,16 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
   }
 
-  public async sendToRadarr(entity: MediaRequest): Promise<void> {
+  public async sendToRadarr(
+    entity: MediaRequest,
+    manager?: EntityManager
+  ): Promise<void> {
     if (
       entity.status === MediaRequestStatus.APPROVED &&
       entity.type === MediaType.MOVIE
     ) {
       try {
-        const mediaRepository = getRepository(Media);
+        const mediaRepository = subscriberRepos(manager).media;
         const settings = getSettings();
 
         if (settings.radarr.length === 0) {
@@ -376,7 +398,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
             mediaId: entity.media.id,
           });
 
-          const requestRepository = getRepository(MediaRequest);
+          const requestRepository = subscriberRepos(manager).request;
           entity.status = MediaRequestStatus.COMPLETED;
           await requestRepository.save(entity);
           return;
@@ -395,12 +417,13 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           searchNow: !radarrSettings.preventSearch,
         };
 
-        // Run entity asynchronously so we don't wait for it on the UI side
+        // Run entity asynchronously so we don't wait for it on the UI side.
+        // Lookups after HTTP must use the committed pool, not this transaction.
         radarr
           .addMovie(radarrMovieOptions)
           .then(async (radarrMovie) => {
-            // We grab media again here to make sure we have the latest version of it
-            const media = await mediaRepository.findOne({
+            const committedMediaRepository = getRepository(Media);
+            const media = await committedMediaRepository.findOne({
               where: { id: entity.media.id },
             });
 
@@ -415,7 +438,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
             ] = radarrMovie.titleSlug;
             media[entity.is4k ? 'serviceId4k' : 'serviceId'] =
               radarrSettings?.id;
-            await mediaRepository.save(media);
+            await committedMediaRepository.save(media);
           })
           .catch(async () => {
             try {
@@ -466,8 +489,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           mediaId: entity.media.id,
         });
       } catch (e) {
-        const requestRepository = getRepository(MediaRequest);
-        const mediaRepository = getRepository(Media);
+        const { request: requestRepository, media: mediaRepository } =
+          subscriberRepos(manager);
         const media = await mediaRepository.findOne({
           where: { id: entity.media.id },
         });
@@ -496,13 +519,16 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
   }
 
-  public async sendToSonarr(entity: MediaRequest): Promise<void> {
+  public async sendToSonarr(
+    entity: MediaRequest,
+    manager?: EntityManager
+  ): Promise<void> {
     if (
       entity.status === MediaRequestStatus.APPROVED &&
       entity.type === MediaType.TV
     ) {
       try {
-        const mediaRepository = getRepository(Media);
+        const mediaRepository = subscriberRepos(manager).media;
         const settings = getSettings();
         if (settings.sonarr.length === 0 && !settings.sonarr[0]) {
           logger.warn(
@@ -531,7 +557,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
             mediaId: entity.media.id,
           });
 
-          const requestRepository = getRepository(MediaRequest);
+          const requestRepository = subscriberRepos(manager).request;
           entity.status = MediaRequestStatus.COMPLETED;
           entity.seasons.forEach((season) => {
             season.status = MediaRequestStatus.COMPLETED;
@@ -548,7 +574,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         const tvdbId = series.external_ids.tvdb_id ?? media.tvdbId;
 
         if (!tvdbId) {
-          const requestRepository = getRepository(MediaRequest);
+          const requestRepository = subscriberRepos(manager).request;
           await mediaRepository.remove(media);
           await requestRepository.remove(entity);
           throw new Error('TVDB ID not found');
@@ -726,12 +752,13 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           searchNow: !sonarrSettings.preventSearch,
         };
 
-        // Run entity asynchronously so we don't wait for it on the UI side
+        // Run entity asynchronously so we don't wait for it on the UI side.
+        // Lookups after HTTP must use the committed pool, not this transaction.
         sonarr
           .addSeries(sonarrSeriesOptions)
           .then(async (sonarrSeries) => {
-            // We grab media again here to make sure we have the latest version of it
-            const media = await mediaRepository.findOne({
+            const committedMediaRepository = getRepository(Media);
+            const media = await committedMediaRepository.findOne({
               where: { id: entity.media.id },
             });
 
@@ -746,7 +773,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
             ] = sonarrSeries.titleSlug;
             media[entity.is4k ? 'serviceId4k' : 'serviceId'] =
               sonarrSettings?.id;
-            await mediaRepository.save(media);
+            await committedMediaRepository.save(media);
 
             if (entity.episodes?.length && sonarrSeries.id) {
               const episodeRepository = getRepository(EpisodeRequest);
@@ -841,8 +868,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           mediaId: entity.media.id,
         });
       } catch (e) {
-        const requestRepository = getRepository(MediaRequest);
-        const mediaRepository = getRepository(Media);
+        const { request: requestRepository, media: mediaRepository } =
+          subscriberRepos(manager);
         const media = await mediaRepository.findOne({
           where: { id: entity.media.id },
         });
@@ -873,8 +900,17 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
   }
 
-  public async updateParentStatus(entity: MediaRequest): Promise<void> {
-    const mediaRepository = getRepository(Media);
+  public async updateParentStatus(
+    entity: MediaRequest,
+    manager?: EntityManager
+  ): Promise<void> {
+    const {
+      media: mediaRepository,
+      request: requestRepository,
+      season: seasonRepository,
+      seasonRequest: seasonRequestRepository,
+      episodeRequest: episodeRequestRepository,
+    } = subscriberRepos(manager);
     const media = await mediaRepository.findOne({
       where: { id: entity.media.id },
     });
@@ -888,9 +924,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     const statusKey = entity.is4k ? 'status4k' : 'status';
-    const seasonRequestRepository = getRepository(SeasonRequest);
-    const episodeRequestRepository = getRepository(EpisodeRequest);
-    const requestRepository = getRepository(MediaRequest);
 
     if (
       entity.status === MediaRequestStatus.APPROVED &&
@@ -949,7 +982,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       media.mediaType === MediaType.TV &&
       entity.status === MediaRequestStatus.DECLINED
     ) {
-      const seasonRepository = getRepository(Season);
       const actualSeasons = await seasonRepository.find({
         where: { media: { id: media.id } },
       });
@@ -1075,8 +1107,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.sendToRadarr(event.entity as MediaRequest);
-      await this.sendToSonarr(event.entity as MediaRequest);
+      await this.sendToRadarr(event.entity as MediaRequest, event.manager);
+      await this.sendToSonarr(event.entity as MediaRequest, event.manager);
     } catch (e) {
       logger.error('Error while sending to *arr in afterUpdate subscriber', {
         label: 'Media Request',
@@ -1086,7 +1118,10 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.updateParentStatus(event.entity as MediaRequest);
+      await this.updateParentStatus(
+        event.entity as MediaRequest,
+        event.manager
+      );
 
       if (event.entity.status === MediaRequestStatus.COMPLETED) {
         if (event.entity.media.mediaType === MediaType.MOVIE) {
@@ -1114,8 +1149,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.sendToRadarr(event.entity as MediaRequest);
-      await this.sendToSonarr(event.entity as MediaRequest);
+      await this.sendToRadarr(event.entity as MediaRequest, event.manager);
+      await this.sendToSonarr(event.entity as MediaRequest, event.manager);
     } catch (e) {
       logger.error('Error while sending to *arr in afterInsert subscriber', {
         label: 'Media Request',
@@ -1125,7 +1160,10 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.updateParentStatus(event.entity as MediaRequest);
+      await this.updateParentStatus(
+        event.entity as MediaRequest,
+        event.manager
+      );
     } catch (e) {
       logger.error(
         'Error while updating parent status in afterInsert subscriber',
