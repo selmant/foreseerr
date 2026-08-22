@@ -52,6 +52,7 @@ export const nativeHostEventTypesV1 = [
   'save-config-success',
   'browser-cache-cleared',
   'runtime-failed',
+  'runtime-recovered',
 ] as const;
 
 export type NativeHostEventTypeV1 = (typeof nativeHostEventTypesV1)[number];

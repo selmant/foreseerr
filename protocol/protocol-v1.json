@@ -58,6 +58,10 @@
       "fields": ["id", "ticket"]
     },
     {
+      "type": "runtime.retry",
+      "fields": ["id"]
+    },
+    {
       "type": "window.minimize",
       "fields": ["id"]
     },
@@ -88,7 +92,8 @@
     "connectivity-success",
     "save-config-success",
     "browser-cache-cleared",
-    "runtime-failed"
+    "runtime-failed",
+    "runtime-recovered"
   ],
   "terminalPlayEventTypes": ["stopped", "finished", "canceled", "error"],
   "envelopes": {
