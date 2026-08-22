@@ -307,7 +307,7 @@ describe('desktop auth tickets', () => {
     assert.strictEqual(redeemed.body.userId, 'user-1');
   });
 
-  it('rejects an HTTP Jellyfin bootstrap URL by default', async () => {
+  it('accepts an HTTP Jellyfin bootstrap URL', async () => {
     getSettings().jellyfin.externalHostname = 'http://jellyfin.example.test';
     const verifier = 'h'.repeat(43);
     const challenge = await import('node:crypto').then(({ createHash }) =>
@@ -321,8 +321,37 @@ describe('desktop auth tickets', () => {
     const redeemed = await request(app)
       .post('/desktop/auth-tickets/redeem')
       .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
-    assert.strictEqual(redeemed.status, 500);
-    assert.strictEqual(redeemed.body.accessToken, undefined);
+    assert.strictEqual(redeemed.status, 200);
+    assert.strictEqual(redeemed.body.serverUrl, 'http://jellyfin.example.test');
+    assert.strictEqual(redeemed.body.accessToken, 'secret-token');
+  });
+
+  it('prefers the LAN Jellyfin URL and keeps the external URL as fallback', async () => {
+    const settings = getSettings();
+    settings.jellyfin.ip = '192.168.40.3';
+    settings.jellyfin.port = 8096;
+    settings.jellyfin.useSsl = false;
+    settings.jellyfin.urlBase = '';
+    settings.jellyfin.externalHostname = 'https://jellyfin.example.test';
+
+    const verifier = 'e'.repeat(43);
+    const challenge = await import('node:crypto').then(({ createHash }) =>
+      createHash('sha256').update(verifier).digest('hex')
+    );
+    const issued = await request(app)
+      .post('/desktop/auth-tickets')
+      .send({ challenge, protocolVersion: 1 });
+    assert.strictEqual(issued.status, 201);
+
+    const redeemed = await request(app)
+      .post('/desktop/auth-tickets/redeem')
+      .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+    assert.strictEqual(redeemed.status, 200);
+    assert.strictEqual(redeemed.body.serverUrl, 'http://192.168.40.3:8096');
+    assert.strictEqual(
+      redeemed.body.fallbackServerUrl,
+      'https://jellyfin.example.test'
+    );
   });
 
   it('bootstraps the LAN Jellyfin URL in the desktop runtime', async () => {
@@ -350,6 +379,10 @@ describe('desktop auth tickets', () => {
         .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
       assert.strictEqual(redeemed.status, 200);
       assert.strictEqual(redeemed.body.serverUrl, 'http://192.168.40.3:8096');
+      assert.strictEqual(
+        redeemed.body.fallbackServerUrl,
+        'https://jellyfin.example.test'
+      );
       assert.strictEqual(redeemed.body.accessToken, 'secret-token');
     } finally {
       if (previousRuntime === undefined) {

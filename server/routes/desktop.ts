@@ -12,7 +12,6 @@ import { getHostname } from '@server/utils/getHostname';
 import { Router } from 'express';
 import type { Store } from 'express-session';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import net from 'node:net';
 import { MoreThan } from 'typeorm';
 import { z } from 'zod';
 
@@ -148,57 +147,41 @@ const cleanupExpiredTickets = async () => {
     .execute();
 };
 
-const isPrivateOrLoopbackHttpHost = (hostname: string): boolean => {
-  if (hostname === 'localhost') {
-    return true;
+/** Playback bootstrap URLs. Prefer the internal Jellyfin box (LAN IP) and
+ * keep the external URL as a client fallback when that host is unreachable. */
+const normalizeJellyfinUrl = (value: string): string | undefined => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
   }
-  if (net.isIPv6(hostname)) {
-    const ip = hostname.toLowerCase();
-    return ip === '::1' || ip.startsWith('fd') || ip.startsWith('fe80:');
-  }
-  if (!net.isIPv4(hostname)) {
-    return false;
-  }
-  const octets = hostname.split('.').map(Number);
-  const [a, b] = octets;
-  return (
-    a === 10 ||
-    a === 127 ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 169 && b === 254)
-  );
-};
-
-/** Playback bootstrap URL. Hosted desktop requires HTTPS. The bundled
- * standalone runtime talks to the same LAN Jellyfin that login/library use;
- * copied production `externalHostname` values 401 and dump Play onto the
- * public Jellyfin login page. */
-const jellyfinDesktopHost = () => {
-  const settings = getSettings();
-  const desktopRuntime = process.env.FORESEERR_RUNTIME === 'desktop';
-  const value = desktopRuntime
-    ? getHostname()
-    : settings.jellyfin.externalHostname?.trim() || getHostname();
-  const parsed = z.string().url().safeParse(value);
+  const parsed = z.string().url().safeParse(trimmed);
   if (!parsed.success) {
-    throw new Error('Invalid Jellyfin desktop server URL');
+    return undefined;
   }
   const url = new URL(parsed.data);
-  if (url.username || url.password) {
+  if (url.username || url.password || !url.hostname) {
+    return undefined;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    return undefined;
+  }
+  return url.toString().replace(/\/$/, '');
+};
+
+const jellyfinDesktopHosts = (): { preferred: string; fallback?: string } => {
+  const settings = getSettings();
+  const internal = normalizeJellyfinUrl(getHostname());
+  const external = normalizeJellyfinUrl(
+    settings.jellyfin.externalHostname ?? ''
+  );
+  if (internal && external && internal !== external) {
+    return { preferred: internal, fallback: external };
+  }
+  const preferred = internal ?? external;
+  if (!preferred) {
     throw new Error('Invalid Jellyfin desktop server URL');
   }
-  if (url.protocol === 'https:') {
-    return url.toString().replace(/\/$/, '');
-  }
-  if (
-    desktopRuntime &&
-    url.protocol === 'http:' &&
-    isPrivateOrLoopbackHttpHost(url.hostname)
-  ) {
-    return url.toString().replace(/\/$/, '');
-  }
-  throw new Error('Invalid Jellyfin desktop server URL');
+  return { preferred };
 };
 
 const findLinkedUser = (userId: number) =>
@@ -311,22 +294,34 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
     ) {
       return res.status(409).json({ code: 'not_linked' });
     }
-    const serverUrl = jellyfinDesktopHost();
+    const { preferred: serverUrl, fallback: fallbackServerUrl } =
+      jellyfinDesktopHosts();
+    const candidates = [serverUrl, fallbackServerUrl].filter(
+      (value): value is string => Boolean(value)
+    );
     let linkedIdentity;
-    try {
-      linkedIdentity = await new JellyfinAPI(
-        serverUrl,
-        user.jellyfinAuthToken,
-        user.jellyfinDeviceId,
-        5000
-      ).getUser();
-    } catch (error) {
-      const status = error instanceof ApiError ? error.statusCode : undefined;
-      const code =
-        status === 401 || status === 403
-          ? 'token_invalid'
-          : 'server_unreachable';
-      return res.status(code === 'token_invalid' ? 401 : 503).json({ code });
+    let lastCode: 'token_invalid' | 'server_unreachable' = 'server_unreachable';
+    for (const candidate of candidates) {
+      try {
+        linkedIdentity = await new JellyfinAPI(
+          candidate,
+          user.jellyfinAuthToken,
+          user.jellyfinDeviceId,
+          5000
+        ).getUser();
+        break;
+      } catch (error) {
+        const status = error instanceof ApiError ? error.statusCode : undefined;
+        lastCode =
+          status === 401 || status === 403
+            ? 'token_invalid'
+            : 'server_unreachable';
+      }
+    }
+    if (!linkedIdentity) {
+      return res
+        .status(lastCode === 'token_invalid' ? 401 : 503)
+        .json({ code: lastCode });
     }
     if (linkedIdentity.Id !== user.jellyfinUserId || !linkedIdentity.ServerId) {
       return res.status(401).json({ code: 'token_invalid' });
@@ -349,6 +344,7 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
 
     return res.status(200).json({
       serverUrl,
+      fallbackServerUrl,
       serverId: linkedIdentity.ServerId,
       userId: user.jellyfinUserId,
       deviceId: user.jellyfinDeviceId,
