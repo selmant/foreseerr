@@ -25,8 +25,17 @@ const baseCacheDirectory = process.env.CACHE_DIRECTORY
   : process.env.CONFIG_DIRECTORY
     ? `${process.env.CONFIG_DIRECTORY}/cache/images`
     : path.join(__dirname, '../../config/cache/images');
-const IMAGE_CACHE_HIGH_WATER_BYTES = 1280 * 1024 * 1024;
-const IMAGE_CACHE_TRIM_TARGET_BYTES = 1024 * 1024 * 1024;
+const DEFAULT_TRANSIENT_CACHE_BYTES = 2 * 1024 * 1024 * 1024;
+const configuredTransientCacheBytes = Number(
+  process.env.FORESEER_CACHE_LIMIT_BYTES ?? DEFAULT_TRANSIENT_CACHE_BYTES
+);
+const transientCacheBytes = Number.isFinite(configuredTransientCacheBytes)
+  ? Math.max(configuredTransientCacheBytes, 128 * 1024 * 1024)
+  : DEFAULT_TRANSIENT_CACHE_BYTES;
+// The combined desktop budget reserves 62.5% for images and 37.5% for CEF.
+// Cleanup returns images to 50% of the combined budget to avoid thrashing.
+const IMAGE_CACHE_HIGH_WATER_BYTES = Math.floor(transientCacheBytes * 0.625);
+const IMAGE_CACHE_TRIM_TARGET_BYTES = Math.floor(transientCacheBytes * 0.5);
 let cleanupInProgress = false;
 
 /** Coerce Axios 1.18+ header values (string | number | boolean | string[]) to string. */
