@@ -41,6 +41,10 @@ export class CacheBudget {
   }
   ensureCapacity(): void {
     while (this.usedBytes > this.limitBytes) {
+      // Prune expiry across every provider before selecting an LRU victim.
+      // An expired item must never cause a live response to be discarded.
+      for (const store of this.stores) store.oldest();
+      if (this.usedBytes <= this.limitBytes) return;
       const candidate = [...this.stores]
         .flatMap((store) => store.oldest())
         .sort((a, b) => a.accessedAt - b.accessedAt)[0];
