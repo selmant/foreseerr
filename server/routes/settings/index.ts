@@ -27,6 +27,7 @@ import {
   clearIntegrationHealthCache,
   getIntegrationHealth,
 } from '@server/lib/integrationHealth';
+import { resetLibraryImageCache } from '@server/lib/libraryImageCache';
 import { clearAnilistSyncCache } from '@server/lib/mediaActions/anilistSyncCache';
 import { clearSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
@@ -1261,6 +1262,7 @@ settingsRoutes.post(
   async (_req, res, next) => {
     try {
       await ImageProxy.clearAll();
+      resetLibraryImageCache();
       return res.status(204).send();
     } catch (error) {
       return next({ status: 500, message: (error as Error).message });
@@ -1297,6 +1299,7 @@ settingsRoutes.post(
       for (const cache of Object.values(cacheManager.getAllCaches()))
         cache.flush();
       await ImageProxy.clearAll();
+      resetLibraryImageCache();
       return res.status(204).send();
     } catch (error) {
       return next({ status: 500, message: (error as Error).message });
