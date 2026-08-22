@@ -52,6 +52,7 @@ const heavyJobIds = new Set<JobId>([
   'process-blocklisted-tags',
 ]);
 let desktopCatchUpTimer: NodeJS.Timeout | undefined;
+let desktopDownloadStartupRun = false;
 
 const runScheduledJob = (
   id: string,
@@ -396,9 +397,28 @@ export const startDesktopCatchUp = (): void => {
     desktopCatchUpTimer = undefined;
     void (async () => {
       const repository = getRepository(JobExecutionState);
+      // Download tracking intentionally does not replay cron history. Each
+      // desktop launch resets stale tracker state and performs one fresh poll,
+      // then the ordinary schedule resumes.
+      if (!desktopDownloadStartupRun) {
+        desktopDownloadStartupRun = true;
+        await executeManagedJob('download-sync-reset', 'light', () =>
+          downloadTracker.resetDownloadTracker()
+        );
+        await executeManagedJob('download-sync', 'light', () =>
+          downloadTracker.updateDownloads()
+        );
+      }
       for (const job of scheduledJobs) {
-        // Download tracker reset has dedicated once-per-launch semantics.
-        if (job.id === 'download-sync-reset') continue;
+        // Download tracking and image cleanup have dedicated startup
+        // maintenance semantics rather than missed-cron replay.
+        if (
+          job.id === 'download-sync-reset' ||
+          job.id === 'download-sync' ||
+          job.id === 'image-cache-cleanup'
+        ) {
+          continue;
+        }
         const state = await repository.findOne({ where: { jobId: job.id } });
         const weight: ManagedJobWeight = heavyJobIds.has(job.id)
           ? 'heavy'
