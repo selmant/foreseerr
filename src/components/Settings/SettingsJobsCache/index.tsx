@@ -300,15 +300,47 @@ const SettingsJobs = () => {
     const response = await axios.post<{ ticket: string }>(
       '/api/v1/settings/cache/browser/flush'
     );
-    if (
-      !host.send({
-        type: 'browser-cache.clear',
-        id: crypto.randomUUID(),
-        ticket: response.data.ticket,
-      })
-    ) {
-      throw new Error('Native browser cache bridge is unavailable');
-    }
+    const id = crypto.randomUUID();
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(new Error('Native browser cache clear timed out'));
+      }, 10_000);
+      const onEvent = (event: Event) => {
+        const detail = (
+          event as CustomEvent<{
+            id?: string;
+            type?: string;
+            errorCode?: string;
+          }>
+        ).detail;
+        if (detail?.id !== id) return;
+        if (detail.type === 'browser-cache-cleared') {
+          cleanup();
+          resolve();
+        } else if (detail.type === 'error') {
+          cleanup();
+          reject(
+            new Error(detail.errorCode ?? 'Native browser cache clear failed')
+          );
+        }
+      };
+      const cleanup = () => {
+        window.clearTimeout(timeout);
+        window.removeEventListener('foreseer:native-event', onEvent);
+      };
+      window.addEventListener('foreseer:native-event', onEvent);
+      if (
+        !host.send({
+          type: 'browser-cache.clear',
+          id,
+          ticket: response.data.ticket,
+        })
+      ) {
+        cleanup();
+        reject(new Error('Native browser cache bridge is unavailable'));
+      }
+    });
     return true;
   };
 
