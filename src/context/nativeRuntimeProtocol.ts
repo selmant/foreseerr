@@ -51,6 +51,7 @@ export const nativeHostEventTypesV1 = [
   'connectivity-success',
   'save-config-success',
   'browser-cache-cleared',
+  'runtime-failed',
 ] as const;
 
 export type NativeHostEventTypeV1 = (typeof nativeHostEventTypesV1)[number];

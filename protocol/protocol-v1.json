@@ -87,7 +87,8 @@
     "error",
     "connectivity-success",
     "save-config-success",
-    "browser-cache-cleared"
+    "browser-cache-cleared",
+    "runtime-failed"
   ],
   "terminalPlayEventTypes": ["stopped", "finished", "canceled", "error"],
   "envelopes": {
