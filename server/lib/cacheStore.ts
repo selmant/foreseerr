@@ -25,6 +25,7 @@ type Entry = {
 export class CacheBudget {
   private usedBytes = 0;
   private evictions = 0;
+  private accessSequence = 0;
   private readonly stores = new Set<WeightedLruCacheStore>();
   constructor(readonly limitBytes = 256 * 1024 * 1024) {}
   register(store: WeightedLruCacheStore): void {
@@ -38,6 +39,10 @@ export class CacheBudget {
   }
   evicted(): void {
     this.evictions += 1;
+  }
+  nextAccess(): number {
+    this.accessSequence += 1;
+    return this.accessSequence;
   }
   ensureCapacity(): void {
     while (this.usedBytes > this.limitBytes) {
@@ -66,7 +71,12 @@ export class WeightedLruCacheStore implements CacheStore {
   private entries = new Map<string, Entry>();
   constructor(
     private readonly budget: CacheBudget,
-    private readonly defaultTtl = 300
+    private readonly defaultTtl = 300,
+    private readonly limits: {
+      maxEntries?: number;
+      maxBytes?: number;
+      estimateSize?: (value: unknown) => number;
+    } = {}
   ) {
     budget.register(this);
   }
@@ -77,20 +87,21 @@ export class WeightedLruCacheStore implements CacheStore {
       this.evict(key, false);
       return undefined;
     }
-    entry.accessedAt = Date.now();
+    entry.accessedAt = this.budget.nextAccess();
     return entry.value as T;
   }
   set<T>(key: string, value: T, ttlSeconds = this.defaultTtl): void {
     this.evict(key, false);
     const entry = {
       value,
-      size: estimateSize(value),
+      size: this.limits.estimateSize?.(value) ?? estimateSize(value),
       expiresAt: Date.now() + ttlSeconds * 1000,
-      accessedAt: Date.now(),
+      accessedAt: this.budget.nextAccess(),
     };
     this.entries.set(key, entry);
     this.budget.add(entry.size);
     this.removeExpired();
+    this.trimToLocalLimits();
     this.budget.ensureCapacity();
   }
   delete(key: string): void {
@@ -115,11 +126,13 @@ export class WeightedLruCacheStore implements CacheStore {
     accessedAt: number;
   }[] {
     this.removeExpired();
-    return [...this.entries].map(([key, entry]) => ({
-      store: this,
-      key,
-      accessedAt: entry.accessedAt,
-    }));
+    return [...this.entries]
+      .map(([key, entry]) => ({
+        store: this,
+        key,
+        accessedAt: entry.accessedAt,
+      }))
+      .sort((a, b) => a.accessedAt - b.accessedAt);
   }
   count(): number {
     this.removeExpired();
@@ -135,6 +148,22 @@ export class WeightedLruCacheStore implements CacheStore {
   private removeExpired(): void {
     for (const [key, entry] of this.entries)
       if (entry.expiresAt <= Date.now()) this.evict(key, false);
+  }
+  private trimToLocalLimits(): void {
+    while (
+      (this.limits.maxEntries !== undefined &&
+        this.entries.size > this.limits.maxEntries) ||
+      (this.limits.maxBytes !== undefined && this.size() > this.limits.maxBytes)
+    ) {
+      const oldest = this.oldest()[0];
+      if (!oldest) return;
+      this.evict(oldest.key);
+    }
+  }
+  private size(): number {
+    let total = 0;
+    for (const entry of this.entries.values()) total += entry.size;
+    return total;
   }
 }
 

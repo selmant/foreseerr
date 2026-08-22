@@ -20,7 +20,7 @@ export type AvailableCacheIds =
   | 'anilist';
 
 const DEFAULT_TTL = 300;
-const cacheBudget = new CacheBudget();
+export const memoryCacheBudget = new CacheBudget();
 
 class Cache {
   public id: AvailableCacheIds;
@@ -35,7 +35,7 @@ class Cache {
     this.id = id;
     this.name = name;
     this.data = new WeightedLruCacheStore(
-      cacheBudget,
+      memoryCacheBudget,
       options.stdTtl ?? DEFAULT_TTL
     );
   }
