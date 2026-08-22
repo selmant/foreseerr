@@ -301,7 +301,8 @@ const startForeseerrInternal = async (
   const totalUsers = await userRepository.count();
   if (totalUsers > 0) {
     startJobs();
-    startDesktopCatchUp();
+    // The desktop host sends its first runtime-state message only after CEF
+    // is ready. That event starts the 30-second managed catch-up delay.
   } else {
     logger.info(
       `Skipping starting the scheduled jobs as we have no Plex/Jellyfin/Emby servers setup yet`,
