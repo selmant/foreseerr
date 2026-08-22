@@ -23,6 +23,15 @@ const mergeSettings = <T>(current: T, incoming: Partial<T>): T =>
     Array.isArray(srcValue) ? srcValue : undefined
   ) as T;
 
+const isManagedApplicationUrl = (value: unknown, origin: string): boolean => {
+  if (typeof value !== 'string') return false;
+  try {
+    return new URL(value).origin === origin;
+  } catch {
+    return false;
+  }
+};
+
 export interface Library {
   id: string;
   name: string;
@@ -733,7 +742,10 @@ class Settings {
         // Settings route handlers may mutate `settings.main` directly. Keep
         // the visible ephemeral origin from becoming durable configuration
         // through that path as well as through the `main` setter below.
-        if (property === 'applicationUrl' && value === applicationUrl) {
+        if (
+          property === 'applicationUrl' &&
+          isManagedApplicationUrl(value, applicationUrl)
+        ) {
           return true;
         }
         return Reflect.set(target, property, value, receiver);
@@ -744,8 +756,10 @@ class Settings {
   set main(data: MainSettings) {
     if (
       isDesktopRuntime() &&
-      data.applicationUrl ===
+      isManagedApplicationUrl(
+        data.applicationUrl,
         effectiveApplicationUrl(this.data.main.applicationUrl)
+      )
     ) {
       data = { ...data, applicationUrl: this.data.main.applicationUrl };
     }

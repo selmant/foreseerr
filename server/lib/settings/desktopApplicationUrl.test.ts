@@ -22,6 +22,7 @@ describe('desktop application URL', () => {
       );
 
       settings.main.applicationUrl = 'http://127.0.0.1:43127';
+      settings.main.applicationUrl = 'http://127.0.0.1:43127/';
 
       // Settings updates commonly spread the currently visible main object.
       // That must not turn the effective URL into durable configuration.
