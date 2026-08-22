@@ -164,7 +164,7 @@ if (!appDataPermissions()) {
   );
 }
 
-export const startForeseerr = async (
+const startForeseerrInternal = async (
   options: ForeseerrStartOptions = {}
 ): Promise<ForeseerrRuntime> => {
   if (managedServer) {
@@ -516,4 +516,42 @@ export const startForeseerr = async (
     server: httpServer,
     stop: (options) => stopManagedRuntime(options?.deadlineMs),
   };
+};
+
+/**
+ * A desktop launcher can retry after a failed start without replacing its
+ * process. Release resources acquired before readiness so the retry is not
+ * blocked by this process's own SQLite connection or instance lock.
+ */
+const cleanupFailedDesktopStart = async (): Promise<void> => {
+  stopJobs();
+  const server = managedServer;
+  managedServer = undefined;
+  if (server) {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    }).catch(() => undefined);
+  }
+  if (dataSource.isInitialized) {
+    await dataSource.destroy().catch(() => undefined);
+  }
+  await releaseDesktopLock?.();
+  releaseDesktopLock = undefined;
+  desktopOrigin = '';
+  stopping = false;
+  setDesktopStopping(false);
+};
+
+export const startForeseerr = async (
+  options: ForeseerrStartOptions = {}
+): Promise<ForeseerrRuntime> => {
+  try {
+    return await startForeseerrInternal(options);
+  } catch (error) {
+    if (desktopRuntime) {
+      await cleanupFailedDesktopStart();
+    }
+    throw error;
+  }
 };
