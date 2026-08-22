@@ -9,7 +9,7 @@ import { getRepository } from '@server/datasource';
 import DiscoverSlider from '@server/entity/DiscoverSlider';
 import type { StatusResponse } from '@server/interfaces/api/settingsInterfaces';
 import { scheduledJobs } from '@server/job/schedule';
-import { isDesktopStopping } from '@server/lib/desktopState';
+import { isDesktopRuntime, isDesktopStopping } from '@server/lib/desktopState';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
@@ -105,7 +105,7 @@ router.get<unknown, StatusResponse>('/status', async (req, res) => {
     commitTag: getCommitTag(),
     ...(checkUpdate && { updateAvailable, commitsBehind }),
     restartRequired: restartFlag.isSet(),
-    ...(process.env.FORESEERR_RUNTIME === 'desktop' && {
+    ...(isDesktopRuntime() && {
       runtime: 'desktop',
       managed: true,
       jobsStarted: scheduledJobs.length > 0,

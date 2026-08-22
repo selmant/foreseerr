@@ -14,6 +14,7 @@ import {
 } from '@server/lib/desktopRuntime';
 import {
   setDesktopPlaybackActive,
+  setDesktopRuntime,
   setDesktopStopping,
 } from '@server/lib/desktopState';
 import ImageProxy from '@server/lib/imageproxy';
@@ -173,6 +174,7 @@ export const startForeseerr = async (
     options.runtime === 'desktop' ||
     (options.runtime === undefined &&
       process.env.FORESEERR_RUNTIME === 'desktop');
+  setDesktopRuntime(desktopRuntime);
   if (desktopRuntime) installDesktopControlHandlers();
   stopping = false;
   desktopOrigin = '';
