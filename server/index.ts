@@ -63,11 +63,12 @@ logger.info(`Starting Seerr version ${getAppVersion()}`);
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
 const handle = app.getRequestHandler();
-const desktopRuntime = process.env.FORESEERR_RUNTIME === 'desktop';
+let desktopRuntime = process.env.FORESEERR_RUNTIME === 'desktop';
 let managedServer: HttpServer | undefined;
 let releaseDesktopLock: (() => Promise<void>) | undefined;
 let stopping = false;
 let desktopOrigin = '';
+let desktopControlInstalled = false;
 
 export interface ForeseerrRuntime {
   origin: string;
@@ -115,7 +116,9 @@ const requestManagedShutdown = (deadlineMs = 10_000): void => {
   void stopManagedRuntime(deadlineMs).finally(() => process.exit(0));
 };
 
-if (desktopRuntime) {
+const installDesktopControlHandlers = (): void => {
+  if (desktopControlInstalled) return;
+  desktopControlInstalled = true;
   process.stdin.setEncoding('utf8');
   let input = '';
   process.stdin.on('data', (chunk: string) => {
@@ -152,7 +155,7 @@ if (desktopRuntime) {
   process.stdin.on('end', () => requestManagedShutdown());
   process.once('SIGTERM', () => requestManagedShutdown());
   process.once('SIGINT', () => requestManagedShutdown());
-}
+};
 
 if (!appDataPermissions()) {
   logger.error(
@@ -163,6 +166,17 @@ if (!appDataPermissions()) {
 export const startForeseerr = async (
   options: ForeseerrStartOptions = {}
 ): Promise<ForeseerrRuntime> => {
+  if (managedServer) {
+    throw new Error('Foreseerr runtime is already running');
+  }
+  desktopRuntime =
+    options.runtime === 'desktop' ||
+    (options.runtime === undefined &&
+      process.env.FORESEERR_RUNTIME === 'desktop');
+  if (desktopRuntime) installDesktopControlHandlers();
+  stopping = false;
+  desktopOrigin = '';
+  setDesktopStopping(false);
   await app.prepare();
   if (desktopRuntime) {
     releaseDesktopLock = await acquireDesktopLock();
@@ -498,10 +512,3 @@ export const startForeseerr = async (
     stop: (options) => stopManagedRuntime(options?.deadlineMs),
   };
 };
-
-startForeseerr().catch(async (err) => {
-  logger.error(err.stack);
-  await releaseDesktopLock?.();
-  releaseDesktopLock = undefined;
-  process.exit(err.exitCode ?? 1);
-});
