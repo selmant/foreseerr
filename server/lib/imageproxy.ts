@@ -20,9 +20,14 @@ type ImageResponse = {
   imageBuffer: Buffer;
 };
 
-const baseCacheDirectory = process.env.CONFIG_DIRECTORY
-  ? `${process.env.CONFIG_DIRECTORY}/cache/images`
-  : path.join(__dirname, '../../config/cache/images');
+const baseCacheDirectory = process.env.CACHE_DIRECTORY
+  ? `${process.env.CACHE_DIRECTORY}/images`
+  : process.env.CONFIG_DIRECTORY
+    ? `${process.env.CONFIG_DIRECTORY}/cache/images`
+    : path.join(__dirname, '../../config/cache/images');
+const IMAGE_CACHE_HIGH_WATER_BYTES = 1280 * 1024 * 1024;
+const IMAGE_CACHE_TRIM_TARGET_BYTES = 1024 * 1024 * 1024;
+let cleanupInProgress = false;
 
 /** Coerce Axios 1.18+ header values (string | number | boolean | string[]) to string. */
 const headerToString = (value: unknown, fallback = ''): string => {
@@ -39,6 +44,101 @@ const headerToString = (value: unknown, fallback = ''): string => {
 };
 
 class ImageProxy {
+  public static async clearAll(): Promise<void> {
+    await promises.rm(baseCacheDirectory, { recursive: true, force: true });
+  }
+
+  public static async getCombinedStats(): Promise<{
+    usedBytes: number;
+    entries: number;
+    highWaterBytes: number;
+    trimTargetBytes: number;
+  }> {
+    const entries = await ImageProxy.listEntries();
+    return {
+      usedBytes: entries.reduce((total, entry) => total + entry.size, 0),
+      entries: entries.length,
+      highWaterBytes: IMAGE_CACHE_HIGH_WATER_BYTES,
+      trimTargetBytes: IMAGE_CACHE_TRIM_TARGET_BYTES,
+    };
+  }
+
+  public static async maintainCache(): Promise<void> {
+    if (cleanupInProgress) return;
+    cleanupInProgress = true;
+    try {
+      const entries = await ImageProxy.listEntries(true);
+      let usedBytes = entries.reduce((total, entry) => total + entry.size, 0);
+      if (usedBytes > IMAGE_CACHE_HIGH_WATER_BYTES) {
+        for (const entry of entries.sort(
+          (a, b) => a.accessedAt - b.accessedAt
+        )) {
+          if (usedBytes <= IMAGE_CACHE_TRIM_TARGET_BYTES) break;
+          await promises.rm(entry.directory, { recursive: true, force: true });
+          usedBytes -= entry.size;
+        }
+      }
+    } catch (error) {
+      logger.warn('Image cache maintenance failed', {
+        label: 'Image Cache',
+        message: (error as Error).message,
+      });
+    } finally {
+      cleanupInProgress = false;
+    }
+  }
+
+  private static async listEntries(
+    removeInvalid = false
+  ): Promise<{ directory: string; size: number; accessedAt: number }[]> {
+    const result: {
+      directory: string;
+      size: number;
+      accessedAt: number;
+    }[] = [];
+    let groups: string[];
+    try {
+      groups = await promises.readdir(baseCacheDirectory);
+    } catch {
+      return result;
+    }
+    for (const group of groups) {
+      let keys: string[];
+      try {
+        keys = await promises.readdir(join(baseCacheDirectory, group));
+      } catch {
+        continue;
+      }
+      for (const key of keys) {
+        const directory = join(baseCacheDirectory, group, key);
+        let files: string[];
+        try {
+          files = await promises.readdir(directory);
+        } catch {
+          continue;
+        }
+        const file = files[0];
+        const expiresAt = Number(file?.split('.')[1]);
+        if (!file || !Number.isFinite(expiresAt) || Date.now() > expiresAt) {
+          if (removeInvalid)
+            await promises.rm(directory, { recursive: true, force: true });
+          continue;
+        }
+        try {
+          const stat = await promises.stat(join(directory, file));
+          result.push({
+            directory,
+            size: stat.size,
+            accessedAt: stat.atimeMs || stat.mtimeMs,
+          });
+        } catch {
+          if (removeInvalid)
+            await promises.rm(directory, { recursive: true, force: true });
+        }
+      }
+    }
+    return result;
+  }
   public static async clearCache(key: string) {
     let deletedImages = 0;
     const cacheDirectory = path.join(baseCacheDirectory, key);
@@ -247,7 +347,14 @@ class ImageProxy {
 
       for (const file of files) {
         const [maxAgeSt, expireAtSt, etag, extension] = file.split('.');
-        const buffer = await promises.readFile(join(directory, file));
+        const cacheFile = join(directory, file);
+        const buffer = await promises.readFile(cacheFile);
+        const stat = await promises.stat(cacheFile);
+        if (Date.now() - stat.atimeMs > 60 * 60 * 1000) {
+          await promises
+            .utimes(cacheFile, new Date(), stat.mtime)
+            .catch(() => undefined);
+        }
         const expireAt = Number(expireAtSt);
         const maxAge = Number(maxAgeSt);
 
@@ -305,6 +412,7 @@ class ImageProxy {
         buffer,
         etag
       );
+      void ImageProxy.maintainCache();
 
       return {
         meta: {

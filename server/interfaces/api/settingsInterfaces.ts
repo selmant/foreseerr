@@ -92,4 +92,8 @@ export interface StatusResponse {
   updateAvailable?: boolean;
   commitsBehind?: number;
   restartRequired: boolean;
+  runtime?: 'desktop';
+  managed?: boolean;
+  jobsStarted?: boolean;
+  stopping?: boolean;
 }

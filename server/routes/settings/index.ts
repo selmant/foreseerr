@@ -1202,36 +1202,46 @@ settingsRoutes.post<{ jobId: JobId }>(
   }
 );
 
-settingsRoutes.get('/cache', async (_req, res) => {
-  const cacheManagerCaches = cacheManager.getAllCaches();
+settingsRoutes.get(
+  '/cache',
+  isAuthenticated(Permission.ADMIN),
+  async (_req, res) => {
+    const cacheManagerCaches = cacheManager.getAllCaches();
 
-  const apiCaches = Object.values(cacheManagerCaches).map((cache) => ({
-    id: cache.id,
-    name: cache.name,
-    stats: cache.getStats(),
-  }));
+    const apiCaches = Object.values(cacheManagerCaches).map((cache) => ({
+      id: cache.id,
+      name: cache.name,
+      stats: cache.getStats(),
+    }));
 
-  const tmdbImageCache = await ImageProxy.getImageStats('tmdb');
-  const avatarImageCache = await ImageProxy.getImageStats('avatar');
+    const tmdbImageCache = await ImageProxy.getImageStats('tmdb');
+    const avatarImageCache = await ImageProxy.getImageStats('avatar');
+    const imageStats = await ImageProxy.getCombinedStats();
+    const memoryStats = Object.values(cacheManagerCaches)[0]?.getStats();
 
-  const stats: DnsStats | undefined = dnsCache?.getStats();
-  const entries: DnsEntries | undefined = dnsCache?.getCacheEntries();
+    const stats: DnsStats | undefined = dnsCache?.getStats();
+    const entries: DnsEntries | undefined = dnsCache?.getCacheEntries();
 
-  return res.status(200).json({
-    apiCaches,
-    imageCache: {
-      tmdb: tmdbImageCache,
-      avatar: avatarImageCache,
-    },
-    dnsCache: {
-      stats,
-      entries,
-    },
-  });
-});
+    return res.status(200).json({
+      apiCaches,
+      imageCache: {
+        tmdb: tmdbImageCache,
+        avatar: avatarImageCache,
+      },
+      memory: memoryStats,
+      images: imageStats,
+      browser: { limitBytes: 768 * 1024 * 1024 },
+      dnsCache: {
+        stats,
+        entries,
+      },
+    });
+  }
+);
 
 settingsRoutes.post<{ cacheId: AvailableCacheIds }>(
   '/cache/:cacheId/flush',
+  isAuthenticated(Permission.ADMIN),
   (req, res, next) => {
     const cache = cacheManager.getCache(req.params.cacheId);
 
@@ -1241,6 +1251,34 @@ settingsRoutes.post<{ cacheId: AvailableCacheIds }>(
     }
 
     next({ status: 404, message: 'Cache not found.' });
+  }
+);
+
+settingsRoutes.post(
+  '/cache/images/flush',
+  isAuthenticated(Permission.ADMIN),
+  async (_req, res, next) => {
+    try {
+      await ImageProxy.clearAll();
+      return res.status(204).send();
+    } catch (error) {
+      return next({ status: 500, message: (error as Error).message });
+    }
+  }
+);
+
+settingsRoutes.post(
+  '/cache/all/flush',
+  isAuthenticated(Permission.ADMIN),
+  async (_req, res, next) => {
+    try {
+      for (const cache of Object.values(cacheManager.getAllCaches()))
+        cache.flush();
+      await ImageProxy.clearAll();
+      return res.status(204).send();
+    } catch (error) {
+      return next({ status: 500, message: (error as Error).message });
+    }
   }
 );
 

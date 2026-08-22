@@ -2,6 +2,7 @@ import { MediaServerType } from '@server/constants/server';
 import blocklistedTagsProcessor from '@server/job/blocklistedTagsProcessor';
 import episodeRequestSync from '@server/job/episodeRequestSync';
 import availabilitySync from '@server/lib/availabilitySync';
+import { isDesktopPlaybackActive } from '@server/lib/desktopState';
 import downloadTracker from '@server/lib/downloadtracker';
 import ImageProxy from '@server/lib/imageproxy';
 import refreshToken from '@server/lib/refreshToken';
@@ -32,7 +33,23 @@ interface ScheduledJob {
 
 export const scheduledJobs: ScheduledJob[] = [];
 
+const runHeavy = (name: string, run: () => void): void => {
+  if (isDesktopPlaybackActive()) {
+    logger.info(
+      `Deferring heavy job while desktop playback is active: ${name}`,
+      {
+        label: 'Jobs',
+      }
+    );
+    return;
+  }
+  run();
+};
+
 export const startJobs = (): void => {
+  if (scheduledJobs.length > 0) {
+    return;
+  }
   const jobs = getSettings().jobs;
   const mediaServerType = getSettings().main.mediaServerType;
 
@@ -50,7 +67,7 @@ export const startJobs = (): void => {
           logger.info('Starting scheduled job: Plex Recently Added Scan', {
             label: 'Jobs',
           });
-          plexRecentScanner.run();
+          runHeavy('Plex Recently Added Scan', () => plexRecentScanner.run());
         }
       ),
       running: () => plexRecentScanner.status().running,
@@ -68,7 +85,7 @@ export const startJobs = (): void => {
         logger.info('Starting scheduled job: Plex Full Library Scan', {
           label: 'Jobs',
         });
-        plexFullScanner.run();
+        runHeavy('Plex Full Library Scan', () => plexFullScanner.run());
       }),
       running: () => plexFullScanner.status().running,
       cancelFn: () => plexFullScanner.cancel(),
@@ -124,7 +141,9 @@ export const startJobs = (): void => {
           logger.info('Starting scheduled job: Jellyfin Recently Added Scan', {
             label: 'Jobs',
           });
-          jellyfinRecentScanner.run();
+          runHeavy('Jellyfin Recently Added Scan', () =>
+            jellyfinRecentScanner.run()
+          );
         }
       ),
       running: () => jellyfinRecentScanner.status().running,
@@ -142,7 +161,7 @@ export const startJobs = (): void => {
         logger.info('Starting scheduled job: Jellyfin Full Scan', {
           label: 'Jobs',
         });
-        jellyfinFullScanner.run();
+        runHeavy('Jellyfin Full Scan', () => jellyfinFullScanner.run());
       }),
       running: () => jellyfinFullScanner.status().running,
       cancelFn: () => jellyfinFullScanner.cancel(),
@@ -159,7 +178,7 @@ export const startJobs = (): void => {
     cronSchedule: jobs['radarr-scan'].schedule,
     job: schedule.scheduleJob(jobs['radarr-scan'].schedule, () => {
       logger.info('Starting scheduled job: Radarr Scan', { label: 'Jobs' });
-      radarrScanner.run();
+      runHeavy('Radarr Scan', () => radarrScanner.run());
     }),
     running: () => radarrScanner.status().running,
     cancelFn: () => radarrScanner.cancel(),
@@ -205,7 +224,7 @@ export const startJobs = (): void => {
     cronSchedule: jobs['sonarr-scan'].schedule,
     job: schedule.scheduleJob(jobs['sonarr-scan'].schedule, () => {
       logger.info('Starting scheduled job: Sonarr Scan', { label: 'Jobs' });
-      sonarrScanner.run();
+      runHeavy('Sonarr Scan', () => sonarrScanner.run());
     }),
     running: () => sonarrScanner.status().running,
     cancelFn: () => sonarrScanner.cancel(),
@@ -222,7 +241,7 @@ export const startJobs = (): void => {
       logger.info('Starting scheduled job: Media Availability Sync', {
         label: 'Jobs',
       });
-      availabilitySync.run();
+      runHeavy('Media Availability Sync', () => availabilitySync.run());
     }),
     running: () => availabilitySync.running,
     cancelFn: () => availabilitySync.cancel(),
@@ -274,6 +293,7 @@ export const startJobs = (): void => {
 
       // Clean users avatar image cache
       ImageProxy.clearCache('avatar');
+      void ImageProxy.maintainCache();
     }),
   });
 
@@ -287,11 +307,22 @@ export const startJobs = (): void => {
       logger.info('Starting scheduled job: Process Blocklisted Tags', {
         label: 'Jobs',
       });
-      blocklistedTagsProcessor.run();
+      runHeavy('Process Blocklisted Tags', () =>
+        blocklistedTagsProcessor.run()
+      );
     }),
     running: () => blocklistedTagsProcessor.status().running,
     cancelFn: () => blocklistedTagsProcessor.cancel(),
   });
 
   logger.info('Scheduled jobs loaded', { label: 'Jobs' });
+};
+
+export const stopJobs = (): void => {
+  for (const scheduledJob of scheduledJobs) {
+    scheduledJob.job.cancel();
+    scheduledJob.cancelFn?.();
+  }
+  scheduledJobs.splice(0, scheduledJobs.length);
+  logger.info('Scheduled jobs stopped', { label: 'Jobs' });
 };

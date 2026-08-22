@@ -1,4 +1,8 @@
-import NodeCache from 'node-cache';
+import {
+  CacheBudget,
+  WeightedLruCacheStore,
+  type CacheStore,
+} from '@server/lib/cacheStore';
 
 export type AvailableCacheIds =
   | 'tmdb'
@@ -16,11 +20,11 @@ export type AvailableCacheIds =
   | 'anilist';
 
 const DEFAULT_TTL = 300;
-const DEFAULT_CHECK_PERIOD = 120;
+const cacheBudget = new CacheBudget();
 
 class Cache {
   public id: AvailableCacheIds;
-  public data: NodeCache;
+  public data: CacheStore;
   public name: string;
 
   constructor(
@@ -30,18 +34,18 @@ class Cache {
   ) {
     this.id = id;
     this.name = name;
-    this.data = new NodeCache({
-      stdTTL: options.stdTtl ?? DEFAULT_TTL,
-      checkperiod: options.checkPeriod ?? DEFAULT_CHECK_PERIOD,
-    });
+    this.data = new WeightedLruCacheStore(
+      cacheBudget,
+      options.stdTtl ?? DEFAULT_TTL
+    );
   }
 
   public getStats() {
-    return this.data.getStats();
+    return this.data.stats();
   }
 
   public flush(): void {
-    this.data.flushAll();
+    this.data.flush();
   }
 }
 

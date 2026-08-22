@@ -5,8 +5,14 @@ import DiscoverSlider from '@server/entity/DiscoverSlider';
 import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
 import { initI18n } from '@server/i18n';
-import { startJobs } from '@server/job/schedule';
+import { startJobs, stopJobs } from '@server/job/schedule';
 import { assertSupportedDatabaseSchema } from '@server/lib/db/schemaGuard';
+import {
+  DESKTOP_SCHEMA_EXIT_CODE,
+  acquireDesktopLock,
+  desktopError,
+} from '@server/lib/desktopRuntime';
+import { setDesktopPlaybackActive } from '@server/lib/desktopState';
 import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
 import EmailAgent from '@server/lib/notifications/agents/email';
@@ -41,6 +47,7 @@ import * as OpenApiValidator from 'express-openapi-validator';
 import type { Store } from 'express-session';
 import session from 'express-session';
 import fs from 'fs/promises';
+import type { Server as HttpServer } from 'http';
 import yaml from 'js-yaml';
 import next from 'next';
 import path from 'path';
@@ -52,6 +59,82 @@ logger.info(`Starting Seerr version ${getAppVersion()}`);
 const dev = process.env.NODE_ENV !== 'production';
 const app = next({ dev });
 const handle = app.getRequestHandler();
+const desktopRuntime = process.env.FORESEERR_RUNTIME === 'desktop';
+let managedServer: HttpServer | undefined;
+let releaseDesktopLock: (() => Promise<void>) | undefined;
+let stopping = false;
+let desktopOrigin = '';
+
+const stopManagedRuntime = async (deadlineMs = 10_000): Promise<void> => {
+  if (stopping) return;
+  stopping = true;
+  stopJobs();
+  const server = managedServer;
+  if (server) {
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        server.closeAllConnections();
+        resolve();
+      }, deadlineMs);
+      server.close(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+  }
+  if (dataSource.isInitialized) {
+    if (!isPgsql) {
+      await dataSource
+        .query('PRAGMA wal_checkpoint(TRUNCATE)')
+        .catch(() => undefined);
+    }
+    await dataSource.destroy();
+  }
+  await releaseDesktopLock?.();
+  releaseDesktopLock = undefined;
+};
+
+const requestManagedShutdown = (deadlineMs = 10_000): void => {
+  void stopManagedRuntime(deadlineMs).finally(() => process.exit(0));
+};
+
+if (desktopRuntime) {
+  process.stdin.setEncoding('utf8');
+  let input = '';
+  process.stdin.on('data', (chunk: string) => {
+    input += chunk;
+    const lines = input.split('\n');
+    input = lines.pop() ?? '';
+    for (const line of lines) {
+      try {
+        const message = JSON.parse(line) as {
+          type?: string;
+          deadlineMs?: number;
+          playbackActive?: boolean;
+        };
+        if (message.type === 'shutdown') {
+          requestManagedShutdown(message.deadlineMs);
+        } else if (
+          message.type === 'runtime-state' &&
+          typeof message.playbackActive === 'boolean'
+        ) {
+          setDesktopPlaybackActive(message.playbackActive);
+        } else {
+          logger.warn('Ignoring unknown desktop control message', {
+            label: 'Desktop',
+          });
+        }
+      } catch {
+        logger.warn('Ignoring malformed desktop control message', {
+          label: 'Desktop',
+        });
+      }
+    }
+  });
+  process.stdin.on('end', () => requestManagedShutdown());
+  process.once('SIGTERM', () => requestManagedShutdown());
+  process.once('SIGINT', () => requestManagedShutdown());
+}
 
 if (!appDataPermissions()) {
   logger.error(
@@ -62,6 +145,9 @@ if (!appDataPermissions()) {
 app
   .prepare()
   .then(async () => {
+    if (desktopRuntime) {
+      releaseDesktopLock = await acquireDesktopLock();
+    }
     // Run Overseerr to Seerr migration
     await checkOverseerrMerge();
 
@@ -84,7 +170,19 @@ app
     // Foreseerr version instead of silently running against an unknown
     // schema. Checked unconditionally (not just in production) since a
     // downgraded dev/synchronize install could still point at such a DB.
-    await assertSupportedDatabaseSchema(dbConnection);
+    try {
+      await assertSupportedDatabaseSchema(dbConnection);
+    } catch (error) {
+      if (desktopRuntime) {
+        await releaseDesktopLock?.();
+        releaseDesktopLock = undefined;
+        throw desktopError(
+          `Desktop database schema is incompatible: ${(error as Error).message}`,
+          DESKTOP_SCHEMA_EXIT_CODE
+        );
+      }
+      throw error;
+    }
 
     // Load Settings
     const settings = await getSettings().load();
@@ -162,8 +260,36 @@ app
     await DiscoverSlider.bootstrapSliders();
 
     const server = express();
-    if (settings.network.trustProxy) {
+    if (!desktopRuntime && settings.network.trustProxy) {
       server.enable('trust proxy');
+    }
+    if (desktopRuntime) {
+      server.use((req, res, next) => {
+        const unsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(
+          req.method
+        );
+        const nativeTicket = req.path === '/api/v1/desktop/auth-tickets/redeem';
+        if (
+          (stopping && req.path !== '/api/v1/status') ||
+          !desktopOrigin ||
+          req.headers.host !== desktopOrigin.replace('http://', '') ||
+          req.headers['x-forwarded-host'] ||
+          req.headers.forwarded ||
+          req.originalUrl.startsWith('http://') ||
+          req.originalUrl.startsWith('https://') ||
+          (unsafeMethod &&
+            !nativeTicket &&
+            req.headers.origin !== desktopOrigin)
+        ) {
+          res.status(stopping ? 503 : 403).json({
+            message: stopping
+              ? 'Foreseerr is shutting down'
+              : 'Invalid local desktop request',
+          });
+          return;
+        }
+        next();
+      });
     }
     server.use(cookieParser());
     server.use(express.json());
@@ -186,13 +312,13 @@ app
         next();
       }
     });
-    if (settings.network.csrfProtection) {
+    if (desktopRuntime || settings.network.csrfProtection) {
       server.use(
         csurf({
           cookie: {
             httpOnly: true,
-            sameSite: true,
-            secure: !dev,
+            sameSite: desktopRuntime ? 'strict' : true,
+            secure: desktopRuntime ? false : !dev,
             key: '_csrf',
             path: '/',
           },
@@ -204,8 +330,8 @@ app
       );
       server.use((req, res, next) => {
         res.cookie('XSRF-TOKEN', req.csrfToken(), {
-          sameSite: true,
-          secure: !dev,
+          sameSite: desktopRuntime ? 'strict' : true,
+          secure: desktopRuntime ? false : !dev,
         });
         next();
       });
@@ -222,8 +348,11 @@ app
         cookie: {
           maxAge: 1000 * 60 * 60 * 24 * 30,
           httpOnly: true,
-          sameSite: settings.network.csrfProtection ? 'strict' : 'lax',
-          secure: 'auto',
+          sameSite:
+            desktopRuntime || settings.network.csrfProtection
+              ? 'strict'
+              : 'lax',
+          secure: desktopRuntime ? false : 'auto',
         },
         store: new TypeormStore({
           cleanupLimit: 2,
@@ -288,9 +417,13 @@ app
       }
     );
 
-    const port = Number(process.env.PORT) || 5055;
-    const host = process.env.HOST;
-    let httpServer;
+    const configuredPort = Number(process.env.PORT);
+    const port =
+      Number.isInteger(configuredPort) && configuredPort >= 0
+        ? configuredPort
+        : 5055;
+    const host = desktopRuntime ? '127.0.0.1' : process.env.HOST;
+    let httpServer: HttpServer;
     if (host) {
       httpServer = server.listen(port, host, () => {
         logger.info(`Server ready on ${host} port ${port}`, {
@@ -311,8 +444,31 @@ app
       });
       process.exit(1);
     });
+    managedServer = httpServer;
+    if (desktopRuntime) {
+      httpServer.on('listening', () => {
+        const address = httpServer.address();
+        if (
+          typeof address !== 'object' ||
+          !address ||
+          address.address !== '127.0.0.1'
+        ) {
+          logger.error('Desktop runtime did not bind exact loopback', {
+            label: 'Desktop',
+          });
+          requestManagedShutdown();
+          return;
+        }
+        desktopOrigin = `http://127.0.0.1:${address.port}`;
+        process.stdout.write(
+          `FORESEERR_DESKTOP_READY ${JSON.stringify({ protocolVersion: 1, pid: process.pid, origin: desktopOrigin, foreseerrVersion: getAppVersion(), commit: process.env.FORESEERR_COMMIT ?? 'unknown', schemaVersion: 0 })}\n`
+        );
+      });
+    }
   })
-  .catch((err) => {
+  .catch(async (err) => {
     logger.error(err.stack);
-    process.exit(1);
+    await releaseDesktopLock?.();
+    releaseDesktopLock = undefined;
+    process.exit(err.exitCode ?? 1);
   });
