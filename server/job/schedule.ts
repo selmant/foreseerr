@@ -91,12 +91,18 @@ const runScheduledJob = (
 const runHeavy = (id: JobId, name: string, run: () => Promise<unknown>) =>
   runScheduledJob(id, 'heavy', name, run);
 
-const runDeferredHeavyJobs = (): void => {
+const runDeferredHeavyJobs = async (): Promise<void> => {
   if (isDesktopPlaybackActive()) return;
   const jobs = [...deferredHeavyJobs];
   deferredHeavyJobs.clear();
   for (const [id, { name, run }] of jobs) {
-    runHeavy(id, name, run);
+    logger.info(`Resuming heavy job deferred by desktop playback: ${name}`, {
+      label: 'Jobs',
+    });
+    // Unlike ordinary cron callbacks, this drain intentionally waits for one
+    // heavy job before beginning the next. Calling them all at once would
+    // cause the shared executor to reject every job after the first.
+    await executeManagedJob(id, 'heavy', () => run());
   }
 };
 
@@ -432,7 +438,7 @@ export const startDesktopCatchUp = (): void => {
       // A playback session may have deferred scheduled heavy work while the
       // timer was pending. Draining here guarantees a full 30 seconds of
       // desktop idleness after the final playback-active=false signal.
-      runDeferredHeavyJobs();
+      await runDeferredHeavyJobs();
       for (const job of scheduledJobs) {
         // Download tracking and image cleanup have dedicated startup
         // maintenance semantics rather than missed-cron replay.
