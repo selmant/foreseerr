@@ -1,5 +1,8 @@
 import { MediaServerType } from '@server/constants/server';
+import { getRepository } from '@server/datasource';
+import { JobExecutionState } from '@server/entity/JobExecutionState';
 import blocklistedTagsProcessor from '@server/job/blocklistedTagsProcessor';
+import { canRunLaunchCatchUp } from '@server/job/catchup';
 import episodeRequestSync from '@server/job/episodeRequestSync';
 import {
   cancelManagedJobs,
@@ -37,6 +40,17 @@ interface ScheduledJob {
 }
 
 export const scheduledJobs: ScheduledJob[] = [];
+
+const heavyJobIds = new Set<JobId>([
+  'plex-recently-added-scan',
+  'plex-full-scan',
+  'jellyfin-recently-added-scan',
+  'jellyfin-full-scan',
+  'radarr-scan',
+  'sonarr-scan',
+  'availability-sync',
+  'process-blocklisted-tags',
+]);
 
 const runScheduledJob = (
   id: string,
@@ -371,6 +385,35 @@ export const startJobs = (): void => {
   });
 
   logger.info('Scheduled jobs loaded', { label: 'Jobs' });
+};
+
+/** Queue one coalesced desktop catch-up pass after the UI has settled. */
+export const startDesktopCatchUp = (): void => {
+  if (process.env.FORESEERR_RUNTIME !== 'desktop') return;
+  setTimeout(() => {
+    void (async () => {
+      const repository = getRepository(JobExecutionState);
+      for (const job of scheduledJobs) {
+        // Download tracker reset has dedicated once-per-launch semantics.
+        if (job.id === 'download-sync-reset') continue;
+        const state = await repository.findOne({ where: { jobId: job.id } });
+        const weight: ManagedJobWeight = heavyJobIds.has(job.id)
+          ? 'heavy'
+          : 'light';
+        if (canRunLaunchCatchUp(job.cronSchedule, weight, state ?? {})) {
+          logger.info(`Running desktop catch-up: ${job.name}`, {
+            label: 'Jobs',
+          });
+          job.job.invoke();
+        }
+      }
+    })().catch((error) => {
+      logger.warn('Desktop catch-up evaluation failed', {
+        label: 'Jobs',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, 30_000);
 };
 
 export const stopJobs = (): void => {

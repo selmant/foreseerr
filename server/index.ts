@@ -5,7 +5,7 @@ import DiscoverSlider from '@server/entity/DiscoverSlider';
 import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
 import { initI18n } from '@server/i18n';
-import { startJobs, stopJobs } from '@server/job/schedule';
+import { startDesktopCatchUp, startJobs, stopJobs } from '@server/job/schedule';
 import { assertSupportedDatabaseSchema } from '@server/lib/db/schemaGuard';
 import {
   DESKTOP_SCHEMA_EXIT_CODE,
@@ -248,6 +248,7 @@ app
     const totalUsers = await userRepository.count();
     if (totalUsers > 0) {
       startJobs();
+      startDesktopCatchUp();
     } else {
       logger.info(
         `Skipping starting the scheduled jobs as we have no Plex/Jellyfin/Emby servers setup yet`,
