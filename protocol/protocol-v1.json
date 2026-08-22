@@ -11,6 +11,7 @@
       "auth-bootstrap",
       "player-events",
       "session-reset",
+      "browser-cache-clear",
       "window-controls",
       "quit",
       "setup"
@@ -53,6 +54,10 @@
       "fields": ["id", "url", "allowHttp"]
     },
     {
+      "type": "browser-cache.clear",
+      "fields": ["id", "ticket"]
+    },
+    {
       "type": "window.minimize",
       "fields": ["id"]
     },
@@ -81,7 +86,8 @@
     "canceled",
     "error",
     "connectivity-success",
-    "save-config-success"
+    "save-config-success",
+    "browser-cache-cleared"
   ],
   "terminalPlayEventTypes": ["stopped", "finished", "canceled", "error"],
   "envelopes": {

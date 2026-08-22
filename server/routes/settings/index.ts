@@ -41,6 +41,7 @@ import {
 } from '@server/lib/trakt';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
+import { issueBrowserCacheTicket } from '@server/routes/desktop';
 import discoverSettingRoutes from '@server/routes/settings/discover';
 import { ApiError } from '@server/types/error';
 import { appDataPath } from '@server/utils/appDataVolume';
@@ -1264,6 +1265,27 @@ settingsRoutes.post(
     } catch (error) {
       return next({ status: 500, message: (error as Error).message });
     }
+  }
+);
+
+settingsRoutes.post(
+  '/cache/browser/flush',
+  isAuthenticated(Permission.ADMIN),
+  (req, res, next) => {
+    if (!req.user || !req.sessionID) {
+      return next({ status: 401, message: 'Session required.' });
+    }
+    // Remote/browser deployments cannot and must not ask a native runtime to
+    // clear a profile they do not own.
+    if (process.env.FORESEERR_RUNTIME !== 'desktop') {
+      return next({
+        status: 409,
+        message: 'Browser cache is managed by the desktop runtime only.',
+      });
+    }
+    return res
+      .status(201)
+      .json(issueBrowserCacheTicket(req.user.id, req.sessionID));
   }
 );
 

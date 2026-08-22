@@ -4,6 +4,7 @@ import { getRepository } from '@server/datasource';
 import { DesktopAuthTicket } from '@server/entity/DesktopAuthTicket';
 import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
+import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import { isAuthenticated } from '@server/middleware/auth';
 import { ApiError } from '@server/types/error';
@@ -18,6 +19,10 @@ const ticketLifetimeMs = 60_000;
 const maxRequestsPerWindow = 10;
 const rateWindowMs = 60_000;
 const requests = new Map<string, { count: number; resetAt: number }>();
+const browserCacheTickets = new Map<
+  string,
+  { userId: number; sessionId: string; expiresAt: number }
+>();
 
 desktopRoutes.use((_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -32,6 +37,11 @@ const challengeBody = z.object({
 const redeemBody = z.object({
   ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   verifier: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  protocolVersion: z.literal(1),
+});
+
+const browserCacheRedeemBody = z.object({
+  ticket: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   protocolVersion: z.literal(1),
 });
 
@@ -69,6 +79,30 @@ const allowRequest = (key: string) => {
 /** Test-only: reset in-memory redeem/issue rate windows between cases. */
 export const resetDesktopAuthRateLimitsForTests = () => {
   requests.clear();
+  browserCacheTickets.clear();
+};
+
+const cleanupBrowserCacheTickets = () => {
+  const now = Date.now();
+  for (const [ticket, value] of browserCacheTickets) {
+    if (value.expiresAt <= now) browserCacheTickets.delete(ticket);
+  }
+};
+
+/**
+ * A browser session may authorize an administrative cache action, but only the
+ * native host can clear Chromium's request context. Keep the handoff opaque,
+ * short-lived, single-use, and bound to the issuing session.
+ */
+export const issueBrowserCacheTicket = (userId: number, sessionId: string) => {
+  cleanupBrowserCacheTickets();
+  const ticket = randomBytes(32).toString('base64url');
+  browserCacheTickets.set(digest(ticket), {
+    userId,
+    sessionId,
+    expiresAt: Date.now() + ticketLifetimeMs,
+  });
+  return { ticket, expiresIn: ticketLifetimeMs };
 };
 
 const cleanupExpiredTickets = async () => {
@@ -255,6 +289,50 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
       accessToken: user.jellyfinAuthToken,
       bootstrapGeneration: randomBytes(12).toString('hex'),
     });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+desktopRoutes.post('/browser-cache/redeem', async (req, res, next) => {
+  const parsed = browserCacheRedeemBody.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ code: 'invalid_request' });
+  }
+  if (!allowRequest(`browser-cache:ip:${req.ip ?? ''}`)) {
+    return res.status(429).json({ code: 'rate_limited' });
+  }
+
+  cleanupBrowserCacheTickets();
+  const ticketDigest = digest(parsed.data.ticket);
+  const record = browserCacheTickets.get(ticketDigest);
+  // Consume before I/O to make the action unrepeatable even if a client races
+  // the native bridge. The action itself is idempotent.
+  browserCacheTickets.delete(ticketDigest);
+  if (!record || record.expiresAt <= Date.now()) {
+    return res.status(401).json({ code: 'ticket_expired' });
+  }
+
+  try {
+    const session = await getRepository(Session).findOne({
+      where: { id: record.sessionId, expiredAt: MoreThan(Date.now()) },
+    });
+    let sessionUserId: number | undefined;
+    try {
+      sessionUserId = session ? JSON.parse(session.json).userId : undefined;
+    } catch {
+      sessionUserId = undefined;
+    }
+    const user = await getRepository(User).findOne({
+      where: { id: record.userId },
+    });
+    if (
+      sessionUserId !== record.userId ||
+      !user?.hasPermission(Permission.ADMIN)
+    ) {
+      return res.status(401).json({ code: 'session_expired' });
+    }
+    return res.status(204).send();
   } catch (error) {
     return next(error);
   }

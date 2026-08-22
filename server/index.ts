@@ -359,7 +359,10 @@ export const startForeseerr = async (
         // Native hosts redeem with ticket+verifier and no browser cookies.
         ignoreRequest: (req) =>
           req.method === 'POST' &&
-          req.path === '/api/v1/desktop/auth-tickets/redeem',
+          [
+            '/api/v1/desktop/auth-tickets/redeem',
+            '/api/v1/desktop/browser-cache/redeem',
+          ].includes(req.path),
       })
     );
     server.use((req, res, next) => {
