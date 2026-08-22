@@ -62,6 +62,10 @@
       "fields": ["id"]
     },
     {
+      "type": "runtime.open-logs",
+      "fields": ["id"]
+    },
+    {
       "type": "window.minimize",
       "fields": ["id"]
     },
@@ -93,7 +97,8 @@
     "save-config-success",
     "browser-cache-cleared",
     "runtime-failed",
-    "runtime-recovered"
+    "runtime-recovered",
+    "logs-opened"
   ],
   "terminalPlayEventTypes": ["stopped", "finished", "canceled", "error"],
   "envelopes": {
