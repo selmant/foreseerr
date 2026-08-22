@@ -15,6 +15,7 @@ import type {
   LogsResultsResponse,
   SettingsAboutResponse,
 } from '@server/interfaces/api/settingsInterfaces';
+import { cancelManagedJob, executeManagedJob } from '@server/job/execution';
 import { scheduledJobs } from '@server/job/schedule';
 import {
   countLinkedAnilistAccounts,
@@ -279,9 +280,12 @@ settingsRoutes.get('/plex/sync', (_req, res) => {
 
 settingsRoutes.post('/plex/sync', (req, res) => {
   if (req.body.cancel) {
+    cancelManagedJob('plex-full-scan');
     plexFullScanner.cancel();
   } else if (req.body.start) {
-    plexFullScanner.run();
+    void executeManagedJob('plex-full-scan', 'heavy', () =>
+      plexFullScanner.run()
+    );
   }
   return res.status(200).json(plexFullScanner.status());
 });
@@ -446,9 +450,12 @@ settingsRoutes.get('/jellyfin/sync', (_req, res) => {
 
 settingsRoutes.post('/jellyfin/sync', (req, res) => {
   if (req.body.cancel) {
+    cancelManagedJob('jellyfin-full-scan');
     jellyfinFullScanner.cancel();
   } else if (req.body.start) {
-    jellyfinFullScanner.run();
+    void executeManagedJob('jellyfin-full-scan', 'heavy', () =>
+      jellyfinFullScanner.run()
+    );
   }
   return res.status(200).json(jellyfinFullScanner.status());
 });

@@ -24,6 +24,11 @@ export const cancelManagedJobs = (): void => {
   }
 };
 
+/** Cancel one manual or scheduled invocation without disturbing other jobs. */
+export const cancelManagedJob = (id: string): void => {
+  activeControllers.get(id)?.abort();
+};
+
 /** Run scheduled and manual work through one non-overlapping, persisted path. */
 export const executeManagedJob = async (
   id: string,
