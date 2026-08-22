@@ -109,6 +109,14 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
     imagecachecount: 'Images Cached',
     imagecachesize: 'Total Cache Size',
     usersavatars: "Users' Avatars",
+    clearimagecache: 'Clear Image Cache',
+    clearbrowsercache: 'Clear Browser HTTP Cache',
+    clearallcaches: 'Clear All Transient Caches',
+    imagecacheflushed: 'Image cache cleared.',
+    browsercacheflushed: 'Browser HTTP cache cleared.',
+    allcachesflushed: 'All Foreseerr transient caches cleared.',
+    browsercacheunavailable:
+      'Browser cache clearing is available only in Foreseer Desktop.',
   }
 );
 
@@ -273,6 +281,51 @@ const SettingsJobs = () => {
       }
     );
     cacheRevalidate();
+  };
+
+  const flushImageCache = async () => {
+    await axios.post('/api/v1/settings/cache/images/flush');
+    addToast(intl.formatMessage(messages.imagecacheflushed), {
+      appearance: 'success',
+      autoDismiss: true,
+    });
+    cacheRevalidate();
+  };
+
+  const flushAllCaches = async () => {
+    await axios.post('/api/v1/settings/cache/all/flush');
+    addToast(intl.formatMessage(messages.allcachesflushed), {
+      appearance: 'success',
+      autoDismiss: true,
+    });
+    cacheRevalidate();
+  };
+
+  const flushBrowserCache = async () => {
+    const host = window.foreseerNative;
+    if (!host?.capabilities.includes('browser-cache-clear')) {
+      addToast(intl.formatMessage(messages.browsercacheunavailable), {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+      return;
+    }
+    const response = await axios.post<{ ticket: string }>(
+      '/api/v1/settings/cache/browser/flush'
+    );
+    if (
+      !host.send({
+        type: 'browser-cache.clear',
+        id: crypto.randomUUID(),
+        ticket: response.data.ticket,
+      })
+    ) {
+      throw new Error('Native browser cache bridge is unavailable');
+    }
+    addToast(intl.formatMessage(messages.browsercacheflushed), {
+      appearance: 'success',
+      autoDismiss: true,
+    });
   };
 
   const scheduleJob = async () => {
@@ -607,6 +660,20 @@ const SettingsJobs = () => {
               ))}
           </Table.TBody>
         </Table>
+      </div>
+      <div className="section flex flex-wrap gap-2">
+        <Button buttonType="danger" onClick={() => void flushImageCache()}>
+          <TrashIcon />
+          <span>{intl.formatMessage(messages.clearimagecache)}</span>
+        </Button>
+        <Button buttonType="danger" onClick={() => void flushBrowserCache()}>
+          <TrashIcon />
+          <span>{intl.formatMessage(messages.clearbrowsercache)}</span>
+        </Button>
+        <Button buttonType="danger" onClick={() => void flushAllCaches()}>
+          <TrashIcon />
+          <span>{intl.formatMessage(messages.clearallcaches)}</span>
+        </Button>
       </div>
       {cacheData?.dnsCache != null && (
         <>
