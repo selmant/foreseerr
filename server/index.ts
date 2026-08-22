@@ -12,7 +12,10 @@ import {
   acquireDesktopLock,
   desktopError,
 } from '@server/lib/desktopRuntime';
-import { setDesktopPlaybackActive } from '@server/lib/desktopState';
+import {
+  setDesktopPlaybackActive,
+  setDesktopStopping,
+} from '@server/lib/desktopState';
 import ImageProxy from '@server/lib/imageproxy';
 import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
@@ -69,6 +72,7 @@ let desktopOrigin = '';
 const stopManagedRuntime = async (deadlineMs = 10_000): Promise<void> => {
   if (stopping) return;
   stopping = true;
+  setDesktopStopping(true);
   stopJobs();
   const server = managedServer;
   if (server) {
