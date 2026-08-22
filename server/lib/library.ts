@@ -142,9 +142,10 @@ const mediaUrlForItem = (jellyfinItemId: string): string | undefined => {
   const jellyfin = settings.jellyfin;
   if (!jellyfin.ip && !jellyfin.externalHostname) return undefined;
   const jellyfinHost =
-    jellyfin.externalHostname && jellyfin.externalHostname.length > 0
-      ? jellyfin.externalHostname
-      : getHostname();
+    process.env.FORESEERR_RUNTIME === 'desktop' ||
+    !(jellyfin.externalHostname && jellyfin.externalHostname.length > 0)
+      ? getHostname()
+      : jellyfin.externalHostname;
   const serverId = jellyfin.serverId ?? '';
   return jellyfinPlaybackUrl(jellyfinHost, serverId, jellyfinItemId);
 };

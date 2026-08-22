@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import request from 'supertest';
 import desktopRoutes, {
+  bindDesktopSessionStore,
   issueBrowserCacheTicket,
   resetDesktopAuthRateLimitsForTests,
 } from './desktop';
@@ -322,6 +323,88 @@ describe('desktop auth tickets', () => {
       .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
     assert.strictEqual(redeemed.status, 500);
     assert.strictEqual(redeemed.body.accessToken, undefined);
+  });
+
+  it('bootstraps the LAN Jellyfin URL in the desktop runtime', async () => {
+    const previousRuntime = process.env.FORESEERR_RUNTIME;
+    process.env.FORESEERR_RUNTIME = 'desktop';
+    try {
+      const settings = getSettings();
+      settings.jellyfin.ip = '192.168.40.3';
+      settings.jellyfin.port = 8096;
+      settings.jellyfin.useSsl = false;
+      settings.jellyfin.urlBase = '';
+      settings.jellyfin.externalHostname = 'https://jellyfin.example.test';
+
+      const verifier = 'd'.repeat(43);
+      const challenge = await import('node:crypto').then(({ createHash }) =>
+        createHash('sha256').update(verifier).digest('hex')
+      );
+      const issued = await request(app)
+        .post('/desktop/auth-tickets')
+        .send({ challenge, protocolVersion: 1 });
+      assert.strictEqual(issued.status, 201);
+
+      const redeemed = await request(app)
+        .post('/desktop/auth-tickets/redeem')
+        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+      assert.strictEqual(redeemed.status, 200);
+      assert.strictEqual(redeemed.body.serverUrl, 'http://192.168.40.3:8096');
+      assert.strictEqual(redeemed.body.accessToken, 'secret-token');
+    } finally {
+      if (previousRuntime === undefined) {
+        delete process.env.FORESEERR_RUNTIME;
+      } else {
+        process.env.FORESEERR_RUNTIME = previousRuntime;
+      }
+    }
+  });
+
+  it('redeems tickets from MemoryStore without a SQLite session row', async () => {
+    const store = new session.MemoryStore();
+    bindDesktopSessionStore(store);
+    try {
+      await getRepository(Session).delete({ id: 'memory-desktop-session' });
+      const memApp = express();
+      memApp.use(express.json());
+      memApp.use(
+        session({
+          secret: 'test-secret',
+          resave: false,
+          saveUninitialized: false,
+          genid: () => 'memory-desktop-session',
+          store,
+        })
+      );
+      memApp.use((req, _res, next) => {
+        req.session.userId = 1;
+        next();
+      });
+      memApp.use(checkUser);
+      memApp.use('/desktop', desktopRoutes);
+
+      const verifier = 'm'.repeat(43);
+      const challenge = await import('node:crypto').then(({ createHash }) =>
+        createHash('sha256').update(verifier).digest('hex')
+      );
+      const issued = await request(memApp)
+        .post('/desktop/auth-tickets')
+        .send({ challenge, protocolVersion: 1 });
+      assert.strictEqual(issued.status, 201);
+
+      const sqliteSession = await getRepository(Session).findOne({
+        where: { id: 'memory-desktop-session' },
+      });
+      assert.equal(sqliteSession, null);
+
+      const redeemed = await request(memApp)
+        .post('/desktop/auth-tickets/redeem')
+        .send({ ticket: issued.body.ticket, verifier, protocolVersion: 1 });
+      assert.strictEqual(redeemed.status, 200);
+      assert.strictEqual(redeemed.body.accessToken, 'secret-token');
+    } finally {
+      bindDesktopSessionStore();
+    }
   });
 
   it('exempts cookie-less ticket redeem from CSRF', () => {

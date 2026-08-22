@@ -10,7 +10,9 @@ import { isAuthenticated } from '@server/middleware/auth';
 import { ApiError } from '@server/types/error';
 import { getHostname } from '@server/utils/getHostname';
 import { Router } from 'express';
+import type { Store } from 'express-session';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import net from 'node:net';
 import { MoreThan } from 'typeorm';
 import { z } from 'zod';
 
@@ -23,6 +25,39 @@ const browserCacheTickets = new Map<
   string,
   { userId: number; sessionId: string; expiresAt: number }
 >();
+
+let liveSessionStore: Store | undefined;
+
+/** Desktop ticket redeem prefers the live express-session store (MemoryStore
+ * in tests, SQLite TypeormStore in the app) over leftover hosted session rows. */
+export const bindDesktopSessionStore = (store?: Store): void => {
+  liveSessionStore = store;
+};
+
+const ticketSessionUserId = async (
+  sessionId: string
+): Promise<number | undefined> => {
+  if (liveSessionStore) {
+    return new Promise((resolve) => {
+      liveSessionStore?.get(sessionId, (error, sess) => {
+        if (error || !sess) {
+          resolve(undefined);
+          return;
+        }
+        const userId = (sess as { userId?: unknown }).userId;
+        resolve(typeof userId === 'number' ? userId : undefined);
+      });
+    });
+  }
+  const session = await getRepository(Session).findOne({
+    where: { id: sessionId, expiredAt: MoreThan(Date.now()) },
+  });
+  try {
+    return session ? JSON.parse(session.json).userId : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 desktopRoutes.use((_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -113,18 +148,57 @@ const cleanupExpiredTickets = async () => {
     .execute();
 };
 
-const externalJellyfinHost = () => {
+const isPrivateOrLoopbackHttpHost = (hostname: string): boolean => {
+  if (hostname === 'localhost') {
+    return true;
+  }
+  if (net.isIPv6(hostname)) {
+    const ip = hostname.toLowerCase();
+    return ip === '::1' || ip.startsWith('fd') || ip.startsWith('fe80:');
+  }
+  if (!net.isIPv4(hostname)) {
+    return false;
+  }
+  const octets = hostname.split('.').map(Number);
+  const [a, b] = octets;
+  return (
+    a === 10 ||
+    a === 127 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254)
+  );
+};
+
+/** Playback bootstrap URL. Hosted desktop requires HTTPS. The bundled
+ * standalone runtime talks to the same LAN Jellyfin that login/library use;
+ * copied production `externalHostname` values 401 and dump Play onto the
+ * public Jellyfin login page. */
+const jellyfinDesktopHost = () => {
   const settings = getSettings();
-  const value = settings.jellyfin.externalHostname?.trim() || getHostname();
+  const desktopRuntime = process.env.FORESEERR_RUNTIME === 'desktop';
+  const value = desktopRuntime
+    ? getHostname()
+    : settings.jellyfin.externalHostname?.trim() || getHostname();
   const parsed = z.string().url().safeParse(value);
-  if (!parsed.success || !parsed.data.startsWith('https://')) {
+  if (!parsed.success) {
     throw new Error('Invalid Jellyfin desktop server URL');
   }
   const url = new URL(parsed.data);
   if (url.username || url.password) {
     throw new Error('Invalid Jellyfin desktop server URL');
   }
-  return url.toString().replace(/\/$/, '');
+  if (url.protocol === 'https:') {
+    return url.toString().replace(/\/$/, '');
+  }
+  if (
+    desktopRuntime &&
+    url.protocol === 'http:' &&
+    isPrivateOrLoopbackHttpHost(url.hostname)
+  ) {
+    return url.toString().replace(/\/$/, '');
+  }
+  throw new Error('Invalid Jellyfin desktop server URL');
 };
 
 const findLinkedUser = (userId: number) =>
@@ -219,15 +293,7 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
   if (!sameDigest(record.challengeDigest, digest(verifier))) {
     return res.status(401).json({ code: 'invalid_verifier' });
   }
-  const session = await getRepository(Session).findOne({
-    where: { id: record.sessionId, expiredAt: MoreThan(Date.now()) },
-  });
-  let sessionUserId: number | undefined;
-  try {
-    sessionUserId = session ? JSON.parse(session.json).userId : undefined;
-  } catch {
-    sessionUserId = undefined;
-  }
+  const sessionUserId = await ticketSessionUserId(record.sessionId);
   if (sessionUserId !== record.userId) {
     return res.status(401).json({ code: 'session_expired' });
   }
@@ -245,7 +311,7 @@ desktopRoutes.post('/auth-tickets/redeem', async (req, res, next) => {
     ) {
       return res.status(409).json({ code: 'not_linked' });
     }
-    const serverUrl = externalJellyfinHost();
+    const serverUrl = jellyfinDesktopHost();
     let linkedIdentity;
     try {
       linkedIdentity = await new JellyfinAPI(
@@ -314,15 +380,7 @@ desktopRoutes.post('/browser-cache/redeem', async (req, res, next) => {
   }
 
   try {
-    const session = await getRepository(Session).findOne({
-      where: { id: record.sessionId, expiredAt: MoreThan(Date.now()) },
-    });
-    let sessionUserId: number | undefined;
-    try {
-      sessionUserId = session ? JSON.parse(session.json).userId : undefined;
-    } catch {
-      sessionUserId = undefined;
-    }
+    const sessionUserId = await ticketSessionUserId(record.sessionId);
     const user = await getRepository(User).findOne({
       where: { id: record.userId },
     });

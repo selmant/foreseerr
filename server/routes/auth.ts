@@ -6,6 +6,7 @@ import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { startDesktopCatchUp, startJobs } from '@server/job/schedule';
+import { forgetDesktopUser } from '@server/lib/desktopLogin';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -15,12 +16,32 @@ import { ApiError } from '@server/types/error';
 import { getAppVersion } from '@server/utils/appVersion';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import net from 'net';
 import validator from 'validator';
 import { z } from 'zod';
 
 const authRoutes = Router();
+
+/** After the login HTTP response is flushed. Starting jobs in setImmediate
+ * races session.save and /auth/me, then a blocked download-sync makes the
+ * desktop supervisor kill Node while the UI still says "Signing In…". */
+const scheduleDesktopJobsAfterResponse = (res: Response): void => {
+  if (process.env.FORESEERR_RUNTIME !== 'desktop') {
+    return;
+  }
+  const start = (): void => {
+    setTimeout(() => {
+      startJobs();
+      startDesktopCatchUp();
+    }, 3_000);
+  };
+  if (res.writableEnded) {
+    start();
+    return;
+  }
+  res.once('finish', start);
+};
 
 export const quickConnectSecret = z.object({
   secret: z
@@ -31,16 +52,13 @@ export const quickConnectSecret = z.object({
 });
 
 authRoutes.get('/me', isAuthenticated(), async (req, res) => {
-  const userRepository = getRepository(User);
   if (!req.user) {
     return res.status(500).json({
       status: 500,
       error: 'Please sign in.',
     });
   }
-  const user = await userRepository.findOneOrFail({
-    where: { id: req.user.id },
-  });
+  const user = req.user;
 
   // check if email is required in settings and if user has an valid email
   const settings = await getSettings();
@@ -52,7 +70,17 @@ authRoutes.get('/me', isAuthenticated(), async (req, res) => {
     logger.warn(`User ${user.username} has no valid email address`);
   }
 
-  return res.status(200).json(user);
+  if (process.env.FORESEERR_RUNTIME === 'desktop') {
+    logger.info('GET /auth/me', { label: 'Auth', userId: user.id });
+    res.once('finish', () => {
+      setTimeout(() => {
+        startJobs();
+        startDesktopCatchUp();
+      }, 5_000);
+    });
+  }
+
+  return res.status(200).json(user.toPublicJSON());
 });
 
 authRoutes.post('/plex', async (req, res, next) => {
@@ -101,7 +129,9 @@ authRoutes.post('/plex', async (req, res, next) => {
 
       settings.main.mediaServerType = MediaServerType.PLEX;
       await settings.save();
-      await userRepository.save(user);
+      if (process.env.FORESEERR_RUNTIME !== 'desktop') {
+        await userRepository.save(user);
+      }
       startJobs();
       startDesktopCatchUp();
     } else {
@@ -214,7 +244,8 @@ authRoutes.post('/plex', async (req, res, next) => {
       req.session.userId = user.id;
     }
 
-    return res.status(200).json(user?.filter() ?? {});
+    scheduleDesktopJobsAfterResponse(res);
+    return res.status(200).json(user?.toPublicJSON() ?? {});
   } catch (e) {
     logger.error('Something went wrong authenticating with Plex account', {
       label: 'API',
@@ -296,7 +327,13 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
     }
 
     // First we need to attempt to log the user in to jellyfin
-    const jellyfinserver = new JellyfinAPI(hostname ?? '', undefined, deviceId);
+    const desktopRuntime = process.env.FORESEERR_RUNTIME === 'desktop';
+    const jellyfinserver = new JellyfinAPI(
+      hostname ?? '',
+      undefined,
+      deviceId,
+      desktopRuntime ? 15_000 : undefined
+    );
 
     const ip = req.ip;
     let clientIp;
@@ -404,7 +441,8 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       const jellyfinClient = new JellyfinAPI(
         hostname,
         account.AccessToken,
-        deviceId
+        deviceId,
+        desktopRuntime ? 15_000 : undefined
       );
       const apiKey = await jellyfinClient.createApiToken('Foreseerr');
 
@@ -439,16 +477,26 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
           jellyfinUsername: account.User.Name,
         }
       );
-      user.avatar = getUserAvatarUrl(user);
-      user.jellyfinUsername = account.User.Name;
-      user.jellyfinAuthToken = account.AccessToken;
-      user.jellyfinDeviceId = deviceId;
-
+      // Persist the new access token without mutating the loaded entity.
+      // `save(user)` can spin TypeORM change-tracking (settings.user). Skipping
+      // the write is worse: Jellyfin invalidates the previous device token on
+      // login, so Library then 401s and the UI says "Could not reach Jellyfin."
+      const sessionFields: {
+        avatar: string;
+        jellyfinUsername: string;
+        jellyfinAuthToken: string;
+        jellyfinDeviceId: string;
+        username?: string;
+      } = {
+        avatar: getUserAvatarUrl(user),
+        jellyfinUsername: account.User.Name,
+        jellyfinAuthToken: account.AccessToken,
+        jellyfinDeviceId: deviceId,
+      };
       if (user.username === account.User.Name) {
-        user.username = '';
+        sessionFields.username = '';
       }
-
-      await userRepository.save(user);
+      await userRepository.update({ id: user.id }, sessionFields);
     } else if (!settings.main.newPlexLogin) {
       logger.warn(
         'Failed sign-in attempt by unimported Jellyfin user with access to the media server',
@@ -495,7 +543,14 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       await userRepository.save(user);
     }
 
-    if (user && user.jellyfinUserId) {
+    // Avatar refresh is optional. In the managed desktop runtime it can hold
+    // the login response open indefinitely when the media server image route
+    // is slow or unavailable.
+    if (
+      user &&
+      user.jellyfinUserId &&
+      process.env.FORESEERR_RUNTIME !== 'desktop'
+    ) {
       try {
         const { changed } = await checkAvatarChanged(user);
 
@@ -520,7 +575,8 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       req.session.userId = user?.id;
     }
 
-    return res.status(200).json(user?.filter() ?? {});
+    scheduleDesktopJobsAfterResponse(res);
+    return res.status(200).json(user?.toPublicJSON() ?? {});
   } catch (e) {
     switch (e.errorCode) {
       case ApiErrorCode.InvalidUrl:
@@ -785,7 +841,8 @@ authRoutes.post(
         req.session.userId = user.id;
       }
 
-      return res.status(200).json(user?.filter() ?? {});
+      scheduleDesktopJobsAfterResponse(res);
+      return res.status(200).json(user?.toPublicJSON() ?? {});
     } catch (e) {
       logger.error('Quick Connect authentication failed', {
         label: 'Auth',
@@ -837,7 +894,8 @@ authRoutes.post('/local', async (req, res, next) => {
       req.session.userId = user.id;
     }
 
-    return res.status(200).json(user?.filter() ?? {});
+    scheduleDesktopJobsAfterResponse(res);
+    return res.status(200).json(user?.toPublicJSON() ?? {});
   } catch (e) {
     logger.error(
       'Something went wrong authenticating with Foreseerr password',
@@ -857,6 +915,7 @@ authRoutes.post('/local', async (req, res, next) => {
 
 authRoutes.post('/logout', async (req, res, next) => {
   try {
+    forgetDesktopUser();
     const userId = req.session?.userId;
     if (!userId) {
       return res.status(200).json({ status: 'ok' });

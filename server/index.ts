@@ -10,6 +10,7 @@ import {
   assertSupportedDatabaseSchema,
   isMissingMigrationsTableError,
 } from '@server/lib/db/schemaGuard';
+import { restoreDesktopSession } from '@server/lib/desktopLogin';
 import {
   DESKTOP_SCHEMA_EXIT_CODE,
   acquireDesktopLock,
@@ -22,6 +23,7 @@ import {
   setDesktopStopping,
 } from '@server/lib/desktopState';
 import ImageProxy from '@server/lib/imageproxy';
+import { jsonSafeClone } from '@server/lib/jsonSafe';
 import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
 import EmailAgent from '@server/lib/notifications/agents/email';
@@ -39,6 +41,7 @@ import logger from '@server/logger';
 import clearCookies from '@server/middleware/clearcookies';
 import routes from '@server/routes';
 import avatarproxy from '@server/routes/avatarproxy';
+import { bindDesktopSessionStore } from '@server/routes/desktop';
 import imageproxy from '@server/routes/imageproxy';
 import { appDataPermissions } from '@server/utils/appDataVolume';
 import { getAppVersion } from '@server/utils/appVersion';
@@ -304,7 +307,11 @@ const startForeseerrInternal = async (
 
   const userRepository = getRepository(User);
   const totalUsers = await userRepository.count();
-  if (totalUsers > 0) {
+  // A standalone desktop starts before anyone has authenticated.  Defer its
+  // external sync work until an authenticated desktop session explicitly
+  // starts it; otherwise copied Arr/Jellyfin jobs can monopolize the local
+  // server while the login page is still loading.
+  if (totalUsers > 0 && !desktopRuntime) {
     startJobs();
     // The desktop host sends its first runtime-state message only after CEF
     // is ready. That event starts the 30-second managed catch-up delay.
@@ -409,6 +416,15 @@ const startForeseerrInternal = async (
 
   // Set up sessions
   const sessionRespository = getRepository(Session);
+  const sessionStore = new TypeormStore({
+    cleanupLimit: 2,
+    ttl: 60 * 60 * 24 * 30,
+    // SQLite cannot use LIMIT inside the expired-session subquery.
+    limitSubquery: isPgsql,
+  }).connect(sessionRespository) as Store;
+  if (desktopRuntime) {
+    bindDesktopSessionStore(sessionStore);
+  }
   server.use(
     '/api',
     session({
@@ -418,16 +434,29 @@ const startForeseerrInternal = async (
       cookie: {
         maxAge: 1000 * 60 * 60 * 24 * 30,
         httpOnly: true,
+        path: '/',
         sameSite:
           desktopRuntime || settings.network.csrfProtection ? 'strict' : 'lax',
         secure: desktopRuntime ? false : 'auto',
       },
-      store: new TypeormStore({
-        cleanupLimit: 2,
-        ttl: 60 * 60 * 24 * 30,
-      }).connect(sessionRespository) as Store,
+      store: sessionStore,
     })
   );
+  if (desktopRuntime) {
+    server.use('/api', restoreDesktopSession);
+    logger.info('Desktop session store is sqlite', { label: 'Server' });
+    server.use('/api', (req, res, next) => {
+      const started = Date.now();
+      logger.info(`API ${req.method} ${req.path}`, { label: 'Desktop' });
+      res.on('finish', () => {
+        logger.info(
+          `API ${req.method} ${req.path} ${res.statusCode} ${Date.now() - started}ms`,
+          { label: 'Desktop' }
+        );
+      });
+      next();
+    });
+  }
   const apiSpecContent = await fs.readFile(API_SPEC_PATH, 'utf-8');
   const apiDocs = yaml.load(apiSpecContent) as Record<string, unknown>;
   server.use('/api-docs', swaggerUi.serve, swaggerUi.setup(apiDocs));
@@ -438,14 +467,14 @@ const startForeseerrInternal = async (
     })
   );
   /**
-   * This is a workaround to convert dates to strings before they are validated by
-   * OpenAPI validator. Otherwise, they are treated as objects instead of strings
-   * and response validation will fail
+   * Convert dates and drop cycles before JSON serialization. Only wrap API
+   * responses — applying this to Next.js `res.json` walks page/runtime graphs
+   * and can pin the event loop so `/login` never reaches the browser.
    */
-  server.use((_req, res, next) => {
+  server.use('/api', (_req, res, next) => {
     const original = res.json;
     res.json = function jsonp(json) {
-      return original.call(this, JSON.parse(JSON.stringify(json)));
+      return original.call(this, jsonSafeClone(json));
     };
     next();
   });
@@ -530,6 +559,11 @@ const startForeseerrInternal = async (
         requestManagedShutdown();
         return;
       }
+      // When the desktop asks the OS to choose a port, PORT is initially
+      // "0".  Next's server-rendered pages use PORT for their same-process
+      // API calls, so replace that sentinel with the actual loopback port
+      // before emitting readiness.
+      process.env.PORT = String(address.port);
       desktopOrigin = `http://127.0.0.1:${address.port}`;
       setDesktopApplicationUrl(desktopOrigin);
       process.stdout.write(

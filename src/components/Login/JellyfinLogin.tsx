@@ -94,6 +94,7 @@ const JellyfinLogin = ({ revalidate, serverType }: JellyfinLoginProps) => {
               password: values.password,
               email: values.username,
             });
+            await revalidate();
           } catch (e) {
             let errorMessage = messages.loginerror;
             switch (e?.response?.data?.message) {
@@ -117,8 +118,6 @@ const JellyfinLogin = ({ revalidate, serverType }: JellyfinLoginProps) => {
                 appearance: 'error',
               }
             );
-          } finally {
-            revalidate();
           }
         }}
       >

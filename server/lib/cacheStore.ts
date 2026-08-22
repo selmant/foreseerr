@@ -45,7 +45,10 @@ export class CacheBudget {
     return this.accessSequence;
   }
   ensureCapacity(): void {
-    while (this.usedBytes > this.limitBytes) {
+    let remaining = 10_000;
+    while (this.usedBytes > this.limitBytes && remaining > 0) {
+      remaining -= 1;
+      const before = this.usedBytes;
       // Prune expiry across every provider before selecting an LRU victim.
       // An expired item must never cause a live response to be discarded.
       for (const store of this.stores) store.oldest();
@@ -55,6 +58,7 @@ export class CacheBudget {
         .sort((a, b) => a.accessedAt - b.accessedAt)[0];
       if (!candidate) return;
       candidate.store.evict(candidate.key);
+      if (this.usedBytes >= before) return;
     }
   }
   stats(): CacheStats {

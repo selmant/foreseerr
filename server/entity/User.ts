@@ -135,7 +135,7 @@ export class User {
 
   @OneToOne(() => UserSettings, (settings) => settings.user, {
     cascade: true,
-    eager: true,
+    eager: false,
     onDelete: 'CASCADE',
   })
   public settings?: UserSettings;
@@ -170,6 +170,42 @@ export class User {
     );
 
     return filtered;
+  }
+
+  /**
+   * Allowlisted client payload. Never spread a TypeORM entity into res.json:
+   * eager `settings.user` and relation getters can expand until the event
+   * loop is stuck (desktop "Signing In…" freeze).
+   */
+  public toPublicJSON(): Record<string, unknown> {
+    const settings = this.settings;
+    return {
+      id: this.id,
+      email: this.email,
+      username: this.username,
+      plexUsername: this.plexUsername,
+      jellyfinUsername: this.jellyfinUsername,
+      displayName: this.displayName,
+      avatar: this.avatar,
+      permissions: this.permissions,
+      userType: this.userType,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+      requestCount: this.requestCount,
+      warnings: this.warnings ?? [],
+      plexId: this.plexId,
+      settings: settings
+        ? {
+            locale: settings.locale,
+            discoverRegion: settings.discoverRegion,
+            streamingRegion: settings.streamingRegion,
+            originalLanguage: settings.originalLanguage,
+            notificationTypes: settings.notificationTypes,
+            watchlistSyncMovies: settings.watchlistSyncMovies,
+            watchlistSyncTv: settings.watchlistSyncTv,
+          }
+        : undefined,
+    };
   }
 
   public hasPermission(

@@ -1,18 +1,39 @@
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
+import { UserSettings } from '@server/entity/UserSettings';
 import type {
   Permission,
   PermissionCheckOptions,
 } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 
+const loadUserById = async (userId: number): Promise<User | null> => {
+  return getRepository(User).findOne({
+    where: { id: userId },
+    // Never join settings here. User.settings is eager and UserSettings.user
+    // points back; loading that graph on every API request wedges Node
+    // (desktop login looks like a silent Sign In bounce).
+    loadEagerRelations: false,
+  });
+};
+
+const localeForUser = async (
+  userId: number,
+  fallback: string
+): Promise<string> => {
+  const row = await getRepository(UserSettings)
+    .createQueryBuilder('us')
+    .select('us.locale', 'locale')
+    .where('us.userId = :userId', { userId })
+    .getRawOne<{ locale?: string | null }>();
+  return row?.locale || fallback;
+};
+
 export const checkUser: Middleware = async (req, _res, next) => {
   const settings = getSettings();
   let user: User | undefined | null;
 
   if (req.header('X-API-Key') === settings.main.apiKey) {
-    const userRepository = getRepository(User);
-
     let userId = 1; // Work on original administrator account
 
     // If a User ID is provided, we will act on that user's behalf
@@ -20,26 +41,17 @@ export const checkUser: Middleware = async (req, _res, next) => {
       userId = Number(req.header('X-API-User'));
     }
 
-    user = await userRepository.findOne({
-      where: { id: userId },
-      relations: { settings: true },
-    });
+    user = await loadUserById(userId);
   } else if (req.session?.userId) {
-    const userRepository = getRepository(User);
-
-    user = await userRepository.findOne({
-      where: { id: req.session.userId },
-      relations: { settings: true },
-    });
+    user = await loadUserById(req.session.userId);
   }
 
   if (user) {
     req.user = user;
+    req.locale = await localeForUser(user.id, settings.main.locale);
+  } else {
+    req.locale = settings.main.locale;
   }
-
-  req.locale = user?.settings?.locale
-    ? user.settings.locale
-    : settings.main.locale;
 
   next();
 };
