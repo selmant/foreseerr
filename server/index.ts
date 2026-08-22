@@ -493,18 +493,18 @@ const startForeseerrInternal = async (
     throw new Error('Desktop runtime must bind exact IPv4 loopback');
   }
   let httpServer: HttpServer;
+  const logBoundAddress = () => {
+    const address = httpServer.address();
+    const boundPort =
+      typeof address === 'object' && address ? address.port : port;
+    logger.info(`Server ready on ${host ?? '127.0.0.1'} port ${boundPort}`, {
+      label: 'Server',
+    });
+  };
   if (host) {
-    httpServer = server.listen(port, host, () => {
-      logger.info(`Server ready on ${host} port ${port}`, {
-        label: 'Server',
-      });
-    });
+    httpServer = server.listen(port, host, logBoundAddress);
   } else {
-    httpServer = server.listen(port, () => {
-      logger.info(`Server ready on port ${port}`, {
-        label: 'Server',
-      });
-    });
+    httpServer = server.listen(port, logBoundAddress);
   }
   httpServer.on('error', (err) => {
     logger.error('Failed to start server', {
