@@ -15,7 +15,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import request from 'supertest';
-import desktopRoutes, { resetDesktopAuthRateLimitsForTests } from './desktop';
+import desktopRoutes, {
+  issueBrowserCacheTicket,
+  resetDesktopAuthRateLimitsForTests,
+} from './desktop';
 
 let app: Express;
 let apiApp: Express;
@@ -87,6 +90,31 @@ beforeEach(async () => {
 });
 
 describe('desktop auth tickets', () => {
+  it('redeems a browser-cache ticket exactly once for its admin session', async () => {
+    const issued = issueBrowserCacheTicket(1, 'desktop-test-session');
+    const redeemed = await request(app)
+      .post('/desktop/browser-cache/redeem')
+      .send({ ticket: issued.ticket, protocolVersion: 1 });
+    assert.strictEqual(redeemed.status, 204);
+    assert.strictEqual(redeemed.headers['cache-control'], 'no-store');
+
+    const replay = await request(app)
+      .post('/desktop/browser-cache/redeem')
+      .send({ ticket: issued.ticket, protocolVersion: 1 });
+    assert.strictEqual(replay.status, 401);
+    assert.strictEqual(replay.body.code, 'ticket_expired');
+  });
+
+  it('rejects browser-cache tickets after the issuing session expires', async () => {
+    const issued = issueBrowserCacheTicket(1, 'desktop-test-session');
+    await getRepository(Session).delete({ id: 'desktop-test-session' });
+    const response = await request(app)
+      .post('/desktop/browser-cache/redeem')
+      .send({ ticket: issued.ticket, protocolVersion: 1 });
+    assert.strictEqual(response.status, 401);
+    assert.strictEqual(response.body.code, 'session_expired');
+  });
+
   it('issues and redeems a ticket once', async () => {
     const verifier = 'v'.repeat(43);
     const challenge = await import('node:crypto').then(({ createHash }) =>
