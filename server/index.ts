@@ -69,6 +69,12 @@ let releaseDesktopLock: (() => Promise<void>) | undefined;
 let stopping = false;
 let desktopOrigin = '';
 
+export interface ForeseerrRuntime {
+  origin: string;
+  server: HttpServer;
+  stop(options?: { deadlineMs?: number }): Promise<void>;
+}
+
 const stopManagedRuntime = async (deadlineMs = 10_000): Promise<void> => {
   if (stopping) return;
   stopping = true;
@@ -148,339 +154,342 @@ if (!appDataPermissions()) {
   );
 }
 
-app
-  .prepare()
-  .then(async () => {
-    if (desktopRuntime) {
-      releaseDesktopLock = await acquireDesktopLock();
-    }
-    // Run Overseerr to Seerr migration
-    await checkOverseerrMerge();
+export const startForeseerr = async (): Promise<ForeseerrRuntime> => {
+  await app.prepare();
+  if (desktopRuntime) {
+    releaseDesktopLock = await acquireDesktopLock();
+  }
+  // Run Overseerr to Seerr migration
+  await checkOverseerrMerge();
 
-    const dbConnection = dataSource.isInitialized
-      ? dataSource
-      : await dataSource.initialize();
+  const dbConnection = dataSource.isInitialized
+    ? dataSource
+    : await dataSource.initialize();
 
-    // Run migrations in production
-    if (process.env.NODE_ENV === 'production') {
-      if (isPgsql) {
-        await dbConnection.runMigrations();
-      } else {
-        await dbConnection.query('PRAGMA foreign_keys=OFF');
-        await dbConnection.runMigrations();
-        await dbConnection.query('PRAGMA foreign_keys=ON');
-      }
-    }
-
-    // Refuse to start against a database migrated by a newer, unrecognized
-    // Foreseerr version instead of silently running against an unknown
-    // schema. Checked unconditionally (not just in production) since a
-    // downgraded dev/synchronize install could still point at such a DB.
-    try {
-      await assertSupportedDatabaseSchema(dbConnection);
-    } catch (error) {
-      if (desktopRuntime) {
-        await releaseDesktopLock?.();
-        releaseDesktopLock = undefined;
-        throw desktopError(
-          `Desktop database schema is incompatible: ${(error as Error).message}`,
-          DESKTOP_SCHEMA_EXIT_CODE
-        );
-      }
-      throw error;
-    }
-
-    // Load Settings
-    const settings = await getSettings().load();
-    restartFlag.initializeSettings(settings);
-
-    initI18n();
-
-    setForceIpv4First(settings.network.forceIpv4First);
-
-    // Add DNS caching
-    if (settings.network.dnsCache?.enabled) {
-      initializeDnsCache({
-        forceMinTtl: settings.network.dnsCache.forceMinTtl,
-        forceMaxTtl: settings.network.dnsCache.forceMaxTtl,
-      });
-    }
-
-    // Register HTTP proxy
-    if (settings.network.proxy.enabled) {
-      await createCustomProxyAgent(
-        settings.network.proxy,
-        settings.network.forceIpv4First
-      );
-    }
-
-    // Migrate library types
-    if (
-      settings.plex.libraries.length > 1 &&
-      !settings.plex.libraries[0].type
-    ) {
-      const userRepository = getRepository(User);
-      const admin = await userRepository.findOne({
-        select: { id: true, plexToken: true },
-        where: { id: 1 },
-      });
-
-      if (admin) {
-        logger.info('Migrating Plex libraries to include media type', {
-          label: 'Settings',
-        });
-
-        const plexapi = new PlexAPI({ plexToken: admin.plexToken });
-        await plexapi.syncLibraries();
-      }
-    }
-
-    // Register Notification Agents
-    notificationManager.registerAgents([
-      new DiscordAgent(),
-      new EmailAgent(),
-      new GotifyAgent(),
-      new NtfyAgent(),
-      new PushbulletAgent(),
-      new PushoverAgent(),
-      new SlackAgent(),
-      new TelegramAgent(),
-      new WebhookAgent(),
-      new WebPushAgent(),
-    ]);
-
-    const userRepository = getRepository(User);
-    const totalUsers = await userRepository.count();
-    if (totalUsers > 0) {
-      startJobs();
-      startDesktopCatchUp();
+  // Run migrations in production
+  if (process.env.NODE_ENV === 'production') {
+    if (isPgsql) {
+      await dbConnection.runMigrations();
     } else {
-      logger.info(
-        `Skipping starting the scheduled jobs as we have no Plex/Jellyfin/Emby servers setup yet`,
-        {
-          label: 'Server',
-        }
-      );
+      await dbConnection.query('PRAGMA foreign_keys=OFF');
+      await dbConnection.runMigrations();
+      await dbConnection.query('PRAGMA foreign_keys=ON');
     }
+  }
 
-    // Bootstrap Discovery Sliders
-    await DiscoverSlider.bootstrapSliders();
-
-    // Prune expired and malformed transient image entries before accepting
-    // requests. Failures are contained inside the cache layer and must never
-    // prevent the durable application runtime from starting.
-    await ImageProxy.maintainCache();
-
-    const server = express();
-    if (!desktopRuntime && settings.network.trustProxy) {
-      server.enable('trust proxy');
-    }
+  // Refuse to start against a database migrated by a newer, unrecognized
+  // Foreseerr version instead of silently running against an unknown
+  // schema. Checked unconditionally (not just in production) since a
+  // downgraded dev/synchronize install could still point at such a DB.
+  try {
+    await assertSupportedDatabaseSchema(dbConnection);
+  } catch (error) {
     if (desktopRuntime) {
-      server.use((req, res, next) => {
-        const unsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(
-          req.method
-        );
-        const nativeTicket = req.path === '/api/v1/desktop/auth-tickets/redeem';
-        if (
-          (stopping && req.path !== '/api/v1/status') ||
-          !desktopOrigin ||
-          req.headers.host !== desktopOrigin.replace('http://', '') ||
-          req.headers['x-forwarded-host'] ||
-          req.headers.forwarded ||
-          req.originalUrl.startsWith('http://') ||
-          req.originalUrl.startsWith('https://') ||
-          (unsafeMethod &&
-            !nativeTicket &&
-            req.headers.origin !== desktopOrigin)
-        ) {
-          res.status(stopping ? 503 : 403).json({
-            message: stopping
-              ? 'Foreseerr is shutting down'
-              : 'Invalid local desktop request',
-          });
-          return;
-        }
-        next();
-      });
-    }
-    server.use(cookieParser());
-    server.use(express.json());
-    server.use(express.urlencoded({ extended: true }));
-    server.use((req, _res, next) => {
-      try {
-        const descriptor = Object.getOwnPropertyDescriptor(req, 'ip');
-        if (descriptor?.writable === true) {
-          Object.defineProperty(req, 'ip', {
-            ...descriptor,
-            value: getClientIp(req) ?? '',
-          });
-        }
-      } catch (e) {
-        logger.error('Failed to attach the ip to the request', {
-          label: 'Middleware',
-          message: (e as Error).message,
-        });
-      } finally {
-        next();
-      }
-    });
-    if (desktopRuntime || settings.network.csrfProtection) {
-      server.use(
-        csurf({
-          cookie: {
-            httpOnly: true,
-            sameSite: desktopRuntime ? 'strict' : true,
-            secure: desktopRuntime ? false : !dev,
-            key: '_csrf',
-            path: '/',
-          },
-          // Native hosts redeem with ticket+verifier and no browser cookies.
-          ignoreRequest: (req) =>
-            req.method === 'POST' &&
-            req.path === '/api/v1/desktop/auth-tickets/redeem',
-        })
+      await releaseDesktopLock?.();
+      releaseDesktopLock = undefined;
+      throw desktopError(
+        `Desktop database schema is incompatible: ${(error as Error).message}`,
+        DESKTOP_SCHEMA_EXIT_CODE
       );
-      server.use((req, res, next) => {
-        res.cookie('XSRF-TOKEN', req.csrfToken(), {
-          sameSite: desktopRuntime ? 'strict' : true,
-          secure: desktopRuntime ? false : !dev,
-        });
-        next();
-      });
     }
+    throw error;
+  }
 
-    // Set up sessions
-    const sessionRespository = getRepository(Session);
-    server.use(
-      '/api',
-      session({
-        secret: settings.sessionSecret,
-        resave: false,
-        saveUninitialized: false,
-        cookie: {
-          maxAge: 1000 * 60 * 60 * 24 * 30,
-          httpOnly: true,
-          sameSite:
-            desktopRuntime || settings.network.csrfProtection
-              ? 'strict'
-              : 'lax',
-          secure: desktopRuntime ? false : 'auto',
-        },
-        store: new TypeormStore({
-          cleanupLimit: 2,
-          ttl: 60 * 60 * 24 * 30,
-        }).connect(sessionRespository) as Store,
-      })
+  // Load Settings
+  const settings = await getSettings().load();
+  restartFlag.initializeSettings(settings);
+
+  initI18n();
+
+  setForceIpv4First(settings.network.forceIpv4First);
+
+  // Add DNS caching
+  if (settings.network.dnsCache?.enabled) {
+    initializeDnsCache({
+      forceMinTtl: settings.network.dnsCache.forceMinTtl,
+      forceMaxTtl: settings.network.dnsCache.forceMaxTtl,
+    });
+  }
+
+  // Register HTTP proxy
+  if (settings.network.proxy.enabled) {
+    await createCustomProxyAgent(
+      settings.network.proxy,
+      settings.network.forceIpv4First
     );
-    const apiSpecContent = await fs.readFile(API_SPEC_PATH, 'utf-8');
-    const apiDocs = yaml.load(apiSpecContent) as Record<string, unknown>;
-    server.use('/api-docs', swaggerUi.serve, swaggerUi.setup(apiDocs));
-    server.use(
-      OpenApiValidator.middleware({
-        apiSpec: API_SPEC_PATH,
-        validateRequests: true,
-      })
+  }
+
+  // Migrate library types
+  if (settings.plex.libraries.length > 1 && !settings.plex.libraries[0].type) {
+    const userRepository = getRepository(User);
+    const admin = await userRepository.findOne({
+      select: { id: true, plexToken: true },
+      where: { id: 1 },
+    });
+
+    if (admin) {
+      logger.info('Migrating Plex libraries to include media type', {
+        label: 'Settings',
+      });
+
+      const plexapi = new PlexAPI({ plexToken: admin.plexToken });
+      await plexapi.syncLibraries();
+    }
+  }
+
+  // Register Notification Agents
+  notificationManager.registerAgents([
+    new DiscordAgent(),
+    new EmailAgent(),
+    new GotifyAgent(),
+    new NtfyAgent(),
+    new PushbulletAgent(),
+    new PushoverAgent(),
+    new SlackAgent(),
+    new TelegramAgent(),
+    new WebhookAgent(),
+    new WebPushAgent(),
+  ]);
+
+  const userRepository = getRepository(User);
+  const totalUsers = await userRepository.count();
+  if (totalUsers > 0) {
+    startJobs();
+    startDesktopCatchUp();
+  } else {
+    logger.info(
+      `Skipping starting the scheduled jobs as we have no Plex/Jellyfin/Emby servers setup yet`,
+      {
+        label: 'Server',
+      }
     );
-    /**
-     * This is a workaround to convert dates to strings before they are validated by
-     * OpenAPI validator. Otherwise, they are treated as objects instead of strings
-     * and response validation will fail
-     */
-    server.use((_req, res, next) => {
-      const original = res.json;
-      res.json = function jsonp(json) {
-        return original.call(this, JSON.parse(JSON.stringify(json)));
-      };
+  }
+
+  // Bootstrap Discovery Sliders
+  await DiscoverSlider.bootstrapSliders();
+
+  // Prune expired and malformed transient image entries before accepting
+  // requests. Failures are contained inside the cache layer and must never
+  // prevent the durable application runtime from starting.
+  await ImageProxy.maintainCache();
+
+  const server = express();
+  if (!desktopRuntime && settings.network.trustProxy) {
+    server.enable('trust proxy');
+  }
+  if (desktopRuntime) {
+    server.use((req, res, next) => {
+      const unsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(
+        req.method
+      );
+      const nativeTicket = req.path === '/api/v1/desktop/auth-tickets/redeem';
+      if (
+        (stopping && req.path !== '/api/v1/status') ||
+        !desktopOrigin ||
+        req.headers.host !== desktopOrigin.replace('http://', '') ||
+        req.headers['x-forwarded-host'] ||
+        req.headers.forwarded ||
+        req.originalUrl.startsWith('http://') ||
+        req.originalUrl.startsWith('https://') ||
+        (unsafeMethod && !nativeTicket && req.headers.origin !== desktopOrigin)
+      ) {
+        res.status(stopping ? 503 : 403).json({
+          message: stopping
+            ? 'Foreseerr is shutting down'
+            : 'Invalid local desktop request',
+        });
+        return;
+      }
       next();
     });
-    server.use('/api/v1', routes);
-
-    // Do not set cookies so CDNs can cache them
-    server.use('/imageproxy', clearCookies, imageproxy);
-    server.use('/avatarproxy', clearCookies, avatarproxy);
-
-    server.get('*path', (req, res) => handle(req, res));
-    server.use(
-      (
-        err: {
-          status: number;
-          message: string;
-          errors: string[];
-          retryAfter?: number;
-        },
-        _req: Request,
-        res: Response,
-        // We must provide a next function for the function signature here even though its not used
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        _next: NextFunction
-      ) => {
-        // format error
-        if (
-          err.status === 429 &&
-          typeof err.retryAfter === 'number' &&
-          Number.isFinite(err.retryAfter)
-        ) {
-          res.setHeader('Retry-After', String(Math.ceil(err.retryAfter)));
-        }
-        res.status(err.status || 500).json({
-          message: err.message,
-          errors: err.errors,
+  }
+  server.use(cookieParser());
+  server.use(express.json());
+  server.use(express.urlencoded({ extended: true }));
+  server.use((req, _res, next) => {
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(req, 'ip');
+      if (descriptor?.writable === true) {
+        Object.defineProperty(req, 'ip', {
+          ...descriptor,
+          value: getClientIp(req) ?? '',
         });
       }
-    );
-
-    const configuredPort = Number(process.env.PORT);
-    const port =
-      Number.isInteger(configuredPort) && configuredPort >= 0
-        ? configuredPort
-        : 5055;
-    const host = desktopRuntime ? '127.0.0.1' : process.env.HOST;
-    let httpServer: HttpServer;
-    if (host) {
-      httpServer = server.listen(port, host, () => {
-        logger.info(`Server ready on ${host} port ${port}`, {
-          label: 'Server',
-        });
+    } catch (e) {
+      logger.error('Failed to attach the ip to the request', {
+        label: 'Middleware',
+        message: (e as Error).message,
       });
-    } else {
-      httpServer = server.listen(port, () => {
-        logger.info(`Server ready on port ${port}`, {
-          label: 'Server',
-        });
-      });
+    } finally {
+      next();
     }
-    httpServer.on('error', (err) => {
-      logger.error('Failed to start server', {
-        label: 'Server',
-        message: err.message,
-      });
-      process.exit(1);
-    });
-    managedServer = httpServer;
-    if (desktopRuntime) {
-      httpServer.on('listening', () => {
-        const address = httpServer.address();
-        if (
-          typeof address !== 'object' ||
-          !address ||
-          address.address !== '127.0.0.1'
-        ) {
-          logger.error('Desktop runtime did not bind exact loopback', {
-            label: 'Desktop',
-          });
-          requestManagedShutdown();
-          return;
-        }
-        desktopOrigin = `http://127.0.0.1:${address.port}`;
-        process.stdout.write(
-          `FORESEERR_DESKTOP_READY ${JSON.stringify({ protocolVersion: 1, pid: process.pid, origin: desktopOrigin, foreseerrVersion: getAppVersion(), commit: process.env.FORESEERR_COMMIT ?? 'unknown', schemaVersion: 0 })}\n`
-        );
-      });
-    }
-  })
-  .catch(async (err) => {
-    logger.error(err.stack);
-    await releaseDesktopLock?.();
-    releaseDesktopLock = undefined;
-    process.exit(err.exitCode ?? 1);
   });
+  if (desktopRuntime || settings.network.csrfProtection) {
+    server.use(
+      csurf({
+        cookie: {
+          httpOnly: true,
+          sameSite: desktopRuntime ? 'strict' : true,
+          secure: desktopRuntime ? false : !dev,
+          key: '_csrf',
+          path: '/',
+        },
+        // Native hosts redeem with ticket+verifier and no browser cookies.
+        ignoreRequest: (req) =>
+          req.method === 'POST' &&
+          req.path === '/api/v1/desktop/auth-tickets/redeem',
+      })
+    );
+    server.use((req, res, next) => {
+      res.cookie('XSRF-TOKEN', req.csrfToken(), {
+        sameSite: desktopRuntime ? 'strict' : true,
+        secure: desktopRuntime ? false : !dev,
+      });
+      next();
+    });
+  }
+
+  // Set up sessions
+  const sessionRespository = getRepository(Session);
+  server.use(
+    '/api',
+    session({
+      secret: settings.sessionSecret,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        maxAge: 1000 * 60 * 60 * 24 * 30,
+        httpOnly: true,
+        sameSite:
+          desktopRuntime || settings.network.csrfProtection ? 'strict' : 'lax',
+        secure: desktopRuntime ? false : 'auto',
+      },
+      store: new TypeormStore({
+        cleanupLimit: 2,
+        ttl: 60 * 60 * 24 * 30,
+      }).connect(sessionRespository) as Store,
+    })
+  );
+  const apiSpecContent = await fs.readFile(API_SPEC_PATH, 'utf-8');
+  const apiDocs = yaml.load(apiSpecContent) as Record<string, unknown>;
+  server.use('/api-docs', swaggerUi.serve, swaggerUi.setup(apiDocs));
+  server.use(
+    OpenApiValidator.middleware({
+      apiSpec: API_SPEC_PATH,
+      validateRequests: true,
+    })
+  );
+  /**
+   * This is a workaround to convert dates to strings before they are validated by
+   * OpenAPI validator. Otherwise, they are treated as objects instead of strings
+   * and response validation will fail
+   */
+  server.use((_req, res, next) => {
+    const original = res.json;
+    res.json = function jsonp(json) {
+      return original.call(this, JSON.parse(JSON.stringify(json)));
+    };
+    next();
+  });
+  server.use('/api/v1', routes);
+
+  // Do not set cookies so CDNs can cache them
+  server.use('/imageproxy', clearCookies, imageproxy);
+  server.use('/avatarproxy', clearCookies, avatarproxy);
+
+  server.get('*path', (req, res) => handle(req, res));
+  server.use(
+    (
+      err: {
+        status: number;
+        message: string;
+        errors: string[];
+        retryAfter?: number;
+      },
+      _req: Request,
+      res: Response,
+      // We must provide a next function for the function signature here even though its not used
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      _next: NextFunction
+    ) => {
+      // format error
+      if (
+        err.status === 429 &&
+        typeof err.retryAfter === 'number' &&
+        Number.isFinite(err.retryAfter)
+      ) {
+        res.setHeader('Retry-After', String(Math.ceil(err.retryAfter)));
+      }
+      res.status(err.status || 500).json({
+        message: err.message,
+        errors: err.errors,
+      });
+    }
+  );
+
+  const configuredPort = Number(process.env.PORT);
+  const port =
+    Number.isInteger(configuredPort) && configuredPort >= 0
+      ? configuredPort
+      : 5055;
+  const host = desktopRuntime ? '127.0.0.1' : process.env.HOST;
+  let httpServer: HttpServer;
+  if (host) {
+    httpServer = server.listen(port, host, () => {
+      logger.info(`Server ready on ${host} port ${port}`, {
+        label: 'Server',
+      });
+    });
+  } else {
+    httpServer = server.listen(port, () => {
+      logger.info(`Server ready on port ${port}`, {
+        label: 'Server',
+      });
+    });
+  }
+  httpServer.on('error', (err) => {
+    logger.error('Failed to start server', {
+      label: 'Server',
+      message: err.message,
+    });
+  });
+  managedServer = httpServer;
+  if (desktopRuntime) {
+    httpServer.on('listening', () => {
+      const address = httpServer.address();
+      if (
+        typeof address !== 'object' ||
+        !address ||
+        address.address !== '127.0.0.1'
+      ) {
+        logger.error('Desktop runtime did not bind exact loopback', {
+          label: 'Desktop',
+        });
+        requestManagedShutdown();
+        return;
+      }
+      desktopOrigin = `http://127.0.0.1:${address.port}`;
+      process.stdout.write(
+        `FORESEERR_DESKTOP_READY ${JSON.stringify({ protocolVersion: 1, pid: process.pid, origin: desktopOrigin, foreseerrVersion: getAppVersion(), commit: process.env.FORESEERR_COMMIT ?? 'unknown', schemaVersion: 0 })}\n`
+      );
+    });
+  }
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once('listening', resolve);
+    httpServer.once('error', reject);
+  });
+  return {
+    origin: desktopRuntime
+      ? desktopOrigin
+      : `http://${host ?? '127.0.0.1'}:${port}`,
+    server: httpServer,
+    stop: (options) => stopManagedRuntime(options?.deadlineMs),
+  };
+};
+
+startForeseerr().catch(async (err) => {
+  logger.error(err.stack);
+  await releaseDesktopLock?.();
+  releaseDesktopLock = undefined;
+  process.exit(err.exitCode ?? 1);
+});
