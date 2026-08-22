@@ -15,10 +15,18 @@ const hformat = winston.format.printf(
   }
 );
 
+// A managed desktop child has a machine-readable stdout contract: its sole
+// stdout record is readiness. All diagnostics, including normal Winston
+// console output, must therefore go to stderr while durable logs use the
+// explicitly-owned log directory.
+const logDirectory = process.env.LOG_DIRECTORY
+  ? process.env.LOG_DIRECTORY
+  : process.env.CONFIG_DIRECTORY
+    ? `${process.env.CONFIG_DIRECTORY}/logs`
+    : path.join(__dirname, '../config/logs');
+
 const seerrFileTransport = new winston.transports.DailyRotateFile({
-  filename: process.env.CONFIG_DIRECTORY
-    ? `${process.env.CONFIG_DIRECTORY}/logs/seerr-%DATE%.log`
-    : path.join(__dirname, '../config/logs/seerr-%DATE%.log'),
+  filename: path.join(logDirectory, 'seerr-%DATE%.log'),
   datePattern: 'YYYY-MM-DD',
   zippedArchive: true,
   maxSize: '20m',
@@ -27,9 +35,7 @@ const seerrFileTransport = new winston.transports.DailyRotateFile({
   symlinkName: 'seerr.log',
 });
 const machineLogFileTransport = new winston.transports.DailyRotateFile({
-  filename: process.env.CONFIG_DIRECTORY
-    ? `${process.env.CONFIG_DIRECTORY}/logs/.machinelogs-%DATE%.json`
-    : path.join(__dirname, '../config/logs/.machinelogs-%DATE%.json'),
+  filename: path.join(logDirectory, '.machinelogs-%DATE%.json'),
   datePattern: 'YYYY-MM-DD',
   zippedArchive: true,
   maxSize: '20m',
@@ -60,6 +66,10 @@ const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console({
+      stderrLevels:
+        process.env.FORESEERR_RUNTIME === 'desktop'
+          ? ['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']
+          : ['error', 'warn'],
       format: winston.format.combine(
         winston.format.colorize(),
         winston.format.splat(),
