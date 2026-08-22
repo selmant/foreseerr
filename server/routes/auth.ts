@@ -5,7 +5,7 @@ import { MediaServerType, ServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
-import { startJobs } from '@server/job/schedule';
+import { startDesktopCatchUp, startJobs } from '@server/job/schedule';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -101,9 +101,9 @@ authRoutes.post('/plex', async (req, res, next) => {
 
       settings.main.mediaServerType = MediaServerType.PLEX;
       await settings.save();
-      startJobs();
-
       await userRepository.save(user);
+      startJobs();
+      startDesktopCatchUp();
     } else {
       const mainUser = await userRepository.findOneOrFail({
         select: { id: true, plexToken: true, plexId: true, email: true },
@@ -419,6 +419,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       settings.jellyfin.apiKey = apiKey;
       await settings.save();
       startJobs();
+      startDesktopCatchUp();
     }
     // User already exists, let's update their information
     else if (account.User.Id === user?.jellyfinUserId) {
