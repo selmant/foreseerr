@@ -443,6 +443,11 @@ export const startDesktopCatchUp = (): void => {
 };
 
 export const stopJobs = (): void => {
+  if (desktopCatchUpTimer) {
+    clearTimeout(desktopCatchUpTimer);
+    desktopCatchUpTimer = undefined;
+  }
+  desktopDownloadStartupRun = false;
   cancelManagedJobs();
   for (const scheduledJob of scheduledJobs) {
     scheduledJob.job.cancel();
