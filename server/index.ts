@@ -13,6 +13,7 @@ import {
   desktopError,
 } from '@server/lib/desktopRuntime';
 import { setDesktopPlaybackActive } from '@server/lib/desktopState';
+import ImageProxy from '@server/lib/imageproxy';
 import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
 import EmailAgent from '@server/lib/notifications/agents/email';
@@ -258,6 +259,11 @@ app
 
     // Bootstrap Discovery Sliders
     await DiscoverSlider.bootstrapSliders();
+
+    // Prune expired and malformed transient image entries before accepting
+    // requests. Failures are contained inside the cache layer and must never
+    // prevent the durable application runtime from starting.
+    await ImageProxy.maintainCache();
 
     const server = express();
     if (!desktopRuntime && settings.network.trustProxy) {
