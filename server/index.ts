@@ -6,7 +6,10 @@ import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
 import { initI18n } from '@server/i18n';
 import { startDesktopCatchUp, startJobs, stopJobs } from '@server/job/schedule';
-import { assertSupportedDatabaseSchema } from '@server/lib/db/schemaGuard';
+import {
+  assertSupportedDatabaseSchema,
+  isMissingMigrationsTableError,
+} from '@server/lib/db/schemaGuard';
 import {
   DESKTOP_SCHEMA_EXIT_CODE,
   acquireDesktopLock,
@@ -158,6 +161,24 @@ const installDesktopControlHandlers = (): void => {
   process.once('SIGINT', () => requestManagedShutdown());
 };
 
+/** The latest applied TypeORM migration is the durable database schema ID. */
+const getDatabaseSchemaVersion = async (): Promise<number> => {
+  let rows: { schemaVersion?: number | string | null }[];
+  try {
+    rows = (await dataSource.query(
+      'SELECT MAX(timestamp) AS "schemaVersion" FROM migrations'
+    )) as { schemaVersion?: number | string | null }[];
+  } catch (error) {
+    // Development can intentionally run before TypeORM creates migrations.
+    if (isMissingMigrationsTableError(error)) return 0;
+    throw error;
+  }
+  const schemaVersion = Number(rows[0]?.schemaVersion ?? 0);
+  return Number.isSafeInteger(schemaVersion) && schemaVersion >= 0
+    ? schemaVersion
+    : 0;
+};
+
 if (!appDataPermissions()) {
   logger.error(
     'Something went wrong while checking config folder! Please ensure the config folder is set up properly.\nhttps://selmant.github.io/foreseerr/getting-started/'
@@ -218,6 +239,7 @@ const startForeseerrInternal = async (
     }
     throw error;
   }
+  const schemaVersion = await getDatabaseSchemaVersion();
 
   // Load Settings
   const settings = await getSettings().load();
@@ -501,7 +523,7 @@ const startForeseerrInternal = async (
       }
       desktopOrigin = `http://127.0.0.1:${address.port}`;
       process.stdout.write(
-        `FORESEERR_DESKTOP_READY ${JSON.stringify({ protocolVersion: 1, pid: process.pid, origin: desktopOrigin, foreseerrVersion: getAppVersion(), commit: process.env.FORESEERR_COMMIT ?? 'unknown', schemaVersion: 0 })}\n`
+        `FORESEERR_DESKTOP_READY ${JSON.stringify({ protocolVersion: 1, pid: process.pid, origin: desktopOrigin, foreseerrVersion: getAppVersion(), commit: process.env.FORESEERR_COMMIT ?? 'unknown', schemaVersion })}\n`
       );
     });
   }
