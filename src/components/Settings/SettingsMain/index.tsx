@@ -76,6 +76,10 @@ const messages = defineMessages('components.Settings.SettingsMain', {
     'Base URL for YouTube videos if a self-hosted YouTube instance is used.',
   versionCheck: 'Version Check',
   versionCheckTip: 'Automatically check for new versions on GitHub.',
+  desktopMode: 'Desktop Mode',
+  desktopModeTip:
+    'Switch between the bundled standalone server and a remote Foreseerr connection. Foreseer will restart to apply the change.',
+  changeDesktopMode: 'Change Desktop Mode',
   validationUrl: 'You must provide a valid URL',
   validationUrlTrailingSlash: 'URL must not end in a trailing slash',
 });
@@ -144,6 +148,15 @@ const SettingsMain = () => {
         appearance: 'error',
       });
     }
+  };
+
+  const canChangeDesktopMode =
+    typeof window !== 'undefined' &&
+    window.foreseerNative?.capabilities.includes('mode-setup');
+  const openDesktopModePreferences = () => {
+    const host = window.foreseerNative;
+    if (!host?.capabilities.includes('mode-setup')) return;
+    host.send({ type: 'runtime.open-setup', id: crypto.randomUUID() });
   };
 
   if (!data && !error) {
@@ -632,6 +645,28 @@ const SettingsMain = () => {
                     />
                   </div>
                 </div>
+                {userHasPermission(Permission.ADMIN) &&
+                  canChangeDesktopMode && (
+                    <div className="form-row">
+                      <label className="text-label">
+                        {intl.formatMessage(messages.desktopMode)}
+                        <span className="label-tip">
+                          {intl.formatMessage(messages.desktopModeTip)}
+                        </span>
+                      </label>
+                      <div className="form-input-area">
+                        <Button
+                          buttonType="default"
+                          type="button"
+                          onClick={openDesktopModePreferences}
+                        >
+                          <span>
+                            {intl.formatMessage(messages.changeDesktopMode)}
+                          </span>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 <div className="actions">
                   <div className="flex justify-end">
                     <span className="ml-3 inline-flex rounded-md shadow-sm">
