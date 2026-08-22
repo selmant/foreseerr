@@ -1,7 +1,11 @@
 import { MediaServerType } from '@server/constants/server';
 import blocklistedTagsProcessor from '@server/job/blocklistedTagsProcessor';
 import episodeRequestSync from '@server/job/episodeRequestSync';
-import { cancelManagedJobs } from '@server/job/execution';
+import {
+  cancelManagedJobs,
+  executeManagedJob,
+  type ManagedJobWeight,
+} from '@server/job/execution';
 import availabilitySync from '@server/lib/availabilitySync';
 import { isDesktopPlaybackActive } from '@server/lib/desktopState';
 import downloadTracker from '@server/lib/downloadtracker';
@@ -34,8 +38,13 @@ interface ScheduledJob {
 
 export const scheduledJobs: ScheduledJob[] = [];
 
-const runHeavy = (name: string, run: () => void): void => {
-  if (isDesktopPlaybackActive()) {
+const runScheduledJob = (
+  id: string,
+  weight: ManagedJobWeight,
+  name: string,
+  run: () => Promise<unknown>
+): void => {
+  if (weight === 'heavy' && isDesktopPlaybackActive()) {
     logger.info(
       `Deferring heavy job while desktop playback is active: ${name}`,
       {
@@ -44,8 +53,16 @@ const runHeavy = (name: string, run: () => void): void => {
     );
     return;
   }
-  run();
+  void executeManagedJob(id, weight, () => run()).catch((error) => {
+    logger.error(`Failed to record scheduled job: ${name}`, {
+      label: 'Jobs',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  });
 };
+
+const runHeavy = (id: string, name: string, run: () => Promise<unknown>) =>
+  runScheduledJob(id, 'heavy', name, run);
 
 export const startJobs = (): void => {
   if (scheduledJobs.length > 0) {
@@ -68,7 +85,9 @@ export const startJobs = (): void => {
           logger.info('Starting scheduled job: Plex Recently Added Scan', {
             label: 'Jobs',
           });
-          runHeavy('Plex Recently Added Scan', () => plexRecentScanner.run());
+          runHeavy('plex-recently-added-scan', 'Plex Recently Added Scan', () =>
+            plexRecentScanner.run()
+          );
         }
       ),
       running: () => plexRecentScanner.status().running,
@@ -86,7 +105,9 @@ export const startJobs = (): void => {
         logger.info('Starting scheduled job: Plex Full Library Scan', {
           label: 'Jobs',
         });
-        runHeavy('Plex Full Library Scan', () => plexFullScanner.run());
+        runHeavy('plex-full-scan', 'Plex Full Library Scan', () =>
+          plexFullScanner.run()
+        );
       }),
       running: () => plexFullScanner.status().running,
       cancelFn: () => plexFullScanner.cancel(),
@@ -142,8 +163,10 @@ export const startJobs = (): void => {
           logger.info('Starting scheduled job: Jellyfin Recently Added Scan', {
             label: 'Jobs',
           });
-          runHeavy('Jellyfin Recently Added Scan', () =>
-            jellyfinRecentScanner.run()
+          runHeavy(
+            'jellyfin-recently-added-scan',
+            'Jellyfin Recently Added Scan',
+            () => jellyfinRecentScanner.run()
           );
         }
       ),
@@ -162,7 +185,9 @@ export const startJobs = (): void => {
         logger.info('Starting scheduled job: Jellyfin Full Scan', {
           label: 'Jobs',
         });
-        runHeavy('Jellyfin Full Scan', () => jellyfinFullScanner.run());
+        runHeavy('jellyfin-full-scan', 'Jellyfin Full Scan', () =>
+          jellyfinFullScanner.run()
+        );
       }),
       running: () => jellyfinFullScanner.status().running,
       cancelFn: () => jellyfinFullScanner.cancel(),
@@ -179,7 +204,7 @@ export const startJobs = (): void => {
     cronSchedule: jobs['radarr-scan'].schedule,
     job: schedule.scheduleJob(jobs['radarr-scan'].schedule, () => {
       logger.info('Starting scheduled job: Radarr Scan', { label: 'Jobs' });
-      runHeavy('Radarr Scan', () => radarrScanner.run());
+      runHeavy('radarr-scan', 'Radarr Scan', () => radarrScanner.run());
     }),
     running: () => radarrScanner.status().running,
     cancelFn: () => radarrScanner.cancel(),
@@ -225,7 +250,7 @@ export const startJobs = (): void => {
     cronSchedule: jobs['sonarr-scan'].schedule,
     job: schedule.scheduleJob(jobs['sonarr-scan'].schedule, () => {
       logger.info('Starting scheduled job: Sonarr Scan', { label: 'Jobs' });
-      runHeavy('Sonarr Scan', () => sonarrScanner.run());
+      runHeavy('sonarr-scan', 'Sonarr Scan', () => sonarrScanner.run());
     }),
     running: () => sonarrScanner.status().running,
     cancelFn: () => sonarrScanner.cancel(),
@@ -242,7 +267,9 @@ export const startJobs = (): void => {
       logger.info('Starting scheduled job: Media Availability Sync', {
         label: 'Jobs',
       });
-      runHeavy('Media Availability Sync', () => availabilitySync.run());
+      runHeavy('availability-sync', 'Media Availability Sync', () =>
+        availabilitySync.run()
+      );
     }),
     running: () => availabilitySync.running,
     cancelFn: () => availabilitySync.cancel(),
@@ -308,7 +335,7 @@ export const startJobs = (): void => {
       logger.info('Starting scheduled job: Process Blocklisted Tags', {
         label: 'Jobs',
       });
-      runHeavy('Process Blocklisted Tags', () =>
+      runHeavy('process-blocklisted-tags', 'Process Blocklisted Tags', () =>
         blocklistedTagsProcessor.run()
       );
     }),
