@@ -292,23 +292,10 @@ const SettingsJobs = () => {
     cacheRevalidate();
   };
 
-  const flushAllCaches = async () => {
-    await axios.post('/api/v1/settings/cache/all/flush');
-    addToast(intl.formatMessage(messages.allcachesflushed), {
-      appearance: 'success',
-      autoDismiss: true,
-    });
-    cacheRevalidate();
-  };
-
-  const flushBrowserCache = async () => {
+  const requestBrowserCacheClear = async () => {
     const host = window.foreseerNative;
     if (!host?.capabilities.includes('browser-cache-clear')) {
-      addToast(intl.formatMessage(messages.browsercacheunavailable), {
-        appearance: 'error',
-        autoDismiss: true,
-      });
-      return;
+      return false;
     }
     const response = await axios.post<{ ticket: string }>(
       '/api/v1/settings/cache/browser/flush'
@@ -321,6 +308,29 @@ const SettingsJobs = () => {
       })
     ) {
       throw new Error('Native browser cache bridge is unavailable');
+    }
+    return true;
+  };
+
+  const flushAllCaches = async () => {
+    await axios.post('/api/v1/settings/cache/all/flush');
+    // Browser cache is native-owned. Include it when this is the desktop app,
+    // while preserving the hosted deployment's server-only clear behavior.
+    await requestBrowserCacheClear();
+    addToast(intl.formatMessage(messages.allcachesflushed), {
+      appearance: 'success',
+      autoDismiss: true,
+    });
+    cacheRevalidate();
+  };
+
+  const flushBrowserCache = async () => {
+    if (!(await requestBrowserCacheClear())) {
+      addToast(intl.formatMessage(messages.browsercacheunavailable), {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+      return;
     }
     addToast(intl.formatMessage(messages.browsercacheflushed), {
       appearance: 'success',
