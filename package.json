@@ -57,6 +57,7 @@
     "cookie-parser": "1.4.7",
     "copy-to-clipboard": "4.0.0",
     "country-flag-icons": "1.6.16",
+    "cron-parser": "4.9.0",
     "cronstrue": "3.14.0",
     "dns-caching": "^0.2.9",
     "email-templates": "13.0.1",
