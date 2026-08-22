@@ -1,6 +1,7 @@
 import { MediaServerType } from '@server/constants/server';
 import blocklistedTagsProcessor from '@server/job/blocklistedTagsProcessor';
 import episodeRequestSync from '@server/job/episodeRequestSync';
+import { cancelManagedJobs } from '@server/job/execution';
 import availabilitySync from '@server/lib/availabilitySync';
 import { isDesktopPlaybackActive } from '@server/lib/desktopState';
 import downloadTracker from '@server/lib/downloadtracker';
@@ -319,6 +320,7 @@ export const startJobs = (): void => {
 };
 
 export const stopJobs = (): void => {
+  cancelManagedJobs();
   for (const scheduledJob of scheduledJobs) {
     scheduledJob.job.cancel();
     scheduledJob.cancelFn?.();

@@ -16,6 +16,9 @@ export class JobExecutionState {
   @DbAwareColumn({ type: 'datetime', nullable: true })
   public lastFailedAt?: Date | null;
 
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public lastCancelledAt?: Date | null;
+
   @Column({ type: 'varchar', length: 512, nullable: true })
   public lastFailureSummary?: string | null;
 
