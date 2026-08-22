@@ -75,6 +75,12 @@ export interface ForeseerrRuntime {
   stop(options?: { deadlineMs?: number }): Promise<void>;
 }
 
+export interface ForeseerrStartOptions {
+  host?: string;
+  port?: number;
+  runtime?: 'hosted' | 'desktop';
+}
+
 const stopManagedRuntime = async (deadlineMs = 10_000): Promise<void> => {
   if (stopping) return;
   stopping = true;
@@ -154,7 +160,9 @@ if (!appDataPermissions()) {
   );
 }
 
-export const startForeseerr = async (): Promise<ForeseerrRuntime> => {
+export const startForeseerr = async (
+  options: ForeseerrStartOptions = {}
+): Promise<ForeseerrRuntime> => {
   await app.prepare();
   if (desktopRuntime) {
     releaseDesktopLock = await acquireDesktopLock();
@@ -427,12 +435,16 @@ export const startForeseerr = async (): Promise<ForeseerrRuntime> => {
     }
   );
 
-  const configuredPort = Number(process.env.PORT);
+  const configuredPort = options.port ?? Number(process.env.PORT);
   const port =
     Number.isInteger(configuredPort) && configuredPort >= 0
       ? configuredPort
       : 5055;
-  const host = desktopRuntime ? '127.0.0.1' : process.env.HOST;
+  const host =
+    options.host ?? (desktopRuntime ? '127.0.0.1' : process.env.HOST);
+  if (desktopRuntime && host !== '127.0.0.1') {
+    throw new Error('Desktop runtime must bind exact IPv4 loopback');
+  }
   let httpServer: HttpServer;
   if (host) {
     httpServer = server.listen(port, host, () => {
