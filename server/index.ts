@@ -104,6 +104,8 @@ const stopManagedRuntime = async (deadlineMs = 10_000): Promise<void> => {
       });
     });
   }
+  managedServer = undefined;
+  desktopOrigin = '';
   if (dataSource.isInitialized) {
     if (!isPgsql) {
       await dataSource
