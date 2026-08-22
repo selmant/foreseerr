@@ -51,6 +51,7 @@ const heavyJobIds = new Set<JobId>([
   'availability-sync',
   'process-blocklisted-tags',
 ]);
+let desktopCatchUpTimer: NodeJS.Timeout | undefined;
 
 const runScheduledJob = (
   id: string,
@@ -390,7 +391,9 @@ export const startJobs = (): void => {
 /** Queue one coalesced desktop catch-up pass after the UI has settled. */
 export const startDesktopCatchUp = (): void => {
   if (process.env.FORESEERR_RUNTIME !== 'desktop') return;
-  setTimeout(() => {
+  if (desktopCatchUpTimer) return;
+  desktopCatchUpTimer = setTimeout(() => {
+    desktopCatchUpTimer = undefined;
     void (async () => {
       const repository = getRepository(JobExecutionState);
       for (const job of scheduledJobs) {

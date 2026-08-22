@@ -120,6 +120,7 @@ if (desktopRuntime) {
           typeof message.playbackActive === 'boolean'
         ) {
           setDesktopPlaybackActive(message.playbackActive);
+          if (!message.playbackActive) startDesktopCatchUp();
         } else {
           logger.warn('Ignoring unknown desktop control message', {
             label: 'Desktop',
