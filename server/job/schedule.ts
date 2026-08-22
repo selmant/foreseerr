@@ -10,7 +10,10 @@ import {
   type ManagedJobWeight,
 } from '@server/job/execution';
 import availabilitySync from '@server/lib/availabilitySync';
-import { isDesktopPlaybackActive } from '@server/lib/desktopState';
+import {
+  isDesktopPlaybackActive,
+  isDesktopRuntime,
+} from '@server/lib/desktopState';
 import downloadTracker from '@server/lib/downloadtracker';
 import ImageProxy from '@server/lib/imageproxy';
 import refreshToken from '@server/lib/refreshToken';
@@ -391,7 +394,7 @@ export const startJobs = (): void => {
 
 /** Queue one coalesced desktop catch-up pass after the UI has settled. */
 export const startDesktopCatchUp = (): void => {
-  if (process.env.FORESEERR_RUNTIME !== 'desktop') return;
+  if (!isDesktopRuntime()) return;
   if (desktopCatchUpTimer) return;
   desktopCatchUpTimer = setTimeout(() => {
     desktopCatchUpTimer = undefined;
