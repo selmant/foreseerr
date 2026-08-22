@@ -328,7 +328,10 @@ const startForeseerrInternal = async (
       const unsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(
         req.method
       );
-      const nativeTicket = req.path === '/api/v1/desktop/auth-tickets/redeem';
+      const nativeTicket = [
+        '/api/v1/desktop/auth-tickets/redeem',
+        '/api/v1/desktop/browser-cache/redeem',
+      ].includes(req.path);
       if (
         (stopping && req.path !== '/api/v1/status') ||
         !desktopOrigin ||

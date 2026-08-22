@@ -327,9 +327,7 @@ describe('desktop auth tickets', () => {
   it('exempts cookie-less ticket redeem from CSRF', () => {
     const serverSource = readFileSync(join(__dirname, '../index.ts'), 'utf8');
     assert.match(serverSource, /ignoreRequest:/);
-    assert.match(
-      serverSource,
-      /req\.path === '\/api\/v1\/desktop\/auth-tickets\/redeem'/
-    );
+    assert.match(serverSource, /'\/api\/v1\/desktop\/auth-tickets\/redeem'/);
+    assert.match(serverSource, /'\/api\/v1\/desktop\/browser-cache\/redeem'/);
   });
 });
