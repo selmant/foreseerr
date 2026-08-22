@@ -729,6 +729,15 @@ class Settings {
         property === 'applicationUrl'
           ? applicationUrl
           : Reflect.get(target, property, receiver),
+      set: (target, property, value, receiver) => {
+        // Settings route handlers may mutate `settings.main` directly. Keep
+        // the visible ephemeral origin from becoming durable configuration
+        // through that path as well as through the `main` setter below.
+        if (property === 'applicationUrl' && value === applicationUrl) {
+          return true;
+        }
+        return Reflect.set(target, property, value, receiver);
+      },
     });
   }
 
