@@ -123,7 +123,12 @@ export const startJobs = (): void => {
         logger.info('Starting scheduled job: Plex Refresh Token', {
           label: 'Jobs',
         });
-        refreshToken.run();
+        runScheduledJob(
+          'plex-refresh-token',
+          'light',
+          'Plex Refresh Token',
+          () => refreshToken.run()
+        );
       }),
     });
 
@@ -138,12 +143,12 @@ export const startJobs = (): void => {
         logger.info('Starting scheduled job: Plex Watchlist Sync', {
           label: 'Jobs',
         });
-        watchlistSync.syncWatchlist().catch((e) => {
-          logger.error('Failed to sync watchlists', {
-            label: 'Plex Watchlist Sync',
-            errorMessage: e.message,
-          });
-        });
+        runScheduledJob(
+          'plex-watchlist-sync',
+          'light',
+          'Plex Watchlist Sync',
+          () => watchlistSync.syncWatchlist()
+        );
       }),
     });
   } else if (
@@ -220,7 +225,12 @@ export const startJobs = (): void => {
       logger.info('Starting scheduled job: Episode Request Sync', {
         label: 'Jobs',
       });
-      episodeRequestSync.run();
+      runScheduledJob(
+        'episode-request-sync',
+        'light',
+        'Episode Request Sync',
+        () => episodeRequestSync.run()
+      );
     }),
     running: () => episodeRequestSync.running,
     cancelFn: () => episodeRequestSync.cancel(),
@@ -236,7 +246,12 @@ export const startJobs = (): void => {
       logger.info('Starting scheduled job: Release Calendar Sync', {
         label: 'Jobs',
       });
-      releaseCalendarSync.run();
+      runScheduledJob(
+        'release-calendar-sync',
+        'light',
+        'Release Calendar Sync',
+        () => releaseCalendarSync.run()
+      );
     }),
     running: () => releaseCalendarSync.running,
     cancelFn: () => releaseCalendarSync.cancel(),
@@ -286,7 +301,9 @@ export const startJobs = (): void => {
       logger.debug('Starting scheduled job: Download Sync', {
         label: 'Jobs',
       });
-      downloadTracker.updateDownloads();
+      runScheduledJob('download-sync', 'light', 'Download Sync', () =>
+        downloadTracker.updateDownloads()
+      );
     }),
   });
 
@@ -301,7 +318,12 @@ export const startJobs = (): void => {
       logger.info('Starting scheduled job: Download Sync Reset', {
         label: 'Jobs',
       });
-      downloadTracker.resetDownloadTracker();
+      runScheduledJob(
+        'download-sync-reset',
+        'light',
+        'Download Sync Reset',
+        () => downloadTracker.resetDownloadTracker()
+      );
     }),
   });
 
@@ -317,11 +339,16 @@ export const startJobs = (): void => {
         label: 'Jobs',
       });
       // Clean TMDB image cache
-      ImageProxy.clearCache('tmdb');
-
-      // Clean users avatar image cache
-      ImageProxy.clearCache('avatar');
-      void ImageProxy.maintainCache();
+      runScheduledJob(
+        'image-cache-cleanup',
+        'light',
+        'Image Cache Cleanup',
+        async () => {
+          ImageProxy.clearCache('tmdb');
+          ImageProxy.clearCache('avatar');
+          await ImageProxy.maintainCache();
+        }
+      );
     }),
   });
 

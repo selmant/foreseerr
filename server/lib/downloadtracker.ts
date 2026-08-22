@@ -59,9 +59,11 @@ class DownloadTracker {
     this.sonarrServers = {};
   }
 
-  public updateDownloads() {
-    this.updateRadarrDownloads();
-    this.updateSonarrDownloads();
+  public async updateDownloads(): Promise<void> {
+    await Promise.all([
+      this.updateRadarrDownloads(),
+      this.updateSonarrDownloads(),
+    ]);
   }
 
   private async updateRadarrDownloads() {
