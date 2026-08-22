@@ -54,6 +54,7 @@ export const nativeHostEventTypesV1 = [
   'runtime-failed',
   'runtime-recovered',
   'logs-opened',
+  'setup-opened',
 ] as const;
 
 export type NativeHostEventTypeV1 = (typeof nativeHostEventTypesV1)[number];

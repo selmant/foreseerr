@@ -66,6 +66,10 @@
       "fields": ["id"]
     },
     {
+      "type": "runtime.open-setup",
+      "fields": ["id"]
+    },
+    {
       "type": "window.minimize",
       "fields": ["id"]
     },
@@ -98,7 +102,8 @@
     "browser-cache-cleared",
     "runtime-failed",
     "runtime-recovered",
-    "logs-opened"
+    "logs-opened",
+    "setup-opened"
   ],
   "terminalPlayEventTypes": ["stopped", "finished", "canceled", "error"],
   "envelopes": {
