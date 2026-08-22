@@ -56,14 +56,22 @@ const heavyJobIds = new Set<JobId>([
 ]);
 let desktopCatchUpTimer: NodeJS.Timeout | undefined;
 let desktopDownloadStartupRun = false;
+const deferredHeavyJobs = new Map<
+  JobId,
+  { name: string; run: () => Promise<unknown> }
+>();
 
 const runScheduledJob = (
-  id: string,
+  id: JobId,
   weight: ManagedJobWeight,
   name: string,
   run: () => Promise<unknown>
 ): void => {
   if (weight === 'heavy' && isDesktopPlaybackActive()) {
+    // Cron may fire repeatedly while a film is playing. Coalesce by job ID;
+    // a single run is retained for the first 30-second idle window after
+    // playback stops rather than replaying every missed occurrence.
+    deferredHeavyJobs.set(id, { name, run });
     logger.info(
       `Deferring heavy job while desktop playback is active: ${name}`,
       {
@@ -80,8 +88,17 @@ const runScheduledJob = (
   });
 };
 
-const runHeavy = (id: string, name: string, run: () => Promise<unknown>) =>
+const runHeavy = (id: JobId, name: string, run: () => Promise<unknown>) =>
   runScheduledJob(id, 'heavy', name, run);
+
+const runDeferredHeavyJobs = (): void => {
+  if (isDesktopPlaybackActive()) return;
+  const jobs = [...deferredHeavyJobs];
+  deferredHeavyJobs.clear();
+  for (const [id, { name, run }] of jobs) {
+    runHeavy(id, name, run);
+  }
+};
 
 export const startJobs = (): void => {
   if (scheduledJobs.length > 0) {
@@ -412,6 +429,10 @@ export const startDesktopCatchUp = (): void => {
           downloadTracker.updateDownloads()
         );
       }
+      // A playback session may have deferred scheduled heavy work while the
+      // timer was pending. Draining here guarantees a full 30 seconds of
+      // desktop idleness after the final playback-active=false signal.
+      runDeferredHeavyJobs();
       for (const job of scheduledJobs) {
         // Download tracking and image cleanup have dedicated startup
         // maintenance semantics rather than missed-cron replay.
@@ -448,6 +469,7 @@ export const stopJobs = (): void => {
     desktopCatchUpTimer = undefined;
   }
   desktopDownloadStartupRun = false;
+  deferredHeavyJobs.clear();
   cancelManagedJobs();
   for (const scheduledJob of scheduledJobs) {
     scheduledJob.job.cancel();
