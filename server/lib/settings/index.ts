@@ -1,6 +1,10 @@
 import type { RatingBadgeSettings } from '@server/constants/ratingBadges';
 import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
+import {
+  effectiveApplicationUrl,
+  isDesktopRuntime,
+} from '@server/lib/desktopState';
 import { Permission } from '@server/lib/permissions';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
@@ -711,10 +715,31 @@ class Settings {
   }
 
   get main(): MainSettings {
-    return this.data.main;
+    const applicationUrl = effectiveApplicationUrl(
+      this.data.main.applicationUrl
+    );
+    if (applicationUrl === this.data.main.applicationUrl) {
+      return this.data.main;
+    }
+    // Preserve normal mutable settings semantics while exposing the volatile
+    // desktop origin only to runtime readers. `this.data` remains the durable
+    // source used by save(), so a random loopback port cannot leak to disk.
+    return new Proxy(this.data.main, {
+      get: (target, property, receiver) =>
+        property === 'applicationUrl'
+          ? applicationUrl
+          : Reflect.get(target, property, receiver),
+    });
   }
 
   set main(data: MainSettings) {
+    if (
+      isDesktopRuntime() &&
+      data.applicationUrl ===
+        effectiveApplicationUrl(this.data.main.applicationUrl)
+    ) {
+      data = { ...data, applicationUrl: this.data.main.applicationUrl };
+    }
     this.data.main = mergeSettings(this.data.main, data);
   }
 
@@ -869,7 +894,7 @@ class Settings {
     return {
       ...this.data.public,
       applicationTitle: this.data.main.applicationTitle,
-      applicationUrl: this.data.main.applicationUrl,
+      applicationUrl: this.main.applicationUrl,
       hideAvailable: this.data.main.hideAvailable,
       hideBlocklisted: this.data.main.hideBlocklisted,
       localLogin: this.data.main.localLogin,

@@ -16,6 +16,7 @@ import {
   desktopError,
 } from '@server/lib/desktopRuntime';
 import {
+  setDesktopApplicationUrl,
   setDesktopPlaybackActive,
   setDesktopRuntime,
   setDesktopStopping,
@@ -106,6 +107,7 @@ const stopManagedRuntime = async (deadlineMs = 10_000): Promise<void> => {
   }
   managedServer = undefined;
   desktopOrigin = '';
+  setDesktopApplicationUrl('');
   if (dataSource.isInitialized) {
     if (!isPgsql) {
       await dataSource
@@ -201,6 +203,7 @@ const startForeseerrInternal = async (
   if (desktopRuntime) installDesktopControlHandlers();
   stopping = false;
   desktopOrigin = '';
+  setDesktopApplicationUrl('');
   setDesktopStopping(false);
   await app.prepare();
   if (desktopRuntime) {
@@ -528,6 +531,7 @@ const startForeseerrInternal = async (
         return;
       }
       desktopOrigin = `http://127.0.0.1:${address.port}`;
+      setDesktopApplicationUrl(desktopOrigin);
       process.stdout.write(
         `FORESEERR_DESKTOP_READY ${JSON.stringify({ protocolVersion: 1, pid: process.pid, origin: desktopOrigin, foreseerrVersion: getAppVersion(), commit: process.env.FORESEERR_COMMIT ?? 'unknown', schemaVersion })}\n`
       );
@@ -567,6 +571,7 @@ const cleanupFailedDesktopStart = async (): Promise<void> => {
   await releaseDesktopLock?.();
   releaseDesktopLock = undefined;
   desktopOrigin = '';
+  setDesktopApplicationUrl('');
   stopping = false;
   setDesktopStopping(false);
 };
