@@ -69,6 +69,12 @@ const messages = defineMessages(
     plexwatchlistsyncseries: 'Auto-Request Series',
     plexwatchlistsyncseriestip:
       'Automatically request series on your <PlexWatchlistSupportLink>Plex Watchlist</PlexWatchlistSupportLink>',
+    autoCompleteSkippedEpisodeEndings: 'Auto-complete skipped episode endings',
+    libraryPlayback: 'Library Playback',
+    autoCompleteSkippedEpisodeEndingsTip:
+      'When you have started a later episode, episodes left at 50% or more are marked watched in both Jellyfin and Trakt the next time Library loads.',
+    autoCompleteSkippedEpisodeEndingsWarning:
+      'This changes your watch history in both services and requires linked Jellyfin and Trakt accounts.',
   }
 );
 
@@ -161,6 +167,8 @@ const UserGeneralSettings = () => {
           tvQuotaDays: data?.tvQuotaDays,
           watchlistSyncMovies: data?.watchlistSyncMovies,
           watchlistSyncTv: data?.watchlistSyncTv,
+          autoCompleteSkippedEpisodeEndings:
+            data?.autoCompleteSkippedEpisodeEndings === true,
         }}
         validationSchema={UserGeneralSettingsSchema}
         enableReinitialize
@@ -182,6 +190,8 @@ const UserGeneralSettings = () => {
               tvQuotaDays: tvQuotaEnabled ? values.tvQuotaDays : null,
               watchlistSyncMovies: values.watchlistSyncMovies,
               watchlistSyncTv: values.watchlistSyncTv,
+              autoCompleteSkippedEpisodeEndings:
+                values.autoCompleteSkippedEpisodeEndings,
             });
 
             if (currentUser?.id === user?.id && setLocale) {
@@ -596,6 +606,47 @@ const UserGeneralSettings = () => {
                     </div>
                   </div>
                 )}
+              <div className="form-row">
+                <label className="text-label">
+                  {intl.formatMessage(messages.libraryPlayback)}
+                </label>
+                <div />
+              </div>
+              <div className="form-row">
+                <label
+                  htmlFor="autoCompleteSkippedEpisodeEndings"
+                  className="checkbox-label"
+                >
+                  <span>
+                    {intl.formatMessage(
+                      messages.autoCompleteSkippedEpisodeEndings
+                    )}
+                  </span>
+                  <span className="label-tip">
+                    {intl.formatMessage(
+                      messages.autoCompleteSkippedEpisodeEndingsTip
+                    )}
+                  </span>
+                  <span className="mt-1 block text-sm text-yellow-500">
+                    {intl.formatMessage(
+                      messages.autoCompleteSkippedEpisodeEndingsWarning
+                    )}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <Field
+                    type="checkbox"
+                    id="autoCompleteSkippedEpisodeEndings"
+                    name="autoCompleteSkippedEpisodeEndings"
+                    onChange={() =>
+                      setFieldValue(
+                        'autoCompleteSkippedEpisodeEndings',
+                        !values.autoCompleteSkippedEpisodeEndings
+                      )
+                    }
+                  />
+                </div>
+              </div>
               <div className="actions">
                 <div className="flex justify-end">
                   <span className="ml-3 inline-flex rounded-md shadow-sm">
