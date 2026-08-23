@@ -50,16 +50,13 @@ const Login = () => {
   useEffect(() => {
     const host = window.foreseerNative;
     setCanOpenRemoteSetup(
-      isUsableForeseerNative(host) && host.capabilities.includes('mode-setup')
+      isUsableForeseerNative(host) && host.capabilities.includes('setup')
     );
   }, []);
 
   const openRemoteSetup = () => {
     const host = window.foreseerNative;
-    if (
-      !isUsableForeseerNative(host) ||
-      !host.capabilities.includes('mode-setup')
-    ) {
+    if (!isUsableForeseerNative(host) || !host.capabilities.includes('setup')) {
       return;
     }
     host.send({ type: 'runtime.open-setup', id: crypto.randomUUID() });

@@ -129,9 +129,10 @@ authRoutes.post('/plex', async (req, res, next) => {
 
       settings.main.mediaServerType = MediaServerType.PLEX;
       await settings.save();
-      if (process.env.FORESEERR_RUNTIME !== 'desktop') {
-        await userRepository.save(user);
-      }
+      // The initial user must be durable before a session can refer to it.
+      // This is also safe in desktop mode: responses use toPublicJSON(), not
+      // the entity graph that originally caused the login serialization loop.
+      await userRepository.save(user);
       startJobs();
       startDesktopCatchUp();
     } else {

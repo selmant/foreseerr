@@ -10,10 +10,10 @@ import { getSettings } from '@server/lib/settings';
 const loadUserById = async (userId: number): Promise<User | null> => {
   return getRepository(User).findOne({
     where: { id: userId },
-    // Never join settings here. User.settings is eager and UserSettings.user
-    // points back; loading that graph on every API request wedges Node
-    // (desktop login looks like a silent Sign In bounce).
-    loadEagerRelations: false,
+    // UserSettings.user is not eager, so this loads the per-user settings
+    // without rebuilding the inverse relation graph. API responses are
+    // allowlisted by User.toPublicJSON().
+    relations: { settings: true },
   });
 };
 

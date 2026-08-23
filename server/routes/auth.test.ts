@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { before, beforeEach, describe, it, mock } from 'node:test';
 
 import JellyfinAPI from '@server/api/jellyfin';
+import PlexTvAPI from '@server/api/plextv';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
+import { UserSettings } from '@server/entity/UserSettings';
+import { stopJobs } from '@server/job/schedule';
 import PreparedEmail from '@server/lib/email';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
@@ -73,6 +76,14 @@ const jellyfinLoginMock = mock.method(
   'login',
   async () => ({ ...defaultAuthenticateResponse })
 );
+
+mock.method(PlexTvAPI.prototype, 'getUser', async () => ({
+  id: 123,
+  email: 'plex-admin@example.test',
+  username: 'plex-admin',
+  authToken: 'plex-token',
+  thumb: 'https://plex.example.test/avatar.png',
+}));
 
 let app: Express;
 
@@ -566,6 +577,17 @@ describe('GET /auth/me', () => {
   });
 
   it('returns the authenticated user', async () => {
+    const userRepository = getRepository(User);
+    const user = await userRepository.findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+      relations: { settings: true },
+    });
+    user.settings = new UserSettings({
+      user,
+      locale: 'tr',
+      autoCompleteSkippedEpisodeEndings: true,
+    });
+    await userRepository.save(user);
     const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
 
     const res = await agent.get('/auth/me');
@@ -573,6 +595,11 @@ describe('GET /auth/me', () => {
     assert.strictEqual(res.status, 200);
     assert.ok('id' in res.body);
     assert.strictEqual(res.body.displayName, 'admin');
+    assert.strictEqual(res.body.settings.locale, 'tr');
+    assert.strictEqual(
+      res.body.settings.autoCompleteSkippedEpisodeEndings,
+      true
+    );
   });
 
   it('includes userEmailRequired warning when email is required but invalid', async () => {
@@ -601,6 +628,31 @@ describe('GET /auth/me', () => {
     assert.ok(res.body.warnings.includes('userEmailRequired'));
 
     settings.notifications.agents.email.options.userEmailRequired = false;
+  });
+});
+
+describe('POST /auth/plex', () => {
+  it('persists and signs in the initial desktop administrator', async () => {
+    const settings = getSettings();
+    settings.main.mediaServerType = MediaServerType.NOT_CONFIGURED;
+    await getRepository(User).clear();
+    const previousRuntime = process.env.FORESEERR_RUNTIME;
+    process.env.FORESEERR_RUNTIME = 'desktop';
+    try {
+      const res = await request(app)
+        .post('/auth/plex')
+        .send({ authToken: 'plex-token' });
+
+      assert.strictEqual(res.status, 200);
+      assert.equal(typeof res.body.id, 'number');
+      assert.strictEqual(await getRepository(User).count(), 1);
+      // The desktop login path starts jobs after the response flushes.
+      await new Promise((resolve) => setTimeout(resolve, 3_100));
+    } finally {
+      stopJobs();
+      if (previousRuntime === undefined) delete process.env.FORESEERR_RUNTIME;
+      else process.env.FORESEERR_RUNTIME = previousRuntime;
+    }
   });
 });
 

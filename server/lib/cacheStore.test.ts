@@ -41,4 +41,25 @@ describe('WeightedLruCacheStore', () => {
     assert.equal(store.get<Buffer>('buffer'), payload);
     assert.equal(budget.stats().usedBytes, payload.length);
   });
+
+  it('keeps the established per-cache management statistics', () => {
+    const budget = new CacheBudget(100);
+    const store = new WeightedLruCacheStore(budget);
+
+    store.set('key', 'value');
+    assert.equal(store.get('key'), 'value');
+    assert.equal(store.get('missing'), undefined);
+
+    assert.deepEqual(store.stats(), {
+      hits: 1,
+      misses: 1,
+      keys: 1,
+      ksize: Buffer.byteLength('key'),
+      vsize: Buffer.byteLength('value'),
+      usedBytes: Buffer.byteLength('value'),
+      limitBytes: 100,
+      entries: 1,
+      evictions: 0,
+    });
+  });
 });

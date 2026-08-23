@@ -1,8 +1,17 @@
-export interface CacheStats {
+export interface CacheBudgetStats {
   usedBytes: number;
   limitBytes: number;
   entries: number;
   evictions: number;
+}
+
+/** Retain the established cache-management API while exposing memory budget. */
+export interface CacheStats extends CacheBudgetStats {
+  hits: number;
+  misses: number;
+  keys: number;
+  ksize: number;
+  vsize: number;
 }
 
 export interface CacheStore {
@@ -61,7 +70,7 @@ export class CacheBudget {
       if (this.usedBytes >= before) return;
     }
   }
-  stats(): CacheStats {
+  stats(): CacheBudgetStats {
     return {
       usedBytes: this.usedBytes,
       limitBytes: this.limitBytes,
@@ -73,6 +82,8 @@ export class CacheBudget {
 
 export class WeightedLruCacheStore implements CacheStore {
   private entries = new Map<string, Entry>();
+  private hits = 0;
+  private misses = 0;
   constructor(
     private readonly budget: CacheBudget,
     private readonly defaultTtl = 300,
@@ -86,11 +97,16 @@ export class WeightedLruCacheStore implements CacheStore {
   }
   get<T>(key: string): T | undefined {
     const entry = this.entries.get(key);
-    if (!entry) return undefined;
-    if (entry.expiresAt <= Date.now()) {
-      this.evict(key, false);
+    if (!entry) {
+      this.misses += 1;
       return undefined;
     }
+    if (entry.expiresAt <= Date.now()) {
+      this.evict(key, false);
+      this.misses += 1;
+      return undefined;
+    }
+    this.hits += 1;
     entry.accessedAt = this.budget.nextAccess();
     return entry.value as T;
   }
@@ -119,7 +135,18 @@ export class WeightedLruCacheStore implements CacheStore {
     for (const key of this.entries.keys()) this.evict(key, false);
   }
   stats(): CacheStats {
-    return this.budget.stats();
+    const budget = this.budget.stats();
+    return {
+      hits: this.hits,
+      misses: this.misses,
+      keys: this.count(),
+      ksize: [...this.entries].reduce(
+        (total, [key]) => total + Buffer.byteLength(key),
+        0
+      ),
+      vsize: this.size(),
+      ...budget,
+    };
   }
   getTtl(key: string): number {
     return this.entries.get(key)?.expiresAt ?? 0;

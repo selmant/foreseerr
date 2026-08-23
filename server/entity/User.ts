@@ -135,7 +135,7 @@ export class User {
 
   @OneToOne(() => UserSettings, (settings) => settings.user, {
     cascade: true,
-    eager: false,
+    eager: true,
     onDelete: 'CASCADE',
   })
   public settings?: UserSettings;
@@ -203,6 +203,9 @@ export class User {
             notificationTypes: settings.notificationTypes,
             watchlistSyncMovies: settings.watchlistSyncMovies,
             watchlistSyncTv: settings.watchlistSyncTv,
+            autoCompleteSkippedEpisodeEndings:
+              settings.autoCompleteSkippedEpisodeEndings,
+            discoverFilterDefaults: settings.discoverFilterDefaults,
           }
         : undefined,
     };

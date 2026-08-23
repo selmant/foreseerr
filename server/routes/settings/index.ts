@@ -21,8 +21,10 @@ import {
   countLinkedAnilistAccounts,
   disconnectAllAnilistLinks,
 } from '@server/lib/anilist';
-import type { AvailableCacheIds } from '@server/lib/cache';
-import cacheManager from '@server/lib/cache';
+import cacheManager, {
+  getMemoryCacheStats,
+  type AvailableCacheIds,
+} from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
 import {
   clearIntegrationHealthCache,
@@ -1226,7 +1228,7 @@ settingsRoutes.get(
     const tmdbImageCache = await ImageProxy.getImageStats('tmdb');
     const avatarImageCache = await ImageProxy.getImageStats('avatar');
     const imageStats = await ImageProxy.getCombinedStats();
-    const memoryStats = Object.values(cacheManagerCaches)[0]?.getStats();
+    const memoryStats = getMemoryCacheStats();
 
     const stats: DnsStats | undefined = dnsCache?.getStats();
     const entries: DnsEntries | undefined = dnsCache?.getCacheEntries();

@@ -22,6 +22,8 @@ export type AvailableCacheIds =
 const DEFAULT_TTL = 300;
 export const memoryCacheBudget = new CacheBudget();
 
+export const getMemoryCacheStats = () => memoryCacheBudget.stats();
+
 class Cache {
   public id: AvailableCacheIds;
   public data: CacheStore;

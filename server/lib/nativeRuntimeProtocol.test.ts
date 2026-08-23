@@ -25,6 +25,7 @@ describe('native runtime protocol v1', () => {
     assert.equal(fixture.protocolVersion, nativeProtocolV1.protocolVersion);
     assert.equal(fixture.host.name, nativeProtocolV1.hostName);
     assert.equal(fixture.eventName, nativeProtocolV1.eventName);
+    assert.ok(fixture.host.capabilities.includes('setup'));
     assert.equal(
       fixture.limits.requestIdMaxLength,
       nativeProtocolV1.limits.requestIdMaxLength

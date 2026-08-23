@@ -152,10 +152,10 @@ const SettingsMain = () => {
 
   const canChangeDesktopMode =
     typeof window !== 'undefined' &&
-    window.foreseerNative?.capabilities.includes('mode-setup');
+    window.foreseerNative?.capabilities.includes('setup');
   const openDesktopModePreferences = () => {
     const host = window.foreseerNative;
-    if (!host?.capabilities.includes('mode-setup')) return;
+    if (!host?.capabilities.includes('setup')) return;
     host.send({ type: 'runtime.open-setup', id: crypto.randomUUID() });
   };
 
