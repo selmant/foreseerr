@@ -26,6 +26,12 @@ const item = (
     UserData: { PlayedPercentage: percentage },
   }) as JellyfinLibraryItemExtended;
 
+const seriesEpisode = (
+  id: string,
+  number: number,
+  percentage: number
+): JellyfinLibraryItemExtended => item(id, number, percentage);
+
 const client = {} as JellyfinAPI;
 
 function dependencies(
@@ -165,5 +171,25 @@ describe('skipped episode cleanup orchestration', () => {
     });
     await cleanupSkippedEpisodeEndings(7, client, [item('e1', 1, 75)], deps);
     assert.equal(showId, 789);
+  });
+
+  it('marks older stale endings but keeps the leading in-progress episode', async () => {
+    const writes: string[] = [];
+    const e10 = seriesEpisode('e10', 10, 70);
+    const e12 = seriesEpisode('e12', 12, 65);
+    const e13 = seriesEpisode('e13', 13, 60);
+    const e15 = seriesEpisode('e15', 15, 55);
+    const { deps } = dependencies({
+      loadSeriesEpisodes: async () => [e10, e12, e13, e15],
+      markJellyfinPlayed: async (_client, _user, episodeId) => {
+        writes.push(episodeId);
+      },
+    });
+    const resume = [e10, e12, e13, e15];
+    assert.deepEqual(
+      await cleanupSkippedEpisodeEndings(7, client, resume, deps),
+      [e15]
+    );
+    assert.deepEqual(writes.sort(), ['e10', 'e12', 'e13']);
   });
 });

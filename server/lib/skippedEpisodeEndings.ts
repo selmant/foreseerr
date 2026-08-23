@@ -39,6 +39,55 @@ const viewed = (item: JellyfinLibraryItemExtended): boolean =>
   (item.UserData?.PlayedPercentage ?? 0) > 0 ||
   (item.UserData?.PlaybackPositionTicks ?? 0) > 0;
 
+const inProgress = (item: JellyfinLibraryItemExtended): boolean =>
+  item.UserData?.Played !== true &&
+  ((item.UserData?.PlayedPercentage ?? 0) > 0 ||
+    (item.UserData?.PlaybackPositionTicks ?? 0) > 0);
+
+const lastPlayedMs = (item: JellyfinLibraryItemExtended): number => {
+  const raw = item.UserData?.LastPlayedDate;
+  if (!raw) return 0;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isLaterCoordinate = (
+  later: [number, number],
+  current: [number, number]
+): boolean =>
+  later[0] > current[0] || (later[0] === current[0] && later[1] > current[1]);
+
+/** Later episode must be started after the candidate, not merely watched in the past. */
+const isLaterViewingActivity = (
+  later: JellyfinLibraryItemExtended,
+  candidate: JellyfinLibraryItemExtended
+): boolean => {
+  if (!viewed(later)) return false;
+  if (inProgress(later)) return true;
+  const laterMs = lastPlayedMs(later);
+  const candidateMs = lastPlayedMs(candidate);
+  if (laterMs === 0 || candidateMs === 0) return false;
+  return laterMs > candidateMs;
+};
+
+/** Leading in-progress episode for a series; never auto-completed. */
+export function frontierEpisodeId(
+  seriesEpisodes: JellyfinLibraryItemExtended[]
+): string | undefined {
+  let frontier: JellyfinLibraryItemExtended | undefined;
+  let frontierCoord: [number, number] | undefined;
+  for (const episode of seriesEpisodes) {
+    if (episode.Type !== 'Episode' || !inProgress(episode)) continue;
+    const coord = coordinate(episode);
+    if (!coord) continue;
+    if (!frontierCoord || isLaterCoordinate(coord, frontierCoord)) {
+      frontier = episode;
+      frontierCoord = coord;
+    }
+  }
+  return frontier?.Id;
+}
+
 export function isStaleSkippedEpisode(
   candidate: JellyfinLibraryItemExtended,
   seriesEpisodes: JellyfinLibraryItemExtended[]
@@ -54,15 +103,16 @@ export function isStaleSkippedEpisode(
   if (!current || progress == null || progress < 50) return false;
   return seriesEpisodes.some((episode) => {
     if (
+      episode.Id === candidate.Id ||
       episode.Type !== 'Episode' ||
-      episode.SeriesId !== candidate.SeriesId ||
-      !viewed(episode)
+      episode.SeriesId !== candidate.SeriesId
     )
       return false;
     const next = coordinate(episode);
     return (
       !!next &&
-      (next[0] > current[0] || (next[0] === current[0] && next[1] > current[1]))
+      isLaterCoordinate(next, current) &&
+      isLaterViewingActivity(episode, candidate)
     );
   });
 }

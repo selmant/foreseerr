@@ -14,6 +14,7 @@ import logger from '@server/logger';
 import { Brackets } from 'typeorm';
 import {
   episodeProgress,
+  frontierEpisodeId,
   isStaleSkippedEpisode,
 } from './skippedEpisodeEndings';
 
@@ -180,11 +181,13 @@ export async function cleanupSkippedEpisodeEndings(
     }
   );
 
-  const classified = preliminary.filter(
-    (item) =>
-      item.SeriesId &&
-      isStaleSkippedEpisode(item, episodesBySeries.get(item.SeriesId) ?? [])
-  );
+  const classified = preliminary.filter((item) => {
+    if (!item.SeriesId) return false;
+    const seriesEpisodes = episodesBySeries.get(item.SeriesId) ?? [];
+    const frontierId = frontierEpisodeId(seriesEpisodes);
+    if (frontierId && item.Id === frontierId) return false;
+    return isStaleSkippedEpisode(item, seriesEpisodes);
+  });
   summary.skipped += preliminary.length - classified.length;
   const classifiedSeriesIds = [
     ...new Set(classified.map((item) => item.SeriesId as string)),

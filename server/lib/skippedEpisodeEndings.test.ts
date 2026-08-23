@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   episodeProgress,
+  frontierEpisodeId,
   isStaleSkippedEpisode,
 } from './skippedEpisodeEndings';
 
@@ -29,17 +30,28 @@ const episode = (
 
 describe('skipped episode ending classification', () => {
   it('requires 50 percent and genuine later viewing activity', () => {
-    const laterWatched = episode('e2', 1, 2, { Played: true });
+    const laterWatched = episode('e2', 1, 2, {
+      Played: true,
+      LastPlayedDate: '2026-08-23T19:00:00Z',
+    });
     assert.equal(
-      isStaleSkippedEpisode(episode('e1', 1, 1, { PlayedPercentage: 49 }), [
-        laterWatched,
-      ]),
+      isStaleSkippedEpisode(
+        episode('e1', 1, 1, {
+          PlayedPercentage: 49,
+          LastPlayedDate: '2026-08-23T18:00:00Z',
+        }),
+        [laterWatched]
+      ),
       false
     );
     assert.equal(
-      isStaleSkippedEpisode(episode('e1', 1, 1, { PlayedPercentage: 50 }), [
-        laterWatched,
-      ]),
+      isStaleSkippedEpisode(
+        episode('e1', 1, 1, {
+          PlayedPercentage: 50,
+          LastPlayedDate: '2026-08-23T18:00:00Z',
+        }),
+        [laterWatched]
+      ),
       true
     );
     assert.equal(
@@ -117,5 +129,44 @@ describe('skipped episode ending classification', () => {
     assert.equal(isStaleSkippedEpisode(e1, all), true);
     assert.equal(isStaleSkippedEpisode(e2, all), true);
     assert.equal(isStaleSkippedEpisode(e3, all), false);
+  });
+
+  it('does not mark a season finale when only later seasons were watched earlier', () => {
+    const finale = episode('finale', 5, 10, {
+      PlayedPercentage: 60,
+      LastPlayedDate: '2026-08-23T20:00:00Z',
+    });
+    const nextSeason = episode('s6e1', 6, 1, {
+      Played: true,
+      LastPlayedDate: '2026-06-01T12:00:00Z',
+    });
+    assert.equal(isStaleSkippedEpisode(finale, [finale, nextSeason]), false);
+  });
+
+  it('marks a skipped ending when a later episode was started more recently', () => {
+    const skipped = episode('e5', 1, 5, {
+      PlayedPercentage: 70,
+      LastPlayedDate: '2026-08-23T18:00:00Z',
+    });
+    const startedLater = episode('e6', 1, 6, {
+      Played: true,
+      LastPlayedDate: '2026-08-23T19:00:00Z',
+    });
+    assert.equal(isStaleSkippedEpisode(skipped, [skipped, startedLater]), true);
+  });
+
+  it('does not mark the frontier episode even when it is above 50 percent', () => {
+    const frontier = episode('e10', 1, 10, { PlayedPercentage: 65 });
+    assert.equal(isStaleSkippedEpisode(frontier, [frontier]), false);
+  });
+
+  it('picks the leading in-progress episode as the frontier', () => {
+    const e10 = episode('e10', 1, 10, { PlayedPercentage: 70 });
+    const e12 = episode('e12', 1, 12, { PlayedPercentage: 65 });
+    const e13 = episode('e13', 1, 13, { PlayedPercentage: 60 });
+    const e15 = episode('e15', 1, 15, { PlayedPercentage: 55 });
+    const e16 = episode('e16', 1, 16, { PlaybackPositionTicks: 1 });
+    assert.equal(frontierEpisodeId([e10, e12, e13, e15]), 'e15');
+    assert.equal(frontierEpisodeId([e10, e12, e13, e15, e16]), 'e16');
   });
 });
