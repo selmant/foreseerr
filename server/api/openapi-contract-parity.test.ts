@@ -1,4 +1,5 @@
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
+import type { UserSettingsGeneralResponse } from '@server/interfaces/api/userSettingsInterfaces';
 import yaml from 'js-yaml';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -91,5 +92,12 @@ describe('OpenAPI contract parity', () => {
         `OpenAPI PublicSettings missing ${key}`
       );
     }
+  });
+
+  it('documents the skipped episode preference on general user settings', () => {
+    const key: keyof UserSettingsGeneralResponse =
+      'autoCompleteSkippedEpisodeEndings';
+    const property = apiDocs.components.schemas.UserSettings.properties?.[key];
+    assert.equal(property?.type, 'boolean');
   });
 });

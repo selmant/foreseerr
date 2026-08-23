@@ -163,6 +163,11 @@ export async function assertUpgradeIsIntact(
     'new Trakt columns should be nullable and unset for pre-existing rows'
   );
   assert.equal(upgradedSettings.traktUserId ?? null, null);
+  assert.equal(
+    upgradedSettings.autoCompleteSkippedEpisodeEndings ?? null,
+    null,
+    'skipped episode cleanup should default to disabled after upgrade'
+  );
   assert.deepEqual(upgradedSettings.discoverFilterDefaults, {});
 
   const upgradedSlider = await dataSource

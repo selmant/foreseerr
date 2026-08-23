@@ -87,6 +87,9 @@ export class UserSettings {
   @Column({ nullable: true })
   public watchlistSyncTv?: boolean;
 
+  @Column({ nullable: true })
+  public autoCompleteSkippedEpisodeEndings?: boolean;
+
   @Column({ type: 'varchar', nullable: true, select: false })
   public traktAccessToken?: string;
 

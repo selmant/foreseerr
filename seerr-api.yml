@@ -218,6 +218,11 @@ components:
           nullable: true
           description: 'Enable watchlist sync for TV'
           example: false
+        autoCompleteSkippedEpisodeEndings:
+          type: boolean
+          nullable: true
+          description: 'Mark stale resumed episodes watched in Jellyfin and Trakt when Library loads'
+          example: false
     DiscoverFilterDefaults:
       type: object
       description: >

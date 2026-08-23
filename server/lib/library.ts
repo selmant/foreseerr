@@ -38,11 +38,14 @@ import {
   resolveSeriesPlayTarget,
 } from '@server/lib/libraryPlayTarget';
 import { getSettings } from '@server/lib/settings';
+import { cleanupSkippedEpisodeEndings } from '@server/lib/skippedEpisodeCleanup';
 import logger from '@server/logger';
+import AsyncLock from '@server/utils/asyncLock';
 import { getHostname } from '@server/utils/getHostname';
 
 const JELLYFIN_LIBRARY_TIMEOUT_MS = 15_000;
 const PLAY_TARGET_CONCURRENCY = 4;
+const watchNowCleanupLock = new AsyncLock();
 
 const mapLimit = async <T, R>(
   items: T[],
@@ -73,6 +76,7 @@ const settledValue = <T>(result: PromiseSettledResult<T>, fallback: T): T =>
 export const findLinkedJellyfinUser = (userId: number) =>
   getRepository(User)
     .createQueryBuilder('user')
+    .leftJoinAndSelect('user.settings', 'settings')
     .addSelect([
       'user.jellyfinAuthToken',
       'user.jellyfinDeviceId',
@@ -765,34 +769,53 @@ export const buildWatchNowResponse = async (
     return { shelves: [], code: linked.code };
   }
 
-  const settings = getSettings();
-  const tvLibraryIds = (settings.jellyfin.libraries ?? [])
-    .filter((lib) => lib.enabled && lib.type === 'show')
-    .map((lib) => lib.id)
-    .filter(Boolean);
+  const build = async (): Promise<LibraryWatchNowResponse> => {
+    const settings = getSettings();
+    const tvLibraryIds = (settings.jellyfin.libraries ?? [])
+      .filter((lib) => lib.enabled && lib.type === 'show')
+      .map((lib) => lib.id)
+      .filter(Boolean);
+    const sources = await loadWatchNowSources(linked.client, tvLibraryIds);
+    let { resume } = sources;
+    const cleanupEnabled =
+      linked.user.settings?.autoCompleteSkippedEpisodeEndings === true;
+    if (cleanupEnabled) {
+      try {
+        resume = await cleanupSkippedEpisodeEndings(
+          userId,
+          linked.client,
+          resume
+        );
+      } catch (error) {
+        logger.warn('Skipped episode cleanup unavailable', {
+          label: 'Library',
+          userId,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    const { latest, nextUp, latestEpisodes } = sources;
+    const shelves: LibraryShelf[] = [];
+    const shelfResults = await Promise.all([
+      buildContinueWatchingShelf(resume),
+      buildRecentlyAddedShelf(linked.client, latest, resume, nextUp),
+      buildRecentlyAddedEpisodesShelf(linked.client, latestEpisodes),
+      buildForgottenShelf(userId, linked.client, resume, nextUp),
+    ]);
+    shelves.push(
+      ...shelfResults.flatMap((result) => (result.shelf ? [result.shelf] : []))
+    );
+    if (
+      !shelves.length &&
+      (sources.failed || shelfResults.some((r) => r.failed))
+    )
+      return { shelves: [], code: 'server_unreachable' };
+    return { shelves };
+  };
 
-  const sources = await loadWatchNowSources(linked.client, tvLibraryIds);
-  const { resume, latest, nextUp, latestEpisodes } = sources;
-  const shelves: LibraryShelf[] = [];
-
-  const shelfResults = await Promise.all([
-    buildContinueWatchingShelf(resume),
-    buildRecentlyAddedShelf(linked.client, latest, resume, nextUp),
-    buildRecentlyAddedEpisodesShelf(linked.client, latestEpisodes),
-    buildForgottenShelf(userId, linked.client, resume, nextUp),
-  ]);
-  shelves.push(
-    ...shelfResults.flatMap((result) => (result.shelf ? [result.shelf] : []))
-  );
-
-  if (
-    !shelves.length &&
-    (sources.failed || shelfResults.some((r) => r.failed))
-  ) {
-    return { shelves: [], code: 'server_unreachable' };
-  }
-
-  return { shelves };
+  return linked.user.settings?.autoCompleteSkippedEpisodeEndings === true
+    ? watchNowCleanupLock.dispatch(userId, build)
+    : build();
 };
 
 export const listAvailableLibrary = async (options: {

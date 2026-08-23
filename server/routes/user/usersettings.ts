@@ -182,6 +182,7 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
     try {
       const user = await userRepository.findOne({
         where: { id: Number(req.params.id) },
+        relations: { settings: true },
       });
 
       if (!user) {
@@ -205,6 +206,8 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
         globalTvQuotaLimit: defaultQuotas.tv.quotaLimit,
         watchlistSyncMovies: user.settings?.watchlistSyncMovies,
         watchlistSyncTv: user.settings?.watchlistSyncTv,
+        autoCompleteSkippedEpisodeEndings:
+          user.settings?.autoCompleteSkippedEpisodeEndings,
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -222,6 +225,7 @@ userSettingsRoutes.post<
   try {
     const user = await userRepository.findOne({
       where: { id: Number(req.params.id) },
+      relations: { settings: true },
     });
 
     if (!user) {
@@ -263,13 +267,19 @@ userSettingsRoutes.post<
 
     if (!user.settings) {
       user.settings = new UserSettings({
-        user: req.user,
+        user,
         locale: req.body.locale,
         discoverRegion: req.body.discoverRegion,
         streamingRegion: req.body.streamingRegion,
         originalLanguage: req.body.originalLanguage,
         watchlistSyncMovies: req.body.watchlistSyncMovies,
         watchlistSyncTv: req.body.watchlistSyncTv,
+        ...(typeof req.body.autoCompleteSkippedEpisodeEndings === 'boolean'
+          ? {
+              autoCompleteSkippedEpisodeEndings:
+                req.body.autoCompleteSkippedEpisodeEndings,
+            }
+          : {}),
       });
     } else {
       user.settings.locale = req.body.locale;
@@ -278,6 +288,10 @@ userSettingsRoutes.post<
       user.settings.originalLanguage = req.body.originalLanguage;
       user.settings.watchlistSyncMovies = req.body.watchlistSyncMovies;
       user.settings.watchlistSyncTv = req.body.watchlistSyncTv;
+      if (typeof req.body.autoCompleteSkippedEpisodeEndings === 'boolean') {
+        user.settings.autoCompleteSkippedEpisodeEndings =
+          req.body.autoCompleteSkippedEpisodeEndings;
+      }
     }
 
     const savedUser = await userRepository.save(user);
@@ -290,6 +304,8 @@ userSettingsRoutes.post<
       originalLanguage: savedUser.settings?.originalLanguage,
       watchlistSyncMovies: savedUser.settings?.watchlistSyncMovies,
       watchlistSyncTv: savedUser.settings?.watchlistSyncTv,
+      autoCompleteSkippedEpisodeEndings:
+        savedUser.settings?.autoCompleteSkippedEpisodeEndings,
       email: savedUser.email,
     });
   } catch (e) {
