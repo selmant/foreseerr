@@ -206,17 +206,35 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
   };
 
   const startScan = async () => {
-    await axios.post('/api/v1/settings/jellyfin/sync', {
-      start: true,
-    });
-    revalidateSync();
+    try {
+      await axios.post('/api/v1/settings/jellyfin/sync', {
+        start: true,
+      });
+    } catch {
+      addToast(intl.formatMessage(messages.jellyfinSyncFailedGenericError), {
+        autoDismiss: true,
+        appearance: 'error',
+      });
+    } finally {
+      // The scan is asynchronous; always refresh the status after the request
+      // so a transient POST failure cannot leave the page in a stale state.
+      revalidateSync();
+    }
   };
 
   const cancelScan = async () => {
-    await axios.post('/api/v1/settings/jellyfin/sync', {
-      cancel: true,
-    });
-    revalidateSync();
+    try {
+      await axios.post('/api/v1/settings/jellyfin/sync', {
+        cancel: true,
+      });
+    } catch {
+      addToast(intl.formatMessage(messages.jellyfinSyncFailedGenericError), {
+        autoDismiss: true,
+        appearance: 'error',
+      });
+    } finally {
+      revalidateSync();
+    }
   };
 
   const toggleLibrary = async (libraryId: string) => {
