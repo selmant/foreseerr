@@ -37,6 +37,7 @@ export interface UserSettings {
   watchlistSyncMovies?: boolean;
   watchlistSyncTv?: boolean;
   autoCompleteSkippedEpisodeEndings?: boolean;
+  autoCompleteSkippedEpisodeThreshold?: number;
 }
 
 interface UserHookResponse {

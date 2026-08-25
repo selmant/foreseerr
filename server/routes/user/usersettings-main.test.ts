@@ -69,6 +69,7 @@ describe('user general settings skipped episode preference', () => {
     const initial = await agent.get(`/api/v1/user/${user.id}/settings/main`);
     assert.equal(initial.status, 200);
     assert.notEqual(initial.body.autoCompleteSkippedEpisodeEndings, true);
+    assert.equal(initial.body.autoCompleteSkippedEpisodeThreshold, 50);
 
     for (const value of [true, false]) {
       const updated = await agent
@@ -98,6 +99,30 @@ describe('user general settings skipped episode preference', () => {
       .send({ username: user.username, email: user.email });
     assert.equal(response.status, 200, JSON.stringify(response.body));
     assert.equal(response.body.autoCompleteSkippedEpisodeEndings, true);
+  });
+
+  it('round-trips a leftover progress threshold and preserves it when omitted', async () => {
+    const agent = await authenticatedAgent('admin@seerr.dev');
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+      relations: { settings: true },
+    });
+    const updated = await agent
+      .post(`/api/v1/user/${user.id}/settings/main`)
+      .send({
+        username: user.username,
+        email: user.email,
+        autoCompleteSkippedEpisodeEndings: true,
+        autoCompleteSkippedEpisodeThreshold: 80,
+      });
+    assert.equal(updated.status, 200, JSON.stringify(updated.body));
+    assert.equal(updated.body.autoCompleteSkippedEpisodeThreshold, 80);
+
+    const omitted = await agent
+      .post(`/api/v1/user/${user.id}/settings/main`)
+      .send({ username: user.username, email: user.email });
+    assert.equal(omitted.status, 200, JSON.stringify(omitted.body));
+    assert.equal(omitted.body.autoCompleteSkippedEpisodeThreshold, 80);
   });
 
   it('keeps existing profile authorization rules', async () => {

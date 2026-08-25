@@ -72,9 +72,13 @@ const messages = defineMessages(
     autoCompleteSkippedEpisodeEndings: 'Auto-complete skipped episode endings',
     libraryPlayback: 'Library Playback',
     autoCompleteSkippedEpisodeEndingsTip:
-      'When you have started a later episode, episodes left at 50% or more are marked watched in both Jellyfin and Trakt the next time Library loads.',
+      'When you have started a later episode, leftover paused episodes at or above the minimum progress are marked watched in both Jellyfin and Trakt the next time Library loads.',
     autoCompleteSkippedEpisodeEndingsWarning:
       'This changes your watch history in both services and requires linked Jellyfin and Trakt accounts.',
+    autoCompleteSkippedEpisodeThreshold: 'Minimum leftover progress',
+    autoCompleteSkippedEpisodeThresholdTip:
+      'Only leftovers at this percentage or higher are auto-completed.',
+    validationSkippedEpisodeThreshold: 'Enter a whole number from 1 to 100.',
   }
 );
 
@@ -121,6 +125,14 @@ const UserGeneralSettings = () => {
             (value) =>
               !value || validator.isEmail(value, { require_tld: false })
           ),
+    autoCompleteSkippedEpisodeThreshold: Yup.number()
+      .transform((value, original) =>
+        original === '' || original == null ? undefined : Number(original)
+      )
+      .integer(intl.formatMessage(messages.validationSkippedEpisodeThreshold))
+      .min(1, intl.formatMessage(messages.validationSkippedEpisodeThreshold))
+      .max(100, intl.formatMessage(messages.validationSkippedEpisodeThreshold))
+      .required(intl.formatMessage(messages.validationSkippedEpisodeThreshold)),
   });
 
   useEffect(() => {
@@ -169,6 +181,8 @@ const UserGeneralSettings = () => {
           watchlistSyncTv: data?.watchlistSyncTv,
           autoCompleteSkippedEpisodeEndings:
             data?.autoCompleteSkippedEpisodeEndings === true,
+          autoCompleteSkippedEpisodeThreshold:
+            data?.autoCompleteSkippedEpisodeThreshold ?? 50,
         }}
         validationSchema={UserGeneralSettingsSchema}
         enableReinitialize
@@ -192,6 +206,9 @@ const UserGeneralSettings = () => {
               watchlistSyncTv: values.watchlistSyncTv,
               autoCompleteSkippedEpisodeEndings:
                 values.autoCompleteSkippedEpisodeEndings,
+              autoCompleteSkippedEpisodeThreshold: Number(
+                values.autoCompleteSkippedEpisodeThreshold
+              ),
             });
 
             if (currentUser?.id === user?.id && setLocale) {
@@ -645,6 +662,42 @@ const UserGeneralSettings = () => {
                       )
                     }
                   />
+                </div>
+              </div>
+              <div className="form-row">
+                <label
+                  htmlFor="autoCompleteSkippedEpisodeThreshold"
+                  className="text-label"
+                >
+                  <span>
+                    {intl.formatMessage(
+                      messages.autoCompleteSkippedEpisodeThreshold
+                    )}
+                  </span>
+                  <span className="label-tip">
+                    {intl.formatMessage(
+                      messages.autoCompleteSkippedEpisodeThresholdTip
+                    )}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <Field
+                    id="autoCompleteSkippedEpisodeThreshold"
+                    name="autoCompleteSkippedEpisodeThreshold"
+                    type="text"
+                    inputMode="numeric"
+                    className="short"
+                    placeholder={50}
+                  />
+                  <span className="ml-2 text-sm text-gray-400">%</span>
+                  {errors.autoCompleteSkippedEpisodeThreshold &&
+                    touched.autoCompleteSkippedEpisodeThreshold &&
+                    typeof errors.autoCompleteSkippedEpisodeThreshold ===
+                      'string' && (
+                      <div className="error">
+                        {errors.autoCompleteSkippedEpisodeThreshold}
+                      </div>
+                    )}
                 </div>
               </div>
               <div className="actions">

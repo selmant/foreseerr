@@ -95,9 +95,17 @@ describe('OpenAPI contract parity', () => {
   });
 
   it('documents the skipped episode preference on general user settings', () => {
-    const key: keyof UserSettingsGeneralResponse =
+    const endings: keyof UserSettingsGeneralResponse =
       'autoCompleteSkippedEpisodeEndings';
-    const property = apiDocs.components.schemas.UserSettings.properties?.[key];
-    assert.equal(property?.type, 'boolean');
+    const threshold: keyof UserSettingsGeneralResponse =
+      'autoCompleteSkippedEpisodeThreshold';
+    assert.equal(
+      apiDocs.components.schemas.UserSettings.properties?.[endings]?.type,
+      'boolean'
+    );
+    assert.equal(
+      apiDocs.components.schemas.UserSettings.properties?.[threshold]?.type,
+      'integer'
+    );
   });
 });

@@ -30,6 +30,10 @@ import { invalidateUserSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import {
+  optionalSkippedEpisodeProgressThreshold,
+  skippedEpisodeProgressThreshold,
+} from '@server/lib/skippedEpisodeEndings';
+import {
   TraktAccountAlreadyLinkedError,
   TraktNotConfiguredError,
   assertTraktAccountAvailable,
@@ -208,6 +212,9 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
         watchlistSyncTv: user.settings?.watchlistSyncTv,
         autoCompleteSkippedEpisodeEndings:
           user.settings?.autoCompleteSkippedEpisodeEndings,
+        autoCompleteSkippedEpisodeThreshold: skippedEpisodeProgressThreshold(
+          user.settings?.autoCompleteSkippedEpisodeThreshold
+        ),
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -265,6 +272,10 @@ userSettingsRoutes.post<
       user.tvQuotaLimit = req.body.tvQuotaLimit;
     }
 
+    const skippedEpisodeThreshold = optionalSkippedEpisodeProgressThreshold(
+      req.body.autoCompleteSkippedEpisodeThreshold
+    );
+
     if (!user.settings) {
       user.settings = new UserSettings({
         user,
@@ -280,6 +291,9 @@ userSettingsRoutes.post<
                 req.body.autoCompleteSkippedEpisodeEndings,
             }
           : {}),
+        ...(skippedEpisodeThreshold !== undefined
+          ? { autoCompleteSkippedEpisodeThreshold: skippedEpisodeThreshold }
+          : {}),
       });
     } else {
       user.settings.locale = req.body.locale;
@@ -291,6 +305,10 @@ userSettingsRoutes.post<
       if (typeof req.body.autoCompleteSkippedEpisodeEndings === 'boolean') {
         user.settings.autoCompleteSkippedEpisodeEndings =
           req.body.autoCompleteSkippedEpisodeEndings;
+      }
+      if (skippedEpisodeThreshold !== undefined) {
+        user.settings.autoCompleteSkippedEpisodeThreshold =
+          skippedEpisodeThreshold;
       }
     }
 
@@ -306,6 +324,9 @@ userSettingsRoutes.post<
       watchlistSyncTv: savedUser.settings?.watchlistSyncTv,
       autoCompleteSkippedEpisodeEndings:
         savedUser.settings?.autoCompleteSkippedEpisodeEndings,
+      autoCompleteSkippedEpisodeThreshold: skippedEpisodeProgressThreshold(
+        savedUser.settings?.autoCompleteSkippedEpisodeThreshold
+      ),
       email: savedUser.email,
     });
   } catch (e) {

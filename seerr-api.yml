@@ -223,6 +223,13 @@ components:
           nullable: true
           description: 'Mark stale resumed episodes watched in Jellyfin and Trakt when Library loads'
           example: false
+        autoCompleteSkippedEpisodeThreshold:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100
+          description: 'Minimum leftover progress percent required before a skipped episode is auto-completed. Defaults to 50 when unset.'
+          example: 50
     DiscoverFilterDefaults:
       type: object
       description: >

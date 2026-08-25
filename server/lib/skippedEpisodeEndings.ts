@@ -1,5 +1,28 @@
 import type { JellyfinLibraryItemExtended } from '@server/api/jellyfin';
 
+export const DEFAULT_SKIPPED_EPISODE_PROGRESS_THRESHOLD = 50;
+
+export function skippedEpisodeProgressThreshold(value: unknown): number {
+  const parsed =
+    typeof value === 'number' || typeof value === 'string'
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_SKIPPED_EPISODE_PROGRESS_THRESHOLD;
+  }
+  return Math.min(100, Math.max(1, Math.round(parsed)));
+}
+
+export function optionalSkippedEpisodeProgressThreshold(
+  value: unknown
+): number | undefined {
+  if (value == null || value === '') return undefined;
+  if (typeof value !== 'number' && typeof value !== 'string') return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return undefined;
+  return skippedEpisodeProgressThreshold(parsed);
+}
+
 export const episodeProgress = (
   episode: JellyfinLibraryItemExtended
 ): number | undefined => {
@@ -90,14 +113,16 @@ export function frontierEpisodeId(
 
 export function isStaleSkippedEpisode(
   candidate: JellyfinLibraryItemExtended,
-  seriesEpisodes: JellyfinLibraryItemExtended[]
+  seriesEpisodes: JellyfinLibraryItemExtended[],
+  progressThreshold: unknown = DEFAULT_SKIPPED_EPISODE_PROGRESS_THRESHOLD
 ): boolean {
   // Played=true is not enough to leave Resume: Jellyfin 10.11 Resume is
   // PlaybackPositionTicks > 0 and does not exclude Played items.
   if (candidate.Type !== 'Episode' || !candidate.SeriesId) return false;
   const current = coordinate(candidate);
   const progress = episodeProgress(candidate);
-  if (!current || progress == null || progress < 50) return false;
+  const minProgress = skippedEpisodeProgressThreshold(progressThreshold);
+  if (!current || progress == null || progress < minProgress) return false;
   return seriesEpisodes.some((episode) => {
     if (
       episode.Id === candidate.Id ||

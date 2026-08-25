@@ -2,9 +2,11 @@ import type { JellyfinLibraryItemExtended } from '@server/api/jellyfin';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  DEFAULT_SKIPPED_EPISODE_PROGRESS_THRESHOLD,
   episodeProgress,
   frontierEpisodeId,
   isStaleSkippedEpisode,
+  skippedEpisodeProgressThreshold,
 } from './skippedEpisodeEndings';
 
 const episode = (
@@ -29,6 +31,17 @@ const episode = (
   }) as JellyfinLibraryItemExtended;
 
 describe('skipped episode ending classification', () => {
+  it('clamps the leftover progress threshold to 1 through 100', () => {
+    assert.equal(skippedEpisodeProgressThreshold(undefined), 50);
+    assert.equal(
+      skippedEpisodeProgressThreshold(null),
+      DEFAULT_SKIPPED_EPISODE_PROGRESS_THRESHOLD
+    );
+    assert.equal(skippedEpisodeProgressThreshold(80.4), 80);
+    assert.equal(skippedEpisodeProgressThreshold(0), 1);
+    assert.equal(skippedEpisodeProgressThreshold(140), 100);
+  });
+
   it('requires 50 percent and genuine later viewing activity', () => {
     const laterWatched = episode('e2', 1, 2, {
       Played: true,
@@ -168,6 +181,14 @@ describe('skipped episode ending classification', () => {
     });
     const later = episode('e2', 1, 2, { PlaybackPositionTicks: 1 });
     assert.equal(isStaleSkippedEpisode(leftover, [leftover, later]), true);
+  });
+
+  it('honors a custom leftover progress threshold', () => {
+    const leftover = episode('e1', 1, 1, { PlayedPercentage: 40 });
+    const later = episode('e2', 1, 2, { PlaybackPositionTicks: 1 });
+    assert.equal(isStaleSkippedEpisode(leftover, [leftover, later]), false);
+    assert.equal(isStaleSkippedEpisode(leftover, [leftover, later], 40), true);
+    assert.equal(isStaleSkippedEpisode(leftover, [leftover, later], 41), false);
   });
 
   it('picks the leading in-progress episode as the frontier', () => {

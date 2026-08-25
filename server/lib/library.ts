@@ -39,6 +39,7 @@ import {
 } from '@server/lib/libraryPlayTarget';
 import { getSettings } from '@server/lib/settings';
 import { cleanupSkippedEpisodeEndings } from '@server/lib/skippedEpisodeCleanup';
+import { skippedEpisodeProgressThreshold } from '@server/lib/skippedEpisodeEndings';
 import logger from '@server/logger';
 import AsyncLock from '@server/utils/asyncLock';
 import { getHostname } from '@server/utils/getHostname';
@@ -784,7 +785,11 @@ export const buildWatchNowResponse = async (
         resume = await cleanupSkippedEpisodeEndings(
           userId,
           linked.client,
-          resume
+          resume,
+          undefined,
+          skippedEpisodeProgressThreshold(
+            linked.user.settings?.autoCompleteSkippedEpisodeThreshold
+          )
         );
       } catch (error) {
         logger.warn('Skipped episode cleanup unavailable', {

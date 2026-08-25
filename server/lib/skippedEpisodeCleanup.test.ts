@@ -219,4 +219,22 @@ describe('skipped episode cleanup orchestration', () => {
     assert.deepEqual(playbackClears, [1]);
     assert.deepEqual(calls.jellyfinWrites, ['e1']);
   });
+
+  it('uses the configured leftover progress threshold', async () => {
+    const e1 = item('e1', 1, 40);
+    const e2 = item('e2', 2, 10);
+    const { calls, deps } = dependencies({
+      loadSeriesEpisodes: async () => [e1, e2],
+    });
+    assert.deepEqual(
+      await cleanupSkippedEpisodeEndings(7, client, [e1, e2], deps),
+      [e1, e2]
+    );
+    assert.deepEqual(calls.jellyfinWrites, []);
+    assert.deepEqual(
+      await cleanupSkippedEpisodeEndings(7, client, [e1, e2], deps, 40),
+      [e2]
+    );
+    assert.deepEqual(calls.jellyfinWrites, ['e1']);
+  });
 });

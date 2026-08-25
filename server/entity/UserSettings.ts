@@ -90,6 +90,9 @@ export class UserSettings {
   @Column({ nullable: true })
   public autoCompleteSkippedEpisodeEndings?: boolean;
 
+  @Column({ type: 'integer', nullable: true })
+  public autoCompleteSkippedEpisodeThreshold?: number;
+
   @Column({ type: 'varchar', nullable: true, select: false })
   public traktAccessToken?: string;
 

@@ -13,9 +13,11 @@ import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { Brackets } from 'typeorm';
 import {
+  DEFAULT_SKIPPED_EPISODE_PROGRESS_THRESHOLD,
   episodeProgress,
   frontierEpisodeId,
   isStaleSkippedEpisode,
+  skippedEpisodeProgressThreshold,
 } from './skippedEpisodeEndings';
 
 const SERIES_HYDRATION_CONCURRENCY = 4;
@@ -126,10 +128,13 @@ export async function cleanupSkippedEpisodeEndings(
   userId: number,
   client: JellyfinAPI,
   resume: JellyfinLibraryItemExtended[],
-  dependencies: SkippedEpisodeCleanupDependencies = defaultDependencies
+  dependencies: SkippedEpisodeCleanupDependencies = defaultDependencies,
+  progressThreshold: unknown = DEFAULT_SKIPPED_EPISODE_PROGRESS_THRESHOLD
 ): Promise<JellyfinLibraryItemExtended[]> {
+  const minProgress = skippedEpisodeProgressThreshold(progressThreshold);
   const preliminary = resume.filter(
-    (item) => item.Type === 'Episode' && (episodeProgress(item) ?? -1) >= 50
+    (item) =>
+      item.Type === 'Episode' && (episodeProgress(item) ?? -1) >= minProgress
   );
   const summary = {
     candidates: preliminary.length,
@@ -199,7 +204,7 @@ export async function cleanupSkippedEpisodeEndings(
     const seriesEpisodes = episodesBySeries.get(item.SeriesId) ?? [];
     const frontierId = frontierEpisodeId(seriesEpisodes);
     if (frontierId && item.Id === frontierId) return false;
-    return isStaleSkippedEpisode(item, seriesEpisodes);
+    return isStaleSkippedEpisode(item, seriesEpisodes, minProgress);
   });
   summary.skipped += preliminary.length - classified.length;
   const classifiedSeriesIds = [

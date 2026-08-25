@@ -205,6 +205,8 @@ export class User {
             watchlistSyncTv: settings.watchlistSyncTv,
             autoCompleteSkippedEpisodeEndings:
               settings.autoCompleteSkippedEpisodeEndings,
+            autoCompleteSkippedEpisodeThreshold:
+              settings.autoCompleteSkippedEpisodeThreshold,
             discoverFilterDefaults: settings.discoverFilterDefaults,
           }
         : undefined,

@@ -168,6 +168,11 @@ export async function assertUpgradeIsIntact(
     null,
     'skipped episode cleanup should default to disabled after upgrade'
   );
+  assert.equal(
+    upgradedSettings.autoCompleteSkippedEpisodeThreshold ?? null,
+    null,
+    'skipped episode threshold should default to unset after upgrade'
+  );
   assert.deepEqual(upgradedSettings.discoverFilterDefaults, {});
 
   const upgradedSlider = await dataSource
