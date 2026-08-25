@@ -129,10 +129,26 @@ const UserGeneralSettings = () => {
       .transform((value, original) =>
         original === '' || original == null ? undefined : Number(original)
       )
-      .integer(intl.formatMessage(messages.validationSkippedEpisodeThreshold))
-      .min(1, intl.formatMessage(messages.validationSkippedEpisodeThreshold))
-      .max(100, intl.formatMessage(messages.validationSkippedEpisodeThreshold))
-      .required(intl.formatMessage(messages.validationSkippedEpisodeThreshold)),
+      .when('autoCompleteSkippedEpisodeEndings', {
+        is: true,
+        then: (schema) =>
+          schema
+            .integer(
+              intl.formatMessage(messages.validationSkippedEpisodeThreshold)
+            )
+            .min(
+              1,
+              intl.formatMessage(messages.validationSkippedEpisodeThreshold)
+            )
+            .max(
+              100,
+              intl.formatMessage(messages.validationSkippedEpisodeThreshold)
+            )
+            .required(
+              intl.formatMessage(messages.validationSkippedEpisodeThreshold)
+            ),
+        otherwise: (schema) => schema.notRequired(),
+      }),
   });
 
   useEffect(() => {
@@ -664,40 +680,57 @@ const UserGeneralSettings = () => {
                   />
                 </div>
               </div>
-              <div className="form-row">
-                <label
-                  htmlFor="autoCompleteSkippedEpisodeThreshold"
-                  className="text-label"
-                >
-                  <span>
-                    {intl.formatMessage(
-                      messages.autoCompleteSkippedEpisodeThreshold
-                    )}
-                  </span>
-                  <span className="label-tip">
-                    {intl.formatMessage(
-                      messages.autoCompleteSkippedEpisodeThresholdTip
-                    )}
-                  </span>
-                </label>
-                <div className="form-input-area">
-                  <Field
-                    id="autoCompleteSkippedEpisodeThreshold"
-                    name="autoCompleteSkippedEpisodeThreshold"
-                    type="text"
-                    inputMode="numeric"
-                    className="short"
-                    placeholder={50}
-                  />
-                  <span className="ml-2 text-sm text-gray-400">%</span>
-                  {errors.autoCompleteSkippedEpisodeThreshold &&
-                    touched.autoCompleteSkippedEpisodeThreshold &&
-                    typeof errors.autoCompleteSkippedEpisodeThreshold ===
-                      'string' && (
-                      <div className="error">
-                        {errors.autoCompleteSkippedEpisodeThreshold}
-                      </div>
-                    )}
+              <div
+                className={`ml-4 mr-2 border-l border-gray-700 pl-4 ${
+                  values.autoCompleteSkippedEpisodeEndings
+                    ? ''
+                    : 'pointer-events-none opacity-50'
+                }`}
+                aria-disabled={!values.autoCompleteSkippedEpisodeEndings}
+              >
+                <div className="form-row">
+                  <label
+                    htmlFor="autoCompleteSkippedEpisodeThreshold"
+                    className="text-label"
+                  >
+                    <span>
+                      {intl.formatMessage(
+                        messages.autoCompleteSkippedEpisodeThreshold
+                      )}
+                    </span>
+                    <span className="label-tip">
+                      {intl.formatMessage(
+                        messages.autoCompleteSkippedEpisodeThresholdTip
+                      )}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <div className="form-input-field max-w-fit">
+                      <Field
+                        id="autoCompleteSkippedEpisodeThreshold"
+                        name="autoCompleteSkippedEpisodeThreshold"
+                        type="text"
+                        inputMode="numeric"
+                        className="short rounded-l-only"
+                        placeholder={50}
+                        disabled={!values.autoCompleteSkippedEpisodeEndings}
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="inline-flex cursor-default items-center rounded-r-md border border-l-0 border-gray-500 bg-gray-800 px-3 text-gray-100 sm:text-sm"
+                      >
+                        %
+                      </span>
+                    </div>
+                    {errors.autoCompleteSkippedEpisodeThreshold &&
+                      touched.autoCompleteSkippedEpisodeThreshold &&
+                      typeof errors.autoCompleteSkippedEpisodeThreshold ===
+                        'string' && (
+                        <div className="error">
+                          {errors.autoCompleteSkippedEpisodeThreshold}
+                        </div>
+                      )}
+                  </div>
                 </div>
               </div>
               <div className="actions">
