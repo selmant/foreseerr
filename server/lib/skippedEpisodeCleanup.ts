@@ -43,6 +43,12 @@ export interface SkippedEpisodeCleanupDependencies {
     seasonNumber: number,
     episodeNumber: number
   ): Promise<boolean>;
+  removeTraktPlayback(
+    userId: number,
+    tmdbId: number,
+    seasonNumber: number,
+    episodeNumber: number
+  ): Promise<void>;
   markJellyfinPlayed(
     client: JellyfinAPI,
     userId: number,
@@ -101,6 +107,13 @@ const defaultDependencies: SkippedEpisodeCleanupDependencies = {
       seasonNumber,
       episodeNumber,
       true
+    ),
+  removeTraktPlayback: (userId, tmdbId, seasonNumber, episodeNumber) =>
+    traktEpisodeActions.removePlaybackProgress(
+      userId,
+      tmdbId,
+      seasonNumber,
+      episodeNumber
     ),
   async markJellyfinPlayed(client, userId, episodeId) {
     await client.markPlayed(episodeId);
@@ -276,6 +289,21 @@ export async function cleanupSkippedEpisodeEndings(
         if (!updated) throw new Error('Trakt episode action unavailable');
         watched.add(episode);
         traktState = 'updated';
+      } else {
+        try {
+          await dependencies.removeTraktPlayback(
+            userId,
+            showTmdbId,
+            season,
+            episode
+          );
+        } catch (error) {
+          logger.warn('Skipped episode Trakt playback clear failed', {
+            ...context,
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+          });
+        }
       }
       try {
         await dependencies.markJellyfinPlayed(client, userId, item.Id);

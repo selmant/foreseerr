@@ -161,6 +161,49 @@ describe('TraktAPI rate limit gating', () => {
     await api.addEpisodeToHistory(1399, 1, 1);
 
     await api.getSyncWatched('tv');
-    assert.equal(calls.filter((call) => call.startsWith('get:')).length, 2);
+    assert.equal(
+      calls.filter((call) => call.startsWith('get:/sync/watched')).length,
+      2
+    );
+  });
+
+  it('removes matching Trakt playback progress after adding episode history', async () => {
+    const api = makeApi();
+    const client = rawClient(api);
+    const calls: string[] = [];
+    client.defaults.adapter = async (config) => {
+      const method = String(config.method).toLowerCase();
+      const url = String(config.url);
+      calls.push(`${method}:${url}`);
+      if (method === 'post') {
+        return jsonResponse(config, 200, { added: { episodes: 1 } });
+      }
+      if (method === 'get' && url.includes('/sync/playback/episodes')) {
+        return jsonResponse(config, 200, [
+          {
+            id: 44,
+            show: { ids: { tmdb: 1399 } },
+            episode: { season: 1, number: 1 },
+          },
+          {
+            id: 45,
+            show: { ids: { tmdb: 1399 } },
+            episode: { season: 1, number: 2 },
+          },
+        ]);
+      }
+      if (method === 'delete') {
+        return jsonResponse(config, 204, {});
+      }
+      return jsonResponse(config, 200, []);
+    };
+
+    await api.addEpisodeToHistory(1399, 1, 1);
+    assert.ok(calls.includes('post:/sync/history'));
+    assert.ok(
+      calls.some((call) => call.startsWith('get:/sync/playback/episodes'))
+    );
+    assert.ok(calls.includes('delete:/sync/playback/44'));
+    assert.equal(calls.includes('delete:/sync/playback/45'), false);
   });
 });

@@ -27,6 +27,13 @@ import { proxyRequestInterceptor } from '@server/utils/customProxyAgent';
 import axios, { type AxiosInstance } from 'axios';
 
 const TRAKT_BASE_URL = 'https://api.trakt.tv';
+
+interface TraktPlaybackEpisode {
+  id: number;
+  progress?: number;
+  episode?: { season?: number; number?: number };
+  show?: { ids?: { tmdb?: number } };
+}
 export const TRAKT_RECOMMENDATIONS_LIMIT_MAX = 500;
 const TRAKT_REFRESH_WINDOW_SECONDS = 300;
 const TRAKT_RETRY_AFTER_MAX_SECONDS = 5;
@@ -506,10 +513,77 @@ class TraktAPI extends ExternalAPI {
     seasonNumber: number,
     episodeNumber: number
   ): Promise<unknown> {
-    return this.postAuthenticated(
+    const result = await this.postAuthenticated(
       '/sync/history',
       TraktAPI.episodeHistoryPayload(tmdbShowId, seasonNumber, episodeNumber)
     );
+    try {
+      await this.removeEpisodePlaybackProgress(
+        tmdbShowId,
+        seasonNumber,
+        episodeNumber
+      );
+    } catch (error) {
+      logger.warn('Failed to clear Trakt playback progress after history add', {
+        label: 'Trakt API',
+        tmdbShowId,
+        seasonNumber,
+        episodeNumber,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Drop leftover /sync/playback pause rows for one episode.
+   * Trakt does not remove these when the episode is added to history.
+   */
+  public async removeEpisodePlaybackProgress(
+    tmdbShowId: number,
+    seasonNumber: number,
+    episodeNumber: number
+  ): Promise<void> {
+    const paused = await this.listEpisodePlaybackProgress();
+    const matches = paused.filter(
+      (entry) =>
+        Number(entry.show?.ids?.tmdb) === tmdbShowId &&
+        Number(entry.episode?.season) === seasonNumber &&
+        Number(entry.episode?.number) === episodeNumber
+    );
+    for (const entry of matches) {
+      if (!Number.isFinite(entry.id) || entry.id <= 0) continue;
+      try {
+        await this.deleteAuthenticated(`/sync/playback/${entry.id}`);
+      } catch (error) {
+        logger.warn('Failed to remove Trakt playback progress', {
+          label: 'Trakt API',
+          tmdbShowId,
+          seasonNumber,
+          episodeNumber,
+          playbackId: entry.id,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  private async listEpisodePlaybackProgress(): Promise<TraktPlaybackEpisode[]> {
+    const items: TraktPlaybackEpisode[] = [];
+    let page = 1;
+    const limit = 100;
+    while (page <= 20) {
+      const batch = await this.requestWithRetry<TraktPlaybackEpisode[]>(
+        'GET',
+        '/sync/playback/episodes',
+        { params: { page, limit }, skipCache: true }
+      );
+      const rows = Array.isArray(batch) ? batch : [];
+      items.push(...rows);
+      if (rows.length < limit) break;
+      page += 1;
+    }
+    return items;
   }
 
   public async removeEpisodeFromHistory(
@@ -996,6 +1070,19 @@ class TraktAPI extends ExternalAPI {
     return result;
   }
 
+  private async deleteAuthenticated(endpoint: string): Promise<void> {
+    try {
+      await this.requestWithRetry<unknown>('DELETE', endpoint, {
+        skipCache: true,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('returned 404')) {
+        return;
+      }
+      throw error;
+    }
+  }
+
   private async getAuthenticated<T>(
     endpoint: string,
     config?: {
@@ -1051,9 +1138,13 @@ class TraktAPI extends ExternalAPI {
   }
 
   private async requestWithRetry<T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     endpoint: string,
-    config?: { params?: Record<string, string | number>; data?: unknown },
+    config?: {
+      params?: Record<string, string | number>;
+      data?: unknown;
+      skipCache?: boolean;
+    },
     retryAuth = true,
     retryRateLimit = true
   ): Promise<T> {
@@ -1061,7 +1152,9 @@ class TraktAPI extends ExternalAPI {
     assertTraktCircuitClosed(this.circuitKey());
 
     const cacheConfig =
-      method === 'GET' ? this.authCacheConfig(config) : undefined;
+      method === 'GET' && !config?.skipCache
+        ? this.authCacheConfig(config)
+        : undefined;
     if (cacheConfig) {
       const cached = this.getCached<T>(endpoint, cacheConfig);
       if (cached !== undefined) {

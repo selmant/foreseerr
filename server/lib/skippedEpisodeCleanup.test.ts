@@ -51,6 +51,7 @@ function dependencies(
       calls.traktWrites.push(episode);
       return true;
     },
+    removeTraktPlayback: async () => undefined,
     markJellyfinPlayed: async (_client, _user, episodeId) => {
       calls.jellyfinWrites.push(episodeId);
     },
@@ -191,5 +192,31 @@ describe('skipped episode cleanup orchestration', () => {
       [e15]
     );
     assert.deepEqual(writes.sort(), ['e10', 'e12', 'e13']);
+  });
+
+  it('clears leftover resume ticks on episodes already marked played', async () => {
+    const playbackClears: number[] = [];
+    const e1 = {
+      ...item('e1', 1, 88),
+      UserData: { Played: true, PlayedPercentage: 88 },
+    };
+    const e2 = item('e2', 2, 10);
+    const { calls, deps } = dependencies({
+      loadSeriesEpisodes: async () => [e1, e2],
+      getTraktSeasonStatus: async () => ({
+        available: true,
+        watchedEpisodeNumbers: [1],
+      }),
+      removeTraktPlayback: async (_user, _show, _season, episode) => {
+        playbackClears.push(episode);
+      },
+    });
+    assert.deepEqual(
+      await cleanupSkippedEpisodeEndings(7, client, [e1, e2], deps),
+      [e2]
+    );
+    assert.deepEqual(calls.traktWrites, []);
+    assert.deepEqual(playbackClears, [1]);
+    assert.deepEqual(calls.jellyfinWrites, ['e1']);
   });
 });

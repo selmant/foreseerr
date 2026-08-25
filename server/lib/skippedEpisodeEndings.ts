@@ -92,12 +92,9 @@ export function isStaleSkippedEpisode(
   candidate: JellyfinLibraryItemExtended,
   seriesEpisodes: JellyfinLibraryItemExtended[]
 ): boolean {
-  if (
-    candidate.Type !== 'Episode' ||
-    candidate.UserData?.Played === true ||
-    !candidate.SeriesId
-  )
-    return false;
+  // Played=true is not enough to leave Resume: Jellyfin 10.11 Resume is
+  // PlaybackPositionTicks > 0 and does not exclude Played items.
+  if (candidate.Type !== 'Episode' || !candidate.SeriesId) return false;
   const current = coordinate(candidate);
   const progress = episodeProgress(candidate);
   if (!current || progress == null || progress < 50) return false;

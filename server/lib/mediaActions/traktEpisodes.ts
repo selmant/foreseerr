@@ -78,4 +78,21 @@ export const traktEpisodeActions = {
     invalidateUserSyncCache(userId);
     return true;
   },
+
+  async removePlaybackProgress(
+    userId: number,
+    tmdbShowId: number,
+    seasonNumber: number,
+    episodeNumber: number
+  ): Promise<void> {
+    if (!(await isAvailable(userId))) {
+      return;
+    }
+    const client = await createTraktUserClient(userId);
+    await client.removeEpisodePlaybackProgress(
+      tmdbShowId,
+      seasonNumber,
+      episodeNumber
+    );
+  },
 };

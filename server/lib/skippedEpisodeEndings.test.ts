@@ -160,6 +160,16 @@ describe('skipped episode ending classification', () => {
     assert.equal(isStaleSkippedEpisode(frontier, [frontier]), false);
   });
 
+  it('still treats a played leftover resume point as stale', () => {
+    const leftover = episode('e1', 1, 1, {
+      Played: true,
+      PlayedPercentage: 88,
+      LastPlayedDate: '2026-08-25T14:42:00Z',
+    });
+    const later = episode('e2', 1, 2, { PlaybackPositionTicks: 1 });
+    assert.equal(isStaleSkippedEpisode(leftover, [leftover, later]), true);
+  });
+
   it('picks the leading in-progress episode as the frontier', () => {
     const e10 = episode('e10', 1, 10, { PlayedPercentage: 70 });
     const e12 = episode('e12', 1, 12, { PlayedPercentage: 65 });
