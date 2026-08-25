@@ -1,6 +1,10 @@
 import logger from '@server/logger';
 import type { AxiosResponse } from 'axios';
-import ServarrBase, { manualImportQuery, type QueueDetailsItem } from './base';
+import ServarrBase, {
+  interactiveReleaseSearchTimeout,
+  manualImportQuery,
+  type QueueDetailsItem,
+} from './base';
 
 export interface ServarrRelease {
   guid: string;
@@ -366,6 +370,7 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
   public async getMovieReleases(movieId: number): Promise<ServarrRelease[]> {
     const response = await this.axios.get<ServarrRelease[]>('/release', {
       params: { movieId },
+      timeout: interactiveReleaseSearchTimeout(),
     });
     return response.data;
   }

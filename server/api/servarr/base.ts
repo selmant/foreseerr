@@ -117,6 +117,22 @@ const QUEUE_PAGE_SIZE = 250;
 const QUEUE_MAX_PAGES = 40;
 
 /**
+ * Interactive indexer search waits on every configured indexer. The global
+ * API timeout (still 10s on many installs, even after the 60s default bump)
+ * is too short for that. 0 means "no timeout".
+ */
+export const INTERACTIVE_RELEASE_SEARCH_TIMEOUT_MS = 120_000;
+
+export function interactiveReleaseSearchTimeout(
+  configuredTimeout = getSettings().network.apiRequestTimeout
+): number {
+  if (configuredTimeout === 0) {
+    return 0;
+  }
+  return Math.max(configuredTimeout, INTERACTIVE_RELEASE_SEARCH_TIMEOUT_MS);
+}
+
+/**
  * Arr GET /manualimport treats seriesId/movieId as "scan the library folder".
  * That 500s when the folder does not exist yet. Queue-based interactive import
  * must send downloadId/folder instead so Arr inspects the completed download.

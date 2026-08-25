@@ -3,6 +3,7 @@ import { afterEach, describe, it, mock } from 'node:test';
 
 import type { AxiosInstance } from 'axios';
 
+import { interactiveReleaseSearchTimeout } from '@server/api/servarr/base';
 import RadarrAPI from '@server/api/servarr/radarr';
 
 function buildRadarr(): RadarrAPI {
@@ -160,7 +161,10 @@ describe('RadarrAPI interactive management', () => {
 
     assert.deepStrictEqual(get.mock.calls[0].arguments, [
       '/release',
-      { params: { movieId: 55 } },
+      {
+        params: { movieId: 55 },
+        timeout: interactiveReleaseSearchTimeout(),
+      },
     ]);
     assert.deepStrictEqual(post.mock.calls[0].arguments, [
       '/release',

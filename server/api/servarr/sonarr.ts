@@ -1,6 +1,10 @@
 import logger from '@server/logger';
 import type { AxiosResponse } from 'axios';
-import ServarrBase, { manualImportQuery, type QueueDetailsItem } from './base';
+import ServarrBase, {
+  interactiveReleaseSearchTimeout,
+  manualImportQuery,
+  type QueueDetailsItem,
+} from './base';
 import type { ManualImportCandidate, ServarrRelease } from './radarr';
 
 export interface SonarrSeason {
@@ -528,6 +532,7 @@ class SonarrAPI extends ServarrBase<{
   ): Promise<ServarrRelease[]> {
     const response = await this.axios.get<ServarrRelease[]>('/release', {
       params: { episodeId },
+      timeout: interactiveReleaseSearchTimeout(),
     });
     return response.data;
   }
@@ -538,6 +543,7 @@ class SonarrAPI extends ServarrBase<{
   ): Promise<ServarrRelease[]> {
     const response = await this.axios.get<ServarrRelease[]>('/release', {
       params: { seriesId, seasonNumber },
+      timeout: interactiveReleaseSearchTimeout(),
     });
     return response.data;
   }

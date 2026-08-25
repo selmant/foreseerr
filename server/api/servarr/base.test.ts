@@ -3,6 +3,10 @@ import { afterEach, describe, it, mock } from 'node:test';
 
 import type { AxiosInstance } from 'axios';
 
+import {
+  INTERACTIVE_RELEASE_SEARCH_TIMEOUT_MS,
+  interactiveReleaseSearchTimeout,
+} from '@server/api/servarr/base';
 import SonarrAPI from '@server/api/servarr/sonarr';
 
 function buildSonarr(): SonarrAPI {
@@ -54,5 +58,22 @@ describe('ServarrBase getQueue', () => {
     });
     assert.equal(queue.length, 251);
     assert.equal(queue[250].id, 251);
+  });
+});
+
+describe('interactiveReleaseSearchTimeout', () => {
+  it('floors a leftover 10s global timeout to two minutes', () => {
+    assert.equal(
+      interactiveReleaseSearchTimeout(10_000),
+      INTERACTIVE_RELEASE_SEARCH_TIMEOUT_MS
+    );
+  });
+
+  it('keeps an administrator timeout longer than the search floor', () => {
+    assert.equal(interactiveReleaseSearchTimeout(180_000), 180_000);
+  });
+
+  it('treats 0 as no timeout', () => {
+    assert.equal(interactiveReleaseSearchTimeout(0), 0);
   });
 });

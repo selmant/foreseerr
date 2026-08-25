@@ -147,7 +147,7 @@ const SettingsNetwork = () => {
             apiRequestTimeout:
               data?.apiRequestTimeout !== undefined
                 ? data.apiRequestTimeout / 1000
-                : 10,
+                : 60,
           }}
           enableReinitialize
           validationSchema={NetworkSettingsSchema}

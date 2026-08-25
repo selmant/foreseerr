@@ -3,6 +3,7 @@ import { afterEach, describe, it, mock } from 'node:test';
 
 import type { AxiosInstance } from 'axios';
 
+import { interactiveReleaseSearchTimeout } from '@server/api/servarr/base';
 import SonarrAPI from '@server/api/servarr/sonarr';
 
 function buildSonarr(): SonarrAPI {
@@ -220,11 +221,17 @@ describe('SonarrAPI interactive management', () => {
 
     assert.deepStrictEqual(get.mock.calls[0].arguments, [
       '/release',
-      { params: { episodeId: 31 } },
+      {
+        params: { episodeId: 31 },
+        timeout: interactiveReleaseSearchTimeout(),
+      },
     ]);
     assert.deepStrictEqual(get.mock.calls[1].arguments, [
       '/release',
-      { params: { seriesId: 9, seasonNumber: 2 } },
+      {
+        params: { seriesId: 9, seasonNumber: 2 },
+        timeout: interactiveReleaseSearchTimeout(),
+      },
     ]);
   });
 
