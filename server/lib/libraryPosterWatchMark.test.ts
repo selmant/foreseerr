@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   libraryMediaActionRefs,
   libraryWatchMark,
+  overlayTitleActionWatched,
   showLibraryUnplayedPip,
 } from '../../src/components/Library/libraryPosterWatchMark';
 
@@ -54,6 +55,29 @@ describe('libraryWatchMark', () => {
     );
   });
 
+  it('marks in-progress Black Clover as partial from live Jellyfin counts', () => {
+    assert.equal(
+      libraryWatchMark({
+        ...series,
+        watched: false,
+        availableEpisodeCount: 77,
+        unplayedItemCount: 40,
+      }),
+      'partial'
+    );
+  });
+
+  it('falls back to unplayed when RecursiveItemCount was not requested', () => {
+    assert.equal(
+      libraryWatchMark({
+        ...series,
+        watched: false,
+        unplayedItemCount: 40,
+      }),
+      'unplayed'
+    );
+  });
+
   it('marks a series with no remaining available episodes as watched', () => {
     assert.equal(
       libraryWatchMark({
@@ -84,6 +108,31 @@ describe('libraryWatchMark', () => {
         jellyfinItemId: 'ep-1',
         jellyfinSeriesId: 'series-1',
         unplayedItemCount: 12,
+      }),
+      'unplayed'
+    );
+  });
+});
+
+describe('overlayTitleActionWatched', () => {
+  it('applies title-level action watched only to movies', () => {
+    assert.equal(overlayTitleActionWatched({ mediaType: 'movie' }), true);
+    assert.equal(overlayTitleActionWatched({ mediaType: 'tv' }), false);
+  });
+
+  it('does not let a watched show paint an unwatched episode as watched', () => {
+    const episode = {
+      mediaType: 'tv' as const,
+      jellyfinItemId: 'ep-1',
+      jellyfinSeriesId: 'series-1',
+      watched: false,
+    };
+    assert.equal(
+      libraryWatchMark({
+        ...episode,
+        watched:
+          Boolean(episode.watched) ||
+          (overlayTitleActionWatched(episode) && true),
       }),
       'unplayed'
     );

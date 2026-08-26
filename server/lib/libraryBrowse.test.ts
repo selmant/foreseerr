@@ -1,4 +1,5 @@
 import {
+  BROWSE_ITEM_FIELDS,
   buildJellyfinBrowseParams,
   isJellyfinItemId,
   jellyfinItemImageRequest,
@@ -33,6 +34,10 @@ describe('buildJellyfinBrowseParams', () => {
     assert.equal(params.userId, 'user-1');
     assert.equal(params.Recursive, true);
     assert.match(String(params.Fields), /RecursiveItemCount/);
+  });
+
+  it('keeps RecursiveItemCount on the shared field list used by latest/search hydrations', () => {
+    assert.match(BROWSE_ITEM_FIELDS, /RecursiveItemCount/);
   });
 
   it('maps unwatched and played filters', () => {
@@ -152,6 +157,16 @@ describe('libraryTitleDisplayFields', () => {
     assert.equal(fields.inProgress, false);
     assert.equal(fields.unplayedItemCount, 12);
     assert.equal(fields.availableEpisodeCount, 24);
+  });
+
+  it('omits availableEpisodeCount when Jellyfin did not return RecursiveItemCount', () => {
+    const fields = libraryTitleDisplayFields({
+      Id: 'series-1',
+      Type: 'Series',
+      UserData: { Played: false, UnplayedItemCount: 35 },
+    });
+    assert.equal(fields.unplayedItemCount, 35);
+    assert.equal('availableEpisodeCount' in fields, false);
   });
 });
 

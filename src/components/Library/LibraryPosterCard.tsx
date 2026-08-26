@@ -3,6 +3,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import {
   isLibrarySeriesPoster,
   libraryWatchMark,
+  overlayTitleActionWatched,
 } from '@app/components/Library/libraryPosterWatchMark';
 import useLibraryPlay from '@app/components/Library/useLibraryPlay';
 import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchContext';
@@ -45,7 +46,7 @@ const LibraryPosterCard = ({
   );
   const isSeriesPoster = isLibrarySeriesPoster(item);
   const actionWatched =
-    !isSeriesPoster && item.tmdbId != null
+    overlayTitleActionWatched(item) && item.tmdbId != null
       ? batch?.getStatus(item.mediaType, item.tmdbId)?.watched
       : undefined;
   const watchMark = libraryWatchMark({

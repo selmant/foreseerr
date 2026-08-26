@@ -518,6 +518,7 @@ export const hydrateForgottenLibraryTitles = (
     DateCreated?: string;
     RunTimeTicks?: number;
     BackdropImageTags?: string[];
+    RecursiveItemCount?: number;
     UserData?: {
       Played?: boolean;
       PlayedPercentage?: number;

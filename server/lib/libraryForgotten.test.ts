@@ -46,4 +46,30 @@ describe('hydrateForgottenLibraryTitles', () => {
     assert.equal(out.mediaId, 9);
     assert.equal(out.tmdbId, 42);
   });
+
+  it('maps series remaining vs available episode counts from Jellyfin', () => {
+    const [out] = hydrateForgottenLibraryTitles(
+      [
+        {
+          mediaType: 'tv',
+          jellyfinItemId: 'series-1',
+          jellyfinSeriesId: 'series-1',
+          title: 'Series',
+        },
+      ],
+      [
+        {
+          Id: 'series-1',
+          Type: 'Series',
+          Name: 'Black Clover',
+          RecursiveItemCount: 72,
+          UserData: { Played: false, UnplayedItemCount: 35 },
+        },
+      ]
+    );
+    assert.equal(out.title, 'Black Clover');
+    assert.equal(out.availableEpisodeCount, 72);
+    assert.equal(out.unplayedItemCount, 35);
+    assert.equal(out.watched, false);
+  });
 });

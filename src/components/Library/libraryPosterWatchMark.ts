@@ -14,6 +14,15 @@ export const isLibrarySeriesPoster = (item: {
   Boolean(item.jellyfinSeriesId) &&
   item.jellyfinItemId === item.jellyfinSeriesId;
 
+/**
+ * Title-level Trakt/AniList watched is keyed by TMDB show/movie id.
+ * Episode posters share the show's TMDB id, so overlaying that flag would
+ * mark newly added episodes watched whenever any episode of the show is.
+ */
+export const overlayTitleActionWatched = (item: {
+  mediaType?: 'movie' | 'tv';
+}): boolean => item.mediaType === 'movie';
+
 export const libraryWatchMark = (item: {
   mediaType?: 'movie' | 'tv';
   jellyfinItemId?: string;

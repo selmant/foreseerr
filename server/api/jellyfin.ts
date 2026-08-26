@@ -4,6 +4,7 @@ import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import availabilitySync from '@server/lib/availabilitySync';
 import {
+  BROWSE_ITEM_FIELDS,
   jellyfinItemImageRequest,
   uniqueSortedGenres,
 } from '@server/lib/libraryBrowse';
@@ -535,8 +536,7 @@ class JellyfinAPI extends ExternalAPI {
           ids: uniqueIds.join(','),
           userId: this.userId ?? 'Me',
           EnableUserData: true,
-          fields:
-            'ProviderIds,MediaSources,Width,Height,IsHD,DateCreated,Overview,Genres,ProductionYear,RunTimeTicks',
+          fields: `${BROWSE_ITEM_FIELDS},MediaSources,Width,Height,IsHD`,
         },
       });
 
@@ -707,7 +707,7 @@ class JellyfinAPI extends ExternalAPI {
           SortBy: 'DateCreated',
           SortOrder: 'Descending',
           Limit: limit,
-          Fields: 'ProviderIds,Overview,DateCreated,PremiereDate',
+          Fields: BROWSE_ITEM_FIELDS,
           EnableUserData: true,
         },
       });
@@ -828,7 +828,7 @@ class JellyfinAPI extends ExternalAPI {
           Recursive: true,
           StartIndex: Math.max(0, options.startIndex ?? 0),
           Limit: options.limit ?? 20,
-          Fields: 'ProviderIds,Overview',
+          Fields: BROWSE_ITEM_FIELDS,
           IncludeItemTypes: include,
           EnableUserData: true,
           userId: this.userId ?? 'Me',
