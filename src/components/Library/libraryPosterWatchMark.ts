@@ -14,6 +14,16 @@ export const isLibrarySeriesPoster = (item: {
   Boolean(item.jellyfinSeriesId) &&
   item.jellyfinItemId === item.jellyfinSeriesId;
 
+/** Episode row in a shelf (not the series shell). */
+export const isLibraryEpisodePoster = (item: {
+  mediaType?: 'movie' | 'tv';
+  jellyfinItemId?: string;
+  jellyfinSeriesId?: string;
+}): boolean =>
+  Boolean(item.jellyfinSeriesId) &&
+  Boolean(item.jellyfinItemId) &&
+  item.jellyfinItemId !== item.jellyfinSeriesId;
+
 /**
  * Title-level Trakt/AniList watched is keyed by TMDB show/movie id.
  * Episode posters share the show's TMDB id, so overlaying that flag would
@@ -21,7 +31,9 @@ export const isLibrarySeriesPoster = (item: {
  */
 export const overlayTitleActionWatched = (item: {
   mediaType?: 'movie' | 'tv';
-}): boolean => item.mediaType === 'movie';
+  jellyfinItemId?: string;
+  jellyfinSeriesId?: string;
+}): boolean => item.mediaType === 'movie' && !isLibraryEpisodePoster(item);
 
 export const libraryWatchMark = (item: {
   mediaType?: 'movie' | 'tv';
@@ -82,17 +94,21 @@ export const libraryMediaActionRefs = (
     tmdbId?: number;
     title?: string;
     year?: number;
+    jellyfinItemId?: string;
+    jellyfinSeriesId?: string;
   }[]
 ) =>
-  items.flatMap((item) =>
-    item.tmdbId
-      ? [
-          {
-            mediaType: item.mediaType,
-            tmdbId: item.tmdbId,
-            title: item.title,
-            year: item.year,
-          },
-        ]
-      : []
-  );
+  items.flatMap((item) => {
+    if (!item.tmdbId) return [];
+    // Episode rows share the show TMDB id; title-level watched/rating status
+    // must not be batched for them (Recently Added Episodes slider).
+    if (isLibraryEpisodePoster(item)) return [];
+    return [
+      {
+        mediaType: item.mediaType,
+        tmdbId: item.tmdbId,
+        title: item.title,
+        year: item.year,
+      },
+    ];
+  });

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  isLibraryEpisodePoster,
   libraryMediaActionRefs,
   libraryWatchMark,
   overlayTitleActionWatched,
@@ -120,6 +121,17 @@ describe('overlayTitleActionWatched', () => {
     assert.equal(overlayTitleActionWatched({ mediaType: 'tv' }), false);
   });
 
+  it('never overlays title watched onto episode posters', () => {
+    assert.equal(
+      overlayTitleActionWatched({
+        mediaType: 'movie',
+        jellyfinItemId: 'ep-1',
+        jellyfinSeriesId: 'series-1',
+      }),
+      false
+    );
+  });
+
   it('does not let a watched show paint an unwatched episode as watched', () => {
     const episode = {
       mediaType: 'tv' as const,
@@ -127,12 +139,33 @@ describe('overlayTitleActionWatched', () => {
       jellyfinSeriesId: 'series-1',
       watched: false,
     };
+    assert.equal(isLibraryEpisodePoster(episode), true);
     assert.equal(
       libraryWatchMark({
         ...episode,
         watched:
           Boolean(episode.watched) ||
           (overlayTitleActionWatched(episode) && true),
+      }),
+      'unplayed'
+    );
+  });
+
+  it('keeps Tomb Raider King S1E8 unplayed when Trakt show is watched', () => {
+    const tombEp = {
+      mediaType: 'tv' as const,
+      jellyfinItemId: '0f3bf4f1e683a4cac5b36951ea88ee0b',
+      jellyfinSeriesId: '8ce65e8434a56258e2accd100b9c4cf0',
+      watched: false,
+      inProgress: false,
+    };
+    const traktShowWatched = true;
+    assert.equal(
+      libraryWatchMark({
+        ...tombEp,
+        watched:
+          Boolean(tombEp.watched) ||
+          (overlayTitleActionWatched(tombEp) && traktShowWatched),
       }),
       'unplayed'
     );
@@ -163,6 +196,35 @@ describe('libraryMediaActionRefs', () => {
         { mediaType: 'tv', title: 'No id' },
       ]),
       [{ mediaType: 'movie', tmdbId: 1, title: 'Dune', year: 2021 }]
+    );
+  });
+
+  it('omits episode rows that share a show TMDB id', () => {
+    assert.deepEqual(
+      libraryMediaActionRefs([
+        {
+          mediaType: 'tv',
+          tmdbId: 297826,
+          title: 'Tomb Raider King',
+          jellyfinItemId: 'ep-8',
+          jellyfinSeriesId: 'series-1',
+        },
+        {
+          mediaType: 'tv',
+          tmdbId: 297826,
+          title: 'Tomb Raider King',
+          jellyfinItemId: 'series-1',
+          jellyfinSeriesId: 'series-1',
+        },
+      ]),
+      [
+        {
+          mediaType: 'tv',
+          tmdbId: 297826,
+          title: 'Tomb Raider King',
+          year: undefined,
+        },
+      ]
     );
   });
 });
