@@ -124,7 +124,7 @@ const LibraryPosterCard = ({
         {watchMark === 'unplayed' ? (
           <span
             data-testid="library-unplayed-pip"
-            className="pointer-events-none absolute -right-12 top-5 z-10 w-[9.5rem] rotate-45 bg-emerald-400 py-1 text-center text-[10px] font-extrabold uppercase tracking-[0.2em] text-gray-950 shadow"
+            className="pointer-events-none absolute -right-9 top-3.5 z-10 w-28 rotate-45 bg-emerald-400 py-0.5 text-center text-[9px] font-extrabold uppercase tracking-widest text-gray-950 shadow"
             aria-hidden
           >
             {intl.formatMessage(messages.unwatchedRibbon)}
