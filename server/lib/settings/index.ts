@@ -102,6 +102,11 @@ export interface MediaActionsSettings {
   };
 }
 
+export interface ServarrInterventionSettings {
+  automaticCleanupEnabled: boolean;
+  cleanupGraceHours: number;
+}
+
 export interface MdbListSettings extends RatingBadgeSettings {
   apiKey: string;
 }
@@ -439,6 +444,7 @@ export interface AllSettings {
   trakt: TraktSettings;
   anilist: AniListSettings;
   mediaActions: MediaActionsSettings;
+  servarrInterventions: ServarrInterventionSettings;
   mdblist: MdbListSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
@@ -527,6 +533,10 @@ class Settings {
           jellyfin: true,
           anilist: true,
         },
+      },
+      servarrInterventions: {
+        automaticCleanupEnabled: false,
+        cleanupGraceHours: 24,
       },
       mdblist: {
         apiKey: '',
@@ -848,6 +858,23 @@ class Settings {
       this.data.mediaActions ?? {
         providers: { trakt: true, jellyfin: true, anilist: true },
       },
+      data
+    );
+  }
+
+  get servarrInterventions(): ServarrInterventionSettings {
+    if (!this.data.servarrInterventions) {
+      this.data.servarrInterventions = {
+        automaticCleanupEnabled: false,
+        cleanupGraceHours: 24,
+      };
+    }
+    return this.data.servarrInterventions;
+  }
+
+  set servarrInterventions(data: ServarrInterventionSettings) {
+    this.data.servarrInterventions = mergeSettings(
+      this.servarrInterventions,
       data
     );
   }

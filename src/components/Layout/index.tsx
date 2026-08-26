@@ -1,3 +1,4 @@
+import Button from '@app/components/Common/Button';
 import DiscoverNavigation from '@app/components/Discover/DiscoverNavigation';
 import MobileMenu from '@app/components/Layout/MobileMenu';
 import PullToRefresh from '@app/components/Layout/PullToRefresh';
@@ -7,21 +8,33 @@ import UserDropdown from '@app/components/Layout/UserDropdown';
 import UserWarnings from '@app/components/Layout/UserWarnings';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
-import { useUser } from '@app/hooks/useUser';
+import { Permission, useUser } from '@app/hooks/useUser';
+import defineMessages from '@app/utils/defineMessages';
 import { ArrowLeftIcon, Bars3BottomLeftIcon } from '@heroicons/react/24/solid';
 import type { AvailableLocale } from '@server/types/languages';
+import axios from 'axios';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
+import { useIntl } from 'react-intl';
 import useSWR from 'swr';
+
+const messages = defineMessages('components.Layout', {
+  interventionAlert:
+    '{count, plural, one {# new Arr queue warning needs attention.} other {# new Arr queue warnings need attention.}}',
+  openInterventions: 'Open interventions',
+  dismissAlert: 'Dismiss',
+});
 
 type LayoutProps = {
   children: React.ReactNode;
 };
 
 const Layout = ({ children }: LayoutProps) => {
+  const intl = useIntl();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  const { user } = useUser();
+  const { user, hasPermission } = useUser();
   const router = useRouter();
   const { currentSettings } = useSettings();
   const { setLocale } = useLocale();
@@ -37,6 +50,19 @@ const Layout = ({ children }: LayoutProps) => {
       revalidateOnMount: true,
     }
   );
+  const canManageRequests = hasPermission(Permission.MANAGE_REQUESTS);
+  const { data: interventionCount, mutate: refreshInterventionCount } = useSWR<{
+    active: number;
+    unseen: number;
+  }>(canManageRequests ? '/api/v1/servarr/interventions/count' : null, {
+    refreshInterval: 60000,
+    revalidateOnFocus: true,
+  });
+
+  const markInterventionsSeen = async () => {
+    await axios.post('/api/v1/servarr/interventions/seen');
+    await refreshInterventionCount();
+  };
 
   useEffect(() => {
     if (setLocale && user) {
@@ -75,6 +101,7 @@ const Layout = ({ children }: LayoutProps) => {
         setClosed={() => setSidebarOpen(false)}
         pendingRequestsCount={requestResponse?.pending ?? 0}
         openIssuesCount={issueResponse?.open ?? 0}
+        activeInterventionsCount={interventionCount?.active ?? 0}
         revalidateIssueCount={() => revalidateIssueCount()}
         revalidateRequestsCount={() => revalidateRequestsCount()}
       />
@@ -82,6 +109,7 @@ const Layout = ({ children }: LayoutProps) => {
         <MobileMenu
           pendingRequestsCount={requestResponse?.pending ?? 0}
           openIssuesCount={issueResponse?.open ?? 0}
+          activeInterventionsCount={interventionCount?.active ?? 0}
           revalidateIssueCount={() => revalidateIssueCount()}
           revalidateRequestsCount={() => revalidateRequestsCount()}
         />
@@ -130,6 +158,28 @@ const Layout = ({ children }: LayoutProps) => {
           <div className="mb-6">
             <div className="max-w-8xl mx-auto px-4">
               <UserWarnings />
+              {canManageRequests &&
+                (interventionCount?.unseen ?? 0) > 0 &&
+                !router.pathname.startsWith('/interventions') && (
+                  <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-yellow-500 bg-yellow-400/20 p-4 text-yellow-100">
+                    <div>
+                      <div className="font-medium">
+                        {intl.formatMessage(messages.interventionAlert, {
+                          count: interventionCount!.unseen,
+                        })}
+                      </div>
+                      <Link className="text-sm underline" href="/interventions">
+                        {intl.formatMessage(messages.openInterventions)}
+                      </Link>
+                    </div>
+                    <Button
+                      buttonSize="sm"
+                      onClick={() => void markInterventionsSeen()}
+                    >
+                      {intl.formatMessage(messages.dismissAlert)}
+                    </Button>
+                  </div>
+                )}
               {(router.pathname === '/' ||
                 router.pathname.startsWith('/discover')) && (
                 <DiscoverNavigation />

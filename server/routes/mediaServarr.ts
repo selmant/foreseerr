@@ -10,7 +10,9 @@ import SonarrAPI from '@server/api/servarr/sonarr';
 import { MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
+import { ServarrIntervention } from '@server/entity/ServarrIntervention';
 import { Permission } from '@server/lib/permissions';
+import { resolveImportedIntervention } from '@server/lib/servarrInterventions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -27,6 +29,7 @@ type ContextBase = {
   is4k: boolean;
   externalId: number;
   serviceName: string;
+  serviceId: number;
   nativeUrl?: string;
 };
 /**
@@ -71,7 +74,10 @@ type ImportCandidateToken = TokenBase & {
   kind: 'import-candidate';
   value: ImportCandidate;
 };
-type CommandToken = TokenBase & { kind: 'command'; value: number };
+type CommandToken = TokenBase & {
+  kind: 'command';
+  value: { commandId: number; interventionId?: number };
+};
 type Token =
   | ReleaseToken
   | ImportSourceToken
@@ -127,6 +133,7 @@ async function resolveContext(
       type: 'radarr',
       externalId,
       serviceName: service.name,
+      serviceId,
       nativeUrl: safeExternalUrl(service.externalUrl),
       client: new RadarrAPI({
         apiKey: service.apiKey,
@@ -146,6 +153,7 @@ async function resolveContext(
     type: 'sonarr',
     externalId,
     serviceName: service.name,
+    serviceId,
     nativeUrl: safeExternalUrl(service.externalUrl),
     client: new SonarrAPI({
       apiKey: service.apiKey,
@@ -806,6 +814,34 @@ mediaServarrRoutes.post(
         )
       );
       const files = importCandidates.map(({ candidate }) => ({ ...candidate }));
+      let intervention: ServarrIntervention | null = null;
+      if (req.body.interventionId != null) {
+        if (!Number.isInteger(req.body.interventionId))
+          throw Object.assign(new Error('Invalid intervention ID.'), {
+            status: 400,
+          });
+        intervention = await getRepository(ServarrIntervention).findOne({
+          where: { id: req.body.interventionId },
+        });
+        if (
+          !intervention ||
+          intervention.state === 'resolved' ||
+          !intervention.manualImportCapable ||
+          intervention.mediaId !== context.media.id ||
+          intervention.serviceId !== context.serviceId ||
+          intervention.externalServiceId !== context.externalId ||
+          intervention.is4k !== context.is4k ||
+          importCandidates.some(
+            ({ source }) => source.downloadId !== intervention!.downloadId
+          )
+        )
+          throw Object.assign(
+            new Error(
+              'This intervention is not valid for the selected import.'
+            ),
+            { status: 409 }
+          );
+      }
       if (files.some((file) => !isCompleteImportCandidate(file, context.type)))
         throw Object.assign(
           new Error(
@@ -872,7 +908,10 @@ mediaServarrRoutes.post(
             type: context.type,
             externalId: context.externalId,
             kind: 'command',
-            value: command.id,
+            value: {
+              commandId: command.id,
+              interventionId: intervention?.id,
+            },
           },
           3600
         ),
@@ -893,13 +932,22 @@ mediaServarrRoutes.get(
         Number(req.params.id),
         parseIs4k(req.query.is4k)
       );
-      const commandId = getToken(
+      const commandToken = getToken(
         req.params.token,
         context,
         req.user!.id,
         'command'
       ).value;
-      const command = await context.client.getCommand(commandId);
+      const command = await context.client.getCommand(commandToken.commandId);
+      if (
+        command.status?.toLowerCase() === 'completed' &&
+        commandToken.interventionId
+      ) {
+        await resolveImportedIntervention(
+          commandToken.interventionId,
+          req.user!.id
+        );
+      }
       return res.json({
         status: command.status?.toLowerCase() ?? 'unknown',
         message: command.message,

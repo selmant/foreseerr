@@ -11,6 +11,7 @@ import {
   CogIcon,
   ExclamationTriangleIcon,
   EyeSlashIcon,
+  InboxArrowDownIcon,
   RectangleStackIcon,
   SparklesIcon,
   UsersIcon,
@@ -33,6 +34,7 @@ export const menuMessages = defineMessages('components.Layout.Sidebar', {
   issues: 'Issues',
   users: 'Users',
   settings: 'Settings',
+  interventions: 'Interventions',
 });
 
 interface SidebarProps {
@@ -40,6 +42,7 @@ interface SidebarProps {
   setClosed: () => void;
   pendingRequestsCount: number;
   openIssuesCount: number;
+  activeInterventionsCount: number;
   revalidateIssueCount: () => void;
   revalidateRequestsCount: () => void;
 }
@@ -79,6 +82,13 @@ const SidebarLinks: SidebarLinkProps[] = [
     messagesKey: 'calendar',
     svgIcon: <CalendarDaysIcon className="mr-3 h-6 w-6" />,
     activeRegExp: /^\/calendar/,
+  },
+  {
+    href: '/interventions',
+    messagesKey: 'interventions',
+    svgIcon: <InboxArrowDownIcon className="mr-3 h-6 w-6" />,
+    activeRegExp: /^\/interventions/,
+    requiredPermission: Permission.MANAGE_REQUESTS,
   },
   {
     href: '/blocklist',
@@ -126,6 +136,7 @@ const Sidebar = ({
   setClosed,
   pendingRequestsCount,
   openIssuesCount,
+  activeInterventionsCount,
   revalidateIssueCount,
   revalidateRequestsCount,
 }: SidebarProps) => {
@@ -319,6 +330,14 @@ const Sidebar = ({
                               }`}
                             >
                               {openIssuesCount}
+                            </Badge>
+                          </div>
+                        )}
+                      {sidebarLink.messagesKey === 'interventions' &&
+                        activeInterventionsCount > 0 && (
+                          <div className="ml-auto flex">
+                            <Badge className="rounded-md border-yellow-500 bg-yellow-600">
+                              {activeInterventionsCount}
                             </Badge>
                           </div>
                         )}

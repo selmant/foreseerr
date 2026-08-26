@@ -18,7 +18,7 @@ import type OverrideRule from '@server/entity/OverrideRule';
 import type { OverrideRuleResultsResponse } from '@server/interfaces/api/overrideRuleInterfaces';
 import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
 import axios from 'axios';
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
 
@@ -50,7 +50,132 @@ const messages = defineMessages('components.Settings', {
   overrideRulesDescription:
     'Override rules allow you to specify properties that will be replaced if a request matches the rule.',
   addrule: 'New Override Rule',
+  interventionCleanup: 'Intervention cleanup',
+  interventionCleanupDescription:
+    'Detect mapped Arr queue warnings. Automatic cleanup deletes overdue downloads, blocklists their releases in Arr, and allows Arr to retry.',
+  automaticCleanup: 'Automatically reject overdue warnings',
+  cleanupGrace: 'Grace period (hours)',
+  saveCleanup: 'Save cleanup settings',
 });
+
+type InterventionSettings = {
+  automaticCleanupEnabled: boolean;
+  cleanupGraceHours: number;
+};
+
+const InterventionCleanupSettings = () => {
+  const intl = useIntl();
+  const { data, mutate: refresh } = useSWR<InterventionSettings>(
+    '/api/v1/settings/servarr-interventions'
+  );
+  const [values, setValues] = useState<InterventionSettings>({
+    automaticCleanupEnabled: false,
+    cleanupGraceHours: 24,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    if (data) setValues(data);
+  }, [data]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      const response = await axios.post<InterventionSettings>(
+        '/api/v1/settings/servarr-interventions',
+        values
+      );
+      setValues(response.data);
+      await refresh(response.data, false);
+    } catch (requestError) {
+      setError(
+        axios.isAxiosError(requestError)
+          ? requestError.response?.data?.message
+          : 'Unable to save cleanup settings.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mb-10">
+      <div className="mb-6">
+        <h3 className="heading">
+          {intl.formatMessage(messages.interventionCleanup)}
+        </h3>
+        <p className="description">
+          {intl.formatMessage(messages.interventionCleanupDescription)}
+        </p>
+      </div>
+      <div className="section">
+        <div className="form-row">
+          <label htmlFor="automaticCleanupEnabled" className="checkbox-label">
+            <span className="mr-2">
+              {intl.formatMessage(messages.automaticCleanup)}
+            </span>
+          </label>
+          <div className="form-input-area">
+            <input
+              type="checkbox"
+              id="automaticCleanupEnabled"
+              checked={values.automaticCleanupEnabled}
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  automaticCleanupEnabled: event.target.checked,
+                }))
+              }
+            />
+          </div>
+        </div>
+        <div className="form-row">
+          <label htmlFor="cleanupGraceHours" className="text-label">
+            <span className="mr-2">
+              {intl.formatMessage(messages.cleanupGrace)}
+            </span>
+          </label>
+          <div className="form-input-area">
+            <div className="form-input-field">
+              <input
+                id="cleanupGraceHours"
+                type="number"
+                min={1}
+                max={720}
+                step={1}
+                value={values.cleanupGraceHours}
+                onChange={(event) =>
+                  setValues((current) => ({
+                    ...current,
+                    cleanupGraceHours: Number(event.target.value),
+                  }))
+                }
+              />
+            </div>
+          </div>
+        </div>
+        {error && <div className="error">{error}</div>}
+        <div className="actions">
+          <div className="flex justify-end">
+            <Button
+              buttonType="primary"
+              disabled={
+                saving ||
+                !Number.isInteger(values.cleanupGraceHours) ||
+                values.cleanupGraceHours < 1 ||
+                values.cleanupGraceHours > 720
+              }
+              onClick={() => void save()}
+            >
+              {intl.formatMessage(messages.saveCleanup)}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface ServerInstanceProps {
   name: string;
@@ -266,6 +391,7 @@ const SettingsServices = () => {
           intl.formatMessage(globalMessages.settings),
         ]}
       />
+      <InterventionCleanupSettings />
       <div className="mb-6">
         <h3 className="heading">
           {intl.formatMessage(messages.radarrsettings)}

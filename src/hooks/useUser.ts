@@ -38,6 +38,7 @@ export interface UserSettings {
   watchlistSyncTv?: boolean;
   autoCompleteSkippedEpisodeEndings?: boolean;
   autoCompleteSkippedEpisodeThreshold?: number;
+  servarrInterventionsSeenAt?: Date | null;
 }
 
 interface UserHookResponse {

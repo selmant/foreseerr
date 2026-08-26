@@ -61,6 +61,30 @@ describe('ServarrBase getQueue', () => {
   });
 });
 
+describe('ServarrBase removeQueueItem', () => {
+  afterEach(() => mock.restoreAll());
+
+  it('removes the client download, blocklists the release, and permits retry', async () => {
+    const sonarr = buildSonarr();
+    const remove = mock.method(getAxios(sonarr), 'delete', async () => ({
+      data: undefined,
+    }));
+
+    await sonarr.removeQueueItem(42);
+
+    assert.deepEqual(remove.mock.calls[0].arguments, [
+      '/queue/42',
+      {
+        params: {
+          removeFromClient: true,
+          blocklist: true,
+          skipRedownload: false,
+        },
+      },
+    ]);
+  });
+});
+
 describe('interactiveReleaseSearchTimeout', () => {
   it('floors a leftover 10s global timeout to two minutes', () => {
     assert.equal(

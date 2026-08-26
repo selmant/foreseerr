@@ -239,7 +239,7 @@ class ServarrBase<QueueItemAppendT> extends ExternalAPI {
     }
   };
 
-  public getQueue = async (): Promise<(QueueItem & QueueItemAppendT)[]> => {
+  public async getQueue(): Promise<(QueueItem & QueueItemAppendT)[]> {
     try {
       const records: (QueueItem & QueueItemAppendT)[] = [];
       for (let page = 1; page <= QUEUE_MAX_PAGES; page += 1) {
@@ -270,7 +270,7 @@ class ServarrBase<QueueItemAppendT> extends ExternalAPI {
         { cause: e }
       );
     }
-  };
+  }
 
   public getTags = async (): Promise<Tag[]> => {
     try {
@@ -363,6 +363,16 @@ class ServarrBase<QueueItemAppendT> extends ExternalAPI {
       if (release.languages) body.languages = release.languages;
     }
     await this.axios.post('/release', body);
+  }
+
+  public async removeQueueItem(queueId: number): Promise<void> {
+    await this.axios.delete(`/queue/${queueId}`, {
+      params: {
+        removeFromClient: true,
+        blocklist: true,
+        skipRedownload: false,
+      },
+    });
   }
 }
 

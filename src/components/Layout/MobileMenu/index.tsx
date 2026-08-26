@@ -11,6 +11,7 @@ import {
   EllipsisHorizontalIcon,
   ExclamationTriangleIcon,
   EyeSlashIcon,
+  InboxArrowDownIcon,
   RectangleStackIcon,
   SparklesIcon,
   UsersIcon,
@@ -21,6 +22,7 @@ import {
   CogIcon as FilledCogIcon,
   ExclamationTriangleIcon as FilledExclamationTriangleIcon,
   EyeSlashIcon as FilledEyeSlashIcon,
+  InboxArrowDownIcon as FilledInboxArrowDownIcon,
   RectangleStackIcon as FilledRectangleStackIcon,
   SparklesIcon as FilledSparklesIcon,
   UsersIcon as FilledUsersIcon,
@@ -34,6 +36,7 @@ import { useIntl } from 'react-intl';
 interface MobileMenuProps {
   pendingRequestsCount: number;
   openIssuesCount: number;
+  activeInterventionsCount: number;
   revalidateIssueCount: () => void;
   revalidateRequestsCount: () => void;
 }
@@ -53,6 +56,7 @@ interface MenuLink {
 const MobileMenu = ({
   pendingRequestsCount,
   openIssuesCount,
+  activeInterventionsCount,
   revalidateIssueCount,
   revalidateRequestsCount,
 }: MobileMenuProps) => {
@@ -99,6 +103,14 @@ const MobileMenu = ({
       svgIcon: <CalendarDaysIcon className="h-6 w-6" />,
       svgIconSelected: <FilledCalendarDaysIcon className="h-6 w-6" />,
       activeRegExp: /^\/calendar/,
+    },
+    {
+      href: '/interventions',
+      content: intl.formatMessage(menuMessages.interventions),
+      svgIcon: <InboxArrowDownIcon className="h-6 w-6" />,
+      svgIconSelected: <FilledInboxArrowDownIcon className="h-6 w-6" />,
+      activeRegExp: /^\/interventions/,
+      requiredPermission: Permission.MANAGE_REQUESTS,
     },
     {
       href: '/blocklist',
@@ -222,6 +234,14 @@ const MobileMenu = ({
                     </Badge>
                   </div>
                 )}
+              {link.href === '/interventions' &&
+                activeInterventionsCount > 0 && (
+                  <div className="ml-auto flex">
+                    <Badge className="rounded-md border-yellow-500 bg-yellow-600">
+                      {activeInterventionsCount}
+                    </Badge>
+                  </div>
+                )}
             </Link>
           );
         })}
@@ -269,12 +289,22 @@ const MobileMenu = ({
                         </Badge>
                       </div>
                     )}
+                  {link.href === '/interventions' &&
+                    activeInterventionsCount > 0 && (
+                      <div className="absolute bottom-3 left-3">
+                        <Badge className="flex h-4 w-4 items-center justify-center rounded-md border-yellow-500 bg-yellow-600 !px-[5px] !py-[7px] text-[8px]">
+                          {activeInterventionsCount > 99
+                            ? '99+'
+                            : activeInterventionsCount}
+                        </Badge>
+                      </div>
+                    )}
                 </Link>
               );
             })}
           {filteredLinks.length > 4 && filteredLinks.length !== 5 && (
             <button
-              className={`flex flex-col items-center space-y-1 ${
+              className={`relative flex flex-col items-center space-y-1 ${
                 isOpen ? 'text-indigo-500' : ''
               }`}
               onClick={() => toggle()}
@@ -283,6 +313,15 @@ const MobileMenu = ({
                 <XMarkIcon className="h-6 w-6" />
               ) : (
                 <EllipsisHorizontalIcon className="h-6 w-6" />
+              )}
+              {activeInterventionsCount > 0 && !isOpen && (
+                <div className="absolute bottom-3 left-3">
+                  <Badge className="flex h-4 w-4 items-center justify-center rounded-md border-yellow-500 bg-yellow-600 !px-[5px] !py-[7px] text-[8px]">
+                    {activeInterventionsCount > 99
+                      ? '99+'
+                      : activeInterventionsCount}
+                  </Badge>
+                </div>
               )}
             </button>
           )}

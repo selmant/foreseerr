@@ -11,11 +11,13 @@ const ServarrPanel = ({
   is4k,
   label,
   onChanged,
+  interventionId,
 }: {
   mediaId: number;
   is4k: boolean;
   label: string;
   onChanged: () => void;
+  interventionId?: number;
 }) => {
   const contextAbortRef = useRef<AbortController | undefined>(undefined);
   const [context, setContext] = useState<ServarrContext>();
@@ -74,6 +76,7 @@ const ServarrPanel = ({
         mediaId={mediaId}
         onChanged={onChanged}
         refreshToken={manualImportRefreshToken}
+        interventionId={interventionId}
       />
       {context.nativeUrl && (
         <a

@@ -32,6 +32,11 @@ describe('OpenAPI library contract', () => {
     '/media/{mediaId}/servarr/imports/reprocess': ['post'],
     '/media/{mediaId}/servarr/imports': ['get', 'post'],
     '/media/{mediaId}/servarr/commands/{token}': ['get'],
+    '/servarr/interventions': ['get'],
+    '/servarr/interventions/count': ['get'],
+    '/servarr/interventions/seen': ['post'],
+    '/servarr/interventions/{interventionId}/reject': ['post'],
+    '/settings/servarr-interventions': ['get', 'post'],
   };
 
   for (const [path, methods] of Object.entries(requiredPaths)) {
@@ -52,6 +57,18 @@ describe('OpenAPI library contract', () => {
     assert.ok(apiDocs.components.schemas.LibraryShelf);
     assert.ok(apiDocs.components.schemas.LibraryWatchNowResponse);
     assert.ok(apiDocs.components.schemas.LibraryAvailableResponse);
+  });
+
+  it('keeps Servarr intervention payloads free of Arr filesystem identity', () => {
+    const schema = apiDocs.components.schemas.ServarrIntervention as {
+      properties?: Record<string, unknown>;
+    };
+    assert.ok(schema.properties);
+    assert.equal(schema.properties.queueId, undefined);
+    assert.equal(schema.properties.downloadId, undefined);
+    assert.equal(schema.properties.outputPath, undefined);
+    assert.ok(schema.properties.releaseTitle);
+    assert.ok(schema.properties.warningMessages);
   });
 
   it('declares series panel schemas and play-target fields', () => {

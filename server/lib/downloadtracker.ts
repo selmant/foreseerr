@@ -1,6 +1,7 @@
 import RadarrAPI from '@server/api/servarr/radarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import { MediaType } from '@server/constants/media';
+import { reconcileServarrWarnings } from '@server/lib/servarrInterventions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { uniqWith } from 'lodash';
@@ -70,26 +71,43 @@ class DownloadTracker {
     const settings = getSettings();
 
     // Remove duplicate servers
-    const filteredServers = uniqWith(settings.radarr, (radarrA, radarrB) => {
-      return (
-        radarrA.hostname === radarrB.hostname &&
-        radarrA.port === radarrB.port &&
-        radarrA.baseUrl === radarrB.baseUrl
-      );
-    });
+    const filteredServers = uniqWith(
+      settings.radarr.filter((server) => server.syncEnabled),
+      (radarrA, radarrB) => {
+        return (
+          radarrA.hostname === radarrB.hostname &&
+          radarrA.port === radarrB.port &&
+          radarrA.baseUrl === radarrB.baseUrl
+        );
+      }
+    );
 
     // Load downloads from Radarr servers
-    Promise.all(
+    await Promise.all(
       filteredServers.map(async (server) => {
         if (server.syncEnabled) {
           const radarr = new RadarrAPI({
             apiKey: server.apiKey,
             url: RadarrAPI.buildUrl(server, '/api/v3'),
           });
+          const matchingServers = settings.radarr.filter(
+            (rs) =>
+              rs.hostname === server.hostname &&
+              rs.port === server.port &&
+              rs.baseUrl === server.baseUrl &&
+              rs.id !== server.id &&
+              rs.syncEnabled
+          );
 
           try {
             await radarr.refreshMonitoredDownloads();
             const queueItems = await radarr.getQueue();
+
+            await Promise.all(
+              [server, ...matchingServers].map((mappedServer) =>
+                reconcileServarrWarnings('radarr', mappedServer, queueItems)
+              )
+            );
 
             this.radarrServers[server.id] = queueItems.map((item) => ({
               externalId: item.movieId,
@@ -119,14 +137,6 @@ class DownloadTracker {
           }
 
           // Duplicate this data to matching servers
-          const matchingServers = settings.radarr.filter(
-            (rs) =>
-              rs.hostname === server.hostname &&
-              rs.port === server.port &&
-              rs.baseUrl === server.baseUrl &&
-              rs.id !== server.id
-          );
-
           if (matchingServers.length > 0) {
             logger.debug(
               `Matching download data to ${matchingServers.length} other Radarr server(s)`,
@@ -148,26 +158,43 @@ class DownloadTracker {
     const settings = getSettings();
 
     // Remove duplicate servers
-    const filteredServers = uniqWith(settings.sonarr, (sonarrA, sonarrB) => {
-      return (
-        sonarrA.hostname === sonarrB.hostname &&
-        sonarrA.port === sonarrB.port &&
-        sonarrA.baseUrl === sonarrB.baseUrl
-      );
-    });
+    const filteredServers = uniqWith(
+      settings.sonarr.filter((server) => server.syncEnabled),
+      (sonarrA, sonarrB) => {
+        return (
+          sonarrA.hostname === sonarrB.hostname &&
+          sonarrA.port === sonarrB.port &&
+          sonarrA.baseUrl === sonarrB.baseUrl
+        );
+      }
+    );
 
     // Load downloads from Sonarr servers
-    Promise.all(
+    await Promise.all(
       filteredServers.map(async (server) => {
         if (server.syncEnabled) {
           const sonarr = new SonarrAPI({
             apiKey: server.apiKey,
             url: SonarrAPI.buildUrl(server, '/api/v3'),
           });
+          const matchingServers = settings.sonarr.filter(
+            (ss) =>
+              ss.hostname === server.hostname &&
+              ss.port === server.port &&
+              ss.baseUrl === server.baseUrl &&
+              ss.id !== server.id &&
+              ss.syncEnabled
+          );
 
           try {
             await sonarr.refreshMonitoredDownloads();
             const queueItems = await sonarr.getQueue();
+
+            await Promise.all(
+              [server, ...matchingServers].map((mappedServer) =>
+                reconcileServarrWarnings('sonarr', mappedServer, queueItems)
+              )
+            );
 
             this.sonarrServers[server.id] = queueItems.map((item) => ({
               externalId: item.seriesId,
@@ -198,14 +225,6 @@ class DownloadTracker {
           }
 
           // Duplicate this data to matching servers
-          const matchingServers = settings.sonarr.filter(
-            (ss) =>
-              ss.hostname === server.hostname &&
-              ss.port === server.port &&
-              ss.baseUrl === server.baseUrl &&
-              ss.id !== server.id
-          );
-
           if (matchingServers.length > 0) {
             logger.debug(
               `Matching download data to ${matchingServers.length} other Sonarr server(s)`,

@@ -1133,6 +1133,74 @@ components:
         label:
           type: string
           example: A Label
+    ServarrInterventionSettings:
+      type: object
+      required: [automaticCleanupEnabled, cleanupGraceHours]
+      properties:
+        automaticCleanupEnabled:
+          type: boolean
+          default: false
+        cleanupGraceHours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          default: 24
+    ServarrIntervention:
+      type: object
+      description: Safe intervention representation. Arr paths, download IDs, and queue IDs are never returned.
+      required:
+        [
+          id,
+          serviceType,
+          serviceId,
+          serviceName,
+          is4k,
+          mediaId,
+          tmdbId,
+          mediaType,
+          releaseTitle,
+          warningMessages,
+          manualImportCapable,
+          state,
+          firstSeenAt,
+          cleanupDeadlineAt,
+        ]
+      properties:
+        id: { type: integer }
+        serviceType: { type: string, enum: [radarr, sonarr] }
+        serviceId: { type: integer }
+        serviceName: { type: string }
+        is4k: { type: boolean }
+        mediaId: { type: integer }
+        tmdbId: { type: integer }
+        mediaType: { type: string, enum: [movie, tv] }
+        releaseTitle: { type: string }
+        warningMessages:
+          type: array
+          items: { type: string }
+        manualImportCapable: { type: boolean }
+        state: { type: string, enum: [active, rejecting, resolved] }
+        resolution:
+          type: string
+          nullable: true
+          enum:
+            [
+              recovered,
+              disappeared,
+              manual_blocklist,
+              automatic_blocklist,
+              manual_import,
+            ]
+        cleanupError: { type: string, nullable: true }
+        firstSeenAt: { type: string, format: date-time }
+        cleanupDeadlineAt: { type: string, format: date-time }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        actor:
+          type: object
+          nullable: true
+          properties:
+            id: { type: integer }
+            displayName: { type: string }
     PublicSettings:
       type: object
       required:
@@ -3445,6 +3513,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MainSettings'
+  /settings/servarr-interventions:
+    get:
+      summary: Get Servarr intervention cleanup settings
+      description: Requires `ADMIN`.
+      tags: [settings]
+      responses:
+        '200':
+          description: Current cleanup policy
+          content:
+            application/json:
+              schema:
+                { $ref: '#/components/schemas/ServarrInterventionSettings' }
+        '401': { description: Unauthorized }
+        '403': { description: Insufficient permission }
+    post:
+      summary: Update Servarr intervention cleanup settings
+      description: The grace period applies only to warnings detected after this change. Requires `ADMIN`.
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServarrInterventionSettings' }
+      responses:
+        '200': { description: Updated cleanup policy }
+        '400':
+          { description: Invalid boolean or grace period outside 1–720 hours }
+        '401': { description: Unauthorized }
+        '403': { description: Insufficient permission }
   /settings/network:
     get:
       summary: Get network settings
@@ -10303,6 +10400,92 @@ paths:
       responses:
         '204':
           description: Successfully removed media item
+  /servarr/interventions:
+    get:
+      summary: List Servarr interventions
+      description: Lists active warnings or only releases blocklisted by Foreseerr. Requires `MANAGE_REQUESTS`.
+      tags: [service]
+      parameters:
+        - in: query
+          name: mode
+          schema: { type: string, enum: [active, history], default: active }
+        - in: query
+          name: take
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - in: query
+          name: skip
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: serviceType
+          schema: { type: string, enum: [radarr, sonarr] }
+        - in: query
+          name: serviceId
+          schema: { type: integer }
+        - in: query
+          name: mediaType
+          schema: { type: string, enum: [movie, tv] }
+      responses:
+        '200':
+          description: Paginated intervention records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pageInfo: { $ref: '#/components/schemas/PageInfo' }
+                  results:
+                    type: array
+                    items: { $ref: '#/components/schemas/ServarrIntervention' }
+        '400': { description: Invalid query }
+        '401': { description: Unauthorized }
+        '403': { description: Insufficient permission }
+  /servarr/interventions/count:
+    get:
+      summary: Count active and unseen Servarr interventions
+      tags: [service]
+      responses:
+        '200':
+          description: Counts for the current manager
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active: { type: integer }
+                  unseen: { type: integer }
+        '401': { description: Unauthorized }
+        '403': { description: Insufficient permission }
+  /servarr/interventions/seen:
+    post:
+      summary: Mark current Servarr interventions seen for this manager
+      tags: [service]
+      responses:
+        '200': { description: Seen timestamp updated }
+        '401': { description: Unauthorized }
+        '403': { description: Insufficient permission }
+  /servarr/interventions/{interventionId}/reject:
+    post:
+      summary: Reject and release-blocklist one warning
+      description: Revalidates the exact mapped warning before deleting it from the client and blocklisting it in Arr. Requires `MANAGE_REQUESTS`.
+      tags: [service]
+      parameters:
+        - in: path
+          name: interventionId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Warning rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServarrIntervention' }
+        '400': { description: Invalid intervention ID }
+        '401': { description: Unauthorized }
+        '403': { description: Insufficient permission }
+        '404': { description: Intervention not found }
+        '409':
+          description: 'Warning is no longer active, mapped, or is already being rejected'
+        '502': { description: Arr or download-client rejection failed }
   /media/{mediaId}/servarr/context:
     get:
       summary: Get mapped Servarr management context
@@ -10542,8 +10725,11 @@ paths:
                         type: array
                         items:
                           type: integer
+                interventionId:
+                  type: integer
+                  description: Optional active intervention to resolve only after successful command completion.
       responses:
-        '200':
+        '202':
           description: Manual import command accepted
         '401':
           description: Unauthorized

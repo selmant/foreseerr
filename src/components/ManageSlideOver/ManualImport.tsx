@@ -25,12 +25,14 @@ const ManualImport = ({
   context,
   onChanged,
   refreshToken,
+  interventionId,
 }: {
   mediaId: number;
   is4k: boolean;
   context: ServarrContext;
   onChanged: () => void;
   refreshToken: number;
+  interventionId?: number;
 }) => {
   const { addToast } = useToasts();
   const sourcesAbortRef = useRef<AbortController | undefined>(undefined);
@@ -286,6 +288,7 @@ const ManualImport = ({
               candidateToken,
               episodeIds,
             })),
+          interventionId,
         },
         { signal: controller.signal }
       );

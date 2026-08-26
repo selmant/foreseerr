@@ -110,6 +110,34 @@ settingsRoutes.get('/network', (req, res) => {
   res.status(200).json(settings.network);
 });
 
+settingsRoutes.get('/servarr-interventions', (_req, res) => {
+  return res.json(getSettings().servarrInterventions);
+});
+
+settingsRoutes.post('/servarr-interventions', async (req, res, next) => {
+  const automaticCleanupEnabled = req.body.automaticCleanupEnabled;
+  const cleanupGraceHours = req.body.cleanupGraceHours;
+  if (
+    typeof automaticCleanupEnabled !== 'boolean' ||
+    !Number.isInteger(cleanupGraceHours) ||
+    cleanupGraceHours < 1 ||
+    cleanupGraceHours > 720
+  ) {
+    return next({
+      status: 400,
+      message:
+        'automaticCleanupEnabled must be boolean and cleanupGraceHours must be an integer from 1 to 720.',
+    });
+  }
+  const settings = getSettings();
+  settings.servarrInterventions = {
+    automaticCleanupEnabled,
+    cleanupGraceHours,
+  };
+  await settings.save();
+  return res.json(settings.servarrInterventions);
+});
+
 settingsRoutes.post('/network', async (req, res) => {
   const settings = getSettings();
 

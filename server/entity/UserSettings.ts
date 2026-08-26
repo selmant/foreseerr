@@ -3,6 +3,7 @@ import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults
 import { safeParseDiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
 import { hasNotificationType, Notification } from '@server/lib/notifications';
 import { NotificationAgentKey } from '@server/lib/settings';
+import { DbAwareColumn } from '@server/utils/DbColumnHelper';
 import {
   Column,
   Entity,
@@ -92,6 +93,9 @@ export class UserSettings {
 
   @Column({ type: 'integer', nullable: true })
   public autoCompleteSkippedEpisodeThreshold?: number;
+
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public servarrInterventionsSeenAt?: Date | null;
 
   @Column({ type: 'varchar', nullable: true, select: false })
   public traktAccessToken?: string;
