@@ -20,7 +20,6 @@ const messages = defineMessages('components.Library.LibraryPosterCard', {
   movie: 'Movie',
   series: 'Series',
   episode: 'Episode',
-  unwatchedRibbon: 'New',
 });
 
 interface LibraryPosterCardProps {
@@ -124,11 +123,9 @@ const LibraryPosterCard = ({
         {watchMark === 'unplayed' ? (
           <span
             data-testid="library-unplayed-pip"
-            className="pointer-events-none absolute -right-9 top-3.5 z-10 w-28 rotate-45 bg-emerald-400 py-0.5 text-center text-[9px] font-extrabold uppercase tracking-widest text-gray-950 shadow"
+            className="pointer-events-none absolute -right-9 top-3.5 z-10 h-2.5 w-28 rotate-45 bg-emerald-400 shadow"
             aria-hidden
-          >
-            {intl.formatMessage(messages.unwatchedRibbon)}
-          </span>
+          />
         ) : null}
         {watchMark === 'watched' ? (
           <span
