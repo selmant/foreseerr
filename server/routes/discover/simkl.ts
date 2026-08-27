@@ -79,8 +79,9 @@ const trendingFile = (mediaType: string, period: string): string => {
 
 simklDiscoverRoutes.get('/library', async (req, res, next) => {
   if (!req.user?.id) return next({ status: 401, message: 'Unauthorized' });
+  const userId = req.user.id;
   const result = await syncSimklUser(
-    req.user.id,
+    userId,
     String(req.query.refresh) === 'true'
   );
   const status =
@@ -99,7 +100,7 @@ simklDiscoverRoutes.get('/library', async (req, res, next) => {
           : ['movie', 'show', 'anime'];
   const rows = await getRepository(SimklSyncItem)
     .createQueryBuilder('item')
-    .where('item.userId = :userId', { userId: req.user.id })
+    .where('item.userId = :userId', { userId })
     .andWhere('item.simklType IN (:...types)', { types })
     .andWhere(status ? 'item.status = :status' : '1=1', { status })
     .orderBy('item.addedAt', 'DESC', 'NULLS LAST')
@@ -121,7 +122,7 @@ simklDiscoverRoutes.get('/library', async (req, res, next) => {
             .set({ tmdbId: item.tmdbId })
             .where('simklId = :simklId AND userId = :userId', {
               simklId: item.sourceId,
-              userId: req.user.id,
+              userId,
             })
             .execute()
         : Promise.resolve()
