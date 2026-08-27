@@ -1,7 +1,9 @@
 import SimklAPI from '@server/api/simkl';
+import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  assignWorkingTmdbMediaType,
   catalogWatchlistItems,
   fillMissingTmdbIds,
   paginateWatchlist,
@@ -248,5 +250,25 @@ describe('simkl catalog mapping', () => {
     );
     assert.equal(unwrapped.title, 'Charmed');
     assert.equal(unwrapped.status, 'plantowatch');
+  });
+
+  it('flips Simkl tv items to movie when only the movie TMDB id works', async () => {
+    const items: WatchlistItem[] = [
+      {
+        id: 378064,
+        ratingKey: 'simkl-best-1',
+        tmdbId: 378064,
+        mediaType: 'tv',
+        title: 'A Silent Voice',
+        source: 'simkl',
+        sourceId: '1',
+      },
+    ];
+    const resolved = await assignWorkingTmdbMediaType(
+      items,
+      async (kind) => kind === 'movie'
+    );
+    assert.equal(resolved[0].mediaType, 'movie');
+    assert.equal(resolved[0].tmdbId, 378064);
   });
 });

@@ -1,4 +1,5 @@
 import SimklAPI from '@server/api/simkl';
+import type TheMovieDb from '@server/api/themoviedb';
 import { getRepository } from '@server/datasource';
 import {
   SimklSyncItem,
@@ -8,12 +9,14 @@ import type {
   WatchlistItem,
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
+import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import {
   hasDiscoverTmdbId,
   omitUnmappedDiscoverItems,
   shouldHideUnmappedFromQuery,
 } from '@server/lib/discover/unmapped';
 import {
+  assignWorkingTmdbMediaType,
   catalogWatchlistItems,
   fillMissingTmdbIds,
   paginateWatchlist,
@@ -54,17 +57,36 @@ const loadSimklTitle =
   (client: SimklAPI) => (kind: 'movies' | 'tv' | 'anime', simklId: string) =>
     client.getTitle(kind, simklId);
 
+const tmdbExists =
+  (tmdb: TheMovieDb) =>
+  async (mediaType: 'movie' | 'tv', tmdbId: number): Promise<boolean> => {
+    try {
+      if (mediaType === 'movie') await tmdb.getMovie({ movieId: tmdbId });
+      else await tmdb.getTvShow({ tvId: tmdbId });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
 async function mappedCatalogPage(
   items: WatchlistItem[],
   page: number,
   hideUnmapped: boolean
 ) {
   const paged = paginateWatchlist(items, page);
-  const results = omitUnmappedDiscoverItems(
-    await fillMissingTmdbIds(paged.results, loadSimklTitle(new SimklAPI())),
-    hideUnmapped
+  const filled = await fillMissingTmdbIds(
+    paged.results,
+    loadSimklTitle(new SimklAPI())
   );
-  return { ...paged, results };
+  const typed = await assignWorkingTmdbMediaType(
+    filled,
+    tmdbExists(createTmdbWithRegionLanguage())
+  );
+  return {
+    ...paged,
+    results: omitUnmappedDiscoverItems(typed, hideUnmapped),
+  };
 }
 
 const trendingFile = (mediaType: string, period: string): string => {
@@ -108,8 +130,16 @@ simklDiscoverRoutes.get('/library', async (req, res, next) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const start = (page - 1) * 20;
   const slice = rows.slice(start, start + 20).map(toWatchlistItem);
+  const filled = await fillMissingTmdbIds(
+    slice,
+    loadSimklTitle(new SimklAPI())
+  );
+  const typed = await assignWorkingTmdbMediaType(
+    filled,
+    tmdbExists(createTmdbWithRegionLanguage(req.user))
+  );
   const results = omitUnmappedDiscoverItems(
-    await fillMissingTmdbIds(slice, loadSimklTitle(new SimklAPI())),
+    typed,
     shouldHideUnmappedFromQuery(req.query)
   );
   const repository = getRepository(SimklSyncItem);

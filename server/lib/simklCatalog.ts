@@ -267,3 +267,26 @@ export async function fillMissingTmdbIds(
     }
   });
 }
+
+/** Prefer the Simkl hint, then the other TMDB catalog, so anime films map as movies. */
+export async function assignWorkingTmdbMediaType(
+  items: WatchlistItem[],
+  probe: (mediaType: 'movie' | 'tv', tmdbId: number) => Promise<boolean>
+): Promise<WatchlistItem[]> {
+  return mapWithConcurrency(items, 2, async (item) => {
+    if (!hasDiscoverTmdbId(item.tmdbId)) return item;
+    const tmdbId = item.tmdbId;
+    const order: ('movie' | 'tv')[] =
+      item.mediaType === 'movie' ? ['movie', 'tv'] : ['tv', 'movie'];
+    for (const mediaType of order) {
+      if (await probe(mediaType, tmdbId)) {
+        return { ...item, mediaType, id: tmdbId };
+      }
+    }
+    return {
+      ...item,
+      id: Number(item.sourceId) || 0,
+      tmdbId: undefined,
+    };
+  });
+}
