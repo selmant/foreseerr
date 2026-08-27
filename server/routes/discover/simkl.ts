@@ -66,10 +66,18 @@ const tmdbTitle =
     try {
       if (mediaType === 'movie') {
         const movie = await tmdb.getMovie({ movieId: tmdbId });
-        return movie.title || false;
+        return (
+          [movie.title, movie.original_title]
+            .filter((value) => typeof value === 'string' && value.trim())
+            .join(' | ') || false
+        );
       }
       const show = await tmdb.getTvShow({ tvId: tmdbId });
-      return show.name || false;
+      return (
+        [show.name, show.original_name]
+          .filter((value) => typeof value === 'string' && value.trim())
+          .join(' | ') || false
+      );
     } catch {
       return false;
     }

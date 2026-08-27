@@ -330,4 +330,42 @@ describe('simkl catalog mapping', () => {
     );
     assert.equal(resolved[0].tmdbId, undefined);
   });
+
+  it('keeps anime films when Simkl romaji overlaps the TMDB English title', async () => {
+    const items: WatchlistItem[] = [
+      {
+        id: 822653,
+        ratingKey: 'simkl-premieres-madoka',
+        tmdbId: 822653,
+        mediaType: 'movie',
+        title: 'Gekijouban Mahou Shoujo Madoka Magica: Walpurgis no Kaiten',
+        source: 'simkl',
+        sourceId: '1621829',
+      },
+    ];
+    const resolved = await assignWorkingTmdbMediaType(items, async (kind) =>
+      kind === 'movie'
+        ? 'Puella Magi Madoka Magica the Movie -Walpurgisnacht: Rising-'
+        : false
+    );
+    assert.equal(resolved[0].mediaType, 'movie');
+    assert.equal(resolved[0].tmdbId, 822653);
+  });
+
+  it('maps Simkl anime_type movie as a movie', () => {
+    const payload = [
+      {
+        title: 'Gekijouban Mahou Shoujo Madoka Magica: Walpurgis no Kaiten',
+        anime_type: 'movie',
+        url: '/anime/1621829/gekijouban-mahou-shoujo-madoka-magica-walpurgis-no-kaiten',
+        ids: { simkl_id: 1621829, slug: 'madoka' },
+      },
+    ];
+    const results = catalogWatchlistItems(
+      [payload],
+      'anime',
+      'simkl-premieres'
+    );
+    assert.equal(results[0].mediaType, 'movie');
+  });
 });

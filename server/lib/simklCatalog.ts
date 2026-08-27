@@ -205,7 +205,11 @@ export const toCatalogWatchlistItem = (
   const title = catalogTitle(item);
   if (!id || !title) return null;
   const mediaType =
-    String(item.type) === 'movie' || typeHint === 'movie' ? 'movie' : 'tv';
+    String(item.type) === 'movie' ||
+    String(item.anime_type) === 'movie' ||
+    typeHint === 'movie'
+      ? 'movie'
+      : 'tv';
   const tmdbId = tmdbIdFromIds(ids);
   const poster = simklPosterUrl(
     typeof item.poster === 'string' ? item.poster : undefined
@@ -289,11 +293,40 @@ export async function fillMissingTmdbIds(
 const normalizeTitle = (value: string): string =>
   value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
+const TITLE_STOPWORDS = new Set([
+  'the',
+  'and',
+  'movie',
+  'season',
+  'show',
+  'series',
+  'vol',
+  'volume',
+]);
+
+const titleTokens = (value: string): Set<string> =>
+  new Set(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 4 && !TITLE_STOPWORDS.has(token))
+  );
+
 export const simklTitlesMatch = (left: string, right: string): boolean => {
   const a = normalizeTitle(left);
   const b = normalizeTitle(right);
   if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  const leftTokens = titleTokens(left);
+  const rightTokens = titleTokens(right);
+  let overlap = 0;
+  let longHit = false;
+  for (const token of leftTokens) {
+    if (!rightTokens.has(token)) continue;
+    overlap += 1;
+    if (token.length >= 6) longHit = true;
+  }
+  return overlap >= 2 || (overlap === 1 && longHit);
 };
 
 /** Prefer the Simkl hint, then the other TMDB catalog, so anime films map as movies. */
