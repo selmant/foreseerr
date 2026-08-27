@@ -19,8 +19,9 @@ const DiscoverSimkl = () => {
     error,
   } = useDiscover<WatchlistItem>(
     settings.currentSettings.simklConfigured
-      ? '/api/v1/discover/simkl/library?status=plantowatch'
-      : ''
+      ? '/api/v1/discover/simkl/library'
+      : '',
+    { status: 'plantowatch' }
   );
   if (!settings.currentSettings.simklConfigured)
     return <ErrorPage statusCode={404} />;

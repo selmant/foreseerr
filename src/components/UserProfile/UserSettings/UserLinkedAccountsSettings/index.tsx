@@ -583,6 +583,7 @@ const UserLinkedAccountsSettings = () => {
           <ul className="mt-4 space-y-3">
             {settings.currentSettings.traktConfigured && (
               <li className="flex items-center gap-4 overflow-hidden rounded-lg bg-gray-800/50 px-4 py-4 shadow ring-1 ring-gray-700 sm:px-6">
+                <TraktLogo className="h-7 w-7" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-bold text-gray-200">
                     Trakt
@@ -609,6 +610,7 @@ const UserLinkedAccountsSettings = () => {
             )}
             {settings.currentSettings.anilistConfigured && (
               <li className="flex items-center gap-4 overflow-hidden rounded-lg bg-gray-800/50 px-4 py-4 shadow ring-1 ring-gray-700 sm:px-6">
+                <AnilistLogo className="h-7 w-7" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <div className="truncate text-sm font-bold text-gray-200">

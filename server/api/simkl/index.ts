@@ -101,16 +101,18 @@ export default class SimklAPI extends ExternalAPI {
   ): Promise<T> {
     await this.pace(method === 'post');
     const separator = path.includes('?') ? '&' : '?';
-    const requestPath = `${path}${separator}client_id=${encodeURIComponent(this.clientId)}`;
+    const requiredParameters = new URLSearchParams({
+      client_id: this.clientId,
+      'app-name': 'foreseerr',
+      'app-version': getAppVersion(),
+    });
+    const requestPath = `${path}${separator}${requiredParameters}`;
     for (let attempt = 0; ; attempt++) {
       try {
         const response =
           method === 'get'
             ? await this.rawAxios.get<T>(requestPath)
-            : await this.rawAxios.post<T>(requestPath, {
-                ...(body as object),
-                client_id: this.clientId,
-              });
+            : await this.rawAxios.post<T>(requestPath, body);
         return response.data;
       } catch (error) {
         const status = axios.isAxiosError(error)
