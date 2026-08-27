@@ -180,12 +180,14 @@ const sourceUrl = (
   return `https://simkl.com/${kind}/${encodeURIComponent(slug)}`;
 };
 
-/** Simkl ranks YouTube let's-plays (e.g. RDR2) in /tv/best; they are not requestable TV. */
+/** Simkl ranks YouTube let's-plays (e.g. RDR2, GTA V) in /tv/best; they are not requestable TV. */
 export const isSimklVideoGamePlay = (
   item: Record<string, unknown>
 ): boolean => {
   const type = String(item.type ?? '').toLowerCase();
   if (type === 'game') return true;
+  const network = String(item.network ?? '').toLowerCase();
+  if (network === 'youtube') return true;
   const genres = Array.isArray(item.genres) ? item.genres : [];
   return genres.some((genre) =>
     String(genre).toLowerCase().includes('video game')

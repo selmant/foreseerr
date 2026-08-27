@@ -306,8 +306,9 @@ describe('simkl catalog mapping', () => {
     assert.equal(items.length, 1);
     const filled = await fillMissingTmdbIds(items, async () => ({
       type: 'show',
-      genres: ['Action', 'Adventure', 'Drama', 'Video Game Play', 'Western'],
-      ids: { tmdb: '313612' },
+      network: 'YouTube',
+      genres: ['Action', 'Adventure', 'Comedy', 'Crime', 'Drama'],
+      ids: { tmdb: '311986' },
     }));
     assert.equal(filled.length, 0);
   });
