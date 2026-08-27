@@ -14,6 +14,7 @@ import {
   episodeWriteResult,
 } from '@server/lib/mediaActions/episodeWrite';
 import { jellyfinEpisodeActions } from '@server/lib/mediaActions/jellyfin';
+import { simklEpisodeActions } from '@server/lib/mediaActions/simklEpisodes';
 import { traktEpisodeActions } from '@server/lib/mediaActions/traktEpisodes';
 import logger from '@server/logger';
 import { Router, type RequestHandler } from 'express';
@@ -173,23 +174,29 @@ mediaActionsRoutes.get(
       if ('error' in parsed) {
         return next({ status: 400, message: parsed.error });
       }
-      const [traktStatus, jellyfinStatus, anilistStatus] = await Promise.all([
-        traktEpisodeActions.getSeasonStatus(
-          req.user.id,
-          parsed.tmdbId,
-          parsed.seasonNumber
-        ),
-        jellyfinEpisodeActions.getSeasonStatus(
-          req.user.id,
-          parsed.tmdbId,
-          parsed.seasonNumber
-        ),
-        anilistEpisodeActions.getSeasonStatus(
-          req.user.id,
-          parsed.tmdbId,
-          parsed.seasonNumber
-        ),
-      ]);
+      const [traktStatus, jellyfinStatus, anilistStatus, simklStatus] =
+        await Promise.all([
+          traktEpisodeActions.getSeasonStatus(
+            req.user.id,
+            parsed.tmdbId,
+            parsed.seasonNumber
+          ),
+          jellyfinEpisodeActions.getSeasonStatus(
+            req.user.id,
+            parsed.tmdbId,
+            parsed.seasonNumber
+          ),
+          anilistEpisodeActions.getSeasonStatus(
+            req.user.id,
+            parsed.tmdbId,
+            parsed.seasonNumber
+          ),
+          simklEpisodeActions.getSeasonStatus(
+            req.user.id,
+            parsed.tmdbId,
+            parsed.seasonNumber
+          ),
+        ]);
 
       const allWatched = new Set<number>();
       for (const ep of traktStatus.watchedEpisodeNumbers) {
@@ -201,12 +208,14 @@ mediaActionsRoutes.get(
       for (const ep of anilistStatus.watchedEpisodeNumbers) {
         allWatched.add(ep);
       }
+      for (const ep of simklStatus.watchedEpisodeNumbers) allWatched.add(ep);
 
       return res.status(200).json({
         available:
           traktStatus.available ||
           jellyfinStatus.available ||
-          anilistStatus.available,
+          anilistStatus.available ||
+          simklStatus.available,
         watchedEpisodeNumbers: Array.from(allWatched).sort((a, b) => a - b),
       });
     } catch (error) {
@@ -231,12 +240,17 @@ const setEpisodeWatched =
         return next({ status: 400, message: 'Invalid episode identifiers.' });
       }
 
-      const [traktAvailable, jellyfinAvailable, anilistAvailable] =
-        await Promise.all([
-          traktEpisodeActions.isAvailable(req.user.id),
-          jellyfinEpisodeActions.isAvailable(req.user.id),
-          anilistEpisodeActions.isAvailable(req.user.id),
-        ]);
+      const [
+        traktAvailable,
+        jellyfinAvailable,
+        anilistAvailable,
+        simklAvailable,
+      ] = await Promise.all([
+        traktEpisodeActions.isAvailable(req.user.id),
+        jellyfinEpisodeActions.isAvailable(req.user.id),
+        anilistEpisodeActions.isAvailable(req.user.id),
+        simklEpisodeActions.isAvailable(req.user.id),
+      ]);
       const directJellyfinItem = jellyfinItemIdSchema.safeParse(
         req.body?.jellyfinItemId
       );
@@ -283,6 +297,21 @@ const setEpisodeWatched =
             'anilist',
             watched,
             anilistEpisodeActions.setWatched(
+              req.user.id,
+              parsed.tmdbId,
+              parsed.seasonNumber,
+              parsed.episodeNumber,
+              watched
+            )
+          )
+        );
+      }
+      if (simklAvailable) {
+        actions.push(
+          episodeWriteResult(
+            'simkl',
+            watched,
+            simklEpisodeActions.setWatched(
               req.user.id,
               parsed.tmdbId,
               parsed.seasonNumber,

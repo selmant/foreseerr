@@ -1,5 +1,6 @@
 import AnilistAPI from '@server/api/anilist';
 import MdblistAPI from '@server/api/mdblist';
+import SimklAPI from '@server/api/simkl';
 import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
@@ -47,6 +48,7 @@ export interface IntegrationHealthResponse {
   trakt: TraktIntegrationHealth;
   mdblist: IntegrationHealth;
   anilist: IntegrationHealth;
+  simkl: IntegrationHealth;
 }
 
 let cachedHealth: {
@@ -224,6 +226,18 @@ const checkAnilist = async (): Promise<IntegrationHealth> => {
   }
 };
 
+const checkSimkl = async (): Promise<IntegrationHealth> => {
+  if (!getSettings().simkl.clientId.trim()) {
+    return notConfigured('Simkl Client ID is not configured.');
+  }
+  try {
+    await new SimklAPI().validateClientId();
+    return healthy('Simkl is reachable and the Client ID was accepted.');
+  } catch {
+    return degraded('Simkl could not accept the saved Client ID.');
+  }
+};
+
 export const getIntegrationHealth =
   async (): Promise<IntegrationHealthResponse> => {
     if (cachedHealth && cachedHealth.expiresAt > Date.now()) {
@@ -232,17 +246,19 @@ export const getIntegrationHealth =
 
     const provider =
       getSettings().trakt.provider === 'jellyfin' ? 'jellyfin' : 'direct';
-    const [direct, jellyfin, mdblist, anilist] = await Promise.all([
+    const [direct, jellyfin, mdblist, anilist, simkl] = await Promise.all([
       checkDirectTrakt(),
       checkJellyfinTrakt(),
       checkMdblist(),
       checkAnilist(),
+      checkSimkl(),
     ]);
     const active = provider === 'jellyfin' ? jellyfin : direct;
     const value: IntegrationHealthResponse = {
       trakt: { provider, ...active, direct, jellyfin },
       mdblist,
       anilist,
+      simkl,
     };
 
     cachedHealth = { value, expiresAt: Date.now() + HEALTH_CHECK_TTL_MS };

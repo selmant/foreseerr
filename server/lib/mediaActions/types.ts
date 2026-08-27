@@ -1,6 +1,6 @@
 export type MediaActionMediaType = 'movie' | 'tv';
 
-export type MediaActionProviderId = 'trakt' | 'jellyfin' | 'anilist';
+export type MediaActionProviderId = 'trakt' | 'jellyfin' | 'anilist' | 'simkl';
 
 export interface MediaActionOperationCapabilities {
   readWatched: boolean;
@@ -26,6 +26,14 @@ export const JELLYFIN_MEDIA_ACTION_CAPABILITIES: MediaActionOperationCapabilitie
   };
 
 export const ANILIST_MEDIA_ACTION_CAPABILITIES: MediaActionOperationCapabilities =
+  {
+    readWatched: true,
+    writeWatched: true,
+    readRating: true,
+    writeRating: true,
+  };
+
+export const SIMKL_MEDIA_ACTION_CAPABILITIES: MediaActionOperationCapabilities =
   {
     readWatched: true,
     writeWatched: true,

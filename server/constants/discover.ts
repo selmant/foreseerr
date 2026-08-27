@@ -36,6 +36,8 @@ export enum DiscoverSliderType {
   ANILIST_TOP,
   ANILIST_NEXT_SEASON,
   MDBLIST_LIST,
+  SIMKL_TRENDING,
+  SIMKL_PLAN_TO_WATCH,
 }
 
 export const defaultSliders: Partial<DiscoverSlider>[] = [
@@ -176,5 +178,17 @@ export const defaultSliders: Partial<DiscoverSlider>[] = [
     enabled: true,
     isBuiltIn: true,
     order: 22,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_TRENDING,
+    enabled: true,
+    isBuiltIn: true,
+    order: 23,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_PLAN_TO_WATCH,
+    enabled: true,
+    isBuiltIn: true,
+    order: 24,
   },
 ];

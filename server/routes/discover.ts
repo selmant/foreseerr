@@ -7,6 +7,7 @@ import { Router } from 'express';
 import anilistDiscoverRoutes from './discover/anilist';
 import mdblistDiscoverRoutes from './discover/mdblist';
 import plexDiscoverRoutes from './discover/plex';
+import simklDiscoverRoutes from './discover/simkl';
 import tmdbDiscoverRoutes from './discover/tmdb';
 import traktDiscoverRoutes from './discover/trakt';
 
@@ -31,5 +32,6 @@ discoverRoutes.use('/mdblist', mdblistDiscoverRoutes);
 discoverRoutes.use('/watchlist', plexDiscoverRoutes);
 discoverRoutes.use(tmdbDiscoverRoutes);
 discoverRoutes.use('/trakt', traktDiscoverRoutes);
+discoverRoutes.use('/simkl', simklDiscoverRoutes);
 
 export default discoverRoutes;

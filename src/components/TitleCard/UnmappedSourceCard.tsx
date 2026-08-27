@@ -1,6 +1,7 @@
 import AnilistLogo from '@app/assets/services/anilist.svg';
 import MdblistLogo from '@app/assets/services/mdblist.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
+import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
@@ -18,6 +19,7 @@ const SOURCE_MARKS: Record<
 > = {
   trakt: { Logo: TraktLogo, label: 'Trakt' },
   anilist: { Logo: AnilistLogo, label: 'AniList' },
+  simkl: { Logo: SimklLogo, label: 'Simkl' },
   mdblist: { Logo: MdblistLogo, label: 'MDBList' },
   plex: { Logo: PlexLogo, label: 'Plex' },
 };

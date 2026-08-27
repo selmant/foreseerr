@@ -45,6 +45,7 @@ Shipped on top of Seerr (requests stay manual; no scheduled auto-request bot):
 - **Trakt Discover** — recommendations, watchlist, history, and pin public or personal lists
 - **AniList Discover** — trending, this season, popular, top 100, next season; linked watching / planning / completed and custom lists
 - **MDBList** — IMDb / RT / Metacritic / Trakt community badges and filters, plus pin public lists as custom Discover rows
+- **Simkl** — PIN-linked library synchronization, watched/rating actions, and Trending, Best, and Premieres discovery
 - Watched / unwatched / score actions (Trakt, optional AniList, Jellyfin where linked)
 - Further SuggestArr-style Discover and settings work — not LLM recommendations
 

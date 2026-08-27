@@ -8,7 +8,8 @@ export type RatingBadgeSource =
   | 'rt'
   | 'rt-user'
   | 'metacritic'
-  | 'trakt-community';
+  | 'trakt-community'
+  | 'simkl-community';
 
 export type RtCriticsState = 'Certified Fresh' | 'Fresh' | 'Rotten';
 export type RtAudienceState = 'Upright' | 'Spilled';
@@ -95,6 +96,18 @@ export function buildRatingBadges(
       label: 'Trakt',
       value,
       title: `Trakt Community Score (${value})`,
+    });
+  }
+
+  // Simkl ratings only accompany Simkl-sourced details; no global lookup is made.
+  if (ratings?.simkl?.rating != null) {
+    const value = Number(ratings.simkl.rating).toFixed(1);
+    badges.push({
+      key: 'simkl-community',
+      label: 'Simkl',
+      value,
+      title: `Simkl Community Score (${value})`,
+      href: ratings.simkl.url,
     });
   }
 

@@ -1,6 +1,7 @@
 import AnilistAPI from '@server/api/anilist';
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
+import SimklAPI, { SimklNotConfiguredError } from '@server/api/simkl';
 import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
@@ -29,6 +30,14 @@ import { invalidateUserAnilistSyncCache } from '@server/lib/mediaActions/anilist
 import { invalidateUserSyncCache } from '@server/lib/mediaActions/syncCache';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
+import {
+  SimklAccountAlreadyLinkedError,
+  assertSimklAccountAvailable,
+  clearUserSimklCredentials,
+  clearUserSimklSyncCache,
+  getUserSimklSettings,
+} from '@server/lib/simkl';
+import { syncSimklUser } from '@server/lib/simklSync';
 import {
   optionalSkippedEpisodeProgressThreshold,
   skippedEpisodeProgressThreshold,
@@ -69,6 +78,15 @@ import { Not } from 'typeorm';
 import { canMakePermissionsChange } from '.';
 
 const userSettingsRoutes = Router({ mergeParams: true });
+
+type SimklPinSession = {
+  expiresAt: number;
+  intervalSeconds: number;
+  lastPollAt: number;
+};
+const simklPinSessions = new Map<string, SimklPinSession>();
+const simklPinKey = (userId: number, deviceCode: string) =>
+  `${userId}:${deviceCode}`;
 
 function userActionsEnabled(value?: boolean | null): boolean {
   return value !== false;
@@ -124,6 +142,16 @@ async function getTraktLinkedAccountPayload(
   };
 }
 
+async function getSimklLinkedAccountPayload(userId: number) {
+  const settings = await getUserSimklSettings(userId);
+  const connected = Boolean(settings?.simklAccessToken);
+  return {
+    connected,
+    username: connected ? (settings?.simklUsername ?? null) : null,
+    actionsEnabled: settings?.mediaActionsSimklEnabled !== false,
+  };
+}
+
 function getAnilistAuthorizeUrl(): string | null {
   try {
     const { clientId } = getAnilistAppCredentials();
@@ -154,7 +182,10 @@ async function getAnilistLinkedAccountPayload(userId: number) {
 async function patchLinkedAccountActions(
   userId: number,
   actorId: number | undefined,
-  field: 'mediaActionsTraktEnabled' | 'mediaActionsAnilistEnabled',
+  field:
+    | 'mediaActionsTraktEnabled'
+    | 'mediaActionsAnilistEnabled'
+    | 'mediaActionsSimklEnabled',
   actionsEnabled: unknown
 ): Promise<{ status: number; message?: string }> {
   if (userId === 1 && actorId !== 1) {
@@ -1024,6 +1055,190 @@ userSettingsRoutes.delete<{ id: string }>(
     } catch (e) {
       next({ status: 500, message: e.message });
     }
+  }
+);
+
+userSettingsRoutes.get<{ id: string }>(
+  '/linked-accounts/simkl',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      return res
+        .status(200)
+        .json(await getSimklLinkedAccountPayload(Number(req.params.id)));
+    } catch (e) {
+      return next({
+        status: 500,
+        message:
+          e instanceof Error ? e.message : 'Unable to load Simkl account.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.patch<{ id: string }>(
+  '/linked-accounts/simkl',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const result = await patchLinkedAccountActions(
+        Number(req.params.id),
+        req.user?.id,
+        'mediaActionsSimklEnabled',
+        req.body.actionsEnabled
+      );
+      if (result.status !== 200) return next(result);
+      return res
+        .status(200)
+        .json(await getSimklLinkedAccountPayload(Number(req.params.id)));
+    } catch (e) {
+      return next({
+        status: 500,
+        message:
+          e instanceof Error ? e.message : 'Unable to update Simkl account.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/simkl/pin/code',
+  isOwnProfile(),
+  async (req, res) => {
+    try {
+      const pin = await new SimklAPI().requestPinCode();
+      const userCode = pin.user_code ?? pin.code;
+      if (!userCode) {
+        return res.status(502).json({
+          message: 'Simkl returned an invalid PIN response.',
+        });
+      }
+      const userId = Number(req.params.id);
+      simklPinSessions.set(simklPinKey(userId, userCode), {
+        expiresAt:
+          Date.now() + Math.max(1, pin.expires_in ?? pin.expires ?? 600) * 1000,
+        intervalSeconds: Math.max(1, pin.interval ?? 5),
+        lastPollAt: 0,
+      });
+      return res.status(200).json({
+        userCode,
+        verificationUri: pin.url ?? 'https://simkl.com/pin/',
+        expiresIn: pin.expires_in ?? pin.expires ?? 600,
+        interval: pin.interval ?? 5,
+        // Opaque value only consumed by the server on the token endpoint.
+        deviceCode: userCode,
+      });
+    } catch (e) {
+      return res.status(e instanceof SimklNotConfiguredError ? 400 : 500).json({
+        message:
+          e instanceof Error
+            ? e.message
+            : 'Unable to start Simkl authorization.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/simkl/pin/token',
+  isOwnProfile(),
+  async (req, res) => {
+    const userId = Number(req.params.id);
+    const deviceCode = String(req.body.deviceCode ?? '').trim();
+    const key = simklPinKey(userId, deviceCode);
+    const session = simklPinSessions.get(key);
+    if (!deviceCode || !session)
+      return res
+        .status(400)
+        .json({ message: 'Invalid or missing PIN session.' });
+    if (session.expiresAt <= Date.now()) {
+      simklPinSessions.delete(key);
+      return res.status(410).json({ status: 'expired' });
+    }
+    const elapsed = Date.now() - session.lastPollAt;
+    if (session.lastPollAt && elapsed < session.intervalSeconds * 1000) {
+      return res.status(429).json({
+        status: 'pending',
+        retryAfterSeconds: Math.ceil(
+          (session.intervalSeconds * 1000 - elapsed) / 1000
+        ),
+      });
+    }
+    session.lastPollAt = Date.now();
+    try {
+      const result = await new SimklAPI().pollPinToken(deviceCode);
+      const accessToken = result.access_token ?? result.token;
+      if (!accessToken) {
+        if (result.error === 'expired_token') {
+          simklPinSessions.delete(key);
+          return res.status(410).json({ status: 'expired' });
+        }
+        if (result.error === 'access_denied') {
+          simklPinSessions.delete(key);
+          return res.status(409).json({ status: 'denied' });
+        }
+        return res.status(202).json({ status: 'pending' });
+      }
+      const client = new SimklAPI({ accessToken });
+      const profile = await client.getUserSettings();
+      const account = profile.user ?? profile.account;
+      const simklUserId = account?.id == null ? '' : String(account.id);
+      if (!simklUserId)
+        return res
+          .status(502)
+          .json({ message: 'Simkl returned an invalid account response.' });
+      await assertSimklAccountAvailable(simklUserId, userId);
+      const userSettings = await ensureUserSettings(userId);
+      userSettings.simklAccessToken = accessToken;
+      userSettings.simklUserId = simklUserId;
+      userSettings.simklUsername =
+        account?.username ?? account?.name ?? undefined;
+      await getRepository(UserSettings).save(userSettings);
+      simklPinSessions.delete(key);
+      return res.status(200).json({
+        status: 'authorized',
+        username: userSettings.simklUsername ?? null,
+      });
+    } catch (e) {
+      if (e instanceof SimklAccountAlreadyLinkedError)
+        return res.status(409).json({ message: e.message });
+      return res.status(e instanceof SimklNotConfiguredError ? 400 : 500).json({
+        message:
+          e instanceof Error
+            ? e.message
+            : 'Unable to complete Simkl authorization.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.delete<{ id: string }>(
+  '/linked-accounts/simkl',
+  isOwnProfileOrAdmin(),
+  async (req, res, next) => {
+    try {
+      const settings = await getUserSimklSettings(Number(req.params.id));
+      if (settings) {
+        await clearUserSimklCredentials(settings.id);
+        await clearUserSimklSyncCache(Number(req.params.id));
+      }
+      return res.status(204).send();
+    } catch (e) {
+      return next({
+        status: 500,
+        message:
+          e instanceof Error ? e.message : 'Unable to unlink Simkl account.',
+      });
+    }
+  }
+);
+
+userSettingsRoutes.post<{ id: string }>(
+  '/linked-accounts/simkl/sync',
+  isOwnProfileOrAdmin(),
+  async (req, res) => {
+    const result = await syncSimklUser(Number(req.params.id), true);
+    return res.status(result.stale ? 503 : 200).json(result);
   }
 );
 

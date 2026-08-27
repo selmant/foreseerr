@@ -17,6 +17,7 @@ export const MEDIA_ACTION_PROVIDER_LABELS: Record<string, string> = {
   trakt: 'Trakt',
   jellyfin: 'Jellyfin',
   anilist: 'AniList',
+  simkl: 'Simkl',
 };
 
 export function failedProviderLabels(

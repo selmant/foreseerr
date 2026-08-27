@@ -14,6 +14,7 @@ import NetworkSlider from '@app/components/Discover/NetworkSlider';
 import PlexWatchlistSlider from '@app/components/Discover/PlexWatchlistSlider';
 import RecentRequestsSlider from '@app/components/Discover/RecentRequestsSlider';
 import RecentlyAddedSlider from '@app/components/Discover/RecentlyAddedSlider';
+import SimklSlider from '@app/components/Discover/SimklSlider';
 import StudioSlider from '@app/components/Discover/StudioSlider';
 import TraktHistorySlider from '@app/components/Discover/TraktHistorySlider';
 import TraktListSlider from '@app/components/Discover/TraktListSlider';
@@ -419,6 +420,27 @@ const Discover = () => {
                 sliderKey={`custom-slider-${slider.id}`}
                 title={slider.title ?? ''}
                 url={slider.data ?? ''}
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_PLAN_TO_WATCH:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simklplantowatch)}
+                endpoint="/api/v1/discover/simkl/library?status=plantowatch"
+                linkUrl="/discover/simkl?status=plantowatch"
+                sliderKey="simkl-plan-to-watch"
+                requiresLink
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_TRENDING:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simkltrending)}
+                endpoint="/api/v1/discover/simkl/trending"
+                linkUrl="/discover/simkl"
+                sliderKey="simkl-trending"
               />
             );
             break;

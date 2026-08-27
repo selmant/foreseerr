@@ -2,6 +2,7 @@ import AnilistLogo from '@app/assets/services/anilist.svg';
 import EmbyLogo from '@app/assets/services/emby-icon-only.svg';
 import JellyfinLogo from '@app/assets/services/jellyfin-icon.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
+import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
@@ -11,6 +12,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
 import LinkAnilistModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkAnilistModal';
 import LinkJellyfinQuickConnectModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkJellyfinQuickConnectModal';
+import LinkSimklModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkSimklModal';
 import LinkTraktModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkTraktModal';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
@@ -73,6 +75,7 @@ enum LinkedAccountType {
   Emby = 'Emby',
   Trakt = 'Trakt',
   Anilist = 'AniList',
+  Simkl = 'Simkl',
 }
 
 type LinkedAccount = {
@@ -182,11 +185,21 @@ const UserLinkedAccountsSettings = () => {
       ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt?includePluginStatus=true`
       : null
   );
+  const { data: simklStatus, mutate: revalidateSimkl } = useSWR<{
+    connected: boolean;
+    username: string | null;
+    actionsEnabled?: boolean;
+  }>(
+    user && settings.currentSettings.simklConfigured
+      ? `/api/v1/user/${user.id}/settings/linked-accounts/simkl`
+      : null
+  );
   const [showJellyfinModal, setShowJellyfinModal] = useState(false);
   const [showJellyfinQuickConnectModal, setShowJellyfinQuickConnectModal] =
     useState(false);
   const [showTraktModal, setShowTraktModal] = useState(false);
   const [showAnilistModal, setShowAnilistModal] = useState(false);
+  const [showSimklModal, setShowSimklModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const applicationName = settings.currentSettings.applicationTitle;
@@ -227,8 +240,13 @@ const UserLinkedAccountsSettings = () => {
         type: LinkedAccountType.Anilist,
         username: anilistStatus.username,
       });
+    if (simklStatus?.connected && simklStatus.username)
+      accounts.push({
+        type: LinkedAccountType.Simkl,
+        username: simklStatus.username,
+      });
     return accounts;
-  }, [user, traktStatus, anilistStatus]);
+  }, [user, traktStatus, anilistStatus, simklStatus]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -305,6 +323,13 @@ const UserLinkedAccountsSettings = () => {
         !settings.currentSettings.anilistConfigured ||
         accounts.some((a) => a.type === LinkedAccountType.Anilist),
     },
+    {
+      name: 'Simkl',
+      action: () => setShowSimklModal(true),
+      hide:
+        !settings.currentSettings.simklConfigured ||
+        accounts.some((a) => a.type === LinkedAccountType.Simkl),
+    },
   ].filter((l) => !l.hide);
 
   const deleteRequest = async (account: string) => {
@@ -323,10 +348,11 @@ const UserLinkedAccountsSettings = () => {
     if (account === 'anilist') {
       await revalidateAnilist();
     }
+    if (account === 'simkl') await revalidateSimkl();
   };
 
   const updateActionsEnabled = async (
-    account: 'trakt' | 'anilist',
+    account: 'trakt' | 'anilist' | 'simkl',
     actionsEnabled: boolean
   ) => {
     if (!user) {
@@ -344,8 +370,10 @@ const UserLinkedAccountsSettings = () => {
 
     if (account === 'trakt') {
       await revalidateTrakt();
-    } else {
+    } else if (account === 'anilist') {
       await revalidateAnilist();
+    } else {
+      await revalidateSimkl();
     }
   };
 
@@ -403,6 +431,13 @@ const UserLinkedAccountsSettings = () => {
       return (
         <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800 p-2">
           <AnilistLogo className="w-9" />
+        </div>
+      );
+    }
+    if (type === LinkedAccountType.Simkl) {
+      return (
+        <div className="flex aspect-square h-full items-center justify-center rounded-full bg-neutral-800 p-2">
+          <SimklLogo className="w-9" />
         </div>
       );
     }
@@ -497,7 +532,8 @@ const UserLinkedAccountsSettings = () => {
               <div className="flex-grow" />
               {!acct.viaPlugin &&
                 (acct.type === LinkedAccountType.Trakt ||
-                acct.type === LinkedAccountType.Anilist
+                acct.type === LinkedAccountType.Anilist ||
+                acct.type === LinkedAccountType.Simkl
                   ? currentUser?.id === user?.id ||
                     hasPermission(Permission.MANAGE_USERS)
                   : enableMediaServerUnlink) && (
@@ -510,7 +546,9 @@ const UserLinkedAccountsSettings = () => {
                             ? 'trakt'
                             : acct.type === LinkedAccountType.Anilist
                               ? 'anilist'
-                              : 'jellyfin'
+                              : acct.type === LinkedAccountType.Simkl
+                                ? 'simkl'
+                                : 'jellyfin'
                       );
                     }}
                     confirmText={intl.formatMessage(globalMessages.areyousure)}
@@ -531,7 +569,8 @@ const UserLinkedAccountsSettings = () => {
       )}
 
       {(settings.currentSettings.traktConfigured ||
-        settings.currentSettings.anilistConfigured) && (
+        settings.currentSettings.anilistConfigured ||
+        settings.currentSettings.simklConfigured) && (
         <div className="mt-10">
           <h3 className="heading">
             {intl.formatMessage(messages.watchTrackers)}
@@ -602,6 +641,31 @@ const UserLinkedAccountsSettings = () => {
                 />
               </li>
             )}
+            {settings.currentSettings.simklConfigured && (
+              <li className="flex items-center gap-4 overflow-hidden rounded-lg bg-gray-800/50 px-4 py-4 shadow ring-1 ring-gray-700 sm:px-6">
+                <SimklLogo className="h-7 w-7" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-bold text-gray-200">
+                    Simkl
+                  </div>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {simklStatus?.connected
+                      ? 'Updates your Simkl history and ratings when you mark titles watched here.'
+                      : intl.formatMessage(messages.linkAccountToEnable)}
+                  </p>
+                </div>
+                <WatchTrackerSwitch
+                  enabled={simklStatus?.actionsEnabled !== false}
+                  disabled={!simklStatus?.connected}
+                  onToggle={() => {
+                    void updateActionsEnabled(
+                      'simkl',
+                      simklStatus?.actionsEnabled === false
+                    );
+                  }}
+                />
+              </li>
+            )}
           </ul>
         </div>
       )}
@@ -649,6 +713,15 @@ const UserLinkedAccountsSettings = () => {
         onSave={() => {
           setShowAnilistModal(false);
           void revalidateAnilist();
+        }}
+      />
+      <LinkSimklModal
+        show={showSimklModal}
+        userId={user?.id}
+        onClose={() => setShowSimklModal(false)}
+        onSave={() => {
+          setShowSimklModal(false);
+          void revalidateSimkl();
         }}
       />
     </>

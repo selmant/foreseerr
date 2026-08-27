@@ -4,7 +4,12 @@ export interface GenreSliderItem {
   backdrops: string[];
 }
 
-export type DiscoverItemSource = 'trakt' | 'anilist' | 'mdblist' | 'plex';
+export type DiscoverItemSource =
+  | 'trakt'
+  | 'anilist'
+  | 'simkl'
+  | 'mdblist'
+  | 'plex';
 
 export interface WatchlistItem {
   id: number;
@@ -27,5 +32,10 @@ export interface WatchlistResponse {
   /** Continuation signal when exact totals are unknown (Phase 0 contract). */
   hasMore?: boolean;
   results: WatchlistItem[];
+  providerState?: {
+    source: DiscoverItemSource;
+    stale: boolean;
+    lastSuccessfulSyncAt?: string;
+  };
 }
 import type { RatingResponse } from '@server/api/ratings';

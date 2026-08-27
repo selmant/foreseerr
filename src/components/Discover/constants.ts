@@ -102,6 +102,8 @@ export const sliderTitles = defineMessages('components.Discover', {
   anilistcompleted: 'AniList Completed',
   anilistlist: 'AniList List',
   mdblistlist: 'MDBList List',
+  simkltrending: 'Simkl Trending',
+  simklplantowatch: 'Simkl Plan to Watch',
 });
 
 export const QueryFilterOptions = z.object({

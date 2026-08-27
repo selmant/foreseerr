@@ -124,11 +124,23 @@ export class UserSettings {
   @Column({ type: 'varchar', nullable: true, unique: true })
   public anilistUserId?: string;
 
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public simklAccessToken?: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  public simklUsername?: string;
+
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  public simklUserId?: string;
+
   @Column({ nullable: true })
   public mediaActionsTraktEnabled?: boolean;
 
   @Column({ nullable: true })
   public mediaActionsAnilistEnabled?: boolean;
+
+  @Column({ nullable: true })
+  public mediaActionsSimklEnabled?: boolean;
 
   @Column({
     type: 'text',

@@ -10,6 +10,12 @@ export interface TraktCommunityRating {
   votes?: number;
 }
 
+export interface SimklCommunityRating {
+  rating: number;
+  votes?: number;
+  url?: string;
+}
+
 /**
  * Combined ratings payload for media detail + title-card badges.
  * `provider` indicates which backend filled the data (MDBList vs legacy scrapers).
@@ -20,4 +26,5 @@ export interface RatingResponse {
   imdb?: IMDBRating;
   metacritic?: MetacriticRating;
   trakt?: TraktCommunityRating;
+  simkl?: SimklCommunityRating;
 }

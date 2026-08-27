@@ -1,11 +1,13 @@
 import AnilistLogo from '@app/assets/services/anilist.svg';
 import MdblistLogo from '@app/assets/services/mdblist.svg';
+import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import Badge from '@app/components/Common/Badge';
 import Modal from '@app/components/Common/Modal';
 import SettingsAnilist from '@app/components/Settings/SettingsAnilist';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
 import SettingsMdblist from '@app/components/Settings/SettingsMdblist';
+import SettingsSimkl from '@app/components/Settings/SettingsSimkl';
 import SettingsTrakt from '@app/components/Settings/SettingsTrakt';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
@@ -27,6 +29,8 @@ const messages = defineMessages(
     anilist: 'AniList',
     anilistDescription:
       'Anime catalog rows (trending, season, popular, top, next season), personal lists, and watched/score sync.',
+    simkl: 'Simkl',
+    simklDescription: 'PIN-linked watchlists, history, ratings, and discovery.',
     anilistExperimentalTooltip:
       'Anime seasons and episodes do not always match TMDB one-to-one, so watches can land on the wrong AniList title or be skipped.',
     configured: 'Configured',
@@ -38,12 +42,13 @@ const messages = defineMessages(
     editTrakt: 'Configure Trakt',
     editMdblist: 'Configure MDBList',
     editAnilist: 'Configure AniList',
+    editSimkl: 'Configure Simkl',
     statusUnavailable: 'Status unavailable',
     checkedAt: 'Checked {time}',
   }
 );
 
-type Integration = 'trakt' | 'mdblist' | 'anilist';
+type Integration = 'trakt' | 'mdblist' | 'anilist' | 'simkl';
 
 type IntegrationHealth = {
   state: 'not_configured' | 'healthy' | 'degraded';
@@ -55,6 +60,7 @@ type IntegrationHealthResponse = {
   trakt: IntegrationHealth & { provider: 'direct' | 'jellyfin' };
   mdblist: IntegrationHealth;
   anilist: IntegrationHealth;
+  simkl: IntegrationHealth;
 };
 
 const ExternalIntegrationCards = () => {
@@ -74,6 +80,14 @@ const ExternalIntegrationCards = () => {
       health: health?.trakt,
       configured: settings.currentSettings.traktConfigured,
       icon: <TraktLogo className="h-10 w-10" />,
+    },
+    {
+      id: 'simkl' as const,
+      name: intl.formatMessage(messages.simkl),
+      description: intl.formatMessage(messages.simklDescription),
+      health: health?.simkl,
+      configured: settings.currentSettings.simklConfigured,
+      icon: <SimklLogo className="h-10 w-10" />,
     },
     {
       id: 'mdblist' as const,
@@ -220,6 +234,17 @@ const ExternalIntegrationCards = () => {
           dialogClass="sm:max-w-4xl"
         >
           <SettingsAnilist onSave={() => setEditing(null)} />
+        </Modal>
+      </Transition>
+
+      <Transition as={Fragment} show={editing === 'simkl'}>
+        <Modal
+          title={intl.formatMessage(messages.editSimkl)}
+          onCancel={() => setEditing(null)}
+          backgroundClickable={false}
+          dialogClass="sm:max-w-2xl"
+        >
+          <SettingsSimkl onSave={() => setEditing(null)} />
         </Modal>
       </Transition>
     </>

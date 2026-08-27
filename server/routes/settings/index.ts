@@ -2,6 +2,7 @@ import { ANILIST_OAUTH_PIN_REDIRECT } from '@server/api/anilist/interfaces';
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexAPI from '@server/api/plexapi';
 import PlexTvAPI from '@server/api/plextv';
+import SimklAPI from '@server/api/simkl';
 import TautulliAPI from '@server/api/tautulli';
 import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
@@ -39,6 +40,10 @@ import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import { plexFullScanner } from '@server/lib/scanners/plex';
 import type { JobId, Library, MainSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
+import {
+  countLinkedSimklAccounts,
+  disconnectAllSimklLinks,
+} from '@server/lib/simkl';
 import {
   countLinkedTraktAccounts,
   disconnectAllTraktLinks,
@@ -546,6 +551,18 @@ settingsRoutes.get('/trakt', async (_req, res) => {
   });
 });
 
+settingsRoutes.get('/simkl', async (_req, res) => {
+  const settings = getSettings();
+  return res.status(200).json({
+    clientId: settings.simkl.clientId,
+    configured: Boolean(settings.simkl.clientId.trim()),
+    actionsEnabled: settings.mediaActions.providers.simkl !== false,
+    showCommunityRating: settings.simkl.showCommunityRating,
+    posterCommunityRating: settings.simkl.posterCommunityRating,
+    linkedAccountCount: await countLinkedSimklAccounts(),
+  });
+});
+
 settingsRoutes.get('/integrations/status', async (_req, res, next) => {
   try {
     return res.status(200).json(await getIntegrationHealth());
@@ -592,6 +609,7 @@ settingsRoutes.post('/trakt/actions', async (req, res, next) => {
         trakt: req.body.actionsEnabled,
         jellyfin: settings.mediaActions.providers.jellyfin,
         anilist: settings.mediaActions.providers.anilist,
+        simkl: settings.mediaActions.providers.simkl,
       },
     };
     await settings.save();
@@ -602,6 +620,70 @@ settingsRoutes.post('/trakt/actions', async (req, res, next) => {
       errorMessage: e instanceof Error ? e.message : 'unknown error',
     });
     return next({ status: 500, message: 'Unable to update Trakt actions.' });
+  }
+});
+
+settingsRoutes.post('/simkl/actions', async (req, res, next) => {
+  if (typeof req.body.actionsEnabled !== 'boolean') {
+    return next({ status: 400, message: 'actionsEnabled must be a boolean.' });
+  }
+  const settings = getSettings();
+  settings.mediaActions = {
+    providers: {
+      ...settings.mediaActions.providers,
+      simkl: req.body.actionsEnabled,
+    },
+  };
+  await settings.save();
+  return res.status(200).json({ actionsEnabled: req.body.actionsEnabled });
+});
+
+settingsRoutes.post('/simkl', async (req, res, next) => {
+  try {
+    const settings = getSettings();
+    const clientId = String(req.body.clientId ?? '').trim();
+    const changing = clientId !== settings.simkl.clientId;
+    const linkedAccountCount = await countLinkedSimklAccounts();
+    if (
+      changing &&
+      linkedAccountCount &&
+      req.body.confirmDisconnectLinkedAccounts !== true
+    ) {
+      return res.status(400).json({
+        message:
+          'Changing Simkl credentials disconnects linked user accounts. Set confirmDisconnectLinkedAccounts to true to proceed.',
+        linkedAccountCount,
+      });
+    }
+    if (clientId) await new SimklAPI({ clientId }).validateClientId();
+    settings.simkl = {
+      clientId,
+      showCommunityRating: req.body.showCommunityRating !== false,
+      posterCommunityRating: req.body.posterCommunityRating === true,
+    };
+    settings.mediaActions = {
+      providers: {
+        ...settings.mediaActions.providers,
+        simkl: req.body.actionsEnabled !== false,
+      },
+    };
+    await settings.save();
+    clearIntegrationHealthCache();
+    if (changing && linkedAccountCount) await disconnectAllSimklLinks();
+    return res.status(200).json({
+      clientId,
+      configured: Boolean(clientId),
+      actionsEnabled: settings.mediaActions.providers.simkl !== false,
+      showCommunityRating: settings.simkl.showCommunityRating,
+      posterCommunityRating: settings.simkl.posterCommunityRating,
+      linkedAccountCount: await countLinkedSimklAccounts(),
+    });
+  } catch (e) {
+    logger.error('Unable to save Simkl settings', {
+      label: 'Settings',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
+    return next({ status: 500, message: 'Unable to save Simkl settings.' });
   }
 });
 
@@ -689,6 +771,7 @@ settingsRoutes.post('/trakt', async (req, res, next) => {
         trakt: req.body.actionsEnabled !== false,
         jellyfin: settings.mediaActions.providers.jellyfin,
         anilist: settings.mediaActions.providers.anilist,
+        simkl: settings.mediaActions.providers.simkl,
       },
     };
     await settings.save();
@@ -871,6 +954,7 @@ settingsRoutes.post('/anilist/actions', async (req, res, next) => {
         trakt: settings.mediaActions.providers.trakt,
         jellyfin: settings.mediaActions.providers.jellyfin,
         anilist: req.body.actionsEnabled,
+        simkl: settings.mediaActions.providers.simkl,
       },
     };
     await settings.save();
@@ -933,6 +1017,7 @@ settingsRoutes.post('/anilist', async (req, res, next) => {
         trakt: settings.mediaActions.providers.trakt,
         jellyfin: settings.mediaActions.providers.jellyfin,
         anilist: req.body.actionsEnabled !== false,
+        simkl: settings.mediaActions.providers.simkl,
       },
     };
     await settings.save();

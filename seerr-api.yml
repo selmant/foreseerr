@@ -703,7 +703,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [trakt, jellyfin, anilist]
+          enum: [trakt, jellyfin, anilist, simkl]
         ok:
           type: boolean
         watched:
@@ -782,7 +782,7 @@ components:
       properties:
         id:
           type: string
-          enum: [trakt, jellyfin, anilist]
+          enum: [trakt, jellyfin, anilist, simkl]
         linked:
           type: boolean
         capabilities:
@@ -8799,7 +8799,7 @@ paths:
                           type: string
                         source:
                           type: string
-                          enum: [trakt, anilist, mdblist, plex]
+                          enum: [trakt, anilist, simkl, mdblist, plex]
                         sourceUrl:
                           type: string
                         sourceId:
@@ -11602,6 +11602,196 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/OverrideRule'
+  /settings/simkl:
+    get:
+      summary: Get Simkl settings
+      tags: [settings]
+      responses:
+        '200': { description: Simkl settings returned }
+    post:
+      summary: Update Simkl settings
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clientId: { type: string }
+                actionsEnabled: { type: boolean }
+                showCommunityRating: { type: boolean }
+                posterCommunityRating: { type: boolean }
+                confirmDisconnectLinkedAccounts: { type: boolean }
+      responses:
+        '200': { description: Simkl settings updated }
+  /settings/simkl/actions:
+    post:
+      summary: Update Simkl media actions
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actionsEnabled]
+              properties:
+                actionsEnabled: { type: boolean }
+      responses:
+        '200': { description: Simkl media actions updated }
+  /user/{userId}/settings/linked-accounts/simkl:
+    get:
+      summary: Get Simkl link status for a user
+      tags: [users]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: number }
+      responses:
+        '200': { description: Simkl link status returned }
+    patch:
+      summary: Update Simkl action preference for a user
+      tags: [users]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: number }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actionsEnabled]
+              properties:
+                actionsEnabled: { type: boolean }
+      responses:
+        '200': { description: Simkl link status returned }
+    delete:
+      summary: Unlink Simkl account for a user
+      tags: [users]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: number }
+      responses:
+        '204': { description: Simkl account unlinked }
+  /user/{userId}/settings/linked-accounts/simkl/pin/code:
+    post:
+      summary: Start Simkl PIN authorization
+      tags: [users]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: number }
+      responses:
+        '200': { description: PIN code issued }
+  /user/{userId}/settings/linked-accounts/simkl/pin/token:
+    post:
+      summary: Poll Simkl PIN authorization
+      tags: [users]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: number }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceCode]
+              properties:
+                deviceCode: { type: string }
+      responses:
+        '200': { description: Simkl account linked }
+        '202': { description: Authorization pending }
+  /user/{userId}/settings/linked-accounts/simkl/sync:
+    post:
+      summary: Synchronize a linked Simkl account
+      tags: [users]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: number }
+      responses:
+        '200': { description: Simkl synchronization completed }
+        '503': { description: Simkl cache is stale }
+  /discover/simkl/library:
+    get:
+      summary: Get the authenticated user's Simkl library
+      tags: [discover]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            {
+              type: string,
+              enum: [watching, plantowatch, hold, completed, dropped],
+            }
+        - in: query
+          name: mediaType
+          schema: { type: string, enum: [movie, tv, anime, all] }
+        - in: query
+          name: page
+          schema: { type: number }
+      responses:
+        '200': { description: Simkl library returned }
+  /discover/simkl/trending:
+    get:
+      summary: Get Simkl trending titles
+      tags: [discover]
+      parameters:
+        - in: query
+          name: mediaType
+          schema: { type: string, enum: [movie, tv, anime, all] }
+        - in: query
+          name: period
+          schema: { type: string, enum: [day, week, month] }
+        - in: query
+          name: page
+          schema: { type: number }
+      responses:
+        '200': { description: Simkl trending titles returned }
+  /discover/simkl/best:
+    get:
+      summary: Get Simkl best TV or anime titles
+      tags: [discover]
+      parameters:
+        - in: query
+          name: mediaType
+          schema: { type: string, enum: [tv, anime] }
+        - in: query
+          name: filter
+          schema: { type: string, enum: [all, year, month, voted, watched] }
+        - in: query
+          name: page
+          schema: { type: number }
+      responses:
+        '200': { description: Simkl best titles returned }
+  /discover/simkl/premieres:
+    get:
+      summary: Get Simkl premieres
+      tags: [discover]
+      parameters:
+        - in: query
+          name: mediaType
+          schema: { type: string, enum: [tv, anime] }
+        - in: query
+          name: window
+          schema: { type: string, enum: [new, upcoming] }
+        - in: query
+          name: page
+          schema: { type: number }
+      responses:
+        '200': { description: Simkl premieres returned }
   /overrideRule/{ruleId}:
     put:
       summary: Update override rule

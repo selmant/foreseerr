@@ -94,11 +94,19 @@ export interface AniListSettings {
   clientSecret: string;
 }
 
+/** Simkl PIN applications use a public client id only. */
+export interface SimklSettings {
+  clientId: string;
+  showCommunityRating: boolean;
+  posterCommunityRating: boolean;
+}
+
 export interface MediaActionsSettings {
   providers: {
     trakt: boolean;
     jellyfin: boolean;
     anilist: boolean;
+    simkl: boolean;
   };
 }
 
@@ -271,9 +279,11 @@ interface FullPublicSettings extends PublicSettings {
   plexClientIdentifier: string;
   traktConfigured: boolean;
   anilistConfigured: boolean;
+  simklConfigured: boolean;
   mediaActionsTraktEnabled: boolean;
   mediaActionsJellyfinEnabled: boolean;
   mediaActionsAnilistEnabled: boolean;
+  mediaActionsSimklEnabled: boolean;
   mdblistConfigured: boolean;
   ratingBadges: RatingBadgeSettings;
 }
@@ -443,6 +453,7 @@ export interface AllSettings {
   tautulli: TautulliSettings;
   trakt: TraktSettings;
   anilist: AniListSettings;
+  simkl: SimklSettings;
   mediaActions: MediaActionsSettings;
   servarrInterventions: ServarrInterventionSettings;
   mdblist: MdbListSettings;
@@ -527,11 +538,17 @@ class Settings {
         clientId: '',
         clientSecret: '',
       },
+      simkl: {
+        clientId: '',
+        showCommunityRating: true,
+        posterCommunityRating: false,
+      },
       mediaActions: {
         providers: {
           trakt: true,
           jellyfin: true,
           anilist: true,
+          simkl: true,
         },
       },
       servarrInterventions: {
@@ -828,16 +845,39 @@ class Settings {
     );
   }
 
+  get simkl(): SimklSettings {
+    if (!this.data.simkl) {
+      this.data.simkl = {
+        clientId: '',
+        showCommunityRating: true,
+        posterCommunityRating: false,
+      };
+    }
+    return this.data.simkl;
+  }
+
+  set simkl(data: SimklSettings) {
+    this.data.simkl = mergeSettings(
+      this.data.simkl ?? {
+        clientId: '',
+        showCommunityRating: true,
+        posterCommunityRating: false,
+      },
+      data
+    );
+  }
+
   get mediaActions(): MediaActionsSettings {
     if (!this.data.mediaActions) {
       this.data.mediaActions = {
-        providers: { trakt: true, jellyfin: true, anilist: true },
+        providers: { trakt: true, jellyfin: true, anilist: true, simkl: true },
       };
     } else if (!this.data.mediaActions.providers) {
       this.data.mediaActions.providers = {
         trakt: true,
         jellyfin: true,
         anilist: true,
+        simkl: true,
       };
     } else {
       if (this.data.mediaActions.providers.trakt === undefined) {
@@ -849,6 +889,9 @@ class Settings {
       if (this.data.mediaActions.providers.anilist === undefined) {
         this.data.mediaActions.providers.anilist = true;
       }
+      if (this.data.mediaActions.providers.simkl === undefined) {
+        this.data.mediaActions.providers.simkl = true;
+      }
     }
     return this.data.mediaActions;
   }
@@ -856,7 +899,7 @@ class Settings {
   set mediaActions(data: MediaActionsSettings) {
     this.data.mediaActions = mergeSettings(
       this.data.mediaActions ?? {
-        providers: { trakt: true, jellyfin: true, anilist: true },
+        providers: { trakt: true, jellyfin: true, anilist: true, simkl: true },
       },
       data
     );
@@ -1008,12 +1051,15 @@ class Settings {
       anilistConfigured: Boolean(
         this.data.anilist?.clientId && this.data.anilist?.clientSecret
       ),
+      simklConfigured: Boolean(this.data.simkl?.clientId?.trim()),
       mediaActionsTraktEnabled:
         this.data.mediaActions?.providers?.trakt !== false,
       mediaActionsJellyfinEnabled:
         this.data.mediaActions?.providers?.jellyfin !== false,
       mediaActionsAnilistEnabled:
         this.data.mediaActions?.providers?.anilist !== false,
+      mediaActionsSimklEnabled:
+        this.data.mediaActions?.providers?.simkl !== false,
       mdblistConfigured: Boolean(this.data.mdblist?.apiKey?.trim()),
       ratingBadges: {
         showTmdb:

@@ -1,12 +1,13 @@
 import AnilistLogo from '@app/assets/services/anilist.svg';
 import MdblistLogo from '@app/assets/services/mdblist.svg';
+import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import { DiscoverSliderType } from '@server/constants/discover';
 import Link from 'next/link';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 
-export type DiscoverSliderSource = 'trakt' | 'anilist' | 'mdblist';
+export type DiscoverSliderSource = 'trakt' | 'anilist' | 'mdblist' | 'simkl';
 
 const SOURCE_MARKS: Record<
   DiscoverSliderSource,
@@ -15,6 +16,7 @@ const SOURCE_MARKS: Record<
   trakt: { Logo: TraktLogo, label: 'Trakt' },
   anilist: { Logo: AnilistLogo, label: 'AniList' },
   mdblist: { Logo: MdblistLogo, label: 'MDBList' },
+  simkl: { Logo: SimklLogo, label: 'Simkl' },
 };
 
 export const getDiscoverSliderSource = (
@@ -38,6 +40,9 @@ export const getDiscoverSliderSource = (
       return 'anilist';
     case DiscoverSliderType.MDBLIST_LIST:
       return 'mdblist';
+    case DiscoverSliderType.SIMKL_TRENDING:
+    case DiscoverSliderType.SIMKL_PLAN_TO_WATCH:
+      return 'simkl';
     default:
       return undefined;
   }

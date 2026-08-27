@@ -1,6 +1,7 @@
 import { AnilistMediaActionProvider } from './anilist';
 import { MediaActionDispatcher } from './dispatcher';
 import { JellyfinMediaActionProvider } from './jellyfin';
+import { SimklMediaActionProvider } from './simkl';
 import { TraktMediaActionProvider } from './trakt';
 import type { MediaActionProvider } from './types';
 
@@ -13,6 +14,7 @@ export type {
 } from './capabilities';
 export { MediaActionDispatcher } from './dispatcher';
 export * from './score';
+export { SimklMediaActionProvider } from './simkl';
 export {
   clearSyncCache,
   invalidateUserSyncCache,
@@ -31,6 +33,7 @@ export function getDefaultMediaActionProviders(): MediaActionProvider[] {
       new TraktMediaActionProvider(),
       new JellyfinMediaActionProvider(),
       new AnilistMediaActionProvider(),
+      new SimklMediaActionProvider(),
     ];
   }
   return defaultProviders;
