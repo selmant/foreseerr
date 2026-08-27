@@ -439,7 +439,7 @@ const Discover = () => {
               <SimklSlider
                 title={intl.formatMessage(sliderTitles.simkltrending)}
                 endpoint="/api/v1/discover/simkl/trending"
-                linkUrl="/discover/simkl"
+                linkUrl="/discover/simkl?view=trending"
                 sliderKey="simkl-trending"
               />
             );
