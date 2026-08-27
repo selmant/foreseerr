@@ -1,3 +1,4 @@
+import { DbAwareColumn } from '@server/utils/DbColumnHelper';
 import {
   Column,
   Entity,
@@ -23,10 +24,10 @@ export class SimklSyncState {
   @Column({ default: false })
   public initialSyncComplete: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @DbAwareColumn({ type: 'datetime', nullable: true })
   public lastCheckedAt?: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @DbAwareColumn({ type: 'datetime', nullable: true })
   public lastSuccessfulSyncAt?: Date;
 
   @Column({ type: 'text', nullable: true })

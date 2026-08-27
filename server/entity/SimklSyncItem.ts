@@ -1,3 +1,4 @@
+import { DbAwareColumn } from '@server/utils/DbColumnHelper';
 import {
   Column,
   Entity,
@@ -60,10 +61,10 @@ export class SimklSyncItem {
   @Column({ type: 'float', nullable: true })
   public userRating?: number;
 
-  @Column({ type: 'datetime', nullable: true })
+  @DbAwareColumn({ type: 'datetime', nullable: true })
   public addedAt?: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @DbAwareColumn({ type: 'datetime', nullable: true })
   public lastWatchedAt?: Date;
 
   @Column({ type: 'integer', nullable: true })
