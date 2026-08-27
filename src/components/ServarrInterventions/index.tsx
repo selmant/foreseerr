@@ -14,6 +14,7 @@ import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import {
+  ArrowPathIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   FunnelIcon,
@@ -45,6 +46,9 @@ const messages = defineMessages('components.ServarrInterventions', {
   byActor: ' by {name}',
   manualImport: 'Manual import',
   reject: 'Reject and blocklist',
+  rejecting: 'Rejecting…',
+  importing: 'Importing…',
+  inProgress: 'In progress',
   rejectConfirm: 'Delete this download and blocklist the release in {service}?',
   rejected: 'Release rejected and blocklisted.',
   rejectFailed: 'Rejection failed.',
@@ -73,6 +77,7 @@ const ServarrInterventions = () => {
   const [serviceType, setServiceType] = useState('');
   const [mediaType, setMediaType] = useState('');
   const [selected, setSelected] = useState<ServarrIntervention>();
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const query = useMemo(
     () =>
       new URLSearchParams({
@@ -89,7 +94,16 @@ const ServarrInterventions = () => {
     error,
     mutate: refresh,
   } = useSWR<InterventionResults>(`/api/v1/servarr/interventions?${query}`, {
-    refreshInterval: mode === 'active' ? 60000 : 0,
+    refreshInterval:
+      mode !== 'active'
+        ? 0
+        : (latest) =>
+            pendingIds.size > 0 ||
+            !!latest?.results.some(
+              (item) => item.state === 'rejecting' || item.state === 'importing'
+            )
+              ? 3000
+              : 60000,
   });
 
   useEffect(() => {
@@ -99,6 +113,7 @@ const ServarrInterventions = () => {
   }, []);
 
   const reject = async (item: ServarrIntervention) => {
+    setPendingIds((current) => new Set(current).add(item.id));
     try {
       await axios.post(`/api/v1/servarr/interventions/${item.id}/reject`);
       addToast(intl.formatMessage(messages.rejected), {
@@ -118,8 +133,19 @@ const ServarrInterventions = () => {
         { appearance: 'error', autoDismiss: true }
       );
       await refresh();
+    } finally {
+      setPendingIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
     }
   };
+
+  const inProgress = (item: ServarrIntervention) =>
+    item.state === 'rejecting' ||
+    item.state === 'importing' ||
+    pendingIds.has(item.id);
 
   return (
     <>
@@ -213,9 +239,16 @@ const ServarrInterventions = () => {
             >
               <div className="flex flex-wrap justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-lg font-semibold text-white">
-                    {item.releaseTitle}
-                  </h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="truncate text-lg font-semibold text-white">
+                      {item.releaseTitle}
+                    </h2>
+                    {inProgress(item) && (
+                      <Badge badgeType="primary">
+                        {intl.formatMessage(messages.inProgress)}
+                      </Badge>
+                    )}
+                  </div>
                   <div className="text-sm text-gray-300">
                     <Link
                       href={
@@ -278,15 +311,29 @@ const ServarrInterventions = () => {
                   <div className="flex items-start gap-2">
                     {item.manualImportCapable && (
                       <Button
-                        disabled={item.state === 'rejecting'}
+                        disabled={inProgress(item)}
                         onClick={() => setSelected(item)}
                       >
-                        {intl.formatMessage(messages.manualImport)}
+                        {item.state === 'importing' ? (
+                          <>
+                            <ArrowPathIcon className="mr-2 h-4 w-4 animate-spin" />
+                            {intl.formatMessage(messages.importing)}
+                          </>
+                        ) : (
+                          intl.formatMessage(messages.manualImport)
+                        )}
                       </Button>
                     )}
-                    {item.state === 'rejecting' ? (
+                    {inProgress(item) ? (
                       <Button buttonType="danger" disabled>
-                        {intl.formatMessage(messages.reject)}
+                        {item.state === 'importing' ? (
+                          intl.formatMessage(messages.reject)
+                        ) : (
+                          <>
+                            <ArrowPathIcon className="mr-2 h-4 w-4 animate-spin" />
+                            {intl.formatMessage(messages.rejecting)}
+                          </>
+                        )}
                       </Button>
                     ) : (
                       <ConfirmButton
@@ -339,9 +386,17 @@ const ServarrInterventions = () => {
             mediaId={selected.mediaId}
             is4k={selected.is4k}
             onChanged={() => {
-              setSelected(undefined);
-              void refresh();
-              void mutate('/api/v1/servarr/interventions/count');
+              void (async () => {
+                const next = await refresh();
+                void mutate('/api/v1/servarr/interventions/count');
+                if (
+                  selected &&
+                  next &&
+                  !next.results.some((item) => item.id === selected.id)
+                ) {
+                  setSelected(undefined);
+                }
+              })();
             }}
           />
         )}

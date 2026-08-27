@@ -9,7 +9,11 @@ import {
 } from 'typeorm';
 
 export type ServarrInterventionService = 'radarr' | 'sonarr';
-export type ServarrInterventionState = 'active' | 'rejecting' | 'resolved';
+export type ServarrInterventionState =
+  | 'active'
+  | 'rejecting'
+  | 'importing'
+  | 'resolved';
 export type ServarrInterventionResolution =
   | 'recovered'
   | 'disappeared'

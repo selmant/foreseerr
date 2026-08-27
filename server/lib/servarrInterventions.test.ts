@@ -7,10 +7,15 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { ServarrIntervention } from '@server/entity/ServarrIntervention';
 import {
+  INTERVENTION_IMPORT_TIMEOUT_MS,
+  INTERVENTION_REJECTION_TIMEOUT_MS,
+  failImportedIntervention,
+  interventionRejectionTimeout,
   publicIntervention,
   reconcileServarrWarnings,
   rejectServarrIntervention,
   resolveImportedIntervention,
+  startImportedIntervention,
 } from '@server/lib/servarrInterventions';
 import { getSettings, type RadarrSettings } from '@server/lib/settings';
 import { setupTestDb } from '@server/test/db';
@@ -217,7 +222,7 @@ describe('Servarr warning reconciliation', () => {
     assert.equal(records[0].serviceId, 7);
   });
 
-  it('returns interrupted rejecting operations to active during the next successful poll', async () => {
+  it('keeps an in-flight rejection in progress until it finishes or times out', async () => {
     const record = await activeWarning();
     record.state = 'rejecting';
     await getRepository(ServarrIntervention).save(record);
@@ -227,7 +232,69 @@ describe('Servarr warning reconciliation', () => {
     const updated = await getRepository(ServarrIntervention).findOneByOrFail({
       id: record.id,
     });
+    assert.equal(updated.state, 'rejecting');
+  });
+
+  it('returns a stale rejection to active after the timeout', async () => {
+    const record = await activeWarning();
+    record.state = 'rejecting';
+    await getRepository(ServarrIntervention).save(record);
+
+    await reconcileServarrWarnings(
+      'radarr',
+      server,
+      [warning()],
+      new Date(Date.now() + INTERVENTION_REJECTION_TIMEOUT_MS + 1000)
+    );
+
+    const updated = await getRepository(ServarrIntervention).findOneByOrFail({
+      id: record.id,
+    });
     assert.equal(updated.state, 'active');
+    assert.match(updated.cleanupError ?? '', /timed out/);
+  });
+
+  it('keeps an in-flight import in progress until it finishes or the two-hour safety net fires', async () => {
+    const record = await activeWarning();
+    record.state = 'importing';
+    await getRepository(ServarrIntervention).save(record);
+
+    await reconcileServarrWarnings('radarr', server, [warning()]);
+    assert.equal(
+      (
+        await getRepository(ServarrIntervention).findOneByOrFail({
+          id: record.id,
+        })
+      ).state,
+      'importing'
+    );
+
+    await reconcileServarrWarnings(
+      'radarr',
+      server,
+      [warning()],
+      new Date(Date.now() + INTERVENTION_IMPORT_TIMEOUT_MS + 1000)
+    );
+    const updated = await getRepository(ServarrIntervention).findOneByOrFail({
+      id: record.id,
+    });
+    assert.equal(updated.state, 'active');
+    assert.match(updated.cleanupError ?? '', /Import timed out/);
+  });
+
+  it('resolves an importing warning as a manual import when it leaves the queue', async () => {
+    const record = await activeWarning();
+    record.state = 'importing';
+    record.actedByUserId = 4;
+    await getRepository(ServarrIntervention).save(record);
+
+    await reconcileServarrWarnings('radarr', server, []);
+
+    const updated = await getRepository(ServarrIntervention).findOneByOrFail({
+      id: record.id,
+    });
+    assert.equal(updated.state, 'resolved');
+    assert.equal(updated.resolution, 'manual_import');
   });
 
   it('does not automatically reject until cleanup is enabled and the deadline has passed', async () => {
@@ -340,7 +407,10 @@ describe('Servarr intervention rejection', () => {
     assert.equal(result.resolution, 'manual_blocklist');
     assert.equal(result.actedByUserId, 1);
     assert.equal(remove.mock.callCount(), 1);
-    assert.deepEqual(remove.mock.calls[0].arguments, [99]);
+    assert.deepEqual(remove.mock.calls[0].arguments, [
+      99,
+      { timeout: INTERVENTION_REJECTION_TIMEOUT_MS },
+    ]);
   });
 
   it('refuses to delete when the live queue item is no longer a mapped warning', async () => {
@@ -401,6 +471,7 @@ describe('Servarr intervention rejection', () => {
 
   it('resolves a linked intervention after a successful import', async () => {
     const record = await activeWarning();
+    await startImportedIntervention(record.id, 4);
     await resolveImportedIntervention(record.id, 4);
     const updated = await getRepository(ServarrIntervention).findOneByOrFail({
       id: record.id,
@@ -408,6 +479,54 @@ describe('Servarr intervention rejection', () => {
     assert.equal(updated.state, 'resolved');
     assert.equal(updated.resolution, 'manual_import');
     assert.equal(updated.actedByUserId, 4);
+  });
+
+  it('returns an importing warning to active when the Arr command fails', async () => {
+    const record = await activeWarning();
+    await startImportedIntervention(record.id, 4);
+    await failImportedIntervention(record.id, 'disk full');
+    const updated = await getRepository(ServarrIntervention).findOneByOrFail({
+      id: record.id,
+    });
+    assert.equal(updated.state, 'active');
+    assert.match(updated.cleanupError ?? '', /disk full/);
+  });
+
+  it('times out a hung Arr rejection', async () => {
+    getSettings().radarr = [server];
+    const record = await activeWarning();
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.method(ServarrBase.prototype, 'getQueue', async () => {
+      await gate;
+      return [warning()];
+    });
+    mock.method(
+      ServarrBase.prototype,
+      'removeQueueItem',
+      async () => undefined
+    );
+
+    await assert.rejects(
+      () => rejectServarrIntervention(record.id, 1, false, 20),
+      (error: Error & { status?: number }) => error.status === 504
+    );
+    release?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const updated = await getRepository(ServarrIntervention).findOneByOrFail({
+      id: record.id,
+    });
+    assert.equal(updated.state, 'active');
+    assert.match(updated.cleanupError ?? '', /timed out/);
+  });
+
+  it('floors a disabled API timeout to two minutes for rejection', () => {
+    assert.equal(
+      interventionRejectionTimeout(0),
+      INTERVENTION_REJECTION_TIMEOUT_MS
+    );
   });
 
   it('leaves the intervention actionable when import resolution is skipped', async () => {

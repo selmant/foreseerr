@@ -12,7 +12,11 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { ServarrIntervention } from '@server/entity/ServarrIntervention';
 import { Permission } from '@server/lib/permissions';
-import { resolveImportedIntervention } from '@server/lib/servarrInterventions';
+import {
+  failImportedIntervention,
+  resolveImportedIntervention,
+  startImportedIntervention,
+} from '@server/lib/servarrInterventions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -825,7 +829,7 @@ mediaServarrRoutes.post(
         });
         if (
           !intervention ||
-          intervention.state === 'resolved' ||
+          intervention.state !== 'active' ||
           !intervention.manualImportCapable ||
           intervention.mediaId !== context.media.id ||
           intervention.serviceId !== context.serviceId ||
@@ -893,10 +897,24 @@ mediaServarrRoutes.post(
           });
         });
       }
-      const command = await context.client.manualImport(
-        files,
-        req.body.importMode === 'copy' ? 'copy' : 'move'
-      );
+      if (intervention) {
+        await startImportedIntervention(intervention.id, req.user!.id);
+      }
+      let command;
+      try {
+        command = await context.client.manualImport(
+          files,
+          req.body.importMode === 'copy' ? 'copy' : 'move'
+        );
+      } catch (error) {
+        if (intervention) {
+          await failImportedIntervention(
+            intervention.id,
+            error instanceof Error ? error.message : 'Manual import failed.'
+          );
+        }
+        throw error;
+      }
       selected.forEach((token: string) => tokens.del(token));
       return res.status(202).json({
         accepted: true,
@@ -939,17 +957,22 @@ mediaServarrRoutes.get(
         'command'
       ).value;
       const command = await context.client.getCommand(commandToken.commandId);
-      if (
-        command.status?.toLowerCase() === 'completed' &&
-        commandToken.interventionId
-      ) {
-        await resolveImportedIntervention(
-          commandToken.interventionId,
-          req.user!.id
-        );
+      const status = command.status?.toLowerCase() ?? 'unknown';
+      if (commandToken.interventionId) {
+        if (status === 'completed') {
+          await resolveImportedIntervention(
+            commandToken.interventionId,
+            req.user!.id
+          );
+        } else if (status === 'failed' || status === 'aborted') {
+          await failImportedIntervention(
+            commandToken.interventionId,
+            command.message
+          );
+        }
       }
       return res.json({
-        status: command.status?.toLowerCase() ?? 'unknown',
+        status,
         message: command.message,
         queuedAt: command.queued,
         startedAt: command.started,

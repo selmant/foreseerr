@@ -10,7 +10,7 @@ export type ServarrIntervention = {
   releaseTitle: string;
   warningMessages: string[];
   manualImportCapable: boolean;
-  state: 'active' | 'rejecting' | 'resolved';
+  state: 'active' | 'rejecting' | 'importing' | 'resolved';
   resolution?:
     | 'recovered'
     | 'disappeared'

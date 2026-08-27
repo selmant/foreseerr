@@ -1179,7 +1179,7 @@ components:
           type: array
           items: { type: string }
         manualImportCapable: { type: boolean }
-        state: { type: string, enum: [active, rejecting, resolved] }
+        state: { type: string, enum: [active, rejecting, importing, resolved] }
         resolution:
           type: string
           nullable: true
@@ -10486,6 +10486,7 @@ paths:
         '409':
           description: 'Warning is no longer active, mapped, or is already being rejected'
         '502': { description: Arr or download-client rejection failed }
+        '504': { description: Arr rejection timed out }
   /media/{mediaId}/servarr/context:
     get:
       summary: Get mapped Servarr management context

@@ -12,7 +12,7 @@ import {
 } from './servarrTypes';
 
 const MANUAL_IMPORT_POLL_MS = 2000;
-const MANUAL_IMPORT_POLL_DEADLINE_MS = 5 * 60 * 1000;
+const MANUAL_IMPORT_POLL_DEADLINE_MS = 2 * 60 * 60 * 1000;
 
 const errorMessage = (error: unknown, fallback: string) =>
   axios.isAxiosError(error)

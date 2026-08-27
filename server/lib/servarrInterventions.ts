@@ -10,7 +10,49 @@ import {
 } from '@server/entity/ServarrIntervention';
 import { getSettings, type DVRSettings } from '@server/lib/settings';
 import logger from '@server/logger';
-import { In } from 'typeorm';
+
+/** Arr delete/blocklist can wait on the download client. Floor hangs, never unbounded. */
+export const INTERVENTION_REJECTION_TIMEOUT_MS = 120_000;
+/** Only a stuck-import safety net. In-progress can run for hours; 15m was the misleading idle look. */
+export const INTERVENTION_IMPORT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+export function interventionRejectionTimeout(
+  configuredTimeout = getSettings().network.apiRequestTimeout
+): number {
+  if (configuredTimeout === 0) {
+    return INTERVENTION_REJECTION_TIMEOUT_MS;
+  }
+  return Math.max(configuredTimeout, INTERVENTION_REJECTION_TIMEOUT_MS);
+}
+
+const isStaleInProgress = (
+  record: ServarrIntervention,
+  now: Date,
+  timeoutMs: number
+) => now.getTime() - new Date(record.updatedAt).getTime() >= timeoutMs;
+
+async function withTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(Object.assign(new Error(message), { status: 504 }));
+        }, timeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    void work.catch(() => undefined);
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 type QueueWithMedia = QueueItem & { movieId?: number; seriesId?: number };
 
@@ -147,7 +189,24 @@ export async function reconcileServarrWarnings(
     currentWarnings.add(queueItem.id);
     const record = byQueueId.get(queueItem.id);
     if (record) {
-      if (record.state === 'rejecting') record.state = 'active';
+      if (record.state === 'rejecting' || record.state === 'importing') {
+        const timedOut = isStaleInProgress(
+          record,
+          now,
+          record.state === 'importing'
+            ? INTERVENTION_IMPORT_TIMEOUT_MS
+            : interventionRejectionTimeout()
+        );
+        if (timedOut) {
+          record.cleanupError =
+            record.state === 'importing'
+              ? 'Import timed out.'
+              : 'Rejection timed out.';
+          record.state = 'active';
+          await repository.save(record);
+        }
+        continue;
+      }
       if (record.state !== 'resolved') {
         record.releaseTitle = queueItem.title.slice(0, 500);
         record.warningMessages = warningMessages(queueItem);
@@ -185,10 +244,17 @@ export async function reconcileServarrWarnings(
 
   for (const record of existing.filter((item) => item.state !== 'resolved')) {
     if (!currentWarnings.has(record.queueId)) {
+      record.resolution =
+        record.state === 'importing'
+          ? 'manual_import'
+          : record.state === 'rejecting'
+            ? record.actedByUserId
+              ? 'manual_blocklist'
+              : 'automatic_blocklist'
+            : currentQueueIds.has(record.queueId)
+              ? 'recovered'
+              : 'disappeared';
       record.state = 'resolved';
-      record.resolution = currentQueueIds.has(record.queueId)
-        ? 'recovered'
-        : 'disappeared';
       record.resolvedAt = now;
       record.cleanupError = null;
       await repository.save(record);
@@ -200,7 +266,7 @@ export async function reconcileServarrWarnings(
       where: {
         serviceType: type,
         serviceId: server.id,
-        state: In(['active', 'rejecting']),
+        state: 'active',
       },
     });
     for (const record of overdue) {
@@ -220,7 +286,8 @@ export async function reconcileServarrWarnings(
 export async function rejectServarrIntervention(
   id: number,
   userId?: number,
-  automatic = false
+  automatic = false,
+  timeoutMs = interventionRejectionTimeout()
 ): Promise<ServarrIntervention> {
   const repository = getRepository(ServarrIntervention);
   const record = await repository.findOne({ where: { id } });
@@ -234,7 +301,11 @@ export async function rejectServarrIntervention(
   }
   const claimed = await repository.update(
     { id: record.id, state: 'active' },
-    { state: 'rejecting', cleanupError: null }
+    {
+      state: 'rejecting',
+      cleanupError: null,
+      ...(automatic ? {} : { actedByUserId: userId }),
+    }
   );
   if (!claimed.affected) {
     throw Object.assign(new Error('This warning is already being rejected.'), {
@@ -252,24 +323,33 @@ export async function rejectServarrIntervention(
         { status: 409 }
       );
     const client = clientFor(record.serviceType, server);
-    const queue = (await client.getQueue()) as QueueWithMedia[];
-    const exact = queue.find((item) => item.id === record.queueId);
-    const media = await getRepository(Media).findOne({
-      where: { id: record.mediaId },
-    });
-    if (
-      !exact ||
-      !media ||
-      !isWarning(exact) ||
-      externalIdFor(record.serviceType, exact) !== record.externalServiceId ||
-      !mappedToService(media, record.serviceId, record.externalServiceId)
-    ) {
-      throw Object.assign(
-        new Error('The exact queue warning is no longer mapped and active.'),
-        { status: 409 }
-      );
-    }
-    await client.removeQueueItem(record.queueId);
+    await withTimeout(
+      (async () => {
+        const queue = (await client.getQueue()) as QueueWithMedia[];
+        const exact = queue.find((item) => item.id === record.queueId);
+        const media = await getRepository(Media).findOne({
+          where: { id: record.mediaId },
+        });
+        if (
+          !exact ||
+          !media ||
+          !isWarning(exact) ||
+          externalIdFor(record.serviceType, exact) !==
+            record.externalServiceId ||
+          !mappedToService(media, record.serviceId, record.externalServiceId)
+        ) {
+          throw Object.assign(
+            new Error(
+              'The exact queue warning is no longer mapped and active.'
+            ),
+            { status: 409 }
+          );
+        }
+        await client.removeQueueItem(record.queueId, { timeout: timeoutMs });
+      })(),
+      timeoutMs,
+      'Rejection timed out.'
+    );
     record.state = 'resolved';
     record.resolution = automatic ? 'automatic_blocklist' : 'manual_blocklist';
     record.actedByUserId = automatic ? null : userId;
@@ -303,13 +383,42 @@ export async function rejectServarrIntervention(
   }
 }
 
+export async function startImportedIntervention(
+  id: number,
+  userId: number
+): Promise<void> {
+  const repository = getRepository(ServarrIntervention);
+  const claimed = await repository.update(
+    { id, state: 'active' },
+    { state: 'importing', actedByUserId: userId, cleanupError: null }
+  );
+  if (!claimed.affected) {
+    throw Object.assign(new Error('This warning is already being handled.'), {
+      status: 409,
+    });
+  }
+}
+
+export async function failImportedIntervention(
+  id: number,
+  message?: string
+): Promise<void> {
+  const repository = getRepository(ServarrIntervention);
+  const record = await repository.findOne({ where: { id } });
+  if (!record || record.state !== 'importing') return;
+  record.state = 'active';
+  record.cleanupError = (message ?? 'Manual import failed.').slice(0, 2000);
+  await repository.save(record);
+}
+
 export async function resolveImportedIntervention(
   id: number,
   userId: number
 ): Promise<void> {
   const repository = getRepository(ServarrIntervention);
   const record = await repository.findOne({ where: { id } });
-  if (!record || record.state === 'resolved') return;
+  if (!record || record.state === 'resolved' || record.state === 'rejecting')
+    return;
   record.state = 'resolved';
   record.resolution = 'manual_import';
   record.actedByUserId = userId;

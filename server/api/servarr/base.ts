@@ -365,13 +365,17 @@ class ServarrBase<QueueItemAppendT> extends ExternalAPI {
     await this.axios.post('/release', body);
   }
 
-  public async removeQueueItem(queueId: number): Promise<void> {
+  public async removeQueueItem(
+    queueId: number,
+    options?: { timeout?: number }
+  ): Promise<void> {
     await this.axios.delete(`/queue/${queueId}`, {
       params: {
         removeFromClient: true,
         blocklist: true,
         skipRedownload: false,
       },
+      ...(options?.timeout != null ? { timeout: options.timeout } : {}),
     });
   }
 }

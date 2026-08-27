@@ -32,7 +32,7 @@ routes.get('/', protectedRoute, async (req, res, next) => {
       .createQueryBuilder('intervention')
       .where(
         values.mode === 'active'
-          ? "intervention.state IN ('active', 'rejecting')"
+          ? "intervention.state IN ('active', 'rejecting', 'importing')"
           : "intervention.resolution IN ('manual_blocklist', 'automatic_blocklist')"
       );
     if (values.serviceType)
@@ -101,12 +101,12 @@ routes.get('/count', protectedRoute, async (req, res, next) => {
     const repository = getRepository(ServarrIntervention);
     const active = await repository
       .createQueryBuilder('intervention')
-      .where("intervention.state IN ('active', 'rejecting')")
+      .where("intervention.state IN ('active', 'rejecting', 'importing')")
       .getCount();
     const seenAt = req.user?.settings?.servarrInterventionsSeenAt;
     let unseenQuery = repository
       .createQueryBuilder('intervention')
-      .where("intervention.state IN ('active', 'rejecting')");
+      .where("intervention.state IN ('active', 'rejecting', 'importing')");
     if (seenAt) {
       unseenQuery = unseenQuery.andWhere('intervention.firstSeenAt > :seenAt', {
         seenAt,
