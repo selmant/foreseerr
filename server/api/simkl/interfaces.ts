@@ -14,7 +14,9 @@ export interface SimklPinTokenResponse {
   error?: string;
 }
 
-export type SimklActivities = Record<string, unknown> & { all?: string };
+export type SimklActivities = Record<string, unknown> & {
+  all?: string | number | null;
+};
 export type SimklSyncResponse = Record<string, unknown>;
 
 export interface SimklUserSettingsResponse {

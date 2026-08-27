@@ -37,12 +37,23 @@ export interface SimklSyncResult {
 type RawItem = Record<string, unknown>;
 
 const toDate = (value: unknown): Date | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const date = new Date(value);
+  const timestamp =
+    typeof value === 'number' && Number.isFinite(value)
+      ? // Simkl timestamps are Unix seconds; JavaScript dates use milliseconds.
+        value * 1000
+      : value;
+  if (typeof timestamp !== 'string' && typeof timestamp !== 'number')
+    return undefined;
+  const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? undefined : date;
 };
 const stringValue = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() ? value : undefined;
+const scalarValue = (value: unknown): string | undefined => {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+};
 const numberValue = (value: unknown): number | undefined => {
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
@@ -70,7 +81,7 @@ function normalizeItem(
     string,
     unknown
   >;
-  const simklId = stringValue(ids.simkl ?? raw.simkl_id ?? raw.id);
+  const simklId = scalarValue(ids.simkl ?? raw.simkl_id ?? raw.id);
   const simklType = (
     stringValue(raw.type ?? raw.simkl_type) === 'show'
       ? 'show'
@@ -102,7 +113,9 @@ function normalizeItem(
 }
 
 const watermark = (activities: SimklActivities): string | undefined =>
-  stringValue(activities.all);
+  scalarValue(activities.all);
+const activityFingerprint = (activities: SimklActivities): string =>
+  JSON.stringify(activities);
 const removalWatermark = (activities: SimklActivities): string | undefined => {
   const values: string[] = [];
   const walk = (value: unknown): void => {
@@ -110,9 +123,10 @@ const removalWatermark = (activities: SimklActivities): string | undefined => {
     for (const [key, child] of Object.entries(
       value as Record<string, unknown>
     )) {
-      if (key === 'removed_from_list' && typeof child === 'string')
-        values.push(child);
-      else walk(child);
+      if (key === 'removed_from_list') {
+        const value = scalarValue(child);
+        if (value) values.push(value);
+      } else walk(child);
     }
   };
   walk(activities);
@@ -142,15 +156,14 @@ export async function syncSimklUser(
     try {
       const client = await createSimklUserClient(userId);
       const activities = await client.getActivities();
+      const activitiesSnapshot = activityFingerprint(activities);
       const nextWatermark = watermark(activities);
-      if (!nextWatermark)
-        throw new Error('Simkl activities response did not contain all');
       const oldActivities = previous?.activities
         ? (JSON.parse(previous.activities) as SimklActivities)
         : undefined;
       if (
         previous?.initialSyncComplete &&
-        watermark(oldActivities ?? {}) === nextWatermark
+        previous.activities === activitiesSnapshot
       ) {
         previous.lastCheckedAt = new Date();
         previous.lastError = undefined;
@@ -165,7 +178,8 @@ export async function syncSimklUser(
         type?: SimklItemType;
         data: Record<string, unknown>;
       }[] = [];
-      if (!previous?.initialSyncComplete) {
+      const oldWatermark = watermark(oldActivities ?? {});
+      if (!previous?.initialSyncComplete || !oldWatermark || !nextWatermark) {
         for (const type of TYPES)
           batches.push({
             type: type.local,
@@ -174,7 +188,7 @@ export async function syncSimklUser(
       } else {
         batches.push({
           data: await client.getAllItems(undefined, {
-            date_from: watermark(oldActivities ?? {})!,
+            date_from: oldWatermark,
           }),
         });
       }
@@ -199,7 +213,7 @@ export async function syncSimklUser(
             const ids = (
               raw.ids && typeof raw.ids === 'object' ? raw.ids : {}
             ) as Record<string, unknown>;
-            const id = stringValue(ids.simkl ?? raw.simkl_id ?? raw.id);
+            const id = scalarValue(ids.simkl ?? raw.simkl_id ?? raw.id);
             if (id) upstreamIds.add(`${type.local}:${id}`);
           }
         }
@@ -238,7 +252,7 @@ export async function syncSimklUser(
           manager
             .getRepository(SimklSyncState)
             .create({ user: { id: userId }, initialSyncComplete: false });
-        state.activities = JSON.stringify(activities);
+        state.activities = activitiesSnapshot;
         state.initialSyncComplete = true;
         state.lastCheckedAt = now;
         state.lastSuccessfulSyncAt = now;
