@@ -268,10 +268,20 @@ export async function fillMissingTmdbIds(
   });
 }
 
+const normalizeTitle = (value: string): string =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+export const simklTitlesMatch = (left: string, right: string): boolean => {
+  const a = normalizeTitle(left);
+  const b = normalizeTitle(right);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+};
+
 /** Prefer the Simkl hint, then the other TMDB catalog, so anime films map as movies. */
 export async function assignWorkingTmdbMediaType(
   items: WatchlistItem[],
-  probe: (mediaType: 'movie' | 'tv', tmdbId: number) => Promise<boolean>
+  probe: (mediaType: 'movie' | 'tv', tmdbId: number) => Promise<string | false>
 ): Promise<WatchlistItem[]> {
   return mapWithConcurrency(items, 2, async (item) => {
     if (!hasDiscoverTmdbId(item.tmdbId)) return item;
@@ -279,7 +289,8 @@ export async function assignWorkingTmdbMediaType(
     const order: ('movie' | 'tv')[] =
       item.mediaType === 'movie' ? ['movie', 'tv'] : ['tv', 'movie'];
     for (const mediaType of order) {
-      if (await probe(mediaType, tmdbId)) {
+      const title = await probe(mediaType, tmdbId);
+      if (title && simklTitlesMatch(item.title, title)) {
         return { ...item, mediaType, id: tmdbId };
       }
     }

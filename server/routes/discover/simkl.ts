@@ -57,13 +57,19 @@ const loadSimklTitle =
   (client: SimklAPI) => (kind: 'movies' | 'tv' | 'anime', simklId: string) =>
     client.getTitle(kind, simklId);
 
-const tmdbExists =
+const tmdbTitle =
   (tmdb: TheMovieDb) =>
-  async (mediaType: 'movie' | 'tv', tmdbId: number): Promise<boolean> => {
+  async (
+    mediaType: 'movie' | 'tv',
+    tmdbId: number
+  ): Promise<string | false> => {
     try {
-      if (mediaType === 'movie') await tmdb.getMovie({ movieId: tmdbId });
-      else await tmdb.getTvShow({ tvId: tmdbId });
-      return true;
+      if (mediaType === 'movie') {
+        const movie = await tmdb.getMovie({ movieId: tmdbId });
+        return movie.title || false;
+      }
+      const show = await tmdb.getTvShow({ tvId: tmdbId });
+      return show.name || false;
     } catch {
       return false;
     }
@@ -81,7 +87,7 @@ async function mappedCatalogPage(
   );
   const typed = await assignWorkingTmdbMediaType(
     filled,
-    tmdbExists(createTmdbWithRegionLanguage())
+    tmdbTitle(createTmdbWithRegionLanguage())
   );
   return {
     ...paged,
@@ -136,7 +142,7 @@ simklDiscoverRoutes.get('/library', async (req, res, next) => {
   );
   const typed = await assignWorkingTmdbMediaType(
     filled,
-    tmdbExists(createTmdbWithRegionLanguage(req.user))
+    tmdbTitle(createTmdbWithRegionLanguage(req.user))
   );
   const results = omitUnmappedDiscoverItems(
     typed,

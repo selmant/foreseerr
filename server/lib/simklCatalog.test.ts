@@ -264,11 +264,28 @@ describe('simkl catalog mapping', () => {
         sourceId: '1',
       },
     ];
-    const resolved = await assignWorkingTmdbMediaType(
-      items,
-      async (kind) => kind === 'movie'
+    const resolved = await assignWorkingTmdbMediaType(items, async (kind) =>
+      kind === 'movie' ? 'A Silent Voice' : false
     );
     assert.equal(resolved[0].mediaType, 'movie');
     assert.equal(resolved[0].tmdbId, 378064);
+  });
+
+  it('drops colliding TMDB movie ids whose titles do not match', async () => {
+    const items: WatchlistItem[] = [
+      {
+        id: 313612,
+        ratingKey: 'simkl-best-rdr',
+        tmdbId: 313612,
+        mediaType: 'tv',
+        title: 'Red Dead Redemption II',
+        source: 'simkl',
+        sourceId: '2276947',
+      },
+    ];
+    const resolved = await assignWorkingTmdbMediaType(items, async (kind) =>
+      kind === 'movie' ? 'Sindhu Bhairavi' : false
+    );
+    assert.equal(resolved[0].tmdbId, undefined);
   });
 });
