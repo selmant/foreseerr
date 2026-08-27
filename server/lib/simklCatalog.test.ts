@@ -265,8 +265,9 @@ describe('simkl catalog mapping', () => {
         sourceId: '1',
       },
     ];
-    const resolved = await assignWorkingTmdbMediaType(items, async (kind) =>
-      kind === 'movie' ? 'A Silent Voice' : false
+    const resolved = await assignWorkingTmdbMediaType(
+      items,
+      async (kind) => kind === 'movie'
     );
     assert.equal(resolved[0].mediaType, 'movie');
     assert.equal(resolved[0].tmdbId, 378064);
@@ -311,45 +312,6 @@ describe('simkl catalog mapping', () => {
       ids: { tmdb: '311986' },
     }));
     assert.equal(filled.length, 0);
-  });
-
-  it('drops colliding TMDB movie ids whose titles do not match', async () => {
-    const items: WatchlistItem[] = [
-      {
-        id: 313612,
-        ratingKey: 'simkl-best-rdr',
-        tmdbId: 313612,
-        mediaType: 'tv',
-        title: 'Red Dead Redemption II',
-        source: 'simkl',
-        sourceId: '2276947',
-      },
-    ];
-    const resolved = await assignWorkingTmdbMediaType(items, async (kind) =>
-      kind === 'movie' ? 'Sindhu Bhairavi' : false
-    );
-    assert.equal(resolved[0].tmdbId, undefined);
-  });
-
-  it('keeps anime films when Simkl romaji overlaps the TMDB English title', async () => {
-    const items: WatchlistItem[] = [
-      {
-        id: 822653,
-        ratingKey: 'simkl-premieres-madoka',
-        tmdbId: 822653,
-        mediaType: 'movie',
-        title: 'Gekijouban Mahou Shoujo Madoka Magica: Walpurgis no Kaiten',
-        source: 'simkl',
-        sourceId: '1621829',
-      },
-    ];
-    const resolved = await assignWorkingTmdbMediaType(items, async (kind) =>
-      kind === 'movie'
-        ? 'Puella Magi Madoka Magica the Movie -Walpurgisnacht: Rising-'
-        : false
-    );
-    assert.equal(resolved[0].mediaType, 'movie');
-    assert.equal(resolved[0].tmdbId, 822653);
   });
 
   it('maps Simkl anime_type movie as a movie', () => {

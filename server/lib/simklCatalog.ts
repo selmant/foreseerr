@@ -290,49 +290,10 @@ export async function fillMissingTmdbIds(
   return mapped.filter((item): item is WatchlistItem => item !== null);
 }
 
-const normalizeTitle = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]+/g, '');
-
-const TITLE_STOPWORDS = new Set([
-  'the',
-  'and',
-  'movie',
-  'season',
-  'show',
-  'series',
-  'vol',
-  'volume',
-]);
-
-const titleTokens = (value: string): Set<string> =>
-  new Set(
-    value
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((token) => token.length >= 4 && !TITLE_STOPWORDS.has(token))
-  );
-
-export const simklTitlesMatch = (left: string, right: string): boolean => {
-  const a = normalizeTitle(left);
-  const b = normalizeTitle(right);
-  if (!a || !b) return false;
-  if (a === b || a.includes(b) || b.includes(a)) return true;
-  const leftTokens = titleTokens(left);
-  const rightTokens = titleTokens(right);
-  let overlap = 0;
-  let longHit = false;
-  for (const token of leftTokens) {
-    if (!rightTokens.has(token)) continue;
-    overlap += 1;
-    if (token.length >= 6) longHit = true;
-  }
-  return overlap >= 2 || (overlap === 1 && longHit);
-};
-
 /** Prefer the Simkl hint, then the other TMDB catalog, so anime films map as movies. */
 export async function assignWorkingTmdbMediaType(
   items: WatchlistItem[],
-  probe: (mediaType: 'movie' | 'tv', tmdbId: number) => Promise<string | false>
+  probe: (mediaType: 'movie' | 'tv', tmdbId: number) => Promise<boolean>
 ): Promise<WatchlistItem[]> {
   return mapWithConcurrency(items, 2, async (item) => {
     if (!hasDiscoverTmdbId(item.tmdbId)) return item;
@@ -340,8 +301,7 @@ export async function assignWorkingTmdbMediaType(
     const order: ('movie' | 'tv')[] =
       item.mediaType === 'movie' ? ['movie', 'tv'] : ['tv', 'movie'];
     for (const mediaType of order) {
-      const title = await probe(mediaType, tmdbId);
-      if (title && simklTitlesMatch(item.title, title)) {
+      if (await probe(mediaType, tmdbId)) {
         return { ...item, mediaType, id: tmdbId };
       }
     }
