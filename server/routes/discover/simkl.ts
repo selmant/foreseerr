@@ -8,6 +8,11 @@ import type {
   WatchlistItem,
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
+import {
+  catalogWatchlistItems,
+  paginateWatchlist,
+  simklPosterUrl,
+} from '@server/lib/simklCatalog';
 import { syncSimklUser } from '@server/lib/simklSync';
 import { Router } from 'express';
 
@@ -22,20 +27,9 @@ const STATUSES = new Set<SimklItemStatus>([
 const sourceUrl = (item: SimklSyncItem) =>
   `https://simkl.com/${item.simklType === 'movie' ? 'movies' : item.simklType === 'anime' ? 'anime' : 'tv'}/${encodeURIComponent(item.slug || item.simklId)}`;
 
-const catalogItems = (
-  payload: Record<string, unknown>
-): Record<string, unknown>[] =>
-  Object.values(payload).flatMap((value) =>
-    Array.isArray(value)
-      ? value.filter(
-          (item): item is Record<string, unknown> =>
-            Boolean(item) && typeof item === 'object'
-        )
-      : []
-  );
-
 function toWatchlistItem(item: SimklSyncItem): WatchlistItem {
   const mediaType = item.simklType === 'movie' ? 'movie' : 'tv';
+  const image = simklPosterUrl(item.posterPath);
   return {
     id: (item.tmdbId ?? Number(item.simklId)) || 0,
     ratingKey: `simkl-${item.simklType}-${item.simklId}`,
@@ -45,39 +39,19 @@ function toWatchlistItem(item: SimklSyncItem): WatchlistItem {
     source: 'simkl',
     sourceId: item.simklId,
     sourceUrl: sourceUrl(item),
-    ...(item.posterPath ? { image: item.posterPath } : {}),
+    ...(image ? { image } : {}),
   };
 }
 
-function catalogWatchlistItems(
-  payloads: Record<string, unknown>[],
-  typeHint: string,
-  keyPrefix: string
-): WatchlistItem[] {
-  const results: WatchlistItem[] = [];
-  for (const item of payloads.flatMap(catalogItems)) {
-    const ids = (
-      item.ids && typeof item.ids === 'object' ? item.ids : {}
-    ) as Record<string, unknown>;
-    const id = String(ids.simkl ?? item.id ?? '');
-    const tmdbId = Number(ids.tmdb);
-    const mediaType =
-      String(item.type) === 'movie' || typeHint === 'movie' ? 'movie' : 'tv';
-    if (!id || typeof item.title !== 'string') continue;
-    results.push({
-      id: Number.isFinite(tmdbId) && tmdbId > 0 ? tmdbId : Number(id) || 0,
-      ratingKey: `${keyPrefix}-${id}`,
-      ...(Number.isFinite(tmdbId) && tmdbId > 0 ? { tmdbId } : {}),
-      mediaType,
-      title: item.title,
-      source: 'simkl',
-      sourceId: id,
-      sourceUrl: `https://simkl.com/${mediaType === 'movie' ? 'movies' : 'tv'}/${encodeURIComponent(String(item.slug ?? id))}`,
-      ...(typeof item.poster === 'string' ? { image: item.poster } : {}),
-    });
-  }
-  return results;
-}
+const trendingFile = (mediaType: string, period: string): string => {
+  const window = period === 'day' ? 'today' : period;
+  if (mediaType === 'movie')
+    return `/discover/trending/movies/${window}_100.json`;
+  if (mediaType === 'tv') return `/discover/trending/tv/${window}_100.json`;
+  if (mediaType === 'anime')
+    return `/discover/trending/anime/${window}_100.json`;
+  return `/discover/trending/${window}_100.json`;
+};
 
 simklDiscoverRoutes.get('/library', async (req, res, next) => {
   if (!req.user?.id) return next({ status: 401, message: 'Unauthorized' });
@@ -129,22 +103,14 @@ simklDiscoverRoutes.get('/trending', async (req, res, next) => {
     const period = ['day', 'week', 'month'].includes(String(req.query.period))
       ? String(req.query.period)
       : 'week';
-    const paths =
-      type === 'movie'
-        ? ['/movies/trending']
-        : type === 'anime'
-          ? ['/anime/trending']
-          : type === 'tv'
-            ? ['/tv/trending']
-            : ['/movies/trending', '/tv/trending'];
-    const payloads = await Promise.all(
-      paths.map((path) => new SimklAPI().getCatalog(path, { page, period }))
+    const payload = await new SimklAPI().getCdnCatalog(
+      trendingFile(type, period)
     );
-    const results = catalogWatchlistItems(payloads, type, 'simkl-public');
     return res.status(200).json({
-      page,
-      hasMore: results.length >= 20,
-      results: results.slice(0, 20),
+      ...paginateWatchlist(
+        catalogWatchlistItems([payload], type, 'simkl-public'),
+        page
+      ),
     } satisfies WatchlistResponse);
   } catch (error) {
     return next({
@@ -166,15 +132,14 @@ simklDiscoverRoutes.get('/best', async (req, res, next) => {
       ? String(req.query.filter)
       : 'all';
     const page = Math.max(1, Number(req.query.page) || 1);
-    const payload = await new SimklAPI().getCatalog(`/${mediaType}/best`, {
-      page,
-      filter,
-    });
-    const results = catalogWatchlistItems([payload], mediaType, 'simkl-best');
+    const payload = await new SimklAPI().getCatalog(
+      `/${mediaType}/best/${filter}`
+    );
     return res.status(200).json({
-      page,
-      hasMore: results.length >= 20,
-      results: results.slice(0, 20),
+      ...paginateWatchlist(
+        catalogWatchlistItems([payload], mediaType, 'simkl-best'),
+        page
+      ),
     } satisfies WatchlistResponse);
   } catch (error) {
     return next({
@@ -190,21 +155,21 @@ simklDiscoverRoutes.get('/best', async (req, res, next) => {
 simklDiscoverRoutes.get('/premieres', async (req, res, next) => {
   try {
     const mediaType = String(req.query.mediaType) === 'anime' ? 'anime' : 'tv';
-    const window = String(req.query.window) === 'upcoming' ? 'upcoming' : 'new';
+    const window =
+      String(req.query.window) === 'upcoming' ||
+      String(req.query.window) === 'soon'
+        ? 'soon'
+        : 'new';
     const page = Math.max(1, Number(req.query.page) || 1);
     const payload = await new SimklAPI().getCatalog(
       `/${mediaType}/premieres/${window}`,
-      { page }
-    );
-    const results = catalogWatchlistItems(
-      [payload],
-      mediaType,
-      'simkl-premieres'
+      { page, limit: 20 }
     );
     return res.status(200).json({
-      page,
-      hasMore: results.length >= 20,
-      results: results.slice(0, 20),
+      ...paginateWatchlist(
+        catalogWatchlistItems([payload], mediaType, 'simkl-premieres'),
+        page
+      ),
     } satisfies WatchlistResponse);
   } catch (error) {
     return next({

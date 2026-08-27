@@ -7,6 +7,11 @@ import {
 } from '@server/entity/SimklSyncItem';
 import { SimklSyncState } from '@server/entity/SimklSyncState';
 import { createSimklUserClient } from '@server/lib/simkl';
+import {
+  simklPosterUrl,
+  simklRecordId,
+  syncEntries,
+} from '@server/lib/simklCatalog';
 import AsyncLock from '@server/utils/asyncLock';
 
 const syncLock = new AsyncLock();
@@ -59,20 +64,6 @@ const numberValue = (value: unknown): number | undefined => {
   return Number.isFinite(number) ? number : undefined;
 };
 
-function itemArrays(response: Record<string, unknown>): RawItem[] {
-  const output: RawItem[] = [];
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const entry of value)
-        if (entry && typeof entry === 'object') output.push(entry as RawItem);
-    } else if (value && typeof value === 'object') {
-      for (const nested of Object.values(value)) visit(nested);
-    }
-  };
-  visit(response);
-  return output;
-}
-
 function normalizeItem(
   raw: RawItem,
   fallbackType?: SimklItemType
@@ -81,31 +72,38 @@ function normalizeItem(
     string,
     unknown
   >;
-  const simklId = scalarValue(ids.simkl ?? raw.simkl_id ?? raw.id);
+  const simklId = simklRecordId(raw, ids);
   const simklType = (
     stringValue(raw.type ?? raw.simkl_type) === 'show'
       ? 'show'
       : stringValue(raw.type ?? raw.simkl_type) === 'anime'
         ? 'anime'
-        : fallbackType
+        : stringValue(raw.type ?? raw.simkl_type) === 'movie'
+          ? 'movie'
+          : fallbackType
   ) as SimklItemType | undefined;
   const title = stringValue(raw.title ?? raw.name);
   const status = stringValue(raw.status) as SimklItemStatus | undefined;
   if (!simklId || !simklType || !title || !status || !STATUSES.has(status))
     return null;
+  const idsRecord = ids as Record<string, unknown>;
   return {
     simklId,
     simklType,
-    tmdbId: numberValue(ids.tmdb ?? raw.tmdb),
-    tvdbId: numberValue(ids.tvdb ?? raw.tvdb),
-    slug: stringValue(raw.slug),
+    tmdbId: numberValue(idsRecord.tmdb ?? raw.tmdb),
+    tvdbId: numberValue(idsRecord.tvdb ?? raw.tvdb),
+    slug: stringValue(raw.slug ?? idsRecord.slug),
     title,
     year: numberValue(raw.year),
-    posterPath: stringValue(raw.poster ?? raw.poster_path),
+    posterPath: simklPosterUrl(
+      stringValue(raw.poster ?? raw.poster_path) ?? null
+    ),
     animeType: stringValue(raw.anime_type),
     status,
     userRating: numberValue(raw.user_rating ?? raw.rating),
-    addedAt: toDate(raw.added_to_list_at ?? raw.added_at),
+    addedAt: toDate(
+      raw.added_to_list_at ?? raw.added_to_watchlist_at ?? raw.added_at
+    ),
     lastWatchedAt: toDate(raw.last_watched_at ?? raw.last_watched),
     watchedEpisodeCount: numberValue(raw.watched_episodes_count),
     totalEpisodeCount: numberValue(raw.total_episodes_count),
@@ -193,8 +191,8 @@ export async function syncSimklUser(
         });
       }
       const items = batches.flatMap(({ type, data }) =>
-        itemArrays(data)
-          .map((item) => normalizeItem(item, type))
+        syncEntries(data, type)
+          .map(({ item, type: entryType }) => normalizeItem(item, entryType))
           .filter((item): item is Omit<SimklSyncItem, 'id' | 'user'> =>
             Boolean(item)
           )
@@ -205,16 +203,17 @@ export async function syncSimklUser(
       if (mustReconcile) {
         upstreamIds = new Set();
         for (const type of TYPES) {
-          for (const raw of itemArrays(
+          for (const { item, type: entryType } of syncEntries(
             await client.getAllItems(type.upstream, {
               extended: 'simkl_ids_only',
-            })
+            }),
+            type.local
           )) {
             const ids = (
-              raw.ids && typeof raw.ids === 'object' ? raw.ids : {}
+              item.ids && typeof item.ids === 'object' ? item.ids : {}
             ) as Record<string, unknown>;
-            const id = scalarValue(ids.simkl ?? raw.simkl_id ?? raw.id);
-            if (id) upstreamIds.add(`${type.local}:${id}`);
+            const id = simklRecordId(item, ids);
+            if (id) upstreamIds.add(`${entryType}:${id}`);
           }
         }
       }

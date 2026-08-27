@@ -143,9 +143,9 @@ export default class SimklAPI extends ExternalAPI {
     }
   }
 
-  /** A cheap public request used when validating a submitted Client ID. */
+  /** Requires a real Client ID; `/movies/trending` succeeds without one. */
   public async validateClientId(): Promise<void> {
-    await this.request('get', '/movies/trending?limit=1');
+    await this.request('get', '/tv/best/all');
   }
 
   public async requestPinCode(): Promise<SimklPinCodeResponse> {
@@ -219,11 +219,34 @@ export default class SimklAPI extends ExternalAPI {
   public async getCatalog(
     path: string,
     params: Record<string, string | number | boolean> = {}
-  ): Promise<Record<string, unknown>> {
+  ): Promise<unknown> {
     const query = new URLSearchParams(
       Object.entries(params).map(([key, value]) => [key, String(value)])
     );
     return this.request('get', `${path}${query.size ? `?${query}` : ''}`);
+  }
+
+  public async getCdnCatalog(path: string): Promise<unknown> {
+    await this.pace(false);
+    const requiredParameters = new URLSearchParams({
+      client_id: this.clientId,
+      'app-name': 'foreseerr',
+      'app-version': getAppVersion(),
+    });
+    const url = `https://data.simkl.in${path}?${requiredParameters}`;
+    try {
+      const response = await this.rawAxios.get<unknown>(url);
+      return response.data;
+    } catch (error) {
+      const status = axios.isAxiosError(error)
+        ? error.response?.status
+        : undefined;
+      if (status === 429) {
+        const retryAfter = Number(error.response?.headers['retry-after']) || 1;
+        throw new SimklRateLimitedError(Math.max(1, retryAfter));
+      }
+      throw new SimklTemporarilyUnavailableError(error);
+    }
   }
 
   public async getWatchedEpisodes(): Promise<Record<string, unknown>> {
