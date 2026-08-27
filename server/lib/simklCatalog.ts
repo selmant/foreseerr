@@ -180,11 +180,24 @@ const sourceUrl = (
   return `https://simkl.com/${kind}/${encodeURIComponent(slug)}`;
 };
 
+/** Simkl ranks YouTube let's-plays (e.g. RDR2) in /tv/best; they are not requestable TV. */
+export const isSimklVideoGamePlay = (
+  item: Record<string, unknown>
+): boolean => {
+  const type = String(item.type ?? '').toLowerCase();
+  if (type === 'game') return true;
+  const genres = Array.isArray(item.genres) ? item.genres : [];
+  return genres.some((genre) =>
+    String(genre).toLowerCase().includes('video game')
+  );
+};
+
 export const toCatalogWatchlistItem = (
   item: Record<string, unknown>,
   typeHint: SimklMediaHint,
   keyPrefix: string
 ): WatchlistItem | null => {
+  if (isSimklVideoGamePlay(item)) return null;
   const ids = isObject(item.ids) ? item.ids : {};
   const id = simklRecordId(item, ids);
   const title = catalogTitle(item);
@@ -254,10 +267,12 @@ export async function fillMissingTmdbIds(
     simklId: string
   ) => Promise<Record<string, unknown>>
 ): Promise<WatchlistItem[]> {
-  return mapWithConcurrency(items, 4, async (item) => {
-    if (hasDiscoverTmdbId(item.tmdbId) || !item.sourceId) return item;
+  const mapped = await mapWithConcurrency(items, 4, async (item) => {
+    if (!item.sourceId) return item;
+    if (hasDiscoverTmdbId(item.tmdbId)) return item;
     try {
       const detail = await loadTitle(simklDetailKind(item), item.sourceId);
+      if (isSimklVideoGamePlay(detail)) return null;
       const ids = isObject(detail.ids) ? detail.ids : {};
       const tmdbId = tmdbIdFromIds(ids);
       if (!hasDiscoverTmdbId(tmdbId)) return item;
@@ -266,6 +281,7 @@ export async function fillMissingTmdbIds(
       return item;
     }
   });
+  return mapped.filter((item): item is WatchlistItem => item !== null);
 }
 
 const normalizeTitle = (value: string): string =>

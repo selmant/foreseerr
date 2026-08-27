@@ -6,6 +6,7 @@ import {
   assignWorkingTmdbMediaType,
   catalogWatchlistItems,
   fillMissingTmdbIds,
+  isSimklVideoGamePlay,
   paginateWatchlist,
   syncEntries,
   unwrapSimklLibraryItem,
@@ -269,6 +270,46 @@ describe('simkl catalog mapping', () => {
     );
     assert.equal(resolved[0].mediaType, 'movie');
     assert.equal(resolved[0].tmdbId, 378064);
+  });
+
+  it('drops Simkl video-game-play titles from catalog mapping', () => {
+    const payload = [
+      {
+        title: 'Red Dead Redemption II',
+        year: 2018,
+        url: '/tv/2276947/red-dead-redemption-ii',
+        genres: ['Action', 'Video Game Play', 'Western'],
+        ids: { simkl_id: 2276947, slug: 'red-dead-redemption-ii' },
+      },
+    ];
+    assert.equal(isSimklVideoGamePlay(payload[0]), true);
+    assert.equal(
+      catalogWatchlistItems([payload], 'tv', 'simkl-best').length,
+      0
+    );
+  });
+
+  it('drops video-game-play titles when Simkl detail is fetched for TMDB ids', async () => {
+    const items = catalogWatchlistItems(
+      [
+        [
+          {
+            title: 'Red Dead Redemption II',
+            url: '/tv/2276947/red-dead-redemption-ii',
+            ids: { simkl_id: 2276947, slug: 'red-dead-redemption-ii' },
+          },
+        ],
+      ],
+      'tv',
+      'simkl-best'
+    );
+    assert.equal(items.length, 1);
+    const filled = await fillMissingTmdbIds(items, async () => ({
+      type: 'show',
+      genres: ['Action', 'Adventure', 'Drama', 'Video Game Play', 'Western'],
+      ids: { tmdb: '313612' },
+    }));
+    assert.equal(filled.length, 0);
   });
 
   it('drops colliding TMDB movie ids whose titles do not match', async () => {
