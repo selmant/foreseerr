@@ -38,6 +38,16 @@ export enum DiscoverSliderType {
   MDBLIST_LIST,
   SIMKL_TRENDING,
   SIMKL_PLAN_TO_WATCH,
+  SIMKL_BEST_TV,
+  SIMKL_BEST_ANIME,
+  SIMKL_NEW_TV_PREMIERES,
+  SIMKL_UPCOMING_TV_PREMIERES,
+  SIMKL_NEW_ANIME_PREMIERES,
+  SIMKL_UPCOMING_ANIME_PREMIERES,
+  SIMKL_WATCHING,
+  SIMKL_ON_HOLD,
+  SIMKL_COMPLETED,
+  SIMKL_DROPPED,
 }
 
 export const defaultSliders: Partial<DiscoverSlider>[] = [
@@ -190,5 +200,65 @@ export const defaultSliders: Partial<DiscoverSlider>[] = [
     enabled: true,
     isBuiltIn: true,
     order: 24,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_BEST_TV,
+    enabled: true,
+    isBuiltIn: true,
+    order: 25,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_BEST_ANIME,
+    enabled: true,
+    isBuiltIn: true,
+    order: 26,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_NEW_TV_PREMIERES,
+    enabled: true,
+    isBuiltIn: true,
+    order: 27,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_UPCOMING_TV_PREMIERES,
+    enabled: true,
+    isBuiltIn: true,
+    order: 28,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_NEW_ANIME_PREMIERES,
+    enabled: true,
+    isBuiltIn: true,
+    order: 29,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_UPCOMING_ANIME_PREMIERES,
+    enabled: true,
+    isBuiltIn: true,
+    order: 30,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_WATCHING,
+    enabled: true,
+    isBuiltIn: true,
+    order: 31,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_ON_HOLD,
+    enabled: true,
+    isBuiltIn: true,
+    order: 32,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_COMPLETED,
+    enabled: true,
+    isBuiltIn: true,
+    order: 33,
+  },
+  {
+    type: DiscoverSliderType.SIMKL_DROPPED,
+    enabled: true,
+    isBuiltIn: true,
+    order: 34,
   },
 ];

@@ -104,6 +104,16 @@ export const sliderTitles = defineMessages('components.Discover', {
   mdblistlist: 'MDBList List',
   simkltrending: 'Simkl Trending',
   simklplantowatch: 'Simkl Plan to Watch',
+  simklbesttv: 'Simkl Best TV',
+  simklbestanime: 'Simkl Best Anime',
+  simklnewtvpremieres: 'Simkl New TV Premieres',
+  simklupcomingtvpremieres: 'Simkl Upcoming TV Premieres',
+  simklnewanimepremieres: 'Simkl New Anime Premieres',
+  simklupcominganimepremieres: 'Simkl Upcoming Anime Premieres',
+  simklwatching: 'Simkl Watching',
+  simklonhold: 'Simkl On Hold',
+  simklcompleted: 'Simkl Completed',
+  simkldropped: 'Simkl Dropped',
 });
 
 export const QueryFilterOptions = z.object({

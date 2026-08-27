@@ -16,17 +16,58 @@ const libraryStatuses = new Set([
   'dropped',
 ]);
 
+const publicViews = {
+  trending: {
+    title: 'Simkl Trending',
+    endpoint: '/api/v1/discover/simkl/trending',
+    options: undefined,
+  },
+  'best-tv': {
+    title: 'Simkl Best TV',
+    endpoint: '/api/v1/discover/simkl/best',
+    options: { mediaType: 'tv' },
+  },
+  'best-anime': {
+    title: 'Simkl Best Anime',
+    endpoint: '/api/v1/discover/simkl/best',
+    options: { mediaType: 'anime' },
+  },
+  'new-tv-premieres': {
+    title: 'Simkl New TV Premieres',
+    endpoint: '/api/v1/discover/simkl/premieres',
+    options: { mediaType: 'tv', window: 'new' },
+  },
+  'upcoming-tv-premieres': {
+    title: 'Simkl Upcoming TV Premieres',
+    endpoint: '/api/v1/discover/simkl/premieres',
+    options: { mediaType: 'tv', window: 'upcoming' },
+  },
+  'new-anime-premieres': {
+    title: 'Simkl New Anime Premieres',
+    endpoint: '/api/v1/discover/simkl/premieres',
+    options: { mediaType: 'anime', window: 'new' },
+  },
+  'upcoming-anime-premieres': {
+    title: 'Simkl Upcoming Anime Premieres',
+    endpoint: '/api/v1/discover/simkl/premieres',
+    options: { mediaType: 'anime', window: 'upcoming' },
+  },
+} as const;
+
 const DiscoverSimkl = () => {
   const settings = useSettings();
   const router = useRouter();
-  const trending = router.query.view === 'trending';
+  const view =
+    typeof router.query.view === 'string'
+      ? publicViews[router.query.view as keyof typeof publicViews]
+      : undefined;
   const status =
     typeof router.query.status === 'string' &&
     libraryStatuses.has(router.query.status)
       ? router.query.status
       : 'plantowatch';
-  const title = trending
-    ? 'Simkl Trending'
+  const title = view
+    ? view.title
     : `Simkl ${
         status === 'plantowatch'
           ? 'Plan to Watch'
@@ -42,11 +83,11 @@ const DiscoverSimkl = () => {
     error,
   } = useDiscover<WatchlistItem>(
     settings.currentSettings.simklConfigured
-      ? trending
-        ? '/api/v1/discover/simkl/trending'
+      ? view
+        ? view.endpoint
         : '/api/v1/discover/simkl/library'
       : '',
-    trending ? undefined : { status }
+    view ? view.options : { status }
   );
   if (!settings.currentSettings.simklConfigured)
     return <ErrorPage statusCode={404} />;

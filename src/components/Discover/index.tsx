@@ -434,6 +434,50 @@ const Discover = () => {
               />
             );
             break;
+          case DiscoverSliderType.SIMKL_WATCHING:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simklwatching)}
+                endpoint="/api/v1/discover/simkl/library?status=watching"
+                linkUrl="/discover/simkl?status=watching"
+                sliderKey="simkl-watching"
+                requiresLink
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_ON_HOLD:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simklonhold)}
+                endpoint="/api/v1/discover/simkl/library?status=hold"
+                linkUrl="/discover/simkl?status=hold"
+                sliderKey="simkl-on-hold"
+                requiresLink
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_COMPLETED:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simklcompleted)}
+                endpoint="/api/v1/discover/simkl/library?status=completed"
+                linkUrl="/discover/simkl?status=completed"
+                sliderKey="simkl-completed"
+                requiresLink
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_DROPPED:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simkldropped)}
+                endpoint="/api/v1/discover/simkl/library?status=dropped"
+                linkUrl="/discover/simkl?status=dropped"
+                sliderKey="simkl-dropped"
+                requiresLink
+              />
+            );
+            break;
           case DiscoverSliderType.SIMKL_TRENDING:
             sliderComponent = (
               <SimklSlider
@@ -441,6 +485,70 @@ const Discover = () => {
                 endpoint="/api/v1/discover/simkl/trending"
                 linkUrl="/discover/simkl?view=trending"
                 sliderKey="simkl-trending"
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_BEST_TV:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simklbesttv)}
+                endpoint="/api/v1/discover/simkl/best?mediaType=tv"
+                linkUrl="/discover/simkl?view=best-tv"
+                sliderKey="simkl-best-tv"
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_BEST_ANIME:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simklbestanime)}
+                endpoint="/api/v1/discover/simkl/best?mediaType=anime"
+                linkUrl="/discover/simkl?view=best-anime"
+                sliderKey="simkl-best-anime"
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_NEW_TV_PREMIERES:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simklnewtvpremieres)}
+                endpoint="/api/v1/discover/simkl/premieres?mediaType=tv&window=new"
+                linkUrl="/discover/simkl?view=new-tv-premieres"
+                sliderKey="simkl-new-tv-premieres"
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_UPCOMING_TV_PREMIERES:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(
+                  sliderTitles.simklupcomingtvpremieres
+                )}
+                endpoint="/api/v1/discover/simkl/premieres?mediaType=tv&window=upcoming"
+                linkUrl="/discover/simkl?view=upcoming-tv-premieres"
+                sliderKey="simkl-upcoming-tv-premieres"
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_NEW_ANIME_PREMIERES:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(sliderTitles.simklnewanimepremieres)}
+                endpoint="/api/v1/discover/simkl/premieres?mediaType=anime&window=new"
+                linkUrl="/discover/simkl?view=new-anime-premieres"
+                sliderKey="simkl-new-anime-premieres"
+              />
+            );
+            break;
+          case DiscoverSliderType.SIMKL_UPCOMING_ANIME_PREMIERES:
+            sliderComponent = (
+              <SimklSlider
+                title={intl.formatMessage(
+                  sliderTitles.simklupcominganimepremieres
+                )}
+                endpoint="/api/v1/discover/simkl/premieres?mediaType=anime&window=upcoming"
+                linkUrl="/discover/simkl?view=upcoming-anime-premieres"
+                sliderKey="simkl-upcoming-anime-premieres"
               />
             );
             break;
