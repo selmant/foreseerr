@@ -33,6 +33,7 @@ const SimklSlider = ({ requiresLink = false, ...props }: SimklSliderProps) => {
           : 'No Simkl titles found.'
       }
       {...props}
+      hideWhenEmpty
     />
   );
 };

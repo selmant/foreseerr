@@ -1,4 +1,6 @@
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import { mapWithConcurrency } from '@server/lib/concurrency';
+import { hasDiscoverTmdbId } from '@server/lib/discover/unmapped';
 
 const POSTER_BASE = 'https://wsrv.nl/?url=https://simkl.in/posters';
 
@@ -16,6 +18,13 @@ const scalar = (value: unknown): string | undefined => {
 const numberValue = (value: unknown): number | undefined => {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : undefined;
+};
+
+export const tmdbIdFromIds = (
+  ids: Record<string, unknown>
+): number | undefined => {
+  const tmdbId = numberValue(ids.tmdb ?? ids.tmdb_id);
+  return hasDiscoverTmdbId(tmdbId) ? tmdbId : undefined;
 };
 
 export const simklPosterUrl = (path?: string | null): string | undefined => {
@@ -182,14 +191,14 @@ export const toCatalogWatchlistItem = (
   if (!id || !title) return null;
   const mediaType =
     String(item.type) === 'movie' || typeHint === 'movie' ? 'movie' : 'tv';
-  const tmdbId = numberValue(ids.tmdb);
+  const tmdbId = tmdbIdFromIds(ids);
   const poster = simklPosterUrl(
     typeof item.poster === 'string' ? item.poster : undefined
   );
   return {
     id: (tmdbId ?? Number(id)) || 0,
     ratingKey: `${keyPrefix}-${id}`,
-    ...(tmdbId ? { tmdbId } : {}),
+    ...(hasDiscoverTmdbId(tmdbId) ? { tmdbId } : {}),
     mediaType,
     title,
     source: 'simkl',
@@ -229,3 +238,32 @@ export const paginateWatchlist = (
     results: results.slice(start, start + pageSize),
   };
 };
+
+export const simklDetailKind = (
+  item: WatchlistItem
+): 'movies' | 'tv' | 'anime' => {
+  if (item.sourceUrl?.includes('/anime/')) return 'anime';
+  return item.mediaType === 'movie' ? 'movies' : 'tv';
+};
+
+/** Cached Simkl detail endpoints expose ids.tmdb when list payloads omit it. */
+export async function fillMissingTmdbIds(
+  items: WatchlistItem[],
+  loadTitle: (
+    kind: 'movies' | 'tv' | 'anime',
+    simklId: string
+  ) => Promise<Record<string, unknown>>
+): Promise<WatchlistItem[]> {
+  return mapWithConcurrency(items, 4, async (item) => {
+    if (hasDiscoverTmdbId(item.tmdbId) || !item.sourceId) return item;
+    try {
+      const detail = await loadTitle(simklDetailKind(item), item.sourceId);
+      const ids = isObject(detail.ids) ? detail.ids : {};
+      const tmdbId = tmdbIdFromIds(ids);
+      if (!hasDiscoverTmdbId(tmdbId)) return item;
+      return { ...item, tmdbId, id: tmdbId };
+    } catch {
+      return item;
+    }
+  });
+}

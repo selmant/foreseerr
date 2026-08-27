@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   catalogWatchlistItems,
+  fillMissingTmdbIds,
+  paginateWatchlist,
   syncEntries,
   unwrapSimklLibraryItem,
 } from './simklCatalog';
@@ -94,6 +96,17 @@ describe('simkl catalog mapping', () => {
       results.some((item) => item.sourceUrl?.includes('/anime/')),
       false
     );
+    const page = paginateWatchlist(results, 1);
+    assert.equal(page.results.length, 20);
+    assert.equal(
+      page.results.filter((item) => item.tmdbId).length,
+      20,
+      'slider page should already carry TMDB ids from CDN'
+    );
+    assert.equal(page.results[0].mediaType, 'tv');
+    const movies = catalogWatchlistItems([payload], 'movie', 'simkl-public');
+    assert.equal(movies[0].mediaType, 'movie');
+    assert.ok(movies[0].tmdbId);
   });
 
   it('loads CDN trending through SimklAPI.getCdnCatalog', async () => {
@@ -113,6 +126,75 @@ describe('simkl catalog mapping', () => {
     assert.ok(results.length > 0);
   });
 
+  it('fills TMDB ids from GET /movies/{id} when the list payload omitted them', async () => {
+    const response = await fetch(
+      'https://api.simkl.com/movies/trending?client_id=invalid-test&app-name=foreseerr&app-version=dev',
+      { headers: API_HEADERS }
+    );
+    const payload = await response.json();
+    const listed = catalogWatchlistItems([payload], 'movie', 'simkl-public');
+    assert.equal(listed[0].tmdbId, undefined);
+    const client = new SimklAPI({ clientId: 'invalid-test' });
+    const filled = await fillMissingTmdbIds(listed.slice(0, 2), (kind, id) =>
+      client.getTitle(kind, id)
+    );
+    assert.ok(filled[0].tmdbId, 'detail endpoint should supply ids.tmdb');
+    assert.equal(filled[0].id, filled[0].tmdbId);
+  });
+
+  it('fills TMDB ids from GET /tv/{id} for live TV trending', async () => {
+    const response = await fetch(
+      'https://api.simkl.com/tv/trending?client_id=invalid-test&app-name=foreseerr&app-version=dev',
+      { headers: API_HEADERS }
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    const listed = catalogWatchlistItems([payload], 'tv', 'simkl-public');
+    assert.equal(listed[0].tmdbId, undefined);
+    assert.equal(listed[0].mediaType, 'tv');
+    const client = new SimklAPI({ clientId: 'invalid-test' });
+    const filled = await fillMissingTmdbIds(listed.slice(0, 2), (kind, id) => {
+      assert.equal(kind, 'tv');
+      return client.getTitle(kind, id);
+    });
+    assert.ok(filled[0].tmdbId);
+    const tmdb = await fetch(
+      `https://www.themoviedb.org/tv/${filled[0].tmdbId}`
+    );
+    assert.equal(tmdb.status, 200, 'Simkl tv tmdb id must exist on TMDB');
+  });
+
+  it('CDN movie tmdb ids exist on themoviedb.org', async () => {
+    const payload = await new SimklAPI({
+      clientId: 'invalid-test',
+    }).getCdnCatalog('/discover/trending/movies/week_100.json');
+    const item = catalogWatchlistItems([payload], 'movie', 'simkl-public')[0];
+    assert.ok(item.tmdbId);
+    const tmdb = await fetch(`https://www.themoviedb.org/movie/${item.tmdbId}`);
+    assert.equal(tmdb.status, 200);
+  });
+
+  it('loads live anime detail ids.tmdb', async () => {
+    const client = new SimklAPI({ clientId: 'invalid-test' });
+    const payload = await client.getCdnCatalog(
+      '/discover/trending/anime/week_100.json'
+    );
+    const item = catalogWatchlistItems([payload], 'anime', 'simkl-public')[0];
+    assert.ok(item.sourceId);
+    const detail = await client.getTitle('anime', item.sourceId);
+    const ids = (detail.ids ?? {}) as Record<string, unknown>;
+    const fromDetail = Number(ids.tmdb);
+    if (item.tmdbId) {
+      assert.equal(fromDetail, item.tmdbId);
+    } else {
+      assert.ok(fromDetail > 0);
+    }
+    const tmdb = await fetch(
+      `https://www.themoviedb.org/tv/${item.tmdbId ?? fromDetail}`
+    );
+    assert.equal(tmdb.status, 200);
+  });
+
   it('maps documented /tv/best array items with simkl_id', () => {
     const payload = [
       {
@@ -128,6 +210,29 @@ describe('simkl catalog mapping', () => {
     assert.equal(results[0].sourceId, '1990194');
     assert.equal(results[0].title, 'Sousou no Frieren');
     assert.ok(results[0].sourceUrl?.includes('/anime/1990194/'));
+  });
+
+  it('resolves missing TMDB ids via the Simkl anime detail endpoint kind', async () => {
+    const items = catalogWatchlistItems(
+      [
+        [
+          {
+            title: 'Sousou no Frieren',
+            url: '/anime/1990194/sousou-no-frieren',
+            ids: { simkl_id: 1990194, slug: 'sousou-no-frieren' },
+          },
+        ],
+      ],
+      'anime',
+      'simkl-best'
+    );
+    const filled = await fillMissingTmdbIds(items, async (kind, id) => {
+      assert.equal(kind, 'anime');
+      assert.equal(id, '1990194');
+      return { ids: { tmdb: '209867' } };
+    });
+    assert.equal(filled[0].tmdbId, 209867);
+    assert.equal(filled[0].id, 209867);
   });
 
   it('unwraps nested show/movie library records from /sync/all-items', () => {

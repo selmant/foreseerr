@@ -17,6 +17,8 @@ interface DiscoverProviderSliderProps {
   sliderKey: string;
   emptyMessage: string;
   hideTitle?: boolean;
+  /** Same as MediaSlider: hide the row entirely when the provider returns no titles. */
+  hideWhenEmpty?: boolean;
   onNewTitles?: (titleCount: number) => void;
 }
 
@@ -30,6 +32,7 @@ const DiscoverProviderSlider = ({
   sliderKey,
   emptyMessage,
   hideTitle = false,
+  hideWhenEmpty = false,
   onNewTitles,
 }: DiscoverProviderSliderProps) => {
   const { data, error } = useSWR<{ results: WatchlistItem[] }>(
@@ -42,6 +45,10 @@ const DiscoverProviderSlider = ({
   }, [data?.results.length, onNewTitles]);
 
   if (!configured || !endpoint || error) {
+    return null;
+  }
+
+  if (hideWhenEmpty && data && data.results.length === 0) {
     return null;
   }
 

@@ -9,7 +9,13 @@ import type {
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import {
+  hasDiscoverTmdbId,
+  omitUnmappedDiscoverItems,
+  shouldHideUnmappedFromQuery,
+} from '@server/lib/discover/unmapped';
+import {
   catalogWatchlistItems,
+  fillMissingTmdbIds,
   paginateWatchlist,
   simklPosterUrl,
 } from '@server/lib/simklCatalog';
@@ -30,10 +36,11 @@ const sourceUrl = (item: SimklSyncItem) =>
 function toWatchlistItem(item: SimklSyncItem): WatchlistItem {
   const mediaType = item.simklType === 'movie' ? 'movie' : 'tv';
   const image = simklPosterUrl(item.posterPath);
+  const tmdbId = hasDiscoverTmdbId(item.tmdbId) ? item.tmdbId : undefined;
   return {
-    id: (item.tmdbId ?? Number(item.simklId)) || 0,
+    id: (tmdbId ?? Number(item.simklId)) || 0,
     ratingKey: `simkl-${item.simklType}-${item.simklId}`,
-    ...(item.tmdbId ? { tmdbId: item.tmdbId } : {}),
+    ...(tmdbId ? { tmdbId } : {}),
     mediaType,
     title: item.title,
     source: 'simkl',
@@ -41,6 +48,23 @@ function toWatchlistItem(item: SimklSyncItem): WatchlistItem {
     sourceUrl: sourceUrl(item),
     ...(image ? { image } : {}),
   };
+}
+
+const loadSimklTitle =
+  (client: SimklAPI) => (kind: 'movies' | 'tv' | 'anime', simklId: string) =>
+    client.getTitle(kind, simklId);
+
+async function mappedCatalogPage(
+  items: WatchlistItem[],
+  page: number,
+  hideUnmapped: boolean
+) {
+  const paged = paginateWatchlist(items, page);
+  const results = omitUnmappedDiscoverItems(
+    await fillMissingTmdbIds(paged.results, loadSimklTitle(new SimklAPI())),
+    hideUnmapped
+  );
+  return { ...paged, results };
 }
 
 const trendingFile = (mediaType: string, period: string): string => {
@@ -82,12 +106,33 @@ simklDiscoverRoutes.get('/library', async (req, res, next) => {
     .getMany();
   const page = Math.max(1, Number(req.query.page) || 1);
   const start = (page - 1) * 20;
+  const slice = rows.slice(start, start + 20).map(toWatchlistItem);
+  const results = omitUnmappedDiscoverItems(
+    await fillMissingTmdbIds(slice, loadSimklTitle(new SimklAPI())),
+    shouldHideUnmappedFromQuery(req.query)
+  );
+  const repository = getRepository(SimklSyncItem);
+  await Promise.all(
+    results.map((item) =>
+      hasDiscoverTmdbId(item.tmdbId) && item.sourceId
+        ? repository
+            .createQueryBuilder()
+            .update()
+            .set({ tmdbId: item.tmdbId })
+            .where('simklId = :simklId AND userId = :userId', {
+              simklId: item.sourceId,
+              userId: req.user.id,
+            })
+            .execute()
+        : Promise.resolve()
+    )
+  );
   return res.status(200).json({
     page,
     totalResults: rows.length,
     totalPages: Math.max(1, Math.ceil(rows.length / 20)),
     hasMore: start + 20 < rows.length,
-    results: rows.slice(start, start + 20).map(toWatchlistItem),
+    results,
     providerState: {
       source: 'simkl',
       stale: result.stale,
@@ -107,10 +152,11 @@ simklDiscoverRoutes.get('/trending', async (req, res, next) => {
       trendingFile(type, period)
     );
     return res.status(200).json({
-      ...paginateWatchlist(
+      ...(await mappedCatalogPage(
         catalogWatchlistItems([payload], type, 'simkl-public'),
-        page
-      ),
+        page,
+        shouldHideUnmappedFromQuery(req.query)
+      )),
     } satisfies WatchlistResponse);
   } catch (error) {
     return next({
@@ -136,10 +182,11 @@ simklDiscoverRoutes.get('/best', async (req, res, next) => {
       `/${mediaType}/best/${filter}`
     );
     return res.status(200).json({
-      ...paginateWatchlist(
+      ...(await mappedCatalogPage(
         catalogWatchlistItems([payload], mediaType, 'simkl-best'),
-        page
-      ),
+        page,
+        shouldHideUnmappedFromQuery(req.query)
+      )),
     } satisfies WatchlistResponse);
   } catch (error) {
     return next({
@@ -166,10 +213,11 @@ simklDiscoverRoutes.get('/premieres', async (req, res, next) => {
       { page, limit: 20 }
     );
     return res.status(200).json({
-      ...paginateWatchlist(
+      ...(await mappedCatalogPage(
         catalogWatchlistItems([payload], mediaType, 'simkl-premieres'),
-        page
-      ),
+        page,
+        shouldHideUnmappedFromQuery(req.query)
+      )),
     } satisfies WatchlistResponse);
   } catch (error) {
     return next({

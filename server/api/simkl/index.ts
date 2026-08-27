@@ -226,6 +226,19 @@ export default class SimklAPI extends ExternalAPI {
     return this.request('get', `${path}${query.size ? `?${query}` : ''}`);
   }
 
+  public async getTitle(
+    kind: 'movies' | 'tv' | 'anime',
+    simklId: string
+  ): Promise<Record<string, unknown>> {
+    const payload = await this.request<unknown>(
+      'get',
+      `/${kind}/${encodeURIComponent(simklId)}`
+    );
+    return payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+  }
+
   public async getCdnCatalog(path: string): Promise<unknown> {
     await this.pace(false);
     const requiredParameters = new URLSearchParams({
