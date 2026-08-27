@@ -19,5 +19,5 @@ export type SimklSyncResponse = Record<string, unknown>;
 
 export interface SimklUserSettingsResponse {
   user?: { id?: number | string; name?: string; username?: string };
-  account?: { id?: number | string; name?: string; username?: string };
+  account?: { id?: number | string };
 }

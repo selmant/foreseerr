@@ -1181,8 +1181,10 @@ userSettingsRoutes.post<{ id: string }>(
       }
       const client = new SimklAPI({ accessToken });
       const profile = await client.getUserSettings();
-      const account = profile.user ?? profile.account;
-      const simklUserId = account?.id == null ? '' : String(account.id);
+      // Simkl returns presentation fields under `user`, but the canonical,
+      // stable account ID under `account.id`.
+      const simklUserId =
+        profile.account?.id == null ? '' : String(profile.account.id);
       if (!simklUserId)
         return res
           .status(502)
@@ -1192,7 +1194,7 @@ userSettingsRoutes.post<{ id: string }>(
       userSettings.simklAccessToken = accessToken;
       userSettings.simklUserId = simklUserId;
       userSettings.simklUsername =
-        account?.username ?? account?.name ?? undefined;
+        profile.user?.username ?? profile.user?.name ?? undefined;
       await getRepository(UserSettings).save(userSettings);
       simklPinSessions.delete(key);
       return res.status(200).json({
