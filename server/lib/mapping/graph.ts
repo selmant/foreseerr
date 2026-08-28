@@ -67,6 +67,49 @@ export async function findLinks(
 }
 
 /**
+ * Pack ingest sometimes unions a whole franchise into one cluster (Bleach TV +
+ * movies + a stray Clannad season-0 edge; Gintama + Semi-Final). Discover asks
+ * "which show is this anilist id" without a season — prefer a whole-work link
+ * and, when that still leaves several works, the unique confidence leader.
+ *
+ * Equal-confidence disagreements stay multi-candidate so MappingService can
+ * mark them ambiguous.
+ */
+export function disambiguateFranchiseCandidates(
+  candidates: MappingCandidate[]
+): MappingCandidate[] {
+  if (candidates.length <= 1) return candidates;
+
+  const byWork = new Map<string, MappingCandidate[]>();
+  for (const candidate of candidates) {
+    const key = `${candidate.target.ns}:${candidate.target.id}`;
+    const bucket = byWork.get(key);
+    if (bucket) bucket.push(candidate);
+    else byWork.set(key, [candidate]);
+  }
+  if (byWork.size <= 1) return candidates;
+
+  const withBare = [...byWork.entries()].filter(([, group]) =>
+    group.some((candidate) => candidate.target.season === undefined)
+  );
+  const pool = withBare.length > 0 ? withBare : [...byWork.entries()];
+  if (pool.length === 1) return pool[0][1];
+
+  const ranked = pool
+    .map(([key, group]) => ({
+      key,
+      group,
+      confidence: Math.max(...group.map((candidate) => candidate.confidence)),
+    }))
+    .sort((a, b) => b.confidence - a.confidence);
+
+  if (ranked[0].confidence > ranked[1].confidence) {
+    return ranked[0].group;
+  }
+  return candidates;
+}
+
+/**
  * Resolve through the stored graph. Candidates are returned rather than a single
  * answer so a one-to-many (a Trakt show TMDB split into per-cour series) surfaces
  * as an ambiguity instead of silently picking the first row.
@@ -79,7 +122,7 @@ export async function resolveFromGraph(
   if (!clusterIds.length) return [];
   const links = await findLinks(clusterIds, to);
   const wantedSeason = from.season;
-  return links
+  const candidates = links
     .filter((link) => {
       if (wantedSeason === undefined) return true;
       // A season-scoped question may be answered by a whole-work link.
@@ -95,6 +138,10 @@ export async function resolveFromGraph(
       sourceKey: link.sourceKey,
       via: [from],
     }));
+  // Season-scoped questions must keep sibling works visible; only the
+  // season-less discover path collapses franchise pollution.
+  if (wantedSeason !== undefined) return candidates;
+  return disambiguateFranchiseCandidates(candidates);
 }
 
 export interface UpsertLink {

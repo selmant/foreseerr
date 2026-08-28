@@ -388,6 +388,75 @@ describe('mapping service resolver chain', () => {
     assert.equal(resolution.candidates.length, 1);
   });
 
+  it('prefers a whole-work TMDB link over a stray season-0 franchise hitchhiker', async () => {
+    // Live Bleach (anilist 269): cluster also held Clannad as tmdb_show:24835:s0
+    // with no season-less edge. Discover must keep Bleach, not go unmapped.
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '269' },
+        confidence: 95,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '30984', season: 1 },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '30984' },
+        confidence: 70,
+        sourceKey: 'animeapi',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '24835', season: 0 },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+    ]);
+
+    const service = new MappingService();
+    const resolution = await service.resolve(
+      { ns: 'anilist', id: '269' },
+      'tmdb_show'
+    );
+    assert.equal(resolution.ambiguous, false);
+    assert.equal(resolution.target?.id, '30984');
+  });
+
+  it('picks the higher-confidence work when a franchise cluster has two bare TMDB ids', async () => {
+    // Live Gintama (anilist 918): main series 57041@90 vs Semi-Final 114211@70.
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '918' },
+        confidence: 95,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '57041', season: 1 },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '57041' },
+        confidence: 70,
+        sourceKey: 'animeapi',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '114211' },
+        confidence: 70,
+        sourceKey: 'animeapi',
+      },
+    ]);
+
+    const service = new MappingService();
+    const resolution = await service.resolve(
+      { ns: 'anilist', id: '918' },
+      'tmdb_show'
+    );
+    assert.equal(resolution.ambiguous, false);
+    assert.equal(resolution.target?.id, '57041');
+  });
+
   it('accepts a corroborated candidate when two sources agree', async () => {
     const service = new MappingService();
     service.register(
