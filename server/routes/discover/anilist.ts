@@ -13,20 +13,56 @@ import { getAnilistUserContext } from '@server/lib/anilist/userContext';
 import { handleAnilistDiscoverRouteError } from '@server/lib/discover/providerErrors';
 import {
   omitUnmappedDiscoverItems,
+  recordUnmappedItems,
   shouldHideUnmappedFromQuery,
 } from '@server/lib/discover/unmapped';
+import { confirmOrRepair } from '@server/lib/discover/validity';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 
 const anilistDiscoverRoutes = Router();
 
-function anilistResults(
+async function anilistResults(
   items: Parameters<typeof toWatchlistItems>[0],
-  query: Request['query']
+  req: Request
 ) {
+  const discoverSource = `anilist${req.path}`;
+  // Pack data goes stale, and a mapping that once pointed somewhere real can
+  // outlive the TMDB record it names.
+  const mapped = await Promise.all(
+    toWatchlistItems(items).map(async (item) => {
+      const confirmed = item.tmdbId
+        ? await confirmOrRepair(
+            {
+              tmdbId: item.tmdbId,
+              mediaType: item.mediaType,
+              title: item.title,
+              refs: item.sourceId
+                ? [{ ns: 'anilist' as const, id: item.sourceId }]
+                : [],
+            },
+            { discoverSource }
+          )
+        : undefined;
+      return {
+        ...item,
+        ...(confirmed ? { tmdbId: confirmed.tmdbId } : {}),
+        mappingState: confirmed?.mappingState ?? {
+          state: item.tmdbId ? ('mapped' as const) : ('unmapped' as const),
+          namespace: 'anilist',
+          ...(item.sourceId ? { externalId: item.sourceId } : {}),
+        },
+      };
+    })
+  );
+  recordUnmappedItems(mapped, {
+    namespace: 'anilist',
+    discoverSource,
+    sourceKey: 'anilist-pack',
+  });
   return omitUnmappedDiscoverItems(
-    toWatchlistItems(items),
-    shouldHideUnmappedFromQuery(query)
+    mapped,
+    shouldHideUnmappedFromQuery(req.query)
   );
 }
 
@@ -48,7 +84,7 @@ async function publicPage(
     return res.status(200).json({
       page,
       hasMore: Boolean(mediaPage.pageInfo.hasNextPage),
-      results: anilistResults(mapped, req.query),
+      results: await anilistResults(mapped, req),
     } satisfies WatchlistResponse);
   } catch (error) {
     return handleAnilistDiscoverRouteError(error, next, errorMessage);
@@ -110,7 +146,7 @@ async function userList(
     return res.status(200).json({
       page: paged.page,
       hasMore: paged.hasMore,
-      results: anilistResults(paged.results, req.query),
+      results: await anilistResults(paged.results, req),
     } satisfies WatchlistResponse);
   } catch (error) {
     return handleAnilistDiscoverRouteError(
@@ -182,7 +218,7 @@ anilistDiscoverRoutes.get('/list', async (req, res, next) => {
     return res.status(200).json({
       page: paged.page,
       hasMore: paged.hasMore,
-      results: anilistResults(paged.results, req.query),
+      results: await anilistResults(paged.results, req),
       title: name,
     });
   } catch (error) {

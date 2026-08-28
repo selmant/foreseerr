@@ -490,6 +490,29 @@ class MdblistAPI extends ExternalAPI {
     return results;
   }
 
+  /**
+   * MDBList's multi-id endpoint: **200 ids per request** against a 1,000/day
+   * free quota, which makes it the only genuine batch resolver and therefore the
+   * one that owns backfill. Returns every id MDBList knows for each input.
+   */
+  public async resolveIdsBatch(
+    provider: 'imdb' | 'tmdb' | 'tvdb' | 'trakt',
+    type: 'movie' | 'show',
+    ids: (string | number)[]
+  ): Promise<MdblistMediaPayload[]> {
+    if (!this.apiKey || !ids.length) return [];
+    const unique = [...new Set(ids.map(String))].slice(0, 200);
+    return this.queueRequest(async () => {
+      const payloads = await this.post<MdblistMediaPayload[]>(
+        `/${provider}/${type}/`,
+        { ids: unique },
+        undefined,
+        0
+      );
+      return Array.isArray(payloads) ? payloads : [];
+    });
+  }
+
   public async searchLists(query: string): Promise<MdblistPublicList[]> {
     if (!this.apiKey) {
       throw new MdblistNotConfiguredError();

@@ -76,6 +76,26 @@ export class TraktReconnectRequiredError extends Error {
   }
 }
 
+/**
+ * Trakt refused a request carrying only the application `client_id`.
+ *
+ * Since Trakt removed custom API access for non-VIP accounts on 2026-07-30,
+ * every unauthenticated request from this host returns 403 — including plainly
+ * public endpoints. Reporting that as a 500 hides the one thing the user can
+ * act on, which is linking a Trakt account.
+ */
+export class TraktAppAccessDeniedError extends Error {
+  public readonly status: number;
+
+  constructor(status: number) {
+    super(
+      'Trakt refused an unauthenticated request. Trakt now requires a linked account for API access.'
+    );
+    this.name = 'TraktAppAccessDeniedError';
+    this.status = status;
+  }
+}
+
 /** Test helper — clear per-client Trakt rate-limit circuits. */
 export const resetTraktRateLimitState = (): void => {
   traktCircuitOpenUntilMs.clear();
@@ -1227,6 +1247,15 @@ class TraktAPI extends ExternalAPI {
         );
       }
 
+      // No token to refresh: this is the app client being turned away, not a
+      // transient failure, so callers can degrade to "link your account".
+      if (
+        !this.accessToken &&
+        (response.status === 401 || response.status === 403)
+      ) {
+        throw new TraktAppAccessDeniedError(response.status);
+      }
+
       throw new Error(
         `Trakt API request failed: ${method} ${endpoint} returned ${response.status}`
       );
@@ -1235,6 +1264,7 @@ class TraktAPI extends ExternalAPI {
         e instanceof TraktRateLimitedError ||
         e instanceof TraktReconnectRequiredError ||
         e instanceof TraktRefreshRejectedError ||
+        e instanceof TraktAppAccessDeniedError ||
         (e instanceof Error && e.message.startsWith('Trakt API'))
       ) {
         throw e;

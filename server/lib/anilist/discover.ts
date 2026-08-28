@@ -47,7 +47,7 @@ export async function mapAnilistMedia(
     return null;
   }
   await anilistIdMapping.sync();
-  const mapped = anilistIdMapping.getFromAnilistId(media.id);
+  const mapped = await anilistIdMapping.getFromAnilistId(media.id);
   const title = anilistMediaTitle(media) || `AniList ${media.id}`;
   const image = anilistCoverImage(media);
   if (!mapped) {

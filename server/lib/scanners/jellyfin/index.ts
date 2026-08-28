@@ -67,7 +67,7 @@ class JellyfinScanner
 
     // We use anidb only if we have the anidbId and nothing else
     if (anidbId && !imdbId && !tmdbId) {
-      const result = animeList.getFromAnidbId(anidbId);
+      const result = await animeList.getFromAnidbId(anidbId);
       tmdbId = Number(result?.tmdbId ?? null);
       imdbId = result?.imdbId;
     }
@@ -258,7 +258,7 @@ class JellyfinScanner
       let tvdbSeasonFromAnidb: number | undefined;
       if (!tvShow && metadata.ProviderIds.AniDB) {
         const anidbId = Number(metadata.ProviderIds.AniDB);
-        const result = animeList.getFromAnidbId(anidbId);
+        const result = await animeList.getFromAnidbId(anidbId);
         tvdbSeasonFromAnidb = result?.tvdbSeason;
         if (result?.tvdbId) {
           try {

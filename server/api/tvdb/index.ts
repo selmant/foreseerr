@@ -40,6 +40,12 @@ const enum TvdbIdStatus {
 type TvdbId = number;
 type ValidTvdbId = Exclude<TvdbId, TvdbIdStatus.INVALID>;
 
+export interface TvdbRemoteIdMatch {
+  tvdbId: number;
+  type: 'series' | 'movie';
+  name?: string;
+}
+
 class Tvdb extends ExternalAPI implements TvShowProvider {
   static instance: Tvdb;
   private readonly tmdb: TheMovieDb;
@@ -297,6 +303,49 @@ class Tvdb extends ExternalAPI implements TvShowProvider {
             a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber
         ),
     };
+  }
+
+  /**
+   * `GET /search/remoteid/{id}` is the only endpoint that walks *backwards* from
+   * an IMDB/TMDB/Zap2it/EIDR id to a TVDB record, and it is the sole authority on
+   * TVDB's own absolute-order numbering.
+   */
+  public async searchRemoteId(remoteId: string): Promise<TvdbRemoteIdMatch[]> {
+    await this.refreshToken();
+    const response = await this.get<
+      TvdbBaseResponse<
+        {
+          series?: { id?: number; name?: string };
+          movie?: { id?: number; name?: string };
+        }[]
+      >
+    >(
+      `/search/remoteid/${encodeURIComponent(remoteId)}`,
+      { headers: { Authorization: `Bearer ${this.token}` } },
+      Tvdb.DEFAULT_CACHE_TTL
+    );
+
+    return (response.data ?? []).flatMap<TvdbRemoteIdMatch>((entry) => {
+      if (entry.series?.id) {
+        return [
+          {
+            tvdbId: entry.series.id,
+            type: 'series' as const,
+            name: entry.series.name,
+          },
+        ];
+      }
+      if (entry.movie?.id) {
+        return [
+          {
+            tvdbId: entry.movie.id,
+            type: 'movie' as const,
+            name: entry.movie.name,
+          },
+        ];
+      }
+      return [];
+    });
   }
 
   private async enrichTmdbShowWithTvdbData(

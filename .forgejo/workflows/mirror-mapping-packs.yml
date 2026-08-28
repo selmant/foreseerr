@@ -1,0 +1,40 @@
+---
+# Daily homelab mirror of the mapping packs.
+#
+# Upstream packs are served from GitHub raw and jsDelivr. Both have failed
+# mid-day, and a pack that cannot be fetched leaves anime mapping stale until
+# the next refresh window. This job copies each pack into Garage so every
+# manifest entry has a third mirror we control.
+name: Mirror mapping packs
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: docker
+    container:
+      image: node:22-bookworm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the AWS CLI
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends awscli
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Mirror packs to Garage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.GARAGE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.GARAGE_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ vars.GARAGE_ENDPOINT_URL }}
+          AWS_DEFAULT_REGION: garage
+          MAPPING_MIRROR_S3: ${{ vars.MAPPING_MIRROR_S3 }}
+        run: pnpm mirror:packs

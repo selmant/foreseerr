@@ -313,7 +313,7 @@ async function fetchSnapshot(
       if (!anilistId) {
         continue;
       }
-      const mapped = anilistIdMapping.getFromAnilistId(anilistId);
+      const mapped = await anilistIdMapping.getFromAnilistId(anilistId);
       if (!mapped) {
         continue;
       }

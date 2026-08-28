@@ -52,6 +52,9 @@ config/logs/*-audit.json
 # anidb mapping file
 config/anime-list.xml
 
+# mapping packs: downloaded at runtime (~100 MB), kept with a .last-good copy
+config/mapping-packs
+
 # dist files
 dist
 

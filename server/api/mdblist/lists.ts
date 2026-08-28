@@ -49,21 +49,32 @@ export interface MdblistPublicList {
 
 export interface MdblistDiscoverItem {
   tmdbId?: number;
-  mediaType: 'movie' | 'tv';
+  /** Undefined when MDBList did not say; never defaulted to `movie`. */
+  mediaType?: 'movie' | 'tv';
   title: string;
   rank?: number;
   imdbId?: string;
+  tvdbId?: number;
 }
 
+/**
+ * MDBList returns ids as flat `imdb_id`/`tvdb_id`/`tmdb_id` fields on list items
+ * and as a nested `ids` object on media lookups. Reading only the nested shape
+ * discarded the IMDB id that is present on essentially every list item.
+ */
 export interface MdblistListItemPayload {
   id?: number;
   rank?: number;
   title?: string;
   mediatype?: string;
   type?: string;
+  imdb_id?: string | null;
+  tvdb_id?: number | string | null;
+  tmdb_id?: number | string | null;
   ids?: {
     tmdb?: number | null;
     imdb?: string | null;
+    tvdb?: number | null;
   };
 }
 
@@ -167,25 +178,38 @@ const toMediaType = (value: string | undefined): 'movie' | 'tv' | undefined => {
   return undefined;
 };
 
+const positiveInt = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : undefined;
+};
+
 export const mapMdblistListItem = (
   item: MdblistListItemPayload
 ): MdblistDiscoverItem | null => {
-  const tmdbRaw = Number(item.ids?.tmdb ?? item.id);
-  const tmdbId = Number.isFinite(tmdbRaw) && tmdbRaw > 0 ? tmdbRaw : undefined;
-  const imdbId = item.ids?.imdb?.trim() || undefined;
+  const tmdbId =
+    positiveInt(item.ids?.tmdb) ??
+    positiveInt(item.tmdb_id) ??
+    positiveInt(item.id);
+  const imdbId =
+    item.ids?.imdb?.trim() || String(item.imdb_id ?? '').trim() || undefined;
+  const tvdbId = positiveInt(item.ids?.tvdb) ?? positiveInt(item.tvdb_id);
   const title = item.title?.trim() || (tmdbId ? String(tmdbId) : imdbId) || '';
   if (!title) {
     return null;
   }
 
-  const mediaType = toMediaType(item.mediatype ?? item.type) ?? 'movie';
+  // Unified lists mix movies and shows without a per-item type, and defaulting
+  // to `movie` sent every show to `/movie/{id}`, which renders a wrong poster or
+  // 404s. An unknown type is left unknown for the mapping layer to settle.
+  const mediaType = toMediaType(item.mediatype ?? item.type);
 
   return {
     ...(hasDiscoverTmdbId(tmdbId) ? { tmdbId } : {}),
-    mediaType,
+    ...(mediaType ? { mediaType } : {}),
     title,
     rank: Number.isFinite(item.rank) ? Number(item.rank) : undefined,
     ...(imdbId ? { imdbId } : {}),
+    ...(tvdbId ? { tvdbId } : {}),
   };
 };
 

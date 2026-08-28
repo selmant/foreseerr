@@ -108,20 +108,24 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
       anilistUserId
     );
     await anilistIdMapping.sync();
-    return items.map((item) => {
-      if (!anilistIdMapping.getAnilistId(item.mediaType, item.tmdbId)) {
-        return { ...item, ...unmappedStatus() };
-      }
-      const status = lookupAnilistItemStatus(
-        snapshot,
-        item.mediaType,
-        item.tmdbId
-      );
-      return {
-        ...item,
-        ...toStatus(status.watched, status.rating),
-      };
-    });
+    return Promise.all(
+      items.map(async (item) => {
+        if (
+          !(await anilistIdMapping.getAnilistId(item.mediaType, item.tmdbId))
+        ) {
+          return { ...item, ...unmappedStatus() };
+        }
+        const status = lookupAnilistItemStatus(
+          snapshot,
+          item.mediaType,
+          item.tmdbId
+        );
+        return {
+          ...item,
+          ...toStatus(status.watched, status.rating),
+        };
+      })
+    );
   }
 
   async markWatched(
@@ -272,7 +276,7 @@ export class AnilistMediaActionProvider implements MediaActionProvider {
     item: MediaItemRef
   ): Promise<{ anilistId: number } | null> {
     await anilistIdMapping.sync();
-    const anilistId = anilistIdMapping.getAnilistId(
+    const anilistId = await anilistIdMapping.getAnilistId(
       item.mediaType,
       item.tmdbId
     );

@@ -1,15 +1,18 @@
 import SimklAPI from '@server/api/simkl';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  assignWorkingTmdbMediaType,
+  catalogCandidates,
   catalogWatchlistItems,
-  fillMissingTmdbIds,
+  hydrateSimklCandidates,
   isSimklVideoGamePlay,
   paginateWatchlist,
+  resolveSimklCandidates,
+  resolveSimklTmdbId,
   syncEntries,
   unwrapSimklLibraryItem,
+  type SimklCandidate,
+  type SimklTmdbResolvers,
 } from './simklCatalog';
 
 const API_HEADERS = {
@@ -129,40 +132,43 @@ describe('simkl catalog mapping', () => {
     assert.ok(results.length > 0);
   });
 
-  it('fills TMDB ids from GET /movies/{id} when the list payload omitted them', async () => {
+  it('hydrates ids from GET /movies/{id} when the list payload omitted them', async () => {
     const response = await fetch(
       'https://api.simkl.com/movies/trending?client_id=invalid-test&app-name=foreseerr&app-version=dev',
       { headers: API_HEADERS }
     );
     const payload = await response.json();
-    const listed = catalogWatchlistItems([payload], 'movie', 'simkl-public');
-    assert.equal(listed[0].tmdbId, undefined);
+    const listed = catalogCandidates([payload], 'movie', 'simkl-public');
+    assert.equal(listed[0].item.tmdbId, undefined);
     const client = new SimklAPI({ clientId: 'invalid-test' });
-    const filled = await fillMissingTmdbIds(listed.slice(0, 2), (kind, id) =>
-      client.getTitle(kind, id)
+    const hydrated = await hydrateSimklCandidates(
+      listed.slice(0, 2),
+      (kind, id) => client.getTitle(kind, id)
     );
-    assert.ok(filled[0].tmdbId, 'detail endpoint should supply ids.tmdb');
-    assert.equal(filled[0].id, filled[0].tmdbId);
+    assert.ok(hydrated[0].ids.tmdb, 'detail endpoint should supply ids.tmdb');
   });
 
-  it('fills TMDB ids from GET /tv/{id} for live TV trending', async () => {
+  it('hydrates ids from GET /tv/{id} for live TV trending', async () => {
     const response = await fetch(
       'https://api.simkl.com/tv/trending?client_id=invalid-test&app-name=foreseerr&app-version=dev',
       { headers: API_HEADERS }
     );
     assert.equal(response.status, 200);
     const payload = await response.json();
-    const listed = catalogWatchlistItems([payload], 'tv', 'simkl-public');
-    assert.equal(listed[0].tmdbId, undefined);
-    assert.equal(listed[0].mediaType, 'tv');
+    const listed = catalogCandidates([payload], 'tv', 'simkl-public');
+    assert.equal(listed[0].item.tmdbId, undefined);
+    assert.equal(listed[0].item.mediaType, 'tv');
     const client = new SimklAPI({ clientId: 'invalid-test' });
-    const filled = await fillMissingTmdbIds(listed.slice(0, 2), (kind, id) => {
-      assert.equal(kind, 'tv');
-      return client.getTitle(kind, id);
-    });
-    assert.ok(filled[0].tmdbId);
+    const hydrated = await hydrateSimklCandidates(
+      listed.slice(0, 2),
+      (kind, id) => {
+        assert.equal(kind, 'tv');
+        return client.getTitle(kind, id);
+      }
+    );
+    assert.ok(hydrated[0].ids.tmdb);
     const tmdb = await fetch(
-      `https://www.themoviedb.org/tv/${filled[0].tmdbId}`
+      `https://www.themoviedb.org/tv/${hydrated[0].ids.tmdb}`
     );
     assert.equal(tmdb.status, 200, 'Simkl tv tmdb id must exist on TMDB');
   });
@@ -215,8 +221,8 @@ describe('simkl catalog mapping', () => {
     assert.ok(results[0].sourceUrl?.includes('/anime/1990194/'));
   });
 
-  it('resolves missing TMDB ids via the Simkl anime detail endpoint kind', async () => {
-    const items = catalogWatchlistItems(
+  it('hydrates missing ids via the Simkl anime detail endpoint kind', async () => {
+    const items = catalogCandidates(
       [
         [
           {
@@ -229,13 +235,13 @@ describe('simkl catalog mapping', () => {
       'anime',
       'simkl-best'
     );
-    const filled = await fillMissingTmdbIds(items, async (kind, id) => {
+    const hydrated = await hydrateSimklCandidates(items, async (kind, id) => {
       assert.equal(kind, 'anime');
       assert.equal(id, '1990194');
-      return { ids: { tmdb: '209867' } };
+      return { ids: { tmdb: '209867', imdb: 'tt22248376' } };
     });
-    assert.equal(filled[0].tmdbId, 209867);
-    assert.equal(filled[0].id, 209867);
+    assert.equal(hydrated[0].ids.tmdb, 209867);
+    assert.equal(hydrated[0].ids.imdb, 'tt22248376');
   });
 
   it('unwraps nested show/movie library records from /sync/all-items', () => {
@@ -251,26 +257,6 @@ describe('simkl catalog mapping', () => {
     );
     assert.equal(unwrapped.title, 'Charmed');
     assert.equal(unwrapped.status, 'plantowatch');
-  });
-
-  it('flips Simkl tv items to movie when only the movie TMDB id works', async () => {
-    const items: WatchlistItem[] = [
-      {
-        id: 378064,
-        ratingKey: 'simkl-best-1',
-        tmdbId: 378064,
-        mediaType: 'tv',
-        title: 'A Silent Voice',
-        source: 'simkl',
-        sourceId: '1',
-      },
-    ];
-    const resolved = await assignWorkingTmdbMediaType(
-      items,
-      async (kind) => kind === 'movie'
-    );
-    assert.equal(resolved[0].mediaType, 'movie');
-    assert.equal(resolved[0].tmdbId, 378064);
   });
 
   it('drops Simkl video-game-play titles from catalog mapping', () => {
@@ -290,8 +276,8 @@ describe('simkl catalog mapping', () => {
     );
   });
 
-  it('drops video-game-play titles when Simkl detail is fetched for TMDB ids', async () => {
-    const items = catalogWatchlistItems(
+  it('drops video-game-play titles when Simkl detail is fetched for ids', async () => {
+    const items = catalogCandidates(
       [
         [
           {
@@ -305,13 +291,13 @@ describe('simkl catalog mapping', () => {
       'simkl-best'
     );
     assert.equal(items.length, 1);
-    const filled = await fillMissingTmdbIds(items, async () => ({
+    const hydrated = await hydrateSimklCandidates(items, async () => ({
       type: 'show',
       network: 'YouTube',
       genres: ['Action', 'Adventure', 'Comedy', 'Crime', 'Drama'],
       ids: { tmdb: '311986' },
     }));
-    assert.equal(filled.length, 0);
+    assert.equal(hydrated.length, 0);
   });
 
   it('maps Simkl anime_type movie as a movie', () => {
@@ -329,5 +315,202 @@ describe('simkl catalog mapping', () => {
       'simkl-premieres'
     );
     assert.equal(results[0].mediaType, 'movie');
+  });
+});
+
+/**
+ * Simkl returned a wrong `ids.tmdb` for each of these; the old existence probe
+ * fell through to `/movie/{same id}`, which exists as an unrelated film 63% of
+ * the time, and rendered it as the anime. Verified against production on
+ * 2026-08-28.
+ */
+const FLAGSHIP_CASES = [
+  {
+    title: 'Shingeki no Kyojin: The Final Season',
+    simklTmdb: 313599,
+    wrongMovie: 'Artistenblut',
+    imdb: 'tt2560140',
+    tvdb: 267440,
+    correct: 1429,
+  },
+  {
+    title: 'Boku no Hero Academia FINAL SEASON',
+    simklTmdb: 308405,
+    wrongMovie: 'The Last Armored Train',
+    imdb: 'tt5626028',
+    tvdb: 305074,
+    correct: 65930,
+  },
+  {
+    title: 'Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season',
+    simklTmdb: 328061,
+    wrongMovie: 'Ariana',
+    imdb: 'tt5607616',
+    tvdb: 305089,
+    correct: 65942,
+  },
+  {
+    title: 'Kimetsu no Yaiba: Yuukaku-hen',
+    simklTmdb: 317316,
+    wrongMovie: 'Underground Rustlers',
+    imdb: 'tt9335498',
+    tvdb: 348545,
+    correct: 85937,
+  },
+  {
+    title: 'Bleach: Sennen Kessen-hen',
+    simklTmdb: 329809,
+    wrongMovie: 'Courted',
+    imdb: 'tt0434665',
+    tvdb: 74796,
+    correct: 30984,
+  },
+  {
+    title: 'Jujutsu Kaisen',
+    simklTmdb: 277700,
+    wrongMovie: 'Tera Jadoo Chal Gayaa',
+    imdb: 'tt12343534',
+    tvdb: 377543,
+    correct: 95479,
+  },
+] as const;
+
+const animeCandidate = (
+  ids: SimklCandidate['ids'],
+  title = 'Some Anime'
+): SimklCandidate => ({
+  isAnime: true,
+  ids,
+  item: {
+    id: 0,
+    ratingKey: 'simkl-best-1',
+    mediaType: 'tv',
+    title,
+    source: 'simkl',
+    sourceId: '1',
+    ...(ids.tmdb ? { tmdbId: ids.tmdb } : {}),
+  },
+});
+
+describe('simkl TMDB resolution never infers media type', () => {
+  for (const flagship of FLAGSHIP_CASES) {
+    it(`recovers ${flagship.title} instead of "${flagship.wrongMovie}"`, async () => {
+      const probed: string[] = [];
+      const resolvers: SimklTmdbResolvers = {
+        findByExternalId: async (source, externalId, mediaType) => {
+          assert.equal(
+            mediaType,
+            'tv',
+            'find must stay scoped to the declared media type'
+          );
+          if (source === 'imdb' && externalId === flagship.imdb)
+            return [flagship.correct];
+          if (source === 'tvdb' && externalId === String(flagship.tvdb))
+            return [flagship.correct];
+          return [];
+        },
+        confirm: async (mediaType, tmdbId) => {
+          probed.push(`${mediaType}:${tmdbId}`);
+          return mediaType === 'movie';
+        },
+      };
+      const resolution = await resolveSimklTmdbId(
+        animeCandidate(
+          {
+            tmdb: flagship.simklTmdb,
+            imdb: flagship.imdb,
+            tvdb: flagship.tvdb,
+          },
+          flagship.title
+        ),
+        resolvers
+      );
+      assert.equal(resolution.tmdbId, flagship.correct);
+      assert.deepEqual(probed, [], 'must not probe the movie namespace');
+    });
+  }
+
+  it('reports an uncorroborated anime tmdb id as an unmapped ambiguity', async () => {
+    const resolution = await resolveSimklTmdbId(
+      animeCandidate({ tmdb: 313599 }),
+      {
+        findByExternalId: async () => [],
+        confirm: async () => true,
+      }
+    );
+    assert.equal(resolution.tmdbId, undefined);
+    assert.equal(resolution.ambiguous, true);
+  });
+
+  it('never falls back to the opposite TMDB namespace', async () => {
+    const asked: string[] = [];
+    const resolution = await resolveSimklTmdbId(
+      {
+        isAnime: false,
+        ids: { tmdb: 1396 },
+        item: {
+          id: 1396,
+          ratingKey: 'simkl-best-2',
+          tmdbId: 1396,
+          mediaType: 'tv',
+          title: 'Breaking Bad',
+          source: 'simkl',
+          sourceId: '2',
+        },
+      },
+      {
+        findByExternalId: async () => [],
+        confirm: async (mediaType, tmdbId) => {
+          asked.push(`${mediaType}:${tmdbId}`);
+          return false;
+        },
+      }
+    );
+    assert.equal(resolution.tmdbId, undefined);
+    assert.deepEqual(asked, ['tv:1396']);
+  });
+
+  it('does not ask TMDB /find for a movie by TVDB id', async () => {
+    const asked: string[] = [];
+    await resolveSimklTmdbId(
+      {
+        isAnime: true,
+        ids: { tvdb: 348545 },
+        item: {
+          id: 0,
+          ratingKey: 'simkl-best-3',
+          mediaType: 'movie',
+          title: 'Some Anime Film',
+          source: 'simkl',
+          sourceId: '3',
+        },
+      },
+      {
+        findByExternalId: async (source) => {
+          asked.push(source);
+          return [];
+        },
+        confirm: async () => true,
+      }
+    );
+    assert.deepEqual(asked, [], 'tvdb_id is unsupported for TMDB movies');
+  });
+
+  it('raises confidence when Simkl and /find agree, and treats a split as ambiguous', async () => {
+    const [agreed, split] = await resolveSimklCandidates(
+      [
+        animeCandidate({ tmdb: 1429, imdb: 'tt2560140' }, 'AoT'),
+        animeCandidate({ imdb: 'tt-split' }, 'Song of the Samurai'),
+      ],
+      {
+        findByExternalId: async (_source, externalId) =>
+          externalId === 'tt2560140' ? [1429] : [302162, 320340],
+        confirm: async () => true,
+      }
+    );
+    assert.equal(agreed.item.tmdbId, 1429);
+    assert.equal(agreed.resolution.confidence, 95);
+    assert.equal(split.item.tmdbId, undefined);
+    assert.equal(split.resolution.ambiguous, true);
   });
 });

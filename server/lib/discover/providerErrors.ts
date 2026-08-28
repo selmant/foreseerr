@@ -5,6 +5,7 @@ import {
   MdblistUnavailableError,
 } from '@server/api/mdblist';
 import {
+  TraktAppAccessDeniedError,
   TraktRateLimitedError,
   TraktReconnectRequiredError,
 } from '@server/api/trakt';
@@ -31,6 +32,12 @@ export const handleTraktDiscoverRouteError = (
       status: 400,
     },
     { matches: (value) => value instanceof TraktNotLinkedError, status: 404 },
+    // Unauthenticated Trakt access is dead, so the app client failing means the
+    // same thing to the caller as an unlinked account: link one to proceed.
+    {
+      matches: (value) => value instanceof TraktAppAccessDeniedError,
+      status: 404,
+    },
     {
       matches: (value) => value instanceof TraktReconnectRequiredError,
       status: 401,

@@ -15,12 +15,16 @@ import {
   omitUnmappedDiscoverItems,
   shouldHideUnmappedFromQuery,
 } from '@server/lib/discover/unmapped';
+import { recordMappingGap } from '@server/lib/mapping/gaps';
 import {
-  assignWorkingTmdbMediaType,
-  catalogWatchlistItems,
-  fillMissingTmdbIds,
+  catalogCandidates,
+  hydrateSimklCandidates,
   paginateWatchlist,
+  resolveSimklCandidates,
   simklPosterUrl,
+  type ResolvedSimklItem,
+  type SimklCandidate,
+  type SimklTmdbResolvers,
 } from '@server/lib/simklCatalog';
 import { syncSimklUser } from '@server/lib/simklSync';
 import { Router } from 'express';
@@ -36,20 +40,31 @@ const STATUSES = new Set<SimklItemStatus>([
 const sourceUrl = (item: SimklSyncItem) =>
   `https://simkl.com/${item.simklType === 'movie' ? 'movies' : item.simklType === 'anime' ? 'anime' : 'tv'}/${encodeURIComponent(item.slug || item.simklId)}`;
 
-function toWatchlistItem(item: SimklSyncItem): WatchlistItem {
+function toSyncCandidate(item: SimklSyncItem): SimklCandidate {
   const mediaType = item.simklType === 'movie' ? 'movie' : 'tv';
   const image = simklPosterUrl(item.posterPath);
   const tmdbId = hasDiscoverTmdbId(item.tmdbId) ? item.tmdbId : undefined;
+  const tvdbId =
+    typeof item.tvdbId === 'number' && item.tvdbId > 0
+      ? item.tvdbId
+      : undefined;
   return {
-    id: (tmdbId ?? Number(item.simklId)) || 0,
-    ratingKey: `simkl-${item.simklType}-${item.simklId}`,
-    ...(tmdbId ? { tmdbId } : {}),
-    mediaType,
-    title: item.title,
-    source: 'simkl',
-    sourceId: item.simklId,
-    sourceUrl: sourceUrl(item),
-    ...(image ? { image } : {}),
+    isAnime: item.simklType === 'anime',
+    ids: {
+      ...(tmdbId ? { tmdb: tmdbId } : {}),
+      ...(tvdbId ? { tvdb: tvdbId } : {}),
+    },
+    item: {
+      id: (tmdbId ?? Number(item.simklId)) || 0,
+      ratingKey: `simkl-${item.simklType}-${item.simklId}`,
+      ...(tmdbId ? { tmdbId } : {}),
+      mediaType,
+      title: item.title,
+      source: 'simkl',
+      sourceId: item.simklId,
+      sourceUrl: sourceUrl(item),
+      ...(image ? { image } : {}),
+    },
   };
 }
 
@@ -57,9 +72,30 @@ const loadSimklTitle =
   (client: SimklAPI) => (kind: 'movies' | 'tv' | 'anime', simklId: string) =>
     client.getTitle(kind, simklId);
 
-const tmdbExists =
-  (tmdb: TheMovieDb) =>
-  async (mediaType: 'movie' | 'tv', tmdbId: number): Promise<boolean> => {
+/**
+ * `/find` is scoped to the declared media type and `confirm` may only reject,
+ * so no resolution can be derived from an id merely existing in the opposite
+ * TMDB namespace.
+ */
+export const tmdbResolvers = (tmdb: TheMovieDb): SimklTmdbResolvers => ({
+  findByExternalId: async (source, externalId, mediaType) => {
+    if (source === 'tvdb' && mediaType === 'movie') return [];
+    try {
+      const found =
+        source === 'imdb'
+          ? await tmdb.getByExternalId({ externalId, type: 'imdb' })
+          : await tmdb.getByExternalId({
+              externalId: Number(externalId),
+              type: 'tvdb',
+            });
+      const results =
+        mediaType === 'movie' ? found.movie_results : found.tv_results;
+      return results.map((result) => result.id).filter((id) => id > 0);
+    } catch {
+      return [];
+    }
+  },
+  confirm: async (mediaType, tmdbId) => {
     try {
       if (mediaType === 'movie') await tmdb.getMovie({ movieId: tmdbId });
       else await tmdb.getTvShow({ tvId: tmdbId });
@@ -67,25 +103,70 @@ const tmdbExists =
     } catch {
       return false;
     }
-  };
+  },
+});
+
+/** Annotate each tile with how (or whether) it resolved, for the UI and repair queue. */
+function withMappingState(resolved: ResolvedSimklItem[]): WatchlistItem[] {
+  return resolved.map(({ item, resolution }) => ({
+    ...item,
+    mappingState: {
+      state: hasDiscoverTmdbId(item.tmdbId)
+        ? ('mapped' as const)
+        : resolution.ambiguous
+          ? ('ambiguous' as const)
+          : ('unmapped' as const),
+      sourceKey: resolution.sourceKey,
+      namespace: 'simkl',
+      ...(item.sourceId ? { externalId: item.sourceId } : {}),
+    },
+  }));
+}
+
+function recordSimklGaps(
+  resolved: ResolvedSimklItem[],
+  discoverSource: string
+): void {
+  for (const { item, resolution, candidate } of resolved) {
+    if (hasDiscoverTmdbId(item.tmdbId) || !item.sourceId) continue;
+    recordMappingGap({
+      namespace: 'simkl',
+      externalId: item.sourceId,
+      title: item.title,
+      mediaType: item.mediaType,
+      discoverSource,
+      reason: resolution.ambiguous ? 'ambiguous' : 'unresolved',
+      sourceKey: resolution.sourceKey,
+      ...(candidate.ids.tmdb
+        ? {
+            rejectedTarget: `${item.mediaType === 'movie' ? 'tmdb_movie' : 'tmdb_show'}:${candidate.ids.tmdb}`,
+          }
+        : {}),
+    });
+  }
+}
 
 async function mappedCatalogPage(
-  items: WatchlistItem[],
+  candidates: SimklCandidate[],
   page: number,
-  hideUnmapped: boolean
+  hideUnmapped: boolean,
+  discoverSource: string,
+  tmdb: TheMovieDb = createTmdbWithRegionLanguage()
 ) {
-  const paged = paginateWatchlist(items, page);
-  const filled = await fillMissingTmdbIds(
+  const paged = paginateWatchlist(candidates, page);
+  const hydrated = await hydrateSimklCandidates(
     paged.results,
     loadSimklTitle(new SimklAPI())
   );
-  const typed = await assignWorkingTmdbMediaType(
-    filled,
-    tmdbExists(createTmdbWithRegionLanguage())
-  );
+  const resolved = await resolveSimklCandidates(hydrated, tmdbResolvers(tmdb));
+  recordSimklGaps(resolved, discoverSource);
   return {
-    ...paged,
-    results: omitUnmappedDiscoverItems(typed, hideUnmapped),
+    page: paged.page,
+    hasMore: paged.hasMore,
+    results: omitUnmappedDiscoverItems(
+      withMappingState(resolved),
+      hideUnmapped
+    ),
   };
 }
 
@@ -129,17 +210,18 @@ simklDiscoverRoutes.get('/library', async (req, res, next) => {
     .getMany();
   const page = Math.max(1, Number(req.query.page) || 1);
   const start = (page - 1) * 20;
-  const slice = rows.slice(start, start + 20).map(toWatchlistItem);
-  const filled = await fillMissingTmdbIds(
+  const slice = rows.slice(start, start + 20).map(toSyncCandidate);
+  const hydrated = await hydrateSimklCandidates(
     slice,
     loadSimklTitle(new SimklAPI())
   );
-  const typed = await assignWorkingTmdbMediaType(
-    filled,
-    tmdbExists(createTmdbWithRegionLanguage(req.user))
+  const resolved = await resolveSimklCandidates(
+    hydrated,
+    tmdbResolvers(createTmdbWithRegionLanguage(req.user))
   );
+  recordSimklGaps(resolved, 'simkl/library');
   const results = omitUnmappedDiscoverItems(
-    typed,
+    withMappingState(resolved),
     shouldHideUnmappedFromQuery(req.query)
   );
   const repository = getRepository(SimklSyncItem);
@@ -184,9 +266,10 @@ simklDiscoverRoutes.get('/trending', async (req, res, next) => {
     );
     return res.status(200).json({
       ...(await mappedCatalogPage(
-        catalogWatchlistItems([payload], type, 'simkl-public'),
+        catalogCandidates([payload], type, 'simkl-public'),
         page,
-        shouldHideUnmappedFromQuery(req.query)
+        shouldHideUnmappedFromQuery(req.query),
+        `simkl/trending/${type}`
       )),
     } satisfies WatchlistResponse);
   } catch (error) {
@@ -214,9 +297,10 @@ simklDiscoverRoutes.get('/best', async (req, res, next) => {
     );
     return res.status(200).json({
       ...(await mappedCatalogPage(
-        catalogWatchlistItems([payload], mediaType, 'simkl-best'),
+        catalogCandidates([payload], mediaType, 'simkl-best'),
         page,
-        shouldHideUnmappedFromQuery(req.query)
+        shouldHideUnmappedFromQuery(req.query),
+        `simkl/best/${mediaType}`
       )),
     } satisfies WatchlistResponse);
   } catch (error) {
@@ -245,9 +329,10 @@ simklDiscoverRoutes.get('/premieres', async (req, res, next) => {
     );
     return res.status(200).json({
       ...(await mappedCatalogPage(
-        catalogWatchlistItems([payload], mediaType, 'simkl-premieres'),
+        catalogCandidates([payload], mediaType, 'simkl-premieres'),
         page,
-        shouldHideUnmappedFromQuery(req.query)
+        shouldHideUnmappedFromQuery(req.query),
+        `simkl/premieres/${mediaType}`
       )),
     } satisfies WatchlistResponse);
   } catch (error) {

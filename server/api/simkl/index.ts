@@ -266,23 +266,92 @@ export default class SimklAPI extends ExternalAPI {
     return this.request('get', '/sync/watched?extended=episodes');
   }
 
+  /**
+   * `GET /redirect?to=simkl&<source>=<id>` answers `301` with the Simkl URL, so
+   * the redirect must not be followed. Unlike the detail endpoint this one is
+   * `cache-control: no-store`, hence its own budget class.
+   */
+  public async redirectToSimklId(
+    source: 'anidb' | 'anilist' | 'mal' | 'kitsu' | 'imdb' | 'tvdb' | 'tmdb',
+    externalId: string
+  ): Promise<{ simklId: string; kind: 'anime' | 'tv' | 'movies' } | undefined> {
+    await this.pace(false);
+    const query = new URLSearchParams({
+      to: 'simkl',
+      [source]: externalId,
+      client_id: this.clientId,
+      'app-name': 'foreseerr',
+      'app-version': getAppVersion(),
+    });
+    const response = await this.rawAxios.get(`/redirect?${query}`, {
+      maxRedirects: 0,
+      validateStatus: (status) => status < 500,
+    });
+    const location =
+      typeof response.headers?.location === 'string'
+        ? response.headers.location
+        : '';
+    const match = location.match(/\/(anime|tv|movies)\/(\d+)/);
+    if (!match) return undefined;
+    return {
+      kind: match[1] as 'anime' | 'tv' | 'movies',
+      simklId: match[2],
+    };
+  }
+
+  /**
+   * A known-good id used to disambiguate Simkl's overloaded `412`, which means
+   * "unknown id in that catalog", "you sent HEAD", or a real credential failure.
+   * A resolver that reads `412` as "blocked" disables Simkl on the first
+   * not-found; one that reads it as "not found" never notices a suspension.
+   *
+   * Never uses HEAD: `HEAD /anime/39687` answers 412 while `GET` answers 200.
+   */
+  public async sentinelIsHealthy(): Promise<boolean> {
+    try {
+      const detail = await this.getTitle('anime', '39687');
+      return Boolean(detail && Object.keys(detail).length);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Write one episode's watch state using explicit ids and numbers.
+   *
+   * `use_tvdb_anime_seasons` is deliberately not sent: it asks Simkl to
+   * reinterpret the season numbers server-side, which silently disagrees with
+   * whatever numbering the caller read the episode under. The mapping layer
+   * translates the coordinates before the call instead, so what is written is
+   * what was resolved.
+   */
   public async setEpisodeHistory(
-    tmdbShowId: number,
+    ids: {
+      simkl?: string | number;
+      tmdb?: number;
+      tvdb?: number;
+      anidb?: number;
+    },
     season: number,
     episode: number,
     watched: boolean
   ): Promise<unknown> {
+    const identifiers = Object.fromEntries(
+      Object.entries(ids).filter(([, value]) => Boolean(value))
+    );
+    if (!Object.keys(identifiers).length) {
+      throw new Error('setEpisodeHistory requires at least one id');
+    }
     return this.request(
       'post',
       watched ? '/sync/history' : '/sync/history/remove',
       {
         shows: [
           {
-            ids: { tmdb: tmdbShowId },
+            ids: identifiers,
             seasons: [{ number: season, episodes: [{ number: episode }] }],
           },
         ],
-        use_tvdb_anime_seasons: true,
       }
     );
   }

@@ -25,6 +25,8 @@ import type {
   TmdbSearchTvResponse,
   TmdbSeasonWithEpisodes,
   TmdbTvDetails,
+  TmdbTvEpisodeGroupDetails,
+  TmdbTvEpisodeGroupsResponse,
   TmdbUpcomingMoviesResponse,
   TmdbWatchProviderDetails,
   TmdbWatchProviderRegion,
@@ -531,6 +533,49 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
       return data;
     } catch (e) {
       throw new Error(`[TMDB] Failed to fetch TV show details: ${e.message}`, {
+        cause: e,
+      });
+    }
+  };
+
+  /**
+   * The alternate orderings TMDB itself publishes for a show: type 1 original
+   * air date, 2 absolute, 3 DVD, 4 digital, 5 story arc, 6 production, 7 tv.
+   * These are the authority for split-season and alternate-order numbering, and
+   * they exist for non-anime shows too.
+   */
+  public getTvEpisodeGroups = async ({
+    tvId,
+  }: {
+    tvId: number;
+  }): Promise<TmdbTvEpisodeGroupsResponse> => {
+    try {
+      return await this.get<TmdbTvEpisodeGroupsResponse>(
+        `/tv/${tvId}/episode_groups`,
+        undefined,
+        // Orderings change rarely; a day of caching keeps this off the hot path.
+        86400
+      );
+    } catch (e) {
+      throw new Error(`[TMDB] Failed to fetch episode groups: ${e.message}`, {
+        cause: e,
+      });
+    }
+  };
+
+  public getTvEpisodeGroup = async ({
+    groupId,
+  }: {
+    groupId: string;
+  }): Promise<TmdbTvEpisodeGroupDetails> => {
+    try {
+      return await this.get<TmdbTvEpisodeGroupDetails>(
+        `/tv/episode_group/${groupId}`,
+        undefined,
+        86400
+      );
+    } catch (e) {
+      throw new Error(`[TMDB] Failed to fetch episode group: ${e.message}`, {
         cause: e,
       });
     }

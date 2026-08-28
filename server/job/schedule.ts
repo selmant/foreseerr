@@ -16,6 +16,9 @@ import {
 } from '@server/lib/desktopState';
 import downloadTracker from '@server/lib/downloadtracker';
 import ImageProxy from '@server/lib/imageproxy';
+import { ensureMappingPacks } from '@server/lib/mapping/bootstrap';
+import { suggestForOpenGaps } from '@server/lib/mapping/heuristic';
+import { backfillMappingGaps } from '@server/lib/mapping/live';
 import refreshToken from '@server/lib/refreshToken';
 import releaseCalendarSync from '@server/lib/releases/sync';
 import {
@@ -53,6 +56,7 @@ const heavyJobIds = new Set<JobId>([
   'sonarr-scan',
   'availability-sync',
   'process-blocklisted-tags',
+  'mapping-backfill',
 ]);
 let desktopCatchUpTimer: NodeJS.Timeout | undefined;
 let desktopDownloadStartupRun = false;
@@ -152,6 +156,17 @@ const runScheduledJobById = (id: JobId): Promise<boolean> => {
       return runHeavy(id, 'Process Blocklisted Tags', () =>
         blocklistedTagsProcessor.run()
       );
+    case 'mapping-pack-refresh':
+      return runScheduledJob(id, 'light', 'Mapping Pack Refresh', () =>
+        ensureMappingPacks({ force: true, ingest: true })
+      );
+    case 'mapping-backfill':
+      // Heavy: it spends the daily MDBList quota and then walks the queue with
+      // title matching, so it must not overlap a library scan.
+      return runHeavy(id, 'Mapping Gap Backfill', async () => {
+        await backfillMappingGaps();
+        await suggestForOpenGaps({ limit: 100 });
+      });
     default:
       return Promise.resolve(false);
   }
@@ -425,6 +440,34 @@ export const startJobs = (): void => {
     }),
     running: () => blocklistedTagsProcessor.status().running,
     cancelFn: () => blocklistedTagsProcessor.cancel(),
+  });
+
+  scheduledJobs.push({
+    id: 'mapping-pack-refresh',
+    name: 'Mapping Pack Refresh',
+    type: 'process',
+    interval: 'days',
+    cronSchedule: jobs['mapping-pack-refresh'].schedule,
+    job: schedule.scheduleJob(jobs['mapping-pack-refresh'].schedule, () => {
+      logger.info('Starting scheduled job: Mapping Pack Refresh', {
+        label: 'Jobs',
+      });
+      void runScheduledJobById('mapping-pack-refresh');
+    }),
+  });
+
+  scheduledJobs.push({
+    id: 'mapping-backfill',
+    name: 'Mapping Gap Backfill',
+    type: 'process',
+    interval: 'days',
+    cronSchedule: jobs['mapping-backfill'].schedule,
+    job: schedule.scheduleJob(jobs['mapping-backfill'].schedule, () => {
+      logger.info('Starting scheduled job: Mapping Gap Backfill', {
+        label: 'Jobs',
+      });
+      void runScheduledJobById('mapping-backfill');
+    }),
   });
 
   logger.info('Scheduled jobs loaded', { label: 'Jobs' });

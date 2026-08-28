@@ -1,15 +1,8 @@
 import type { AnilistMediaFormat } from '@server/api/anilist/interfaces';
-import logger from '@server/logger';
-import axios from 'axios';
-import fs, { promises as fsp } from 'fs';
-import path from 'path';
-
-const UPDATE_INTERVAL_MSEC = 24 * 3600 * 1000;
-const MAPPING_URL =
-  'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json';
-const LOCAL_PATH = process.env.CONFIG_DIRECTORY
-  ? `${process.env.CONFIG_DIRECTORY}/anilist-tmdb.json`
-  : path.join(__dirname, '../../../config/anilist-tmdb.json');
+import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
+import { findClusterIds, findLinks } from '@server/lib/mapping/graph';
+import mappingService from '@server/lib/mapping/service';
+import { tmdbNamespace, type Namespace } from '@server/lib/mapping/types';
 
 export interface AnilistTmdbMapping {
   tmdbId: number;
@@ -19,24 +12,6 @@ export interface AnilistTmdbMapping {
 interface FribbTmdbIds {
   tv?: number;
   movie?: number | number[];
-}
-
-interface FribbSeason {
-  tvdb?: number | string;
-  tmdb?: number | string;
-}
-
-interface FribbEpisodeOffset {
-  tvdb?: number | string;
-  tmdb?: number | string;
-}
-
-interface FribbEntry {
-  type?: string;
-  anilist_id?: number;
-  themoviedb_id?: FribbTmdbIds;
-  season?: FribbSeason;
-  episode_offset?: FribbEpisodeOffset;
 }
 
 const SERIES_FRIBB_TYPES = new Set(['TV', 'ONA', 'TV_SHORT']);
@@ -56,10 +31,6 @@ function parseNonNegativeInt(value: unknown): number | null {
     return null;
   }
   return Math.trunc(parsed);
-}
-
-function parseOffset(value: unknown): number {
-  return parseNonNegativeInt(value) ?? 0;
 }
 
 export function isSeriesFribbType(type?: string | null): boolean {
@@ -93,6 +64,11 @@ export function anilistFormatToMediaType(
   return format === 'MOVIE' ? 'movie' : 'tv';
 }
 
+/**
+ * Retained from the old bespoke Fribb loader because the format still needs the
+ * movie-versus-tv preference rule; the download, indexing, and lookup all moved
+ * to the pack framework and the mapping graph.
+ */
 export function resolveFribbTmdb(
   ids: FribbTmdbIds | undefined,
   format?: AnilistMediaFormat | null
@@ -114,58 +90,6 @@ export function resolveFribbTmdb(
     return { tmdbId: movie, mediaType: 'movie' };
   }
   return null;
-}
-
-export function indexFribbEntries(entries: FribbEntry[]): {
-  byAnilist: Map<number, AnilistTmdbMapping>;
-  byTmdb: Map<string, number>;
-  byTmdbAll: Map<string, number[]>;
-  byTmdbSeasons: Map<string, AnilistSeasonMapping[]>;
-} {
-  const byAnilist = new Map<number, AnilistTmdbMapping>();
-  const byTmdb = new Map<string, number>();
-  const byTmdbAll = new Map<string, number[]>();
-  const byTmdbSeasons = new Map<string, AnilistSeasonMapping[]>();
-
-  for (const entry of entries) {
-    const anilistId = Number(entry.anilist_id);
-    if (!Number.isFinite(anilistId) || anilistId <= 0) {
-      continue;
-    }
-    const mapped = resolveFribbTmdb(
-      entry.themoviedb_id,
-      entry.type === 'MOVIE' ? 'MOVIE' : entry.type
-    );
-    if (!mapped) {
-      continue;
-    }
-    if (!byAnilist.has(anilistId)) {
-      byAnilist.set(anilistId, mapped);
-    }
-    const reverseKey = `${mapped.mediaType}:${mapped.tmdbId}`;
-    if (!byTmdb.has(reverseKey)) {
-      byTmdb.set(reverseKey, anilistId);
-    }
-    const all = byTmdbAll.get(reverseKey) ?? [];
-    if (!all.includes(anilistId)) {
-      all.push(anilistId);
-      byTmdbAll.set(reverseKey, all);
-    }
-    const seasonEntries = byTmdbSeasons.get(reverseKey) ?? [];
-    if (!seasonEntries.some((item) => item.anilistId === anilistId)) {
-      seasonEntries.push({
-        anilistId,
-        type: entry.type,
-        seasonTmdb: parseNonNegativeInt(entry.season?.tmdb),
-        seasonTvdb: parseNonNegativeInt(entry.season?.tvdb),
-        offsetTmdb: parseOffset(entry.episode_offset?.tmdb),
-        offsetTvdb: parseOffset(entry.episode_offset?.tvdb),
-      });
-      byTmdbSeasons.set(reverseKey, seasonEntries);
-    }
-  }
-
-  return { byAnilist, byTmdb, byTmdbAll, byTmdbSeasons };
 }
 
 function offsetForCatalog(
@@ -264,132 +188,102 @@ export function pickFribbSeasonEntry(
   return { mapping: picked, progress, mode };
 }
 
+/**
+ * Thin delegates onto `MappingService`.
+ *
+ * The bespoke downloader and in-process index this file used to own are gone:
+ * Fribb is now one declarative pack among several (and demoted, since its
+ * AniList/MAL fields froze on 2026-07-07 when upstream manami was archived), and
+ * lookups go through the persistent mapping graph.
+ */
 class AnilistIdMapping {
-  private syncing = false;
-  private byAnilist = new Map<number, AnilistTmdbMapping>();
-  private byTmdb = new Map<string, number>();
-  private byTmdbAll = new Map<string, number[]>();
-  private byTmdbSeasons = new Map<string, AnilistSeasonMapping[]>();
-  private mappingModified: Date | null = null;
-
-  public isLoaded = (): boolean => this.byAnilist.size > 0;
-
-  public getFromAnilistId = (
-    anilistId: number
-  ): AnilistTmdbMapping | undefined => {
-    return this.byAnilist.get(Number(anilistId));
-  };
-
-  public getAnilistId = (
-    mediaType: 'movie' | 'tv',
-    tmdbId: number
-  ): number | undefined => {
-    return this.byTmdb.get(`${mediaType}:${Number(tmdbId)}`);
-  };
-
-  public getAnilistIds = (
-    mediaType: 'movie' | 'tv',
-    tmdbId: number
-  ): number[] => {
-    return this.byTmdbAll.get(`${mediaType}:${Number(tmdbId)}`) ?? [];
-  };
-
-  public getAnilistSeasonEntries = (
-    mediaType: 'movie' | 'tv',
-    tmdbId: number
-  ): AnilistSeasonMapping[] => {
-    return this.byTmdbSeasons.get(`${mediaType}:${Number(tmdbId)}`) ?? [];
-  };
-
-  public loadFromEntries = (entries: FribbEntry[]): void => {
-    const indexed = indexFribbEntries(entries);
-    this.byAnilist = indexed.byAnilist;
-    this.byTmdb = indexed.byTmdb;
-    this.byTmdbAll = indexed.byTmdbAll;
-    this.byTmdbSeasons = indexed.byTmdbSeasons;
-    this.mappingModified = new Date();
-  };
-
-  private loadFromFile = async (): Promise<void> => {
-    logger.info('Loading AniList TMDB mapping file', {
-      label: 'AniList Mapping',
-    });
-    try {
-      const mappingStat = await fsp.stat(LOCAL_PATH);
-      const raw = await fsp.readFile(LOCAL_PATH, 'utf8');
-      const parsed = JSON.parse(raw) as FribbEntry[];
-      if (!Array.isArray(parsed)) {
-        throw new Error('AniList mapping file is not a JSON array');
-      }
-      this.loadFromEntries(parsed);
-      this.mappingModified = mappingStat.mtime;
-      logger.info(`Loaded ${this.byAnilist.size} AniList TMDB mappings`, {
-        label: 'AniList Mapping',
-      });
-    } catch (e) {
-      throw new Error(
-        `Failed to load AniList TMDB mappings: ${
-          e instanceof Error ? e.message : 'unknown error'
-        }`,
-        { cause: e }
-      );
-    }
-  };
-
-  private downloadFile = async (): Promise<void> => {
-    logger.info('Downloading latest AniList TMDB mapping file', {
-      label: 'AniList Mapping',
-    });
-    try {
-      const response = await axios.get(MAPPING_URL, {
-        responseType: 'stream',
-      });
-      await new Promise<void>((resolve, reject) => {
-        const writer = fs.createWriteStream(LOCAL_PATH);
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-        response.data.pipe(writer);
-      });
-    } catch (e) {
-      throw new Error(
-        `Failed to download AniList TMDB mapping: ${
-          e instanceof Error ? e.message : 'unknown error'
-        }`,
-        { cause: e }
-      );
-    }
-  };
+  public isLoaded = (): boolean => true;
 
   public sync = async (): Promise<void> => {
-    if (this.syncing) {
-      return;
-    }
+    ensureMappingLayer();
+  };
 
-    this.syncing = true;
-    try {
-      if (fs.existsSync(LOCAL_PATH)) {
-        const now = new Date();
-        const stat = await fsp.stat(LOCAL_PATH);
-        if (now.getTime() - stat.mtime.getTime() < UPDATE_INTERVAL_MSEC) {
-          if (!this.isLoaded()) {
-            await this.loadFromFile();
-          } else if (
-            this.mappingModified &&
-            stat.mtime.getTime() > this.mappingModified.getTime()
-          ) {
-            await this.loadFromFile();
-          }
-          return;
-        }
-      }
-      await this.downloadFile();
-      await this.loadFromFile();
-    } finally {
-      this.syncing = false;
+  public getFromAnilistId = async (
+    anilistId: number
+  ): Promise<AnilistTmdbMapping | undefined> => {
+    for (const [namespace, mediaType] of [
+      ['tmdb_show', 'tv'],
+      ['tmdb_movie', 'movie'],
+    ] as [Namespace, 'movie' | 'tv'][]) {
+      const resolution = await mappingService.resolve(
+        { ns: 'anilist', id: String(anilistId) },
+        namespace,
+        { silent: true }
+      );
+      const tmdbId = Number(resolution.target?.id);
+      if (tmdbId > 0) return { tmdbId, mediaType };
     }
+    return undefined;
+  };
+
+  public getAnilistId = async (
+    mediaType: 'movie' | 'tv',
+    tmdbId: number
+  ): Promise<number | undefined> => {
+    const ids = await this.getAnilistIds(mediaType, tmdbId);
+    return ids[0];
+  };
+
+  public getAnilistIds = async (
+    mediaType: 'movie' | 'tv',
+    tmdbId: number
+  ): Promise<number[]> => {
+    const clusterIds = await findClusterIds({
+      ns: tmdbNamespace(mediaType),
+      id: String(tmdbId),
+    });
+    const links = await findLinks(clusterIds, 'anilist');
+    return [
+      ...new Set(
+        links
+          .map((link) => Number(link.externalId))
+          .filter((id) => Number.isFinite(id) && id > 0)
+      ),
+    ];
+  };
+
+  /**
+   * Season-scoped AniList links for one TMDB show, in the shape the existing
+   * episode call sites expect. Phase 5 replaces this with the episode rule
+   * engine; until then it is derived from the graph rather than from Fribb's
+   * `episode_offset` field, which was populated for only 1.57% of entries.
+   */
+  public getAnilistSeasonEntries = async (
+    mediaType: 'movie' | 'tv',
+    tmdbId: number
+  ): Promise<AnilistSeasonMapping[]> => {
+    const namespace = tmdbNamespace(mediaType);
+    const clusterIds = await findClusterIds({
+      ns: namespace,
+      id: String(tmdbId),
+    });
+    if (!clusterIds.length) return [];
+    const [anilistLinks, tmdbLinks, tvdbLinks] = await Promise.all([
+      findLinks(clusterIds, 'anilist'),
+      findLinks(clusterIds, namespace),
+      findLinks(clusterIds, 'tvdb_show'),
+    ]);
+    const seasonFor = (
+      links: { clusterId: number; season?: number }[],
+      clusterId: number
+    ): number | null =>
+      links.find((link) => link.clusterId === clusterId)?.season ?? null;
+    return anilistLinks.map((link) => ({
+      anilistId: Number(link.externalId),
+      seasonTmdb: seasonFor(tmdbLinks, link.clusterId),
+      seasonTvdb: seasonFor(tvdbLinks, link.clusterId),
+      offsetTmdb: 0,
+      offsetTvdb: 0,
+    }));
   };
 }
 
 const anilistIdMapping = new AnilistIdMapping();
 
 export default anilistIdMapping;
+export { parseNonNegativeInt };

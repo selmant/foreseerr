@@ -27,6 +27,44 @@ export const tmdbIdFromIds = (
   return hasDiscoverTmdbId(tmdbId) ? tmdbId : undefined;
 };
 
+/**
+ * Ids Simkl publishes alongside its own. Its `tmdb` field is unreliable for
+ * anime seasons (measured 48.9-85.7% wrong), while `imdb`/`tvdb`/`anidb`/
+ * `anilist`/`mal` were correct in every traced case.
+ */
+export interface SimklExternalIds {
+  tmdb?: number;
+  imdb?: string;
+  tvdb?: number;
+  anidb?: number;
+  anilist?: number;
+  mal?: number;
+}
+
+const imdbId = (value: unknown): string | undefined => {
+  const raw = scalar(value);
+  return raw && /^tt\d{4,}$/i.test(raw) ? raw.toLowerCase() : undefined;
+};
+
+export const simklExternalIds = (
+  ids: Record<string, unknown>
+): SimklExternalIds => {
+  const tmdb = tmdbIdFromIds(ids);
+  const imdb = imdbId(ids.imdb ?? ids.imdb_id);
+  const tvdb = numberValue(ids.tvdb ?? ids.tvdb_id);
+  const anidb = numberValue(ids.anidb ?? ids.anidb_id);
+  const anilist = numberValue(ids.anilist ?? ids.anilist_id);
+  const mal = numberValue(ids.mal ?? ids.mal_id);
+  return {
+    ...(tmdb ? { tmdb } : {}),
+    ...(imdb ? { imdb } : {}),
+    ...(tvdb ? { tvdb } : {}),
+    ...(anidb ? { anidb } : {}),
+    ...(anilist ? { anilist } : {}),
+    ...(mal ? { mal } : {}),
+  };
+};
+
 export const simklPosterUrl = (path?: string | null): string | undefined => {
   if (typeof path !== 'string' || !path.trim()) return undefined;
   if (/^https?:\/\//i.test(path)) return path;
@@ -194,11 +232,32 @@ export const isSimklVideoGamePlay = (
   );
 };
 
-export const toCatalogWatchlistItem = (
+/**
+ * A Simkl record paired with the ids needed to resolve it. Media type is read
+ * from Simkl's own `type`/`anime_type` and is never inferred later, because the
+ * same integer is a valid TMDB movie and TV id 63% of the time.
+ */
+export interface SimklCandidate {
+  item: WatchlistItem;
+  ids: SimklExternalIds;
+  isAnime: boolean;
+}
+
+const isAnimeRecord = (
+  item: Record<string, unknown>,
+  typeHint: SimklMediaHint
+): boolean => {
+  if (typeHint === 'anime') return true;
+  if (typeof item.anime_type === 'string' && item.anime_type.trim())
+    return true;
+  return typeof item.url === 'string' && item.url.includes('/anime/');
+};
+
+export const toSimklCandidate = (
   item: Record<string, unknown>,
   typeHint: SimklMediaHint,
   keyPrefix: string
-): WatchlistItem | null => {
+): SimklCandidate | null => {
   if (isSimklVideoGamePlay(item)) return null;
   const ids = isObject(item.ids) ? item.ids : {};
   const id = simklRecordId(item, ids);
@@ -210,46 +269,65 @@ export const toCatalogWatchlistItem = (
     typeHint === 'movie'
       ? 'movie'
       : 'tv';
-  const tmdbId = tmdbIdFromIds(ids);
+  const external = simklExternalIds(ids);
+  const tmdbId = external.tmdb;
   const poster = simklPosterUrl(
     typeof item.poster === 'string' ? item.poster : undefined
   );
   return {
-    id: (tmdbId ?? Number(id)) || 0,
-    ratingKey: `${keyPrefix}-${id}`,
-    ...(hasDiscoverTmdbId(tmdbId) ? { tmdbId } : {}),
-    mediaType,
-    title,
-    source: 'simkl',
-    sourceId: id,
-    sourceUrl: sourceUrl(item, mediaType, typeHint, id, ids),
-    ...(poster ? { image: poster } : {}),
+    ids: external,
+    isAnime: isAnimeRecord(item, typeHint),
+    item: {
+      id: (tmdbId ?? Number(id)) || 0,
+      ratingKey: `${keyPrefix}-${id}`,
+      ...(hasDiscoverTmdbId(tmdbId) ? { tmdbId } : {}),
+      mediaType,
+      title,
+      source: 'simkl',
+      sourceId: id,
+      sourceUrl: sourceUrl(item, mediaType, typeHint, id, ids),
+      ...(poster ? { image: poster } : {}),
+    },
   };
+};
+
+export const toCatalogWatchlistItem = (
+  item: Record<string, unknown>,
+  typeHint: SimklMediaHint,
+  keyPrefix: string
+): WatchlistItem | null =>
+  toSimklCandidate(item, typeHint, keyPrefix)?.item ?? null;
+
+export const catalogCandidates = (
+  payloads: unknown[],
+  typeHint: SimklMediaHint,
+  keyPrefix: string
+): SimklCandidate[] => {
+  const results: SimklCandidate[] = [];
+  const seen = new Set<string>();
+  for (const { item, typeHint: hint } of payloads.flatMap((payload) =>
+    catalogEntries(payload, typeHint)
+  )) {
+    const mapped = toSimklCandidate(item, hint, keyPrefix);
+    if (!mapped || seen.has(mapped.item.ratingKey)) continue;
+    seen.add(mapped.item.ratingKey);
+    results.push(mapped);
+  }
+  return results;
 };
 
 export const catalogWatchlistItems = (
   payloads: unknown[],
   typeHint: SimklMediaHint,
   keyPrefix: string
-): WatchlistItem[] => {
-  const results: WatchlistItem[] = [];
-  const seen = new Set<string>();
-  for (const { item, typeHint: hint } of payloads.flatMap((payload) =>
-    catalogEntries(payload, typeHint)
-  )) {
-    const mapped = toCatalogWatchlistItem(item, hint, keyPrefix);
-    if (!mapped || seen.has(mapped.ratingKey)) continue;
-    seen.add(mapped.ratingKey);
-    results.push(mapped);
-  }
-  return results;
-};
+): WatchlistItem[] =>
+  catalogCandidates(payloads, typeHint, keyPrefix).map(({ item }) => item);
 
-export const paginateWatchlist = (
-  results: WatchlistItem[],
+export const paginateWatchlist = <T>(
+  results: T[],
   page: number,
   pageSize = 20
-): { results: WatchlistItem[]; hasMore: boolean; page: number } => {
+): { results: T[]; hasMore: boolean; page: number } => {
   const start = (Math.max(1, page) - 1) * pageSize;
   return {
     page: Math.max(1, page),
@@ -265,50 +343,167 @@ export const simklDetailKind = (
   return item.mediaType === 'movie' ? 'movies' : 'tv';
 };
 
-/** Cached Simkl detail endpoints expose ids.tmdb when list payloads omit it. */
-export async function fillMissingTmdbIds(
-  items: WatchlistItem[],
-  loadTitle: (
-    kind: 'movies' | 'tv' | 'anime',
-    simklId: string
-  ) => Promise<Record<string, unknown>>
-): Promise<WatchlistItem[]> {
-  const mapped = await mapWithConcurrency(items, 4, async (item) => {
-    if (!item.sourceId) return item;
-    if (hasDiscoverTmdbId(item.tmdbId)) return item;
+export type SimklDetailLoader = (
+  kind: 'movies' | 'tv' | 'anime',
+  simklId: string
+) => Promise<Record<string, unknown>>;
+
+/**
+ * Simkl list payloads frequently carry only `simkl_id` + `slug`. The detail
+ * endpoint is Cloudflare edge-cached and parallel-safe, so it is fetched when
+ * ids are missing, and always for anime because Simkl's own `tmdb` field cannot
+ * be trusted there and the imdb/tvdb/anidb ids are needed to corroborate it.
+ */
+const needsSimklDetail = (candidate: SimklCandidate): boolean => {
+  if (!candidate.item.sourceId) return false;
+  if (candidate.isAnime)
+    return !candidate.ids.imdb && !candidate.ids.tvdb && !candidate.ids.anidb;
+  return !candidate.ids.tmdb && !candidate.ids.imdb && !candidate.ids.tvdb;
+};
+
+export async function hydrateSimklCandidates(
+  candidates: SimklCandidate[],
+  loadTitle: SimklDetailLoader
+): Promise<SimklCandidate[]> {
+  const mapped = await mapWithConcurrency(candidates, 4, async (candidate) => {
+    if (!needsSimklDetail(candidate)) return candidate;
+    const sourceId = candidate.item.sourceId as string;
     try {
-      const detail = await loadTitle(simklDetailKind(item), item.sourceId);
+      const detail = await loadTitle(simklDetailKind(candidate.item), sourceId);
       if (isSimklVideoGamePlay(detail)) return null;
       const ids = isObject(detail.ids) ? detail.ids : {};
-      const tmdbId = tmdbIdFromIds(ids);
-      if (!hasDiscoverTmdbId(tmdbId)) return item;
-      return { ...item, tmdbId, id: tmdbId };
+      return {
+        ...candidate,
+        ids: { ...candidate.ids, ...simklExternalIds(ids) },
+      };
     } catch {
-      return item;
+      return candidate;
     }
   });
-  return mapped.filter((item): item is WatchlistItem => item !== null);
+  return mapped.filter((entry): entry is SimklCandidate => entry !== null);
 }
 
-/** Prefer the Simkl hint, then the other TMDB catalog, so anime films map as movies. */
-export async function assignWorkingTmdbMediaType(
-  items: WatchlistItem[],
-  probe: (mediaType: 'movie' | 'tv', tmdbId: number) => Promise<boolean>
-): Promise<WatchlistItem[]> {
-  return mapWithConcurrency(items, 2, async (item) => {
-    if (!hasDiscoverTmdbId(item.tmdbId)) return item;
-    const tmdbId = item.tmdbId;
-    const order: ('movie' | 'tv')[] =
-      item.mediaType === 'movie' ? ['movie', 'tv'] : ['tv', 'movie'];
-    for (const mediaType of order) {
-      if (await probe(mediaType, tmdbId)) {
-        return { ...item, mediaType, id: tmdbId };
-      }
-    }
+export interface SimklTmdbResolution {
+  tmdbId?: number;
+  confidence: number;
+  sourceKey: string;
+  /** Set when a candidate was found but could not be corroborated. */
+  ambiguous?: boolean;
+}
+
+export interface SimklTmdbResolvers {
+  /**
+   * TMDB `/find`, scoped to the declared media type. `tvdb_id` is documented as
+   * unsupported for movies, so callers must return an empty list there.
+   */
+  findByExternalId: (
+    source: 'imdb' | 'tvdb',
+    externalId: string,
+    mediaType: 'movie' | 'tv'
+  ) => Promise<number[]>;
+  /**
+   * Existence check in the declared namespace only. May reject a candidate,
+   * never choose between two: `/movie/{id}` returning 200 is not evidence that
+   * the id denotes that movie.
+   */
+  confirm: (mediaType: 'movie' | 'tv', tmdbId: number) => Promise<boolean>;
+}
+
+const UNRESOLVED: SimklTmdbResolution = {
+  confidence: 0,
+  sourceKey: 'simkl:unresolved',
+};
+
+/**
+ * Resolve one Simkl record to a TMDB id without ever inferring media type.
+ *
+ * Simkl's `imdb`/`tvdb` ids resolve through TMDB `/find` and were correct in
+ * every traced case; its `tmdb` field is only accepted when a second namespace
+ * agrees, or (for non-anime, where it measured reliable) when it exists in the
+ * declared namespace. Anime records with an uncorroborated `tmdb` are reported
+ * as ambiguous so they render an honest unmapped tile instead of the wrong
+ * poster.
+ */
+export async function resolveSimklTmdbId(
+  candidate: SimklCandidate,
+  resolvers: SimklTmdbResolvers
+): Promise<SimklTmdbResolution> {
+  const { mediaType } = candidate.item;
+  const { imdb, tvdb, tmdb } = candidate.ids;
+
+  const corroborating: { sourceKey: string; ids: number[] }[] = [];
+  if (imdb) {
+    corroborating.push({
+      sourceKey: 'tmdb-find:imdb',
+      ids: await resolvers.findByExternalId('imdb', imdb, mediaType),
+    });
+  }
+  if (tvdb && mediaType === 'tv') {
+    corroborating.push({
+      sourceKey: 'tmdb-find:tvdb',
+      ids: await resolvers.findByExternalId('tvdb', String(tvdb), mediaType),
+    });
+  }
+
+  const agreed = corroborating.find(({ ids }) => tmdb && ids.includes(tmdb));
+  if (agreed) {
     return {
-      ...item,
-      id: Number(item.sourceId) || 0,
-      tmdbId: undefined,
+      tmdbId: tmdb,
+      confidence: 95,
+      sourceKey: `simkl:tmdb+${agreed.sourceKey}`,
     };
+  }
+
+  const found = corroborating.find(({ ids }) => ids.length === 1);
+  if (found) {
+    return {
+      tmdbId: found.ids[0],
+      confidence: 80,
+      sourceKey: found.sourceKey,
+    };
+  }
+
+  const multiple = corroborating.find(({ ids }) => ids.length > 1);
+  if (multiple) {
+    return { ...UNRESOLVED, ambiguous: true, sourceKey: multiple.sourceKey };
+  }
+
+  if (!tmdb) return UNRESOLVED;
+
+  if (candidate.isAnime) {
+    return { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
+  }
+
+  return (await resolvers.confirm(mediaType, tmdb))
+    ? { tmdbId: tmdb, confidence: 60, sourceKey: 'simkl:tmdb' }
+    : { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
+}
+
+export interface ResolvedSimklItem {
+  item: WatchlistItem;
+  resolution: SimklTmdbResolution;
+  candidate: SimklCandidate;
+}
+
+export async function resolveSimklCandidates(
+  candidates: SimklCandidate[],
+  resolvers: SimklTmdbResolvers
+): Promise<ResolvedSimklItem[]> {
+  return mapWithConcurrency(candidates, 2, async (candidate) => {
+    let resolution: SimklTmdbResolution;
+    try {
+      resolution = await resolveSimklTmdbId(candidate, resolvers);
+    } catch {
+      resolution = UNRESOLVED;
+    }
+    const tmdbId = resolution.tmdbId;
+    const item: WatchlistItem = hasDiscoverTmdbId(tmdbId)
+      ? { ...candidate.item, tmdbId, id: tmdbId }
+      : {
+          ...candidate.item,
+          id: Number(candidate.item.sourceId) || 0,
+          tmdbId: undefined,
+        };
+    return { item, resolution, candidate };
   });
 }

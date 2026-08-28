@@ -413,6 +413,58 @@ export interface TmdbSeasonWithEpisodes extends Omit<
   external_ids: TmdbExternalIds;
 }
 
+/**
+ * TMDB episode group `type`: 1 original air date, 2 absolute, 3 DVD, 4 digital,
+ * 5 story arc, 6 production, 7 tv.
+ */
+export type TmdbEpisodeGroupType = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export interface TmdbTvEpisodeGroupSummary {
+  id: string;
+  name: string;
+  description?: string;
+  group_count: number;
+  episode_count: number;
+  type: TmdbEpisodeGroupType;
+  network?: {
+    id: number;
+    name: string;
+    logo_path?: string;
+    origin_country?: string;
+  } | null;
+}
+
+export interface TmdbTvEpisodeGroupsResponse {
+  id: number;
+  results: TmdbTvEpisodeGroupSummary[];
+}
+
+export interface TmdbTvEpisodeGroupEpisode {
+  id: number;
+  name?: string;
+  order: number;
+  episode_number: number;
+  season_number: number;
+  show_id?: number;
+  air_date?: string;
+}
+
+export interface TmdbTvEpisodeGroupDetails {
+  id: string;
+  name: string;
+  description?: string;
+  episode_count: number;
+  group_count: number;
+  type: TmdbEpisodeGroupType;
+  groups: {
+    id: string;
+    name: string;
+    order: number;
+    locked?: boolean;
+    episodes: TmdbTvEpisodeGroupEpisode[];
+  }[];
+}
+
 export interface TmdbCollection {
   id: number;
   name: string;

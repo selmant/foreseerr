@@ -8,37 +8,67 @@ import type {
 } from '@server/interfaces/api/discoverInterfaces';
 import { handleMdblistDiscoverRouteError } from '@server/lib/discover/providerErrors';
 import {
+  resolveDiscoverItems,
+  type ResolvableDiscoverItem,
+} from '@server/lib/discover/resolveItems';
+import {
   hasDiscoverTmdbId,
   imdbSourceUrl,
   omitUnmappedDiscoverItems,
+  recordUnmappedItems,
   shouldHideUnmappedFromQuery,
   tmdbSourceUrl,
 } from '@server/lib/discover/unmapped';
+import type { IdRef } from '@server/lib/mapping/types';
 import { Router } from 'express';
 
 const mdblistDiscoverRoutes = Router();
 
-const mapItems = (items: MdblistDiscoverItem[]): WatchlistItem[] =>
+const mapItems = (items: MdblistDiscoverItem[]): ResolvableDiscoverItem[] =>
   items.map((item) => {
     const sourceId = hasDiscoverTmdbId(item.tmdbId)
       ? String(item.tmdbId)
       : item.imdbId || item.title;
+    // The media type is only known when MDBList said so; a unified list leaves
+    // it open until the mapping layer settles it.
+    const mediaType = item.mediaType;
     const sourceUrl = item.imdbId
       ? imdbSourceUrl(item.imdbId)
-      : hasDiscoverTmdbId(item.tmdbId)
-        ? tmdbSourceUrl(item.mediaType, item.tmdbId)
+      : hasDiscoverTmdbId(item.tmdbId) && mediaType
+        ? tmdbSourceUrl(mediaType, item.tmdbId)
+        : undefined;
+    // IMDB is the id MDBList carries for practically every list item and the one
+    // TMDB `/find` resolves reliably; TVDB is the fallback for shows.
+    const from: IdRef | undefined = item.imdbId
+      ? { ns: 'imdb', id: item.imdbId }
+      : item.tvdbId
+        ? { ns: 'tvdb_show', id: String(item.tvdbId) }
         : undefined;
     return {
       id: item.tmdbId ?? 0,
-      ratingKey: `mdblist-${item.mediaType}-${sourceId}`,
+      ratingKey: `mdblist-${mediaType ?? 'unknown'}-${sourceId}`,
       ...(hasDiscoverTmdbId(item.tmdbId) ? { tmdbId: item.tmdbId } : {}),
-      mediaType: item.mediaType,
+      mediaType: mediaType ?? 'movie',
       title: item.title,
       source: 'mdblist' as const,
       sourceId,
       ...(sourceUrl ? { sourceUrl } : {}),
+      ...(from ? { from } : {}),
     };
   });
+
+const resolvedMdblistItems = async (
+  items: MdblistDiscoverItem[]
+): Promise<WatchlistItem[]> => {
+  const resolved = await resolveDiscoverItems(mapItems(items), {
+    discoverSource: 'mdblist/list',
+  });
+  recordUnmappedItems(resolved, {
+    namespace: 'imdb',
+    discoverSource: 'mdblist/list',
+  });
+  return resolved;
+};
 
 mdblistDiscoverRoutes.get('/lists/search', async (req, res, next) => {
   try {
@@ -73,7 +103,7 @@ mdblistDiscoverRoutes.get('/list', async (req, res, next) => {
       page,
       hasMore,
       results: omitUnmappedDiscoverItems(
-        mapItems(items),
+        await resolvedMdblistItems(items),
         shouldHideUnmappedFromQuery(req.query)
       ),
       title,

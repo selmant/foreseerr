@@ -5,6 +5,11 @@ import anilistIdMapping, {
   pickFribbSeasonEntry,
 } from '@server/lib/anilist/mapping';
 import { getAnilistUserContext } from '@server/lib/anilist/userContext';
+import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
+import {
+  findEpisodeRules,
+  translateEpisodeBridged,
+} from '@server/lib/mapping/episodes';
 import { AnilistMediaActionProvider } from './anilist';
 import {
   absoluteEpisodeNumber,
@@ -51,6 +56,53 @@ function catalogOffset(
   return catalog === 'tvdb' ? mapping.offsetTvdb : mapping.offsetTmdb;
 }
 
+/**
+ * The exact AniList entry and progress for one TMDB episode, from stored episode
+ * rules.
+ *
+ * Packs express their ranges against AniDB, so an AniList answer is bridged
+ * through it. Returns undefined when no rule covers the episode, which is the
+ * signal to fall back to season-level inference rather than to guess a number.
+ */
+async function progressFromRules(
+  tmdbShowId: number,
+  seasonNumber: number,
+  episodeNumber: number
+): Promise<{ anilistId: number; progress: number } | undefined> {
+  ensureMappingLayer();
+  const from = {
+    ns: 'tmdb_show' as const,
+    id: String(tmdbShowId),
+    season: seasonNumber,
+    episode: episodeNumber,
+  };
+  const translated = await translateEpisodeBridged(from, 'anilist', [
+    'anidb',
+    'mal',
+  ]);
+  const anilistId = Number(translated?.target.id);
+  if (!translated || !(anilistId > 0) || translated.episode < 1) {
+    return undefined;
+  }
+  return { anilistId, progress: translated.episode };
+}
+
+/** Whether any rule at all covers this show, i.e. whether the engine applies. */
+async function hasEpisodeRules(
+  tmdbShowId: number,
+  seasonNumber: number
+): Promise<boolean> {
+  const from = {
+    ns: 'tmdb_show' as const,
+    id: String(tmdbShowId),
+    season: seasonNumber,
+  };
+  for (const namespace of ['anilist', 'anidb', 'mal'] as const) {
+    if ((await findEpisodeRules(from, namespace)).length) return true;
+  }
+  return false;
+}
+
 export const anilistEpisodeActions = {
   isAvailable(userId: number): Promise<boolean> {
     return anilistProvider.isAvailable(userId);
@@ -76,6 +128,35 @@ export const anilistEpisodeActions = {
         userId,
         anilistUserId
       );
+
+      // Rules give an exact per-episode answer, so where they exist the season
+      // heuristics below are not consulted at all.
+      if (await hasEpisodeRules(tmdbShowId, seasonNumber)) {
+        const show = await new TheMovieDb().getTvShow({ tvId: tmdbShowId });
+        const season = seasonsFromTmdb(show).find(
+          (item) => item.seasonNumber === seasonNumber
+        );
+        const watched: number[] = [];
+        for (
+          let episode = 1;
+          episode <= (season?.episodeCount ?? 0);
+          episode += 1
+        ) {
+          const mapped = await progressFromRules(
+            tmdbShowId,
+            seasonNumber,
+            episode
+          );
+          if (!mapped) continue;
+          const entry = lookupAnilistEntryByAnilistId(
+            snapshot,
+            mapped.anilistId
+          );
+          if ((entry?.progress ?? 0) >= mapped.progress) watched.push(episode);
+        }
+        return { available: true, watchedEpisodeNumbers: watched };
+      }
+
       if (candidates.mode === 'absolute') {
         const mapping = candidates.entries[0];
         const entry = lookupAnilistEntryByAnilistId(
@@ -143,8 +224,19 @@ export const anilistEpisodeActions = {
       return 'skipped';
     }
 
+    const fromRules = await progressFromRules(
+      tmdbShowId,
+      seasonNumber,
+      episodeNumber
+    );
     const entries = await seasonEntries(tmdbShowId);
-    const picked = pickFribbSeasonEntry(entries, seasonNumber, episodeNumber);
+    const picked = fromRules
+      ? {
+          mapping: { anilistId: fromRules.anilistId },
+          progress: fromRules.progress,
+          mode: 'in-season' as const,
+        }
+      : pickFribbSeasonEntry(entries, seasonNumber, episodeNumber);
     if (!picked) {
       return 'skipped';
     }

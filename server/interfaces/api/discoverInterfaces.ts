@@ -11,6 +11,28 @@ export type DiscoverItemSource =
   | 'mdblist'
   | 'plex';
 
+/**
+ * Why a tile has no TMDB id, so the UI can say something truer than "unmapped".
+ *
+ * `ambiguous` is deliberately distinct from `unmapped`: several sources
+ * disagreed, and showing either answer would be showing a wrong poster.
+ */
+export type DiscoverMappingState =
+  | 'mapped'
+  | 'unmapped'
+  | 'ambiguous'
+  | 'pending';
+
+export interface DiscoverMappingInfo {
+  state: DiscoverMappingState;
+  /** Resolver that produced the id, e.g. `graph`, `anibridge`, `tmdb-find`. */
+  sourceKey?: string;
+  confidence?: number;
+  /** Namespace and id the tile was resolved *from*, for the repair queue. */
+  namespace?: string;
+  externalId?: string;
+}
+
 export interface WatchlistItem {
   id: number;
   ratingKey: string;
@@ -22,6 +44,7 @@ export interface WatchlistItem {
   sourceUrl?: string;
   sourceId?: string;
   image?: string;
+  mappingState?: DiscoverMappingInfo;
 }
 
 export interface WatchlistResponse {

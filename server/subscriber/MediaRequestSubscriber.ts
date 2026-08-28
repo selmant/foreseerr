@@ -18,6 +18,7 @@ import { isAnimeMedia } from '@server/lib/anime/detect';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { getSettings } from '@server/lib/settings';
 import {
+  resolveSonarrSeasons,
   resolveSonarrSeriesRouting,
   shouldShortCircuitAvailableTvRequest,
 } from '@server/lib/sonarrRequestRouting';
@@ -738,7 +739,10 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           tvdbid: tvdbId,
           seasons: entity.episodes?.length
             ? []
-            : entity.seasons.map((season) => season.seasonNumber),
+            : await resolveSonarrSeasons(
+                media.tmdbId,
+                entity.seasons.map((season) => season.seasonNumber)
+              ),
           episodeTvdbIds: entity.episodes?.length
             ? entity.episodes.map((episode) => episode.tvdbId)
             : undefined,

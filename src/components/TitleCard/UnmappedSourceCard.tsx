@@ -5,12 +5,21 @@ import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
+import FixMappingModal from '@app/components/TitleCard/FixMappingModal';
+import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowTopRightOnSquareIcon,
+  WrenchScrewdriverIcon,
+} from '@heroicons/react/24/outline';
 import { EyeSlashIcon } from '@heroicons/react/24/solid';
-import type { DiscoverItemSource } from '@server/interfaces/api/discoverInterfaces';
+import type {
+  DiscoverItemSource,
+  DiscoverMappingInfo,
+} from '@server/interfaces/api/discoverInterfaces';
 import type { ComponentType, SVGProps } from 'react';
+import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
 const SOURCE_MARKS: Record<
@@ -30,6 +39,8 @@ const messages = defineMessages('components.TitleCard.UnmappedSourceCard', {
   ribbon: 'Unmapped',
   openOriginal: 'Open original',
   hide: 'Hide',
+  fixMapping: 'Fix mapping',
+  ambiguous: 'Sources disagree',
 });
 
 export interface UnmappedSourceCardProps {
@@ -40,6 +51,7 @@ export interface UnmappedSourceCardProps {
   image?: string;
   hasTmdbId?: boolean;
   canExpand?: boolean;
+  mappingState?: DiscoverMappingInfo;
   onHide: () => void;
 }
 
@@ -51,10 +63,18 @@ const UnmappedSourceCard = ({
   image,
   hasTmdbId = false,
   canExpand,
+  mappingState,
   onHide,
 }: UnmappedSourceCardProps) => {
   const intl = useIntl();
+  const { hasPermission } = useUser();
+  const [repairing, setRepairing] = useState(false);
   const { Logo, label } = SOURCE_MARKS[source];
+  // Only an admin can write an override, and only an identified item can be
+  // corrected: without a namespace and id there is nothing to key the fix to.
+  const canRepair =
+    hasPermission(Permission.ADMIN) &&
+    Boolean(mappingState?.namespace && mappingState?.externalId);
 
   return (
     <div
@@ -128,7 +148,11 @@ const UnmappedSourceCard = ({
               </h1>
               <p className="mt-1 text-xs font-medium text-amber-300">
                 {intl.formatMessage(
-                  hasTmdbId ? messages.notFoundOnTmdb : messages.unmapped
+                  mappingState?.state === 'ambiguous'
+                    ? messages.ambiguous
+                    : hasTmdbId
+                      ? messages.notFoundOnTmdb
+                      : messages.unmapped
                 )}
               </p>
             </div>
@@ -152,10 +176,24 @@ const UnmappedSourceCard = ({
                 </span>
               </Button>
             ) : null}
+            {canRepair && (
+              <Button
+                buttonType="warning"
+                buttonSize="sm"
+                className="h-7 px-2"
+                title={intl.formatMessage(messages.fixMapping)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setRepairing(true);
+                }}
+              >
+                <WrenchScrewdriverIcon className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               buttonType="default"
               buttonSize="sm"
-              className={sourceUrl ? 'h-7 px-2' : 'h-7 w-full'}
+              className={sourceUrl || canRepair ? 'h-7 px-2' : 'h-7 w-full'}
               onClick={(e) => {
                 e.preventDefault();
                 onHide();
@@ -167,6 +205,15 @@ const UnmappedSourceCard = ({
           </div>
         </div>
       </div>
+      {repairing && mappingState?.namespace && mappingState?.externalId && (
+        <FixMappingModal
+          title={title}
+          mediaType={type}
+          namespace={mappingState.namespace}
+          externalId={mappingState.externalId}
+          onClose={() => setRepairing(false)}
+        />
+      )}
     </div>
   );
 };

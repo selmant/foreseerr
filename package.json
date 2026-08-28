@@ -22,6 +22,8 @@
     "format:check": "prettier --check --cache .",
     "typecheck": "pnpm typecheck:server && pnpm typecheck:client",
     "check:versions": "node scripts/check-version-consistency.mjs",
+    "measure:mapping": "ts-node -r tsconfig-paths/register --project server/tsconfig.json scripts/measure-mapping.ts",
+    "mirror:packs": "ts-node -r tsconfig-paths/register --project server/tsconfig.json scripts/mirror-mapping-packs.ts",
     "check:migrations": "ts-node -r tsconfig-paths/register --project server/tsconfig.json scripts/check-migrations.ts sqlite && DB_TYPE=postgres ts-node -r tsconfig-paths/register --project server/tsconfig.json scripts/check-migrations.ts postgres",
     "typecheck:server": "tsc --project server/tsconfig.json --noEmit",
     "typecheck:client": "tsc --noEmit",

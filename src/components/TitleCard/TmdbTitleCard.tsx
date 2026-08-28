@@ -8,6 +8,7 @@ import { Permission, useUser } from '@app/hooks/useUser';
 import type { RatingResponse } from '@server/api/ratings';
 import type {
   DiscoverItemSource,
+  DiscoverMappingInfo,
   WatchlistItem,
 } from '@server/interfaces/api/discoverInterfaces';
 import { hasServarrMapping } from '@server/lib/servarrMapping';
@@ -40,6 +41,7 @@ export interface TmdbTitleCardProps {
   sourceId?: string;
   sourceImage?: string;
   ratingKey?: string;
+  mappingState?: DiscoverMappingInfo;
 }
 
 export function watchlistTitleCardProps(
@@ -56,6 +58,7 @@ export function watchlistTitleCardProps(
   | 'sourceId'
   | 'sourceImage'
   | 'ratingKey'
+  | 'mappingState'
 > {
   return {
     id: item.tmdbId ?? item.id ?? 0,
@@ -68,6 +71,7 @@ export function watchlistTitleCardProps(
     sourceId: item.sourceId,
     sourceImage: item.image,
     ratingKey: item.ratingKey,
+    mappingState: item.mappingState,
   };
 }
 
@@ -102,6 +106,7 @@ const TmdbTitleCard = ({
   sourceId,
   sourceImage,
   ratingKey,
+  mappingState,
 }: TmdbTitleCardProps) => {
   const { hasPermission } = useUser();
   const { isHidden, hide, hideAllUnmapped } = useHiddenUnmappedTitles();
@@ -136,6 +141,7 @@ const TmdbTitleCard = ({
         sourceUrl={sourceUrl}
         image={sourceImage}
         canExpand={canExpand}
+        mappingState={mappingState}
         onHide={() => hide(hideKey)}
       />
     );
@@ -160,6 +166,7 @@ const TmdbTitleCard = ({
           image={sourceImage}
           hasTmdbId
           canExpand={canExpand}
+          mappingState={mappingState}
           onHide={() => hide(hideKey)}
         />
       );

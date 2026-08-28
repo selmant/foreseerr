@@ -507,7 +507,7 @@ class PlexScanner
         );
       } else if (matchedhama) {
         const anidbId = Number(matchedhama[1]);
-        const result = animeList.getFromAnidbId(anidbId);
+        const result = await animeList.getFromAnidbId(anidbId);
         let tvShow: TmdbTvDetails | null = null;
 
         // Set isHama to true, so we can know to add special processing to this item
@@ -583,7 +583,10 @@ class PlexScanner
       );
       if (episodes) {
         for (const episode of episodes) {
-          const special = animeList.getSpecialEpisode(tvdbId, episode.index);
+          const special = await animeList.getSpecialEpisode(
+            tvdbId,
+            episode.index
+          );
           if (special) {
             if (special.tmdbId) {
               await this.processPlexMovieByTmdbId(episode, special.tmdbId);

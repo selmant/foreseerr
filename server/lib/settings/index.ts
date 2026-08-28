@@ -440,7 +440,9 @@ export type JobId =
   | 'availability-sync'
   | 'process-blocklisted-tags'
   | 'episode-request-sync'
-  | 'release-calendar-sync';
+  | 'release-calendar-sync'
+  | 'mapping-pack-refresh'
+  | 'mapping-backfill';
 
 export interface AllSettings {
   clientId: string;
@@ -720,6 +722,12 @@ class Settings {
         },
         'release-calendar-sync': {
           schedule: '0 0 */6 * * *',
+        },
+        'mapping-pack-refresh': {
+          schedule: '0 15 4 * * *',
+        },
+        'mapping-backfill': {
+          schedule: '0 45 4 * * *',
         },
       },
       network: {

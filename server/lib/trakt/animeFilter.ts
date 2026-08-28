@@ -9,6 +9,7 @@ import {
   EXTERNAL_ENRICHMENT_CONCURRENCY,
   mapWithConcurrency,
 } from '@server/lib/concurrency';
+import { hydrateTraktTmdbIds } from '@server/lib/trakt/mapping';
 import { paginateSortedTraktItems } from '@server/lib/trakt/mixedPagination';
 
 const MAX_TRAKT_PAGES = 10;
@@ -40,8 +41,11 @@ async function classifyTraktItemsByAnime(
   items: TraktMediaItem[],
   tmdb: TheMovieDb
 ): Promise<{ item: TraktMediaItem; isAnime: boolean }[]> {
+  // An item with no TMDB id cannot be classified, and treating that as "not
+  // anime" is what silently removed it from anime sliders.
+  const hydrated = await hydrateTraktTmdbIds(items);
   return mapWithConcurrency(
-    items,
+    hydrated,
     EXTERNAL_ENRICHMENT_CONCURRENCY,
     async (item) => ({
       item,

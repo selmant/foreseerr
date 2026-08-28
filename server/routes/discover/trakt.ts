@@ -22,6 +22,7 @@ import {
 import {
   hasDiscoverTmdbId,
   omitUnmappedDiscoverItems,
+  recordUnmappedItems,
   shouldHideUnmappedFromQuery,
   traktSourceUrl,
 } from '@server/lib/discover/unmapped';
@@ -38,6 +39,10 @@ import {
   fetchPaginatedTraktNonAnimeItems,
   filterTraktAnimeItems,
 } from '@server/lib/trakt/animeFilter';
+import {
+  confirmTraktTmdbIds,
+  hydrateTraktTmdbIds,
+} from '@server/lib/trakt/mapping';
 import {
   TRAKT_RECOMMENDATIONS_ITEMS_PER_PAGE,
   getTraktRecommendationPage,
@@ -65,8 +70,33 @@ const mapTraktItems = (items: TraktMediaItem[]): WatchlistItem[] =>
       ...(permalink
         ? { sourceUrl: traktSourceUrl(item.mediaType, permalink) }
         : {}),
+      mappingState: {
+        state: hasDiscoverTmdbId(item.tmdbId)
+          ? ('mapped' as const)
+          : ('unmapped' as const),
+        namespace: 'trakt',
+        ...(sourceId ? { externalId: sourceId } : {}),
+      },
     };
   });
+
+/**
+ * The client to talk to Trakt with, preferring the caller's own token.
+ *
+ * `createTraktAppClient()` is kept as the last resort rather than removed
+ * outright, because Trakt's refusal of `client_id`-only traffic is a policy
+ * that could be relaxed. When it is refused the error carries that fact, so the
+ * caller sees "link your Trakt account" instead of a 500.
+ */
+const traktClientForRequest = async (req: Request): Promise<TraktAPI> => {
+  if (!req.user?.id) return createTraktAppClient();
+  try {
+    return await createTraktUserClient(req.user.id);
+  } catch (e) {
+    if (e instanceof TraktNotLinkedError) return createTraktAppClient();
+    throw e;
+  }
+};
 
 interface MapFilteredTraktItemsOptions {
   user?: User;
@@ -74,6 +104,7 @@ interface MapFilteredTraktItemsOptions {
   tmdb?: TheMovieDb;
   skipWatchedFilter?: boolean;
   skipPostFilters?: boolean;
+  discoverSource?: string;
 }
 
 const mapFilteredTraktItems = async (
@@ -81,20 +112,34 @@ const mapFilteredTraktItems = async (
   options: MapFilteredTraktItemsOptions = {}
 ): Promise<WatchlistItem[]> => {
   const tmdb = options.tmdb ?? new TheMovieDb();
+  // Resolve before filtering: the watched and availability filters key off the
+  // TMDB id, so an item resolved afterwards would bypass them.
+  const hydrated = await confirmTraktTmdbIds(
+    await hydrateTraktTmdbIds(items, {
+      discoverSource: options.discoverSource ?? 'trakt',
+    }),
+    { discoverSource: options.discoverSource ?? 'trakt' }
+  );
   const filtered = options.skipPostFilters
-    ? items
-    : await filterTraktDiscoverPageItems(items, {
+    ? hydrated
+    : await filterTraktDiscoverPageItems(hydrated, {
         user: options.user,
         query: options.query,
         tmdb,
         skipWatchedFilter: options.skipWatchedFilter,
       });
 
+  const mapped = await enrichResultsWithRatings(mapTraktItems(filtered), {
+    query: options.query,
+    skipExisting: true,
+  });
+  recordUnmappedItems(mapped, {
+    namespace: 'trakt',
+    discoverSource: options.discoverSource ?? 'trakt',
+  });
+
   return omitUnmappedDiscoverItems(
-    await enrichResultsWithRatings(mapTraktItems(filtered), {
-      query: options.query,
-      skipExisting: true,
-    }),
+    mapped,
     shouldHideUnmappedFromQuery(options.query ?? {})
   );
 };
@@ -453,7 +498,9 @@ traktDiscoverRoutes.get('/lists/search', async (req, res, next) => {
       return res.status(200).json({ results: [] });
     }
 
-    const trakt = createTraktAppClient();
+    // Prefer the caller's own token: an app-client search is answered with 403
+    // by Trakt today, so the user client is the only one that works.
+    const trakt = await traktClientForRequest(req);
     const results = await trakt.searchLists(query);
     return res.status(200).json({ results });
   } catch (e) {
@@ -476,18 +523,7 @@ traktDiscoverRoutes.get('/list', async (req, res, next) => {
     }
 
     const { username, listRef } = parseTraktListUrlOrThrow(url);
-    let trakt: TraktAPI;
-    try {
-      trakt = req.user?.id
-        ? await createTraktUserClient(req.user.id)
-        : createTraktAppClient();
-    } catch (e) {
-      if (e instanceof TraktNotLinkedError) {
-        trakt = createTraktAppClient();
-      } else {
-        throw e;
-      }
-    }
+    const trakt = await traktClientForRequest(req);
 
     let metadataName = listRef;
     const tmdb = createTmdbWithRegionLanguage(req.user);

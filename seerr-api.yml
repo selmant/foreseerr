@@ -93,6 +93,263 @@ components:
           readOnly: true
         requestedBy:
           $ref: '#/components/schemas/User'
+    MappingNamespace:
+      type: string
+      description: |
+        Identity namespace in the mapping graph. `tmdb_movie` and `tmdb_show`
+        are separate because the same integer is a valid id in both catalogues
+        for two unrelated titles, so media type is part of an id's identity.
+      enum:
+        - tmdb_movie
+        - tmdb_show
+        - tvdb_movie
+        - tvdb_show
+        - imdb
+        - anidb
+        - anilist
+        - mal
+        - kitsu
+        - simkl
+        - trakt
+        - livechart
+        - animeplanet
+        - anisearch
+    DiscoverMappingInfo:
+      type: object
+      description: How a discover item was mapped to TMDB, or why it was not.
+      properties:
+        state:
+          type: string
+          enum: [mapped, unmapped, ambiguous]
+        namespace:
+          $ref: '#/components/schemas/MappingNamespace'
+        externalId:
+          type: string
+        sourceKey:
+          type: string
+          description: Resolver or pack that produced the answer.
+          example: anibridge
+        confidence:
+          type: number
+          example: 90
+        layer:
+          type: string
+          enum: [override, graph, pack, live, heuristic, cache, none]
+    MappingGap:
+      type: object
+      description: An unresolved discover item, recorded so misses are measurable.
+      properties:
+        id:
+          type: number
+          readOnly: true
+        namespace:
+          $ref: '#/components/schemas/MappingNamespace'
+        externalId:
+          type: string
+        season:
+          type: number
+          description: '-1 when the gap is not season-scoped.'
+          example: -1
+        title:
+          type: string
+        year:
+          type: number
+        mediaType:
+          type: string
+          enum: [movie, tv]
+        discoverSource:
+          type: string
+          example: simkl/premieres/anime
+        reason:
+          type: string
+          enum: [unresolved, ambiguous, phantom, wrong-type]
+        status:
+          type: string
+          enum: [open, resolved, ignored]
+        rejectedTarget:
+          type: string
+        sourceKey:
+          type: string
+        suggestedTarget:
+          type: string
+          description: |
+            Quarantined heuristic guess, as a ref key. Shown for review only; it
+            is never consulted by the resolver chain.
+          example: tmdb_show:1429
+        suggestedConfidence:
+          type: number
+        suggestedBy:
+          type: string
+        hitCount:
+          type: number
+        firstSeenAt:
+          type: string
+        lastSeenAt:
+          type: string
+    MappingOverride:
+      type: object
+      description: |
+        An admin correction, which wins over every other resolver. `id` is not
+        read-only so that an exported file can be re-imported verbatim; the
+        server matches on the from/to identity and ignores any id supplied.
+      properties:
+        id:
+          type: number
+        fromNamespace:
+          $ref: '#/components/schemas/MappingNamespace'
+        fromExternalId:
+          type: string
+        fromSeason:
+          type: number
+          nullable: true
+        toNamespace:
+          $ref: '#/components/schemas/MappingNamespace'
+        toExternalId:
+          type: string
+          description: Empty records that no counterpart exists.
+        toSeason:
+          type: number
+          nullable: true
+        note:
+          type: string
+          nullable: true
+    MappingSource:
+      type: object
+      description: A registered mapping pack or live resolver.
+      properties:
+        key:
+          type: string
+          example: anibridge
+        kind:
+          type: string
+          enum: [pack, live]
+        enabled:
+          type: boolean
+        priority:
+          type: number
+        trust:
+          type: number
+        format:
+          type: string
+          enum: [json-graph, json-array, ndjson, yaml-map, xml-animelist]
+        mirrors:
+          type: array
+          items:
+            type: string
+        licence:
+          type: string
+        legalNote:
+          type: string
+        version:
+          type: string
+        entryCount:
+          type: number
+        lastFetchedAt:
+          type: string
+        lastSuccessAt:
+          type: string
+        lastError:
+          type: string
+        circuitState:
+          type: string
+          enum: [closed, open, half-open]
+        consecutiveFailures:
+          type: number
+    MappingHealth:
+      type: object
+      properties:
+        gaps:
+          type: object
+          properties:
+            openGaps:
+              type: number
+            totalHits:
+              type: number
+            byReason:
+              type: object
+              additionalProperties:
+                type: number
+            bySource:
+              type: object
+              additionalProperties:
+                type: number
+            byNamespace:
+              type: object
+              additionalProperties:
+                type: number
+        budgets:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              costClass:
+                type: string
+                enum: [interactive, bulk, both]
+              tokens:
+                type: number
+              inFlight:
+                type: number
+              queued:
+                type: number
+              circuitState:
+                type: string
+                enum: [closed, open, half-open]
+              consecutiveFailures:
+                type: number
+        usage:
+          type: array
+          description: Per-source request counters, one row per UTC day.
+          items:
+            type: object
+            properties:
+              sourceKey:
+                type: string
+              day:
+                type: string
+                example: '2026-08-28'
+              requests:
+                type: number
+              failures:
+                type: number
+              itemsResolved:
+                type: number
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/MappingSource'
+        resolvers:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              kind:
+                type: string
+                enum: [override, graph, pack, live, heuristic]
+              trust:
+                type: number
+        providers:
+          type: array
+          description: >-
+            Access health of providers the mapping layer depends on but does
+            not own. Trakt refuses requests carrying only the application
+            client_id, so list search and unlinked users degrade.
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              state:
+                type: string
+                enum: [ok, failing, unconfigured]
+              detail:
+                type: string
+              checkedAt:
+                type: string
+                format: date-time
     User:
       type: object
       properties:
@@ -4533,6 +4790,328 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Job'
+  /settings/mapping/health:
+    get:
+      summary: Get mapping health
+      description: |
+        Returns the state of the media id mapping layer: open gaps and their
+        causes, per-source budgets and circuit-breaker state, daily request
+        volume, registered packs, and live resolvers.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: Mapping health returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MappingHealth'
+  /settings/mapping/gaps:
+    get:
+      summary: List mapping gaps
+      description: Unresolved discover items, most-seen first.
+      tags:
+        - settings
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, resolved, ignored]
+            default: open
+        - in: query
+          name: discoverSource
+          schema:
+            type: string
+        - in: query
+          name: take
+          schema:
+            type: number
+            default: 50
+        - in: query
+          name: skip
+          schema:
+            type: number
+            default: 0
+      responses:
+        '200':
+          description: Mapping gaps returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MappingGap'
+                  total:
+                    type: number
+  /settings/mapping/gaps/suggest:
+    post:
+      summary: Suggest matches for open gaps
+      description: |
+        Runs the quarantined title/year/episode-count heuristic over the busiest
+        open gaps and stores each guess on its gap for review. Suggestions are
+        never used by the resolver chain and never written to the mapping graph.
+      tags:
+        - settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit:
+                  type: number
+                  default: 50
+      responses:
+        '200':
+          description: Sweep finished
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  examined:
+                    type: number
+                  suggested:
+                    type: number
+  /settings/mapping/gaps/{gapId}/resolve:
+    post:
+      summary: Resolve a mapping gap
+      description: |
+        Stores an admin correction as an override, or marks the gap ignored. An
+        empty `toExternalId` records a genuine absence and stops the resolver
+        chain re-asking on every render.
+      tags:
+        - settings
+      parameters:
+        - in: path
+          name: gapId
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ignore:
+                  type: boolean
+                toNamespace:
+                  $ref: '#/components/schemas/MappingNamespace'
+                toExternalId:
+                  type: string
+                toSeason:
+                  type: number
+                  nullable: true
+                note:
+                  type: string
+      responses:
+        '200':
+          description: Gap resolved
+        '400':
+          description: Unknown namespace
+        '404':
+          description: Gap not found
+  /settings/mapping/overrides:
+    get:
+      summary: List mapping overrides
+      tags:
+        - settings
+      responses:
+        '200':
+          description: Overrides returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MappingOverride'
+    post:
+      summary: Create a mapping override
+      description: Creates a correction directly, without a queued gap.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MappingOverride'
+      responses:
+        '200':
+          description: Override saved
+        '400':
+          description: Unknown namespace or missing source id
+  /settings/mapping/overrides/import:
+    post:
+      summary: Import mapping overrides
+      description: Replaces or merges overrides from an exported JSON payload.
+      tags:
+        - settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                overrides:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MappingOverride'
+      responses:
+        '200':
+          description: Import finished
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: number
+                  skipped:
+                    type: number
+  /settings/mapping/overrides/{overrideId}:
+    delete:
+      summary: Delete a mapping override
+      tags:
+        - settings
+      parameters:
+        - in: path
+          name: overrideId
+          required: true
+          schema:
+            type: number
+      responses:
+        '204':
+          description: Override deleted
+  /settings/mapping/sources:
+    get:
+      summary: List mapping sources
+      description: Registered packs and live resolvers, with the manifest entries available to add.
+      tags:
+        - settings
+      responses:
+        '200':
+          description: Sources returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MappingSource'
+                  available:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        format:
+                          type: string
+                        mirrors:
+                          type: array
+                          items:
+                            type: string
+                        licence:
+                          type: string
+                        legalNote:
+                          type: string
+  /settings/mapping/sources/{sourceKey}:
+    post:
+      summary: Update a mapping source
+      description: Enable or disable a source and tune its priority, trust and budget.
+      tags:
+        - settings
+      parameters:
+        - in: path
+          name: sourceKey
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                priority:
+                  type: number
+                trust:
+                  type: number
+                rps:
+                  type: number
+                burst:
+                  type: number
+                concurrency:
+                  type: number
+                dailyQuota:
+                  type: number
+                  nullable: true
+      responses:
+        '200':
+          description: Source updated
+  /settings/mapping/sources/{sourceKey}/refresh:
+    post:
+      summary: Refresh a mapping pack
+      description: Fetches the pack now, validating before it replaces the working copy.
+      tags:
+        - settings
+      parameters:
+        - in: path
+          name: sourceKey
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Refresh finished
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  status:
+                    type: string
+                    enum: [downloaded, notModified, lastGood, skipped, failed]
+                  records:
+                    type: number
+                  clusters:
+                    type: number
+                  error:
+                    type: string
+        '404':
+          description: Unknown pack
+  /settings/mapping/sources/{sourceKey}/reset-circuit:
+    post:
+      summary: Reset a source circuit breaker
+      tags:
+        - settings
+      parameters:
+        - in: path
+          name: sourceKey
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Circuit breaker reset
   /settings/cache:
     get:
       summary: Get a list of active caches
@@ -8806,6 +9385,8 @@ paths:
                           type: string
                         image:
                           type: string
+                        mappingState:
+                          $ref: '#/components/schemas/DiscoverMappingInfo'
   /request:
     get:
       summary: Get all requests
