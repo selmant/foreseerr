@@ -257,6 +257,15 @@ const isAnimeRecord = (
   return typeof item.url === 'string' && item.url.includes('/anime/');
 };
 
+/**
+ * Theatrical anime often arrive on anime/best and anime/premieres typed as tv
+ * (`anime_type` missing). Title cues like 劇場版 / Gekijouban / Eiga are the
+ * reliable signal Simkl itself uses in the display name.
+ */
+export const looksLikeAnimeFilmTitle = (title: string): boolean =>
+  /\b(gekij[oō]u?ban|eiga|movie|film|theatrical)\b/i.test(title) ||
+  /劇場版|映画/.test(title);
+
 export const toSimklCandidate = (
   item: Record<string, unknown>,
   typeHint: SimklMediaHint,
@@ -267,10 +276,12 @@ export const toSimklCandidate = (
   const id = simklRecordId(item, ids);
   const title = catalogTitle(item);
   if (!id || !title) return null;
+  const isAnime = isAnimeRecord(item, typeHint);
   const mediaType =
     String(item.type) === 'movie' ||
     String(item.anime_type) === 'movie' ||
-    typeHint === 'movie'
+    typeHint === 'movie' ||
+    (isAnime && looksLikeAnimeFilmTitle(title))
       ? 'movie'
       : 'tv';
   const external = simklExternalIds(ids);
@@ -280,7 +291,7 @@ export const toSimklCandidate = (
   );
   return {
     ids: external,
-    isAnime: isAnimeRecord(item, typeHint),
+    isAnime,
     item: {
       id: (tmdbId ?? Number(id)) || 0,
       ratingKey: `${keyPrefix}-${id}`,
@@ -551,14 +562,17 @@ async function resolveViaMappingLayer(
 
   ensureMappingLayer();
   const declaredType = candidate.item.mediaType;
-  // Anime theatrical films show up on anime/best as mediaType=tv. Prefer the
-  // declared namespace, then the opposite — existence confirm still gates.
+  // Prefer the declared namespace. Anime films typed as tv (or detected via
+  // title) try movie first so franchise TV hubs do not win on existence alone
+  // (Madoka Walpurgis → tv/39218 instead of movie/822653).
   const mediaTypes: ('movie' | 'tv')[] =
-    candidate.isAnime && declaredType === 'tv'
-      ? ['tv', 'movie']
-      : candidate.isAnime && declaredType === 'movie'
+    declaredType === 'movie'
+      ? candidate.isAnime
         ? ['movie', 'tv']
-        : [declaredType];
+        : ['movie']
+      : candidate.isAnime
+        ? ['tv', 'movie']
+        : ['tv'];
 
   for (const mediaType of mediaTypes) {
     const target = tmdbNamespace(mediaType);

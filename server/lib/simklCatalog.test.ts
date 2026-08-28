@@ -11,6 +11,7 @@ import {
   catalogWatchlistItems,
   hydrateSimklCandidates,
   isSimklVideoGamePlay,
+  looksLikeAnimeFilmTitle,
   paginateWatchlist,
   resolveSimklCandidates,
   resolveSimklTmdbId,
@@ -77,6 +78,32 @@ const librarySample = {
 };
 
 describe('simkl catalog mapping', () => {
+  it('types gekijouban / eiga titles as movie on anime catalogs', () => {
+    assert.equal(
+      looksLikeAnimeFilmTitle(
+        'Gekijouban Mahou Shoujo Madoka Magica: Walpurgis no Kaiten'
+      ),
+      true
+    );
+    assert.equal(looksLikeAnimeFilmTitle('Eiga Koe no Katachi'), true);
+    assert.equal(looksLikeAnimeFilmTitle('Sousou no Frieren'), false);
+
+    const [madoka] = catalogCandidates(
+      [
+        [
+          {
+            title: 'Gekijouban Mahou Shoujo Madoka Magica: Walpurgis no Kaiten',
+            ids: { simkl: 1621829, anilist: 162182 },
+          },
+        ],
+      ],
+      'anime',
+      'simkl-premieres'
+    );
+    assert.equal(madoka.item.mediaType, 'movie');
+    assert.equal(madoka.isAnime, true);
+  });
+
   it('maps a live /movies/trending array that uses ids.simkl_id', async () => {
     const response = await fetch(
       'https://api.simkl.com/movies/trending?client_id=invalid-test&app-name=foreseerr&app-version=dev',
