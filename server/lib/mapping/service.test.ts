@@ -365,6 +365,29 @@ describe('mapping service resolver chain', () => {
     assert.equal(gap.discoverSource, 'trakt/list');
   });
 
+  it('collapses season-scoped links of one show into a single answer', async () => {
+    // anibridge stores one edge per cour (`tmdb_show:82684:s1` … `:s4`). Those
+    // are the same work; treating them as four disagreeing candidates is what
+    // made getFromAnilistId fall through to a colliding tmdb_movie id.
+    const service = new MappingService();
+    service.register(
+      packResolver('anibridge', {
+        'anilist:182205->tmdb_show': [
+          { ns: 'tmdb_show', id: '82684', season: 1 },
+          { ns: 'tmdb_show', id: '82684', season: 4 },
+        ],
+      })
+    );
+
+    const resolution = await service.resolve(
+      { ns: 'anilist', id: '182205' },
+      'tmdb_show'
+    );
+    assert.equal(resolution.ambiguous, false);
+    assert.equal(resolution.target?.id, '82684');
+    assert.equal(resolution.candidates.length, 1);
+  });
+
   it('accepts a corroborated candidate when two sources agree', async () => {
     const service = new MappingService();
     service.register(
@@ -388,7 +411,8 @@ describe('mapping service resolver chain', () => {
     );
     assert.equal(resolution.ambiguous, false);
     assert.equal(resolution.target?.id, '1429');
-    assert.equal(resolution.candidates.length, 2);
+    // Agreeing sources collapse to one work; the point is we accept it.
+    assert.equal(resolution.candidates.length, 1);
   });
 
   it('quarantines a heuristic answer and never writes it to the graph', async () => {

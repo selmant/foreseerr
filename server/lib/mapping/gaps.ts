@@ -57,7 +57,13 @@ async function persist(
     .set({
       hitCount: () => `"hitCount" + ${hits}`,
       lastSeenAt: now,
-      reason: observation.reason ?? 'unresolved',
+      // A later sighting of the same gap as a bare "unmapped" tile must not
+      // erase a more specific reason (phantom, ambiguous, wrong-type) that the
+      // resolver already recorded — that is how LOTR Extended lost its
+      // `phantom` label after confirmOrRepair had already rejected the dead id.
+      ...(observation.reason && observation.reason !== 'unresolved'
+        ? { reason: observation.reason }
+        : {}),
       ...(observation.title ? { title: observation.title } : {}),
       ...(observation.year ? { year: observation.year } : {}),
       ...(observation.mediaType ? { mediaType: observation.mediaType } : {}),

@@ -1232,6 +1232,35 @@ settingsRoutes.get(
   }
 );
 
+/**
+ * node-schedule's `nextInvocation()` sometimes returns a Luxon DateTime rather
+ * than a Date. JSON then ships the Luxon guts, and the Jobs settings page does
+ * `new Date(job.nextExecutionTime)` which yields Invalid Date and throws inside
+ * FormattedRelativeTime.
+ */
+const jobNextExecutionIso = (next: unknown): string | null => {
+  if (!next) return null;
+  if (next instanceof Date) return next.toISOString();
+  if (
+    typeof next === 'object' &&
+    next !== null &&
+    'toJSDate' in next &&
+    typeof (next as { toJSDate: () => Date }).toJSDate === 'function'
+  ) {
+    return (next as { toJSDate: () => Date }).toJSDate().toISOString();
+  }
+  if (
+    typeof next === 'object' &&
+    next !== null &&
+    'toISO' in next &&
+    typeof (next as { toISO: () => string | null }).toISO === 'function'
+  ) {
+    return (next as { toISO: () => string | null }).toISO();
+  }
+  const parsed = new Date(next as string | number);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
 settingsRoutes.get('/jobs', (_req, res) => {
   return res.status(200).json(
     scheduledJobs.map((job) => ({
@@ -1240,7 +1269,7 @@ settingsRoutes.get('/jobs', (_req, res) => {
       type: job.type,
       interval: job.interval,
       cronSchedule: job.cronSchedule,
-      nextExecutionTime: job.job.nextInvocation(),
+      nextExecutionTime: jobNextExecutionIso(job.job.nextInvocation()),
       running: job.running ? job.running() : false,
     }))
   );

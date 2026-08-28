@@ -163,6 +163,13 @@ export function simklResolver(
         // so it is only ever offered at low confidence and the caller decides
         // whether a second namespace corroborates it. The media type comes from
         // Simkl's declared kind, never from probing.
+        //
+        // Anime is always a show-shaped answer here: writing the same integer
+        // into `tmdb_movie` is how Slime Season 4 rendered as Chasing Mavericks
+        // (movie/82684 vs tv/82684).
+        if (located.kind === 'anime' && to === 'tmdb_movie') {
+          return [];
+        }
         const declared = simklKindForNamespace(to);
         if (declared && declared !== located.kind && located.kind !== 'anime') {
           return [];

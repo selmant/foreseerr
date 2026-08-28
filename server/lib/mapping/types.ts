@@ -104,6 +104,13 @@ export const seasonValue = (column: number): number | undefined =>
 export const refKey = (ref: IdRef): string =>
   `${ref.ns}:${ref.id}${ref.season === undefined ? '' : `:s${ref.season}`}`;
 
+/**
+ * Identity of the work, ignoring season. Season-scoped anibridge edges for the
+ * same show (`tmdb_show:82684:s1` … `:s4`) must not count as four disagreeing
+ * answers when a discover tile asks "which show is this".
+ */
+export const workKey = (ref: IdRef): string => `${ref.ns}:${ref.id}`;
+
 export const clusterKindForNamespace = (
   ns: Namespace
 ): ClusterKind | undefined => {

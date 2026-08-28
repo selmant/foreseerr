@@ -9,6 +9,7 @@ import {
   refKey,
   seasonColumn,
   seasonValue,
+  workKey,
   type IdRef,
   type MappingCandidate,
   type MappingResolver,
@@ -64,8 +65,37 @@ const LAYER_ORDER: ResolverKind[] = [
   'heuristic',
 ];
 
-const distinctTargets = (candidates: MappingCandidate[]): number =>
-  new Set(candidates.map((candidate) => refKey(candidate.target))).size;
+const distinctWorks = (candidates: MappingCandidate[]): number =>
+  new Set(candidates.map((candidate) => workKey(candidate.target))).size;
+
+/**
+ * Keep the highest-confidence candidate per work. Season variants of the same
+ * id collapse into one answer so anibridge's per-cour edges do not look like
+ * four sources disagreeing about one show.
+ */
+const collapseSeasonVariants = (
+  candidates: MappingCandidate[]
+): MappingCandidate[] => {
+  const best = new Map<string, MappingCandidate>();
+  for (const candidate of candidates) {
+    const key = workKey(candidate.target);
+    const current = best.get(key);
+    if (!current || candidate.confidence > current.confidence) {
+      best.set(key, candidate);
+      continue;
+    }
+    // Prefer a season-less link when confidence ties: discover tiles ask for
+    // the work, not a particular cour.
+    if (
+      candidate.confidence === current.confidence &&
+      candidate.target.season === undefined &&
+      current.target.season !== undefined
+    ) {
+      best.set(key, candidate);
+    }
+  }
+  return [...best.values()];
+};
 
 export class MappingService {
   private readonly resolvers: MappingResolver[] = [];
@@ -181,9 +211,9 @@ export class MappingService {
       }
       // Two independent sources agreeing is the acceptance rule, so keep
       // querying siblings in this layer until corroboration is possible.
-      if (distinctTargets(candidates) === 1 && candidates.length >= 2) break;
+      if (distinctWorks(candidates) === 1 && candidates.length >= 2) break;
     }
-    return candidates;
+    return collapseSeasonVariants(candidates);
   }
 
   /**
@@ -263,7 +293,7 @@ export class MappingService {
       const ranked = [...candidates].sort(
         (a, b) => b.confidence - a.confidence
       );
-      const ambiguous = distinctTargets(candidates) > 1;
+      const ambiguous = distinctWorks(candidates) > 1;
 
       // An unresolved ambiguity is a reviewable question, never a silent write.
       if (ambiguous && layer !== 'override') {

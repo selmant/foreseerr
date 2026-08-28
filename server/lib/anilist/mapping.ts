@@ -1,4 +1,5 @@
 import type { AnilistMediaFormat } from '@server/api/anilist/interfaces';
+import { confirmTmdbId } from '@server/lib/discover/validity';
 import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
 import { findClusterIds, findLinks } from '@server/lib/mapping/graph';
 import mappingService from '@server/lib/mapping/service';
@@ -204,19 +205,34 @@ class AnilistIdMapping {
   };
 
   public getFromAnilistId = async (
-    anilistId: number
+    anilistId: number,
+    preferred?: 'movie' | 'tv'
   ): Promise<AnilistTmdbMapping | undefined> => {
-    for (const [namespace, mediaType] of [
-      ['tmdb_show', 'tv'],
-      ['tmdb_movie', 'movie'],
-    ] as [Namespace, 'movie' | 'tv'][]) {
+    // AniList's format is the only authoritative media-type signal here.
+    // Falling through from show to movie for a TV series is how Slime Season 4
+    // rendered as Chasing Mavericks: the same integer is a real movie 63% of
+    // the time, so existence of /movie/{id} is not evidence of identity.
+    const order: [Namespace, 'movie' | 'tv'][] =
+      preferred === 'movie'
+        ? [['tmdb_movie', 'movie']]
+        : preferred === 'tv'
+          ? [['tmdb_show', 'tv']]
+          : [
+              ['tmdb_show', 'tv'],
+              ['tmdb_movie', 'movie'],
+            ];
+
+    for (const [namespace, mediaType] of order) {
       const resolution = await mappingService.resolve(
         { ns: 'anilist', id: String(anilistId) },
         namespace,
-        { silent: true }
+        { silent: true, mediaType }
       );
       const tmdbId = Number(resolution.target?.id);
-      if (tmdbId > 0) return { tmdbId, mediaType };
+      if (!(tmdbId > 0)) continue;
+      // Existence may only reject. A live id in the wrong namespace is still wrong.
+      if (!(await confirmTmdbId(mediaType, tmdbId))) continue;
+      return { tmdbId, mediaType };
     }
     return undefined;
   };

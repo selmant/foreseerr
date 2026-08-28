@@ -47,13 +47,14 @@ export async function mapAnilistMedia(
     return null;
   }
   await anilistIdMapping.sync();
-  const mapped = await anilistIdMapping.getFromAnilistId(media.id);
+  const preferred = anilistFormatToMediaType(media.format);
+  const mapped = await anilistIdMapping.getFromAnilistId(media.id, preferred);
   const title = anilistMediaTitle(media) || `AniList ${media.id}`;
   const image = anilistCoverImage(media);
   if (!mapped) {
     return {
       anilistId: media.id,
-      mediaType: anilistFormatToMediaType(media.format),
+      mediaType: preferred,
       title,
       ...(image ? { image } : {}),
     };
@@ -61,7 +62,7 @@ export async function mapAnilistMedia(
   return {
     anilistId: media.id,
     tmdbId: mapped.tmdbId,
-    mediaType: mapped.mediaType ?? anilistFormatToMediaType(media.format),
+    mediaType: mapped.mediaType ?? preferred,
     title,
     ...(image ? { image } : {}),
   };

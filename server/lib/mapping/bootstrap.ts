@@ -2,11 +2,13 @@ import logger from '@server/logger';
 import { registerLiveResolvers } from './live';
 import { refreshAllPacks, type PackRefreshResult } from './packs';
 import { fetchManifest } from './packs/manifest';
+import { scrubSimklAnimeMovieCollisions } from './scrub';
 
 const REFRESH_INTERVAL_MSEC = 24 * 3600 * 1000;
 
 let lastRefreshAt = 0;
 let inFlight: Promise<PackRefreshResult[]> | undefined;
+let scrubbedCollisions = false;
 
 /**
  * Ensure the pack layer is loaded, refreshing at most daily.
@@ -66,6 +68,16 @@ export function ensureMappingLayer(): void {
   // Unit tests exercise the resolvers against a seeded graph; downloading packs
   // behind their backs would make them slow and network-dependent.
   if (process.env.NODE_ENV === 'test') return;
+  if (!scrubbedCollisions) {
+    scrubbedCollisions = true;
+    void scrubSimklAnimeMovieCollisions().catch((error) => {
+      scrubbedCollisions = false;
+      logger.error('Unable to scrub Simkl anime movie collisions', {
+        label: 'Mapping',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   if (Date.now() - lastRefreshAt <= REFRESH_INTERVAL_MSEC || inFlight) return;
   void ensureMappingPacks();
 }
@@ -77,4 +89,5 @@ export async function listManifestPacks() {
 export const resetMappingPackRefreshState = (): void => {
   lastRefreshAt = 0;
   inFlight = undefined;
+  scrubbedCollisions = false;
 };
