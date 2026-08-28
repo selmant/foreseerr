@@ -11,7 +11,12 @@ import {
   type Namespace,
 } from '@server/lib/mapping/types';
 import logger from '@server/logger';
-import { PackFetchError, fetchPack, type PackCacheState } from './download';
+import {
+  PackFetchError,
+  fetchPack,
+  readLocalPack,
+  type PackCacheState,
+} from './download';
 import { parsePack, validatePackBody, type PackRecord } from './formats';
 import {
   extraMirrors,
@@ -295,6 +300,88 @@ export async function refreshAllPacks(
   for (const entry of ordered) {
     results.push(await refreshPack(entry, { ingest: options.ingest }));
   }
+  return results;
+}
+
+/**
+ * Load every enabled pack from the local config directory (no HTTP).
+ *
+ * Registers the in-memory resolvers immediately so discover can answer, then
+ * optionally ingests into Postgres in the same call. Prefer `ingest: false` on
+ * the request path and let a background job finish the graph write.
+ */
+export async function loadLocalPacks(
+  options: { ingest?: boolean } = {}
+): Promise<PackRefreshResult[]> {
+  const manifest = await fetchManifest();
+  const ordered = [...manifest.packs].sort((a, b) => a.priority - b.priority);
+  const results: PackRefreshResult[] = [];
+
+  for (const entry of ordered) {
+    const row = await getRepository(MappingSource).findOne({
+      where: { key: entry.key },
+    });
+    const enabled = row ? row.enabled : entry.enabled;
+    if (!enabled) {
+      mappingService.unregister(entry.key);
+      loaded.delete(entry.key);
+      results.push({ key: entry.key, status: 'skipped' });
+      continue;
+    }
+
+    const local = await readLocalPack(entry.key, entry.format);
+    if (!local) {
+      results.push({
+        key: entry.key,
+        status: 'failed',
+        error: 'no local pack file',
+      });
+      continue;
+    }
+
+    try {
+      validatePackBody(entry.format, local.body);
+      const { records } = await parsePack(entry.format, local.body, {
+        fieldMap: entry.fieldMap,
+        typeFields: entry.typeFields,
+        namespaceMap: entry.namespaceMap,
+      });
+      const pack: LoadedPack = {
+        entry,
+        index: new PackIndex(records),
+        records,
+      };
+      loaded.set(entry.key, pack);
+      mappingService.register(packResolver(pack));
+      mappingService.invalidate();
+
+      await recordSourceState(entry, {
+        lastFetchedAt: new Date(),
+        lastSuccessAt: new Date(),
+        lastError: null,
+        entryCount: records.length,
+        consecutiveFailures: 0,
+      });
+
+      const clusters = options.ingest ? await ingestPack(pack) : 0;
+      results.push({
+        key: entry.key,
+        status: 'lastGood',
+        records: records.length,
+        clusters,
+      });
+      logger.info(`Loaded local mapping pack ${entry.key}`, {
+        label: 'Mapping',
+        records: records.length,
+        path: local.path,
+        clusters,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({ key: entry.key, status: 'failed', error: message });
+    }
+  }
+
   return results;
 }
 

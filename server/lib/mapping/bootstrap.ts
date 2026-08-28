@@ -1,6 +1,11 @@
 import logger from '@server/logger';
 import { registerLiveResolvers } from './live';
-import { refreshAllPacks, type PackRefreshResult } from './packs';
+import {
+  loadLocalPacks,
+  refreshAllPacks,
+  type PackRefreshResult,
+} from './packs';
+import { syncBundledPacks } from './packs/download';
 import { fetchManifest } from './packs/manifest';
 import { scrubSimklAnimeMovieCollisions } from './scrub';
 
@@ -9,6 +14,7 @@ const REFRESH_INTERVAL_MSEC = 24 * 3600 * 1000;
 let lastRefreshAt = 0;
 let inFlight: Promise<PackRefreshResult[]> | undefined;
 let scrubbedCollisions = false;
+let localBoot: Promise<PackRefreshResult[]> | undefined;
 
 /**
  * Ensure the pack layer is loaded, refreshing at most daily.
@@ -56,6 +62,70 @@ export async function ensureMappingPacks(
 }
 
 /**
+ * Boot path: copy bundled packs into config, register them from disk (no HTTP),
+ * then kick a background network refresh + graph ingest.
+ *
+ * Discover can answer from the in-memory pack index as soon as this resolves
+ * the loadLocalPacks step — typically seconds, not the minutes an ingest takes.
+ */
+export async function bootstrapMappingAtBoot(): Promise<void> {
+  if (process.env.NODE_ENV === 'test') return;
+  if (localBoot) {
+    await localBoot;
+    return;
+  }
+
+  registerLiveResolvers();
+  localBoot = (async () => {
+    const copied = await syncBundledPacks();
+    if (copied.length) {
+      logger.info('Copied bundled mapping packs into config', {
+        label: 'Mapping',
+        packs: copied,
+      });
+    }
+
+    // Register resolvers from disk first so AniList/Simkl work before Postgres
+    // ingest finishes. Ingest runs next and is what survives a restart.
+    const loaded = await loadLocalPacks({ ingest: false });
+    lastRefreshAt = Date.now();
+
+    void loadLocalPacks({ ingest: true })
+      .then((ingested) => {
+        logger.info('Ingested local mapping packs into the graph', {
+          label: 'Mapping',
+          results: ingested.map((row) => ({
+            key: row.key,
+            status: row.status,
+            clusters: row.clusters,
+          })),
+        });
+      })
+      .catch((error) => {
+        logger.error('Local mapping pack ingest failed', {
+          label: 'Mapping',
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    // Network refresh stays in the background; disk already made us useful.
+    void ensureMappingPacks({ force: true, ingest: true });
+
+    return loaded;
+  })();
+
+  try {
+    await localBoot;
+  } catch (error) {
+    localBoot = undefined;
+    logger.error('Mapping boot from disk failed', {
+      label: 'Mapping',
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
  * Make the mapping layer usable for one lookup, without blocking on I/O.
  *
  * The graph in Postgres is the system of record, so a resolution needs nothing
@@ -90,4 +160,5 @@ export const resetMappingPackRefreshState = (): void => {
   lastRefreshAt = 0;
   inFlight = undefined;
   scrubbedCollisions = false;
+  localBoot = undefined;
 };

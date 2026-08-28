@@ -195,3 +195,65 @@ export async function fetchPack({
     attempts
   );
 }
+
+/**
+ * Read a pack that is already on disk — no network.
+ *
+ * Used on boot when packs were shipped inside the package (or left from a
+ * previous refresh) so the container does not wait on GitHub/jsDelivr before
+ * it can resolve AniList ids.
+ */
+export async function readLocalPack(
+  key: string,
+  format: string
+): Promise<{ body: string; path: string } | undefined> {
+  await fsp.mkdir(PACK_DIRECTORY, { recursive: true });
+  for (const candidate of [packPath(key, format), lastGoodPath(key, format)]) {
+    const body = await readIfPresent(candidate);
+    if (body?.length) return { body, path: candidate };
+  }
+  return undefined;
+}
+
+/**
+ * Copy bundled pack files from the install into the writable config directory.
+ *
+ * The Nix package ships the daily mapping dumps under
+ * `$out/share/mapping-packs`; config is a bind-mounted volume. Only missing
+ * (or empty) targets are filled so an operator's refreshed copy is never
+ * overwritten by a stale bundle.
+ */
+export async function syncBundledPacks(
+  bundledDirectory = process.env.FORESEER_BUNDLED_PACKS
+): Promise<string[]> {
+  if (!bundledDirectory) return [];
+  let entries: string[];
+  try {
+    entries = await fsp.readdir(bundledDirectory);
+  } catch {
+    return [];
+  }
+
+  await fsp.mkdir(PACK_DIRECTORY, { recursive: true });
+  const copied: string[] = [];
+  for (const name of entries) {
+    if (name.startsWith('.')) continue;
+    const source = path.join(bundledDirectory, name);
+    const target = path.join(PACK_DIRECTORY, name);
+    try {
+      const sourceStat = await fsp.stat(source);
+      if (!sourceStat.isFile()) continue;
+      const existing = await readIfPresent(target);
+      if (existing && existing.length > 0) continue;
+      await fsp.copyFile(source, target);
+      copied.push(name);
+    } catch (error) {
+      logger.warn('Unable to copy bundled mapping pack', {
+        label: 'Mapping',
+        pack: name,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return copied;
+}

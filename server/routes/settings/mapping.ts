@@ -341,6 +341,27 @@ mappingRoutes.get('/sources', async (req, res, next) => {
   }
 });
 
+/**
+ * Register + ingest packs already sitting in config/mapping-packs (no HTTP).
+ * Must be declared before `/sources/:key` so Express does not treat
+ * `load-local` as a pack key.
+ */
+mappingRoutes.post('/sources/load-local', async (req, res, next) => {
+  try {
+    const ingest = req.body?.ingest !== false;
+    const { loadLocalPacks } = await import('@server/lib/mapping/packs');
+    return res.status(200).json({
+      results: await loadLocalPacks({ ingest }),
+    });
+  } catch (error) {
+    return next({
+      status: 500,
+      message: 'Unable to load local mapping packs.',
+      cause: error,
+    });
+  }
+});
+
 mappingRoutes.post('/sources/:key', async (req, res, next) => {
   try {
     const repository = getRepository(MappingSource);
