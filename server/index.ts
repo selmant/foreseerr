@@ -327,13 +327,6 @@ const startForeseerrInternal = async (
   // Bootstrap Discovery Sliders
   await DiscoverSlider.bootstrapSliders();
 
-  // Mapping packs: copy any bundled dumps into config and register them from
-  // disk before the first discover request. Network refresh + graph ingest
-  // continue in the background so boot is not gated on GitHub.
-  const { bootstrapMappingAtBoot } =
-    await import('@server/lib/mapping/bootstrap');
-  await bootstrapMappingAtBoot();
-
   // Prune expired and malformed transient image entries before accepting
   // requests. Failures are contained inside the cache layer and must never
   // prevent the durable application runtime from starting.
