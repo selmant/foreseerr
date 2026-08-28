@@ -483,6 +483,34 @@ describe('simkl TMDB resolution never infers media type', () => {
     assert.deepEqual(asked, ['tv:1396']);
   });
 
+  it('resolves anime theatrical films typed as tv via IMDB movie /find', async () => {
+    const asked: string[] = [];
+    const resolution = await resolveSimklTmdbId(
+      {
+        isAnime: true,
+        ids: { imdb: 'tt5311514' },
+        item: {
+          id: 0,
+          ratingKey: 'simkl-best-kimi',
+          mediaType: 'tv',
+          title: 'Kimi no Na wa.',
+          source: 'simkl',
+          sourceId: '543146',
+        },
+      },
+      {
+        findByExternalId: async (_source, _id, mediaType) => {
+          asked.push(mediaType);
+          return mediaType === 'movie' ? [372058] : [];
+        },
+        confirm: async () => true,
+      }
+    );
+    assert.equal(resolution.tmdbId, 372058);
+    assert.equal(resolution.mediaType, 'movie');
+    assert.deepEqual(asked, ['tv', 'movie']);
+  });
+
   it('does not ask TMDB /find for a movie by TVDB id', async () => {
     const asked: string[] = [];
     await resolveSimklTmdbId(

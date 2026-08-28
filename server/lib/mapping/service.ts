@@ -3,12 +3,15 @@ import { MappingOverride } from '@server/entity/MappingOverride';
 import logger from '@server/logger';
 import { recordMappingGap } from './gaps';
 import { resolveFromGraph, upsertCluster } from './graph';
+import { normalizeTitle, titleScore } from './heuristic';
+import { tmdbRecord } from './live/tmdbFind';
 import { BoundedLru } from './lru';
 import {
   isNamespace,
   refKey,
   seasonColumn,
   seasonValue,
+  tmdbMediaType,
   workKey,
   type IdRef,
   type MappingCandidate,
@@ -96,6 +99,41 @@ const collapseSeasonVariants = (
   }
   return [...best.values()];
 };
+
+/**
+ * When a franchise mega-cluster leaves several equal-confidence TMDB ids,
+ * pick the one whose live title matches the discover title. Used for cases
+ * like Infinity Castle sharing a cluster with Mugen Train at confidence 90.
+ */
+async function pickByTitle(
+  candidates: MappingCandidate[],
+  title: string
+): Promise<MappingCandidate | undefined> {
+  const wanted = normalizeTitle(title);
+  if (!wanted) return undefined;
+
+  const scored: { candidate: MappingCandidate; score: number }[] = [];
+  for (const candidate of collapseSeasonVariants(candidates)) {
+    const mediaType = tmdbMediaType(candidate.target.ns);
+    const tmdbId = Number(candidate.target.id);
+    if (!mediaType || !(tmdbId > 0)) continue;
+    const record = await tmdbRecord(mediaType, tmdbId);
+    if (!record.alive) continue;
+    scored.push({
+      candidate,
+      score: Math.max(
+        titleScore(wanted, normalizeTitle(record.title ?? '')),
+        titleScore(wanted, normalizeTitle(record.originalTitle ?? ''))
+      ),
+    });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  if (!scored.length || scored[0].score < 70) return undefined;
+  if (scored.length > 1 && scored[0].score - scored[1].score < 10) {
+    return undefined;
+  }
+  return scored[0].candidate;
+}
 
 export class MappingService {
   private readonly resolvers: MappingResolver[] = [];
@@ -297,6 +335,25 @@ export class MappingService {
 
       // An unresolved ambiguity is a reviewable question, never a silent write.
       if (ambiguous && layer !== 'override') {
+        const byTitle = options.title
+          ? await pickByTitle(ranked, options.title)
+          : undefined;
+        if (byTitle) {
+          const resolution: MappingResolution = {
+            target: byTitle.target,
+            confidence: byTitle.confidence,
+            sourceKey: byTitle.sourceKey,
+            candidates: ranked,
+            ambiguous: false,
+            layer,
+          };
+          this.hot.set(cacheKey, resolution);
+          return resolution;
+        }
+        // Franchise mega-clusters often poison the graph; pack/live may still
+        // have a clean per-work answer (e.g. animeapi's Infinity Castle row).
+        if (layer === 'graph') continue;
+
         const resolution: MappingResolution = {
           confidence: 0,
           sourceKey: ranked[0].sourceKey,

@@ -393,6 +393,11 @@ export interface SimklTmdbResolution {
   sourceKey: string;
   /** Set when a candidate was found but could not be corroborated. */
   ambiguous?: boolean;
+  /**
+   * Declared media type after resolution. Anime films often arrive typed as
+   * `tv` from the anime catalog; mapping/IMDB may prove they are movies.
+   */
+  mediaType?: 'movie' | 'tv';
 }
 
 export interface SimklTmdbResolvers {
@@ -432,20 +437,48 @@ export async function resolveSimklTmdbId(
   candidate: SimklCandidate,
   resolvers: SimklTmdbResolvers
 ): Promise<SimklTmdbResolution> {
-  const { mediaType } = candidate.item;
+  const declaredType = candidate.item.mediaType;
   const { imdb, tvdb, tmdb } = candidate.ids;
 
-  const corroborating: { sourceKey: string; ids: number[] }[] = [];
+  const corroborating: {
+    sourceKey: string;
+    ids: number[];
+    mediaType: 'movie' | 'tv';
+  }[] = [];
   if (imdb) {
+    const preferredIds = await resolvers.findByExternalId(
+      'imdb',
+      imdb,
+      declaredType
+    );
     corroborating.push({
       sourceKey: 'tmdb-find:imdb',
-      ids: await resolvers.findByExternalId('imdb', imdb, mediaType),
+      mediaType: declaredType,
+      ids: preferredIds,
     });
+    // Anime "best" lists dump theatrical films as tv. Only probe movies when
+    // the declared namespace found nothing — otherwise flagship TV shows would
+    // keep hitting /find twice for no reason.
+    if (
+      candidate.isAnime &&
+      declaredType === 'tv' &&
+      preferredIds.length === 0
+    ) {
+      const movieIds = await resolvers.findByExternalId('imdb', imdb, 'movie');
+      if (movieIds.length) {
+        corroborating.push({
+          sourceKey: 'tmdb-find:imdb:movie',
+          mediaType: 'movie',
+          ids: movieIds,
+        });
+      }
+    }
   }
-  if (tvdb && mediaType === 'tv') {
+  if (tvdb && declaredType === 'tv') {
     corroborating.push({
       sourceKey: 'tmdb-find:tvdb',
-      ids: await resolvers.findByExternalId('tvdb', String(tvdb), mediaType),
+      mediaType: 'tv',
+      ids: await resolvers.findByExternalId('tvdb', String(tvdb), 'tv'),
     });
   }
 
@@ -455,6 +488,7 @@ export async function resolveSimklTmdbId(
       tmdbId: tmdb,
       confidence: 95,
       sourceKey: `simkl:tmdb+${agreed.sourceKey}`,
+      mediaType: agreed.mediaType,
     };
   }
 
@@ -464,6 +498,7 @@ export async function resolveSimklTmdbId(
       tmdbId: found.ids[0],
       confidence: 80,
       sourceKey: found.sourceKey,
+      mediaType: found.mediaType,
     };
   }
 
@@ -484,8 +519,13 @@ export async function resolveSimklTmdbId(
     return { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
   }
 
-  return (await resolvers.confirm(mediaType, tmdb))
-    ? { tmdbId: tmdb, confidence: 60, sourceKey: 'simkl:tmdb' }
+  return (await resolvers.confirm(declaredType, tmdb))
+    ? {
+        tmdbId: tmdb,
+        confidence: 60,
+        sourceKey: 'simkl:tmdb',
+        mediaType: declaredType,
+      }
     : { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
 }
 
@@ -510,33 +550,44 @@ async function resolveViaMappingLayer(
   if (!refs.length) return undefined;
 
   ensureMappingLayer();
-  const mediaType = candidate.item.mediaType;
-  const target = tmdbNamespace(mediaType);
+  const declaredType = candidate.item.mediaType;
+  // Anime theatrical films show up on anime/best as mediaType=tv. Prefer the
+  // declared namespace, then the opposite — existence confirm still gates.
+  const mediaTypes: ('movie' | 'tv')[] =
+    candidate.isAnime && declaredType === 'tv'
+      ? ['tv', 'movie']
+      : candidate.isAnime && declaredType === 'movie'
+        ? ['movie', 'tv']
+        : [declaredType];
 
-  for (const ref of refs) {
-    try {
-      const resolution = await mappingService.resolve(ref, target, {
-        silent: true,
-        title: candidate.item.title,
-        mediaType,
-        discoverSource: 'simkl',
-      });
-      const tmdbId = Number(resolution.target?.id);
-      if (!(tmdbId > 0)) continue;
-      // Existence may only reject — same integer in the other namespace is how
-      // wrong posters happen.
-      if (!(await resolvers.confirm(mediaType, tmdbId))) continue;
-      return {
-        tmdbId,
-        confidence: resolution.confidence,
-        sourceKey: resolution.sourceKey || `mapping:${ref.ns}`,
-      };
-    } catch (error) {
-      logger.debug('Simkl mapping-layer fallthrough failed', {
-        label: 'Mapping',
-        from: `${ref.ns}:${ref.id}`,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+  for (const mediaType of mediaTypes) {
+    const target = tmdbNamespace(mediaType);
+    for (const ref of refs) {
+      try {
+        const resolution = await mappingService.resolve(ref, target, {
+          silent: true,
+          title: candidate.item.title,
+          mediaType,
+          discoverSource: 'simkl',
+        });
+        const tmdbId = Number(resolution.target?.id);
+        if (!(tmdbId > 0)) continue;
+        // Existence may only reject — same integer in the other namespace is how
+        // wrong posters happen.
+        if (!(await resolvers.confirm(mediaType, tmdbId))) continue;
+        return {
+          tmdbId,
+          confidence: resolution.confidence,
+          sourceKey: resolution.sourceKey || `mapping:${ref.ns}`,
+          mediaType,
+        };
+      } catch (error) {
+        logger.debug('Simkl mapping-layer fallthrough failed', {
+          label: 'Mapping',
+          from: `${ref.ns}:${ref.id}`,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
   return undefined;
@@ -560,8 +611,9 @@ export async function resolveSimklCandidates(
       resolution = UNRESOLVED;
     }
     const tmdbId = resolution.tmdbId;
+    const mediaType = resolution.mediaType ?? candidate.item.mediaType;
     const item: WatchlistItem = hasDiscoverTmdbId(tmdbId)
-      ? { ...candidate.item, tmdbId, id: tmdbId }
+      ? { ...candidate.item, tmdbId, id: tmdbId, mediaType }
       : {
           ...candidate.item,
           id: Number(candidate.item.sourceId) || 0,

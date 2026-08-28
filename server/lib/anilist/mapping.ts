@@ -206,7 +206,8 @@ class AnilistIdMapping {
 
   public getFromAnilistId = async (
     anilistId: number,
-    preferred?: 'movie' | 'tv'
+    preferred?: 'movie' | 'tv',
+    options: { title?: string; year?: number } = {}
   ): Promise<AnilistTmdbMapping | undefined> => {
     // AniList's format is the only authoritative media-type signal here.
     // Falling through from show to movie for a TV series is how Slime Season 4
@@ -226,7 +227,12 @@ class AnilistIdMapping {
       const resolution = await mappingService.resolve(
         { ns: 'anilist', id: String(anilistId) },
         namespace,
-        { silent: true, mediaType }
+        {
+          silent: true,
+          mediaType,
+          title: options.title,
+          year: options.year,
+        }
       );
       const tmdbId = Number(resolution.target?.id);
       if (!(tmdbId > 0)) continue;
