@@ -1,6 +1,10 @@
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import { mapWithConcurrency } from '@server/lib/concurrency';
 import { hasDiscoverTmdbId } from '@server/lib/discover/unmapped';
+import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
+import mappingService from '@server/lib/mapping/service';
+import { tmdbNamespace, type IdRef } from '@server/lib/mapping/types';
+import logger from '@server/logger';
 
 const POSTER_BASE = 'https://wsrv.nl/?url=https://simkl.in/posters';
 
@@ -351,13 +355,13 @@ export type SimklDetailLoader = (
 /**
  * Simkl list payloads frequently carry only `simkl_id` + `slug`. The detail
  * endpoint is Cloudflare edge-cached and parallel-safe, so it is fetched when
- * ids are missing, and always for anime because Simkl's own `tmdb` field cannot
- * be trusted there and the imdb/tvdb/anidb ids are needed to corroborate it.
+ * ids are missing, and always for anime when IMDB/TVDB are absent: those are
+ * the cheap `/find` path, and without them we need anilist/anidb/mal for the
+ * mapping-layer fallthrough.
  */
 const needsSimklDetail = (candidate: SimklCandidate): boolean => {
   if (!candidate.item.sourceId) return false;
-  if (candidate.isAnime)
-    return !candidate.ids.imdb && !candidate.ids.tvdb && !candidate.ids.anidb;
+  if (candidate.isAnime) return !candidate.ids.imdb && !candidate.ids.tvdb;
   return !candidate.ids.tmdb && !candidate.ids.imdb && !candidate.ids.tvdb;
 };
 
@@ -468,6 +472,12 @@ export async function resolveSimklTmdbId(
     return { ...UNRESOLVED, ambiguous: true, sourceKey: multiple.sourceKey };
   }
 
+  // TMDB `/find` only speaks IMDB/TVDB. Everything else — including brand-new
+  // seasonal anime that Simkl has anilist/anidb/mal for but no IMDB yet — goes
+  // through the mapping layer, which is what the packs and live resolvers are for.
+  const mapped = await resolveViaMappingLayer(candidate, resolvers);
+  if (mapped) return mapped;
+
   if (!tmdb) return UNRESOLVED;
 
   if (candidate.isAnime) {
@@ -477,6 +487,59 @@ export async function resolveSimklTmdbId(
   return (await resolvers.confirm(mediaType, tmdb))
     ? { tmdbId: tmdb, confidence: 60, sourceKey: 'simkl:tmdb' }
     : { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
+}
+
+/** Ids Simkl got right that the mapping graph and live resolvers already speak. */
+const mappingRefs = (candidate: SimklCandidate): IdRef[] => {
+  const refs: IdRef[] = [];
+  const { anilist, anidb, mal } = candidate.ids;
+  if (anilist) refs.push({ ns: 'anilist', id: String(anilist) });
+  if (anidb) refs.push({ ns: 'anidb', id: String(anidb) });
+  if (mal) refs.push({ ns: 'mal', id: String(mal) });
+  if (candidate.item.sourceId) {
+    refs.push({ ns: 'simkl', id: String(candidate.item.sourceId) });
+  }
+  return refs;
+};
+
+async function resolveViaMappingLayer(
+  candidate: SimklCandidate,
+  resolvers: SimklTmdbResolvers
+): Promise<SimklTmdbResolution | undefined> {
+  const refs = mappingRefs(candidate);
+  if (!refs.length) return undefined;
+
+  ensureMappingLayer();
+  const mediaType = candidate.item.mediaType;
+  const target = tmdbNamespace(mediaType);
+
+  for (const ref of refs) {
+    try {
+      const resolution = await mappingService.resolve(ref, target, {
+        silent: true,
+        title: candidate.item.title,
+        mediaType,
+        discoverSource: 'simkl',
+      });
+      const tmdbId = Number(resolution.target?.id);
+      if (!(tmdbId > 0)) continue;
+      // Existence may only reject — same integer in the other namespace is how
+      // wrong posters happen.
+      if (!(await resolvers.confirm(mediaType, tmdbId))) continue;
+      return {
+        tmdbId,
+        confidence: resolution.confidence,
+        sourceKey: resolution.sourceKey || `mapping:${ref.ns}`,
+      };
+    } catch (error) {
+      logger.debug('Simkl mapping-layer fallthrough failed', {
+        label: 'Mapping',
+        from: `${ref.ns}:${ref.id}`,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return undefined;
 }
 
 export interface ResolvedSimklItem {

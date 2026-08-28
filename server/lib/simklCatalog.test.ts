@@ -1,6 +1,11 @@
 import SimklAPI from '@server/api/simkl';
+import { getRepository } from '@server/datasource';
+import { MappingCluster } from '@server/entity/MappingCluster';
+import { MappingLink } from '@server/entity/MappingLink';
+import { upsertCluster } from '@server/lib/mapping/graph';
+import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { beforeEach, describe, it } from 'node:test';
 import {
   catalogCandidates,
   catalogWatchlistItems,
@@ -14,6 +19,14 @@ import {
   type SimklCandidate,
   type SimklTmdbResolvers,
 } from './simklCatalog';
+
+setupTestDb();
+
+beforeEach(async () => {
+  for (const entity of [MappingLink, MappingCluster]) {
+    await getRepository(entity).clear();
+  }
+});
 
 const API_HEADERS = {
   'User-Agent': 'Foreseerr/dev (Simkl integration)',
@@ -512,5 +525,39 @@ describe('simkl TMDB resolution never infers media type', () => {
     assert.equal(agreed.resolution.confidence, 95);
     assert.equal(split.item.tmdbId, undefined);
     assert.equal(split.resolution.ambiguous, true);
+  });
+
+  it('falls through to the mapping layer via anilist when IMDB/TVDB are absent', async () => {
+    // Link Click S3: Simkl detail has anilist/anidb/mal but no imdb/tvdb/tmdb.
+    // Without the mapping fallthrough it stayed an unmapped premiere forever.
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '191832' },
+        confidence: 80,
+        sourceKey: 'animeapi',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '123542' },
+        confidence: 80,
+        sourceKey: 'animeapi',
+      },
+    ]);
+
+    const resolution = await resolveSimklTmdbId(
+      animeCandidate(
+        { anilist: 191832, anidb: 19882 },
+        'Shiguang Dailiren III'
+      ),
+      {
+        findByExternalId: async () => [],
+        confirm: async (mediaType, tmdbId) =>
+          mediaType === 'tv' && tmdbId === 123542,
+      }
+    );
+    assert.equal(resolution.tmdbId, 123542);
+    assert.ok(
+      (resolution.sourceKey ?? '').includes('animeapi') ||
+        (resolution.sourceKey ?? '').includes('mapping')
+    );
   });
 });
