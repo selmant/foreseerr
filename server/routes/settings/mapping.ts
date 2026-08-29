@@ -399,7 +399,9 @@ mappingRoutes.post('/sources/:key/refresh', async (req, res, next) => {
     if (!entry) {
       return next({ status: 404, message: 'Mapping pack not in manifest.' });
     }
-    return res.status(200).json(await refreshPack(entry, { ingest: true }));
+    return res
+      .status(200)
+      .json(await refreshPack(entry, { ingest: true, replacePackGraph: true }));
   } catch (error) {
     return next({
       status: 500,

@@ -1,5 +1,6 @@
 import { getRepository } from '@server/datasource';
 import { MappingCluster } from '@server/entity/MappingCluster';
+import { MappingEpisodeRule } from '@server/entity/MappingEpisodeRule';
 import { MappingLink } from '@server/entity/MappingLink';
 import { In } from 'typeorm';
 import {
@@ -278,4 +279,35 @@ export async function upsertCluster(
   }
 
   return clusterId;
+}
+
+let packGraphRewrites = 0;
+
+export const beginPackGraphRewrite = (): void => {
+  packGraphRewrites += 1;
+};
+
+export const endPackGraphRewrite = (): void => {
+  packGraphRewrites = Math.max(0, packGraphRewrites - 1);
+};
+
+export const isPackGraphRewriteInFlight = (): boolean => packGraphRewrites > 0;
+
+export const resetPackGraphRewriteState = (): void => {
+  packGraphRewrites = 0;
+};
+
+/**
+ * Drop graph rows that came from one pack so the next ingest can write a
+ * corrected target. Live/override rows are identified by other sourceKeys and
+ * are left alone.
+ */
+export async function retractPackFromGraph(sourceKey: string): Promise<void> {
+  await getRepository(MappingEpisodeRule).delete({ sourceKey });
+  await getRepository(MappingLink).delete({ sourceKey });
+  await getRepository(MappingCluster)
+    .createQueryBuilder()
+    .delete()
+    .where(`id NOT IN (SELECT DISTINCT "clusterId" FROM "mapping_link")`)
+    .execute();
 }

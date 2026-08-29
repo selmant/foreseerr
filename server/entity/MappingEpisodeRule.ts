@@ -18,6 +18,7 @@ import { MappingCluster } from './MappingCluster';
  */
 @Entity()
 @Index(['cluster', 'sourceNamespace', 'targetNamespace'])
+@Index(['sourceKey'])
 export class MappingEpisodeRule {
   @PrimaryGeneratedColumn()
   public id: number;

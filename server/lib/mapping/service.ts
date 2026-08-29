@@ -2,7 +2,11 @@ import { getRepository } from '@server/datasource';
 import { MappingOverride } from '@server/entity/MappingOverride';
 import logger from '@server/logger';
 import { recordMappingGap } from './gaps';
-import { resolveFromGraph, upsertCluster } from './graph';
+import {
+  isPackGraphRewriteInFlight,
+  resolveFromGraph,
+  upsertCluster,
+} from './graph';
 import { normalizeTitle, titleScore, tokenOverlapScore } from './heuristic';
 import { tmdbRecord } from './live/tmdbFind';
 import { BoundedLru } from './lru';
@@ -232,7 +236,9 @@ export class MappingService {
   ): Promise<MappingCandidate[]> {
     if (kind === 'override') return this.resolveOverride(from, to);
     if (kind === 'graph') return resolveFromGraph(from, to);
-    if (kind === 'live' && options.offline) return [];
+    if (kind === 'live' && (options.offline || isPackGraphRewriteInFlight())) {
+      return [];
+    }
 
     const context: ResolverContext = {
       title: options.title,
@@ -343,9 +349,10 @@ export class MappingService {
 
       // An unresolved ambiguity is a reviewable question, never a silent write.
       if (ambiguous && layer !== 'override') {
-        const byTitle = options.title
-          ? await pickByTitle(ranked, options.title)
-          : undefined;
+        const byTitle =
+          options.title && !isPackGraphRewriteInFlight()
+            ? await pickByTitle(ranked, options.title)
+            : undefined;
         if (byTitle) {
           const resolution: MappingResolution = {
             target: byTitle.target,

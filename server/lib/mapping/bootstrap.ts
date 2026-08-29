@@ -1,4 +1,5 @@
 import logger from '@server/logger';
+import { resetPackGraphRewriteState } from './graph';
 import { registerLiveResolvers } from './live';
 import { refreshAllPacks, type PackRefreshResult } from './packs';
 import { fetchManifest } from './packs/manifest';
@@ -92,4 +93,5 @@ export const resetMappingPackRefreshState = (): void => {
   inFlight = undefined;
   scrubbedCollisions = false;
   clearPackProgress();
+  resetPackGraphRewriteState();
 };

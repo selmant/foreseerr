@@ -21,6 +21,7 @@ import { MappingCluster } from './MappingCluster';
 @Entity()
 @Index(['namespace', 'externalId', 'season', 'cluster'], { unique: true })
 @Index(['namespace', 'externalId'])
+@Index(['sourceKey'])
 export class MappingLink {
   @PrimaryGeneratedColumn()
   public id: number;

@@ -1,5 +1,6 @@
 import { getRepository } from '@server/datasource';
 import { MappingCluster } from '@server/entity/MappingCluster';
+import { MappingEpisodeRule } from '@server/entity/MappingEpisodeRule';
 import { MappingGap } from '@server/entity/MappingGap';
 import { MappingLink } from '@server/entity/MappingLink';
 import { MappingOverride } from '@server/entity/MappingOverride';
@@ -7,7 +8,13 @@ import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import { flushMappingGaps } from './gaps';
-import { resolveFromGraph, upsertCluster } from './graph';
+import {
+  beginPackGraphRewrite,
+  endPackGraphRewrite,
+  resolveFromGraph,
+  retractPackFromGraph,
+  upsertCluster,
+} from './graph';
 import { BoundedLru } from './lru';
 import { MappingService } from './service';
 import type { IdRef, MappingResolver } from './types';
@@ -17,6 +24,7 @@ setupTestDb();
 beforeEach(async () => {
   await flushMappingGaps();
   for (const entity of [
+    MappingEpisodeRule,
     MappingLink,
     MappingCluster,
     MappingOverride,
@@ -679,5 +687,111 @@ describe('mapping service resolver chain', () => {
     );
     assert.equal(resolution.target?.id, '1429');
     assert.equal(calls, 0);
+  });
+});
+
+describe('pack graph retract', () => {
+  it('lets a later pack ingest replace the stored TMDB target', async () => {
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '1' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '111' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+    ]);
+
+    await retractPackFromGraph('anibridge');
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '1' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '222' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+    ]);
+
+    const candidates = await resolveFromGraph(
+      { ns: 'anilist', id: '1' },
+      'tmdb_show'
+    );
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].target.id, '222');
+  });
+
+  it('leaves live-sourced links when a pack is retracted', async () => {
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '1' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '111' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'simkl', id: '9' },
+        confidence: 80,
+        sourceKey: 'simkl-live',
+      },
+    ]);
+
+    await retractPackFromGraph('anibridge');
+
+    assert.equal(
+      await getRepository(MappingLink).count({
+        where: { sourceKey: 'anibridge' },
+      }),
+      0
+    );
+    const live = await getRepository(MappingLink).find({
+      where: { sourceKey: 'simkl-live' },
+    });
+    assert.equal(live.length, 1);
+    assert.equal(live[0].externalId, '9');
+    assert.equal(await getRepository(MappingCluster).count(), 1);
+  });
+
+  it('skips live resolvers while a pack graph rewrite is in flight', async () => {
+    const service = new MappingService();
+    let liveCalls = 0;
+    service.register({
+      key: 'simkl',
+      kind: 'live',
+      trust: 80,
+      supports: () => true,
+      resolve: async () => {
+        liveCalls += 1;
+        return [
+          {
+            target: { ns: 'tmdb_show', id: '1' },
+            confidence: 80,
+            sourceKey: 'simkl-live',
+          },
+        ];
+      },
+    });
+
+    beginPackGraphRewrite();
+    try {
+      const resolution = await service.resolve(
+        { ns: 'anilist', id: '99' },
+        'tmdb_show'
+      );
+      assert.equal(resolution.target, undefined);
+      assert.equal(liveCalls, 0);
+    } finally {
+      endPackGraphRewrite();
+    }
   });
 });

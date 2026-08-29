@@ -1,7 +1,12 @@
 import { getRepository } from '@server/datasource';
 import { MappingSource } from '@server/entity/MappingSource';
 import { upsertEpisodeRule } from '@server/lib/mapping/episodes';
-import { upsertCluster } from '@server/lib/mapping/graph';
+import {
+  beginPackGraphRewrite,
+  endPackGraphRewrite,
+  retractPackFromGraph,
+  upsertCluster,
+} from '@server/lib/mapping/graph';
 import mappingService from '@server/lib/mapping/service';
 import {
   refKey,
@@ -177,7 +182,7 @@ export interface PackRefreshResult {
  */
 export async function refreshPack(
   entry: PackManifestEntry,
-  options: { ingest?: boolean } = {}
+  options: { ingest?: boolean; replacePackGraph?: boolean } = {}
 ): Promise<PackRefreshResult> {
   const row = await getRepository(MappingSource).findOne({
     where: { key: entry.key },
@@ -229,7 +234,25 @@ export async function refreshPack(
       consecutiveFailures: 0,
     });
 
-    const clusters = options.ingest ? await ingestPack(pack) : 0;
+    const replacePackGraph =
+      fetched.status === 'downloaded' || Boolean(options.replacePackGraph);
+    let clusters = 0;
+    if (
+      options.ingest &&
+      (replacePackGraph || fetched.status !== 'notModified')
+    ) {
+      if (replacePackGraph) {
+        beginPackGraphRewrite();
+        try {
+          await retractPackFromGraph(entry.key);
+          clusters = await ingestPack(pack);
+        } finally {
+          endPackGraphRewrite();
+        }
+      } else {
+        clusters = await ingestPack(pack);
+      }
+    }
     logger.info(`Refreshed mapping pack ${entry.key}`, {
       label: 'Mapping',
       status: fetched.status,
