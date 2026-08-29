@@ -53,6 +53,13 @@ describe('heuristic title normalization', () => {
     assert.ok(noise < 50);
   });
 
+  it('does not count a hub name hiding inside a longer compound token', () => {
+    assert.ok(
+      titleScore('owarimonogatari', 'monogatari') < 80,
+      'character-substring containment is not same-work evidence'
+    );
+  });
+
   it('scores romaji film titles against English via token overlap', () => {
     const walpurgis = tokenOverlapScore(
       'Gekijouban Mahou Shoujo Madoka Magica: Walpurgis no Kaiten',

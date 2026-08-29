@@ -71,9 +71,11 @@ export const titleScore = (a: string, b: string): number => {
   if (a === b) return 100;
   const longest = Math.max(a.length, b.length);
   const similarity = 1 - editDistance(a, b) / longest;
-  // A containment match ("attack on titan" in "attack on titan final") is a
-  // weaker but real signal, and edit distance punishes it too harshly.
-  const contained = a.includes(b) || b.includes(a);
+  // Phrase containment must be token-bounded: "monogatari" inside
+  // "owarimonogatari" is a franchise hub hitchhike, not the same work.
+  const paddedA = ` ${a} `;
+  const paddedB = ` ${b} `;
+  const contained = paddedA.includes(paddedB) || paddedB.includes(paddedA);
   return Math.round(Math.max(similarity, contained ? 0.8 : 0) * 100);
 };
 
@@ -96,8 +98,8 @@ export const tokenOverlapScore = (a: string, b: string): number => {
       right.some(
         (other) =>
           other === token ||
-          other.includes(token) ||
-          token.includes(other) ||
+          other.startsWith(token) ||
+          token.startsWith(other) ||
           titleScore(token, other) >= 80
       )
     ) {
