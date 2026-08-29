@@ -17,7 +17,7 @@ export interface BaseSearchResult<T> {
 
 interface BaseMedia {
   id: number;
-  mediaType: string;
+  mediaType?: string;
   mediaInfo?: {
     status: MediaStatus;
   };

@@ -121,7 +121,12 @@ async function pickByTitle(
     const mediaType = tmdbMediaType(candidate.target.ns);
     const tmdbId = Number(candidate.target.id);
     if (!mediaType || !(tmdbId > 0)) continue;
-    const record = await tmdbRecord(mediaType, tmdbId);
+    let record;
+    try {
+      record = await tmdbRecord(mediaType, tmdbId);
+    } catch {
+      continue;
+    }
     if (!record.alive) continue;
     const english = record.title ?? '';
     const original = record.originalTitle ?? '';
@@ -318,7 +323,15 @@ export class MappingService {
       };
     }
 
-    const cacheKey = `${refKey(from)}->${to}${options.offline ? '|offline' : ''}`;
+    const cacheKey = [
+      `${refKey(from)}->${to}`,
+      options.offline ? 'offline' : '',
+      options.silent ? 'silent' : '',
+      options.minKind ?? '',
+      options.mediaType ?? '',
+      options.title ?? '',
+      options.year ?? '',
+    ].join('|');
     const cached = this.hot.get(cacheKey);
     if (cached) return cached;
 
@@ -337,6 +350,8 @@ export class MappingService {
       this.hot.set(cacheKey, denied);
       return denied;
     }
+
+    let pendingAmbiguity: MappingResolution | undefined;
 
     for (const layer of layers) {
       const candidates = await this.runLayer(layer, from, to, options);
@@ -365,10 +380,6 @@ export class MappingService {
           this.hot.set(cacheKey, resolution);
           return resolution;
         }
-        // Franchise mega-clusters often poison the graph; pack/live may still
-        // have a clean per-work answer (e.g. animeapi's Infinity Castle row).
-        if (layer === 'graph') continue;
-
         const resolution: MappingResolution = {
           confidence: 0,
           sourceKey: ranked[0].sourceKey,
@@ -376,12 +387,23 @@ export class MappingService {
           ambiguous: true,
           layer,
         };
+        // Franchise mega-clusters often poison the graph; pack/live may still
+        // have a clean per-work answer. Keep the graph ambiguity if they do not.
+        if (layer === 'graph') {
+          pendingAmbiguity = resolution;
+          continue;
+        }
         if (!options.silent) this.recordGap(from, to, options, 'ambiguous');
         this.hot.set(cacheKey, resolution);
         return resolution;
       }
 
       const best = ranked[0];
+      // A lone low-confidence live guess is not a trusted answer and must not
+      // become a graph row after a mere existence check.
+      if (layer === 'live' && best.confidence < 50) {
+        continue;
+      }
       if (layer === 'pack' || layer === 'live') {
         await this.persist(from, best, options);
       }
@@ -408,6 +430,12 @@ export class MappingService {
       }
       this.hot.set(cacheKey, resolution);
       return resolution;
+    }
+
+    if (pendingAmbiguity) {
+      if (!options.silent) this.recordGap(from, to, options, 'ambiguous');
+      this.hot.set(cacheKey, pendingAmbiguity);
+      return pendingAmbiguity;
     }
 
     if (!options.silent) this.recordGap(from, to, options, 'unresolved');

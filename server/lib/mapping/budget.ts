@@ -74,6 +74,7 @@ class SourceGovernor {
   private quotaDay = utcDay();
   private quotaUsed = 0;
   private quotaLoaded = false;
+  private quotaInflight?: Promise<void>;
 
   public constructor(public budget: SourceBudget) {
     this.tokens = budget.burst;
@@ -132,24 +133,44 @@ class SourceGovernor {
     }
   }
 
-  private async loadQuota(): Promise<void> {
-    if (this.quotaLoaded && this.quotaDay === utcDay()) return;
-    this.quotaDay = utcDay();
-    this.quotaUsed = 0;
-    this.quotaLoaded = true;
-    if (!this.budget.dailyQuota) return;
-    try {
-      const row = await getRepository(MappingSourceUsage).findOne({
-        where: { sourceKey: this.budget.key, day: this.quotaDay },
-      });
-      this.quotaUsed = row?.requests ?? 0;
-    } catch (error) {
-      logger.debug('Unable to load mapping source quota', {
-        label: 'Mapping',
-        source: this.budget.key,
-        errorMessage: error instanceof Error ? error.message : String(error),
+  /**
+   * Concurrent callers share one in-flight load. `quotaLoaded` is set only
+   * after the DB read finishes, so nobody proceeds on a zeroed counter.
+   * A UTC day change starts a fresh load.
+   */
+  private loadQuota(): Promise<void> {
+    const day = utcDay();
+    if (this.quotaLoaded && this.quotaDay === day) return Promise.resolve();
+    if (!this.quotaInflight) {
+      this.quotaInflight = this.readPersistedQuota(day).finally(() => {
+        this.quotaInflight = undefined;
       });
     }
+    return this.quotaInflight.then(() => {
+      if (this.quotaLoaded && this.quotaDay === utcDay()) return;
+      return this.loadQuota();
+    });
+  }
+
+  private async readPersistedQuota(day: string): Promise<void> {
+    this.quotaDay = day;
+    this.quotaUsed = 0;
+    this.quotaLoaded = false;
+    if (this.budget.dailyQuota) {
+      try {
+        const row = await getRepository(MappingSourceUsage).findOne({
+          where: { sourceKey: this.budget.key, day },
+        });
+        this.quotaUsed = row?.requests ?? 0;
+      } catch (error) {
+        logger.debug('Unable to load mapping source quota', {
+          label: 'Mapping',
+          source: this.budget.key,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    this.quotaLoaded = true;
   }
 
   /**
@@ -264,14 +285,6 @@ class SourceGovernor {
       this.halfOpen = true;
     }
 
-    await this.loadQuota();
-    if (
-      this.budget.dailyQuota !== undefined &&
-      this.quotaUsed >= this.budget.dailyQuota
-    ) {
-      throw new QuotaExceededError(this.budget.key);
-    }
-
     if (this.active >= this.budget.concurrency) {
       await this.enqueue(costClass);
     } else {
@@ -287,15 +300,26 @@ class SourceGovernor {
         await new Promise((resolve) => setTimeout(resolve, wait));
       }
       this.tokens -= 1;
+
+      await this.loadQuota();
+      if (
+        this.budget.dailyQuota !== undefined &&
+        this.quotaUsed >= this.budget.dailyQuota
+      ) {
+        throw new QuotaExceededError(this.budget.key);
+      }
       this.quotaUsed += 1;
-      const result = await task();
-      this.recordSuccess();
-      void this.persistUsage(false);
-      return result;
-    } catch (error) {
-      this.recordFailure();
-      void this.persistUsage(true);
-      throw error;
+
+      try {
+        const result = await task();
+        this.recordSuccess();
+        void this.persistUsage(false);
+        return result;
+      } catch (error) {
+        this.recordFailure();
+        void this.persistUsage(true);
+        throw error;
+      }
     } finally {
       this.active -= 1;
       this.pump();

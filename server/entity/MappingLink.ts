@@ -19,7 +19,9 @@ import { MappingCluster } from './MappingCluster';
  * the wrong show.
  */
 @Entity()
-@Index(['namespace', 'externalId', 'season', 'cluster'], { unique: true })
+@Index(['namespace', 'externalId', 'season', 'cluster', 'sourceKey'], {
+  unique: true,
+})
 @Index(['namespace', 'externalId'])
 @Index(['sourceKey'])
 export class MappingLink {

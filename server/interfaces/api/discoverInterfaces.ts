@@ -37,7 +37,8 @@ export interface WatchlistItem {
   id: number;
   ratingKey: string;
   tmdbId?: number;
-  mediaType: 'movie' | 'tv';
+  /** Omitted when the source did not declare a type (e.g. a unified MDBList). */
+  mediaType?: 'movie' | 'tv';
   title: string;
   ratings?: RatingResponse | null;
   source?: DiscoverItemSource;

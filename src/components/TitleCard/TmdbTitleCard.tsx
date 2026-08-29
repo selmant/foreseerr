@@ -21,7 +21,7 @@ export interface TmdbTitleCardProps {
   id: number;
   tmdbId?: number;
   tvdbId?: number;
-  type: 'movie' | 'tv';
+  type?: 'movie' | 'tv';
   title?: string;
   canExpand?: boolean;
   isAddedToWatchlist?: boolean;
@@ -171,7 +171,7 @@ const TmdbTitleCard = ({
         />
       );
     }
-    return hasPermission(Permission.ADMIN) ? (
+    return hasPermission(Permission.ADMIN) && type ? (
       <TitleCard.ErrorCard
         id={id}
         tmdbId={resolvedTmdbId ?? 0}

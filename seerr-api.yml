@@ -325,6 +325,30 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MappingSource'
+        available:
+          type: array
+          description: Manifest packs that have no MappingSource row yet.
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              format:
+                type: string
+              mirrors:
+                type: array
+                items:
+                  type: string
+              licence:
+                type: string
+              legalNote:
+                type: string
+              enabled:
+                type: boolean
+              priority:
+                type: number
+              trust:
+                type: number
         resolvers:
           type: array
           items:

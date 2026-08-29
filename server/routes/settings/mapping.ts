@@ -14,9 +14,21 @@ import {
   listMappingGaps,
   summarizeMappingGaps,
 } from '@server/lib/mapping/gaps';
+import {
+  loadMappingSourceEnabledState,
+  retractPackFromGraph,
+  setMappingSourceEnabled,
+} from '@server/lib/mapping/graph';
 import { suggestForOpenGaps } from '@server/lib/mapping/heuristic';
-import { refreshPack } from '@server/lib/mapping/packs';
-import { fetchManifest } from '@server/lib/mapping/packs/manifest';
+import {
+  loadedPacks,
+  packResolver,
+  refreshPack,
+} from '@server/lib/mapping/packs';
+import {
+  fetchManifest,
+  type PackManifestEntry,
+} from '@server/lib/mapping/packs/manifest';
 import { snapshotPackProgress } from '@server/lib/mapping/packs/progress';
 import { providerHealth } from '@server/lib/mapping/providerHealth';
 import mappingService from '@server/lib/mapping/service';
@@ -25,15 +37,48 @@ import { Router } from 'express';
 
 const mappingRoutes = Router();
 
+const availableManifestPacks = (
+  rows: MappingSource[],
+  packs: PackManifestEntry[]
+): PackManifestEntry[] =>
+  packs.filter((pack) => !rows.some((row) => row.key === pack.key));
+
+const sourceFromManifest = (
+  pack: PackManifestEntry,
+  enabled: boolean
+): Partial<MappingSource> => {
+  const now = new Date();
+  return {
+    key: pack.key,
+    kind: 'pack',
+    enabled,
+    format: pack.format,
+    mirrors: pack.mirrors,
+    priority: pack.priority,
+    trust: pack.trust,
+    namespaceTrust: pack.namespaceTrust ?? null,
+    fieldMap: pack.fieldMap ?? null,
+    namespaceMap: pack.namespaceMap ?? null,
+    licence: pack.licence ?? null,
+    legalNote: pack.legalNote ?? null,
+    costClass: pack.costClass ?? 'bulk',
+    createdAt: now,
+    updatedAt: now,
+  };
+};
+
 mappingRoutes.get('/health', async (req, res, next) => {
   try {
     // Sightings are batched in memory, so flush before reporting or the page
     // shows a number the operator can prove wrong by reloading a slider.
     await flushMappingGaps();
     await flushBudgetUsage();
-    const sources = await getRepository(MappingSource).find({
-      order: { priority: 'ASC' },
-    });
+    const [sources, manifest] = await Promise.all([
+      getRepository(MappingSource).find({
+        order: { priority: 'ASC' },
+      }),
+      fetchManifest().catch(() => ({ packs: [] as PackManifestEntry[] })),
+    ]);
     return res.status(200).json({
       gaps: await summarizeMappingGaps(),
       budgets: budgetSnapshot(),
@@ -60,6 +105,7 @@ mappingRoutes.get('/health', async (req, res, next) => {
         concurrency: source.concurrency,
         dailyQuota: source.dailyQuota,
       })),
+      available: availableManifestPacks(sources, manifest.packs),
       resolvers: mappingService
         .registered()
         .map(({ key, kind, trust }) => ({ key, kind, trust })),
@@ -307,6 +353,14 @@ mappingRoutes.post('/overrides/import', async (req, res, next) => {
       const existing = await repository.findOne({ where: identity });
       if (existing) await repository.update(existing.id, patch);
       else await repository.insert({ ...identity, ...patch, createdAt: now });
+      await getRepository(MappingGap).update(
+        {
+          namespace: identity.fromNamespace,
+          externalId: identity.fromExternalId,
+          season: identity.fromSeason,
+        },
+        { status: 'resolved' }
+      );
       imported += 1;
     }
 
@@ -330,9 +384,7 @@ mappingRoutes.get('/sources', async (req, res, next) => {
     return res.status(200).json({
       results: rows,
       // Packs the manifest offers that have never been fetched here yet.
-      available: manifest.packs.filter(
-        (pack) => !rows.some((row) => row.key === pack.key)
-      ),
+      available: availableManifestPacks(rows, manifest.packs),
     });
   } catch (error) {
     return next({
@@ -346,15 +398,34 @@ mappingRoutes.get('/sources', async (req, res, next) => {
 mappingRoutes.post('/sources/:key', async (req, res, next) => {
   try {
     const repository = getRepository(MappingSource);
-    const source = await repository.findOne({
+    let source = await repository.findOne({
       where: { key: req.params.key },
     });
+    let created = false;
     if (!source) {
-      return next({ status: 404, message: 'Mapping source not found.' });
+      const manifest = await fetchManifest().catch(() => ({
+        packs: [] as PackManifestEntry[],
+      }));
+      const pack = manifest.packs.find((entry) => entry.key === req.params.key);
+      if (!pack) {
+        return next({ status: 404, message: 'Mapping source not found.' });
+      }
+      const enabled =
+        typeof req.body?.enabled === 'boolean' ? req.body.enabled : true;
+      await repository.insert(sourceFromManifest(pack, enabled));
+      source = await repository.findOne({ where: { key: req.params.key } });
+      if (!source) {
+        return next({
+          status: 500,
+          message: 'Unable to create mapping source.',
+        });
+      }
+      created = true;
     }
 
     const { enabled, priority, trust, rps, concurrency, dailyQuota, mirrors } =
       req.body ?? {};
+    const wasEnabled = source.enabled;
     const patch: Partial<MappingSource> = { updatedAt: new Date() };
     if (typeof enabled === 'boolean') patch.enabled = enabled;
     if (Number.isFinite(priority)) patch.priority = Number(priority);
@@ -377,6 +448,42 @@ mappingRoutes.post('/sources/:key', async (req, res, next) => {
         ...(merged.dailyQuota ? { dailyQuota: merged.dailyQuota } : {}),
         backpressure: merged.backpressure ?? 'none',
       });
+    }
+
+    if (merged.enabled === false && (created || wasEnabled)) {
+      setMappingSourceEnabled(merged.key, false);
+      mappingService.unregister(merged.key);
+      await retractPackFromGraph(merged.key);
+    } else if (
+      merged.enabled &&
+      (created || (typeof enabled === 'boolean' && !wasEnabled))
+    ) {
+      setMappingSourceEnabled(merged.key, true);
+      if (merged.kind === 'pack') {
+        const loaded = loadedPacks().find(
+          (pack) => pack.entry.key === merged.key
+        );
+        if (loaded) {
+          mappingService.register(packResolver(loaded));
+        } else if (process.env.NODE_ENV !== 'test') {
+          const manifest = await fetchManifest().catch(() => ({
+            packs: [] as PackManifestEntry[],
+          }));
+          const entry = manifest.packs.find((pack) => pack.key === merged.key);
+          if (entry) {
+            void refreshPack(entry, {
+              ingest: true,
+              replacePackGraph: true,
+            });
+          }
+        }
+      } else {
+        const { registerLiveResolvers } =
+          await import('@server/lib/mapping/live');
+        registerLiveResolvers({ force: true });
+        const disabled = await loadMappingSourceEnabledState();
+        for (const key of disabled) mappingService.unregister(key);
+      }
     }
     mappingService.invalidate();
 

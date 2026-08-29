@@ -18,8 +18,8 @@ let registered = false;
  * Register the live layer once. Ordering inside the layer comes from each
  * resolver's `trust`, not from this list.
  */
-export function registerLiveResolvers(): void {
-  if (registered) return;
+export function registerLiveResolvers(options: { force?: boolean } = {}): void {
+  if (registered && !options.force) return;
   registered = true;
   for (const resolver of [
     tmdbFindResolver(),

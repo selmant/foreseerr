@@ -190,6 +190,39 @@ describe('daily quota', () => {
     assert.equal(row.requests, 2);
     assert.equal(row.failures, 1);
   });
+
+  it('reserves quota atomically so concurrent callers cannot oversubscribe', async () => {
+    configureBudget({
+      key: 'atomic-quota',
+      costClass: 'both',
+      rps: 1000,
+      burst: 1000,
+      concurrency: 4,
+      dailyQuota: 1,
+      backpressure: 'none',
+    });
+
+    let executed = 0;
+    const results = await Promise.allSettled(
+      Array.from({ length: 4 }, () =>
+        withBudget('atomic-quota', 'interactive', async () => {
+          executed += 1;
+          return 1;
+        })
+      )
+    );
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 3);
+    assert.equal(executed, 1);
+    for (const result of rejected) {
+      assert.ok(result.reason instanceof QuotaExceededError);
+    }
+  });
 });
 
 describe('circuit breaker', () => {

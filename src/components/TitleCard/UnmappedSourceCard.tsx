@@ -45,7 +45,7 @@ const messages = defineMessages('components.TitleCard.UnmappedSourceCard', {
 
 export interface UnmappedSourceCardProps {
   title: string;
-  type: 'movie' | 'tv';
+  type?: 'movie' | 'tv';
   source: DiscoverItemSource;
   sourceUrl?: string;
   image?: string;
@@ -111,17 +111,19 @@ const UnmappedSourceCard = ({
           </span>
 
           <div className="absolute left-0 right-0 flex items-center p-2">
-            <div
-              className={`z-40 rounded-full shadow ${
-                type === 'movie' ? 'bg-blue-500' : 'bg-purple-600'
-              }`}
-            >
-              <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
-                {type === 'movie'
-                  ? intl.formatMessage(globalMessages.movie)
-                  : intl.formatMessage(globalMessages.tvshow)}
+            {type ? (
+              <div
+                className={`z-40 rounded-full shadow ${
+                  type === 'movie' ? 'bg-blue-500' : 'bg-purple-600'
+                }`}
+              >
+                <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
+                  {type === 'movie'
+                    ? intl.formatMessage(globalMessages.movie)
+                    : intl.formatMessage(globalMessages.tvshow)}
+                </div>
               </div>
-            </div>
+            ) : null}
             <span
               className="z-40 ml-1.5 inline-flex h-5 w-5 items-center justify-center drop-shadow"
               title={label}

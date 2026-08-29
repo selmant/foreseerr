@@ -28,7 +28,7 @@ const mapItems = (items: MdblistDiscoverItem[]): ResolvableDiscoverItem[] =>
   items.map((item) => {
     const sourceId = hasDiscoverTmdbId(item.tmdbId)
       ? String(item.tmdbId)
-      : item.imdbId || item.title;
+      : item.imdbId || (item.tvdbId ? String(item.tvdbId) : item.title);
     // The media type is only known when MDBList said so; a unified list leaves
     // it open until the mapping layer settles it.
     const mediaType = item.mediaType;
@@ -48,7 +48,7 @@ const mapItems = (items: MdblistDiscoverItem[]): ResolvableDiscoverItem[] =>
       id: item.tmdbId ?? 0,
       ratingKey: `mdblist-${mediaType ?? 'unknown'}-${sourceId}`,
       ...(hasDiscoverTmdbId(item.tmdbId) ? { tmdbId: item.tmdbId } : {}),
-      mediaType: mediaType ?? 'movie',
+      ...(mediaType ? { mediaType } : {}),
       title: item.title,
       source: 'mdblist' as const,
       sourceId,
@@ -64,7 +64,6 @@ const resolvedMdblistItems = async (
     discoverSource: 'mdblist/list',
   });
   recordUnmappedItems(resolved, {
-    namespace: 'imdb',
     discoverSource: 'mdblist/list',
   });
   return resolved;

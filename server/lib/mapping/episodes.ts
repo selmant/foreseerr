@@ -286,9 +286,10 @@ export async function translateEpisodeBridged(
       { silent: true }
     );
     if (!resolution.target?.id) continue;
+    const season = resolution.target.season ?? hop.season;
     return {
       target: { ...resolution.target, episode: hop.episode },
-      season: hop.season,
+      season,
       episode: hop.episode,
       confidence: Math.min(hop.confidence, resolution.confidence),
       sourceKey: `${hop.sourceKey}+${resolution.sourceKey}`,

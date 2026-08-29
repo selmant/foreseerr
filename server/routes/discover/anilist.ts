@@ -31,19 +31,20 @@ async function anilistResults(
   // outlive the TMDB record it names.
   const mapped = await Promise.all(
     toWatchlistItems(items).map(async (item) => {
-      const confirmed = item.tmdbId
-        ? await confirmOrRepair(
-            {
-              tmdbId: item.tmdbId,
-              mediaType: item.mediaType,
-              title: item.title,
-              refs: item.sourceId
-                ? [{ ns: 'anilist' as const, id: item.sourceId }]
-                : [],
-            },
-            { discoverSource }
-          )
-        : undefined;
+      const confirmed =
+        item.tmdbId && item.mediaType
+          ? await confirmOrRepair(
+              {
+                tmdbId: item.tmdbId,
+                mediaType: item.mediaType,
+                title: item.title,
+                refs: item.sourceId
+                  ? [{ ns: 'anilist' as const, id: item.sourceId }]
+                  : [],
+              },
+              { discoverSource }
+            )
+          : undefined;
       return {
         ...item,
         ...(confirmed ? { tmdbId: confirmed.tmdbId } : {}),

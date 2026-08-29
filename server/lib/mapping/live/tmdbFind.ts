@@ -109,6 +109,24 @@ export interface TmdbProbe {
   year?: number;
 }
 
+/**
+ * TMDB wraps axios failures as `Error` with `cause` set to the original
+ * axios error. Walk that chain so a confirmed 404 is distinguishable from a
+ * timeout, 429, or 5xx.
+ */
+function httpStatus(error: unknown): number | undefined {
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+  while (current != null && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    const status = (current as { response?: { status?: unknown } }).response
+      ?.status;
+    if (typeof status === 'number') return status;
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return undefined;
+}
+
 /** The same probe, keeping the record so the caller need not fetch it twice. */
 export async function tmdbRecord(
   mediaType: 'movie' | 'tv',
@@ -140,9 +158,13 @@ export async function tmdbRecord(
       originalTitle,
       year: Number.isFinite(year) && year > 0 ? year : undefined,
     };
-  } catch {
-    // Cached so a dead id is not re-probed on every slider render.
-    cacheNegative('tmdb-find', request);
-    return { alive: false };
+  } catch (error) {
+    // Only a confirmed 404 is a dead id. Timeouts, 429, 5xx, a tripped
+    // circuit, and credential errors must not be sticky-cached as misses.
+    if (httpStatus(error) === 404) {
+      cacheNegative('tmdb-find', request);
+      return { alive: false };
+    }
+    throw error;
   }
 }

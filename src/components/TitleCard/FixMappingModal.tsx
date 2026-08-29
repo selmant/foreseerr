@@ -22,7 +22,7 @@ const messages = defineMessages('components.TitleCard.FixMappingModal', {
 
 interface FixMappingModalProps {
   title: string;
-  mediaType: 'movie' | 'tv';
+  mediaType?: 'movie' | 'tv';
   namespace: string;
   externalId: string;
   season?: number;

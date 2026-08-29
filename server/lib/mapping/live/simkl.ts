@@ -58,11 +58,12 @@ const statusOf = (error: unknown): number | undefined =>
  */
 async function classify412(
   client: SimklAPI,
-  request: string
+  request: string,
+  sourceKey: 'simkl-redirect' | 'simkl-detail'
 ): Promise<'not-found' | 'blocked'> {
   const healthy = await client.sentinelIsHealthy();
   if (healthy) {
-    cacheNegative('simkl-detail', request);
+    cacheNegative(sourceKey, request);
     return 'not-found';
   }
   tripCircuit('simkl-detail', 'sentinel probe also returned 412');
@@ -117,7 +118,7 @@ export function simklResolver(
         );
       } catch (error) {
         if (statusOf(error) === 412) {
-          await classify412(client, request);
+          await classify412(client, request, 'simkl-redirect');
           return [];
         }
         throw error;
@@ -137,7 +138,7 @@ export function simklResolver(
         );
       } catch (error) {
         if (statusOf(error) === 412) {
-          await classify412(client, detailRequest);
+          await classify412(client, detailRequest, 'simkl-detail');
           return [];
         }
         throw error;

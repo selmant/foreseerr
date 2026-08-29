@@ -1,6 +1,6 @@
 import logger from '@server/logger';
 import axios from 'axios';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { createWriteStream, promises as fsp } from 'fs';
 import path from 'path';
 import type { Readable } from 'stream';
@@ -76,7 +76,7 @@ export interface FetchPackOptions {
    * and refreshed its mtime, so the staleness check then skipped re-downloading
    * and every load threw for the next 24 hours.
    */
-  validate: (body: string) => void;
+  validate: (body: string) => void | Promise<void>;
   timeoutMsec?: number;
   onProgress?: (event: {
     received: number;
@@ -133,7 +133,7 @@ export async function fetchPack({
   const attempts: { mirror: string; error: string }[] = [];
 
   for (const mirror of mirrors) {
-    const temporary = `${target}.${process.pid}.tmp`;
+    const temporary = `${target}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
     try {
       const response = await axios.get<Readable>(mirror, {
         timeout: timeoutMsec,
@@ -183,7 +183,7 @@ export async function fetchPack({
       if (!body.length) {
         throw new Error('empty response body');
       }
-      validate(body);
+      await validate(body);
 
       // Validate, then rename: the live path is only ever replaced by a file
       // already known to parse.
@@ -227,7 +227,7 @@ export async function fetchPack({
     const body = await readIfPresent(candidate);
     if (!body) continue;
     try {
-      validate(body);
+      await validate(body);
       logger.warn('Serving the last known-good mapping pack', {
         label: 'Mapping',
         pack: key,

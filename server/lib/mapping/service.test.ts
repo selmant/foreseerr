@@ -11,8 +11,10 @@ import { flushMappingGaps } from './gaps';
 import {
   beginPackGraphRewrite,
   endPackGraphRewrite,
+  resetMappingSourceEnabledState,
   resolveFromGraph,
   retractPackFromGraph,
+  setMappingSourceEnabled,
   upsertCluster,
 } from './graph';
 import { BoundedLru } from './lru';
@@ -22,6 +24,7 @@ import type { IdRef, MappingResolver } from './types';
 setupTestDb();
 
 beforeEach(async () => {
+  resetMappingSourceEnabledState();
   await flushMappingGaps();
   for (const entity of [
     MappingEpisodeRule,
@@ -457,6 +460,78 @@ describe('mapping service resolver chain', () => {
     const [gap] = await getRepository(MappingGap).find();
     assert.equal(gap.reason, 'ambiguous');
     assert.equal(gap.discoverSource, 'trakt/list');
+  });
+
+  it('keeps a graph cour split as ambiguous when lower layers find nothing', async () => {
+    await upsertCluster([
+      {
+        ref: { ns: 'trakt', id: 'song-of-the-samurai' },
+        confidence: 80,
+        sourceKey: 'a',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '302162' },
+        confidence: 80,
+        sourceKey: 'a',
+      },
+    ]);
+    await upsertCluster([
+      {
+        ref: { ns: 'trakt', id: 'song-of-the-samurai' },
+        confidence: 80,
+        sourceKey: 'b',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '320340' },
+        confidence: 80,
+        sourceKey: 'b',
+      },
+    ]);
+
+    const service = new MappingService();
+    const resolution = await service.resolve(
+      { ns: 'trakt', id: 'song-of-the-samurai' },
+      'tmdb_show'
+    );
+    assert.equal(resolution.ambiguous, true);
+    assert.equal(resolution.target, undefined);
+    assert.equal(resolution.layer, 'graph');
+  });
+
+  it('does not reuse a silent miss to skip later gap recording', async () => {
+    const service = new MappingService();
+    await service.resolve({ ns: 'anilist', id: '404' }, 'tmdb_show', {
+      silent: true,
+    });
+    await service.resolve({ ns: 'anilist', id: '404' }, 'tmdb_show', {
+      discoverSource: 'trakt/list',
+    });
+    await flushMappingGaps();
+    const gap = await getRepository(MappingGap).findOne({
+      where: { externalId: '404' },
+    });
+    assert.equal(gap?.reason, 'unresolved');
+  });
+
+  it('hides disabled-source graph links immediately', async () => {
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '1' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '9' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+    ]);
+    setMappingSourceEnabled('anibridge', false);
+    const candidates = await resolveFromGraph(
+      { ns: 'anilist', id: '1' },
+      'tmdb_show'
+    );
+    assert.equal(candidates.length, 0);
   });
 
   it('collapses season-scoped links of one show into a single answer', async () => {

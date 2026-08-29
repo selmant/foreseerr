@@ -1,6 +1,7 @@
 import { getRepository } from '@server/datasource';
 import { MappingGap } from '@server/entity/MappingGap';
 import { MappingOverride } from '@server/entity/MappingOverride';
+import { MappingSource } from '@server/entity/MappingSource';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import { checkUser, isAuthenticated } from '@server/middleware/auth';
@@ -216,6 +217,32 @@ describe('mapping settings API', () => {
     assert.equal(await getRepository(MappingOverride).count(), 1);
   });
 
+  it('closes matching open gaps when overrides are imported', async () => {
+    const agent = await loginAsAdmin();
+    const id = await seedGap({
+      namespace: 'anilist',
+      externalId: '110277',
+    });
+
+    const imported = await agent
+      .post('/api/v1/settings/mapping/overrides/import')
+      .send({
+        overrides: [
+          {
+            fromNamespace: 'anilist',
+            fromExternalId: '110277',
+            toNamespace: 'tmdb_show',
+            toExternalId: '1429',
+          },
+        ],
+      });
+
+    assert.equal(imported.status, 200, JSON.stringify(imported.body));
+    assert.equal(imported.body.imported, 1);
+    const gap = await getRepository(MappingGap).findOneBy({ id });
+    assert.equal(gap?.status, 'resolved');
+  });
+
   it('lists sources together with the manifest entries available to add', async () => {
     const agent = await loginAsAdmin();
 
@@ -228,6 +255,69 @@ describe('mapping settings API', () => {
         (pack: { key: string }) => pack.key === 'anibridge'
       )
     );
+  });
+
+  it('includes advertised packs without a source row in health', async () => {
+    const agent = await loginAsAdmin();
+
+    const res = await agent.get('/api/v1/settings/mapping/health');
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.ok(Array.isArray(res.body.available));
+    assert.ok(
+      res.body.available.some(
+        (pack: { key: string }) => pack.key === 'anime-lists'
+      )
+    );
+  });
+
+  it('creates a MappingSource row so an advertised pack can be enabled', async () => {
+    const agent = await loginAsAdmin();
+
+    const res = await agent
+      .post('/api/v1/settings/mapping/sources/anime-lists')
+      .send({ enabled: true });
+
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.key, 'anime-lists');
+    assert.equal(res.body.enabled, true);
+    const row = await getRepository(MappingSource).findOneBy({
+      key: 'anime-lists',
+    });
+    assert.equal(row?.enabled, true);
+  });
+
+  it('unregisters a pack when it is disabled', async () => {
+    const agent = await loginAsAdmin();
+    const mappingService = (await import('@server/lib/mapping/service'))
+      .default;
+    mappingService.register({
+      key: 'anime-lists',
+      kind: 'pack',
+      trust: 75,
+      supports: () => true,
+      resolve: async () => [],
+    });
+
+    try {
+      await agent
+        .post('/api/v1/settings/mapping/sources/anime-lists')
+        .send({ enabled: true });
+      const disabled = await agent
+        .post('/api/v1/settings/mapping/sources/anime-lists')
+        .send({ enabled: false });
+
+      assert.equal(disabled.status, 200, JSON.stringify(disabled.body));
+      assert.equal(disabled.body.enabled, false);
+      assert.equal(
+        mappingService
+          .registered()
+          .some((resolver) => resolver.key === 'anime-lists'),
+        false
+      );
+    } finally {
+      mappingService.unregister('anime-lists');
+    }
   });
 
   it('refuses a refresh for a pack that is not in the manifest', async () => {

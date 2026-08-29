@@ -11,6 +11,7 @@ import {
   parseEpisodeRange,
   seasonsFromAbsolute,
   translateEpisode,
+  translateEpisodeBridged,
   translateEpisodeOnce,
   upsertEpisodeRule,
   type EpisodeRule,
@@ -250,6 +251,57 @@ describe('stored episode rules', () => {
 
     assert.equal(wrongSeason.length, 0);
     assert.equal(rightSeason.length, 1);
+  });
+});
+
+describe('bridged episode translation', () => {
+  it('returns the target season when it differs from the hop', async () => {
+    const anilist: IdRef = { ns: 'anilist', id: '110277' };
+    const anidb: IdRef = { ns: 'anidb', id: '8142', season: 1 };
+    const tvdb: IdRef = { ns: 'tvdb_show', id: '267440', season: 2 };
+    const clusterId = await upsertCluster([
+      { ref: anilist, confidence: 90, sourceKey: 'anime-lists' },
+      { ref: anidb, confidence: 90, sourceKey: 'anime-lists' },
+      { ref: tvdb, confidence: 90, sourceKey: 'anime-lists' },
+    ]);
+    assert.ok(clusterId);
+    await upsertEpisodeRule({
+      clusterId,
+      source: anilist,
+      target: anidb,
+      sourceRange: '1-12',
+      targetRange: '1-12',
+      ratio: 1,
+      confidence: 90,
+      sourceKey: 'anime-lists',
+    });
+    mappingService.register({
+      key: 'bridge-season-test',
+      kind: 'pack',
+      trust: 80,
+      supports: (from, to) => from.ns === 'anidb' && to === 'tvdb_show',
+      resolve: async () => [
+        {
+          target: tvdb,
+          confidence: 80,
+          sourceKey: 'anime-lists',
+        },
+      ],
+    });
+
+    try {
+      const translated = await translateEpisodeBridged(
+        { ...anilist, episode: 3 },
+        'tvdb_show',
+        ['anidb']
+      );
+      assert.equal(translated?.episode, 3);
+      assert.equal(translated?.season, 2);
+      assert.equal(translated?.target.season, 2);
+      assert.equal(translated?.target.ns, 'tvdb_show');
+    } finally {
+      mappingService.unregister('bridge-season-test');
+    }
   });
 });
 

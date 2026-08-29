@@ -1,3 +1,4 @@
+import type TheMovieDb from '@server/api/themoviedb';
 import type {
   DiscoverMappingInfo,
   WatchlistItem,
@@ -22,6 +23,8 @@ export interface ResolveDiscoverOptions {
   discoverSource: string;
   /** Skip live resolvers; used by bulk paths that must not spend quota. */
   offline?: boolean;
+  /** Test seam: the same override `confirmOrRepair` already accepts. */
+  tmdb?: TheMovieDb;
 }
 
 const stateFor = (
@@ -61,6 +64,7 @@ export async function resolveDiscoverItems(
               discoverSource: options.discoverSource,
               offline: options.offline,
               namespace: from,
+              tmdb: options.tmdb,
             }
           )
         : undefined;
@@ -109,7 +113,8 @@ export async function resolveDiscoverItems(
           candidate > 0 &&
           (await confirmTmdbId(
             target === 'tmdb_movie' ? 'movie' : 'tv',
-            candidate
+            candidate,
+            options.tmdb
           ))
         ) {
           tmdbId = candidate;

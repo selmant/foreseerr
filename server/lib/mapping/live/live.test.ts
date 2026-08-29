@@ -1,4 +1,5 @@
 import type SimklAPI from '@server/api/simkl';
+import type TheMovieDb from '@server/api/themoviedb';
 import {
   budgetSnapshot,
   clearNegativeCache,
@@ -10,6 +11,7 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
 import { anizipResolver } from './anizip';
 import { simklResolver } from './simkl';
+import { tmdbRecord } from './tmdbFind';
 import { tvdbResolver } from './tvdb';
 
 setupTestDb();
@@ -145,6 +147,27 @@ describe('simkl live resolver', () => {
     assert.equal(detail?.circuitState, 'closed');
   });
 
+  it('negative-caches a redirect 412 under simkl-redirect, not simkl-detail', async () => {
+    const { client, calls } = fakeSimkl({
+      redirectStatus: 412,
+      sentinelHealthy: true,
+    });
+    const resolver = simklResolver(() => client);
+
+    const candidates = await resolver.resolve(
+      { ns: 'anilist', id: '999999' },
+      'imdb'
+    );
+
+    assert.deepEqual(candidates, []);
+    assert.ok(calls.includes('sentinel'));
+    assert.equal(isNegativelyCached('simkl-redirect', 'anilist:999999'), true);
+    assert.equal(isNegativelyCached('simkl-detail', 'anilist:999999'), false);
+
+    await resolver.resolve({ ns: 'anilist', id: '999999' }, 'imdb');
+    assert.equal(calls.filter((call) => call === 'redirect').length, 1);
+  });
+
   it('reads 412 as blocked and opens the breaker when the sentinel also fails', async () => {
     const { client } = fakeSimkl({
       detailStatus: 412,
@@ -236,5 +259,55 @@ describe('resolver support matrix', () => {
       resolver.supports({ ns: 'trakt', id: 'x' }, 'tvdb_show'),
       false
     );
+  });
+});
+
+const wrappedTmdbError = (status?: number, message = 'failed'): Error =>
+  new Error(`[TMDB] Failed to fetch movie details: ${message}`, {
+    cause: Object.assign(new Error(message), {
+      isAxiosError: true,
+      ...(status !== undefined ? { response: { status } } : {}),
+    }),
+  });
+
+describe('tmdbRecord negative cache', () => {
+  it('negative-caches a confirmed 404, including wrapped Error.cause', async () => {
+    let calls = 0;
+    const tmdb = {
+      getMovie: async () => {
+        calls += 1;
+        throw wrappedTmdbError(404);
+      },
+    } as unknown as TheMovieDb;
+
+    const first = await tmdbRecord('movie', 434021, tmdb);
+    assert.equal(first.alive, false);
+    assert.equal(isNegativelyCached('tmdb-find', 'exists:movie:434021'), true);
+
+    const second = await tmdbRecord('movie', 434021, tmdb);
+    assert.equal(second.alive, false);
+    assert.equal(calls, 1);
+  });
+
+  it('does not negative-cache a thrown 500', async () => {
+    const tmdb = {
+      getMovie: async () => {
+        throw wrappedTmdbError(500);
+      },
+    } as unknown as TheMovieDb;
+
+    await assert.rejects(() => tmdbRecord('movie', 1, tmdb));
+    assert.equal(isNegativelyCached('tmdb-find', 'exists:movie:1'), false);
+  });
+
+  it('does not negative-cache a timeout', async () => {
+    const tmdb = {
+      getMovie: async () => {
+        throw wrappedTmdbError(undefined, 'timeout');
+      },
+    } as unknown as TheMovieDb;
+
+    await assert.rejects(() => tmdbRecord('movie', 2, tmdb));
+    assert.equal(isNegativelyCached('tmdb-find', 'exists:movie:2'), false);
   });
 });

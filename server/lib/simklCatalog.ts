@@ -244,7 +244,7 @@ export const isSimklVideoGamePlay = (
  * same integer is a valid TMDB movie and TV id 63% of the time.
  */
 export interface SimklCandidate {
-  item: WatchlistItem;
+  item: WatchlistItem & { mediaType: 'movie' | 'tv' };
   ids: SimklExternalIds;
   isAnime: boolean;
   /**
@@ -487,9 +487,9 @@ const UNRESOLVED: SimklTmdbResolution = {
  * Simkl's `imdb`/`tvdb` ids resolve through TMDB `/find` and were correct in
  * every traced case; its `tmdb` field is only accepted when a second namespace
  * agrees, or (for non-anime, where it measured reliable) when it exists in the
- * declared namespace. Anime records with an uncorroborated `tmdb` are reported
- * as ambiguous so they render an honest unmapped tile instead of the wrong
- * poster.
+ * declared namespace. Anime records — TV or movie — with an uncorroborated
+ * `tmdb` are reported as ambiguous so they render an honest unmapped tile
+ * instead of the wrong poster.
  */
 export async function resolveSimklTmdbId(
   candidate: SimklCandidate,
@@ -562,18 +562,11 @@ export async function resolveSimklTmdbId(
 
   if (!tmdb) return UNRESOLVED;
 
-  // Anime TV seasons cannot trust Simkl's tmdb field (48.9-85.7% wrong). Anime
-  // theatricals are different: when we already typed the row as a movie and the
-  // id exists as a movie, accepting it beats falling through to the TV hub.
+  // Anime cannot trust Simkl's tmdb field (measured 48.9-85.7% wrong for TV
+  // seasons). Theatricals are the same class of error: existence in the
+  // declared namespace is not corroboration. IMDB/TVDB/mapping remain the
+  // paths that may accept a Simkl tmdb id.
   if (candidate.isAnime) {
-    if (declaredType === 'movie' && (await resolvers.confirm('movie', tmdb))) {
-      return {
-        tmdbId: tmdb,
-        confidence: 60,
-        sourceKey: 'simkl:tmdb',
-        mediaType: 'movie',
-      };
-    }
     return { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
   }
 

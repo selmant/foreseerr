@@ -80,9 +80,19 @@ interface HealthResponse {
   budgets: BudgetSnapshot[];
   usage: UsageRow[];
   sources: SourceRow[];
+  available?: AvailablePack[];
   resolvers: { key: string; kind: string; trust: number }[];
   providers?: ProviderHealthRow[];
   refreshes?: PackRefreshProgress[];
+}
+
+interface AvailablePack {
+  key: string;
+  format?: string;
+  licence?: string | null;
+  legalNote?: string | null;
+  trust?: number;
+  priority?: number;
 }
 
 interface PackRefreshProgress {
@@ -267,6 +277,20 @@ const SettingsMapping = () => {
     }
   };
 
+  const enableAvailablePack = async (key: string) => {
+    try {
+      await axios.post(`/api/v1/settings/mapping/sources/${key}`, {
+        enabled: true,
+      });
+      revalidateHealth();
+    } catch {
+      addToast(`Unable to enable ${key}.`, {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    }
+  };
+
   const resetCircuit = async (key: string) => {
     try {
       await axios.post(`/api/v1/settings/mapping/sources/${key}/reset-circuit`);
@@ -321,6 +345,9 @@ const SettingsMapping = () => {
   const usageToday = (health?.usage ?? []).filter((row) => row.day === today);
   const packSources = (health?.sources ?? []).filter(
     (source) => source.kind === 'pack'
+  );
+  const availablePacks = (health?.available ?? []).filter(
+    (pack) => !packSources.some((source) => source.key === pack.key)
   );
   const packKeys = new Set(packSources.map((source) => source.key));
   const liveApiRows = (() => {
@@ -559,6 +586,50 @@ const SettingsMapping = () => {
                 </tr>
               );
             })}
+            {availablePacks.map((pack) => (
+              <tr key={`available-${pack.key}`}>
+                <Table.TD>
+                  <div className="font-medium text-white">{pack.key}</div>
+                  <div className="text-xs text-gray-400">
+                    advertised · not installed
+                    {pack.trust != null ? ` · trust ${pack.trust}` : ''}
+                    {pack.priority != null
+                      ? ` · priority ${pack.priority}`
+                      : ''}
+                  </div>
+                </Table.TD>
+                <Table.TD>—</Table.TD>
+                <Table.TD>
+                  <span className="text-gray-500" title="Packs are local files">
+                    —
+                  </span>
+                </Table.TD>
+                <Table.TD>
+                  <span className="rounded bg-gray-600 px-2 py-1 text-xs text-white">
+                    available
+                  </span>
+                </Table.TD>
+                <Table.TD>
+                  <div className="text-xs text-gray-300">
+                    {pack.licence ?? 'unknown'}
+                  </div>
+                  {pack.legalNote && (
+                    <div className="text-xs text-yellow-500">
+                      {pack.legalNote}
+                    </div>
+                  )}
+                </Table.TD>
+                <Table.TD alignText="right">
+                  <Button
+                    buttonType="primary"
+                    buttonSize="sm"
+                    onClick={() => enableAvailablePack(pack.key)}
+                  >
+                    Enable
+                  </Button>
+                </Table.TD>
+              </tr>
+            ))}
           </Table.TBody>
         </Table>
       </div>

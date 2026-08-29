@@ -1,10 +1,15 @@
 import logger from '@server/logger';
-import { resetPackGraphRewriteState } from './graph';
+import {
+  loadMappingSourceEnabledState,
+  resetMappingSourceEnabledState,
+  resetPackGraphRewriteState,
+} from './graph';
 import { registerLiveResolvers } from './live';
 import { refreshAllPacks, type PackRefreshResult } from './packs';
 import { fetchManifest } from './packs/manifest';
 import { clearPackProgress } from './packs/progress';
 import { scrubSimklAnimeMovieCollisions } from './scrub';
+import mappingService from './service';
 
 const REFRESH_INTERVAL_MSEC = 24 * 3600 * 1000;
 
@@ -38,7 +43,19 @@ export async function ensureMappingPacks(
 
   inFlight = refreshAllPacks({ ingest: options.ingest ?? true })
     .then((results) => {
-      lastRefreshAt = Date.now();
+      const anySucceeded = results.some(
+        (result) =>
+          result.status === 'downloaded' ||
+          result.status === 'notModified' ||
+          result.status === 'lastGood'
+      );
+      if (anySucceeded) {
+        lastRefreshAt = Date.now();
+      } else if (results.some((result) => result.status === 'failed')) {
+        lastRefreshAt = Date.now() - REFRESH_INTERVAL_MSEC + 3600 * 1000;
+      } else {
+        lastRefreshAt = Date.now();
+      }
       return results;
     })
     .catch((error) => {
@@ -67,6 +84,9 @@ export async function ensureMappingPacks(
  */
 export function ensureMappingLayer(): void {
   registerLiveResolvers();
+  void loadMappingSourceEnabledState().then((disabled) => {
+    for (const key of disabled) mappingService.unregister(key);
+  });
   // Unit tests exercise the resolvers against a seeded graph; downloading packs
   // behind their backs would make them slow and network-dependent.
   if (process.env.NODE_ENV === 'test') return;
@@ -94,4 +114,5 @@ export const resetMappingPackRefreshState = (): void => {
   scrubbedCollisions = false;
   clearPackProgress();
   resetPackGraphRewriteState();
+  resetMappingSourceEnabledState();
 };

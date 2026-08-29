@@ -22,14 +22,20 @@ setupTestDb();
  */
 const DEAD = new Set(['movie:434021', 'movie:328440', 'tv:327100']);
 
+const http404 = () =>
+  Object.assign(new Error('404'), {
+    isAxiosError: true,
+    response: { status: 404 },
+  });
+
 const fakeTmdb = (alive: (key: string) => boolean = (key) => !DEAD.has(key)) =>
   ({
     getMovie: async ({ movieId }: { movieId: number }) => {
-      if (!alive(`movie:${movieId}`)) throw new Error('404');
+      if (!alive(`movie:${movieId}`)) throw http404();
       return { id: movieId };
     },
     getTvShow: async ({ tvId }: { tvId: number }) => {
-      if (!alive(`tv:${tvId}`)) throw new Error('404');
+      if (!alive(`tv:${tvId}`)) throw http404();
       return { id: tvId };
     },
   }) as unknown as TheMovieDb;

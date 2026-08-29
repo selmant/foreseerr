@@ -8,7 +8,7 @@ import {
   recordMappingGap,
   type MappingGapObservation,
 } from '@server/lib/mapping/gaps';
-import type { Namespace } from '@server/lib/mapping/types';
+import { isNamespace, type Namespace } from '@server/lib/mapping/types';
 
 /**
  * Proves only that an integer arrived. A present id is not a valid id: three
@@ -49,7 +49,10 @@ export interface UnmappedRecordOptions {
  * page and the repair queue.
  */
 export function recordUnmappedItems(
-  items: (Pick<WatchlistItem, 'tmdbId' | 'title' | 'mediaType'> & {
+  items: (Pick<
+    WatchlistItem,
+    'tmdbId' | 'title' | 'mediaType' | 'mappingState'
+  > & {
     source?: DiscoverItemSource;
     sourceId?: string;
   })[],
@@ -57,10 +60,14 @@ export function recordUnmappedItems(
 ): void {
   for (const item of items) {
     if (hasDiscoverTmdbId(item.tmdbId)) continue;
+    const mappedNamespace = item.mappingState?.namespace;
     const namespace =
+      (mappedNamespace && isNamespace(mappedNamespace)
+        ? mappedNamespace
+        : undefined) ??
       options.namespace ??
       (item.source ? SOURCE_NAMESPACE[item.source] : undefined);
-    const externalId = item.sourceId;
+    const externalId = item.mappingState?.externalId ?? item.sourceId;
     if (!namespace || !externalId) continue;
     const observation: MappingGapObservation = {
       namespace,

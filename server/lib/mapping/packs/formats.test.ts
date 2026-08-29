@@ -8,6 +8,7 @@ import {
   splitRatio,
   validatePackBody,
 } from './formats';
+import { PackIndex } from './index';
 
 describe('pack graph tokens', () => {
   it('parses anibridge descriptor and season-qualified target tokens', () => {
@@ -321,5 +322,28 @@ describe('pack validation rejects a truncated download', () => {
       'xml-animelist',
       '<anime-list><anime anidbid="1"/></anime-list>'
     );
+  });
+
+  it('parses an error envelope into zero mapping records', async () => {
+    const { records } = await parsePack(
+      'json-graph',
+      JSON.stringify({ error: 'rate limited' })
+    );
+    assert.equal(records.length, 0);
+  });
+});
+
+describe('season-scoped pack lookup', () => {
+  it('does not answer a scoped query with a sibling-season record', () => {
+    const index = new PackIndex([
+      {
+        refs: [
+          { ns: 'anidb', id: '1', season: 1 },
+          { ns: 'tmdb_show', id: '10', season: 1 },
+        ],
+      },
+    ]);
+    assert.equal(index.lookup({ ns: 'anidb', id: '1', season: 2 }).length, 0);
+    assert.equal(index.lookup({ ns: 'anidb', id: '1', season: 1 }).length, 1);
   });
 });

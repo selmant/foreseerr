@@ -34,11 +34,17 @@ async function probe(
   const key = `${mediaType}:${tmdbId}`;
   const cached = alive.get(key);
   if (cached) return cached;
-  const record = await tmdbRecord(mediaType, tmdbId, tmdb);
-  // Only the positive answer is cached here; `tmdbRecord` negative-caches
-  // misses with its own TTL, so a deleted id can come back without a restart.
-  if (record.alive) alive.set(key, record);
-  return record;
+  try {
+    const record = await tmdbRecord(mediaType, tmdbId, tmdb);
+    // Only the positive answer is cached here; `tmdbRecord` negative-caches
+    // misses with its own TTL, so a deleted id can come back without a restart.
+    if (record.alive) alive.set(key, record);
+    return record;
+  } catch {
+    // A timeout/429/5xx is not proof the id is dead; keep the tile until a
+    // confirmed 404 arrives.
+    return { alive: true };
+  }
 }
 
 export async function confirmTmdbId(

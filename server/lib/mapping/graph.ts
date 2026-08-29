@@ -2,6 +2,7 @@ import { getRepository } from '@server/datasource';
 import { MappingCluster } from '@server/entity/MappingCluster';
 import { MappingEpisodeRule } from '@server/entity/MappingEpisodeRule';
 import { MappingLink } from '@server/entity/MappingLink';
+import { MappingSource } from '@server/entity/MappingSource';
 import { In } from 'typeorm';
 import {
   clusterKindForNamespace,
@@ -13,6 +14,41 @@ import {
   type MappingCandidate,
   type Namespace,
 } from './types';
+
+const disabledSourceKeys = new Set<string>();
+
+export const setMappingSourceEnabled = (
+  key: string,
+  enabled: boolean
+): void => {
+  if (enabled) disabledSourceKeys.delete(key);
+  else disabledSourceKeys.add(key);
+};
+
+export const resetMappingSourceEnabledState = (): void => {
+  disabledSourceKeys.clear();
+};
+
+export const mappingSourceContributes = (sourceKey: string): boolean => {
+  if (disabledSourceKeys.has(sourceKey)) return false;
+  for (const key of disabledSourceKeys) {
+    if (sourceKey.startsWith(`${key}:`)) return false;
+  }
+  return true;
+};
+
+export async function loadMappingSourceEnabledState(): Promise<string[]> {
+  disabledSourceKeys.clear();
+  try {
+    const rows = await getRepository(MappingSource).find({
+      where: { enabled: false },
+    });
+    for (const row of rows) disabledSourceKeys.add(row.key);
+    return rows.map((row) => row.key);
+  } catch {
+    return [];
+  }
+}
 
 export interface LinkRecord {
   clusterId: number;
@@ -43,9 +79,16 @@ export async function findClusterIds(from: IdRef): Promise<number[]> {
     });
   }
   const rows = await query
+    .addSelect('link.sourceKey', 'sourceKey')
     .orderBy('link.confidence', 'DESC')
-    .getRawMany<{ clusterId: number }>();
-  return [...new Set(rows.map((row) => row.clusterId))];
+    .getRawMany<{ clusterId: number; sourceKey: string }>();
+  return [
+    ...new Set(
+      rows
+        .filter((row) => mappingSourceContributes(row.sourceKey))
+        .map((row) => row.clusterId)
+    ),
+  ];
 }
 
 export async function findLinks(
@@ -57,14 +100,16 @@ export async function findLinks(
     where: { clusterId: In(clusterIds), namespace },
     order: { confidence: 'DESC' },
   });
-  return rows.map((row) => ({
-    clusterId: row.clusterId,
-    namespace: row.namespace,
-    externalId: row.externalId,
-    season: seasonValue(row.season),
-    confidence: row.confidence,
-    sourceKey: row.sourceKey,
-  }));
+  return rows
+    .filter((row) => mappingSourceContributes(row.sourceKey))
+    .map((row) => ({
+      clusterId: row.clusterId,
+      namespace: row.namespace,
+      externalId: row.externalId,
+      season: seasonValue(row.season),
+      confidence: row.confidence,
+      sourceKey: row.sourceKey,
+    }));
 }
 
 /**
@@ -255,6 +300,7 @@ export async function upsertCluster(
       externalId: String(link.ref.id),
       season: seasonColumn(link.ref.season),
       clusterId,
+      sourceKey: link.sourceKey,
     };
     const current = await linkRepository.findOne({ where: identity });
     if (!current) {
@@ -303,8 +349,17 @@ export const resetPackGraphRewriteState = (): void => {
  * are left alone.
  */
 export async function retractPackFromGraph(sourceKey: string): Promise<void> {
-  await getRepository(MappingEpisodeRule).delete({ sourceKey });
-  await getRepository(MappingLink).delete({ sourceKey });
+  const match = { sourceKey, prefix: `${sourceKey}:%` };
+  await getRepository(MappingEpisodeRule)
+    .createQueryBuilder()
+    .delete()
+    .where('sourceKey = :sourceKey OR sourceKey LIKE :prefix', match)
+    .execute();
+  await getRepository(MappingLink)
+    .createQueryBuilder()
+    .delete()
+    .where('sourceKey = :sourceKey OR sourceKey LIKE :prefix', match)
+    .execute();
   await getRepository(MappingCluster)
     .createQueryBuilder()
     .delete()

@@ -62,7 +62,16 @@ class PackIndex {
   public lookup(from: IdRef): PackRecord[] {
     const exact = this.byRef.get(refKey(from));
     if (exact?.length) return exact;
-    return this.byRef.get(`${from.ns}:${from.id}`) ?? [];
+    const fallback = this.byRef.get(`${from.ns}:${from.id}`) ?? [];
+    if (from.season === undefined) return fallback;
+    return fallback.filter((record) =>
+      record.refs.some(
+        (ref) =>
+          ref.ns === from.ns &&
+          String(ref.id) === String(from.id) &&
+          (ref.season === undefined || ref.season === from.season)
+      )
+    );
   }
 
   public get size(): number {
@@ -77,6 +86,10 @@ export interface LoadedPack {
 }
 
 const loaded = new Map<string, LoadedPack>();
+const packRefreshLocks = new Map<string, Promise<PackRefreshResult>>();
+
+const MIN_DROP_COMPARE_COUNT = 50;
+const MAX_PACK_DROP_RATIO = 0.5;
 
 const trustFor = (entry: PackManifestEntry, ns: Namespace): number =>
   entry.namespaceTrust?.[ns] ?? entry.trust;
@@ -184,6 +197,19 @@ export async function refreshPack(
   entry: PackManifestEntry,
   options: { ingest?: boolean; replacePackGraph?: boolean } = {}
 ): Promise<PackRefreshResult> {
+  const existing = packRefreshLocks.get(entry.key);
+  if (existing) return existing;
+  const work = refreshPackUnlocked(entry, options).finally(() => {
+    packRefreshLocks.delete(entry.key);
+  });
+  packRefreshLocks.set(entry.key, work);
+  return work;
+}
+
+async function refreshPackUnlocked(
+  entry: PackManifestEntry,
+  options: { ingest?: boolean; replacePackGraph?: boolean } = {}
+): Promise<PackRefreshResult> {
   const row = await getRepository(MappingSource).findOne({
     where: { key: entry.key },
   });
@@ -197,14 +223,35 @@ export async function refreshPack(
   const mirrors = [...entry.mirrors, ...extraMirrors(entry.key)];
   beginPackProgress(entry.key);
   try {
+    let parsedRecords: PackRecord[] | undefined;
     const fetched = await fetchPack({
       key: entry.key,
       format: entry.format,
       mirrors,
       cache: await cacheStateFor(entry.key),
-      validate: (body) => {
+      validate: async (body) => {
         updatePackProgress(entry.key, { phase: 'validating' });
         validatePackBody(entry.format, body);
+        const { records } = await parsePack(entry.format, body, {
+          fieldMap: entry.fieldMap,
+          typeFields: entry.typeFields,
+          namespaceMap: entry.namespaceMap,
+        });
+        if (!records.length) {
+          throw new Error('pack parsed to zero mapping records');
+        }
+        const previous =
+          row?.entryCount ?? loaded.get(entry.key)?.records.length;
+        if (
+          previous !== undefined &&
+          previous >= MIN_DROP_COMPARE_COUNT &&
+          records.length < Math.ceil(previous * MAX_PACK_DROP_RATIO)
+        ) {
+          throw new Error(
+            `pack dropped from ${previous} to ${records.length} records`
+          );
+        }
+        parsedRecords = records;
       },
       onProgress: ({ received, total, mirror }) =>
         reportDownloadBytes(entry.key, received, total, mirror),
@@ -213,11 +260,18 @@ export async function refreshPack(
     if (!body) throw new Error('pack fetch returned no body');
 
     updatePackProgress(entry.key, { phase: 'parsing' });
-    const { records } = await parsePack(entry.format, body, {
-      fieldMap: entry.fieldMap,
-      typeFields: entry.typeFields,
-      namespaceMap: entry.namespaceMap,
-    });
+    const records =
+      parsedRecords ??
+      (
+        await parsePack(entry.format, body, {
+          fieldMap: entry.fieldMap,
+          typeFields: entry.typeFields,
+          namespaceMap: entry.namespaceMap,
+        })
+      ).records;
+    if (!records.length) {
+      throw new Error('pack parsed to zero mapping records');
+    }
     const pack: LoadedPack = { entry, index: new PackIndex(records), records };
     loaded.set(entry.key, pack);
     mappingService.register(packResolver(pack));
@@ -235,7 +289,8 @@ export async function refreshPack(
     });
 
     const replacePackGraph =
-      fetched.status === 'downloaded' || Boolean(options.replacePackGraph);
+      fetched.status === 'downloaded' ||
+      (Boolean(options.replacePackGraph) && fetched.status !== 'lastGood');
     let clusters = 0;
     if (
       options.ingest &&
