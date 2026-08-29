@@ -32,7 +32,7 @@ runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
 - Support for **PostgreSQL** and **SQLite** databases.
 - Support for various notification agents.
 - Easily **Watchlist** or **Blocklist** media.
-- **Discover** from TMDB plus optional Trakt, AniList, and MDBList sources.
+- **Discover** from TMDB plus optional Trakt, AniList, Simkl, and MDBList sources.
 - More features to come!
 
 ## We need your help!

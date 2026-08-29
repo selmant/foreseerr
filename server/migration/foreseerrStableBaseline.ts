@@ -21,3 +21,10 @@ export const FORESEERR_V0_1_0_LAST_MIGRATION_TIMESTAMP = 1784500000000;
  * migrations after v0.5.0.
  */
 export const FORESEERR_V0_5_0_LAST_MIGRATION_TIMESTAMP = 1785910000000;
+
+/**
+ * Foreseerr v0.7.0 cutoff: last migration shipped with the mapping-layer
+ * cluster (`MappingLinkProvenance`). Frozen for future Foreseerr→Foreseerr
+ * upgrade matrices; do not move when adding newer migrations after v0.7.0.
+ */
+export const FORESEERR_V0_7_0_LAST_MIGRATION_TIMESTAMP = 1787440000000;

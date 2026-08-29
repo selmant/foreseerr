@@ -24,10 +24,10 @@ normal Jellyfin links, while a compatible desktop runtime adds native playback
 only after the signed-in user's account is linked to Jellyfin. See the
 [native desktop guide](docs/using-seerr/native-desktop.md) for the user-facing
 behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
-for installation and release compatibility.
+`0.3.0` for installation and release compatibility.
 
 > [!NOTE]
-> Foreseerr `v0.6.2` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, `v0.5.x`, and `v0.6.x` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
+> Foreseerr `v0.7.0` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, `v0.5.x`, and `v0.6.x` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
 
 ## Current Features (from Seerr)
 
@@ -46,7 +46,8 @@ Shipped on top of Seerr (requests stay manual; no scheduled auto-request bot):
 - **AniList Discover** — trending, this season, popular, top 100, next season; linked watching / planning / completed and custom lists
 - **MDBList** — IMDb / RT / Metacritic / Trakt community badges and filters, plus pin public lists as custom Discover rows
 - **Simkl** — PIN-linked library synchronization, watched/rating actions, and Trending, Best, and Premieres discovery
-- Watched / unwatched / score actions (Trakt, optional AniList, Jellyfin where linked)
+- **Mapping layer** — packs + live resolvers so Discover sources reach TMDB; repair unmapped titles in Settings → Mapping
+- Watched / unwatched / score actions (Trakt, optional AniList, Simkl, Jellyfin where linked)
 - Further SuggestArr-style Discover and settings work — not LLM recommendations
 
 See [Discover](docs/using-seerr/discover.md) and [Integrations](docs/using-seerr/settings/integrations.md).
@@ -73,7 +74,7 @@ docker run -d \
   --restart unless-stopped \
   -p 5055:5055 \
   -v "$(pwd)/foreseerr-config:/app/config" \
-  ghcr.io/selmant/foreseerr:v0.6.2
+  ghcr.io/selmant/foreseerr:v0.7.0
 ```
 
 Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
@@ -87,7 +88,7 @@ The equivalent production-style Compose service is:
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/foreseerr:v0.6.2
+    image: ghcr.io/selmant/foreseerr:v0.7.0
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -105,7 +106,7 @@ sudo chown -R 1000:1000 foreseerr-config
 docker compose up -d
 ```
 
-The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.6.2`) or a stable alias (`latest`, `v0`, `v0.6`) rather than `develop`.
+The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.7.0`) or a stable alias (`latest`, `v0`, `v0.7`) rather than `develop`.
 
 > Older pulls used `ghcr.io/selmant/seerr`. Point compose/CLI at `ghcr.io/selmant/foreseerr` going forward.
 

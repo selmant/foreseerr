@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: Configure Trakt, AniList, and MDBList for Discover and ratings.
+description: Configure Trakt, AniList, MDBList, and Simkl for Discover and ratings.
 sidebar_position: 5
 ---
 
@@ -72,6 +72,7 @@ browse share that quota. Foreseerr caches list search and list pages so Discover
 does not refetch on every scroll.
 
 MDBList “My Lists” and personalized recommendation lists are not supported yet.
+
 ## Simkl
 
 Create an application at [Simkl Developer Settings](https://simkl.com/settings/developer) and copy its public Client ID into **Settings → Integrations → Simkl**. No client secret is stored or required.

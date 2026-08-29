@@ -31,17 +31,21 @@ all retain the browser fallback.
 
 ## Requirements
 
-- A working Foreseerr account and a linked Jellyfin account.
-- A supported Foreseer Desktop release or source build. See the
+- Foreseer Desktop `0.3.0` (or later) for standalone mode, recovery, and
+  LAN Jellyfin playback. See the
   [Desktop README](https://github.com/selmant/foreseerr-desktop#readme) for the
   current platform and packaging status.
-- The exact HTTPS address of your Foreseerr instance. Configure this in the
-  Desktop app; do not put Jellyfin tokens, device IDs, or administrative keys
+- A linked Jellyfin account for native playback. Standalone mode starts a
+  bundled Foreseerr on localhost and does not need a separate hosted instance.
+  Remote mode still needs the HTTPS address of your existing Foreseerr
+  deployment. Do not put Jellyfin tokens, device IDs, or administrative keys
   in the URL or desktop configuration.
 
-The first desktop session uses your normal Foreseerr browser session to perform
-a short-lived, single-use bootstrap. The page never receives the linked
-Jellyfin access token.
+Remote mode’s first session uses your normal Foreseerr browser session to
+perform a short-lived, single-use bootstrap. The page never receives the
+linked Jellyfin access token. Standalone mode owns its own local database
+under the Desktop config directory; upgrades of the bundled Foreseerr version
+create a timestamped backup first.
 
 ## Expected behavior
 
