@@ -123,12 +123,20 @@ const bucketHint = (key: string): SimklMediaHint | undefined => {
   return undefined;
 };
 
+const catalogEntry = (
+  item: Record<string, unknown>,
+  typeHint: SimklMediaHint
+): { item: Record<string, unknown>; typeHint: SimklMediaHint } => ({
+  item: unwrapSimklLibraryItem(item),
+  typeHint,
+});
+
 export const catalogEntries = (
   payload: unknown,
   typeHint: SimklMediaHint = 'all'
 ): { item: Record<string, unknown>; typeHint: SimklMediaHint }[] => {
   if (Array.isArray(payload)) {
-    return payload.filter(isObject).map((item) => ({ item, typeHint }));
+    return payload.filter(isObject).map((item) => catalogEntry(item, typeHint));
   }
   if (!isObject(payload)) return [];
   const fromBuckets: {
@@ -141,7 +149,7 @@ export const catalogEntries = (
     if (!hint) continue;
     if (typeHint !== 'all' && hint !== typeHint) continue;
     for (const item of value) {
-      if (isObject(item)) fromBuckets.push({ item, typeHint: hint });
+      if (isObject(item)) fromBuckets.push(catalogEntry(item, hint));
     }
   }
   if (fromBuckets.length) {
@@ -152,7 +160,7 @@ export const catalogEntries = (
   }
   return Object.values(payload).flatMap((value) =>
     Array.isArray(value)
-      ? value.filter(isObject).map((item) => ({ item, typeHint }))
+      ? value.filter(isObject).map((item) => catalogEntry(item, typeHint))
       : []
   );
 };
