@@ -526,7 +526,18 @@ export async function resolveSimklTmdbId(
 
   if (!tmdb) return UNRESOLVED;
 
+  // Anime TV seasons cannot trust Simkl's tmdb field (48.9-85.7% wrong). Anime
+  // theatricals are different: when we already typed the row as a movie and the
+  // id exists as a movie, accepting it beats falling through to the TV hub.
   if (candidate.isAnime) {
+    if (declaredType === 'movie' && (await resolvers.confirm('movie', tmdb))) {
+      return {
+        tmdbId: tmdb,
+        confidence: 60,
+        sourceKey: 'simkl:tmdb',
+        mediaType: 'movie',
+      };
+    }
     return { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
   }
 
@@ -561,10 +572,11 @@ async function resolveViaMappingLayer(
   if (!refs.length) return undefined;
 
   ensureMappingLayer();
-  const declaredType = candidate.item.mediaType;
-  // Prefer the declared namespace. Anime films typed as tv (or detected via
-  // title) try movie first so franchise TV hubs do not win on existence alone
-  // (Madoka Walpurgis → tv/39218 instead of movie/822653).
+  const filmTitle = looksLikeAnimeFilmTitle(candidate.item.title ?? '');
+  const declaredType =
+    filmTitle && candidate.isAnime ? 'movie' : candidate.item.mediaType;
+  // Prefer the declared namespace. Anime films try movie first so franchise TV
+  // hubs do not win on existence alone (Madoka Walpurgis → tv/39218).
   const mediaTypes: ('movie' | 'tv')[] =
     declaredType === 'movie'
       ? candidate.isAnime
@@ -574,7 +586,17 @@ async function resolveViaMappingLayer(
         ? ['tv', 'movie']
         : ['tv'];
 
+  let movieAmbiguous = false;
   for (const mediaType of mediaTypes) {
+    // A theatrical anime whose movie ids are ambiguous must not fall through
+    // to the franchise TV series — that is how Walpurgis became Madoka TV.
+    if (
+      mediaType === 'tv' &&
+      declaredType === 'movie' &&
+      (filmTitle || movieAmbiguous)
+    ) {
+      break;
+    }
     const target = tmdbNamespace(mediaType);
     for (const ref of refs) {
       try {
@@ -584,6 +606,9 @@ async function resolveViaMappingLayer(
           mediaType,
           discoverSource: 'simkl',
         });
+        if (resolution.ambiguous && mediaType === 'movie') {
+          movieAmbiguous = true;
+        }
         const tmdbId = Number(resolution.target?.id);
         if (!(tmdbId > 0)) continue;
         // Existence may only reject — same integer in the other namespace is how
