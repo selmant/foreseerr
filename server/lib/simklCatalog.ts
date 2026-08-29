@@ -247,6 +247,12 @@ export interface SimklCandidate {
   item: WatchlistItem;
   ids: SimklExternalIds;
   isAnime: boolean;
+  /**
+   * Simkl itself named the type (`type`, `anime_type`, or a movie catalog
+   * hint). List rows that omit it still default to `tv` and must be hydrated
+   * so we take Simkl's type rather than guessing from TMDB.
+   */
+  typedFromSource: boolean;
 }
 
 const isAnimeRecord = (
@@ -279,11 +285,18 @@ export const toSimklCandidate = (
   const title = catalogTitle(item);
   if (!id || !title) return null;
   const isAnime = isAnimeRecord(item, typeHint);
+  const sourceAnimeType = scalar(item.anime_type)?.toLowerCase();
+  const typedFromSource =
+    String(item.type) === 'movie' ||
+    String(item.type) === 'show' ||
+    sourceAnimeType === 'movie' ||
+    sourceAnimeType === 'tv' ||
+    typeHint === 'movie';
   const mediaType =
     String(item.type) === 'movie' ||
-    String(item.anime_type) === 'movie' ||
+    sourceAnimeType === 'movie' ||
     typeHint === 'movie' ||
-    (isAnime && looksLikeAnimeFilmTitle(title))
+    (!typedFromSource && isAnime && looksLikeAnimeFilmTitle(title))
       ? 'movie'
       : 'tv';
   const external = simklExternalIds(ids);
@@ -294,6 +307,7 @@ export const toSimklCandidate = (
   return {
     ids: external,
     isAnime,
+    typedFromSource,
     item: {
       id: (tmdbId ?? Number(id)) || 0,
       ratingKey: `${keyPrefix}-${id}`,
@@ -374,7 +388,12 @@ export type SimklDetailLoader = (
  */
 const needsSimklDetail = (candidate: SimklCandidate): boolean => {
   if (!candidate.item.sourceId) return false;
-  if (candidate.isAnime) return !candidate.ids.imdb && !candidate.ids.tvdb;
+  if (candidate.isAnime) {
+    // List payloads often omit `anime_type` even when IMDB is present.
+    // Fetching detail is how we take Simkl's type before resolve.
+    if (!candidate.typedFromSource) return true;
+    return !candidate.ids.imdb && !candidate.ids.tvdb;
+  }
   return !candidate.ids.tmdb && !candidate.ids.imdb && !candidate.ids.tvdb;
 };
 
@@ -390,18 +409,25 @@ export async function hydrateSimklCandidates(
       if (isSimklVideoGamePlay(detail)) return null;
       const ids = isObject(detail.ids) ? detail.ids : {};
       const mergedIds = { ...candidate.ids, ...simklExternalIds(ids) };
-      const animeType = scalar(detail.anime_type);
+      const animeType = scalar(detail.anime_type)?.toLowerCase();
       const title =
         (typeof detail.title === 'string' && detail.title.trim()) ||
         candidate.item.title;
-      const mediaType =
+      const typedFromSource =
+        candidate.typedFromSource ||
         String(detail.type) === 'movie' ||
+        String(detail.type) === 'show' ||
         animeType === 'movie' ||
-        (candidate.isAnime && looksLikeAnimeFilmTitle(title))
+        animeType === 'tv';
+      const mediaType =
+        String(detail.type) === 'movie' || animeType === 'movie'
           ? 'movie'
-          : candidate.item.mediaType;
+          : animeType === 'tv' || String(detail.type) === 'show'
+            ? 'tv'
+            : candidate.item.mediaType;
       return {
         ...candidate,
+        typedFromSource,
         ids: mergedIds,
         item: {
           ...candidate.item,
@@ -426,8 +452,8 @@ export interface SimklTmdbResolution {
   /** Set when a candidate was found but could not be corroborated. */
   ambiguous?: boolean;
   /**
-   * Declared media type after resolution. Anime films often arrive typed as
-   * `tv` from the anime catalog; mapping/IMDB may prove they are movies.
+   * Declared media type after resolution. Taken from Simkl (`type` /
+   * `anime_type`) or the catalog bucket, never inferred from TMDB.
    */
   mediaType?: 'movie' | 'tv';
 }
@@ -488,23 +514,6 @@ export async function resolveSimklTmdbId(
       mediaType: declaredType,
       ids: preferredIds,
     });
-    // Anime "best" lists dump theatrical films as tv. Only probe movies when
-    // the declared namespace found nothing — otherwise flagship TV shows would
-    // keep hitting /find twice for no reason.
-    if (
-      candidate.isAnime &&
-      declaredType === 'tv' &&
-      preferredIds.length === 0
-    ) {
-      const movieIds = await resolvers.findByExternalId('imdb', imdb, 'movie');
-      if (movieIds.length) {
-        corroborating.push({
-          sourceKey: 'tmdb-find:imdb:movie',
-          mediaType: 'movie',
-          ids: movieIds,
-        });
-      }
-    }
   }
   if (tvdb && declaredType === 'tv') {
     corroborating.push({
@@ -603,39 +612,37 @@ async function resolveViaTitleSearch(
     }
   }
 
-  const mediaTypes: ('movie' | 'tv')[] =
-    candidate.item.mediaType === 'movie' ? ['movie'] : ['tv', 'movie'];
-
-  for (const mediaType of mediaTypes) {
-    try {
-      const suggestion = await suggestByTitle(
-        {
-          ns: 'simkl',
-          id: String(candidate.item.sourceId ?? ''),
-        },
-        tmdbNamespace(mediaType),
-        { title, mediaType }
-      );
-      if (!suggestion || suggestion.score < TITLE_SEARCH_MIN_SCORE) continue;
-      const tmdbId = Number(suggestion.target.id);
-      if (!(tmdbId > 0)) continue;
-      if (!(await resolvers.confirm(mediaType, tmdbId))) continue;
-      return {
-        tmdbId,
-        confidence: 45,
-        sourceKey: 'tmdb-title-search',
-        mediaType,
-      };
-    } catch (error) {
-      logger.debug('Simkl title-search fallback failed', {
-        label: 'Mapping',
-        title,
-        mediaType,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+  const mediaType = candidate.item.mediaType;
+  try {
+    const suggestion = await suggestByTitle(
+      {
+        ns: 'simkl',
+        id: String(candidate.item.sourceId ?? ''),
+      },
+      tmdbNamespace(mediaType),
+      { title, mediaType }
+    );
+    if (!suggestion || suggestion.score < TITLE_SEARCH_MIN_SCORE) {
+      return undefined;
     }
+    const tmdbId = Number(suggestion.target.id);
+    if (!(tmdbId > 0)) return undefined;
+    if (!(await resolvers.confirm(mediaType, tmdbId))) return undefined;
+    return {
+      tmdbId,
+      confidence: 45,
+      sourceKey: 'tmdb-title-search',
+      mediaType,
+    };
+  } catch (error) {
+    logger.debug('Simkl title-search fallback failed', {
+      label: 'Mapping',
+      title,
+      mediaType,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
   }
-  return undefined;
 }
 
 /** Ids Simkl got right that the mapping graph and live resolvers already speak. */
@@ -659,61 +666,31 @@ async function resolveViaMappingLayer(
   if (!refs.length) return undefined;
 
   ensureMappingLayer();
-  const filmTitle = looksLikeAnimeFilmTitle(candidate.item.title ?? '');
-  const declaredType =
-    filmTitle && candidate.isAnime ? 'movie' : candidate.item.mediaType;
-  // Prefer the declared namespace. Anime films try movie first so franchise TV
-  // hubs do not win on existence alone (Madoka Walpurgis → tv/39218).
-  const mediaTypes: ('movie' | 'tv')[] =
-    declaredType === 'movie'
-      ? candidate.isAnime
-        ? ['movie', 'tv']
-        : ['movie']
-      : candidate.isAnime
-        ? ['tv', 'movie']
-        : ['tv'];
-
-  let movieAmbiguous = false;
-  for (const mediaType of mediaTypes) {
-    // A theatrical anime whose movie ids are ambiguous must not fall through
-    // to the franchise TV series — that is how Walpurgis became Madoka TV.
-    if (
-      mediaType === 'tv' &&
-      declaredType === 'movie' &&
-      (filmTitle || movieAmbiguous)
-    ) {
-      break;
-    }
-    const target = tmdbNamespace(mediaType);
-    for (const ref of refs) {
-      try {
-        const resolution = await mappingService.resolve(ref, target, {
-          silent: true,
-          title: candidate.item.title,
-          mediaType,
-          discoverSource: 'simkl',
-        });
-        if (resolution.ambiguous && mediaType === 'movie') {
-          movieAmbiguous = true;
-        }
-        const tmdbId = Number(resolution.target?.id);
-        if (!(tmdbId > 0)) continue;
-        // Existence may only reject — same integer in the other namespace is how
-        // wrong posters happen.
-        if (!(await resolvers.confirm(mediaType, tmdbId))) continue;
-        return {
-          tmdbId,
-          confidence: resolution.confidence,
-          sourceKey: resolution.sourceKey || `mapping:${ref.ns}`,
-          mediaType,
-        };
-      } catch (error) {
-        logger.debug('Simkl mapping-layer fallthrough failed', {
-          label: 'Mapping',
-          from: `${ref.ns}:${ref.id}`,
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
-      }
+  const declaredType = candidate.item.mediaType;
+  const target = tmdbNamespace(declaredType);
+  for (const ref of refs) {
+    try {
+      const resolution = await mappingService.resolve(ref, target, {
+        silent: true,
+        title: candidate.item.title,
+        mediaType: declaredType,
+        discoverSource: 'simkl',
+      });
+      const tmdbId = Number(resolution.target?.id);
+      if (!(tmdbId > 0)) continue;
+      if (!(await resolvers.confirm(declaredType, tmdbId))) continue;
+      return {
+        tmdbId,
+        confidence: resolution.confidence,
+        sourceKey: resolution.sourceKey || `mapping:${ref.ns}`,
+        mediaType: declaredType,
+      };
+    } catch (error) {
+      logger.debug('Simkl mapping-layer fallthrough failed', {
+        label: 'Mapping',
+        from: `${ref.ns}:${ref.id}`,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return undefined;

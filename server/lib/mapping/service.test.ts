@@ -99,6 +99,92 @@ describe('mapping graph', () => {
     assert.equal(candidates[0].sourceKey, 'anibridge');
   });
 
+  it('does not merge a movie work into an existing series cluster', async () => {
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '21519' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '372058' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+    ]);
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '21519' },
+        confidence: 80,
+        sourceKey: 'animeapi',
+      },
+      {
+        ref: { ns: 'tmdb_movie', id: '372058' },
+        confidence: 80,
+        sourceKey: 'animeapi',
+      },
+    ]);
+
+    assert.equal(await getRepository(MappingCluster).count(), 2);
+    const movies = await resolveFromGraph(
+      { ns: 'anilist', id: '21519' },
+      'tmdb_movie'
+    );
+    assert.equal(movies.length, 1);
+    assert.equal(movies[0].target.ns, 'tmdb_movie');
+    assert.equal(movies[0].target.id, '372058');
+  });
+
+  it('does not union two series that share anidb but disagree on TMDB', async () => {
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '21' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'anidb', id: '69' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '378214' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+    ]);
+    await upsertCluster([
+      {
+        ref: { ns: 'anilist', id: '269' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'anidb', id: '69' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+      {
+        ref: { ns: 'tmdb_show', id: '30984' },
+        confidence: 90,
+        sourceKey: 'anibridge',
+      },
+    ]);
+
+    const onePiece = await resolveFromGraph(
+      { ns: 'anilist', id: '21' },
+      'tmdb_show'
+    );
+    assert.equal(onePiece.length, 1);
+    assert.equal(onePiece[0].target.id, '378214');
+    const bleach = await resolveFromGraph(
+      { ns: 'anilist', id: '269' },
+      'tmdb_show'
+    );
+    assert.equal(bleach.length, 1);
+    assert.equal(bleach[0].target.id, '30984');
+  });
+
   it('keeps colliding seasons of one TMDB id in separate clusters', async () => {
     await upsertCluster([
       {

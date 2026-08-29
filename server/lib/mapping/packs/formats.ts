@@ -1,5 +1,6 @@
 import type { MappingPackFormat } from '@server/entity/MappingSource';
 import {
+  clusterKindForNamespace,
   isNamespace,
   type IdRef,
   type Namespace,
@@ -161,12 +162,26 @@ function parseJsonGraph(
  */
 const declaredType = (value: unknown): 'movie' | 'tv' | undefined => {
   if (typeof value !== 'string') return undefined;
-  const normalized = value.trim().toLowerCase();
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
   if (normalized === 'movie' || normalized === 'movies') return 'movie';
-  if (normalized === 'tv' || normalized === 'show' || normalized === 'shows')
+  if (
+    normalized === 'tv' ||
+    normalized === 'show' ||
+    normalized === 'shows' ||
+    normalized === 'ona' ||
+    normalized === 'tv_short'
+  )
     return 'tv';
   return undefined;
 };
+
+/** Fribb `type` on the same row as a nested `{ tv, movie }` TMDB field. */
+const fribbRowKind = (
+  entry: Record<string, unknown>
+): 'movie' | 'tv' | undefined => declaredType(entry.type);
 
 function recordFromFlatObject(
   entry: Record<string, unknown>,
@@ -193,15 +208,24 @@ function recordFromFlatObject(
       continue;
     }
 
-    // Fribb nests TMDB ids as `{ tv, movie }` under one field.
+    // Fribb nests TMDB ids as `{ tv, movie }` under one field. The row `type`
+    // decides which nested id is this work; ingesting both is how a TV AniList
+    // id also grew a colliding movie edge.
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
       const nested = raw as Record<string, unknown>;
       const tv = numericId(nested.tv);
       const movie = numericId(
         Array.isArray(nested.movie) ? nested.movie[0] : nested.movie
       );
-      if (tv) refs.push({ ns: 'tmdb_show', id: tv });
-      if (movie) refs.push({ ns: 'tmdb_movie', id: movie });
+      const kind = fribbRowKind(entry);
+      if (kind === 'movie') {
+        if (movie) refs.push({ ns: 'tmdb_movie', id: movie });
+      } else if (kind === 'tv') {
+        if (tv) refs.push({ ns: 'tmdb_show', id: tv });
+      } else {
+        if (tv) refs.push({ ns: 'tmdb_show', id: tv });
+        if (movie) refs.push({ ns: 'tmdb_movie', id: movie });
+      }
       continue;
     }
     const value = Array.isArray(raw) ? raw[0] : raw;
@@ -247,6 +271,50 @@ function parseJsonArray(
     if (record) records.push(record);
   }
   return { records };
+}
+
+/**
+ * A Fribb (and similar) row can name both a TMDB show and a TMDB movie. Those
+ * are two works; ingesting them as one cluster is how a series AniList id grew
+ * a colliding movie edge. Split before upsert. Shared provider ids (anilist,
+ * mal, …) stay on both records so each work still resolves.
+ */
+export function partitionPackRecord(record: PackRecord): PackRecord[] {
+  const movieRefs = record.refs.filter(
+    (ref) => clusterKindForNamespace(ref.ns) === 'movie'
+  );
+  const seriesRefs = record.refs.filter(
+    (ref) => clusterKindForNamespace(ref.ns) === 'series'
+  );
+  const rest = record.refs.filter(
+    (ref) => clusterKindForNamespace(ref.ns) === undefined
+  );
+  if (!movieRefs.length || !seriesRefs.length) return [record];
+
+  const seriesRules = record.episodeRules?.filter((rule) => {
+    const kinds = [
+      clusterKindForNamespace(rule.source.ns),
+      clusterKindForNamespace(rule.target.ns),
+    ];
+    return (
+      kinds.includes('series') || kinds.every((kind) => kind === undefined)
+    );
+  });
+
+  return [
+    {
+      ...record,
+      refs: [...rest, ...seriesRefs],
+      ...(seriesRules?.length
+        ? { episodeRules: seriesRules }
+        : { episodeRules: undefined }),
+    },
+    {
+      ...record,
+      refs: [...rest, ...movieRefs],
+      episodeRules: undefined,
+    },
+  ];
 }
 
 function parseNdjson(body: string, options: PackParseOptions): PackParseResult {

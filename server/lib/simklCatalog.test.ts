@@ -356,6 +356,39 @@ describe('simkl catalog mapping', () => {
     );
     assert.equal(results[0].mediaType, 'movie');
   });
+
+  it('hydrates anime_type even when the list row already has IMDB', async () => {
+    const items = catalogCandidates(
+      [
+        [
+          {
+            title: 'Kimi no Na wa.',
+            url: '/anime/543146/kimi-no-na-wa',
+            ids: { simkl_id: 543146, imdb: 'tt5311514', tmdb: 372058 },
+          },
+        ],
+      ],
+      'anime',
+      'simkl-best'
+    );
+    assert.equal(items[0].typedFromSource, false);
+    assert.equal(items[0].item.mediaType, 'tv');
+    let fetched = 0;
+    const hydrated = await hydrateSimklCandidates(items, async (kind, id) => {
+      fetched += 1;
+      assert.equal(kind, 'anime');
+      assert.equal(id, '543146');
+      return {
+        type: 'anime',
+        anime_type: 'movie',
+        title: 'Kimi no Na wa.',
+        ids: { tmdb: 372058, imdb: 'tt5311514' },
+      };
+    });
+    assert.equal(fetched, 1);
+    assert.equal(hydrated[0].item.mediaType, 'movie');
+    assert.equal(hydrated[0].typedFromSource, true);
+  });
 });
 
 /**
@@ -420,6 +453,7 @@ const animeCandidate = (
   title = 'Some Anime'
 ): SimklCandidate => ({
   isAnime: true,
+  typedFromSource: true,
   ids,
   item: {
     id: 0,
@@ -487,6 +521,7 @@ describe('simkl TMDB resolution never infers media type', () => {
     const resolution = await resolveSimklTmdbId(
       {
         isAnime: false,
+        typedFromSource: true,
         ids: { tmdb: 1396 },
         item: {
           id: 1396,
@@ -510,11 +545,12 @@ describe('simkl TMDB resolution never infers media type', () => {
     assert.deepEqual(asked, ['tv:1396']);
   });
 
-  it('resolves anime theatrical films typed as tv via IMDB movie /find', async () => {
+  it('does not resolve a tv-typed row through IMDB movie /find', async () => {
     const asked: string[] = [];
     const resolution = await resolveSimklTmdbId(
       {
         isAnime: true,
+        typedFromSource: true,
         ids: { imdb: 'tt5311514' },
         item: {
           id: 0,
@@ -530,12 +566,40 @@ describe('simkl TMDB resolution never infers media type', () => {
           asked.push(mediaType);
           return mediaType === 'movie' ? [372058] : [];
         },
-        confirm: async () => true,
+        confirm: async () => false,
+      }
+    );
+    assert.equal(resolution.tmdbId, undefined);
+    assert.deepEqual(asked, ['tv']);
+  });
+
+  it('resolves a Simkl-typed anime movie via IMDB in the movie namespace', async () => {
+    const asked: string[] = [];
+    const resolution = await resolveSimklTmdbId(
+      {
+        isAnime: true,
+        typedFromSource: true,
+        ids: { imdb: 'tt5311514', tmdb: 372058 },
+        item: {
+          id: 372058,
+          ratingKey: 'simkl-best-kimi',
+          mediaType: 'movie',
+          title: 'Kimi no Na wa.',
+          source: 'simkl',
+          sourceId: '543146',
+        },
+      },
+      {
+        findByExternalId: async (_source, _id, mediaType) => {
+          asked.push(mediaType);
+          return mediaType === 'movie' ? [372058] : [];
+        },
+        confirm: async (mediaType) => mediaType === 'movie',
       }
     );
     assert.equal(resolution.tmdbId, 372058);
     assert.equal(resolution.mediaType, 'movie');
-    assert.deepEqual(asked, ['tv', 'movie']);
+    assert.deepEqual(asked, ['movie']);
   });
 
   it('does not ask TMDB /find for a movie by TVDB id', async () => {
@@ -543,6 +607,7 @@ describe('simkl TMDB resolution never infers media type', () => {
     await resolveSimklTmdbId(
       {
         isAnime: true,
+        typedFromSource: true,
         ids: { tvdb: 348545 },
         item: {
           id: 0,
@@ -616,9 +681,15 @@ describe('simkl TMDB resolution never infers media type', () => {
     );
   });
 
-  it('uses a high-confidence TMDB title hit for brand-new anime without pack rows', async () => {
+  it('uses a high-confidence TMDB title hit in the declared type only', async () => {
     const resolution = await resolveSimklTmdbId(
-      animeCandidate({}, 'THE RIBBON HERO'),
+      {
+        ...animeCandidate({}, 'THE RIBBON HERO'),
+        item: {
+          ...animeCandidate({}, 'THE RIBBON HERO').item,
+          mediaType: 'movie',
+        },
+      },
       {
         findByExternalId: async () => [],
         confirm: async (mediaType, tmdbId) =>

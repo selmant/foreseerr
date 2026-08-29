@@ -50,6 +50,7 @@ function toSyncCandidate(item: SimklSyncItem): SimklCandidate {
       : undefined;
   return {
     isAnime: item.simklType === 'anime',
+    typedFromSource: true,
     ids: {
       ...(tmdbId ? { tmdb: tmdbId } : {}),
       ...(tvdbId ? { tvdb: tvdbId } : {}),

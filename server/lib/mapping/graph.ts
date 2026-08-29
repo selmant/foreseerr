@@ -170,11 +170,26 @@ const canonicalTmdb = (
   return {};
 };
 
+const sameCanonicalTmdb = (
+  cluster: MappingCluster,
+  incoming: { canonicalTmdbId?: number; canonicalTmdbType?: 'movie' | 'tv' }
+): boolean => {
+  if (!incoming.canonicalTmdbId || !cluster.canonicalTmdbId) return true;
+  return (
+    cluster.canonicalTmdbId === incoming.canonicalTmdbId &&
+    cluster.canonicalTmdbType === incoming.canonicalTmdbType
+  );
+};
+
 /**
  * Attach a set of ids to one cluster, merging into an existing cluster when any
- * of the ids already resolves. Every stored link keeps its own `sourceKey` and
- * `confidence`, so a heuristic guess can never become indistinguishable from a
- * dataset fact after the fact.
+ * of the ids already resolves — but never into a cluster of the opposite kind
+ * or a different TMDB work. Sharing an AniDB/MAL id across a franchise used to
+ * union films and sibling series onto one cluster, so one AniList id resolved
+ * to dozens of TMDB shows.
+ *
+ * Every stored link keeps its own `sourceKey` and `confidence`, so a heuristic
+ * guess can never become indistinguishable from a dataset fact after the fact.
  */
 export async function upsertCluster(
   links: UpsertLink[],
@@ -193,12 +208,27 @@ export async function upsertCluster(
   }
 
   const refs = links.map((link) => link.ref);
-  let clusterId = [...existing][0];
+  const incomingKind = clusterKindFor(refs);
+  const incomingCanonical = canonicalTmdb(refs);
+
+  let clusterId: number | undefined;
+  if (existing.size) {
+    const clusters = await clusterRepository.find({
+      where: { id: In([...existing]) },
+    });
+    const compatible = clusters.filter(
+      (cluster) =>
+        cluster.kind === incomingKind &&
+        sameCanonicalTmdb(cluster, incomingCanonical)
+    );
+    clusterId = compatible[0]?.id;
+  }
+
   if (clusterId === undefined) {
     const created = await clusterRepository.save(
       clusterRepository.create({
-        kind: clusterKindFor(refs),
-        ...canonicalTmdb(refs),
+        kind: incomingKind,
+        ...incomingCanonical,
         title: options.title,
         year: options.year,
         createdAt: now,
@@ -207,10 +237,12 @@ export async function upsertCluster(
     );
     clusterId = created.id;
   } else {
-    const canonical = canonicalTmdb(refs);
+    const cluster = await clusterRepository.findOneBy({ id: clusterId });
     await clusterRepository.update(clusterId, {
       updatedAt: now,
-      ...(canonical.canonicalTmdbId ? canonical : {}),
+      ...(!cluster?.canonicalTmdbId && incomingCanonical.canonicalTmdbId
+        ? incomingCanonical
+        : {}),
       ...(options.title ? { title: options.title } : {}),
       ...(options.year ? { year: options.year } : {}),
     });

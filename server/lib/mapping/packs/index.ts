@@ -12,7 +12,12 @@ import {
 } from '@server/lib/mapping/types';
 import logger from '@server/logger';
 import { PackFetchError, fetchPack, type PackCacheState } from './download';
-import { parsePack, validatePackBody, type PackRecord } from './formats';
+import {
+  parsePack,
+  partitionPackRecord,
+  validatePackBody,
+  type PackRecord,
+} from './formats';
 import {
   extraMirrors,
   fetchManifest,
@@ -249,37 +254,39 @@ export async function refreshPack(
 export async function ingestPack(pack: LoadedPack): Promise<number> {
   let clusters = 0;
   for (const record of pack.records) {
-    const links = record.refs.map((ref) => ({
-      ref,
-      confidence: trustFor(pack.entry, ref.ns),
-      sourceKey: pack.entry.key,
-    }));
-    try {
-      const clusterId = await upsertCluster(links, {
-        title: record.title,
-        year: record.year,
-      });
-      if (clusterId !== undefined) clusters += 1;
-      if (clusterId !== undefined && record.episodeRules?.length) {
-        for (const rule of record.episodeRules) {
-          await upsertEpisodeRule({
-            clusterId,
-            source: rule.source,
-            target: rule.target,
-            sourceRange: rule.sourceRange,
-            targetRange: rule.targetRange,
-            ratio: rule.ratio,
-            confidence: trustFor(pack.entry, rule.target.ns),
-            sourceKey: pack.entry.key,
-          });
+    for (const part of partitionPackRecord(record)) {
+      const links = part.refs.map((ref) => ({
+        ref,
+        confidence: trustFor(pack.entry, ref.ns),
+        sourceKey: pack.entry.key,
+      }));
+      try {
+        const clusterId = await upsertCluster(links, {
+          title: part.title,
+          year: part.year,
+        });
+        if (clusterId !== undefined) clusters += 1;
+        if (clusterId !== undefined && part.episodeRules?.length) {
+          for (const rule of part.episodeRules) {
+            await upsertEpisodeRule({
+              clusterId,
+              source: rule.source,
+              target: rule.target,
+              sourceRange: rule.sourceRange,
+              targetRange: rule.targetRange,
+              ratio: rule.ratio,
+              confidence: trustFor(pack.entry, rule.target.ns),
+              sourceKey: pack.entry.key,
+            });
+          }
         }
+      } catch (error) {
+        logger.debug('Unable to ingest mapping pack record', {
+          label: 'Mapping',
+          pack: pack.entry.key,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
       }
-    } catch (error) {
-      logger.debug('Unable to ingest mapping pack record', {
-        label: 'Mapping',
-        pack: pack.entry.key,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
     }
   }
   mappingService.invalidate();

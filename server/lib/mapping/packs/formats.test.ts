@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   parseGraphToken,
   parsePack,
+  partitionPackRecord,
   splitRatio,
   validatePackBody,
 } from './formats';
@@ -157,6 +158,66 @@ describe('json-array pack format', () => {
     ]);
     assert.equal(records.length, 2);
   });
+
+  it('splits a nested tv+movie TMDB field into two works', async () => {
+    const { records } = await parsePack(
+      'json-array',
+      JSON.stringify([
+        {
+          anilist_id: 21459,
+          themoviedb_id: { tv: 65930, movie: 512200 },
+        },
+      ]),
+      {
+        fieldMap: {
+          anilist: 'anilist_id',
+          tmdb_show: 'themoviedb_id',
+        },
+      }
+    );
+    const [series, film] = partitionPackRecord(records[0]);
+    assert.deepEqual(
+      series.refs.map(refKey).sort(),
+      ['anilist:21459', 'tmdb_show:65930'].sort()
+    );
+    assert.deepEqual(
+      film.refs.map(refKey).sort(),
+      ['anilist:21459', 'tmdb_movie:512200'].sort()
+    );
+  });
+
+  it('keeps only the nested TMDB id that matches Fribb type', async () => {
+    const { records } = await parsePack(
+      'json-array',
+      JSON.stringify([
+        {
+          type: 'TV',
+          anilist_id: 21459,
+          themoviedb_id: { tv: 65930, movie: 512200 },
+        },
+        {
+          type: 'MOVIE',
+          anilist_id: 21519,
+          themoviedb_id: { tv: 999, movie: 372058 },
+        },
+      ]),
+      {
+        fieldMap: {
+          anilist: 'anilist_id',
+          tmdb_show: 'themoviedb_id',
+        },
+      }
+    );
+    assert.equal(records.length, 2);
+    assert.deepEqual(records[0].refs.map(refKey).sort(), [
+      'anilist:21459',
+      'tmdb_show:65930',
+    ]);
+    assert.deepEqual(records[1].refs.map(refKey).sort(), [
+      'anilist:21519',
+      'tmdb_movie:372058',
+    ]);
+  });
 });
 
 describe('ndjson and yaml-map pack formats', () => {
@@ -203,6 +264,21 @@ describe('xml-animelist pack format', () => {
       'tmdb_show:1429',
     ]);
     assert.equal(records[0].title, 'Shingeki no Kyojin');
+  });
+
+  it('stores a defaulttvdbseason=0 tmdb id as a movie', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<anime-list>
+  <anime anidbid="10949" tvdbid="267440" defaulttvdbseason="0" tmdbid="372058" imdbid="tt5311514">
+    <name>Kimi no Na wa.</name>
+  </anime>
+</anime-list>`;
+    const { records } = await parsePack('xml-animelist', xml);
+    assert.deepEqual(records[0].refs.map(refKey), [
+      'anidb:10949',
+      'imdb:tt5311514',
+      'tmdb_movie:372058',
+    ]);
   });
 
   it('turns mapping-list offsets into episode ranges', async () => {
