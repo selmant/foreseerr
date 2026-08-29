@@ -31,13 +31,12 @@ export interface MappingGapRow {
 
 interface BudgetSnapshot {
   key: string;
-  costClass: string;
   tokens: number;
-  inFlight: number;
   queued: number;
+  active: number;
   circuitState: 'closed' | 'open' | 'half-open';
   consecutiveFailures: number;
-  requestsToday: number;
+  quotaUsed: number;
   dailyQuota?: number;
 }
 
@@ -320,6 +319,59 @@ const SettingsMapping = () => {
 
   const today = new Date().toISOString().slice(0, 10);
   const usageToday = (health?.usage ?? []).filter((row) => row.day === today);
+  const packSources = (health?.sources ?? []).filter(
+    (source) => source.kind === 'pack'
+  );
+  const packKeys = new Set(packSources.map((source) => source.key));
+  const liveApiRows = (() => {
+    const byKey = new Map<
+      string,
+      {
+        key: string;
+        requests: number;
+        active: number;
+        queued: number;
+        circuitState: 'closed' | 'open' | 'half-open';
+        dailyQuota?: number;
+      }
+    >();
+    for (const budget of health?.budgets ?? []) {
+      if (packKeys.has(budget.key)) continue;
+      const usage = usageToday.find((row) => row.sourceKey === budget.key);
+      byKey.set(budget.key, {
+        key: budget.key,
+        requests: usage?.requests ?? budget.quotaUsed ?? 0,
+        active: budget.active ?? 0,
+        queued: budget.queued ?? 0,
+        circuitState: budget.circuitState,
+        dailyQuota: budget.dailyQuota,
+      });
+    }
+    for (const usage of usageToday) {
+      if (packKeys.has(usage.sourceKey) || byKey.has(usage.sourceKey)) continue;
+      byKey.set(usage.sourceKey, {
+        key: usage.sourceKey,
+        requests: usage.requests,
+        active: 0,
+        queued: 0,
+        circuitState: 'closed',
+      });
+    }
+    for (const source of health?.sources ?? []) {
+      if (source.kind === 'pack' || byKey.has(source.key)) continue;
+      const usage = usageToday.find((row) => row.sourceKey === source.key);
+      byKey.set(source.key, {
+        key: source.key,
+        requests: usage?.requests ?? 0,
+        active: 0,
+        queued: 0,
+        circuitState:
+          (source.circuitState as 'closed' | 'open' | 'half-open') ?? 'closed',
+        dailyQuota: source.dailyQuota ?? undefined,
+      });
+    }
+    return [...byKey.values()].sort((a, b) => b.requests - a.requests);
+  })();
 
   return (
     <>
@@ -393,10 +445,10 @@ const SettingsMapping = () => {
       )}
 
       <div className="mt-8">
-        <h3 className="heading">Sources</h3>
+        <h3 className="heading">Packs</h3>
         <p className="description">
-          Packs and live resolvers, with the daily request volume and breaker
-          state for each.
+          Local mapping files. Lookups read the graph, so they do not count as
+          API requests.
         </p>
         <Table>
           <thead>
@@ -410,12 +462,9 @@ const SettingsMapping = () => {
             </tr>
           </thead>
           <Table.TBody>
-            {(health?.sources ?? []).map((source) => {
+            {packSources.map((source) => {
               const budget = health?.budgets.find(
                 (entry) => entry.key === source.key
-              );
-              const usage = usageToday.find(
-                (row) => row.sourceKey === source.key
               );
               const state = budget?.circuitState ?? source.circuitState;
               return (
@@ -447,8 +496,12 @@ const SettingsMapping = () => {
                   </Table.TD>
                   <Table.TD>{source.entryCount ?? '—'}</Table.TD>
                   <Table.TD>
-                    {usage?.requests ?? budget?.requestsToday ?? 0}
-                    {source.dailyQuota ? ` / ${source.dailyQuota}` : ''}
+                    <span
+                      className="text-gray-500"
+                      title="Packs are local files"
+                    >
+                      —
+                    </span>
                   </Table.TD>
                   <Table.TD>
                     <span
@@ -502,6 +555,65 @@ const SettingsMapping = () => {
                         {source.enabled ? 'Disable' : 'Enable'}
                       </Button>
                     </div>
+                  </Table.TD>
+                </tr>
+              );
+            })}
+          </Table.TBody>
+        </Table>
+      </div>
+
+      <div className="mt-8">
+        <h3 className="heading">Live APIs</h3>
+        <p className="description">
+          Third-party calls the mapping layer actually budgets. This is what
+          &quot;Requests today&quot; counts.
+        </p>
+        <Table>
+          <thead>
+            <tr>
+              <Table.TH>Source</Table.TH>
+              <Table.TH>Requests today</Table.TH>
+              <Table.TH>In flight</Table.TH>
+              <Table.TH>Breaker</Table.TH>
+              <Table.TH className="text-right">Actions</Table.TH>
+            </tr>
+          </thead>
+          <Table.TBody>
+            {liveApiRows.map((row) => {
+              const state = row.circuitState;
+              return (
+                <tr key={row.key}>
+                  <Table.TD>
+                    <div className="font-medium text-white">{row.key}</div>
+                    {row.queued > 0 && (
+                      <div className="text-xs text-gray-400">
+                        {row.queued} queued
+                      </div>
+                    )}
+                  </Table.TD>
+                  <Table.TD>
+                    {row.requests.toLocaleString()}
+                    {row.dailyQuota ? ` / ${row.dailyQuota}` : ''}
+                  </Table.TD>
+                  <Table.TD>{row.active}</Table.TD>
+                  <Table.TD>
+                    <span
+                      className={`rounded px-2 py-1 text-xs ${circuitStyle(state)}`}
+                    >
+                      {state}
+                    </span>
+                  </Table.TD>
+                  <Table.TD alignText="right">
+                    {state !== 'closed' && (
+                      <Button
+                        buttonType="warning"
+                        buttonSize="sm"
+                        onClick={() => resetCircuit(row.key)}
+                      >
+                        Reset breaker
+                      </Button>
+                    )}
                   </Table.TD>
                 </tr>
               );

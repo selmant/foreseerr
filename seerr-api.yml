@@ -293,6 +293,12 @@ components:
                 type: number
               queued:
                 type: number
+              active:
+                type: number
+              quotaUsed:
+                type: number
+              dailyQuota:
+                type: number
               circuitState:
                 type: string
                 enum: [closed, open, half-open]

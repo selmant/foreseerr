@@ -116,6 +116,9 @@ describe('mapping settings API', () => {
     assert.equal(res.body.gaps.openGaps, 1);
     assert.equal(res.body.gaps.totalHits, 7);
     assert.ok(Array.isArray(res.body.budgets));
+    assert.ok(
+      res.body.budgets.some((row: { key: string }) => row.key === 'tmdb-find')
+    );
     assert.ok(Array.isArray(res.body.usage));
     assert.ok(Array.isArray(res.body.resolvers));
     assert.ok(Array.isArray(res.body.refreshes));
