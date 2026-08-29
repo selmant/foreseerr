@@ -1,7 +1,9 @@
+import AnilistAPI from '@server/api/anilist';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import { mapWithConcurrency } from '@server/lib/concurrency';
 import { hasDiscoverTmdbId } from '@server/lib/discover/unmapped';
 import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
+import { suggestByTitle } from '@server/lib/mapping/heuristic';
 import mappingService from '@server/lib/mapping/service';
 import { tmdbNamespace, type IdRef } from '@server/lib/mapping/types';
 import logger from '@server/logger';
@@ -387,9 +389,28 @@ export async function hydrateSimklCandidates(
       const detail = await loadTitle(simklDetailKind(candidate.item), sourceId);
       if (isSimklVideoGamePlay(detail)) return null;
       const ids = isObject(detail.ids) ? detail.ids : {};
+      const mergedIds = { ...candidate.ids, ...simklExternalIds(ids) };
+      const animeType = scalar(detail.anime_type);
+      const title =
+        (typeof detail.title === 'string' && detail.title.trim()) ||
+        candidate.item.title;
+      const mediaType =
+        String(detail.type) === 'movie' ||
+        animeType === 'movie' ||
+        (candidate.isAnime && looksLikeAnimeFilmTitle(title))
+          ? 'movie'
+          : candidate.item.mediaType;
       return {
         ...candidate,
-        ids: { ...candidate.ids, ...simklExternalIds(ids) },
+        ids: mergedIds,
+        item: {
+          ...candidate.item,
+          title,
+          mediaType,
+          ...(hasDiscoverTmdbId(mergedIds.tmdb)
+            ? { tmdbId: mergedIds.tmdb }
+            : {}),
+        },
       };
     } catch {
       return candidate;
@@ -524,6 +545,12 @@ export async function resolveSimklTmdbId(
   const mapped = await resolveViaMappingLayer(candidate, resolvers);
   if (mapped) return mapped;
 
+  // Brand-new seasonal anime often have AniList/MAL but no pack row yet. A
+  // high-confidence TMDB title hit (optionally using AniList's English title)
+  // is returned for this request only — never written into the mapping graph.
+  const titled = await resolveViaTitleSearch(candidate, resolvers);
+  if (titled) return titled;
+
   if (!tmdb) return UNRESOLVED;
 
   // Anime TV seasons cannot trust Simkl's tmdb field (48.9-85.7% wrong). Anime
@@ -549,6 +576,66 @@ export async function resolveSimklTmdbId(
         mediaType: declaredType,
       }
     : { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
+}
+
+/** Minimum suggestByTitle score before a discover tile may use a title hit. */
+const TITLE_SEARCH_MIN_SCORE = 85;
+
+/**
+ * Last-resort discover path for anime that packs/live ids have not covered.
+ * Does not persist — the quarantined heuristic layer remains the only writer
+ * of title suggestions into the review queue.
+ */
+async function resolveViaTitleSearch(
+  candidate: SimklCandidate,
+  resolvers: SimklTmdbResolvers
+): Promise<SimklTmdbResolution | undefined> {
+  if (!candidate.isAnime || !candidate.item.title?.trim()) return undefined;
+
+  let title = candidate.item.title;
+  if (candidate.ids.anilist) {
+    try {
+      const media = await new AnilistAPI().getMedia(candidate.ids.anilist);
+      title =
+        media?.title?.english?.trim() || media?.title?.romaji?.trim() || title;
+    } catch {
+      // Keep the Simkl title.
+    }
+  }
+
+  const mediaTypes: ('movie' | 'tv')[] =
+    candidate.item.mediaType === 'movie' ? ['movie'] : ['tv', 'movie'];
+
+  for (const mediaType of mediaTypes) {
+    try {
+      const suggestion = await suggestByTitle(
+        {
+          ns: 'simkl',
+          id: String(candidate.item.sourceId ?? ''),
+        },
+        tmdbNamespace(mediaType),
+        { title, mediaType }
+      );
+      if (!suggestion || suggestion.score < TITLE_SEARCH_MIN_SCORE) continue;
+      const tmdbId = Number(suggestion.target.id);
+      if (!(tmdbId > 0)) continue;
+      if (!(await resolvers.confirm(mediaType, tmdbId))) continue;
+      return {
+        tmdbId,
+        confidence: 45,
+        sourceKey: 'tmdb-title-search',
+        mediaType,
+      };
+    } catch (error) {
+      logger.debug('Simkl title-search fallback failed', {
+        label: 'Mapping',
+        title,
+        mediaType,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return undefined;
 }
 
 /** Ids Simkl got right that the mapping graph and live resolvers already speak. */

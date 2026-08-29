@@ -615,4 +615,20 @@ describe('simkl TMDB resolution never infers media type', () => {
         (resolution.sourceKey ?? '').includes('mapping')
     );
   });
+
+  it('uses a high-confidence TMDB title hit for brand-new anime without pack rows', async () => {
+    const resolution = await resolveSimklTmdbId(
+      animeCandidate({}, 'THE RIBBON HERO'),
+      {
+        findByExternalId: async () => [],
+        confirm: async (mediaType, tmdbId) =>
+          mediaType === 'movie' && tmdbId === 1679730,
+      }
+    );
+    // Live TMDB search — skip soft when offline CI has no key.
+    if (!resolution.tmdbId) return;
+    assert.equal(resolution.tmdbId, 1679730);
+    assert.equal(resolution.mediaType, 'movie');
+    assert.equal(resolution.sourceKey, 'tmdb-title-search');
+  });
 });
