@@ -11,6 +11,7 @@ import {
   suggestByTitle,
   suggestForOpenGaps,
   titleScore,
+  tokenOverlapScore,
   type TitleSearchHit,
   type TitleSearchProvider,
 } from './heuristic';
@@ -50,6 +51,19 @@ describe('heuristic title normalization', () => {
     assert.equal(exact, 100);
     assert.ok(near > noise);
     assert.ok(noise < 50);
+  });
+
+  it('scores romaji film titles against English via token overlap', () => {
+    const walpurgis = tokenOverlapScore(
+      'Gekijouban Mahou Shoujo Madoka Magica: Walpurgis no Kaiten',
+      'Puella Magi Madoka Magica the Movie -Walpurgisnacht: Rising-'
+    );
+    const series = tokenOverlapScore(
+      'Gekijouban Mahou Shoujo Madoka Magica: Walpurgis no Kaiten',
+      'Puella Magi Madoka Magica'
+    );
+    assert.ok(walpurgis >= 40);
+    assert.ok(walpurgis > series);
   });
 });
 

@@ -3,7 +3,7 @@ import { MappingOverride } from '@server/entity/MappingOverride';
 import logger from '@server/logger';
 import { recordMappingGap } from './gaps';
 import { resolveFromGraph, upsertCluster } from './graph';
-import { normalizeTitle, titleScore } from './heuristic';
+import { normalizeTitle, titleScore, tokenOverlapScore } from './heuristic';
 import { tmdbRecord } from './live/tmdbFind';
 import { BoundedLru } from './lru';
 import {
@@ -119,20 +119,28 @@ async function pickByTitle(
     if (!mediaType || !(tmdbId > 0)) continue;
     const record = await tmdbRecord(mediaType, tmdbId);
     if (!record.alive) continue;
+    const english = record.title ?? '';
+    const original = record.originalTitle ?? '';
     scored.push({
       candidate,
       score: Math.max(
-        titleScore(wanted, normalizeTitle(record.title ?? '')),
-        titleScore(wanted, normalizeTitle(record.originalTitle ?? ''))
+        titleScore(wanted, normalizeTitle(english)),
+        titleScore(wanted, normalizeTitle(original)),
+        tokenOverlapScore(title, english),
+        tokenOverlapScore(title, original)
       ),
     });
   }
   scored.sort((a, b) => b.score - a.score);
-  if (!scored.length || scored[0].score < 70) return undefined;
-  if (scored.length > 1 && scored[0].score - scored[1].score < 10) {
-    return undefined;
-  }
-  return scored[0].candidate;
+  if (!scored.length) return undefined;
+  // Hard accept at ≥70; soft accept a unique leader ≥40 so romaji↔English
+  // franchise films (Madoka Walpurgis) still beat the TV hub siblings.
+  const leader = scored[0];
+  const margin =
+    scored.length > 1 ? leader.score - scored[1].score : leader.score;
+  if (leader.score >= 70 && margin >= 10) return leader.candidate;
+  if (leader.score >= 40 && margin >= 15) return leader.candidate;
+  return undefined;
 }
 
 export class MappingService {

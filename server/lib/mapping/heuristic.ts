@@ -78,6 +78,36 @@ export const titleScore = (a: string, b: string): number => {
 };
 
 /**
+ * Token overlap for romaji-vs-English pairs that whole-string edit distance
+ * thrases (e.g. "Gekijouban … Walpurgis no Kaiten" vs "… Walpurgisnacht: Rising").
+ * Tokens ≥4 chars; a token hits if equal, contained, or titleScore ≥80.
+ */
+export const tokenOverlapScore = (a: string, b: string): number => {
+  const tokens = (value: string): string[] =>
+    normalizeTitle(value)
+      .split(' ')
+      .filter((token) => token.length >= 4);
+  const left = tokens(a);
+  const right = tokens(b);
+  if (!left.length || !right.length) return 0;
+  let hits = 0;
+  for (const token of left) {
+    if (
+      right.some(
+        (other) =>
+          other === token ||
+          other.includes(token) ||
+          token.includes(other) ||
+          titleScore(token, other) >= 80
+      )
+    ) {
+      hits += 1;
+    }
+  }
+  return Math.round((hits / left.length) * 100);
+};
+
+/**
  * Year and episode count are gates, not weights. A high title score with the
  * wrong year is exactly the failure mode that produced wrong posters: a strong
  * name match cannot be allowed to outvote hard evidence that this is a
