@@ -201,7 +201,7 @@ class AnilistIdMapping {
   public isLoaded = (): boolean => true;
 
   public sync = async (): Promise<void> => {
-    ensureMappingLayer();
+    await ensureMappingLayer();
   };
 
   public getFromAnilistId = async (

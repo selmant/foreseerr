@@ -81,7 +81,7 @@ describe('media-actions capabilities', () => {
     assert.deepEqual(res.body.movie, { watched: true, rating: true });
     assert.deepEqual(res.body.tv, { watched: true, rating: true });
     assert.deepEqual(res.body.episode, { watched: true, rating: false });
-    assert.equal(res.body.providers.length, 3);
+    assert.equal(res.body.providers.length, 4);
     assert.deepEqual(res.body.providers[0], {
       id: 'trakt',
       linked: true,

@@ -23,7 +23,7 @@ class AnimeListMapping {
   public isLoaded = (): boolean => true;
 
   public sync = async (): Promise<void> => {
-    ensureMappingLayer();
+    await ensureMappingLayer();
   };
 
   public getFromAnidbId = async (

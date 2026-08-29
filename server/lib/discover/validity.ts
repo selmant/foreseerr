@@ -118,7 +118,7 @@ export async function repairDeadTmdbId(
   request: RepairRequest
 ): Promise<RepairResult> {
   if (!request.refs.length) return { ambiguous: false };
-  ensureMappingLayer();
+  await ensureMappingLayer();
 
   const target = tmdbNamespace(request.mediaType);
   let ambiguous = false;

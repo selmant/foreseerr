@@ -17,7 +17,7 @@ const CONFIG_DIRECTORY = path.join(
 process.env.CONFIG_DIRECTORY = CONFIG_DIRECTORY;
 
 /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/consistent-type-imports */
-const { refreshPack } =
+const { PackIndex, refreshPack, replacePackGraph } =
   require('@server/lib/mapping/packs') as typeof import('@server/lib/mapping/packs');
 const { upsertCluster } =
   require('@server/lib/mapping/graph') as typeof import('@server/lib/mapping/graph');
@@ -174,6 +174,49 @@ describe('pack refresh retract', () => {
         where: { sourceKey: 'simkl-live' },
       }),
       2
+    );
+  });
+
+  it('rolls back retraction when replacement ingest fails', async () => {
+    entry.mirrors = [`${base}/pack.json`];
+    const first = await refreshPack(entry, { ingest: true });
+    assert.equal(first.status, 'downloaded');
+    const before = await getRepository(MappingLink).find({
+      where: { sourceKey: entry.key },
+    });
+    assert.ok(before.length > 0);
+
+    const records = [
+      {
+        refs: [
+          { ns: 'anilist' as const, id: '2' },
+          { ns: 'tmdb_show' as const, id: '222' },
+        ],
+        episodeRules: [
+          {
+            source: { ns: 'anilist' as const, id: '2' },
+            target: { ns: 'tmdb_show' as const, id: '222' },
+            sourceRange: '1',
+            targetRange: undefined as unknown as string,
+            ratio: 1,
+          },
+        ],
+      },
+    ];
+    await assert.rejects(() =>
+      replacePackGraph({
+        entry,
+        records,
+        index: new PackIndex(records),
+      })
+    );
+
+    const after = await getRepository(MappingLink).find({
+      where: { sourceKey: entry.key },
+    });
+    assert.deepEqual(
+      after.map(({ namespace, externalId }) => ({ namespace, externalId })),
+      before.map(({ namespace, externalId }) => ({ namespace, externalId }))
     );
   });
 });

@@ -45,7 +45,7 @@ export async function resolveDiscoverItems(
   options: ResolveDiscoverOptions
 ): Promise<WatchlistItem[]> {
   if (!items.length) return [];
-  ensureMappingLayer();
+  await ensureMappingLayer();
 
   const resolved: WatchlistItem[] = [];
   for (const { from, ...item } of items) {

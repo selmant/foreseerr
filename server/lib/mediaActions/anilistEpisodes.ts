@@ -69,7 +69,7 @@ async function progressFromRules(
   seasonNumber: number,
   episodeNumber: number
 ): Promise<{ anilistId: number; progress: number } | undefined> {
-  ensureMappingLayer();
+  await ensureMappingLayer();
   const from = {
     ns: 'tmdb_show' as const,
     id: String(tmdbShowId),

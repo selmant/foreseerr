@@ -62,7 +62,7 @@ if (positionals.length > 0) {
   files.sort();
 }
 
-// @ts-ignore
+// @ts-expect-error NODE_ENV is narrowed by the ambient process type.
 process.env.NODE_ENV = 'test';
 // configure ts
 process.env.TS_NODE_PROJECT = resolveImport('../tsconfig.json');
@@ -85,6 +85,12 @@ const stream = run({
     join(BASE_DIR, 'server/migration/**'),
   ],
   testNamePatterns: opts.testNamePattern,
+});
+
+// `node:test` reports failures on the stream but does not set the parent
+// process exit code when driven programmatically through `run()`.
+stream.on('test:fail', () => {
+  process.exitCode = 1;
 });
 
 // In CI, write a JUnit report to a file for use by GitHub

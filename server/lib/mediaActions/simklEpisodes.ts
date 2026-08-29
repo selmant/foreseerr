@@ -30,7 +30,7 @@ async function simklCoordinates(
   seasonNumber: number,
   episodeNumber: number
 ): Promise<SimklCoordinates> {
-  ensureMappingLayer();
+  await ensureMappingLayer();
   const from = {
     ns: 'tmdb_show' as const,
     id: String(tmdbId),

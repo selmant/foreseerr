@@ -3,7 +3,7 @@ import { MappingCluster } from '@server/entity/MappingCluster';
 import { MappingEpisodeRule } from '@server/entity/MappingEpisodeRule';
 import { MappingLink } from '@server/entity/MappingLink';
 import { MappingSource } from '@server/entity/MappingSource';
-import { In } from 'typeorm';
+import { In, type EntityManager } from 'typeorm';
 import {
   clusterKindForNamespace,
   seasonColumn,
@@ -16,17 +16,24 @@ import {
 } from './types';
 
 const disabledSourceKeys = new Set<string>();
+let sourceEnabledStateLoaded = false;
+let sourceEnabledStateLoad: Promise<string[]> | undefined;
+let sourceEnabledStateVersion = 0;
 
 export const setMappingSourceEnabled = (
   key: string,
   enabled: boolean
 ): void => {
+  sourceEnabledStateVersion += 1;
   if (enabled) disabledSourceKeys.delete(key);
   else disabledSourceKeys.add(key);
 };
 
 export const resetMappingSourceEnabledState = (): void => {
   disabledSourceKeys.clear();
+  sourceEnabledStateLoaded = false;
+  sourceEnabledStateLoad = undefined;
+  sourceEnabledStateVersion += 1;
 };
 
 export const mappingSourceContributes = (sourceKey: string): boolean => {
@@ -37,17 +44,38 @@ export const mappingSourceContributes = (sourceKey: string): boolean => {
   return true;
 };
 
-export async function loadMappingSourceEnabledState(): Promise<string[]> {
-  disabledSourceKeys.clear();
-  try {
-    const rows = await getRepository(MappingSource).find({
-      where: { enabled: false },
-    });
-    for (const row of rows) disabledSourceKeys.add(row.key);
-    return rows.map((row) => row.key);
-  } catch {
-    return [];
+export function loadMappingSourceEnabledState(
+  options: { force?: boolean } = {}
+): Promise<string[]> {
+  if (sourceEnabledStateLoaded && !options.force) {
+    return Promise.resolve([...disabledSourceKeys]);
   }
+  if (sourceEnabledStateLoad) {
+    return options.force
+      ? sourceEnabledStateLoad.then(() =>
+          loadMappingSourceEnabledState({ force: true })
+        )
+      : sourceEnabledStateLoad;
+  }
+
+  const version = sourceEnabledStateVersion;
+  sourceEnabledStateLoad = getRepository(MappingSource)
+    .find({ where: { enabled: false } })
+    .then((rows) => {
+      if (version !== sourceEnabledStateVersion) {
+        return [...disabledSourceKeys];
+      }
+      const next = new Set(rows.map((row) => row.key));
+      disabledSourceKeys.clear();
+      for (const key of next) disabledSourceKeys.add(key);
+      sourceEnabledStateLoaded = true;
+      return [...next];
+    })
+    .catch(() => [...disabledSourceKeys])
+    .finally(() => {
+      sourceEnabledStateLoad = undefined;
+    });
+  return sourceEnabledStateLoad;
 }
 
 export interface LinkRecord {
@@ -67,8 +95,13 @@ export interface LinkRecord {
  * season-scoped query must not pick up a sibling season, which is exactly the
  * many-to-one collision that made 4,066 anime entries resolve to the wrong show.
  */
-export async function findClusterIds(from: IdRef): Promise<number[]> {
-  const query = getRepository(MappingLink)
+export async function findClusterIds(
+  from: IdRef,
+  manager?: EntityManager
+): Promise<number[]> {
+  const query = (
+    manager?.getRepository(MappingLink) ?? getRepository(MappingLink)
+  )
     .createQueryBuilder('link')
     .select('link.clusterId', 'clusterId')
     .where('link.namespace = :ns', { ns: from.ns })
@@ -239,16 +272,19 @@ const sameCanonicalTmdb = (
  */
 export async function upsertCluster(
   links: UpsertLink[],
-  options: { title?: string; year?: number } = {}
+  options: { title?: string; year?: number } = {},
+  manager?: EntityManager
 ): Promise<number | undefined> {
   if (!links.length) return undefined;
-  const clusterRepository = getRepository(MappingCluster);
-  const linkRepository = getRepository(MappingLink);
+  const clusterRepository =
+    manager?.getRepository(MappingCluster) ?? getRepository(MappingCluster);
+  const linkRepository =
+    manager?.getRepository(MappingLink) ?? getRepository(MappingLink);
   const now = new Date();
 
   const existing = new Set<number>();
   for (const link of links) {
-    for (const clusterId of await findClusterIds(link.ref)) {
+    for (const clusterId of await findClusterIds(link.ref, manager)) {
       existing.add(clusterId);
     }
   }
@@ -348,19 +384,29 @@ export const resetPackGraphRewriteState = (): void => {
  * corrected target. Live/override rows are identified by other sourceKeys and
  * are left alone.
  */
-export async function retractPackFromGraph(sourceKey: string): Promise<void> {
+export async function retractPackFromGraph(
+  sourceKey: string,
+  manager?: EntityManager
+): Promise<void> {
   const match = { sourceKey, prefix: `${sourceKey}:%` };
-  await getRepository(MappingEpisodeRule)
+  const episodeRuleRepository =
+    manager?.getRepository(MappingEpisodeRule) ??
+    getRepository(MappingEpisodeRule);
+  const linkRepository =
+    manager?.getRepository(MappingLink) ?? getRepository(MappingLink);
+  const clusterRepository =
+    manager?.getRepository(MappingCluster) ?? getRepository(MappingCluster);
+  await episodeRuleRepository
     .createQueryBuilder()
     .delete()
     .where('sourceKey = :sourceKey OR sourceKey LIKE :prefix', match)
     .execute();
-  await getRepository(MappingLink)
+  await linkRepository
     .createQueryBuilder()
     .delete()
     .where('sourceKey = :sourceKey OR sourceKey LIKE :prefix', match)
     .execute();
-  await getRepository(MappingCluster)
+  await clusterRepository
     .createQueryBuilder()
     .delete()
     .where(`id NOT IN (SELECT DISTINCT "clusterId" FROM "mapping_link")`)

@@ -481,7 +481,7 @@ mappingRoutes.post('/sources/:key', async (req, res, next) => {
         const { registerLiveResolvers } =
           await import('@server/lib/mapping/live');
         registerLiveResolvers({ force: true });
-        const disabled = await loadMappingSourceEnabledState();
+        const disabled = await loadMappingSourceEnabledState({ force: true });
         for (const key of disabled) mappingService.unregister(key);
       }
     }

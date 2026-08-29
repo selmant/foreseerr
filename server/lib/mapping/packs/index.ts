@@ -1,9 +1,10 @@
-import { getRepository } from '@server/datasource';
+import dataSource, { getRepository } from '@server/datasource';
 import { MappingSource } from '@server/entity/MappingSource';
 import { upsertEpisodeRule } from '@server/lib/mapping/episodes';
 import {
   beginPackGraphRewrite,
   endPackGraphRewrite,
+  mappingSourceContributes,
   retractPackFromGraph,
   upsertCluster,
 } from '@server/lib/mapping/graph';
@@ -16,6 +17,7 @@ import {
   type Namespace,
 } from '@server/lib/mapping/types';
 import logger from '@server/logger';
+import type { EntityManager } from 'typeorm';
 import { PackFetchError, fetchPack, type PackCacheState } from './download';
 import {
   parsePack,
@@ -273,10 +275,39 @@ async function refreshPackUnlocked(
       throw new Error('pack parsed to zero mapping records');
     }
     const pack: LoadedPack = { entry, index: new PackIndex(records), records };
+
+    const shouldReplacePackGraph =
+      fetched.status === 'downloaded' ||
+      (Boolean(options.replacePackGraph) && fetched.status !== 'lastGood');
+    let clusters = 0;
+    if (
+      options.ingest &&
+      (shouldReplacePackGraph || fetched.status !== 'notModified')
+    ) {
+      if (shouldReplacePackGraph) {
+        beginPackGraphRewrite();
+        try {
+          if (!mappingSourceContributes(entry.key)) {
+            return { key: entry.key, status: 'skipped' };
+          }
+          clusters = await replacePackGraph(pack);
+        } finally {
+          endPackGraphRewrite();
+        }
+      } else {
+        clusters = await ingestPack(pack);
+      }
+    }
+    // This check and registration are synchronous, so a disable operation
+    // either wins before publication or unregisters the resolver afterwards.
+    if (!mappingSourceContributes(entry.key)) {
+      loaded.delete(entry.key);
+      mappingService.unregister(entry.key);
+      return { key: entry.key, status: 'skipped' };
+    }
     loaded.set(entry.key, pack);
     mappingService.register(packResolver(pack));
     mappingService.invalidate();
-
     await recordSourceState(entry, {
       etag: fetched.etag ?? null,
       lastModified: fetched.lastModified ?? null,
@@ -287,27 +318,6 @@ async function refreshPackUnlocked(
       entryCount: records.length,
       consecutiveFailures: 0,
     });
-
-    const replacePackGraph =
-      fetched.status === 'downloaded' ||
-      (Boolean(options.replacePackGraph) && fetched.status !== 'lastGood');
-    let clusters = 0;
-    if (
-      options.ingest &&
-      (replacePackGraph || fetched.status !== 'notModified')
-    ) {
-      if (replacePackGraph) {
-        beginPackGraphRewrite();
-        try {
-          await retractPackFromGraph(entry.key);
-          clusters = await ingestPack(pack);
-        } finally {
-          endPackGraphRewrite();
-        }
-      } else {
-        clusters = await ingestPack(pack);
-      }
-    }
     logger.info(`Refreshed mapping pack ${entry.key}`, {
       label: 'Mapping',
       status: fetched.status,
@@ -344,7 +354,10 @@ async function refreshPackUnlocked(
 }
 
 /** Write a parsed pack into the persistent graph, in bounded batches. */
-export async function ingestPack(pack: LoadedPack): Promise<number> {
+export async function ingestPack(
+  pack: LoadedPack,
+  manager?: EntityManager
+): Promise<number> {
   let clusters = 0;
   const recordsTotal = pack.records.length;
   let recordsDone = 0;
@@ -369,26 +382,34 @@ export async function ingestPack(pack: LoadedPack): Promise<number> {
         sourceKey: pack.entry.key,
       }));
       try {
-        const clusterId = await upsertCluster(links, {
-          title: part.title,
-          year: part.year,
-        });
+        const clusterId = await upsertCluster(
+          links,
+          {
+            title: part.title,
+            year: part.year,
+          },
+          manager
+        );
         if (clusterId !== undefined) clusters += 1;
         if (clusterId !== undefined && part.episodeRules?.length) {
           for (const rule of part.episodeRules) {
-            await upsertEpisodeRule({
-              clusterId,
-              source: rule.source,
-              target: rule.target,
-              sourceRange: rule.sourceRange,
-              targetRange: rule.targetRange,
-              ratio: rule.ratio,
-              confidence: trustFor(pack.entry, rule.target.ns),
-              sourceKey: pack.entry.key,
-            });
+            await upsertEpisodeRule(
+              {
+                clusterId,
+                source: rule.source,
+                target: rule.target,
+                sourceRange: rule.sourceRange,
+                targetRange: rule.targetRange,
+                ratio: rule.ratio,
+                confidence: trustFor(pack.entry, rule.target.ns),
+                sourceKey: pack.entry.key,
+              },
+              manager
+            );
           }
         }
       } catch (error) {
+        if (manager) throw error;
         logger.debug('Unable to ingest mapping pack record', {
           label: 'Mapping',
           pack: pack.entry.key,
@@ -400,6 +421,13 @@ export async function ingestPack(pack: LoadedPack): Promise<number> {
   mappingService.invalidate();
   return clusters;
 }
+
+/** Replace one pack's graph contribution as an all-or-nothing operation. */
+export const replacePackGraph = (pack: LoadedPack): Promise<number> =>
+  dataSource.transaction(async (manager) => {
+    await retractPackFromGraph(pack.entry.key, manager);
+    return ingestPack(pack, manager);
+  });
 
 export async function refreshAllPacks(
   options: { ingest?: boolean; manifestUrl?: string } = {}

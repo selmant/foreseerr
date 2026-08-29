@@ -82,11 +82,10 @@ export async function ensureMappingPacks(
  * background: making a user's first slider of the day wait for a 100 MB
  * download and a full ingest would trade a mapping bug for a worse one.
  */
-export function ensureMappingLayer(): void {
+export async function ensureMappingLayer(): Promise<void> {
   registerLiveResolvers();
-  void loadMappingSourceEnabledState().then((disabled) => {
-    for (const key of disabled) mappingService.unregister(key);
-  });
+  const disabled = await loadMappingSourceEnabledState();
+  for (const key of disabled) mappingService.unregister(key);
   // Unit tests exercise the resolvers against a seeded graph; downloading packs
   // behind their backs would make them slow and network-dependent.
   if (process.env.NODE_ENV === 'test') return;

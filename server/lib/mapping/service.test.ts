@@ -4,6 +4,7 @@ import { MappingEpisodeRule } from '@server/entity/MappingEpisodeRule';
 import { MappingGap } from '@server/entity/MappingGap';
 import { MappingLink } from '@server/entity/MappingLink';
 import { MappingOverride } from '@server/entity/MappingOverride';
+import { MappingSource } from '@server/entity/MappingSource';
 import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
@@ -11,6 +12,8 @@ import { flushMappingGaps } from './gaps';
 import {
   beginPackGraphRewrite,
   endPackGraphRewrite,
+  loadMappingSourceEnabledState,
+  mappingSourceContributes,
   resetMappingSourceEnabledState,
   resolveFromGraph,
   retractPackFromGraph,
@@ -32,6 +35,7 @@ beforeEach(async () => {
     MappingCluster,
     MappingOverride,
     MappingGap,
+    MappingSource,
   ]) {
     await getRepository(entity).clear();
   }
@@ -532,6 +536,30 @@ describe('mapping service resolver chain', () => {
       'tmdb_show'
     );
     assert.equal(candidates.length, 0);
+  });
+
+  it('does not let an in-flight reload overwrite a newer disable', async () => {
+    const repository = getRepository(MappingSource);
+    const originalFind = repository.find.bind(repository);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    repository.find = async (...args) => {
+      await gate;
+      return originalFind(...args);
+    };
+
+    try {
+      const loading = loadMappingSourceEnabledState({ force: true });
+      setMappingSourceEnabled('anibridge', false);
+      assert.equal(mappingSourceContributes('anibridge'), false);
+      release();
+      await loading;
+      assert.equal(mappingSourceContributes('anibridge'), false);
+    } finally {
+      repository.find = originalFind;
+    }
   });
 
   it('collapses season-scoped links of one show into a single answer', async () => {

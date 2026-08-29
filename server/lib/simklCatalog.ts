@@ -658,7 +658,7 @@ async function resolveViaMappingLayer(
   const refs = mappingRefs(candidate);
   if (!refs.length) return undefined;
 
-  ensureMappingLayer();
+  await ensureMappingLayer();
   const declaredType = candidate.item.mediaType;
   const target = tmdbNamespace(declaredType);
   for (const ref of refs) {

@@ -37,7 +37,7 @@ export async function hydrateTraktTmdbIds(
 ): Promise<TraktMediaItem[]> {
   const missing = items.filter((item) => !item.tmdbId);
   if (!missing.length) return items;
-  ensureMappingLayer();
+  await ensureMappingLayer();
 
   const resolved = new Map<TraktMediaItem, number>();
   for (const item of missing) {

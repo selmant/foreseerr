@@ -1,7 +1,7 @@
 import { getRepository } from '@server/datasource';
 import { MappingEpisodeRule } from '@server/entity/MappingEpisodeRule';
 import logger from '@server/logger';
-import { In } from 'typeorm';
+import { In, type EntityManager } from 'typeorm';
 import { findClusterIds } from './graph';
 import mappingService from './service';
 import {
@@ -336,9 +336,12 @@ export interface UpsertEpisodeRule {
 
 /** Store an episode rule, keeping the highest-confidence version of a row. */
 export async function upsertEpisodeRule(
-  rule: UpsertEpisodeRule
+  rule: UpsertEpisodeRule,
+  manager?: EntityManager
 ): Promise<void> {
-  const repository = getRepository(MappingEpisodeRule);
+  const repository =
+    manager?.getRepository(MappingEpisodeRule) ??
+    getRepository(MappingEpisodeRule);
   // An empty string, not NULL, marks "applies to any id in this cluster": the
   // identity lookup below has to be able to match it.
   const identity = {
