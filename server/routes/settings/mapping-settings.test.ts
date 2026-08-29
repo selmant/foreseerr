@@ -118,6 +118,7 @@ describe('mapping settings API', () => {
     assert.ok(Array.isArray(res.body.budgets));
     assert.ok(Array.isArray(res.body.usage));
     assert.ok(Array.isArray(res.body.resolvers));
+    assert.ok(Array.isArray(res.body.refreshes));
   });
 
   it('lists gaps most-seen first', async () => {

@@ -23,6 +23,12 @@ import {
   fetchManifest,
   type PackManifestEntry,
 } from './manifest';
+import {
+  beginPackProgress,
+  endPackProgress,
+  reportDownloadBytes,
+  updatePackProgress,
+} from './progress';
 
 /**
  * A pack's parsed contents, indexed for lookup.
@@ -184,17 +190,24 @@ export async function refreshPack(
   }
 
   const mirrors = [...entry.mirrors, ...extraMirrors(entry.key)];
+  beginPackProgress(entry.key);
   try {
     const fetched = await fetchPack({
       key: entry.key,
       format: entry.format,
       mirrors,
       cache: await cacheStateFor(entry.key),
-      validate: (body) => validatePackBody(entry.format, body),
+      validate: (body) => {
+        updatePackProgress(entry.key, { phase: 'validating' });
+        validatePackBody(entry.format, body);
+      },
+      onProgress: ({ received, total, mirror }) =>
+        reportDownloadBytes(entry.key, received, total, mirror),
     });
     const body = fetched.body;
     if (!body) throw new Error('pack fetch returned no body');
 
+    updatePackProgress(entry.key, { phase: 'parsing' });
     const { records } = await parsePack(entry.format, body, {
       fieldMap: entry.fieldMap,
       typeFields: entry.typeFields,
@@ -247,13 +260,30 @@ export async function refreshPack(
       errorMessage: message,
     });
     return { key: entry.key, status: 'failed', error: message };
+  } finally {
+    endPackProgress(entry.key);
   }
 }
 
 /** Write a parsed pack into the persistent graph, in bounded batches. */
 export async function ingestPack(pack: LoadedPack): Promise<number> {
   let clusters = 0;
+  const recordsTotal = pack.records.length;
+  let recordsDone = 0;
+  updatePackProgress(pack.entry.key, {
+    phase: 'ingesting',
+    recordsDone: 0,
+    recordsTotal,
+  });
   for (const record of pack.records) {
+    recordsDone += 1;
+    if (recordsDone === recordsTotal || recordsDone % 250 === 0) {
+      updatePackProgress(pack.entry.key, {
+        phase: 'ingesting',
+        recordsDone,
+        recordsTotal,
+      });
+    }
     for (const part of partitionPackRecord(record)) {
       const links = part.refs.map((ref) => ({
         ref,

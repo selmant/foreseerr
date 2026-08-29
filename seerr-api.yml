@@ -350,6 +350,33 @@ components:
               checkedAt:
                 type: string
                 format: date-time
+        refreshes:
+          type: array
+          description: In-flight mapping pack downloads and ingests.
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              phase:
+                type: string
+                enum: [downloading, validating, parsing, ingesting]
+              mirror:
+                type: string
+              bytesReceived:
+                type: number
+              bytesTotal:
+                type: number
+              recordsDone:
+                type: number
+              recordsTotal:
+                type: number
+              startedAt:
+                type: string
+                format: date-time
+              updatedAt:
+                type: string
+                format: date-time
     User:
       type: object
       properties:

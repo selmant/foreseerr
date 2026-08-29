@@ -4,6 +4,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import Table from '@app/components/Common/Table';
 import MappingRepairModal from '@app/components/Settings/SettingsMapping/MappingRepairModal';
 import useToasts from '@app/hooks/useToasts';
+import { formatBytes } from '@app/utils/numberHelpers';
 import axios from 'axios';
 import { useState } from 'react';
 import useSWR from 'swr';
@@ -82,6 +83,19 @@ interface HealthResponse {
   sources: SourceRow[];
   resolvers: { key: string; kind: string; trust: number }[];
   providers?: ProviderHealthRow[];
+  refreshes?: PackRefreshProgress[];
+}
+
+interface PackRefreshProgress {
+  key: string;
+  phase: 'downloading' | 'validating' | 'parsing' | 'ingesting';
+  mirror?: string;
+  bytesReceived?: number;
+  bytesTotal?: number;
+  recordsDone?: number;
+  recordsTotal?: number;
+  startedAt: string;
+  updatedAt: string;
 }
 
 interface ProviderHealthRow {
@@ -106,16 +120,80 @@ const Stat = ({ label, value }: { label: string; value: string | number }) => (
   </div>
 );
 
+const phaseLabel = (phase: PackRefreshProgress['phase']): string => {
+  if (phase === 'downloading') return 'Downloading';
+  if (phase === 'validating') return 'Validating';
+  if (phase === 'parsing') return 'Parsing';
+  return 'Ingesting';
+};
+
+const PackProgress = ({ progress }: { progress: PackRefreshProgress }) => {
+  const percent =
+    progress.phase === 'ingesting' &&
+    progress.recordsTotal &&
+    progress.recordsTotal > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (100 * (progress.recordsDone ?? 0)) / progress.recordsTotal
+          )
+        )
+      : progress.bytesTotal && progress.bytesTotal > 0
+        ? Math.min(
+            100,
+            Math.round(
+              (100 * (progress.bytesReceived ?? 0)) / progress.bytesTotal
+            )
+          )
+        : undefined;
+  const detail =
+    progress.phase === 'ingesting' && progress.recordsTotal
+      ? `${(progress.recordsDone ?? 0).toLocaleString()} / ${progress.recordsTotal.toLocaleString()} records`
+      : progress.bytesReceived != null
+        ? `${formatBytes(progress.bytesReceived, 1)}${
+            progress.bytesTotal
+              ? ` / ${formatBytes(progress.bytesTotal, 1)}`
+              : ''
+          }`
+        : null;
+
+  return (
+    <div className="mt-2 w-56">
+      <div className="flex justify-between text-xs text-gray-400">
+        <span>{phaseLabel(progress.phase)}</span>
+        <span>
+          {percent != null ? `${percent}%` : (detail ?? 'in progress')}
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded bg-gray-700">
+        <div
+          className={`h-full bg-indigo-500 ${
+            percent == null ? 'w-full animate-pulse' : 'transition-all'
+          }`}
+          style={percent != null ? { width: `${percent}%` } : undefined}
+        />
+      </div>
+      {percent != null && detail && (
+        <div className="mt-1 text-xs text-gray-500">{detail}</div>
+      )}
+    </div>
+  );
+};
+
 const SettingsMapping = () => {
   const { addToast } = useToasts();
   const [repairing, setRepairing] = useState<MappingGapRow | null>(null);
+  const [refreshingKeys, setRefreshingKeys] = useState<string[]>([]);
 
   const {
     data: health,
     error,
     mutate: revalidateHealth,
   } = useSWR<HealthResponse>('/api/v1/settings/mapping/health', {
-    refreshInterval: 30000,
+    refreshInterval: (data) =>
+      (data?.refreshes?.length ?? 0) > 0 || refreshingKeys.length > 0
+        ? 1000
+        : 30000,
   });
   const { data: gaps, mutate: revalidateGaps } = useSWR<{
     results: MappingGapRow[];
@@ -124,7 +202,13 @@ const SettingsMapping = () => {
 
   if (!health && !error) return <LoadingSpinner />;
 
+  const refreshByKey = new Map(
+    (health?.refreshes ?? []).map((row) => [row.key, row])
+  );
+
   const refreshPack = async (key: string) => {
+    setRefreshingKeys((keys) => (keys.includes(key) ? keys : [...keys, key]));
+    void revalidateHealth();
     try {
       const { data } = await axios.post(
         `/api/v1/settings/mapping/sources/${key}/refresh`
@@ -142,6 +226,8 @@ const SettingsMapping = () => {
         appearance: 'error',
         autoDismiss: true,
       });
+    } finally {
+      setRefreshingKeys((keys) => keys.filter((item) => item !== key));
     }
   };
 
@@ -345,6 +431,19 @@ const SettingsMapping = () => {
                         {source.lastError}
                       </div>
                     )}
+                    {(refreshByKey.get(source.key) ||
+                      refreshingKeys.includes(source.key)) && (
+                      <PackProgress
+                        progress={
+                          refreshByKey.get(source.key) ?? {
+                            key: source.key,
+                            phase: 'downloading',
+                            startedAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                          }
+                        }
+                      />
+                    )}
                   </Table.TD>
                   <Table.TD>{source.entryCount ?? '—'}</Table.TD>
                   <Table.TD>
@@ -374,9 +473,16 @@ const SettingsMapping = () => {
                         <Button
                           buttonType="primary"
                           buttonSize="sm"
+                          disabled={
+                            refreshingKeys.includes(source.key) ||
+                            refreshByKey.has(source.key)
+                          }
                           onClick={() => refreshPack(source.key)}
                         >
-                          Refresh
+                          {refreshByKey.has(source.key) ||
+                          refreshingKeys.includes(source.key)
+                            ? 'Refreshing…'
+                            : 'Refresh'}
                         </Button>
                       )}
                       {state && state !== 'closed' && (

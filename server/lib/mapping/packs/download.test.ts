@@ -52,6 +52,7 @@ before(async () => {
     res
       .writeHead(route.status, {
         'content-type': 'application/json',
+        'content-length': Buffer.byteLength(route.body ?? ''),
         ...(route.etag ? { etag: route.etag } : {}),
       })
       .end(route.body ?? '');
@@ -93,6 +94,22 @@ describe('mapping pack download', () => {
       await fsp.readFile(packPath('test', 'json-graph'), 'utf8'),
       GOOD
     );
+  });
+
+  it('reports download progress including content-length', async () => {
+    routes.set('/good.json', { status: 200, body: GOOD });
+    const events: { received: number; total?: number }[] = [];
+    await fetchPack({
+      key: 'test',
+      format: 'json-graph',
+      mirrors: [`${base}/good.json`],
+      validate,
+      onProgress: (event) => events.push(event),
+    });
+    assert.ok(events.length >= 1);
+    const last = events[events.length - 1];
+    assert.equal(last.received, Buffer.byteLength(GOOD));
+    assert.equal(last.total, Buffer.byteLength(GOOD));
   });
 
   it('falls through to the next mirror when the first is unreachable', async () => {

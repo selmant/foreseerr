@@ -17,6 +17,7 @@ import {
 import { suggestForOpenGaps } from '@server/lib/mapping/heuristic';
 import { refreshPack } from '@server/lib/mapping/packs';
 import { fetchManifest } from '@server/lib/mapping/packs/manifest';
+import { snapshotPackProgress } from '@server/lib/mapping/packs/progress';
 import { providerHealth } from '@server/lib/mapping/providerHealth';
 import mappingService from '@server/lib/mapping/service';
 import { isNamespace, seasonColumn } from '@server/lib/mapping/types';
@@ -65,6 +66,7 @@ mappingRoutes.get('/health', async (req, res, next) => {
       providers: await providerHealth({
         force: req.query.probe === 'true',
       }),
+      refreshes: snapshotPackProgress(),
     });
   } catch (error) {
     return next({

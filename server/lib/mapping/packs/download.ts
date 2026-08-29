@@ -1,8 +1,11 @@
 import logger from '@server/logger';
 import axios from 'axios';
 import { createHash } from 'crypto';
-import { promises as fsp } from 'fs';
+import { createWriteStream, promises as fsp } from 'fs';
 import path from 'path';
+import type { Readable } from 'stream';
+import { Transform } from 'stream';
+import { pipeline } from 'stream/promises';
 
 export const PACK_DIRECTORY = process.env.CONFIG_DIRECTORY
   ? path.join(process.env.CONFIG_DIRECTORY, 'mapping-packs')
@@ -75,6 +78,11 @@ export interface FetchPackOptions {
    */
   validate: (body: string) => void;
   timeoutMsec?: number;
+  onProgress?: (event: {
+    received: number;
+    total?: number;
+    mirror: string;
+  }) => void;
 }
 
 /**
@@ -84,6 +92,32 @@ export interface FetchPackOptions {
  * assets expose `etag`/`last-modified`, and the old loader re-downloaded 7.5 MB
  * every 24 h regardless.
  */
+const contentLength = (
+  headers: Record<string, unknown>
+): number | undefined => {
+  const encoding = headers['content-encoding'];
+  if (typeof encoding === 'string' && encoding && encoding !== 'identity') {
+    // Length is the compressed size; byte counts after Axios decompresses.
+    return undefined;
+  }
+  const raw = headers['content-length'];
+  const value =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string'
+        ? Number(raw)
+        : undefined;
+  return value && Number.isFinite(value) && value > 0 ? value : undefined;
+};
+
+const unlinkQuiet = async (file: string): Promise<void> => {
+  try {
+    await fsp.unlink(file);
+  } catch {
+    // Missing is the success case after a failed mirror.
+  }
+};
+
 export async function fetchPack({
   key,
   format,
@@ -91,6 +125,7 @@ export async function fetchPack({
   cache,
   validate,
   timeoutMsec = 60_000,
+  onProgress,
 }: FetchPackOptions): Promise<PackFetchResult> {
   await fsp.mkdir(PACK_DIRECTORY, { recursive: true });
   const target = packPath(key, format);
@@ -98,11 +133,11 @@ export async function fetchPack({
   const attempts: { mirror: string; error: string }[] = [];
 
   for (const mirror of mirrors) {
+    const temporary = `${target}.${process.pid}.tmp`;
     try {
-      const response = await axios.get<string>(mirror, {
+      const response = await axios.get<Readable>(mirror, {
         timeout: timeoutMsec,
-        responseType: 'text',
-        transformResponse: [(data) => data],
+        responseType: 'stream',
         // statically.io answers 301, and release assets redirect to blob storage.
         maxRedirects: 5,
         headers: {
@@ -116,6 +151,7 @@ export async function fetchPack({
       });
       const { status } = response;
       if (status === 304) {
+        response.data.destroy();
         const existing = await readIfPresent(target);
         if (existing) {
           return {
@@ -129,16 +165,28 @@ export async function fetchPack({
         }
         throw new Error('mirror answered 304 but no local copy exists');
       }
-      const body = response.data;
-      if (typeof body !== 'string' || !body.length) {
+
+      const total = contentLength(
+        response.headers as unknown as Record<string, unknown>
+      );
+      let received = 0;
+      const counter = new Transform({
+        transform(chunk, _encoding, callback) {
+          received += chunk.length;
+          onProgress?.({ received, total, mirror });
+          callback(null, chunk);
+        },
+      });
+      await pipeline(response.data, counter, createWriteStream(temporary));
+
+      const body = await fsp.readFile(temporary, 'utf8');
+      if (!body.length) {
         throw new Error('empty response body');
       }
       validate(body);
 
-      // Write, validate, then rename: the live path is only ever replaced by a
-      // file already known to parse.
-      const temporary = `${target}.${process.pid}.tmp`;
-      await fsp.writeFile(temporary, body, 'utf8');
+      // Validate, then rename: the live path is only ever replaced by a file
+      // already known to parse.
       const previous = await readIfPresent(target);
       if (previous) {
         await fsp.writeFile(lastGood, previous, 'utf8');
@@ -162,6 +210,7 @@ export async function fetchPack({
         sha256: createHash('sha256').update(body).digest('hex'),
       };
     } catch (error) {
+      await unlinkQuiet(temporary);
       const message = error instanceof Error ? error.message : String(error);
       attempts.push({ mirror, error: message });
       logger.debug('Mapping pack mirror failed', {

@@ -2,6 +2,7 @@ import logger from '@server/logger';
 import { registerLiveResolvers } from './live';
 import { refreshAllPacks, type PackRefreshResult } from './packs';
 import { fetchManifest } from './packs/manifest';
+import { clearPackProgress } from './packs/progress';
 import { scrubSimklAnimeMovieCollisions } from './scrub';
 
 const REFRESH_INTERVAL_MSEC = 24 * 3600 * 1000;
@@ -90,4 +91,5 @@ export const resetMappingPackRefreshState = (): void => {
   lastRefreshAt = 0;
   inFlight = undefined;
   scrubbedCollisions = false;
+  clearPackProgress();
 };
