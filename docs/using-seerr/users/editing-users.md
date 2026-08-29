@@ -63,12 +63,18 @@ Users cannot modify their own permissions. Users with the **Manage Users** permi
 
 ## Linked Accounts
 
-Trakt and AniList are linked from the user's own profile (**Settings → Linked
-Accounts**), not from this admin edit form. An admin must configure the apps
-first under [Integrations](/using-seerr/settings/integrations). MDBList uses a
-single instance API key and is not linked per user.
+Trakt, AniList, and Simkl are linked from the user's own profile (**Settings →
+Linked Accounts**), not from this admin edit form. An admin must configure the
+apps first under [Integrations](/using-seerr/settings/integrations). MDBList
+uses a single instance API key and is not linked per user.
 
 **Watch trackers** (below the identity cards) control whether watched status and
-ratings fan out to Trakt or AniList. Both default to **on** after the account is
-linked. Turning a tracker off does not unlink it. AniList is marked Experimental
-because season/episode mapping is not always 1:1 with TMDB.
+ratings fan out to Trakt, AniList, or Simkl. They default to **on** after the
+account is linked. Turning a tracker off does not unlink it. AniList is marked
+Experimental because season/episode mapping is not always 1:1 with TMDB.
+
+## Skipped episode endings
+
+On the user's **General** settings, **Auto-complete skipped episode endings**
+marks leftover paused episodes watched in Jellyfin and Trakt when a later
+episode has already been started. See [Library](/using-seerr/library#skipped-episode-endings).

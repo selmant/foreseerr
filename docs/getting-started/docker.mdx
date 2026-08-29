@@ -17,9 +17,9 @@ An alternative Docker image is available on Docker Hub for this project. You can
 Our Docker images are available with the following tags:
 
 - `latest`: Always points to the most recent stable release.
-- Version tags (e.g., `v0.1.0`): For specific stable versions.
+- Version tags (e.g., `v0.7.0`): For specific stable versions.
 - Major version aliases (e.g., `v0`): Alias for the latest stable release in the respective major version series.
-- Minor version aliases (e.g., `v0.1`): Alias for the latest stable release in the respective minor version series.
+- Minor version aliases (e.g., `v0.7`): Alias for the latest stable release in the respective minor version series.
 - `develop`: Rolling release/nightly builds for using the latest changes (use with caution).
 :::
 
@@ -91,7 +91,7 @@ docker run -d ...
 ```
 
 :::tip
-You may alternatively use a third-party updating mechanism, such as [Watchtower](https://github.com/containrrr/watchtower) or [Ouroboros](https://github.com/pyouroboros/ouroboros), to keep Foreseerr up-to-date automatically.
+You may alternatively use a third-party updating mechanism, such as [Watchtower](https://github.com/containrrr/watchtower), to keep Foreseerr up-to-date automatically.
 
 You could also use [diun](https://github.com/crazy-max/diun) to receive notifications when a new image is available.
 :::
@@ -141,7 +141,7 @@ docker compose up -d
 #### Updating:
 Pull the latest image:
 ```bash
-docker compose pull seerr
+docker compose pull foreseerr
 ```
 Then, restart all services defined in the Compose file:
 ```bash
@@ -159,14 +159,14 @@ Please refer to the [Docker Desktop for Windows user manual](https://docs.docker
 
 First, create a volume to store the configuration data for Foreseerr using using either the Docker CLI:
 ```bash
-docker volume create seerr-data
+docker volume create foreseerr-data
 ```
 
 or the Docker Desktop app:
 1. Open the Docker Desktop app
 2. Head to the Volumes tab
 3. Click on the "Create a volume" in the center of the page. Or if you have other volumes already, click on the "Create" button on the top right of the page.
-4. Enter a name for the volume (example: `seerr-data`) and hit "Create"
+4. Enter a name for the volume (example: `foreseerr-data`) and hit "Create"
 
 Then, create and start the Foreseerr container:
 <Tabs groupId="docker-methods" queryString>
@@ -195,7 +195,7 @@ The argument `-e PORT=5055` is optional.
 
 Stop and remove the existing container:
 ```powershell
-docker stop seerr; docker rm seerr
+docker stop foreseerr; docker rm foreseerr
 ```
 Pull the latest image:
 ```powershell
@@ -233,7 +233,7 @@ The argument `-e PORT=5055` is optional.
 
 Stop and remove the existing container:
 ```batch
-docker stop seerr && docker rm seerr
+docker stop foreseerr && docker rm foreseerr
 ```
 Pull the latest image:
 ```batch
@@ -250,7 +250,7 @@ docker run -d ...
 ```yaml
 ---
 services:
-  seerr:
+  foreseerr:
     image: ghcr.io/selmant/foreseerr:latest
     init: true
     container_name: foreseerr
@@ -277,7 +277,7 @@ volumes:
 #### Updating:
 Pull the latest image:
 ```bash
-docker compose pull seerr
+docker compose pull foreseerr
 ```
 Then, restart all services defined in the Compose file:
 ```bash
@@ -286,7 +286,7 @@ docker compose up -d
   </TabItem>
 </Tabs>
 
-To access the files inside the volume created above, navigate to `\\wsl$\docker-desktop-data\version-pack-data\community\docker\volumes\seerr-data\_data` using File Explorer.
+To access the files inside the volume created above, navigate to `\\wsl$\docker-desktop-data\version-pack-data\community\docker\volumes\foreseerr-data\_data` using File Explorer.
 
 :::info
 Docker on Windows works differently than it does on Linux; it runs Docker inside of a stripped-down Linux VM. Volume mounts are exposed to Docker inside this VM via SMB mounts. While this is fine for media, it is unacceptable for the `/app/config` directory because SMB does not support file locking. This will eventually corrupt your database, which can lead to slow behavior and crashes.

@@ -22,8 +22,8 @@ runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
 - **Full Jellyfin/Emby/Plex integration**. Login and manage user access with Jellyfin/Emby/Plex.
 - **Syncs to your Jellyfin/Emby/Plex library** to show what titles you already have.
 - Supports Movies, Shows and Mixed Libraries.
-- **Integrates with Sonarr and Radarr**. With more services to come in the future.
-- Optionally set **Override rules** for requests to match with your defined conditions.
+- **Integrates with Sonarr and Radarr**, including override rules, a unified **release calendar**, and an **interventions** inbox for queue warnings.
+- **Library / Watch Now** for Jellyfin-linked accounts: Continue Watching, Recently Added, Ready to Watch, and library browse.
 - **Easy to use request system** allowing users to request individual seasons or movies in a friendly, clean UI.
 - **Simple request management UI**. Don't dig through the app to approve recent requests.
 - **Mobile-friendly design**, for when you need to approve requests on the go.
@@ -33,6 +33,8 @@ runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
 - Support for various notification agents.
 - Easily **Watchlist** or **Blocklist** media.
 - **Discover** from TMDB plus optional Trakt, AniList, Simkl, and MDBList sources.
+- **Mapping** from those sources onto TMDB, with packs, live resolvers, and a repair queue.
+- Optional **Foreseer Desktop** companion for same-window Jellyfin playback.
 - More features to come!
 
 ## We need your help!

@@ -2,7 +2,7 @@
 <img src="./public/logo_full.svg" alt="Foreseerr" style="margin: 20px 0;">
 </p>
 
-**Foreseerr** is a personal fork of [Seerr](https://github.com/seerr-team/seerr) that folds SuggestArr-style discovery and media workflows into the app itself — Trakt, AniList, and MDBList browse, richer ratings, and more — without running a separate suggestion sidecar.
+**Foreseerr** is a personal fork of [Seerr](https://github.com/seerr-team/seerr) that folds SuggestArr-style discovery and media workflows into the app itself — Trakt, AniList, Simkl, and MDBList browse, a mapping layer to TMDB, Library / Watch Now, a release calendar, and Servarr interventions — without running a separate suggestion sidecar.
 
 It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex / Emby), and Radarr/Sonarr support. Config paths stay Seerr-compatible (`CONFIG_DIRECTORY`, Docker `/app/config`).
 
@@ -42,15 +42,20 @@ behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
 
 Shipped on top of Seerr (requests stay manual; no scheduled auto-request bot):
 
-- **Trakt Discover** — recommendations, watchlist, history, and pin public or personal lists
+- **Trakt Discover** — recommendations, watchlist, history, and pin public or personal lists (Direct Trakt app or Better Trakt via Jellyfin)
 - **AniList Discover** — trending, this season, popular, top 100, next season; linked watching / planning / completed and custom lists
+- **Simkl** — PIN-linked library sync, watched/rating actions, and Trending, Best, Premieres, and personal status rows
 - **MDBList** — IMDb / RT / Metacritic / Trakt community badges and filters, plus pin public lists as custom Discover rows
-- **Simkl** — PIN-linked library synchronization, watched/rating actions, and Trending, Best, and Premieres discovery
 - **Mapping layer** — packs + live resolvers so Discover sources reach TMDB; repair unmapped titles in Settings → Mapping
+- **Library** — Continue Watching, Recently Added, Ready to Watch, and Jellyfin browse (Jellyfin-linked accounts)
+- **Release calendar** — Radarr/Sonarr dates in month or agenda view, with request and manage actions
+- **Interventions** — review mapped Radarr/Sonarr queue warnings, import, or reject and blocklist
 - Watched / unwatched / score actions (Trakt, optional AniList, Simkl, Jellyfin where linked)
-- Further SuggestArr-style Discover and settings work — not LLM recommendations
+- Optional [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) companion for same-window Jellyfin playback
 
-See [Discover](docs/using-seerr/discover.md) and [Integrations](docs/using-seerr/settings/integrations.md).
+Requests stay manual; there is no scheduled auto-request bot and no LLM recommendations.
+
+See [Discover](docs/using-seerr/discover.md), [Library](docs/using-seerr/library.md), [Calendar](docs/using-seerr/calendar.md), [Integrations](docs/using-seerr/settings/integrations.md), and [Mapping](docs/using-seerr/settings/mapping.md).
 
 ## Installation
 

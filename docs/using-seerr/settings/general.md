@@ -26,7 +26,7 @@ You must configure this setting in order to enable password reset and generation
 
 ## Enable Image Caching
 
-When enabled, Jellseerr will proxy and cache images from pre-configured sources (such as TMDB). This can use a significant amount of disk space.
+When enabled, Foreseerr will proxy and cache images from pre-configured sources (such as TMDB). This can use a significant amount of disk space.
 
 Images are saved in the `config/cache/images` and stale images are cleared out every 24 hours.
 
@@ -40,9 +40,9 @@ Set the default display language for Foreseerr. Users can override this setting 
 
 These settings filter content shown on the "Discover" home page based on regional availability and original language, respectively. The Streaming Region filters the available streaming providers on the media page. Users can override these global settings by configuring these same options in their user settings.
 
-Trakt, AniList, and MDBList rows are configured under
+Trakt, AniList, Simkl, and MDBList rows are configured under
 [Integrations](integrations.md). Slider layout is covered in
-[Discover](../discover.md).
+[Discover](../discover.md). Mapping health is under [Mapping](mapping.md).
 
 ## Blocklist Region and Blocklist Language
 

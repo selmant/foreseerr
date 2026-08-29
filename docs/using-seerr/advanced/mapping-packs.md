@@ -9,7 +9,7 @@ sidebar_position: 6
 Discover sources speak in their own ids: Simkl ids, AniList ids, AniDB ids,
 IMDB ids, TVDB ids. Foreseerr renders TMDB. The mapping layer is what turns one
 into the other, and **Settings → Mapping** is where you can see how well it is
-doing.
+doing. For the administration UI, see [Mapping](../settings/mapping.md).
 
 ## The resolver chain
 

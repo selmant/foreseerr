@@ -1,25 +1,29 @@
 ---
 title: Integrations
-description: Configure Trakt, AniList, MDBList, and Simkl for Discover and ratings.
+description: Configure Trakt, AniList, MDBList, Simkl, Radarr, and Sonarr.
 sidebar_position: 5
 ---
 
 # Integrations
 
-Optional discovery sources live under **Settings → Integrations** (also during
-the setup wizard). Health checks show whether each service is reachable.
+**Settings → Integrations** holds optional discovery sources and Radarr/Sonarr.
 
-These are separate from Radarr/Sonarr. For request servers, see
-[Services](services.md).
+Discovery cards (Trakt, AniList, MDBList, Simkl) sit at the top. Health checks
+show whether each service is reachable. Radarr, Sonarr, override rules, and
+intervention cleanup are on the same page below those cards.
+
+For Radarr/Sonarr field-by-field setup, see [Services](services.md).
 
 ## Trakt
 
 Trakt powers personalized Discover rows and watched/rating actions.
 
 1. Create an API app at [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications).
-2. Enter the client ID and secret in **Settings → Integrations → Trakt**.
-3. Each user links their own account in **Linked Accounts** with a device code
-   (`trakt.tv/activate`).
+2. Enter the client ID and secret in **Settings → Integrations → Trakt**, or
+   switch the instance to **Better Trakt via Jellyfin** if that plugin is
+   installed.
+3. Direct Trakt users link in **Linked Accounts** with a device code
+   (`trakt.tv/activate`). Better Trakt users link inside Jellyfin.
 
 Once linked, Discover can show recommendations, watchlist, and history. Watched
 and rating sync is on by default; users can turn it off under **Linked Accounts
@@ -27,7 +31,7 @@ and rating sync is on by default; users can turn it off under **Linked Accounts
 lists as custom sliders. See [Discover](../discover.md#trakt).
 
 Jellyfin watched state can still appear when Trakt is not linked. Direct Trakt
-vs Better Trakt (Jellyfin plugin) is chosen in the same settings card.
+vs Better Trakt is a single instance-wide choice on the Trakt card.
 
 ## AniList
 
@@ -51,7 +55,8 @@ Each user can also turn it off under **Linked Accounts → Watch trackers**
 without unlinking.
 
 AniList season mapping is experimental: TMDB seasons and episodes are not always
-1:1 with AniList, so a watch can land on the wrong title or be skipped.
+1:1 with AniList, so a watch can land on the wrong title or be skipped. Prefer
+repairing mappings in [Settings → Mapping](mapping.md) over guessing.
 
 ## MDBList
 
@@ -79,6 +84,10 @@ Create an application at [Simkl Developer Settings](https://simkl.com/settings/d
 
 Each user then opens **Profile → Linked Accounts**, starts the PIN flow, and authorizes the displayed code on Simkl. Tokens are stored per user and can be revoked from Simkl at any time.
 
-Foreseerr synchronizes the Simkl library only while a user is viewing a Simkl-backed surface or explicitly refreshes it. Cached results remain available when Simkl is temporarily unavailable and are marked stale by the API. Simkl provides tracking and attribution; TMDB/TVDB remain Foreseerr's canonical metadata sources.
+Public Trending / Best / Premieres rows work with the Client ID only. Plan to Watch and other personal statuses need a linked account. Foreseerr synchronizes the Simkl library only while a user is viewing a Simkl-backed surface or explicitly refreshes it. Cached results remain available when Simkl is temporarily unavailable and are marked stale. Simkl provides tracking and attribution; TMDB/TVDB remain Foreseerr's canonical metadata sources.
+
+Every Simkl-sourced title must link to its Simkl page. Changing the Client ID disconnects linked users after confirmation.
 
 Current exclusions are custom lists, automatic requests, scrobbling, calendar ingestion, and playback-resume synchronization.
+
+See [Discover](../discover.md#simkl).

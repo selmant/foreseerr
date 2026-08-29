@@ -12,5 +12,5 @@ maintainers:
   - name: Foreseerr
     url: https://github.com/selmant
 sources:
-  - https://github.com/selmant/foreseerr/tree/main/charts/foreseerr-chart
+  - https://github.com/selmant/foreseerr/tree/develop/charts/foreseerr-chart
 home: https://github.com/selmant/foreseerr

@@ -47,7 +47,7 @@ You can view all available tags on the [Foreseerr Releases page](https://github.
 
 ### Verifying a Specific Release Tag
 
-Each tagged release (for example `v0.1.0`) is immutable and cryptographically signed.
+Each tagged release (for example `v0.7.0`) is immutable and cryptographically signed.
 Verification should always be performed using the image digest (SHA256).
 
 #### Retrieve the Image Digest
@@ -56,14 +56,14 @@ Verification should always be performed using the image digest (SHA256).
   <TabItem value="docker" label="Docker">
 
 ```bash
-docker buildx imagetools inspect ghcr.io/selmant/foreseerr:v0.1.0 --format '{{json .Manifest.Digest}}' | tr -d '"'
+docker buildx imagetools inspect ghcr.io/selmant/foreseerr:v0.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"'
 ```
   </TabItem>
 
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-skopeo inspect docker://ghcr.io/selmant/foreseerr:v0.1.0 --format '{{.Digest}}'
+skopeo inspect docker://ghcr.io/selmant/foreseerr:v0.7.0 --format '{{.Digest}}'
 ```
   </TabItem>
 </Tabs>
@@ -83,7 +83,7 @@ sha256:abcd1234...
 
 ```bash
 cosign verify ghcr.io/selmant/foreseerr@sha256:abcd1234... \
-  --certificate-identity "https://github.com/selmant/foreseerr/.github/workflows/release.yml@refs/tags/v0.1.0" \
+  --certificate-identity "https://github.com/selmant/foreseerr/.github/workflows/release.yml@refs/tags/v0.7.0" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -92,7 +92,7 @@ cosign verify ghcr.io/selmant/foreseerr@sha256:abcd1234... \
 
 ```bash
 cosign verify selmantr/foreseerr@sha256:abcd1234... \
-  --certificate-identity "https://github.com/selmant/foreseerr/.github/workflows/release.yml@refs/tags/v0.1.0" \
+  --certificate-identity "https://github.com/selmant/foreseerr/.github/workflows/release.yml@refs/tags/v0.7.0" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
   </TabItem>
@@ -178,7 +178,7 @@ Each image includes a CycloneDX SBOM attestation.
 ```bash
 cosign verify-attestation ghcr.io/selmant/foreseerr@sha256:abcd1234... \
   --type cyclonedx \
-  --certificate-identity "https://github.com/selmant/foreseerr/.github/workflows/release.yml@refs/tags/v0.1.0" \
+  --certificate-identity "https://github.com/selmant/foreseerr/.github/workflows/release.yml@refs/tags/v0.7.0" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
 :::info Successful Verification Example
@@ -196,7 +196,7 @@ The following checks were performed:
 ```bash
 cosign verify-attestation ghcr.io/selmant/foreseerr@sha256:abcd1234... \
   --type cyclonedx \
-  --certificate-identity "https://github.com/selmant/foreseerr/.github/workflows/release.yml@refs/tags/v0.1.0" \
+  --certificate-identity "https://github.com/selmant/foreseerr/.github/workflows/release.yml@refs/tags/v0.7.0" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" | jq -r '.payload | @base64d' > sbom.json
 ```
 

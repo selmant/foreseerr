@@ -1,6 +1,7 @@
 ---
 title: Discover
 description: Browse TMDB, Trakt, AniList, Simkl, and MDBList rows on the Discover page.
+sidebar_position: 3
 ---
 
 # Discover
@@ -10,6 +11,9 @@ Trakt, AniList, and Simkl. Admins can reorder, hide, or add custom sliders,
 including public Trakt and MDBList lists and a named AniList list.
 
 Requests stay manual. Pinning a list does not auto-request titles.
+
+Unmapped source titles can appear as source-only cards instead of being
+dropped. Repair them in [Settings → Mapping](settings/mapping.md).
 
 ## TMDB
 
@@ -22,7 +26,7 @@ These rows work with no extra API keys (Foreseerr already uses TMDB):
 ## Trakt
 
 Requires a Trakt app in **Settings → Integrations**, then each user links
-their account under **Linked Accounts**.
+their account under **Linked Accounts** (or Better Trakt via Jellyfin).
 
 Built-in rows (hidden until the user is linked):
 
@@ -57,25 +61,36 @@ These rows need a linked AniList account (**Linked Accounts**):
 - Custom **AniList List** (pick one of that user’s lists by name)
 
 Titles are mapped to TMDB through the [mapping layer](advanced/mapping-packs.md).
-Items that still have no TMDB match can appear as source cards instead of
-being dropped. Admins can hide those cards or repair the mapping in
-**Settings → Mapping**.
 
 See [Integrations](settings/integrations.md#anilist).
 
 ## Simkl
 
-Requires a Simkl Client ID in **Settings → Integrations**, then each user
-links their account under **Linked Accounts** with a PIN.
+Requires a Simkl Client ID in **Settings → Integrations**. Public catalog rows
+need only that Client ID. Personal library rows need a PIN-linked account.
 
-Built-in rows (hidden until the user is linked):
+Public rows (hidden until Simkl is configured):
 
 - Trending
-- Best
-- Premieres
+- Best TV / Best Anime
+- New and upcoming TV and anime premieres
+
+Personal rows (hidden until the current user is linked):
+
+- Plan to Watch
+- Watching
+- On Hold
+- Completed
+- Dropped
+
+`/discover/simkl` is the provider hub with the same feeds and URL-backed
+filters. Every Simkl-sourced title includes a link to its canonical Simkl
+page.
 
 Library sync and watched/rating actions run while a Simkl-backed surface is
-open, or when the user refreshes it. Custom Simkl lists are not supported.
+open, or when the user refreshes it. Cached rows can show as stale if Simkl
+is temporarily down. Custom Simkl lists, scrobbling, and calendar ingestion
+are not supported.
 
 See [Integrations](settings/integrations.md#simkl).
 

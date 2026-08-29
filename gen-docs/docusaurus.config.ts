@@ -5,7 +5,7 @@ import { themes as prismThemes } from 'prism-react-renderer';
 
 const config: Config = {
   title: 'Foreseerr',
-  tagline: 'One Stop Solution for all your media request needs',
+  tagline: 'Requests, discovery, library, and calendar for your media stack',
   favicon: 'img/favicon.ico',
 
   url: 'https://selmant.github.io',
@@ -43,6 +43,16 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           routeBasePath: '/',
           path: '../docs',
+          exclude: [
+            '**/superpowers/**',
+            'product-roadmap-and-recommendation-research.md',
+            'post-fork-consistency-roadmap.md',
+            'calendar-and-notification-features-plan.md',
+            'mapping-feature-review-*.md',
+            'stable-contract.md',
+            'stable-release-gate.md',
+            'servarr-interactive-operations.md',
+          ],
           editUrl: 'https://github.com/selmant/foreseerr/edit/develop/docs/',
           docItemComponent: '@theme/ApiItem',
           async sidebarItemsGenerator({

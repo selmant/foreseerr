@@ -2,7 +2,10 @@
 
 Helm chart for deploying [Foreseerr](https://github.com/selmant/foreseerr) on Kubernetes.
 
-Foreseerr is a Seerr fork with SuggestArr-inspired features. Config mounts remain Seerr-compatible at `/app/config`.
+Foreseerr is a Seerr fork with Discover sources (Trakt, AniList, Simkl,
+MDBList), a TMDB mapping layer, Library, Calendar, and Servarr interventions.
+Config mounts remain Seerr-compatible at `/app/config`. The current app
+version for this chart is `v0.7.0`.
 
 ## Installation
 

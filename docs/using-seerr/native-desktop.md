@@ -1,6 +1,7 @@
 ---
 title: Native Desktop
 description: Use Foreseerr through the optional Foreseer Desktop companion.
+sidebar_position: 7
 ---
 
 # Native Desktop

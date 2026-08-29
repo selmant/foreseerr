@@ -6,6 +6,12 @@ sidebar_position: 4
 
 # Services
 
+Radarr and Sonarr are configured on **Settings → Integrations**, below the
+Trakt / AniList / MDBList / Simkl cards. There is no separate Services tab.
+
+Queue warnings appear in [Interventions](../interventions.md). Upcoming dates
+appear on the [Calendar](../calendar.md).
+
 :::info
 **If you keep separate copies of non-4K and 4K content in your media libraries, you will need to set up multiple Radarr/Sonarr instances and link each of them to Foreseerr.**
 
@@ -76,4 +82,10 @@ Enable this setting if you would like to scan your Radarr/Sonarr server for exis
 
 #### Enable Automatic Search (optional)
 
-Enable this setting to have Radarr/Sonarr to automatically search for media upon approval of a request.
+Enable this setting to have Radarr/Sonarr automatically search for media upon approval of a request.
+
+## Intervention cleanup
+
+On the same Integrations page, **Intervention cleanup** can automatically
+reject overdue Arr queue warnings after a grace period. See
+[Interventions](../interventions.md).
