@@ -1,4 +1,5 @@
 import Button from '@app/components/Common/Button';
+import Modal from '@app/components/Common/Modal';
 import useToasts from '@app/hooks/useToasts';
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -62,6 +63,7 @@ const ManualImport = ({
   const [rematchingToken, setRematchingToken] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const refreshSources = useCallback(async () => {
     sourcesAbortRef.current?.abort();
@@ -253,19 +255,15 @@ const ManualImport = ({
     );
   };
 
+  const selectedFiles = candidates.filter((candidate) =>
+    selected.includes(candidate.token)
+  );
+  const selectedWarnings = selectedFiles.flatMap((candidate) =>
+    candidate.rejections.map((rejection) => rejection.reason)
+  );
+
   const submitImport = async () => {
-    const files = candidates.filter((candidate) =>
-      selected.includes(candidate.token)
-    );
-    const warnings = files.flatMap((candidate) =>
-      candidate.rejections.map((rejection) => rejection.reason)
-    );
-    if (
-      !window.confirm(
-        `Import ${files.length} file(s) using ${mode}?${warnings.length ? `\n\nWarnings:\n${warnings.join('\n')}` : ''}`
-      )
-    )
-      return;
+    setConfirmOpen(false);
     submitAbortRef.current?.abort();
     const controller = new AbortController();
     submitAbortRef.current = controller;
@@ -281,7 +279,7 @@ const ManualImport = ({
           is4k,
           candidateTokens: selected,
           importMode: mode,
-          acknowledgeRejections: warnings.length > 0,
+          acknowledgeRejections: selectedWarnings.length > 0,
           episodeMappings: Object.entries(episodeMappings)
             .filter(([token]) => selected.includes(token))
             .map(([candidateToken, episodeIds]) => ({
@@ -395,6 +393,7 @@ const ManualImport = ({
               onClick={() => {
                 setCandidates([]);
                 setSourceLabel(undefined);
+                setConfirmOpen(false);
                 setWorkflowOpen(true);
               }}
             >
@@ -415,10 +414,11 @@ const ManualImport = ({
             <Button
               buttonType="success"
               buttonSize="sm"
+              type="button"
               disabled={
                 !selected.length || submitting || rematchingToken !== undefined
               }
-              onClick={() => void submitImport()}
+              onClick={() => setConfirmOpen(true)}
             >
               Import selected ({selected.length})
             </Button>
@@ -533,6 +533,31 @@ const ManualImport = ({
             );
           })}
         </div>
+      )}
+      {confirmOpen && (
+        <Modal
+          title={`Import ${selectedFiles.length} file(s)?`}
+          backgroundClickable={!submitting}
+          okText={`Import (${mode})`}
+          okButtonType="success"
+          okDisabled={!selectedFiles.length || submitting}
+          onOk={() => void submitImport()}
+          onCancel={() => setConfirmOpen(false)}
+        >
+          <p>
+            {context.service.name} will {mode} the selected files
+            {selectedWarnings.length
+              ? ' even though Arr reported warnings.'
+              : '.'}
+          </p>
+          {selectedWarnings.length > 0 && (
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-yellow-300">
+              {selectedWarnings.map((warning, index) => (
+                <li key={`${index}-${warning}`}>{warning}</li>
+              ))}
+            </ul>
+          )}
+        </Modal>
       )}
     </div>
   );
