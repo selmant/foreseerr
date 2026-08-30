@@ -25,7 +25,7 @@ describe('mapping gap telemetry', () => {
         namespace: 'simkl',
         externalId: '2419656',
         title: 'Ore dake Level Up na Ken',
-        discoverSource: 'simkl/premieres/anime',
+        discoverSource: 'simkl/trending/anime',
         reason: 'ambiguous',
       });
     }
@@ -77,14 +77,14 @@ describe('mapping gap telemetry', () => {
     recordMappingGap({
       namespace: 'simkl',
       externalId: 'rare',
-      discoverSource: 'simkl/best/anime',
+      discoverSource: 'simkl/trending/anime',
       reason: 'unresolved',
     });
     for (let index = 0; index < 5; index += 1) {
       recordMappingGap({
         namespace: 'simkl',
         externalId: 'popular',
-        discoverSource: 'simkl/best/anime',
+        discoverSource: 'simkl/trending/anime',
         reason: 'ambiguous',
       });
     }
@@ -99,7 +99,7 @@ describe('mapping gap telemetry', () => {
     assert.equal(summary.totalHits, 6);
     assert.equal(summary.byReason.ambiguous, 1);
     assert.equal(summary.byReason.unresolved, 1);
-    assert.equal(summary.bySource['simkl/best/anime'], 2);
+    assert.equal(summary.bySource['simkl/trending/anime'], 2);
     assert.equal(summary.byNamespace.simkl, 2);
   });
 

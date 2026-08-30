@@ -159,7 +159,7 @@ components:
           enum: [movie, tv]
         discoverSource:
           type: string
-          example: simkl/premieres/anime
+          example: simkl/trending/anime
         reason:
           type: string
           enum: [unresolved, ambiguous, phantom, wrong-type]
@@ -12398,38 +12398,6 @@ paths:
           schema: { type: number }
       responses:
         '200': { description: Simkl trending titles returned }
-  /discover/simkl/best:
-    get:
-      summary: Get Simkl best TV or anime titles
-      tags: [discover]
-      parameters:
-        - in: query
-          name: mediaType
-          schema: { type: string, enum: [tv, anime] }
-        - in: query
-          name: filter
-          schema: { type: string, enum: [all, year, month, voted, watched] }
-        - in: query
-          name: page
-          schema: { type: number }
-      responses:
-        '200': { description: Simkl best titles returned }
-  /discover/simkl/premieres:
-    get:
-      summary: Get Simkl premieres
-      tags: [discover]
-      parameters:
-        - in: query
-          name: mediaType
-          schema: { type: string, enum: [tv, anime] }
-        - in: query
-          name: window
-          schema: { type: string, enum: [new, upcoming] }
-        - in: query
-          name: page
-          schema: { type: number }
-      responses:
-        '200': { description: Simkl premieres returned }
   /overrideRule/{ruleId}:
     put:
       summary: Update override rule

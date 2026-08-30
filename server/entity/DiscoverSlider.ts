@@ -1,11 +1,15 @@
-import type { DiscoverSliderType } from '@server/constants/discover';
-import { defaultSliders } from '@server/constants/discover';
+import {
+  defaultSliders,
+  retiredDiscoverSliderTypes,
+  type DiscoverSliderType,
+} from '@server/constants/discover';
 import { getRepository } from '@server/datasource';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
 import {
   Column,
   Entity,
+  In,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -14,6 +18,9 @@ import {
 class DiscoverSlider {
   public static async bootstrapSliders(): Promise<void> {
     const sliderRepository = getRepository(DiscoverSlider);
+    await sliderRepository.delete({
+      type: In([...retiredDiscoverSliderTypes]),
+    });
     for (const slider of defaultSliders) {
       const existingBuiltIn = await sliderRepository.findOne({
         where: {

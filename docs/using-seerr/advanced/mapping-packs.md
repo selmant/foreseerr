@@ -108,7 +108,7 @@ fribb        29402 records   anilist 20010  →tmdb 40.6%  season-scoped 0      
 anime-lists   7654 records   anilist 0      →tmdb n/a    season-scoped 5576   episode rules 3272
 ```
 
-Per-slider rates — how many tiles on `simkl/premieres anime` actually resolved —
+Per-slider rates — how many tiles on `simkl/trending anime` actually resolved —
 come from the gap telemetry on the Mapping settings page, since they depend on
 what your instance has served.
 

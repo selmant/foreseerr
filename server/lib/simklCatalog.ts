@@ -232,7 +232,7 @@ const sourceUrl = (
   return `https://simkl.com/${kind}/${encodeURIComponent(slug)}`;
 };
 
-/** Simkl ranks YouTube let's-plays (e.g. RDR2, GTA V) in /tv/best; they are not requestable TV. */
+/** YouTube let's-plays (e.g. RDR2, GTA V) are not requestable TV. */
 export const isSimklVideoGamePlay = (
   item: Record<string, unknown>
 ): boolean => {
@@ -274,7 +274,7 @@ const isAnimeRecord = (
 };
 
 /**
- * Theatrical anime often arrive on anime/best and anime/premieres typed as tv
+ * Theatrical anime often arrive on anime catalogs typed as tv
  * (`anime_type` missing). Title cues like 劇場版 / Gekijouban / Eiga are the
  * reliable signal Simkl itself uses in the display name.
  */

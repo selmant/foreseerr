@@ -71,9 +71,7 @@ need only that Client ID. Personal library rows need a PIN-linked account.
 
 Public rows (hidden until Simkl is configured):
 
-- Trending
-- Best TV / Best Anime
-- New and upcoming TV and anime premieres
+- Trending (movies, TV, and anime from Simkl's trending JSON files)
 
 Personal rows (hidden until the current user is linked):
 
@@ -89,8 +87,8 @@ page.
 
 Library sync and watched/rating actions run while a Simkl-backed surface is
 open, or when the user refreshes it. Cached rows can show as stale if Simkl
-is temporarily down. Custom Simkl lists, scrobbling, and calendar ingestion
-are not supported.
+is temporarily down. Custom Simkl lists, Best/Premieres catalog endpoints,
+scrobbling, and calendar ingestion are not supported.
 
 See [Integrations](settings/integrations.md#simkl).
 

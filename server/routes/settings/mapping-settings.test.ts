@@ -90,7 +90,7 @@ const seedGap = async (overrides: Partial<MappingGap> = {}) => {
     season: -1,
     title: 'Ore dake Level Up na Ken',
     mediaType: 'tv',
-    discoverSource: 'simkl/premieres/anime',
+    discoverSource: 'simkl/trending/anime',
     reason: 'ambiguous',
     status: 'open',
     hitCount: 7,

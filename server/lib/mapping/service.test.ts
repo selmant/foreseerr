@@ -761,7 +761,7 @@ describe('mapping service resolver chain', () => {
     const resolution = await service.resolve(
       { ns: 'simkl', id: '2419656' },
       'tmdb_show',
-      { discoverSource: 'simkl/premieres/anime', title: 'Solo Leveling' }
+      { discoverSource: 'simkl/trending/anime', title: 'Solo Leveling' }
     );
     assert.equal(resolution.layer, 'none');
     await flushMappingGaps();

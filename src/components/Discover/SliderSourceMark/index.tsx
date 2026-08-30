@@ -42,12 +42,6 @@ export const getDiscoverSliderSource = (
       return 'mdblist';
     case DiscoverSliderType.SIMKL_TRENDING:
     case DiscoverSliderType.SIMKL_PLAN_TO_WATCH:
-    case DiscoverSliderType.SIMKL_BEST_TV:
-    case DiscoverSliderType.SIMKL_BEST_ANIME:
-    case DiscoverSliderType.SIMKL_NEW_TV_PREMIERES:
-    case DiscoverSliderType.SIMKL_UPCOMING_TV_PREMIERES:
-    case DiscoverSliderType.SIMKL_NEW_ANIME_PREMIERES:
-    case DiscoverSliderType.SIMKL_UPCOMING_ANIME_PREMIERES:
     case DiscoverSliderType.SIMKL_WATCHING:
     case DiscoverSliderType.SIMKL_ON_HOLD:
     case DiscoverSliderType.SIMKL_COMPLETED:

@@ -22,45 +22,15 @@ const publicViews = {
     endpoint: '/api/v1/discover/simkl/trending',
     options: undefined,
   },
-  'best-tv': {
-    title: 'Simkl Best TV',
-    endpoint: '/api/v1/discover/simkl/best',
-    options: { mediaType: 'tv' },
-  },
-  'best-anime': {
-    title: 'Simkl Best Anime',
-    endpoint: '/api/v1/discover/simkl/best',
-    options: { mediaType: 'anime' },
-  },
-  'new-tv-premieres': {
-    title: 'Simkl New TV Premieres',
-    endpoint: '/api/v1/discover/simkl/premieres',
-    options: { mediaType: 'tv', window: 'new' },
-  },
-  'upcoming-tv-premieres': {
-    title: 'Simkl Upcoming TV Premieres',
-    endpoint: '/api/v1/discover/simkl/premieres',
-    options: { mediaType: 'tv', window: 'upcoming' },
-  },
-  'new-anime-premieres': {
-    title: 'Simkl New Anime Premieres',
-    endpoint: '/api/v1/discover/simkl/premieres',
-    options: { mediaType: 'anime', window: 'new' },
-  },
-  'upcoming-anime-premieres': {
-    title: 'Simkl Upcoming Anime Premieres',
-    endpoint: '/api/v1/discover/simkl/premieres',
-    options: { mediaType: 'anime', window: 'upcoming' },
-  },
 } as const;
 
 const DiscoverSimkl = () => {
   const settings = useSettings();
   const query = useRouteQuery();
-  const view =
-    typeof query.view === 'string'
-      ? publicViews[query.view as keyof typeof publicViews]
-      : undefined;
+  const viewKey = typeof query.view === 'string' ? query.view : undefined;
+  const view = viewKey
+    ? publicViews[viewKey as keyof typeof publicViews]
+    : undefined;
   const status =
     typeof query.status === 'string' && libraryStatuses.has(query.status)
       ? query.status
@@ -81,13 +51,14 @@ const DiscoverSimkl = () => {
     fetchMore,
     error,
   } = useDiscover<WatchlistItem>(
-    settings.currentSettings.simklConfigured
+    settings.currentSettings.simklConfigured && (!viewKey || view)
       ? view
         ? view.endpoint
         : '/api/v1/discover/simkl/library'
       : '',
     view ? view.options : { status }
   );
+  if (viewKey && !view) return <ErrorPage statusCode={404} />;
   if (!settings.currentSettings.simklConfigured)
     return <ErrorPage statusCode={404} />;
   if (error) return <ErrorPage statusCode={500} />;

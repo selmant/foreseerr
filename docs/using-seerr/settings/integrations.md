@@ -84,10 +84,10 @@ Create an application at [Simkl Developer Settings](https://simkl.com/settings/d
 
 Each user then opens **Profile → Linked Accounts**, starts the PIN flow, and authorizes the displayed code on Simkl. Tokens are stored per user and can be revoked from Simkl at any time.
 
-Public Trending / Best / Premieres rows work with the Client ID only. Plan to Watch and other personal statuses need a linked account. Foreseerr synchronizes the Simkl library only while a user is viewing a Simkl-backed surface or explicitly refreshes it. Cached results remain available when Simkl is temporarily unavailable and are marked stale. Simkl provides tracking and attribution; TMDB/TVDB remain Foreseerr's canonical metadata sources.
+Public Trending rows work with the Client ID only. Plan to Watch and other personal statuses need a linked account. Foreseerr synchronizes the Simkl library only while a user is viewing a Simkl-backed surface or explicitly refreshes it. Cached results remain available when Simkl is temporarily unavailable and are marked stale. Simkl provides tracking and attribution; TMDB/TVDB remain Foreseerr's canonical metadata sources.
 
 Every Simkl-sourced title must link to its Simkl page. Changing the Client ID disconnects linked users after confirmation.
 
-Current exclusions are custom lists, automatic requests, scrobbling, calendar ingestion, and playback-resume synchronization.
+Current exclusions are custom lists, Best/Premieres catalog endpoints, automatic requests, scrobbling, calendar ingestion, and playback-resume synchronization.
 
 See [Discover](../discover.md#simkl).

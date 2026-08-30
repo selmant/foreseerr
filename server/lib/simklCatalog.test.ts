@@ -408,7 +408,7 @@ describe('simkl catalog mapping', () => {
     );
   });
 
-  it('maps documented /tv/best array items with simkl_id', () => {
+  it('maps catalog array items that use ids.simkl_id', () => {
     const payload = [
       {
         title: 'Sousou no Frieren',

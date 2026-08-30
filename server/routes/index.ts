@@ -5,6 +5,7 @@ import type {
   TmdbMovieResult,
   TmdbTvResult,
 } from '@server/api/themoviedb/interfaces';
+import { retiredDiscoverSliderTypes } from '@server/constants/discover';
 import { getRepository } from '@server/datasource';
 import DiscoverSlider from '@server/entity/DiscoverSlider';
 import type { StatusResponse } from '@server/interfaces/api/settingsInterfaces';
@@ -138,7 +139,9 @@ router.get('/settings/public', async (req, res) => {
 router.get('/settings/discover', isAuthenticated(), async (_req, res) => {
   const sliderRepository = getRepository(DiscoverSlider);
 
-  const sliders = await sliderRepository.find({ order: { order: 'ASC' } });
+  const sliders = (
+    await sliderRepository.find({ order: { order: 'ASC' } })
+  ).filter((slider) => !retiredDiscoverSliderTypes.has(slider.type));
 
   return res.json(sliders);
 });

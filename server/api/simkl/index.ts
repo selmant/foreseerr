@@ -145,7 +145,7 @@ export default class SimklAPI extends ExternalAPI {
 
   /** Requires a real Client ID; `/movies/trending` succeeds without one. */
   public async validateClientId(): Promise<void> {
-    await this.request('get', '/tv/best/all');
+    await this.getCdnCatalog('/discover/trending/tv/week_100.json');
   }
 
   public async requestPinCode(): Promise<SimklPinCodeResponse> {
