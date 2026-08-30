@@ -21,10 +21,14 @@ const ServiceWorkerSetup = () => {
 
           const pushNotificationsEnabled =
             localStorage.getItem('pushNotificationsEnabled') === 'true';
+          const notificationPermission =
+            typeof Notification === 'undefined'
+              ? 'denied'
+              : Notification.permission;
 
           // Reset the notifications flag if permissions were revoked
           if (
-            Notification.permission !== 'granted' &&
+            notificationPermission !== 'granted' &&
             pushNotificationsEnabled
           ) {
             localStorage.setItem('pushNotificationsEnabled', 'false');

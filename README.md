@@ -26,6 +26,14 @@ only after the signed-in user's account is linked to Jellyfin. See the
 behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
 `0.3.0` for installation and release compatibility.
 
+## Optional Native Android Companion
+
+[Foreseer Android](https://github.com/selmant/foreseer-android) is the same
+idea on Android TV (phone flavor later): a WebView of this UI plus protocol v1
+`play.item`, with Jellyfin playback in Media3. It talks to an existing
+Foreseerr URL; it does not bundle a server. See the
+[native Android guide](docs/using-seerr/native-android.md).
+
 > [!NOTE]
 > Foreseerr `v0.7.0` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, `v0.5.x`, and `v0.6.x` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
 

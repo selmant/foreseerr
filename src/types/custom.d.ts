@@ -41,7 +41,7 @@ interface ForeseerNativeCommandV1 {
 
 interface ForeseerNativeV1 {
   readonly protocolVersion: 1;
-  readonly hostName: 'foreseer-desktop';
+  readonly hostName: 'foreseer-desktop' | 'foreseer-android';
   readonly hostVersion: string;
   readonly capabilities: readonly string[];
   send(command: ForeseerNativeCommandV1): boolean;

@@ -43,6 +43,7 @@ export interface NativePlayTarget {
 interface NativeRuntimeContextValue {
   state: NativeRuntimeState;
   canQuit: boolean;
+  isTvShell: boolean;
   play: (target: NativePlayTarget) => boolean;
   quit: () => boolean;
 }
@@ -50,6 +51,7 @@ interface NativeRuntimeContextValue {
 const NativeRuntimeContext = createContext<NativeRuntimeContextValue>({
   state: 'web',
   canQuit: false,
+  isTvShell: false,
   play: () => false,
   quit: () => false,
 });
@@ -61,6 +63,7 @@ export const NativeRuntimeProvider = ({
 }: React.PropsWithChildren) => {
   const [state, setState] = useState<NativeRuntimeState>('web');
   const [canQuit, setCanQuit] = useState(false);
+  const [isTvShell, setIsTvShell] = useState(false);
   const activePlayRequestId = useRef<string | undefined>(undefined);
   const activePlayTimeout = useRef<number | undefined>(undefined);
   const queuedPlayTarget = useRef<NativePlayTarget | undefined>(undefined);
@@ -74,12 +77,22 @@ export const NativeRuntimeProvider = ({
       setCanQuit(host.capabilities.includes('quit'));
       // Native desktop has no browser chrome — share PWA chromeless UI (e.g. Back).
       document.documentElement.classList.add('native-shell');
+      if (host.capabilities.includes('tv-focus')) {
+        document.documentElement.classList.add('tv-shell');
+        setIsTvShell(true);
+      } else {
+        document.documentElement.classList.remove('tv-shell');
+        setIsTvShell(false);
+      }
     } else {
       setCanQuit(false);
+      setIsTvShell(false);
       document.documentElement.classList.remove('native-shell');
+      document.documentElement.classList.remove('tv-shell');
     }
     return () => {
       document.documentElement.classList.remove('native-shell');
+      document.documentElement.classList.remove('tv-shell');
     };
   }, []);
 
@@ -283,6 +296,7 @@ export const NativeRuntimeProvider = ({
     () => ({
       state,
       canQuit,
+      isTvShell,
       quit,
       play: (target) => {
         if (target.provider !== 'jellyfin' || !target.itemId) {
@@ -301,7 +315,7 @@ export const NativeRuntimeProvider = ({
         return false;
       },
     }),
-    [admitPlay, canQuit, quit, state]
+    [admitPlay, canQuit, isTvShell, quit, state]
   );
 
   return (

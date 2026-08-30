@@ -4,6 +4,7 @@ import LoadingBar from '@app/components/LoadingBar';
 import PWAHeader from '@app/components/PWAHeader';
 import ServiceWorkerSetup from '@app/components/ServiceWorkerSetup';
 import StatusChecker from '@app/components/StatusChecker';
+import TvNavigationGate from '@app/components/Tv/TvNavigationGate';
 import { InteractionProvider } from '@app/context/InteractionContext';
 import { LanguageContext } from '@app/context/LanguageContext';
 import { NativeRuntimeProvider } from '@app/context/NativeRuntimeContext';
@@ -254,7 +255,9 @@ const AppShell = ({
             <StatusChecker />
             <ServiceWorkerSetup />
             <UserContext initialUser={user}>
-              <NativeRuntimeProvider>{content}</NativeRuntimeProvider>
+              <NativeRuntimeProvider>
+                <TvNavigationGate>{content}</TvNavigationGate>
+              </NativeRuntimeProvider>
             </UserContext>
             <Toaster
               position="top-right"

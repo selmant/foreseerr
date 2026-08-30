@@ -593,6 +593,26 @@
     }
   }
 
+  html.tv-shell .tv-focus-target.tv-focused,
+  html.tv-shell .tv-focused {
+    outline: 3px solid theme('colors.indigo.400');
+    outline-offset: 4px;
+  }
+
+  html.tv-shell .slider-pager {
+    @apply hidden;
+  }
+
+  html.tv-shell .ptr--ptr {
+    display: none !important;
+  }
+
+  html.tv-shell button,
+  html.tv-shell a,
+  html.tv-shell [role='button'] {
+    @apply focus-visible:outline-none;
+  }
+
   .extra-bottom-space {
     height: calc(4rem + env(safe-area-inset-bottom));
   }

@@ -24,7 +24,8 @@ When your account is linked to Jellyfin, Overview can show:
 
 Empty shelves are omitted. If nothing is linked, Library tells you to link
 Jellyfin in settings. Playback uses the normal Jellyfin link in a browser, or
-native playback when [Foreseer Desktop](native-desktop.md) is running.
+native playback when [Foreseer Desktop](native-desktop.md) or
+[Foreseer Android](native-android.md) is running.
 
 Open a poster for series/season details, resume, next-unwatched, or rewatch
 choices. Episode watched/unwatched toggles apply to Jellyfin (and to Trakt or

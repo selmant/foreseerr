@@ -6,6 +6,7 @@ export const nativeProtocolV1 = {
   fixtureId: 'foreseer-native-protocol-v1-2026-08-11',
   protocolVersion: 1,
   hostName: 'foreseer-desktop',
+  allowedHostNames: ['foreseer-desktop', 'foreseer-android'] as const,
   eventName: 'foreseer:native-event',
   limits: {
     requestIdMaxLength: 64,
@@ -29,13 +30,21 @@ export interface ForeseerNativeCommandV1 {
   allowHttp?: boolean;
 }
 
+export type NativeHostNameV1 =
+  (typeof nativeProtocolV1.allowedHostNames)[number];
+
 export interface ForeseerNativeV1 {
   readonly protocolVersion: 1;
-  readonly hostName: 'foreseer-desktop';
+  readonly hostName: NativeHostNameV1;
   readonly hostVersion: string;
   readonly capabilities: readonly string[];
   send(command: ForeseerNativeCommandV1): boolean;
 }
+
+export const isAllowedNativeHostName = (
+  name: string
+): name is NativeHostNameV1 =>
+  (nativeProtocolV1.allowedHostNames as readonly string[]).includes(name);
 
 export const nativeHostEventTypesV1 = [
   'auth-challenge',
@@ -94,7 +103,7 @@ export const isUsableForeseerNative = (
 ): host is ForeseerNativeV1 =>
   !!host &&
   host.protocolVersion === nativeProtocolV1.protocolVersion &&
-  host.hostName === nativeProtocolV1.hostName &&
+  isAllowedNativeHostName(host.hostName) &&
   typeof host.send === 'function' &&
   Array.isArray(host.capabilities) &&
   host.capabilities.includes('play-item');

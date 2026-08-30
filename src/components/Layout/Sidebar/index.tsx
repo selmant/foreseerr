@@ -2,6 +2,7 @@ import AppImage from '@app/components/Common/AppImage';
 import Badge from '@app/components/Common/Badge';
 import QuitAppControl from '@app/components/Layout/QuitAppControl';
 import VersionStatus from '@app/components/Layout/VersionStatus';
+import TvFocusable from '@app/components/Tv/TvFocusable';
 import useClickOutside from '@app/hooks/useClickOutside';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
@@ -286,63 +287,64 @@ const Sidebar = ({
                     : true
                 ).map((sidebarLink) => {
                   return (
-                    <Link
-                      key={`desktop-${sidebarLink.messagesKey}`}
-                      to={sidebarLink.href}
-                      className={`group flex items-center rounded-md px-2 py-2 text-lg font-medium leading-6 text-white transition duration-150 ease-in-out focus:outline-none ${
-                        location.pathname.match(sidebarLink.activeRegExp)
-                          ? 'bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500'
-                          : 'hover:bg-gray-700 focus:bg-gray-700'
-                      } `}
-                      data-testid={sidebarLink.dataTestId}
-                    >
-                      {sidebarLink.svgIcon}
-                      {intl.formatMessage(
-                        menuMessages[sidebarLink.messagesKey]
-                      )}
-                      {sidebarLink.messagesKey === 'requests' &&
-                        pendingRequestsCount > 0 &&
-                        hasPermission(Permission.MANAGE_REQUESTS) && (
-                          <div className="ml-auto flex">
-                            <Badge
-                              className={`rounded-md bg-gradient-to-br ${
-                                location.pathname.match(
-                                  sidebarLink.activeRegExp
-                                )
-                                  ? 'border-indigo-600 from-indigo-700 to-purple-700'
-                                  : 'border-indigo-500 from-indigo-600 to-purple-600'
-                              }`}
-                            >
-                              {pendingRequestsCount}
-                            </Badge>
-                          </div>
+                    <TvFocusable key={`desktop-${sidebarLink.messagesKey}`}>
+                      <Link
+                        to={sidebarLink.href}
+                        className={`group flex items-center rounded-md px-2 py-2 text-lg font-medium leading-6 text-white transition duration-150 ease-in-out focus:outline-none ${
+                          location.pathname.match(sidebarLink.activeRegExp)
+                            ? 'bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500'
+                            : 'hover:bg-gray-700 focus:bg-gray-700'
+                        } `}
+                        data-testid={sidebarLink.dataTestId}
+                      >
+                        {sidebarLink.svgIcon}
+                        {intl.formatMessage(
+                          menuMessages[sidebarLink.messagesKey]
                         )}
-                      {sidebarLink.messagesKey === 'issues' &&
-                        openIssuesCount > 0 &&
-                        hasPermission(Permission.MANAGE_ISSUES) && (
-                          <div className="ml-auto flex">
-                            <Badge
-                              className={`rounded-md bg-gradient-to-br ${
-                                location.pathname.match(
-                                  sidebarLink.activeRegExp
-                                )
-                                  ? 'border-indigo-600 from-indigo-700 to-purple-700'
-                                  : 'border-indigo-500 from-indigo-600 to-purple-600'
-                              }`}
-                            >
-                              {openIssuesCount}
-                            </Badge>
-                          </div>
-                        )}
-                      {sidebarLink.messagesKey === 'interventions' &&
-                        activeInterventionsCount > 0 && (
-                          <div className="ml-auto flex">
-                            <Badge className="rounded-md border-yellow-500 bg-yellow-600">
-                              {activeInterventionsCount}
-                            </Badge>
-                          </div>
-                        )}
-                    </Link>
+                        {sidebarLink.messagesKey === 'requests' &&
+                          pendingRequestsCount > 0 &&
+                          hasPermission(Permission.MANAGE_REQUESTS) && (
+                            <div className="ml-auto flex">
+                              <Badge
+                                className={`rounded-md bg-gradient-to-br ${
+                                  location.pathname.match(
+                                    sidebarLink.activeRegExp
+                                  )
+                                    ? 'border-indigo-600 from-indigo-700 to-purple-700'
+                                    : 'border-indigo-500 from-indigo-600 to-purple-600'
+                                }`}
+                              >
+                                {pendingRequestsCount}
+                              </Badge>
+                            </div>
+                          )}
+                        {sidebarLink.messagesKey === 'issues' &&
+                          openIssuesCount > 0 &&
+                          hasPermission(Permission.MANAGE_ISSUES) && (
+                            <div className="ml-auto flex">
+                              <Badge
+                                className={`rounded-md bg-gradient-to-br ${
+                                  location.pathname.match(
+                                    sidebarLink.activeRegExp
+                                  )
+                                    ? 'border-indigo-600 from-indigo-700 to-purple-700'
+                                    : 'border-indigo-500 from-indigo-600 to-purple-600'
+                                }`}
+                              >
+                                {openIssuesCount}
+                              </Badge>
+                            </div>
+                          )}
+                        {sidebarLink.messagesKey === 'interventions' &&
+                          activeInterventionsCount > 0 && (
+                            <div className="ml-auto flex">
+                              <Badge className="rounded-md border-yellow-500 bg-yellow-600">
+                                {activeInterventionsCount}
+                              </Badge>
+                            </div>
+                          )}
+                      </Link>
+                    </TvFocusable>
                   );
                 })}
               </nav>

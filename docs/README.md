@@ -17,6 +17,12 @@ Jellyfin playback on a desktop computer, install the optional
 uses this hosted UI and preserves ordinary browser playback whenever the native
 runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
 
+## Optional Native Android
+
+On Android TV (phone later), [Foreseer Android](https://github.com/selmant/foreseer-android)
+loads the same hosted UI in a WebView and plays supported Jellyfin items with
+the Jellyfin Kotlin SDK and Media3. See [Native Android](using-seerr/native-android.md).
+
 ## Features
 
 - **Full Jellyfin/Emby/Plex integration**. Login and manage user access with Jellyfin/Emby/Plex.
@@ -35,6 +41,7 @@ runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
 - **Discover** from TMDB plus optional Trakt, AniList, Simkl, and MDBList sources.
 - **Mapping** from those sources onto TMDB, with packs, live resolvers, and a repair queue.
 - Optional **Foreseer Desktop** companion for same-window Jellyfin playback.
+- Optional **Foreseer Android** companion for Android TV / phone Jellyfin playback.
 - More features to come!
 
 ## We need your help!

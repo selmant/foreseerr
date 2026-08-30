@@ -35,6 +35,9 @@ importers:
       '@heroicons/react':
         specifier: 2.2.0
         version: 2.2.0(react@19.2.6)
+      '@noriginmedia/norigin-spatial-navigation':
+        specifier: ^3.3.0
+        version: 3.3.0(react@19.2.6)
       '@react-spring/web':
         specifier: ^10.0.3
         version: 10.0.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1988,6 +1991,17 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
+
+  '@noriginmedia/norigin-spatial-navigation-core@4.1.0':
+    resolution: {integrity: sha512-Z7Q1qWPNcx1KqabdEF5FiDOr2INCqrytsUbBOmLbQX6fOkC3VJmwwzzg2Pufr6lxwqAGgiuYFKA9cVdIUjTKWA==}
+
+  '@noriginmedia/norigin-spatial-navigation-react@3.3.0':
+    resolution: {integrity: sha512-YmiXFkczmfRTz6vmVmQoNhryi0j/09Ez77RPdCM2/VmXo7XcTVIYhrrQIqXkslLe2BzM2/k6ITqwTGhl2B/GTg==}
+    peerDependencies:
+      react: '>=16.8.0'
+
+  '@noriginmedia/norigin-spatial-navigation@3.3.0':
+    resolution: {integrity: sha512-8LfwMC3IRuDIntJpcNLEcf+nyXz9F52dCqnJBkLq1bypVibnAPE+uF3KReFFCHzH9VYZK7P0AWZvTtbx3vwjhQ==}
 
   '@npmcli/agent@4.0.0':
     resolution: {integrity: sha512-kAQTcEN9E8ERLVg5AsGwLNoFb+oEG6engbqAU2P43gD4JEIkNGMHdVQ096FsOAAYpZPB0RSt0zgInKIAS1l5QA==}
@@ -10162,6 +10176,23 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.17.1
+
+  '@noriginmedia/norigin-spatial-navigation-core@4.1.0':
+    dependencies:
+      lodash-es: 4.17.23
+
+  '@noriginmedia/norigin-spatial-navigation-react@3.3.0(react@19.2.6)':
+    dependencies:
+      '@noriginmedia/norigin-spatial-navigation-core': 4.1.0
+      lodash-es: 4.17.23
+      react: 19.2.6
+
+  '@noriginmedia/norigin-spatial-navigation@3.3.0(react@19.2.6)':
+    dependencies:
+      '@noriginmedia/norigin-spatial-navigation-core': 4.1.0
+      '@noriginmedia/norigin-spatial-navigation-react': 3.3.0(react@19.2.6)
+    transitivePeerDependencies:
+      - react
 
   '@npmcli/agent@4.0.0':
     dependencies:

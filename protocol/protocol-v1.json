@@ -4,6 +4,7 @@
   "eventName": "foreseer:native-event",
   "host": {
     "name": "foreseer-desktop",
+    "allowedNames": ["foreseer-desktop", "foreseer-android"],
     "versionSource": "package-metadata",
     "versionMaxLength": 128,
     "capabilities": [

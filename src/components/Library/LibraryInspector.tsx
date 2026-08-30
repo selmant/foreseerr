@@ -4,6 +4,7 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import LibraryEpisodeWatchToggle from '@app/components/Library/LibraryEpisodeWatchToggle';
 import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
 import MediaActionDetailBar from '@app/components/MediaActions/MediaActionDetailBar';
+import TvFocusable from '@app/components/Tv/TvFocusable';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useLockBodyScroll } from '@app/hooks/useLockBodyScroll';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -252,14 +253,16 @@ const LibraryInspector = ({
                   sizes="512px"
                 />
               ) : null}
-              <button
-                type="button"
-                className="absolute right-3 top-3 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-black/50 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
-                aria-label={intl.formatMessage(messages.close)}
-                onClick={onClose}
-              >
-                <XMarkIcon className="h-6 w-6" />
-              </button>
+              <TvFocusable>
+                <button
+                  type="button"
+                  className="absolute right-3 top-3 inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-black/50 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  aria-label={intl.formatMessage(messages.close)}
+                  onClick={onClose}
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </TvFocusable>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               {data?.code === 'not_linked' ? (
@@ -321,27 +324,29 @@ const LibraryInspector = ({
                   ) : null}
                   <div className="flex flex-wrap items-center gap-2">
                     {data.playItemId && (data.playUrl || data.mediaUrl) ? (
-                      <Button
-                        as="a"
-                        href={data.playUrl ?? data.mediaUrl}
-                        buttonType="primary"
-                        onClick={(event) =>
-                          playTarget(
-                            event,
-                            data.playItemId as string,
-                            data.subtitle || title,
-                            (data.playUrl ?? data.mediaUrl) as string
-                          )
-                        }
-                      >
-                        {intl.formatMessage(
-                          data.mediaType === 'tv'
-                            ? messages.playNext
-                            : progress > 0
-                              ? messages.resume
-                              : messages.play
-                        )}
-                      </Button>
+                      <TvFocusable>
+                        <Button
+                          as="a"
+                          href={data.playUrl ?? data.mediaUrl}
+                          buttonType="primary"
+                          onClick={(event) =>
+                            playTarget(
+                              event,
+                              data.playItemId as string,
+                              data.subtitle || title,
+                              (data.playUrl ?? data.mediaUrl) as string
+                            )
+                          }
+                        >
+                          {intl.formatMessage(
+                            data.mediaType === 'tv'
+                              ? messages.playNext
+                              : progress > 0
+                                ? messages.resume
+                                : messages.play
+                          )}
+                        </Button>
+                      </TvFocusable>
                     ) : null}
                     {tmdbId ? (
                       <MediaActionDetailBar

@@ -14,7 +14,7 @@ interface UserContextProps {
  * the login page if their session ever becomes invalid.
  */
 export const UserContext = ({ initialUser, children }: UserContextProps) => {
-  const { user, error, revalidate } = useUser({ initialData: initialUser });
+  const { user, revalidate } = useUser({ initialData: initialUser });
   const location = useLocation();
   const routing = useRef(false);
 
@@ -27,13 +27,13 @@ export const UserContext = ({ initialUser, children }: UserContextProps) => {
       !/^\/(setup|login|resetpassword)(\/|$)/.test(
         `${location.pathname}${location.search}`
       ) &&
-      (!user || error) &&
+      !user &&
       !routing.current
     ) {
       routing.current = true;
       window.location.href = '/login';
     }
-  }, [location.pathname, location.search, user, error]);
+  }, [location.pathname, location.search, user]);
 
   return <>{children}</>;
 };

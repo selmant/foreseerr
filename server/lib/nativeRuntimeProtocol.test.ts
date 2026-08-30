@@ -24,6 +24,10 @@ describe('native runtime protocol v1', () => {
     assert.equal(fixture.fixtureId, nativeProtocolV1.fixtureId);
     assert.equal(fixture.protocolVersion, nativeProtocolV1.protocolVersion);
     assert.equal(fixture.host.name, nativeProtocolV1.hostName);
+    assert.deepEqual(
+      fixture.host.allowedNames,
+      nativeProtocolV1.allowedHostNames
+    );
     assert.equal(fixture.eventName, nativeProtocolV1.eventName);
     assert.ok(fixture.host.capabilities.includes('setup'));
     assert.equal(
@@ -121,6 +125,16 @@ describe('native runtime protocol v1', () => {
         hostName: 'foreseer-desktop',
         hostVersion: '0.2.0',
         capabilities: ['play-item', 'auth-bootstrap'],
+        send: () => true,
+      }),
+      true
+    );
+    assert.equal(
+      isUsableForeseerNative({
+        protocolVersion: 1,
+        hostName: 'foreseer-android',
+        hostVersion: '0.1.0',
+        capabilities: ['play-item', 'auth-bootstrap', 'tv-focus'],
         send: () => true,
       }),
       true
