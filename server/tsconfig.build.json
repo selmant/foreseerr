@@ -1,4 +1,7 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["**/*.test.ts", "test/**"]
+  "exclude": ["**/*.test.ts", "test/**"],
+  "compilerOptions": {
+    "incremental": false
+  }
 }
