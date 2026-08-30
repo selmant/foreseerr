@@ -2,12 +2,12 @@ import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import PersonCard from '@app/components/PersonCard';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { MovieDetails } from '@server/models/Movie';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.MovieDetails.MovieCast', {
@@ -15,10 +15,10 @@ const messages = defineMessages('components.MovieDetails.MovieCast', {
 });
 
 const MovieCast = () => {
-  const router = useRouter();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
   const { data, error } = useSWR<MovieDetails>(
-    `/api/v1/movie/${router.query.movieId}`
+    `/api/v1/movie/${routeQuery.movieId}`
   );
 
   if (!data && !error) {
@@ -35,7 +35,7 @@ const MovieCast = () => {
       <div className="mb-5 mt-1">
         <Header
           subtext={
-            <Link href={`/movie/${data.id}`} className="hover:underline">
+            <Link to={`/movie/${data.id}`} className="hover:underline">
               {data.title}
             </Link>
           }

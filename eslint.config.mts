@@ -1,5 +1,4 @@
 import js from '@eslint/js';
-import nextPlugin from '@next/eslint-plugin-next';
 import prettier from 'eslint-config-prettier';
 import formatjs from 'eslint-plugin-formatjs';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
@@ -15,7 +14,7 @@ type Plugin = NonNullable<Config['plugins']>[string];
 export default defineConfig(
   // Global ignores
   {
-    ignores: ['node_modules/**', '.next/**'],
+    ignores: ['node_modules/**', 'dist/**'],
   },
   js.configs.recommended,
   tseslint.configs.recommended,
@@ -44,11 +43,8 @@ export default defineConfig(
       'react-hooks': reactHooks as Plugin,
       formatjs,
       'no-relative-import-paths': noRelativeImportPaths,
-      '@next/next': nextPlugin,
     },
     rules: {
-      ...nextPlugin.configs.recommended.rules,
-
       // TypeScript
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-use-before-define': 'off',

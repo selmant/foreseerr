@@ -2,6 +2,7 @@ import EmbyLogo from '@app/assets/services/emby.svg';
 import JellyfinLogo from '@app/assets/services/jellyfin.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
 import AppDataWarning from '@app/components/AppDataWarning';
+import AppImage from '@app/components/Common/AppImage';
 import Button from '@app/components/Common/Button';
 import ImageFader from '@app/components/Common/ImageFader';
 import PageTitle from '@app/components/Common/PageTitle';
@@ -17,10 +18,9 @@ import defineMessages from '@app/utils/defineMessages';
 import { MediaServerType } from '@server/constants/server';
 import type { Library } from '@server/lib/settings';
 import axios from 'axios';
-import Image from 'next/image';
-import { useRouter } from 'next/router';
 import { useCallback, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { useNavigate } from 'react-router';
 import useSWR, { mutate } from 'swr';
 import SetupLogin from './SetupLogin';
 
@@ -51,7 +51,7 @@ const Setup = () => {
   const [mediaServerType, setMediaServerType] = useState(
     MediaServerType.NOT_CONFIGURED
   );
-  const router = useRouter();
+  const navigate = useNavigate();
   const { locale } = useLocale();
   const settings = useSettings();
   const toasts = useToasts();
@@ -67,7 +67,7 @@ const Setup = () => {
       await axios.post('/api/v1/settings/main', { locale });
       mutate('/api/v1/settings/public');
 
-      router.push('/');
+      navigate('/');
     }
   };
 
@@ -108,7 +108,7 @@ const Setup = () => {
 
   useEffect(() => {
     if (settings.currentSettings.initialized) {
-      router.push('/');
+      navigate('/');
     }
 
     if (
@@ -123,7 +123,6 @@ const Setup = () => {
   }, [
     settings.currentSettings.mediaServerType,
     settings.currentSettings.initialized,
-    router,
     toasts,
     intl,
     currentStep,
@@ -159,7 +158,7 @@ const Setup = () => {
       </div>
       <div className="relative z-40 px-4 sm:mx-auto sm:w-full sm:max-w-4xl">
         <div className="relative mb-10 h-48 max-w-full sm:mx-auto sm:h-64 sm:max-w-md">
-          <Image src="/logo_stacked.svg" alt="Logo" fill />
+          <AppImage src="/logo_stacked.svg" alt="Logo" fill />
         </div>
         <AppDataWarning />
         <nav className="relative z-50">

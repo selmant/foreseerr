@@ -1,7 +1,7 @@
 import { NProgress } from '@tanem/react-nprogress';
-import { useRouter } from 'next/router';
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom';
+import { useLocation } from 'react-router';
 
 interface BarProps {
   progress: number;
@@ -39,28 +39,17 @@ const MemoizedNProgress = React.memo(NProgressBar);
 const LoadingBar = (): React.ReactPortal | null => {
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const location = useLocation();
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    const handleLoading = () => {
-      setLoading(true);
-    };
-    const handleFinishedLoading = () => {
-      setLoading(false);
-    };
-    router.events.on('routeChangeStart', handleLoading);
-    router.events.on('routeChangeComplete', handleFinishedLoading);
-    router.events.on('routeChangeError', handleFinishedLoading);
-
-    return () => {
-      router.events.off('routeChangeStart', handleLoading);
-      router.events.off('routeChangeComplete', handleFinishedLoading);
-      router.events.off('routeChangeError', handleFinishedLoading);
-    };
-  }, [router]);
+    setLoading(true);
+    const timeout = window.setTimeout(() => setLoading(false), 400);
+    return () => window.clearTimeout(timeout);
+  }, [location.pathname, location.search]);
 
   return mounted
     ? ReactDOM.createPortal(

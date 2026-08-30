@@ -2,11 +2,11 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { MovieResult } from '@server/models/Search';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverMovieLanguage', {
@@ -14,7 +14,7 @@ const messages = defineMessages('components.Discover.DiscoverMovieLanguage', {
 });
 
 const DiscoverMovieLanguage = () => {
-  const router = useRouter();
+  const query = useRouteQuery();
   const intl = useIntl();
 
   const {
@@ -34,7 +34,7 @@ const DiscoverMovieLanguage = () => {
         name: string;
       };
     }
-  >(`/api/v1/discover/movies/language/${router.query.language}`);
+  >(`/api/v1/discover/movies/language/${query.language}`);
 
   if (error) {
     return <ErrorPage statusCode={500} />;
@@ -43,7 +43,7 @@ const DiscoverMovieLanguage = () => {
   const title = isLoadingInitialData
     ? intl.formatMessage(globalMessages.loading)
     : intl.formatMessage(messages.languageMovies, {
-        language: intl.formatDisplayName(router.query.language as string, {
+        language: intl.formatDisplayName(query.language as string, {
           type: 'language',
           fallback: 'none',
         }),

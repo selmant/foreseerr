@@ -1,7 +1,6 @@
 import TvRecommendations from '@app/components/TvDetails/TvRecommendations';
-import type { NextPage } from 'next';
 
-const TvRecommendationsPage: NextPage = () => {
+const TvRecommendationsPage = () => {
   return <TvRecommendations />;
 };
 

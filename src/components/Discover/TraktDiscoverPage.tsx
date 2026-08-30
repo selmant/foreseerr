@@ -6,13 +6,13 @@ import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters'
 import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
 import useDiscover from '@app/hooks/useDiscover';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 interface TraktDiscoverPageProps {
@@ -45,7 +45,7 @@ const TraktDiscoverPage = ({
   showHideWatchedFilter,
   registerHideWatched = false,
 }: TraktDiscoverPageProps) => {
-  const router = useRouter();
+  const routeQuery = useRouteQuery();
   const settings = useSettings();
   const { user } = useUser();
   const { data: traktStatus } = useSWR<{
@@ -73,7 +73,7 @@ const TraktDiscoverPage = ({
     mutate,
   } = useDiscover<WatchlistItem, { title?: string }>(
     canLoad ? endpoint : '',
-    prepareTraktDiscoverOptions(router.query, queryExcludes, user?.id)
+    prepareTraktDiscoverOptions(routeQuery, queryExcludes, user?.id)
   );
   useRegisterHideWatchedRevalidation(mutate, registerHideWatched);
 
@@ -155,7 +155,7 @@ const TraktDiscoverMessage = ({
       <p>{message}</p>
       {linkAccount && (
         <Link
-          href="/profile/settings/linked-accounts"
+          to="/profile/settings/linked-accounts"
           className="mt-4 inline-block text-white underline"
         >
           {linkedAccountsLabel}

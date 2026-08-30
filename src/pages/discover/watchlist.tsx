@@ -1,7 +1,6 @@
 import DiscoverWatchlist from '@app/components/Discover/DiscoverWatchlist';
-import type { NextPage } from 'next';
 
-const WatchlistPage: NextPage = () => {
+const WatchlistPage = () => {
   return <DiscoverWatchlist />;
 };
 

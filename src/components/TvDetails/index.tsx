@@ -29,6 +29,7 @@ import Season, {
 import useDeepLinks from '@app/hooks/useDeepLinks';
 import useLocale from '@app/hooks/useLocale';
 import useMediaListActions from '@app/hooks/useMediaListActions';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -36,6 +37,7 @@ import ErrorPage from '@app/pages/_error';
 import { sortCrewPriority } from '@app/utils/creditHelpers';
 import defineMessages from '@app/utils/defineMessages';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
+import { buildPath } from '@app/utils/routing';
 import { Disclosure, Transition } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import {
@@ -60,10 +62,9 @@ import type { TvDetails as TvDetailsType } from '@server/models/Tv';
 import type { Crew } from '@server/models/common';
 import { countries } from 'country-flag-icons';
 import 'country-flag-icons/3x2/flags.css';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link, useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.TvDetails', {
@@ -112,7 +113,9 @@ interface TvDetailsProps {
 const TvDetails = ({ tv }: TvDetailsProps) => {
   const settings = useSettings();
   const { user, hasPermission } = useUser();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
   const { locale } = useLocale();
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -124,7 +127,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     data,
     error,
     mutate: revalidate,
-  } = useSWR<TvDetailsType>(`/api/v1/tv/${router.query.tvId}`, {
+  } = useSWR<TvDetailsType>(`/api/v1/tv/${routeQuery.tvId}`, {
     fallbackData: tv,
     refreshInterval: refreshIntervalHelper(
       {
@@ -143,14 +146,13 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
   );
 
   useEffect(() => {
-    if (router.query.manage === '1') {
+    if (routeQuery.manage === '1') {
       setShowManager(true);
-      router.replace({
-        pathname: router.pathname,
-        query: { tvId: router.query.tvId },
+      navigate(buildPath(location.pathname, { tvId: routeQuery.tvId }), {
+        replace: true,
       });
     }
-  }, [router, router.query.manage]);
+  }, [routeQuery.manage]);
 
   const closeBlocklistModal = useCallback(
     () => setShowBlocklistModal(false),
@@ -288,7 +290,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       data.genres
         .map((g) => (
           <Link
-            href={`/discover/tv?genre=${g.id}`}
+            to={`/discover/tv?genre=${g.id}`}
             key={`genre-${g.id}`}
             className="hover:underline"
           >
@@ -443,9 +445,8 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
         mediaType="tv"
         onClose={() => {
           setShowManager(false);
-          router.replace({
-            pathname: router.pathname,
-            query: { tvId: router.query.tvId },
+          navigate(buildPath(location.pathname, { tvId: routeQuery.tvId }), {
+            replace: true,
           });
         }}
         revalidate={() => revalidate()}
@@ -680,7 +681,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   .map((person) => (
                     <li key={`crew-${person.job}-${person.id}`}>
                       <span>{person.job}</span>
-                      <Link href={`/person/${person.id}`} className="crew-name">
+                      <Link to={`/person/${person.id}`} className="crew-name">
                         {person.name}
                       </Link>
                     </li>
@@ -688,7 +689,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
               </ul>
               <div className="mt-4 flex justify-end">
                 <Link
-                  href={`/tv/${data.id}/crew`}
+                  to={`/tv/${data.id}/crew`}
                   className="flex items-center text-gray-400 transition duration-300 hover:text-gray-100"
                 >
                   <span>{intl.formatMessage(messages.viewfullcrew)}</span>
@@ -701,7 +702,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
             <div className="mt-6">
               {data.keywords.map((keyword) => (
                 <Link
-                  href={`/discover/tv?keywords=${keyword.id}`}
+                  to={`/discover/tv?keywords=${keyword.id}`}
                   key={`keyword-id-${keyword.id}`}
                   className="mb-2 mr-2 inline-flex last:mr-0"
                 >
@@ -1134,7 +1135,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
               <div className="media-fact">
                 <span>{intl.formatMessage(messages.originallanguage)}</span>
                 <span className="media-fact-value">
-                  <Link href={`/discover/tv/language/${data.originalLanguage}`}>
+                  <Link to={`/discover/tv/language/${data.originalLanguage}`}>
                     {intl.formatDisplayName(data.originalLanguage, {
                       type: 'language',
                       fallback: 'none',
@@ -1188,7 +1189,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   {data.networks
                     .map((n) => (
                       <Link
-                        href={`/discover/tv/network/${n.id}`}
+                        to={`/discover/tv/network/${n.id}`}
                         key={`network-${n.id}`}
                       >
                         {n.name}
@@ -1247,11 +1248,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       {data.credits.cast.length > 0 && (
         <>
           <div className="slider-header">
-            <Link
-              href="/tv/[tvId]/cast"
-              as={`/tv/${data.id}/cast`}
-              className="slider-title"
-            >
+            <Link to={`/tv/${data.id}/cast`} className="slider-title">
               <span>{intl.formatMessage(messages.cast)}</span>
               <ArrowRightCircleIcon />
             </Link>
@@ -1275,14 +1272,14 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
       <MediaSlider
         sliderKey="recommendations"
         title={intl.formatMessage(messages.recommendations)}
-        url={`/api/v1/tv/${router.query.tvId}/recommendations`}
+        url={`/api/v1/tv/${routeQuery.tvId}/recommendations`}
         linkUrl={`/tv/${data.id}/recommendations`}
         hideWhenEmpty
       />
       <MediaSlider
         sliderKey="similar"
         title={intl.formatMessage(messages.similar)}
-        url={`/api/v1/tv/${router.query.tvId}/similar`}
+        url={`/api/v1/tv/${routeQuery.tvId}/similar`}
         linkUrl={`/tv/${data.id}/similar`}
         hideWhenEmpty
       />

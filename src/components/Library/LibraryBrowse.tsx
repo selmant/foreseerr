@@ -17,8 +17,10 @@ import {
 } from '@app/components/Library/browseUrlState';
 import useLibraryInfiniteScroll from '@app/components/Library/useLibraryInfiniteScroll';
 import ManageSlideOver from '@app/components/ManageSlideOver';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import defineMessages from '@app/utils/defineMessages';
 import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
+import { buildPath } from '@app/utils/routing';
 import type {
   LibraryBrowseResponse,
   LibraryFacetsResponse,
@@ -27,9 +29,9 @@ import type {
 import type { ParsedLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
-import { useRouter } from 'next/router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { useNavigate } from 'react-router';
 import useSWR from 'swr';
 import useSWRInfinite from 'swr/infinite';
 
@@ -62,7 +64,8 @@ const paramsFromState = (state: ReturnType<typeof browseStateFromQuery>) => {
 
 const LibraryBrowse = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const routeQuery = useRouteQuery();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [inspectorItem, setInspectorItem] = useState<LibraryTitle | null>(null);
@@ -73,10 +76,7 @@ const LibraryBrowse = () => {
   >(null);
   const [searchInput, setSearchInput] = useState('');
 
-  const state = useMemo(
-    () => browseStateFromQuery(router.query),
-    [router.query]
-  );
+  const state = useMemo(() => browseStateFromQuery(routeQuery), [routeQuery]);
 
   useEffect(() => {
     setSearchInput(state.q ?? '');
@@ -88,26 +88,24 @@ const LibraryBrowse = () => {
       if (next === (state.q ?? '')) {
         return;
       }
-      void router.replace(
-        {
-          pathname: '/library/browse',
-          query: paramsFromState({ ...state, q: next || undefined, skip: 0 }),
-        },
-        undefined,
-        { shallow: true }
+      void navigate(
+        buildPath(
+          '/library/browse',
+          paramsFromState({ ...state, q: next || undefined, skip: 0 })
+        ),
+        { replace: true }
       );
     }, 300);
     return () => window.clearTimeout(handle);
-  }, [searchInput, router, state]);
+  }, [searchInput, state]);
 
   const applyPatch = (patch: Partial<ParsedLibraryBrowseQuery>) => {
-    void router.replace(
-      {
-        pathname: '/library/browse',
-        query: paramsFromState(mergeBrowsePatch(state, patch, searchInput)),
-      },
-      undefined,
-      { shallow: true }
+    void navigate(
+      buildPath(
+        '/library/browse',
+        paramsFromState(mergeBrowsePatch(state, patch, searchInput))
+      ),
+      { replace: true }
     );
   };
 
@@ -232,13 +230,12 @@ const LibraryBrowse = () => {
             onChange={applyPatch}
             onDensityChange={(density) => {
               storeDensity(density);
-              void router.replace(
-                {
-                  pathname: '/library/browse',
-                  query: paramsFromState({ ...state, density }),
-                },
-                undefined,
-                { shallow: true }
+              void navigate(
+                buildPath(
+                  '/library/browse',
+                  paramsFromState({ ...state, density })
+                ),
+                { replace: true }
               );
             }}
             onOpenFilters={() => setFiltersOpen(true)}

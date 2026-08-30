@@ -1,8 +1,8 @@
 import { areDiscoverDefaultsCleared } from '@app/components/Discover/mergeFilterDefaults';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUser } from '@app/hooks/useUser';
 import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
-import { useRouter } from 'next/router';
 import { useCallback, useEffect, useState } from 'react';
 
 const EVENT = 'seerr-hidden-unmapped-changed';
@@ -91,7 +91,7 @@ export const useHiddenUnmappedTitles = (): {
   hideAllUnmapped: boolean;
 } => {
   const { user } = useUser();
-  const router = useRouter();
+  const query = useRouteQuery();
   const { data: defaults } = useDiscoverFilterDefaults();
   const [hidden, setHidden] = useState(() => readHiddenSet(user?.id));
 
@@ -122,6 +122,6 @@ export const useHiddenUnmappedTitles = (): {
   return {
     isHidden: (key: string) => Boolean(key) && hidden.has(key),
     hide,
-    hideAllUnmapped: resolveHideUnmapped(defaults, router.query, user?.id),
+    hideAllUnmapped: resolveHideUnmapped(defaults, query, user?.id),
   };
 };

@@ -1,7 +1,6 @@
 import Setup from '@app/components/Setup';
-import type { NextPage } from 'next';
 
-const SetupPage: NextPage = () => {
+const SetupPage = () => {
   return <Setup />;
 };
 

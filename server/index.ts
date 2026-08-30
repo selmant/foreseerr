@@ -61,16 +61,14 @@ import session from 'express-session';
 import fs from 'fs/promises';
 import type { Server as HttpServer } from 'http';
 import yaml from 'js-yaml';
-import next from 'next';
 import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 
 const API_SPEC_PATH = path.join(__dirname, '../seerr-api.yml');
+const PUBLIC_PATH = path.join(__dirname, 'public');
 
 logger.info(`Starting Seerr version ${getAppVersion()}`);
 const dev = process.env.NODE_ENV !== 'production';
-const app = next({ dev });
-const handle = app.getRequestHandler();
 let desktopRuntime = process.env.FORESEERR_RUNTIME === 'desktop';
 let managedServer: HttpServer | undefined;
 let releaseDesktopLock: (() => Promise<void>) | undefined;
@@ -208,7 +206,6 @@ const startForeseerrInternal = async (
   desktopOrigin = '';
   setDesktopApplicationUrl('');
   setDesktopStopping(false);
-  await app.prepare();
   if (desktopRuntime) {
     releaseDesktopLock = await acquireDesktopLock();
   }
@@ -461,6 +458,7 @@ const startForeseerrInternal = async (
   const apiDocs = yaml.load(apiSpecContent) as Record<string, unknown>;
   server.use('/api-docs', swaggerUi.serve, swaggerUi.setup(apiDocs));
   server.use(
+    '/api',
     OpenApiValidator.middleware({
       apiSpec: API_SPEC_PATH,
       validateRequests: true,
@@ -468,8 +466,8 @@ const startForeseerrInternal = async (
   );
   /**
    * Convert dates and drop cycles before JSON serialization. Only wrap API
-   * responses — applying this to Next.js `res.json` walks page/runtime graphs
-   * and can pin the event loop so `/login` never reaches the browser.
+   * responses — applying this globally walks page/runtime graphs and can pin
+   * the event loop so `/login` never reaches the browser.
    */
   server.use('/api', (_req, res, next) => {
     const original = res.json;
@@ -484,7 +482,16 @@ const startForeseerrInternal = async (
   server.use('/imageproxy', clearCookies, imageproxy);
   server.use('/avatarproxy', clearCookies, avatarproxy);
 
-  server.get('*path', (req, res) => handle(req, res));
+  if (!dev) {
+    server.use(express.static(PUBLIC_PATH, { index: false }));
+    server.get(
+      /^(?!\/api(?:\/|$)|\/api-docs|\/imageproxy|\/avatarproxy).*/,
+      (_req, res) => {
+        res.sendFile(path.join(PUBLIC_PATH, 'index.html'));
+      }
+    );
+  }
+
   server.use(
     (
       err: {
@@ -560,9 +567,9 @@ const startForeseerrInternal = async (
         return;
       }
       // When the desktop asks the OS to choose a port, PORT is initially
-      // "0".  Next's server-rendered pages use PORT for their same-process
-      // API calls, so replace that sentinel with the actual loopback port
-      // before emitting readiness.
+      // "0".  The SPA uses same-origin API calls on the bound loopback port,
+      // so replace that sentinel with the actual loopback port before emitting
+      // readiness.
       process.env.PORT = String(address.port);
       desktopOrigin = `http://127.0.0.1:${address.port}`;
       setDesktopApplicationUrl(desktopOrigin);

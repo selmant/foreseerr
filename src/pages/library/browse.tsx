@@ -1,7 +1,6 @@
 import LibraryBrowse from '@app/components/Library/LibraryBrowse';
-import type { NextPage } from 'next';
 
-const LibraryBrowsePage: NextPage = () => {
+const LibraryBrowsePage = () => {
   return <LibraryBrowse />;
 };
 

@@ -1,10 +1,10 @@
 import type { User } from '@app/hooks/useUser';
 import { useUser } from '@app/hooks/useUser';
-import { useRouter } from 'next/dist/client/router';
 import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router';
 
 interface UserContextProps {
-  initialUser: User;
+  initialUser?: User;
   children?: React.ReactNode;
 }
 
@@ -15,23 +15,25 @@ interface UserContextProps {
  */
 export const UserContext = ({ initialUser, children }: UserContextProps) => {
   const { user, error, revalidate } = useUser({ initialData: initialUser });
-  const router = useRouter();
+  const location = useLocation();
   const routing = useRef(false);
 
   useEffect(() => {
     revalidate();
-  }, [router.pathname, revalidate]);
+  }, [`${location.pathname}${location.search}`, revalidate]);
 
   useEffect(() => {
     if (
-      !router.pathname.match(/(setup|login|resetpassword)/) &&
+      !/^\/(setup|login|resetpassword)(\/|$)/.test(
+        `${location.pathname}${location.search}`
+      ) &&
       (!user || error) &&
       !routing.current
     ) {
       routing.current = true;
-      location.href = '/login';
+      window.location.href = '/login';
     }
-  }, [router, user, error]);
+  }, [location.pathname, location.search, user, error]);
 
   return <>{children}</>;
 };

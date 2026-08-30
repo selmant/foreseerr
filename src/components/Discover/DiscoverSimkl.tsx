@@ -3,10 +3,10 @@ import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import ErrorPage from '@app/pages/_error';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import { useRouter } from 'next/router';
 
 const libraryStatuses = new Set([
   'watching',
@@ -56,15 +56,14 @@ const publicViews = {
 
 const DiscoverSimkl = () => {
   const settings = useSettings();
-  const router = useRouter();
+  const query = useRouteQuery();
   const view =
-    typeof router.query.view === 'string'
-      ? publicViews[router.query.view as keyof typeof publicViews]
+    typeof query.view === 'string'
+      ? publicViews[query.view as keyof typeof publicViews]
       : undefined;
   const status =
-    typeof router.query.status === 'string' &&
-    libraryStatuses.has(router.query.status)
-      ? router.query.status
+    typeof query.status === 'string' && libraryStatuses.has(query.status)
+      ? query.status
       : 'plantowatch';
   const title = view
     ? view.title

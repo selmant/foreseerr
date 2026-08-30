@@ -3,9 +3,8 @@ import UserNotificationSettings from '@app/components/UserProfile/UserSettings/U
 import UserWebPushSettings from '@app/components/UserProfile/UserSettings/UserNotificationSettings/UserNotificationsWebPush';
 import useRouteGuard from '@app/hooks/useRouteGuard';
 import { Permission } from '@app/hooks/useUser';
-import type { NextPage } from 'next';
 
-const WebPushNotificationsPage: NextPage = () => {
+const WebPushNotificationsPage = () => {
   useRouteGuard(Permission.MANAGE_USERS);
   return (
     <UserSettings>

@@ -32,8 +32,8 @@ import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 import type { JSX } from 'react';
@@ -430,7 +430,7 @@ const ManageSlideOver = ({
                             <span className="flex flex-row flex-wrap">
                               {watchData.data.users.map((user) => (
                                 <Link
-                                  href={
+                                  to={
                                     currentUser?.id === user.id
                                       ? '/profile'
                                       : `/users/${user.id}`
@@ -592,7 +592,7 @@ const ManageSlideOver = ({
                             <span className="flex flex-row flex-wrap">
                               {watchData.data4k.users.map((user) => (
                                 <Link
-                                  href={
+                                  to={
                                     currentUser?.id === user.id
                                       ? '/profile'
                                       : `/users/${user.id}`

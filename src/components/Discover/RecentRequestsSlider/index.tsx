@@ -8,8 +8,8 @@ import {
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import type { RequestResultsResponse } from '@server/interfaces/api/requestInterfaces';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover.RecentRequestsSlider', {
@@ -40,7 +40,7 @@ const RecentRequestsSlider = () => {
   return (
     <>
       <div className="slider-header">
-        <Link href="/requests?filter=all" className="slider-title">
+        <Link to="/requests?filter=all" className="slider-title">
           <span>{intl.formatMessage(sliderTitles.recentrequests)}</span>
           <ArrowRightCircleIcon />
         </Link>

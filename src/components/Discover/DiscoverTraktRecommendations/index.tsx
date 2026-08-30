@@ -1,7 +1,7 @@
 import TraktDiscoverPage from '@app/components/Discover/TraktDiscoverPage';
 import defineMessages from '@app/utils/defineMessages';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 
 const messages = defineMessages(
   'components.Discover.DiscoverTraktRecommendations',
@@ -26,7 +26,7 @@ const DiscoverTraktRecommendations = () => {
       showRecommendationFilters
       registerHideWatched
       subtext={
-        <Link href="/discover/trakt/lists" className="hover:underline">
+        <Link to="/discover/trakt/lists" className="hover:underline">
           Your Trakt Lists
         </Link>
       }

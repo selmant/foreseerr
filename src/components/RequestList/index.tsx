@@ -4,10 +4,12 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
 import RequestItem from '@app/components/RequestList/RequestItem';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { buildPath } from '@app/utils/routing';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import {
   ArrowDownIcon,
@@ -19,10 +21,9 @@ import {
   FunnelIcon,
 } from '@heroicons/react/24/solid';
 import type { RequestResultsResponse } from '@server/interfaces/api/requestInterfaces';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link, useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.RequestList', {
@@ -54,10 +55,12 @@ type SortDirection = 'asc' | 'desc';
 type MediaType = 'all' | 'movie' | 'tv';
 
 const RequestList = () => {
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
   const { user } = useUser({
-    id: Number(router.query.userId),
+    id: Number(routeQuery.userId),
   });
   const { user: currentUser, hasPermission } = useUser();
   const [currentFilter, setCurrentFilter] = useState<Filter>(Filter.PENDING);
@@ -67,7 +70,7 @@ const RequestList = () => {
     useState<SortDirection>('desc');
   const [currentPageSize, setCurrentPageSize] = useState<number>(10);
 
-  const page = router.query.page ? Number(router.query.page) : 1;
+  const page = routeQuery.page ? Number(routeQuery.page) : 1;
   const pageIndex = page - 1;
   const updateQueryParams = useUpdateQueryParams({ page: page.toString() });
 
@@ -79,10 +82,10 @@ const RequestList = () => {
     `/api/v1/request?take=${currentPageSize}&skip=${
       pageIndex * currentPageSize
     }&filter=${currentFilter}&mediaType=${currentMediaType}&sort=${currentSort}&sortDirection=${currentSortDirection}${
-      router.pathname.startsWith('/profile')
+      location.pathname.startsWith('/profile')
         ? `&requestedBy=${currentUser?.id}`
-        : router.query.userId
-          ? `&requestedBy=${router.query.userId}`
+        : routeQuery.userId
+          ? `&requestedBy=${routeQuery.userId}`
           : ''
     }`
   );
@@ -103,10 +106,10 @@ const RequestList = () => {
     }
 
     // If filter value is provided in query, use that instead
-    if (Object.values(Filter).includes(router.query.filter as Filter)) {
-      setCurrentFilter(router.query.filter as Filter);
+    if (Object.values(Filter).includes(routeQuery.filter as Filter)) {
+      setCurrentFilter(routeQuery.filter as Filter);
     }
-  }, [router.query.filter]);
+  }, [routeQuery.filter]);
 
   // Set filter values to local storage any time they are changed
   useEffect(() => {
@@ -144,18 +147,18 @@ const RequestList = () => {
       <PageTitle
         title={[
           intl.formatMessage(messages.requests),
-          router.query.userId ? user?.displayName : '',
+          routeQuery.userId ? user?.displayName : '',
         ]}
       />
       <div className="mb-4 flex flex-col justify-between lg:flex-row lg:items-end">
         <Header
           subtext={
-            router.pathname.startsWith('/profile') ? (
-              <Link href={`/profile`} className="hover:underline">
+            location.pathname.startsWith('/profile') ? (
+              <Link to={`/profile`} className="hover:underline">
                 {currentUser?.displayName}
               </Link>
-            ) : router.query.userId ? (
-              <Link href={`/users/${user?.id}`} className="hover:underline">
+            ) : routeQuery.userId ? (
+              <Link to={`/users/${user?.id}`} className="hover:underline">
                 {user?.displayName}
               </Link>
             ) : (
@@ -175,12 +178,12 @@ const RequestList = () => {
               name="mediaType"
               onChange={(e) => {
                 setCurrentMediaType(e.target.value as MediaType);
-                router.push({
-                  pathname: router.pathname,
-                  query: router.query.userId
-                    ? { userId: router.query.userId }
-                    : {},
-                });
+                navigate(
+                  buildPath(
+                    location.pathname,
+                    routeQuery.userId ? { userId: routeQuery.userId } : {}
+                  )
+                );
               }}
               value={currentMediaType}
               className="rounded-r-only"
@@ -205,12 +208,12 @@ const RequestList = () => {
               name="filter"
               onChange={(e) => {
                 setCurrentFilter(e.target.value as Filter);
-                router.push({
-                  pathname: router.pathname,
-                  query: router.query.userId
-                    ? { userId: router.query.userId }
-                    : {},
-                });
+                navigate(
+                  buildPath(
+                    location.pathname,
+                    routeQuery.userId ? { userId: routeQuery.userId } : {}
+                  )
+                );
               }}
               value={currentFilter}
               className="rounded-r-only"
@@ -253,12 +256,12 @@ const RequestList = () => {
               name="sort"
               onChange={(e) => {
                 setCurrentSort(e.target.value as Sort);
-                router.push({
-                  pathname: router.pathname,
-                  query: router.query.userId
-                    ? { userId: router.query.userId }
-                    : {},
-                });
+                navigate(
+                  buildPath(
+                    location.pathname,
+                    routeQuery.userId ? { userId: routeQuery.userId } : {}
+                  )
+                );
               }}
               value={currentSort}
               className="rounded-none border-r-0"
@@ -372,14 +375,13 @@ const RequestList = () => {
                     name="pageSize"
                     onChange={(e) => {
                       setCurrentPageSize(Number(e.target.value));
-                      router
-                        .push({
-                          pathname: router.pathname,
-                          query: router.query.userId
-                            ? { userId: router.query.userId }
-                            : {},
-                        })
-                        .then(() => window.scrollTo(0, 0));
+                      navigate(
+                        buildPath(
+                          location.pathname,
+                          routeQuery.userId ? { userId: routeQuery.userId } : {}
+                        )
+                      );
+                      window.scrollTo(0, 0);
                     }}
                     value={currentPageSize}
                     className="short inline"

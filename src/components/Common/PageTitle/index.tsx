@@ -1,5 +1,5 @@
 import useSettings from '@app/hooks/useSettings';
-import Head from 'next/head';
+import { Helmet } from 'react-helmet-async';
 
 interface PageTitleProps {
   title: string | (string | undefined)[];
@@ -13,9 +13,9 @@ const PageTitle = ({ title }: PageTitleProps) => {
   } - ${settings.currentSettings.applicationTitle}`;
 
   return (
-    <Head>
+    <Helmet>
       <title>{titleText}</title>
-    </Head>
+    </Helmet>
   );
 };
 

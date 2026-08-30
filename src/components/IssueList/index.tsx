@@ -3,9 +3,11 @@ import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import IssueItem from '@app/components/IssueList/IssueItem';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { buildPath } from '@app/utils/routing';
 import {
   BarsArrowDownIcon,
   ChevronLeftIcon,
@@ -13,9 +15,9 @@ import {
   FunnelIcon,
 } from '@heroicons/react/24/solid';
 import type { IssueResultsResponse } from '@server/interfaces/api/issueInterfaces';
-import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.IssueList', {
@@ -35,12 +37,14 @@ type Sort = 'added' | 'modified';
 
 const IssueList = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const [currentFilter, setCurrentFilter] = useState<Filter>(Filter.OPEN);
   const [currentSort, setCurrentSort] = useState<Sort>('added');
   const [currentPageSize, setCurrentPageSize] = useState<number>(10);
 
-  const page = router.query.page ? Number(router.query.page) : 1;
+  const page = routeQuery.page ? Number(routeQuery.page) : 1;
   const pageIndex = page - 1;
   const updateQueryParams = useUpdateQueryParams({ page: page.toString() });
 
@@ -63,10 +67,10 @@ const IssueList = () => {
     }
 
     // If filter value is provided in query, use that instead
-    if (Object.values(Filter).includes(router.query.filter as Filter)) {
-      setCurrentFilter(router.query.filter as Filter);
+    if (Object.values(Filter).includes(routeQuery.filter as Filter)) {
+      setCurrentFilter(routeQuery.filter as Filter);
     }
-  }, [router.query.filter]);
+  }, [routeQuery.filter]);
 
   // Set filter values to local storage any time they are changed
   useEffect(() => {
@@ -106,12 +110,12 @@ const IssueList = () => {
               name="filter"
               onChange={(e) => {
                 setCurrentFilter(e.target.value as Filter);
-                router.push({
-                  pathname: router.pathname,
-                  query: router.query.userId
-                    ? { userId: router.query.userId }
-                    : {},
-                });
+                navigate(
+                  buildPath(
+                    location.pathname,
+                    routeQuery.userId ? { userId: routeQuery.userId } : {}
+                  )
+                );
               }}
               value={currentFilter}
               className="rounded-r-only"
@@ -136,12 +140,12 @@ const IssueList = () => {
               name="sort"
               onChange={(e) => {
                 setCurrentSort(e.target.value as Sort);
-                router.push({
-                  pathname: router.pathname,
-                  query: router.query.userId
-                    ? { userId: router.query.userId }
-                    : {},
-                });
+                navigate(
+                  buildPath(
+                    location.pathname,
+                    routeQuery.userId ? { userId: routeQuery.userId } : {}
+                  )
+                );
               }}
               value={currentSort}
               className="rounded-r-only"
@@ -210,14 +214,13 @@ const IssueList = () => {
                     name="pageSize"
                     onChange={(e) => {
                       setCurrentPageSize(Number(e.target.value));
-                      router
-                        .push({
-                          pathname: router.pathname,
-                          query: router.query.userId
-                            ? { userId: router.query.userId }
-                            : {},
-                        })
-                        .then(() => window.scrollTo(0, 0));
+                      navigate(
+                        buildPath(
+                          location.pathname,
+                          routeQuery.userId ? { userId: routeQuery.userId } : {}
+                        )
+                      );
+                      window.scrollTo(0, 0);
                     }}
                     value={currentPageSize}
                     className="short inline"

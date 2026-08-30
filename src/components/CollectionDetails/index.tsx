@@ -9,6 +9,7 @@ import RequestModal from '@app/components/RequestModal';
 import Slider from '@app/components/Slider';
 import StatusBadge from '@app/components/StatusBadge';
 import TitleCard from '@app/components/TitleCard';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -25,10 +26,9 @@ import { MediaStatus } from '@server/constants/media';
 import type { Collection } from '@server/models/Collection';
 import axios from 'axios';
 import { uniq } from 'lodash';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { Fragment, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.CollectionDetails', {
@@ -46,7 +46,7 @@ interface CollectionDetailsProps {
 
 const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
   const intl = useIntl();
-  const router = useRouter();
+  const routeQuery = useRouteQuery();
   const settings = useSettings();
   const { hasPermission } = useUser();
   const [requestModal, setRequestModal] = useState(false);
@@ -72,7 +72,7 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
     data,
     error,
     mutate: revalidate,
-  } = useSWR<Collection>(`/api/v1/collection/${router.query.collectionId}`, {
+  } = useSWR<Collection>(`/api/v1/collection/${routeQuery.collectionId}`, {
     fallbackData: collection,
     revalidateOnMount: true,
     refreshInterval: refreshIntervalHelper(
@@ -256,7 +256,7 @@ const CollectionDetails = ({ collection }: CollectionDetailsProps) => {
       )
         .map((genreId) => (
           <Link
-            href={`/discover/movies/genre/${genreId}`}
+            to={`/discover/movies/genre/${genreId}`}
             key={`genre-${genreId}`}
             className="hover:underline"
           >

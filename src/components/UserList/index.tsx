@@ -10,6 +10,7 @@ import SensitiveInput from '@app/components/Common/SensitiveInput';
 import Table from '@app/components/Common/Table';
 import BulkEditModal from '@app/components/UserList/BulkEditModal';
 import PlexImportModal from '@app/components/UserList/PlexImportModal';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
@@ -34,10 +35,9 @@ import type { UserResultsResponse } from '@server/interfaces/api/userInterfaces'
 import { hasPermission } from '@server/lib/permissions';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link, useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 import validator from 'validator';
 import * as Yup from 'yup';
@@ -106,14 +106,16 @@ type SortDirection = 'asc' | 'desc';
 
 const UserList = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const settings = useSettings();
   const { addToast } = useToasts();
   const { user: currentUser, hasPermission: currentHasPermission } = useUser();
   const [currentSort, setCurrentSort] = useState<Sort>('created');
   const [currentPageSize, setCurrentPageSize] = useState<number>(10);
 
-  const page = router.query.page ? Number(router.query.page) : 1;
+  const page = routeQuery.page ? Number(routeQuery.page) : 1;
   const pageIndex = page - 1;
   const updateQueryParams = useUpdateQueryParams({ page: page.toString() });
 
@@ -786,7 +788,7 @@ const UserList = () => {
               <Table.TD>
                 <div className="flex items-center">
                   <Link
-                    href={`/users/${user.id}`}
+                    to={`/users/${user.id}`}
                     className="h-10 w-10 flex-shrink-0"
                   >
                     <CachedImage
@@ -800,7 +802,7 @@ const UserList = () => {
                   </Link>
                   <div className="ml-4">
                     <Link
-                      href={`/users/${user.id}`}
+                      to={`/users/${user.id}`}
                       className="text-base font-bold leading-5 transition duration-300 hover:underline"
                       data-testid="user-list-username-link"
                     >
@@ -828,7 +830,7 @@ const UserList = () => {
                   { type: 'or' }
                 ) ? (
                   <Link
-                    href={`/users/${user.id}/requests`}
+                    to={`/users/${user.id}/requests`}
                     className="text-sm leading-5 transition duration-300 hover:underline"
                   >
                     {user.requestCount}
@@ -879,12 +881,7 @@ const UserList = () => {
                   <Button
                     buttonType="warning"
                     disabled={user.id === 1 && currentUser?.id !== 1}
-                    onClick={() =>
-                      router.push(
-                        '/users/[userId]/settings',
-                        `/users/${user.id}/settings`
-                      )
-                    }
+                    onClick={() => navigate(`/users/${user.id}/settings`)}
                   >
                     {intl.formatMessage(globalMessages.edit)}
                   </Button>
@@ -934,9 +931,8 @@ const UserList = () => {
                           name="pageSize"
                           onChange={(e) => {
                             setCurrentPageSize(Number(e.target.value));
-                            router
-                              .push(router.pathname)
-                              .then(() => window.scrollTo(0, 0));
+                            navigate(location.pathname);
+                            window.scrollTo(0, 0);
                           }}
                           value={currentPageSize}
                           className="short inline"

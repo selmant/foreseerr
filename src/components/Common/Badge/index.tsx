@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import React from 'react';
+import { Link } from 'react-router';
 
 interface BadgeProps {
   badgeType?:
@@ -94,7 +94,7 @@ const Badge = (
   } else if (href) {
     return (
       <Link
-        href={href}
+        to={href}
         className={badgeStyle.join(' ')}
         ref={ref as React.Ref<HTMLAnchorElement>}
         onClick={onClick}

@@ -2,13 +2,13 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { MovieDetails } from '@server/models/Movie';
 import type { MovieResult } from '@server/models/Search';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.MovieDetails', {
@@ -16,10 +16,10 @@ const messages = defineMessages('components.MovieDetails', {
 });
 
 const MovieSimilar = () => {
-  const router = useRouter();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
   const { data: movieData } = useSWR<MovieDetails>(
-    `/api/v1/movie/${router.query.movieId}`
+    `/api/v1/movie/${routeQuery.movieId}`
   );
   const {
     isLoadingInitialData,
@@ -29,7 +29,7 @@ const MovieSimilar = () => {
     titles,
     fetchMore,
     error,
-  } = useDiscover<MovieResult>(`/api/v1/movie/${router.query.movieId}/similar`);
+  } = useDiscover<MovieResult>(`/api/v1/movie/${routeQuery.movieId}/similar`);
 
   if (error) {
     return <ErrorPage statusCode={500} />;
@@ -43,7 +43,7 @@ const MovieSimilar = () => {
       <div className="mb-5 mt-1">
         <Header
           subtext={
-            <Link href={`/movie/${movieData?.id}`} className="hover:underline">
+            <Link to={`/movie/${movieData?.id}`} className="hover:underline">
               {movieData?.title}
             </Link>
           }

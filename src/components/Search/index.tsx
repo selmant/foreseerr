@@ -2,6 +2,7 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type {
@@ -9,7 +10,6 @@ import type {
   PersonResult,
   TvResult,
 } from '@server/models/Search';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Search', {
@@ -19,7 +19,7 @@ const messages = defineMessages('components.Search', {
 
 const Search = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const query = useRouteQuery();
 
   const {
     isLoadingInitialData,
@@ -32,7 +32,7 @@ const Search = () => {
   } = useDiscover<MovieResult | TvResult | PersonResult>(
     `/api/v1/search`,
     {
-      query: router.query.query,
+      query: query.query,
     },
     { hideAvailable: false, hideBlocklisted: false }
   );

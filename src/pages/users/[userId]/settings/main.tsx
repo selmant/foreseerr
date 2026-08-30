@@ -2,9 +2,8 @@ import UserSettings from '@app/components/UserProfile/UserSettings';
 import UserGeneralSettings from '@app/components/UserProfile/UserSettings/UserGeneralSettings';
 import useRouteGuard from '@app/hooks/useRouteGuard';
 import { Permission } from '@app/hooks/useUser';
-import type { NextPage } from 'next';
 
-const UserSettingsMainPage: NextPage = () => {
+const UserSettingsMainPage = () => {
   useRouteGuard(Permission.MANAGE_USERS);
   return (
     <UserSettings>

@@ -7,12 +7,14 @@ import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDebouncedState from '@app/hooks/useDebouncedState';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useToasts from '@app/hooks/useToasts';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
+import { buildPath } from '@app/utils/routing';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -27,12 +29,11 @@ import type {
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import type { ChangeEvent } from 'react';
 import { useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
+import { Link, useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Blocklist', {
@@ -64,10 +65,12 @@ const Blocklist = () => {
   const [searchFilter, debouncedSearchFilter, setSearchFilter] =
     useDebouncedState('');
   const [currentFilter, setCurrentFilter] = useState<Filter>(Filter.MANUAL);
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
 
-  const page = router.query.page ? Number(router.query.page) : 1;
+  const page = routeQuery.page ? Number(routeQuery.page) : 1;
   const pageIndex = page - 1;
   const updateQueryParams = useUpdateQueryParams({ page: page.toString() });
 
@@ -97,7 +100,11 @@ const Blocklist = () => {
     // Remove the "page" query param from the URL
     // so that the "skip" query param on line 62 is empty
     // and the search returns results without skipping items
-    if (router.query.page) router.replace(router.basePath);
+    if (routeQuery.page) {
+      const remainingQuery = { ...routeQuery };
+      delete remainingQuery.page;
+      navigate(buildPath(location.pathname, remainingQuery), { replace: true });
+    }
 
     setSearchFilter(e.target.value as string);
   };
@@ -121,12 +128,12 @@ const Blocklist = () => {
               name="filter"
               onChange={(e) => {
                 setCurrentFilter(e.target.value as Filter);
-                router.push({
-                  pathname: router.pathname,
-                  query: router.query.userId
-                    ? { userId: router.query.userId }
-                    : {},
-                });
+                navigate(
+                  buildPath(
+                    location.pathname,
+                    routeQuery.userId ? { userId: routeQuery.userId } : {}
+                  )
+                );
               }}
               value={currentFilter}
               className="rounded-r-only"
@@ -219,14 +226,13 @@ const Blocklist = () => {
                     name="pageSize"
                     onChange={(e) => {
                       setCurrentPageSize(Number(e.target.value));
-                      router
-                        .push({
-                          pathname: router.pathname,
-                          query: router.query.userId
-                            ? { userId: router.query.userId }
-                            : {},
-                        })
-                        .then(() => window.scrollTo(0, 0));
+                      navigate(
+                        buildPath(
+                          location.pathname,
+                          routeQuery.userId ? { userId: routeQuery.userId } : {}
+                        )
+                      );
+                      window.scrollTo(0, 0);
                     }}
                     value={currentPageSize}
                     className="short inline"
@@ -347,7 +353,7 @@ const BlocklistedItem = ({ item, revalidateList }: BlocklistedItemProps) => {
       <div className="relative flex w-full flex-col justify-between overflow-hidden sm:flex-row">
         <div className="relative z-10 flex w-full items-center overflow-hidden pl-4 pr-4 sm:pr-0 xl:w-7/12 2xl:w-2/3">
           <Link
-            href={
+            to={
               item.mediaType === 'movie'
                 ? `/movie/${item.tmdbId}`
                 : `/tv/${item.tmdbId}`
@@ -377,7 +383,7 @@ const BlocklistedItem = ({ item, revalidateList }: BlocklistedItemProps) => {
                 )?.slice(0, 4)}
             </div>
             <Link
-              href={
+              to={
                 item.mediaType === 'movie'
                   ? `/movie/${item.tmdbId}`
                   : `/tv/${item.tmdbId}`
@@ -415,7 +421,7 @@ const BlocklistedItem = ({ item, revalidateList }: BlocklistedItemProps) => {
                     />
                   ),
                   user: item.user ? (
-                    <Link href={`/users/${item.user.id}`}>
+                    <Link to={`/users/${item.user.id}`}>
                       <span className="group flex items-center truncate">
                         <CachedImage
                           type="avatar"

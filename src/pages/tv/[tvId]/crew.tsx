@@ -1,7 +1,6 @@
 import TvCrew from '@app/components/TvDetails/TvCrew';
-import type { NextPage } from 'next';
 
-const TvCrewPage: NextPage = () => {
+const TvCrewPage = () => {
   return <TvCrew />;
 };
 

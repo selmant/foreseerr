@@ -1,7 +1,6 @@
 import DiscoverMdblistList from '@app/components/Discover/DiscoverMdblistList';
-import type { NextPage } from 'next';
 
-const MdblistListPage: NextPage = () => {
+const MdblistListPage = () => {
   return <DiscoverMdblistList />;
 };
 

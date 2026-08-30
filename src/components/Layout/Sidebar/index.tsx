@@ -1,3 +1,4 @@
+import AppImage from '@app/components/Common/AppImage';
 import Badge from '@app/components/Common/Badge';
 import QuitAppControl from '@app/components/Layout/QuitAppControl';
 import VersionStatus from '@app/components/Layout/VersionStatus';
@@ -17,11 +18,9 @@ import {
   UsersIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import Image from 'next/image';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { Fragment, useEffect, useRef } from 'react';
 import { useIntl } from 'react-intl';
+import { Link, useLocation } from 'react-router';
 
 export const menuMessages = defineMessages('components.Layout.Sidebar', {
   dashboard: 'Discover',
@@ -141,7 +140,7 @@ const Sidebar = ({
   revalidateRequestsCount,
 }: SidebarProps) => {
   const navRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const location = useLocation();
   const intl = useIntl();
   const { hasPermission } = useUser();
   useClickOutside(navRef, () => setClosed());
@@ -205,8 +204,8 @@ const Sidebar = ({
                   >
                     <div className="flex flex-shrink-0 items-center px-2">
                       <span className="w-full px-4 text-xl text-gray-50">
-                        <Link href="/" className="relative block h-24 w-64">
-                          <Image src="/logo_full.svg" alt="Logo" fill />
+                        <Link to="/" className="relative block h-24 w-64">
+                          <AppImage src="/logo_full.svg" alt="Logo" fill />
                         </Link>
                       </span>
                     </div>
@@ -221,8 +220,7 @@ const Sidebar = ({
                         return (
                           <Link
                             key={`mobile-${sidebarLink.messagesKey}`}
-                            href={sidebarLink.href}
-                            as={sidebarLink.as}
+                            to={sidebarLink.href}
                             onClick={() => setClosed()}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
@@ -232,7 +230,7 @@ const Sidebar = ({
                             role="button"
                             tabIndex={0}
                             className={`flex items-center rounded-md px-2 py-2 text-base font-medium leading-6 text-white transition duration-150 ease-in-out focus:outline-none ${
-                              router.pathname.match(sidebarLink.activeRegExp)
+                              location.pathname.match(sidebarLink.activeRegExp)
                                 ? 'bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500'
                                 : 'hover:bg-gray-700 focus:bg-gray-700'
                             } `}
@@ -269,8 +267,8 @@ const Sidebar = ({
             <div className="flex flex-1 flex-col overflow-y-auto pb-4">
               <div className="flex flex-shrink-0 items-center">
                 <span className="w-full px-4 py-2 text-2xl text-gray-50">
-                  <Link href="/" className="relative block h-24">
-                    <Image
+                  <Link to="/" className="relative block h-24">
+                    <AppImage
                       src="/logo_full.svg"
                       alt="Logo"
                       fill
@@ -290,10 +288,9 @@ const Sidebar = ({
                   return (
                     <Link
                       key={`desktop-${sidebarLink.messagesKey}`}
-                      href={sidebarLink.href}
-                      as={sidebarLink.as}
+                      to={sidebarLink.href}
                       className={`group flex items-center rounded-md px-2 py-2 text-lg font-medium leading-6 text-white transition duration-150 ease-in-out focus:outline-none ${
-                        router.pathname.match(sidebarLink.activeRegExp)
+                        location.pathname.match(sidebarLink.activeRegExp)
                           ? 'bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500'
                           : 'hover:bg-gray-700 focus:bg-gray-700'
                       } `}
@@ -309,7 +306,9 @@ const Sidebar = ({
                           <div className="ml-auto flex">
                             <Badge
                               className={`rounded-md bg-gradient-to-br ${
-                                router.pathname.match(sidebarLink.activeRegExp)
+                                location.pathname.match(
+                                  sidebarLink.activeRegExp
+                                )
                                   ? 'border-indigo-600 from-indigo-700 to-purple-700'
                                   : 'border-indigo-500 from-indigo-600 to-purple-600'
                               }`}
@@ -324,7 +323,9 @@ const Sidebar = ({
                           <div className="ml-auto flex">
                             <Badge
                               className={`rounded-md bg-gradient-to-br ${
-                                router.pathname.match(sidebarLink.activeRegExp)
+                                location.pathname.match(
+                                  sidebarLink.activeRegExp
+                                )
                                   ? 'border-indigo-600 from-indigo-700 to-purple-700'
                                   : 'border-indigo-500 from-indigo-600 to-purple-600'
                               }`}

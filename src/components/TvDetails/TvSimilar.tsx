@@ -2,13 +2,13 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { TvResult } from '@server/models/Search';
 import type { TvDetails } from '@server/models/Tv';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.TvDetails', {
@@ -16,9 +16,9 @@ const messages = defineMessages('components.TvDetails', {
 });
 
 const TvSimilar = () => {
-  const router = useRouter();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
-  const { data: tvData } = useSWR<TvDetails>(`/api/v1/tv/${router.query.tvId}`);
+  const { data: tvData } = useSWR<TvDetails>(`/api/v1/tv/${routeQuery.tvId}`);
   const {
     isLoadingInitialData,
     isEmpty,
@@ -27,7 +27,7 @@ const TvSimilar = () => {
     titles,
     fetchMore,
     error,
-  } = useDiscover<TvResult>(`/api/v1/tv/${router.query.tvId}/similar`);
+  } = useDiscover<TvResult>(`/api/v1/tv/${routeQuery.tvId}/similar`);
 
   if (error) {
     return <ErrorPage statusCode={500} />;
@@ -39,7 +39,7 @@ const TvSimilar = () => {
       <div className="mb-5 mt-1">
         <Header
           subtext={
-            <Link href={`/tv/${tvData?.id}`} className="hover:underline">
+            <Link to={`/tv/${tvData?.id}`} className="hover:underline">
               {tvData?.name}
             </Link>
           }

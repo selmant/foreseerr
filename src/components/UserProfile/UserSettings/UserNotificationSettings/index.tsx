@@ -6,14 +6,15 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import type { SettingsRoute } from '@app/components/Common/SettingsTabs';
 import SettingsTabs from '@app/components/Common/SettingsTabs';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import { CloudIcon, EnvelopeIcon } from '@heroicons/react/24/solid';
 import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
+import { useLocation } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages(
@@ -34,8 +35,9 @@ const UserNotificationSettings = ({
   children,
 }: UserNotificationSettingsProps) => {
   const intl = useIntl();
-  const router = useRouter();
-  const { user } = useUser({ id: Number(router.query.userId) });
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
+  const { user } = useUser({ id: Number(routeQuery.userId) });
   const { data, error } = useSWR<UserSettingsNotificationsResponse>(
     user ? `/api/v1/user/${user?.id}/settings/notifications` : null
   );
@@ -113,7 +115,9 @@ const UserNotificationSettings = ({
   ];
 
   settingsRoutes.forEach((settingsRoute) => {
-    settingsRoute.route = router.asPath.includes('/profile')
+    settingsRoute.route = `${location.pathname}${location.search}`.includes(
+      '/profile'
+    )
       ? `/profile${settingsRoute.route}`
       : `/users/${user?.id}${settingsRoute.route}`;
   });

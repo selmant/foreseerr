@@ -14,8 +14,8 @@ import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
 import * as Yup from 'yup';
 
@@ -119,7 +119,7 @@ const CreateIssueModal = ({
                     strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
                   })}
                 </div>
-                <Link href={`/issues/${newIssue.data.id}`} legacyBehavior>
+                <Link to={`/issues/${newIssue.data.id}`}>
                   <Button as="a" className="mt-4">
                     <span>{intl.formatMessage(messages.toastviewissue)}</span>
                     <ArrowRightCircleIcon />

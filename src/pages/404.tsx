@@ -1,8 +1,8 @@
 import PageTitle from '@app/components/Common/PageTitle';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 
 const messages = defineMessages('pages', {
   errormessagewithcode: '{statusCode} - {error}',
@@ -22,7 +22,7 @@ const Custom404 = () => {
           error: intl.formatMessage(messages.pagenotfound),
         })}
       </div>
-      <Link href="/" className="mt-2 flex">
+      <Link to="/" className="mt-2 flex">
         {intl.formatMessage(messages.returnHome)}
         <ArrowRightCircleIcon className="ml-2 h-6 w-6" />
       </Link>

@@ -1,10 +1,9 @@
 import DiscoverAnilistPage from '@app/components/Discover/DiscoverAnilist';
-import type { NextPage } from 'next';
-import { useRouter } from 'next/router';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 
-const AnilistListPage: NextPage = () => {
-  const router = useRouter();
-  const name = typeof router.query.name === 'string' ? router.query.name : '';
+const AnilistListPage = () => {
+  const query = useRouteQuery();
+  const name = typeof query.name === 'string' ? query.name : '';
 
   return (
     <DiscoverAnilistPage

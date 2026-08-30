@@ -12,9 +12,9 @@ import { MediaType } from '@server/constants/media';
 import type Issue from '@server/entity/Issue';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
-import Link from 'next/link';
 import { useInView } from 'react-intersection-observer';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.IssueList.IssueItem', {
@@ -139,7 +139,7 @@ const IssueItem = ({ issue }: IssueItemProps) => {
       <div className="relative flex w-full flex-col justify-between overflow-hidden sm:flex-row">
         <div className="relative z-10 flex w-full items-center overflow-hidden pl-4 pr-4 sm:pr-0 xl:w-7/12 2xl:w-2/3">
           <Link
-            href={
+            to={
               issue.media.mediaType === MediaType.MOVIE
                 ? `/movie/${issue.media.tmdbId}`
                 : `/tv/${issue.media.tmdbId}`
@@ -168,7 +168,7 @@ const IssueItem = ({ issue }: IssueItemProps) => {
               )}
             </div>
             <Link
-              href={
+              to={
                 issue.media.mediaType === MediaType.MOVIE
                   ? `/movie/${issue.media.tmdbId}`
                   : `/tv/${issue.media.tmdbId}`
@@ -263,7 +263,7 @@ const IssueItem = ({ issue }: IssueItemProps) => {
                     ),
                     user: (
                       <Link
-                        href={`/users/${issue.createdBy.id}`}
+                        to={`/users/${issue.createdBy.id}`}
                         className="group flex items-center truncate"
                       >
                         <CachedImage
@@ -303,7 +303,7 @@ const IssueItem = ({ issue }: IssueItemProps) => {
       </div>
       <div className="z-10 mt-4 flex w-full flex-col justify-center pl-4 pr-4 xl:mt-0 xl:w-96 xl:items-end xl:pl-0">
         <span className="w-full">
-          <Link href={`/issues/${issue.id}`} passHref legacyBehavior>
+          <Link to={`/issues/${issue.id}`}>
             <Button as="a" className="w-full" buttonType="primary">
               <EyeIcon />
               <span>{intl.formatMessage(messages.viewissue)}</span>

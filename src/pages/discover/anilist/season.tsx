@@ -1,7 +1,6 @@
 import DiscoverAnilistPage from '@app/components/Discover/DiscoverAnilist';
-import type { NextPage } from 'next';
 
-const AnilistSeasonPage: NextPage = () => (
+const AnilistSeasonPage = () => (
   <DiscoverAnilistPage
     kind="season"
     endpoint="/api/v1/discover/anilist/season"

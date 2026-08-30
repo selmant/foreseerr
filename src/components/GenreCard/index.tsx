@@ -1,7 +1,7 @@
 import CachedImage from '@app/components/Common/CachedImage';
 import { withProperties } from '@app/utils/typeHelpers';
-import Link from 'next/link';
 import { useState } from 'react';
+import { Link } from 'react-router';
 
 interface GenreCardProps {
   name: string;
@@ -15,7 +15,7 @@ const GenreCard = ({ image, url, name, canExpand = false }: GenreCardProps) => {
 
   return (
     <Link
-      href={url}
+      to={url}
       className={`relative flex h-32 items-center justify-center sm:h-36 ${
         canExpand ? 'w-full' : 'w-56 sm:w-72'
       } transform-gpu cursor-pointer p-8 shadow ring-1 transition duration-300 ease-in-out ${

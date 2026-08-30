@@ -1,6 +1,6 @@
 import CachedImage from '@app/components/Common/CachedImage';
-import Link from 'next/link';
 import { useState } from 'react';
+import { Link } from 'react-router';
 
 interface CompanyCardProps {
   name: string;
@@ -13,7 +13,7 @@ const CompanyCard = ({ image, url, name }: CompanyCardProps) => {
 
   return (
     <Link
-      href={url}
+      to={url}
       className={`relative flex h-32 w-56 transform-gpu cursor-pointer items-center justify-center p-8 shadow ring-1 transition duration-300 ease-in-out sm:h-36 sm:w-72 ${
         isHovered
           ? 'scale-105 bg-gray-700 ring-gray-500'

@@ -28,10 +28,9 @@ import {
   UsersIcon as FilledUsersIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { cloneElement, useEffect, useRef, useState, type JSX } from 'react';
 import { useIntl } from 'react-intl';
+import { Link, useLocation } from 'react-router';
 
 interface MobileMenuProps {
   pendingRequestsCount: number;
@@ -64,7 +63,7 @@ const MobileMenu = ({
   const intl = useIntl();
   const [isOpen, setIsOpen] = useState(false);
   const { hasPermission } = useUser();
-  const router = useRouter();
+  const location = useLocation();
   useClickOutside(ref, () => {
     setTimeout(() => {
       if (isOpen) {
@@ -195,11 +194,11 @@ const MobileMenu = ({
         className="absolute left-0 right-0 top-0 flex w-full -translate-y-full flex-col space-y-6 border-t border-gray-600 bg-gray-900/90 px-6 py-6 font-semibold text-gray-100 backdrop-blur"
       >
         {filteredLinks.map((link) => {
-          const isActive = router.pathname.match(link.activeRegExp);
+          const isActive = location.pathname.match(link.activeRegExp);
           return (
             <Link
               key={`mobile-menu-link-${link.href}`}
-              href={link.href}
+              to={link.href}
               className={`flex items-center ${
                 isActive ? 'text-indigo-500' : ''
               }`}
@@ -255,11 +254,11 @@ const MobileMenu = ({
             .slice(0, filteredLinks.length === 5 ? 5 : 4)
             .map((link) => {
               const isActive =
-                router.pathname.match(link.activeRegExp) && !isOpen;
+                location.pathname.match(link.activeRegExp) && !isOpen;
               return (
                 <Link
                   key={`mobile-menu-link-${link.href}`}
-                  href={link.href}
+                  to={link.href}
                   className={`relative flex flex-col items-center space-y-1 ${
                     isActive ? 'text-indigo-500' : ''
                   }`}
@@ -276,7 +275,7 @@ const MobileMenu = ({
                       <div className="absolute bottom-3 left-3">
                         <Badge
                           className={`bg-gradient-to-br ${
-                            router.pathname.match(link.activeRegExp)
+                            location.pathname.match(link.activeRegExp)
                               ? 'border-indigo-600 from-indigo-700 to-purple-700'
                               : 'border-indigo-500 from-indigo-600 to-purple-600'
                           } flex ${

@@ -8,8 +8,8 @@ import {
   UserIcon,
 } from '@heroicons/react/24/solid';
 import type Issue from '@server/entity/Issue';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 
 interface IssueBlockProps {
   issue: Issue;
@@ -40,7 +40,7 @@ const IssueBlock = ({ issue }: IssueBlockProps) => {
             <UserIcon className="mr-1.5 h-5 w-5 min-w-0 flex-shrink-0" />
             <span className="w-40 truncate md:w-auto">
               <Link
-                href={
+                to={
                   issue.createdBy.id === user?.id
                     ? '/profile'
                     : `/users/${issue.createdBy.id}`
@@ -63,7 +63,7 @@ const IssueBlock = ({ issue }: IssueBlockProps) => {
           </div>
         </div>
         <div className="ml-2 flex flex-shrink-0 flex-wrap">
-          <Link href={`/issues/${issue.id}`} passHref legacyBehavior>
+          <Link to={`/issues/${issue.id}`}>
             <Button buttonType="primary" as="a">
               <EyeIcon />
             </Button>

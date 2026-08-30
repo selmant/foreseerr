@@ -1,8 +1,7 @@
 import UserSettings from '@app/components/UserProfile/UserSettings';
 import UserLinkedAccountsSettings from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings';
-import type { NextPage } from 'next';
 
-const UserSettingsLinkedAccountsPage: NextPage = () => {
+const UserSettingsLinkedAccountsPage = () => {
   return (
     <UserSettings>
       <UserLinkedAccountsSettings />

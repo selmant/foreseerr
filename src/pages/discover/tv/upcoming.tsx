@@ -1,7 +1,6 @@
 import DiscoverTvUpcoming from '@app/components/Discover/DiscoverTvUpcoming';
-import type { NextPage } from 'next';
 
-const DiscoverTvPage: NextPage = () => {
+const DiscoverTvPage = () => {
   return <DiscoverTvUpcoming />;
 };
 

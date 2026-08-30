@@ -11,9 +11,9 @@ import { CalendarIcon, TrashIcon, UserIcon } from '@heroicons/react/24/solid';
 import type { MediaType } from '@server/constants/media';
 import type { Blocklist } from '@server/entity/Blocklist';
 import axios from 'axios';
-import Link from 'next/link';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('component.BlocklistBlock', {
@@ -90,7 +90,7 @@ const BlocklistBlock = ({
                 </Tooltip>
                 <span className="w-40 truncate md:w-auto">
                   <Link
-                    href={
+                    to={
                       data.user.id === user?.id
                         ? '/profile'
                         : `/users/${data.user.id}`

@@ -3,6 +3,7 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -12,7 +13,6 @@ import defineMessages from '@app/utils/defineMessages';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { Form, Formik } from 'formik';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 import * as Yup from 'yup';
@@ -49,9 +49,9 @@ const UserPasswordChange = () => {
   const intl = useIntl();
   const settings = useSettings();
   const { addToast } = useToasts();
-  const router = useRouter();
+  const query = useRouteQuery();
   const { user: currentUser } = useUser();
-  const { user, hasPermission } = useUser({ id: Number(router.query.userId) });
+  const { user, hasPermission } = useUser({ id: Number(query.userId) });
   const {
     data,
     error,

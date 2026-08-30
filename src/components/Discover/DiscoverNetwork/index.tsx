@@ -3,12 +3,12 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { TvNetwork } from '@server/models/common';
 import type { TvResult } from '@server/models/Search';
-import { useRouter } from 'next/router';
+import type { TvNetwork } from '@server/models/common';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverNetwork', {
@@ -16,7 +16,7 @@ const messages = defineMessages('components.Discover.DiscoverNetwork', {
 });
 
 const DiscoverTvNetwork = () => {
-  const router = useRouter();
+  const query = useRouteQuery();
   const intl = useIntl();
 
   const {
@@ -29,7 +29,7 @@ const DiscoverTvNetwork = () => {
     error,
     firstResultData,
   } = useDiscover<TvResult, { network: TvNetwork }>(
-    `/api/v1/discover/tv/network/${router.query.networkId}`
+    `/api/v1/discover/tv/network/${query.networkId}`
   );
 
   if (error) {

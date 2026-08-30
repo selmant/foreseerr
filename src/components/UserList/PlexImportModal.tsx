@@ -1,11 +1,11 @@
 import Alert from '@app/components/Common/Alert';
+import AppImage from '@app/components/Common/AppImage';
 import Modal from '@app/components/Common/Modal';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import axios from 'axios';
-import Image from 'next/image';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -257,7 +257,7 @@ const PlexImportModal = ({ onCancel, onComplete }: PlexImportProps) => {
                           </td>
                           <td className="whitespace-nowrap px-1 py-4 text-sm font-medium leading-5 text-gray-100 md:px-6">
                             <div className="flex items-center">
-                              <Image
+                              <AppImage
                                 className="h-10 w-10 flex-shrink-0 rounded-full"
                                 src={user.thumb}
                                 alt=""

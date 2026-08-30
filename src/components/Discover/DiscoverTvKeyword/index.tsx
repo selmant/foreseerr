@@ -2,12 +2,12 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover, { encodeURIExtraParams } from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
 import type { TvResult } from '@server/models/Search';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverTvKeyword', {
@@ -15,7 +15,7 @@ const messages = defineMessages('components.Discover.DiscoverTvKeyword', {
 });
 
 const DiscoverTvKeyword = () => {
-  const router = useRouter();
+  const query = useRouteQuery();
   const intl = useIntl();
 
   const {
@@ -30,7 +30,7 @@ const DiscoverTvKeyword = () => {
   } = useDiscover<TvResult, { keywords: TmdbKeyword[] }>(
     `/api/v1/discover/tv`,
     {
-      keywords: encodeURIExtraParams(router.query.keywords as string),
+      keywords: encodeURIExtraParams(query.keywords as string),
     }
   );
 

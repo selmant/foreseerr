@@ -3,11 +3,11 @@ import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { MovieResult } from '@server/models/Search';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverMovieGenre', {
@@ -15,7 +15,7 @@ const messages = defineMessages('components.Discover.DiscoverMovieGenre', {
 });
 
 const DiscoverMovieGenre = () => {
-  const router = useRouter();
+  const query = useRouteQuery();
   const intl = useIntl();
 
   const {
@@ -29,7 +29,7 @@ const DiscoverMovieGenre = () => {
     firstResultData,
     mutate,
   } = useDiscover<MovieResult, { genre: { id: number; name: string } }>(
-    `/api/v1/discover/movies/genre/${router.query.genreId}`
+    `/api/v1/discover/movies/genre/${query.genreId}`
   );
   useRegisterHideWatchedRevalidation(mutate);
 

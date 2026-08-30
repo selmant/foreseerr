@@ -1,8 +1,7 @@
 import defineMessages from '@app/utils/defineMessages';
 import { FilmIcon, SparklesIcon, TvIcon } from '@heroicons/react/24/outline';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
+import { Link, useLocation } from 'react-router';
 
 const messages = defineMessages('components.Layout.Sidebar', {
   dashboard: 'Discover',
@@ -12,25 +11,25 @@ const messages = defineMessages('components.Layout.Sidebar', {
 
 const DiscoverNavigation = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const location = useLocation();
   const routes = [
     {
       href: '/',
       label: intl.formatMessage(messages.dashboard),
       icon: SparklesIcon,
-      isActive: router.pathname === '/' || router.pathname === '/discover',
+      isActive: location.pathname === '/' || location.pathname === '/discover',
     },
     {
       href: '/discover/movies',
       label: intl.formatMessage(messages.browsemovies),
       icon: FilmIcon,
-      isActive: router.pathname.startsWith('/discover/movies'),
+      isActive: location.pathname.startsWith('/discover/movies'),
     },
     {
       href: '/discover/tv',
       label: intl.formatMessage(messages.browsetv),
       icon: TvIcon,
-      isActive: router.pathname.startsWith('/discover/tv'),
+      isActive: location.pathname.startsWith('/discover/tv'),
     },
   ];
 
@@ -40,7 +39,7 @@ const DiscoverNavigation = () => {
         {routes.map(({ href, label, icon: Icon, isActive }) => (
           <Link
             key={href}
-            href={href}
+            to={href}
             aria-current={isActive ? 'page' : undefined}
             className={`flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
               isActive

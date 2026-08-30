@@ -4,8 +4,8 @@ import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { CogIcon, UserIcon } from '@heroicons/react/24/solid';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 
 const messages = defineMessages('components.UserProfile.ProfileHeader', {
   settings: 'Edit Settings',
@@ -59,7 +59,7 @@ const ProfileHeader = ({ user, isSettingsPage }: ProfileHeaderProps) => {
         <div className="pt-1.5">
           <h1 className="mb-1 flex flex-col sm:flex-row sm:items-center">
             <Link
-              href={
+              to={
                 user.id === loggedInUser?.id ? '/profile' : `/users/${user.id}`
               }
               className="text-overseerr text-lg font-bold hover:to-purple-200 sm:text-2xl"
@@ -86,13 +86,11 @@ const ProfileHeader = ({ user, isSettingsPage }: ProfileHeaderProps) => {
           (user.id !== 1 && hasPermission(Permission.MANAGE_USERS))) &&
         !isSettingsPage ? (
           <Link
-            href={
+            to={
               loggedInUser?.id === user.id
                 ? `/profile/settings`
                 : `/users/${user.id}/settings`
             }
-            passHref
-            legacyBehavior
           >
             <Button as="a">
               <CogIcon />
@@ -102,11 +100,9 @@ const ProfileHeader = ({ user, isSettingsPage }: ProfileHeaderProps) => {
         ) : (
           isSettingsPage && (
             <Link
-              href={
+              to={
                 loggedInUser?.id === user.id ? `/profile` : `/users/${user.id}`
               }
-              passHref
-              legacyBehavior
             >
               <Button as="a">
                 <UserIcon />

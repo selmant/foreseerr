@@ -9,10 +9,9 @@ import {
 } from '@heroicons/react/24/outline';
 import { CogIcon, UserIcon } from '@heroicons/react/24/solid';
 import axios from 'axios';
-import type { LinkProps } from 'next/link';
-import Link from 'next/link';
 import { Fragment, forwardRef } from 'react';
 import { useIntl } from 'react-intl';
+import { Link, type LinkProps } from 'react-router';
 
 const messages = defineMessages('components.Layout.UserDropdown', {
   myprofile: 'Profile',
@@ -24,9 +23,9 @@ const messages = defineMessages('components.Layout.UserDropdown', {
 const ForwardedLink = forwardRef<
   HTMLAnchorElement,
   LinkProps & React.ComponentPropsWithoutRef<'a'>
->(({ href, children, ...rest }, ref) => {
+>(({ to, children, ...rest }, ref) => {
   return (
-    <Link href={href} ref={ref} {...rest}>
+    <Link to={to} ref={ref} {...rest}>
       {children}
     </Link>
   );
@@ -102,7 +101,7 @@ const UserDropdown = () => {
               <Menu.Item>
                 {({ active }) => (
                   <ForwardedLink
-                    href={`/profile`}
+                    to={`/profile`}
                     className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
                       active
                         ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
@@ -118,7 +117,7 @@ const UserDropdown = () => {
               <Menu.Item>
                 {({ active }) => (
                   <ForwardedLink
-                    href={
+                    to={
                       hasPermission(
                         [Permission.MANAGE_REQUESTS, Permission.REQUEST_VIEW],
                         { type: 'or' }
@@ -141,7 +140,7 @@ const UserDropdown = () => {
               <Menu.Item>
                 {({ active }) => (
                   <ForwardedLink
-                    href={`/profile/settings`}
+                    to={`/profile/settings`}
                     className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
                       active
                         ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'

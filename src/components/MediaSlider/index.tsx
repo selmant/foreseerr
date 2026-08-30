@@ -12,8 +12,8 @@ import type {
   PersonResult,
   TvResult,
 } from '@server/models/Search';
-import Link from 'next/link';
 import { useEffect } from 'react';
+import { Link } from 'react-router';
 import useSWRInfinite from 'swr/infinite';
 
 interface MixedResult {
@@ -181,7 +181,7 @@ const MediaSlider = ({
     <>
       <div className="slider-header">
         {linkUrl ? (
-          <Link href={linkUrl} className="slider-title min-w-0 pr-16">
+          <Link to={linkUrl} className="slider-title min-w-0 pr-16">
             <span className="truncate">{title}</span>
             <ArrowRightCircleIcon />
           </Link>

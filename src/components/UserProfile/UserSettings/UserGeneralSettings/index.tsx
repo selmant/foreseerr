@@ -7,6 +7,7 @@ import QuotaSelector from '@app/components/QuotaSelector';
 import RegionSelector from '@app/components/RegionSelector';
 import { availableLanguages } from '@app/context/LanguageContext';
 import useLocale from '@app/hooks/useLocale';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
@@ -19,7 +20,6 @@ import type { UserSettingsGeneralResponse } from '@server/interfaces/api/userSet
 import type { AvailableLocale } from '@server/types/languages';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
-import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -88,13 +88,13 @@ const UserGeneralSettings = () => {
   const { locale, setLocale } = useLocale();
   const [movieQuotaEnabled, setMovieQuotaEnabled] = useState(false);
   const [tvQuotaEnabled, setTvQuotaEnabled] = useState(false);
-  const router = useRouter();
+  const query = useRouteQuery();
   const {
     user,
     hasPermission,
     revalidate: revalidateUser,
   } = useUser({
-    id: Number(router.query.userId),
+    id: Number(query.userId),
   });
   const { user: currentUser, hasPermission: currentHasPermission } = useUser();
   const { currentSettings } = useSettings();

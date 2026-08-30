@@ -13,6 +13,7 @@ import {
   clearHiddenUnmappedTitles,
   hiddenUnmappedCount,
 } from '@app/hooks/useHiddenUnmappedTitles';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
@@ -23,7 +24,6 @@ import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import Datepicker from '@seerr-team/react-tailwindcss-datepicker';
 import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
 import axios from 'axios';
-import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -90,9 +90,9 @@ const rangeMessageKeys = {
 const UserDiscoverSettings = () => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const router = useRouter();
+  const query = useRouteQuery();
   const { currentSettings } = useSettings();
-  const { user } = useUser({ id: Number(router.query.userId) });
+  const { user } = useUser({ id: Number(query.userId) });
   const {
     data,
     error,

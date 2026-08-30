@@ -2,12 +2,12 @@ import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import PersonCard from '@app/components/PersonCard';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { TvDetails } from '@server/models/Tv';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.TvDetails.TvCrew', {
@@ -15,9 +15,9 @@ const messages = defineMessages('components.TvDetails.TvCrew', {
 });
 
 const TvCrew = () => {
-  const router = useRouter();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
-  const { data, error } = useSWR<TvDetails>(`/api/v1/tv/${router.query.tvId}`);
+  const { data, error } = useSWR<TvDetails>(`/api/v1/tv/${routeQuery.tvId}`);
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -35,7 +35,7 @@ const TvCrew = () => {
       <div className="mb-5 mt-1">
         <Header
           subtext={
-            <Link href={`/tv/${data.id}`} className="hover:underline">
+            <Link to={`/tv/${data.id}`} className="hover:underline">
               {data.name}
             </Link>
           }

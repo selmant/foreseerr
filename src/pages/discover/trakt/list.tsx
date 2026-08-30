@@ -1,7 +1,6 @@
 import DiscoverTraktList from '@app/components/Discover/DiscoverTraktList';
-import type { NextPage } from 'next';
 
-const TraktListPage: NextPage = () => {
+const TraktListPage = () => {
   return <DiscoverTraktList />;
 };
 

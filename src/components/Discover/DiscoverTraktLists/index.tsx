@@ -6,8 +6,8 @@ import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover.DiscoverTraktLists', {
@@ -66,7 +66,7 @@ const DiscoverTraktLists = () => {
         <div className="text-center text-gray-400">
           <p>{intl.formatMessage(messages.linkAccount)}</p>
           <Link
-            href="/profile/settings/linked-accounts"
+            to="/profile/settings/linked-accounts"
             className="mt-4 inline-block text-white underline"
           >
             {intl.formatMessage(messages.linkedAccounts)}
@@ -121,7 +121,7 @@ const DiscoverTraktLists = () => {
                   return (
                     <li key={`${list.id}-${list.slug}`}>
                       <Link
-                        href={href}
+                        to={href}
                         className="block rounded-lg bg-gray-800/50 p-5 shadow ring-1 ring-gray-700 transition hover:bg-gray-800"
                       >
                         <div className="text-lg font-semibold text-white">

@@ -2,6 +2,7 @@ import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import NotificationTypeSelector from '@app/components/NotificationTypeSelector';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -15,7 +16,6 @@ import { DISCORD_SNOWFLAKE_REGEX } from '@server/constants/discord';
 import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 import * as Yup from 'yup';
@@ -40,8 +40,8 @@ const messages = defineMessages(
 const UserNotificationsDiscord = () => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const router = useRouter();
-  const { user } = useUser({ id: Number(router.query.userId) });
+  const query = useRouteQuery();
+  const { user } = useUser({ id: Number(query.userId) });
   const { user: currentUser } = useUser();
   const {
     data,

@@ -1,7 +1,6 @@
 import MovieSimilar from '@app/components/MovieDetails/MovieSimilar';
-import type { NextPage } from 'next';
 
-const MovieSimilarPage: NextPage = () => {
+const MovieSimilarPage = () => {
   return <MovieSimilar />;
 };
 

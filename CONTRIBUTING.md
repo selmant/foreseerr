@@ -251,7 +251,7 @@ PGPASSWORD=postgres sudo docker exec -it postgres-seerr /usr/bin/psql -h 127.0.0
 ```bash
 git switch develop
 pnpm i
-rm -r .next dist; pnpm build
+rm -r dist/public dist; pnpm build
 pnpm start
 DB_TYPE="postgres" DB_USER=postgres DB_PASS=postgres pnpm start
 ```

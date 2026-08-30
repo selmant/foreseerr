@@ -1,7 +1,6 @@
 import TvGenreList from '@app/components/Discover/TvGenreList';
-import type { NextPage } from 'next';
 
-const TvGenresPage: NextPage = () => {
+const TvGenresPage = () => {
   return <TvGenreList />;
 };
 

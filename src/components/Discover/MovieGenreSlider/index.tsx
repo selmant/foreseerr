@@ -4,9 +4,9 @@ import Slider from '@app/components/Slider';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import type { GenreSliderItem } from '@server/interfaces/api/discoverInterfaces';
-import Link from 'next/link';
 import React from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover.MovieGenreSlider', {
@@ -26,7 +26,7 @@ const MovieGenreSlider = () => {
   return (
     <>
       <div className="slider-header">
-        <Link href="/discover/movies/genres" className="slider-title">
+        <Link to="/discover/movies/genres" className="slider-title">
           <span>{intl.formatMessage(messages.moviegenres)}</span>
           <ArrowRightCircleIcon />
         </Link>

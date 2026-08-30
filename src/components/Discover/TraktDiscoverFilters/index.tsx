@@ -1,19 +1,19 @@
 import Button from '@app/components/Common/Button';
+import FilterSlideover, {
+  browseFilterCapabilities,
+} from '@app/components/Discover/FilterSlideover';
 import {
   countActiveFilters,
   prepareFilterValues,
 } from '@app/components/Discover/constants';
-import FilterSlideover, {
-  browseFilterCapabilities,
-} from '@app/components/Discover/FilterSlideover';
 import { mergeFilterDefaults } from '@app/components/Discover/mergeFilterDefaults';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { CircleStackIcon, FunnelIcon } from '@heroicons/react/24/solid';
-import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -39,31 +39,27 @@ const TraktDiscoverFilters = ({
   showHideWatchedFilter = true,
 }: TraktDiscoverFiltersProps) => {
   const intl = useIntl();
-  const router = useRouter();
+  const query = useRouteQuery();
   const { user } = useUser();
   const updateQueryParams = useUpdateQueryParams({});
   const [showFilters, setShowFilters] = useState(false);
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const preparedFilters = mergeFilterDefaults(
-    prepareFilterValues(router.query),
+    prepareFilterValues(query),
     discoverDefaults,
     user?.id
   );
 
   const currentType: TraktMediaType =
-    router.query.type === 'movie' ||
-    router.query.type === 'tv' ||
-    router.query.type === 'anime'
-      ? router.query.type
+    query.type === 'movie' || query.type === 'tv' || query.type === 'anime'
+      ? query.type
       : 'all';
 
   const filterType: 'movie' | 'tv' = currentType === 'tv' ? 'tv' : 'movie';
   const genreType: 'movie' | 'tv' | 'all' =
     currentType === 'movie' || currentType === 'tv' ? currentType : 'all';
   const currentSort =
-    router.query.sort === 'added' || router.query.sort === 'released'
-      ? router.query.sort
-      : '';
+    query.sort === 'added' || query.sort === 'released' ? query.sort : '';
 
   const activeFilterCount =
     countActiveFilters(preparedFilters) +

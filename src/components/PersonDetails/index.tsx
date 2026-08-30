@@ -5,6 +5,7 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import ExternalLinkBlock from '@app/components/ExternalLinkBlock';
 import TitleCard from '@app/components/TitleCard';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -12,7 +13,6 @@ import { CircleStackIcon } from '@heroicons/react/24/solid';
 import type { PersonCombinedCreditsResponse } from '@server/interfaces/api/personInterfaces';
 import type { PersonDetails as PersonDetailsType } from '@server/models/Person';
 import { groupBy } from 'lodash';
-import { useRouter } from 'next/router';
 import { useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 import TruncateMarkup from 'react-truncate-markup';
@@ -31,16 +31,16 @@ type MediaType = 'all' | 'movie' | 'tv';
 
 const PersonDetails = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const query = useRouteQuery();
   const [currentMediaType, setCurrentMediaType] = useState<string>('all');
   const { data, error } = useSWR<PersonDetailsType>(
-    `/api/v1/person/${router.query.personId}`
+    `/api/v1/person/${query.personId}`
   );
   const [showBio, setShowBio] = useState(false);
 
   const { data: combinedCredits, error: errorCombinedCredits } =
     useSWR<PersonCombinedCreditsResponse>(
-      `/api/v1/person/${router.query.personId}/combined_credits`
+      `/api/v1/person/${query.personId}/combined_credits`
     );
 
   const sortedCast = useMemo(() => {

@@ -8,6 +8,7 @@ import TmdbTitleCard, {
   watchlistTitleCardProps,
 } from '@app/components/TitleCard/TmdbTitleCard';
 import ProfileHeader from '@app/components/UserProfile/ProfileHeader';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -20,10 +21,9 @@ import type {
 } from '@server/interfaces/api/userInterfaces';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useCallback, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.UserProfile', {
@@ -46,9 +46,9 @@ type MediaTitle = MovieDetails | TvDetails;
 
 const UserProfile = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const routeQuery = useRouteQuery();
   const { user, error } = useUser({
-    id: Number(router.query.userId),
+    id: Number(routeQuery.userId),
   });
   const { user: currentUser, hasPermission: currentHasPermission } = useUser();
   const [availableTitles, setAvailableTitles] = useState<
@@ -161,7 +161,7 @@ const UserProfile = () => {
                 </dt>
                 <dd className="mt-1 text-3xl font-semibold text-white">
                   <Link
-                    href={
+                    to={
                       currentHasPermission(
                         [Permission.MANAGE_REQUESTS, Permission.REQUEST_VIEW],
                         { type: 'or' }
@@ -297,7 +297,7 @@ const UserProfile = () => {
           <>
             <div className="slider-header">
               <Link
-                href={
+                to={
                   currentHasPermission(
                     [Permission.MANAGE_REQUESTS, Permission.REQUEST_VIEW],
                     { type: 'or' }
@@ -339,7 +339,7 @@ const UserProfile = () => {
           <>
             <div className="slider-header">
               <Link
-                href={
+                to={
                   user.id === currentUser?.id
                     ? '/profile/watchlist'
                     : `/users/${user.id}/watchlist`

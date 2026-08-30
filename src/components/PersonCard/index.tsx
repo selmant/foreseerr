@@ -1,7 +1,7 @@
 import CachedImage from '@app/components/Common/CachedImage';
 import { UserCircleIcon } from '@heroicons/react/24/solid';
-import Link from 'next/link';
 import { useState } from 'react';
+import { Link } from 'react-router';
 
 interface PersonCardProps {
   personId: number;
@@ -22,7 +22,7 @@ const PersonCard = ({
 
   return (
     <Link
-      href={`/person/${personId}`}
+      to={`/person/${personId}`}
       className={canExpand ? 'w-full' : 'w-36 sm:w-36 md:w-44'}
       onMouseEnter={() => {
         setHovered(true);

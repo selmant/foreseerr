@@ -7,9 +7,9 @@ import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
-import Link from 'next/link';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.Login', {
@@ -155,7 +155,7 @@ const LocalLogin = ({ revalidate }: LocalLoginProps) => {
                     <div className="flex-grow" />
                     {passwordResetEnabled && (
                       <Link
-                        href="/resetpassword"
+                        to="/resetpassword"
                         className="pt-2 text-sm text-indigo-500 hover:text-indigo-400"
                       >
                         {intl.formatMessage(messages.forgotpassword)}

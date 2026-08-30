@@ -6,17 +6,11 @@ import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import { DocumentTextIcon } from '@heroicons/react/24/outline';
-import dynamic from 'next/dynamic';
-import { Fragment, useState } from 'react';
+import { Fragment, lazy, Suspense, useState } from 'react';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
 import useSWR from 'swr';
 
-// dyanmic is having trouble extracting the props for react-markdown here so we are just ignoring it since its really
-// only children we are using
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const ReactMarkdown = dynamic<any>(() => import('react-markdown'), {
-  ssr: false,
-});
+const ReactMarkdown = lazy(() => import('react-markdown'));
 
 const messages = defineMessages('components.Settings.SettingsAbout.Releases', {
   releases: 'Releases',
@@ -84,7 +78,9 @@ const Release = ({ currentVersion, release, isLatest }: ReleaseProps) => {
           }}
         >
           <div className="prose">
-            <ReactMarkdown>{release.body}</ReactMarkdown>
+            <Suspense fallback={<LoadingSpinner />}>
+              <ReactMarkdown>{release.body}</ReactMarkdown>
+            </Suspense>
           </div>
         </Modal>
       </Transition>

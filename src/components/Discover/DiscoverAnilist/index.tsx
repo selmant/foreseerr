@@ -8,8 +8,8 @@ import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover.DiscoverAnilist', {
@@ -90,7 +90,7 @@ const DiscoverAnilistPage = ({
         <div className="text-center text-gray-400">
           <p>{intl.formatMessage(messages.linkAccount)}</p>
           <Link
-            href="/profile/settings/linked-accounts"
+            to="/profile/settings/linked-accounts"
             className="mt-4 inline-block text-white underline"
           >
             {intl.formatMessage(messages.linkedAccounts)}

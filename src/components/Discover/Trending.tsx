@@ -2,13 +2,13 @@ import Button from '@app/components/Common/Button';
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import FilterSlideover, {
+  browseFilterCapabilities,
+} from '@app/components/Discover/FilterSlideover';
 import {
   countActiveFilters,
   prepareFilterValues,
 } from '@app/components/Discover/constants';
-import FilterSlideover, {
-  browseFilterCapabilities,
-} from '@app/components/Discover/FilterSlideover';
 import {
   discoverDefaultsRequestExtras,
   mergeFilterDefaults,
@@ -16,6 +16,7 @@ import {
 import useDiscover from '@app/hooks/useDiscover';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
@@ -26,7 +27,6 @@ import type {
   PersonResult,
   TvResult,
 } from '@server/models/Search';
-import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -44,14 +44,14 @@ type TimeWindow = 'day' | 'week';
 
 const Trending = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const query = useRouteQuery();
   const { user } = useUser();
   const [currentMediaType, setCurrentMediaType] = useState<MediaType>('all');
   const [currentTimeWindow, setCurrentTimeWindow] = useState<TimeWindow>('day');
   const [showFilters, setShowFilters] = useState(false);
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const preparedFilters = mergeFilterDefaults(
-    prepareFilterValues(router.query),
+    prepareFilterValues(query),
     discoverDefaults,
     user?.id
   );

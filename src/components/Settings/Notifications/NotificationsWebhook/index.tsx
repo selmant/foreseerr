@@ -18,16 +18,13 @@ import {
 } from '@heroicons/react/24/solid';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
-import dynamic from 'next/dynamic';
-import Link from 'next/link';
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 import * as Yup from 'yup';
 
-const JSONEditor = dynamic(() => import('@app/components/JSONEditor'), {
-  ssr: false,
-});
+const JSONEditor = lazy(() => import('@app/components/JSONEditor'));
 
 const defaultPayload = {
   notification_type: '{{notification_type}}',
@@ -365,11 +362,7 @@ const NotificationsWebhook = () => {
             </div>
             {values.supportVariables && (
               <div className="mt-2">
-                <Link
-                  href="https://selmant.github.io/foreseerr/using-seerr/notifications/webhook/#template-variables"
-                  passHref
-                  legacyBehavior
-                >
+                <Link to="https://selmant.github.io/foreseerr/using-seerr/notifications/webhook/#template-variables">
                   <Button
                     as="a"
                     buttonSize="sm"
@@ -512,12 +505,14 @@ const NotificationsWebhook = () => {
               </label>
               <div className="form-input-area">
                 <div className="form-input-field">
-                  <JSONEditor
-                    name="webhook-json-payload"
-                    onUpdate={(value) => setFieldValue('jsonPayload', value)}
-                    value={values.jsonPayload}
-                    onBlur={() => setFieldTouched('jsonPayload')}
-                  />
+                  <Suspense fallback={<LoadingSpinner />}>
+                    <JSONEditor
+                      name="webhook-json-payload"
+                      onUpdate={(value) => setFieldValue('jsonPayload', value)}
+                      value={values.jsonPayload}
+                      onBlur={() => setFieldTouched('jsonPayload')}
+                    />
+                  </Suspense>
                 </div>
                 {errors.jsonPayload &&
                   touched.jsonPayload &&
@@ -536,11 +531,7 @@ const NotificationsWebhook = () => {
                     <ArrowPathIcon />
                     <span>{intl.formatMessage(messages.resetPayload)}</span>
                   </Button>
-                  <Link
-                    href="https://selmant.github.io/foreseerr/using-seerr/notifications/webhook/#template-variables"
-                    passHref
-                    legacyBehavior
-                  >
+                  <Link to="https://selmant.github.io/foreseerr/using-seerr/notifications/webhook/#template-variables">
                     <Button
                       as="a"
                       buttonSize="sm"

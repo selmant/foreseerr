@@ -1,7 +1,6 @@
 import ResetPassword from '@app/components/ResetPassword';
-import type { NextPage } from 'next';
 
-const ResetPasswordPage: NextPage = () => {
+const ResetPasswordPage = () => {
   return <ResetPassword />;
 };
 

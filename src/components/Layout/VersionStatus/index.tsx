@@ -7,8 +7,8 @@ import {
   ServerIcon,
 } from '@heroicons/react/24/outline';
 import type { StatusResponse } from '@server/interfaces/api/settingsInterfaces';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Layout.VersionStatus', {
@@ -46,7 +46,7 @@ const VersionStatus = ({ onClick }: VersionStatusProps) => {
 
   return (
     <Link
-      href="/settings/about"
+      to="/settings/about"
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && onClick) {

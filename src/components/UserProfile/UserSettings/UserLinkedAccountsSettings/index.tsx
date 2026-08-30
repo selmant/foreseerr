@@ -14,6 +14,7 @@ import LinkAnilistModal from '@app/components/UserProfile/UserSettings/UserLinke
 import LinkJellyfinQuickConnectModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkJellyfinQuickConnectModal';
 import LinkSimklModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkSimklModal';
 import LinkTraktModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkTraktModal';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -22,7 +23,6 @@ import PlexOAuth from '@app/utils/plex';
 import { CheckIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
 import axios from 'axios';
-import { useRouter } from 'next/router';
 import { useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -147,13 +147,13 @@ const WatchTrackerSwitch = ({
 const UserLinkedAccountsSettings = () => {
   const intl = useIntl();
   const settings = useSettings();
-  const router = useRouter();
+  const query = useRouteQuery();
   const { user: currentUser } = useUser();
   const {
     user,
     hasPermission,
     revalidate: revalidateUser,
-  } = useUser({ id: Number(router.query.userId) });
+  } = useUser({ id: Number(query.userId) });
   const { data: passwordInfo } = useSWR<{ hasPassword: boolean }>(
     user ? `/api/v1/user/${user?.id}/settings/password` : null
   );

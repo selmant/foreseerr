@@ -3,11 +3,11 @@ import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverMdblistList', {
@@ -18,8 +18,8 @@ const messages = defineMessages('components.Discover.DiscoverMdblistList', {
 const DiscoverMdblistList = () => {
   const intl = useIntl();
   const settings = useSettings();
-  const router = useRouter();
-  const url = typeof router.query.url === 'string' ? router.query.url : '';
+  const query = useRouteQuery();
+  const url = typeof query.url === 'string' ? query.url : '';
 
   const {
     isLoadingInitialData,

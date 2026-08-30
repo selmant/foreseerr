@@ -4,8 +4,8 @@ import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import { DiscoverSliderType } from '@server/constants/discover';
-import Link from 'next/link';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
+import { Link } from 'react-router';
 
 export type DiscoverSliderSource = 'trakt' | 'anilist' | 'mdblist' | 'simkl';
 
@@ -103,7 +103,7 @@ export const DiscoverSliderTitle = ({
   children: ReactNode;
 }) => (
   <div className="slider-header">
-    <Link href={href} className="slider-title">
+    <Link to={href} className="slider-title">
       <SliderSourceMark source={source} />
       <span>{children}</span>
       <ArrowRightCircleIcon />

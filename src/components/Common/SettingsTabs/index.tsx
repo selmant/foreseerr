@@ -1,8 +1,7 @@
 import { useUser } from '@app/hooks/useUser';
 import type { Permission } from '@server/lib/permissions';
 import { hasPermission } from '@server/lib/permissions';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
+import { Link, useLocation, useNavigate } from 'react-router';
 
 export interface SettingsRoute {
   text: string;
@@ -56,7 +55,7 @@ const SettingsLink = ({
 
   return (
     <Link
-      href={route}
+      to={route}
       className={`${linkClasses} ${
         currentPath.match(regex) ? activeLinkColor : inactiveLinkColor
       }`}
@@ -74,7 +73,8 @@ const SettingsTabs = ({
   tabType?: 'default' | 'button';
   settingsRoutes: SettingsRoute[];
 }) => {
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user: currentUser } = useUser();
 
   return (
@@ -86,14 +86,15 @@ const SettingsTabs = ({
         <select
           id="tabs"
           onChange={(e) => {
-            router.push(e.target.value);
+            navigate(e.target.value);
           }}
           onBlur={(e) => {
-            router.push(e.target.value);
+            navigate(e.target.value);
           }}
           defaultValue={
-            settingsRoutes.find((route) => !!router.pathname.match(route.regex))
-              ?.route
+            settingsRoutes.find(
+              (route) => !!location.pathname.match(route.regex)
+            )?.route
           }
           aria-label="Selected Tab"
         >
@@ -112,7 +113,7 @@ const SettingsTabs = ({
             .map((route, index) => (
               <SettingsLink
                 tabType={tabType}
-                currentPath={router.pathname}
+                currentPath={location.pathname}
                 route={route.route}
                 regex={route.regex}
                 hidden={route.hidden ?? false}
@@ -130,7 +131,7 @@ const SettingsTabs = ({
             {settingsRoutes.map((route, index) => (
               <SettingsLink
                 tabType={tabType}
-                currentPath={router.pathname}
+                currentPath={location.pathname}
                 route={route.route}
                 regex={route.regex}
                 hidden={route.hidden ?? false}
@@ -159,7 +160,7 @@ const SettingsTabs = ({
               .map((route, index) => (
                 <SettingsLink
                   tabType={tabType}
-                  currentPath={router.pathname}
+                  currentPath={location.pathname}
                   route={route.route}
                   regex={route.regex}
                   key={`standard-settings-link-${index}`}

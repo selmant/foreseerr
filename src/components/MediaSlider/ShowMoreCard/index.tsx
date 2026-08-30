@@ -2,10 +2,10 @@ import CachedImage from '@app/components/Common/CachedImage';
 import TitleCard from '@app/components/TitleCard';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/solid';
-import Link from 'next/link';
 import { useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 
 const messages = defineMessages('components.MediaSlider.ShowMoreCard', {
   seemore: 'See More',
@@ -33,7 +33,7 @@ const ShowMoreCard = ({ url, posters }: ShowMoreCardProps) => {
 
   return (
     <Link
-      href={url}
+      to={url}
       className={'w-36 sm:w-36 md:w-44'}
       onMouseEnter={() => {
         setHovered(true);

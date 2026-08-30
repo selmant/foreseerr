@@ -8,6 +8,7 @@ import IssueComment from '@app/components/IssueDetails/IssueComment';
 import IssueDescription from '@app/components/IssueDetails/IssueDescription';
 import { issueOptions } from '@app/components/IssueModal/constants';
 import useDeepLinks from '@app/hooks/useDeepLinks';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -30,10 +31,9 @@ import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
+import { Link, useNavigate } from 'react-router';
 import useSWR, { mutate } from 'swr';
 import * as Yup from 'yup';
 
@@ -79,12 +79,13 @@ const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
 
 const IssueDetails = () => {
   const { addToast } = useToasts();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const { user: currentUser, hasPermission } = useUser();
   const { data: issueData, mutate: revalidateIssue } = useSWR<Issue>(
-    `/api/v1/issue/${router.query.issueId}`
+    `/api/v1/issue/${routeQuery.issueId}`
   );
   const { data, error } = useSWR<MovieDetails | TvDetails>(
     issueData?.media.tmdbId
@@ -166,7 +167,7 @@ const IssueDetails = () => {
         appearance: 'success',
         autoDismiss: true,
       });
-      router.push('/issues');
+      navigate('/issues');
     } catch {
       addToast(intl.formatMessage(messages.toastissuedeletefailed), {
         appearance: 'error',
@@ -257,7 +258,7 @@ const IssueDetails = () => {
           </div>
           <h1>
             <Link
-              href={`/${
+              to={`/${
                 issueData.media.mediaType === MediaType.MOVIE ? 'movie' : 'tv'
               }/${data.id}`}
               className="hover:underline"
@@ -273,7 +274,7 @@ const IssueDetails = () => {
               issueId: issueData.id,
               username: (
                 <Link
-                  href={
+                  to={
                     belongsToUser
                       ? '/profile'
                       : `/users/${issueData.createdBy.id}`

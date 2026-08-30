@@ -1,7 +1,6 @@
 import DiscoverTvKeyword from '@app/components/Discover/DiscoverTvKeyword';
-import type { NextPage } from 'next';
 
-const DiscoverTvKeywordPage: NextPage = () => {
+const DiscoverTvKeywordPage = () => {
   return <DiscoverTvKeyword />;
 };
 

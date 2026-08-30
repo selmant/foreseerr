@@ -9,10 +9,10 @@ import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
 import type { default as IssueCommentType } from '@server/entity/IssueComment';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
-import Link from 'next/link';
 import { Fragment, useState } from 'react';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
 import ReactMarkdown from 'react-markdown';
+import { Link } from 'react-router';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.IssueDetails.IssueComment', {
@@ -86,7 +86,7 @@ const IssueComment = ({
           {intl.formatMessage(messages.areyousuredelete)}
         </Modal>
       </Transition>
-      <Link href={isActiveUser ? '/profile' : `/users/${comment.user.id}`}>
+      <Link to={isActiveUser ? '/profile' : `/users/${comment.user.id}`}>
         <CachedImage
           type="avatar"
           src={comment.user.avatar}
@@ -246,9 +246,7 @@ const IssueComment = ({
               {
                 username: (
                   <Link
-                    href={
-                      isActiveUser ? '/profile' : `/users/${comment.user.id}`
-                    }
+                    to={isActiveUser ? '/profile' : `/users/${comment.user.id}`}
                     className="font-semibold text-gray-100 transition duration-300 hover:text-white hover:underline"
                   >
                     {comment.user.displayName}

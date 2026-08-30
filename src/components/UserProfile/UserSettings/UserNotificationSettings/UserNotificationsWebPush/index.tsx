@@ -5,6 +5,7 @@ import NotificationTypeSelector, {
   ALL_NOTIFICATIONS,
 } from '@app/components/NotificationTypeSelector';
 import DeviceItem from '@app/components/UserProfile/UserSettings/UserNotificationSettings/UserNotificationsWebPush/DeviceItem';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
@@ -24,7 +25,6 @@ import {
 import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
 import axios from 'axios';
 import { Form, Formik } from 'formik';
-import { useRouter } from 'next/router';
 import { useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
@@ -54,8 +54,8 @@ const messages = defineMessages(
 const UserWebPushSettings = () => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const router = useRouter();
-  const { user } = useUser({ id: Number(router.query.userId) });
+  const query = useRouteQuery();
+  const { user } = useUser({ id: Number(query.userId) });
   const { currentSettings } = useSettings();
   const [webPushEnabled, setWebPushEnabled] = useState(false);
   const [subEndpoint, setSubEndpoint] = useState<string | null>(null);

@@ -6,8 +6,8 @@ import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover.PlexWatchlistSlider', {
@@ -42,7 +42,7 @@ const PlexWatchlistSlider = () => {
   return (
     <>
       <div className="slider-header">
-        <Link href="/discover/watchlist" className="slider-title">
+        <Link to="/discover/watchlist" className="slider-title">
           <span>{intl.formatMessage(messages.plexwatchlist)}</span>
           <ArrowRightCircleIcon />
         </Link>

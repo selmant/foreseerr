@@ -2,7 +2,7 @@ import { UserType } from '@server/constants/user';
 import type { PermissionCheckOptions } from '@server/lib/permissions';
 import { hasPermission, Permission } from '@server/lib/permissions';
 import type { NotificationAgentKey } from '@server/lib/settings';
-import { useRouter } from 'next/router';
+import { useLocation } from 'react-router';
 import type { MutatorCallback } from 'swr';
 import useSWR from 'swr';
 
@@ -59,9 +59,9 @@ export const useUser = ({
   id,
   initialData,
 }: { id?: number; initialData?: User } = {}): UserHookResponse => {
-  const router = useRouter();
-  const isAuthPage = /^\/(login|setup|resetpassword(?:\/|$))/.test(
-    router.pathname
+  const location = useLocation();
+  const isAuthPage = /^\/(login|setup|resetpassword)(\/|$)/.test(
+    `${location.pathname}${location.search}`
   );
 
   const {

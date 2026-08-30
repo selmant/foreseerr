@@ -13,9 +13,9 @@ import {
   ListBulletIcon,
 } from '@heroicons/react/24/outline';
 import type { CalendarItem } from '@server/interfaces/api/calendarInterfaces';
-import Link from 'next/link';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import AgendaView from './AgendaView';
 import CalendarDetails from './CalendarDetails';
 import CalendarFilters from './CalendarFilters';
@@ -62,7 +62,7 @@ const EmptyCalendar = () => {
         {intl.formatMessage(messages.emptyDescription)}
       </p>
       <Link
-        href="/discover"
+        to="/discover"
         className="mt-5 inline-flex rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
       >
         {intl.formatMessage(messages.discover)}

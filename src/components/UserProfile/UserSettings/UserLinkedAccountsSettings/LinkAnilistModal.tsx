@@ -1,10 +1,10 @@
 import Modal from '@app/components/Common/Modal';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import axios from 'axios';
-import { useRouter } from 'next/router';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -35,8 +35,8 @@ interface LinkAnilistModalProps {
 const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
   const intl = useIntl();
   const settings = useSettings();
-  const router = useRouter();
-  const routeUserId = Number(router.query.userId);
+  const query = useRouteQuery();
+  const routeUserId = Number(query.userId);
   const { user: routeUser } = useUser(
     Number.isFinite(routeUserId) && routeUserId > 0
       ? { id: routeUserId }

@@ -6,6 +6,7 @@ import NotificationTypeSelector, {
 } from '@app/components/NotificationTypeSelector';
 import { OpenPgpLink } from '@app/components/Settings/Notifications/NotificationsEmail';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -14,7 +15,6 @@ import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
 import axios from 'axios';
 import { Form, Formik } from 'formik';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 import * as Yup from 'yup';
@@ -34,8 +34,8 @@ const messages = defineMessages(
 const UserEmailSettings = () => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const router = useRouter();
-  const { user } = useUser({ id: Number(router.query.userId) });
+  const query = useRouteQuery();
+  const { user } = useUser({ id: Number(query.userId) });
   const {
     data,
     error,

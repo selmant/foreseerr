@@ -58,7 +58,7 @@ const StatusChecker = () => {
       show={
         !alertDismissed &&
         ((hasPermission(Permission.ADMIN) && data.restartRequired) ||
-          data.commitTag !== process.env.commitTag)
+          data.commitTag !== import.meta.env.COMMIT_TAG)
       }
     >
       {hasPermission(Permission.ADMIN) && data.restartRequired ? (
@@ -67,7 +67,7 @@ const StatusChecker = () => {
           backgroundClickable={false}
           onOk={() => {
             setAlertDismissed(true);
-            if (data.commitTag !== process.env.commitTag) {
+            if (data.commitTag !== import.meta.env.COMMIT_TAG) {
               location.reload();
             }
           }}

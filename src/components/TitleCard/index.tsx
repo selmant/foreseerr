@@ -37,10 +37,10 @@ import { MediaStatus } from '@server/constants/media';
 import type { Watchlist } from '@server/entity/Watchlist';
 import type { MediaType } from '@server/models/Search';
 import axios from 'axios';
-import Link from 'next/link';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import { mutate } from 'swr';
 
 interface TitleCardProps {
@@ -790,7 +790,7 @@ const TitleCard = ({
           >
             <div className="absolute inset-0 overflow-hidden rounded-xl">
               <Link
-                href={detailHref}
+                to={detailHref}
                 onClick={onLibraryCardNavigate}
                 className="absolute inset-0 h-full w-full cursor-pointer overflow-hidden text-left"
                 style={{

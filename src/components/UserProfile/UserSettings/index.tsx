@@ -4,6 +4,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import type { SettingsRoute } from '@app/components/Common/SettingsTabs';
 import SettingsTabs from '@app/components/Common/SettingsTabs';
 import ProfileHeader from '@app/components/UserProfile/ProfileHeader';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -11,8 +12,8 @@ import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
 import { hasPermission, Permission } from '@server/lib/permissions';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
+import { useLocation } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.UserProfile.UserSettings', {
@@ -31,10 +32,11 @@ type UserSettingsProps = {
 };
 
 const UserSettings = ({ children }: UserSettingsProps) => {
-  const router = useRouter();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const settings = useSettings();
   const { user: currentUser } = useUser();
-  const { user, error } = useUser({ id: Number(router.query.userId) });
+  const { user, error } = useUser({ id: Number(routeQuery.userId) });
   const intl = useIntl();
   const { data } = useSWR<UserSettingsNotificationsResponse>(
     user ? `/api/v1/user/${user?.id}/settings/notifications` : null
@@ -116,7 +118,9 @@ const UserSettings = ({ children }: UserSettingsProps) => {
   }
 
   settingsRoutes.forEach((settingsRoute) => {
-    settingsRoute.route = router.asPath.includes('/profile')
+    settingsRoute.route = `${location.pathname}${location.search}`.includes(
+      '/profile'
+    )
       ? `/profile${settingsRoute.route}`
       : `/users/${user.id}${settingsRoute.route}`;
   });

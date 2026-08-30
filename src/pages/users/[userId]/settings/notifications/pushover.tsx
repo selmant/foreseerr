@@ -3,9 +3,8 @@ import UserNotificationSettings from '@app/components/UserProfile/UserSettings/U
 import UserNotificationsPushover from '@app/components/UserProfile/UserSettings/UserNotificationSettings/UserNotificationsPushover';
 import useRouteGuard from '@app/hooks/useRouteGuard';
 import { Permission } from '@app/hooks/useUser';
-import type { NextPage } from 'next';
 
-const NotificationsPage: NextPage = () => {
+const NotificationsPage = () => {
   useRouteGuard(Permission.MANAGE_USERS);
   return (
     <UserSettings>

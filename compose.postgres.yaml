@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile.local
     ports:
+      - '3000:3000'
       - '5055:5055'
     environment:
       DB_TYPE: 'postgres' # Which DB engine to use. The default is "sqlite". To use postgres, this needs to be set to "postgres"
@@ -19,7 +20,7 @@ services:
     volumes:
       - .:/app:rw,cached
       - /app/node_modules
-      - /app/.next
+      - /app/dist/public
     depends_on:
       - postgres
     links:

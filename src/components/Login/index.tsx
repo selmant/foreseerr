@@ -1,6 +1,7 @@
 import EmbyLogo from '@app/assets/services/emby-icon-only.svg';
 import JellyfinLogo from '@app/assets/services/jellyfin-icon.svg';
 import PlexLogo from '@app/assets/services/plex.svg';
+import AppImage from '@app/components/Common/AppImage';
 import Button from '@app/components/Common/Button';
 import ImageFader from '@app/components/Common/ImageFader';
 import PageTitle from '@app/components/Common/PageTitle';
@@ -16,10 +17,9 @@ import { Transition } from '@headlessui/react';
 import { XCircleIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
 import axios from 'axios';
-import { useRouter } from 'next/dist/client/router';
-import Image from 'next/image';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { useIntl } from 'react-intl';
+import { useNavigate } from 'react-router';
 import { CSSTransition, SwitchTransition } from 'react-transition-group';
 import useSWR from 'swr';
 
@@ -35,7 +35,7 @@ const messages = defineMessages('components.Login', {
 
 const Login = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const navigate = useNavigate();
   const settings = useSettings();
   const { user, revalidate } = useUser();
 
@@ -89,9 +89,9 @@ const Login = () => {
   // valid user, we redirect the user to the home page as the login was successful.
   useEffect(() => {
     if (user) {
-      router.push('/');
+      navigate('/');
     }
-  }, [user, router]);
+  }, [user]);
 
   const { data: backdrops } = useSWR<string[]>('/api/v1/backdrops', {
     refreshInterval: 0,
@@ -115,7 +115,7 @@ const Login = () => {
         ? JellyfinLogo
         : settings.currentSettings.mediaServerType === MediaServerType.EMBY
           ? EmbyLogo
-          : undefined;
+          : PlexLogo;
 
   const isJellyfin =
     settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN ||
@@ -145,7 +145,6 @@ const Login = () => {
             className="flex-1 bg-transparent"
             onClick={() => setMediaServerLogin(false)}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/os_icon.svg"
               alt={settings.currentSettings.applicationTitle}
@@ -182,7 +181,7 @@ const Login = () => {
       </div>
       <div className="relative z-40 mt-10 flex flex-col items-center px-4 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="relative h-48 w-full max-w-full">
-          <Image src="/logo_stacked.svg" alt="Logo" fill />
+          <AppImage src="/logo_stacked.svg" alt="Logo" fill />
         </div>
       </div>
       <div className="relative z-50 mt-8 sm:mx-auto sm:w-full sm:max-w-md">

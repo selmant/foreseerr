@@ -26,10 +26,10 @@ import type { NonFunctionProperties } from '@server/interfaces/api/common';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
 
 const messages = defineMessages('components.RequestCard', {
@@ -114,7 +114,7 @@ const RequestCardError = ({ requestData }: RequestCardErrorProps) => {
                 ) && (
                   <div className="card-field !hidden sm:!block">
                     <Link
-                      href={`/users/${requestData.requestedBy.id}`}
+                      to={`/users/${requestData.requestedBy.id}`}
                       className="group flex items-center"
                     >
                       <span className="avatar-sm">
@@ -381,7 +381,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
             )}
           </div>
           <Link
-            href={
+            to={
               request.type === 'movie'
                 ? `/movie/${requestData.media.tmdbId}`
                 : `/tv/${requestData.media.tmdbId}`
@@ -396,7 +396,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
           ) && (
             <div className="card-field">
               <Link
-                href={`/users/${requestData.requestedBy.id}`}
+                to={`/users/${requestData.requestedBy.id}`}
                 className="group flex items-center"
               >
                 <span className="avatar-sm">
@@ -649,7 +649,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
           </div>
         </div>
         <Link
-          href={
+          to={
             request.type === 'movie'
               ? `/movie/${requestData.media.tmdbId}`
               : `/tv/${requestData.media.tmdbId}`

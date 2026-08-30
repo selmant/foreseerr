@@ -6,6 +6,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import Table from '@app/components/Common/Table';
 import Tooltip from '@app/components/Common/Tooltip';
 import useDebouncedState from '@app/hooks/useDebouncedState';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useToasts from '@app/hooks/useToasts';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import globalMessages from '@app/i18n/globalMessages';
@@ -27,9 +28,9 @@ import type {
   LogsResultsResponse,
 } from '@server/interfaces/api/settingsInterfaces';
 import copy from 'copy-to-clipboard';
-import { useRouter } from 'next/router';
 import { Fragment, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Settings.SettingsLogs', {
@@ -57,7 +58,9 @@ const messages = defineMessages('components.Settings.SettingsLogs', {
 type Filter = 'debug' | 'info' | 'warn' | 'error';
 
 const SettingsLogs = () => {
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
   const { addToast } = useToasts();
   const [currentFilter, setCurrentFilter] = useState<Filter>('debug');
@@ -70,7 +73,7 @@ const SettingsLogs = () => {
     log?: LogMessage;
   }>({ isOpen: false });
 
-  const page = router.query.page ? Number(router.query.page) : 1;
+  const page = routeQuery.page ? Number(routeQuery.page) : 1;
   const pageIndex = page - 1;
   const updateQueryParams = useUpdateQueryParams({ page: page.toString() });
 
@@ -286,7 +289,7 @@ const SettingsLogs = () => {
                 name="filter"
                 onChange={(e) => {
                   setCurrentFilter(e.target.value as Filter);
-                  router.push(router.pathname);
+                  navigate(location.pathname);
                 }}
                 value={currentFilter}
                 className="rounded-r-only"
@@ -446,9 +449,8 @@ const SettingsLogs = () => {
                             name="pageSize"
                             onChange={(e) => {
                               setCurrentPageSize(Number(e.target.value));
-                              router
-                                .push(router.pathname)
-                                .then(() => window.scrollTo(0, 0));
+                              navigate(location.pathname);
+                              window.scrollTo(0, 0);
                             }}
                             value={currentPageSize}
                             className="short inline"

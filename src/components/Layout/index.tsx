@@ -13,10 +13,9 @@ import defineMessages from '@app/utils/defineMessages';
 import { ArrowLeftIcon, Bars3BottomLeftIcon } from '@heroicons/react/24/solid';
 import type { AvailableLocale } from '@server/types/languages';
 import axios from 'axios';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link, useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Layout', {
@@ -35,7 +34,8 @@ const Layout = ({ children }: LayoutProps) => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const { user, hasPermission } = useUser();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { currentSettings } = useSettings();
   const { setLocale } = useLocale();
   const { data: requestResponse, mutate: revalidateRequestsCount } = useSWR(
@@ -143,7 +143,7 @@ const Layout = ({ children }: LayoutProps) => {
                 isScrolled ? 'opacity-90' : 'opacity-70'
               } pwa-only transition duration-300 hover:text-white focus:text-white focus:outline-none`}
               aria-label="Go back"
-              onClick={() => router.back()}
+              onClick={() => navigate(-1)}
             >
               <ArrowLeftIcon className="w-7" />
             </button>
@@ -160,7 +160,7 @@ const Layout = ({ children }: LayoutProps) => {
               <UserWarnings />
               {canManageRequests &&
                 (interventionCount?.unseen ?? 0) > 0 &&
-                !router.pathname.startsWith('/interventions') && (
+                !location.pathname.startsWith('/interventions') && (
                   <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-yellow-500 bg-yellow-400/20 p-4 text-yellow-100">
                     <div>
                       <div className="font-medium">
@@ -168,7 +168,7 @@ const Layout = ({ children }: LayoutProps) => {
                           count: interventionCount!.unseen,
                         })}
                       </div>
-                      <Link className="text-sm underline" href="/interventions">
+                      <Link className="text-sm underline" to="/interventions">
                         {intl.formatMessage(messages.openInterventions)}
                       </Link>
                     </div>
@@ -180,8 +180,8 @@ const Layout = ({ children }: LayoutProps) => {
                     </Button>
                   </div>
                 )}
-              {(router.pathname === '/' ||
-                router.pathname.startsWith('/discover')) && (
+              {(location.pathname === '/' ||
+                location.pathname.startsWith('/discover')) && (
                 <DiscoverNavigation />
               )}
               {children}

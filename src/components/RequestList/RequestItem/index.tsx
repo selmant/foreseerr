@@ -26,10 +26,10 @@ import type { RequestResultsResponse } from '@server/interfaces/api/requestInter
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
-import Link from 'next/link';
 import { useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
 
 const messages = defineMessages('components.RequestList.RequestItem', {
@@ -196,7 +196,7 @@ const RequestItemError = ({
                         ),
                         user: (
                           <Link
-                            href={`/users/${requestData.requestedBy.id}`}
+                            to={`/users/${requestData.requestedBy.id}`}
                             className="group flex items-center truncate"
                           >
                             <span className="avatar-sm ml-1.5">
@@ -256,7 +256,7 @@ const RequestItemError = ({
                       ),
                       user: (
                         <Link
-                          href={`/users/${requestData.modifiedBy.id}`}
+                          to={`/users/${requestData.modifiedBy.id}`}
                           className="group flex items-center truncate"
                         >
                           <span className="avatar-sm ml-1.5">
@@ -457,7 +457,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
         <div className="relative flex w-full flex-col justify-between overflow-hidden sm:flex-row">
           <div className="relative z-10 flex w-full items-center overflow-hidden pl-4 pr-4 sm:pr-0 xl:w-7/12 2xl:w-2/3">
             <Link
-              href={
+              to={
                 requestData.type === 'movie'
                   ? `/movie/${requestData.media.tmdbId}`
                   : `/tv/${requestData.media.tmdbId}`
@@ -486,7 +486,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                 )?.slice(0, 4)}
               </div>
               <Link
-                href={
+                to={
                   requestData.type === 'movie'
                     ? `/movie/${requestData.media.tmdbId}`
                     : `/tv/${requestData.media.tmdbId}`
@@ -616,7 +616,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                       ),
                       user: (
                         <Link
-                          href={`/users/${requestData.requestedBy.id}`}
+                          to={`/users/${requestData.requestedBy.id}`}
                           className="group flex items-center truncate"
                         >
                           <span className="avatar-sm ml-1.5">
@@ -676,7 +676,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                     ),
                     user: (
                       <Link
-                        href={`/users/${requestData.modifiedBy.id}`}
+                        to={`/users/${requestData.modifiedBy.id}`}
                         className="group flex items-center truncate"
                       >
                         <span className="avatar-sm ml-1.5">

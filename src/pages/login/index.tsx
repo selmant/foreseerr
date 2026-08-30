@@ -1,7 +1,6 @@
 import Login from '@app/components/Login';
-import type { NextPage } from 'next';
 
-const LoginPage: NextPage = () => {
+const LoginPage = () => {
   return <Login />;
 };
 

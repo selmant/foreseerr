@@ -1,7 +1,6 @@
 import DiscoverAnilistPage from '@app/components/Discover/DiscoverAnilist';
-import type { NextPage } from 'next';
 
-const AnilistCompletedPage: NextPage = () => (
+const AnilistCompletedPage = () => (
   <DiscoverAnilistPage
     kind="completed"
     endpoint="/api/v1/discover/anilist/completed"

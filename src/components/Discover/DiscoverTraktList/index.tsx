@@ -1,6 +1,6 @@
 import TraktDiscoverPage from '@app/components/Discover/TraktDiscoverPage';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import defineMessages from '@app/utils/defineMessages';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverTraktList', {
@@ -10,8 +10,8 @@ const messages = defineMessages('components.Discover.DiscoverTraktList', {
 
 const DiscoverTraktList = () => {
   const intl = useIntl();
-  const router = useRouter();
-  const url = typeof router.query.url === 'string' ? router.query.url : '';
+  const query = useRouteQuery();
+  const url = typeof query.url === 'string' ? query.url : '';
 
   return (
     <TraktDiscoverPage

@@ -2,12 +2,12 @@ import Button from '@app/components/Common/Button';
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import FilterSlideover from '@app/components/Discover/FilterSlideover';
 import type { FilterOptions } from '@app/components/Discover/constants';
 import {
   countActiveFilters,
   prepareFilterValues,
 } from '@app/components/Discover/constants';
-import FilterSlideover from '@app/components/Discover/FilterSlideover';
 import {
   discoverDefaultsRequestExtras,
   mergeFilterDefaults,
@@ -15,6 +15,7 @@ import {
 import useDiscover from '@app/hooks/useDiscover';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
@@ -22,7 +23,6 @@ import defineMessages from '@app/utils/defineMessages';
 import { BarsArrowDownIcon, FunnelIcon } from '@heroicons/react/24/solid';
 import type { SortOptions as TMDBSortOptions } from '@server/api/themoviedb';
 import type { MovieResult } from '@server/models/Search';
-import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -53,13 +53,13 @@ const SortOptions: Record<string, TMDBSortOptions> = {
 
 const DiscoverMovies = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const query = useRouteQuery();
   const { user } = useUser();
   const updateQueryParams = useUpdateQueryParams({});
 
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const preparedFilters = mergeFilterDefaults(
-    prepareFilterValues(router.query),
+    prepareFilterValues(query),
     discoverDefaults,
     user?.id
   );

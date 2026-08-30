@@ -2,13 +2,13 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { useIntl } from 'react-intl';
+import { Link, useLocation } from 'react-router';
 
 const messages = defineMessages('components.Discover.DiscoverWatchlist', {
   discoverwatchlist: 'Your Watchlist',
@@ -17,9 +17,10 @@ const messages = defineMessages('components.Discover.DiscoverWatchlist', {
 
 const DiscoverWatchlist = () => {
   const intl = useIntl();
-  const router = useRouter();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const { user } = useUser({
-    id: Number(router.query.userId),
+    id: Number(routeQuery.userId),
   });
   const { user: currentUser } = useUser();
 
@@ -34,10 +35,10 @@ const DiscoverWatchlist = () => {
     mutate,
   } = useDiscover<WatchlistItem>(
     `/api/v1/${
-      router.pathname.startsWith('/profile')
+      location.pathname.startsWith('/profile')
         ? `user/${currentUser?.id}`
-        : router.query.userId
-          ? `user/${router.query.userId}`
+        : routeQuery.userId
+          ? `user/${routeQuery.userId}`
           : 'discover'
     }/watchlist`
   );
@@ -47,19 +48,17 @@ const DiscoverWatchlist = () => {
   }
 
   const title = intl.formatMessage(
-    router.query.userId ? messages.watchlist : messages.discoverwatchlist
+    routeQuery.userId ? messages.watchlist : messages.discoverwatchlist
   );
 
   return (
     <>
-      <PageTitle
-        title={[title, router.query.userId ? user?.displayName : '']}
-      />
+      <PageTitle title={[title, routeQuery.userId ? user?.displayName : '']} />
       <div className="mb-5 mt-1">
         <Header
           subtext={
-            router.query.userId ? (
-              <Link href={`/users/${user?.id}`} className="hover:underline">
+            routeQuery.userId ? (
+              <Link to={`/users/${user?.id}`} className="hover:underline">
                 {user?.displayName}
               </Link>
             ) : (

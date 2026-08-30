@@ -20,9 +20,9 @@ import {
   FunnelIcon,
 } from '@heroicons/react/24/solid';
 import axios from 'axios';
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
 
 const TAKE = 25;
@@ -251,7 +251,7 @@ const ServarrInterventions = () => {
                   </div>
                   <div className="text-sm text-gray-300">
                     <Link
-                      href={
+                      to={
                         item.mediaType === 'movie'
                           ? `/movie/${item.tmdbId}`
                           : `/tv/${item.tmdbId}`

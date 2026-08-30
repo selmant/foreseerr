@@ -1,10 +1,8 @@
 import PageTitle from '@app/components/Common/PageTitle';
 import defineMessages from '@app/utils/defineMessages';
-import type { Undefinable } from '@app/utils/typeHelpers';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
-import type { NextPage } from 'next';
-import Link from 'next/link';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 
 interface ErrorProps {
   statusCode?: number;
@@ -19,7 +17,7 @@ const messages = defineMessages('pages', {
   returnHome: 'Return Home',
 });
 
-const ErrorPage: NextPage<ErrorProps> = ({ statusCode }) => {
+const ErrorPage = ({ statusCode }: ErrorProps) => {
   const intl = useIntl();
 
   const getErrorMessage = (statusCode?: number) => {
@@ -45,25 +43,12 @@ const ErrorPage: NextPage<ErrorProps> = ({ statusCode }) => {
             })
           : getErrorMessage(statusCode)}
       </div>
-      <Link href="/" className="mt-2 flex">
+      <Link to="/" className="mt-2 flex">
         {intl.formatMessage(messages.returnHome)}
         <ArrowRightCircleIcon className="ml-2 h-6 w-6" />
       </Link>
     </div>
   );
-};
-
-ErrorPage.getInitialProps = async ({ res, err }): Promise<ErrorProps> => {
-  // Apologies for how gross ternary is but this is just temporary. Honestly,
-  // blame the nextjs docs
-  let statusCode: Undefinable<number>;
-  if (res) {
-    statusCode = res.statusCode;
-  } else {
-    statusCode = err ? err.statusCode : undefined;
-  }
-
-  return { statusCode };
 };
 
 export default ErrorPage;

@@ -21,6 +21,7 @@ import StatusBadge from '@app/components/StatusBadge';
 import useDeepLinks from '@app/hooks/useDeepLinks';
 import useLocale from '@app/hooks/useLocale';
 import useMediaListActions from '@app/hooks/useMediaListActions';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -28,6 +29,7 @@ import ErrorPage from '@app/pages/_error';
 import { sortCrewPriority } from '@app/utils/creditHelpers';
 import defineMessages from '@app/utils/defineMessages';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
+import { buildPath } from '@app/utils/routing';
 import {
   ArrowRightCircleIcon,
   CloudIcon,
@@ -51,10 +53,9 @@ import type { MovieDetails as MovieDetailsType } from '@server/models/Movie';
 import { countries } from 'country-flag-icons';
 import 'country-flag-icons/3x2/flags.css';
 import { uniqBy } from 'lodash';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link, useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.MovieDetails', {
@@ -107,7 +108,9 @@ interface MovieDetailsProps {
 const MovieDetails = ({ movie }: MovieDetailsProps) => {
   const settings = useSettings();
   const { user, hasPermission } = useUser();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const routeQuery = useRouteQuery();
   const intl = useIntl();
   const { locale } = useLocale();
   const [showManager, setShowManager] = useState(false);
@@ -120,7 +123,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     data,
     error,
     mutate: revalidate,
-  } = useSWR<MovieDetailsType>(`/api/v1/movie/${router.query.movieId}`, {
+  } = useSWR<MovieDetailsType>(`/api/v1/movie/${routeQuery.movieId}`, {
     fallbackData: movie,
     refreshInterval: refreshIntervalHelper(
       {
@@ -139,14 +142,13 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
   );
 
   useEffect(() => {
-    if (router.query.manage === '1') {
+    if (routeQuery.manage === '1') {
       setShowManager(true);
-      router.replace({
-        pathname: router.pathname,
-        query: { movieId: router.query.movieId },
+      navigate(buildPath(location.pathname, { movieId: routeQuery.movieId }), {
+        replace: true,
       });
     }
-  }, [router, router.query.manage]);
+  }, [routeQuery.manage]);
 
   const closeBlocklistModal = useCallback(
     () => setShowBlocklistModal(false),
@@ -295,7 +297,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
       data.genres
         .map((g) => (
           <Link
-            href={`/discover/movies?genre=${g.id}`}
+            to={`/discover/movies?genre=${g.id}`}
             key={`genre-${g.id}`}
             className="hover:underline"
           >
@@ -389,10 +391,12 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
         mediaType="movie"
         onClose={() => {
           setShowManager(false);
-          router.replace({
-            pathname: router.pathname,
-            query: { movieId: router.query.movieId },
-          });
+          navigate(
+            buildPath(location.pathname, { movieId: routeQuery.movieId }),
+            {
+              replace: true,
+            }
+          );
         }}
         revalidate={() => revalidate()}
         show={showManager}
@@ -622,7 +626,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                 {sortedCrew.slice(0, 6).map((person) => (
                   <li key={`crew-${person.job}-${person.id}`}>
                     <span>{person.job}</span>
-                    <Link href={`/person/${person.id}`} className="crew-name">
+                    <Link to={`/person/${person.id}`} className="crew-name">
                       {person.name}
                     </Link>
                   </li>
@@ -630,7 +634,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
               </ul>
               <div className="mt-4 flex justify-end">
                 <Link
-                  href={`/movie/${data.id}/crew`}
+                  to={`/movie/${data.id}/crew`}
                   className="flex items-center text-gray-400 transition duration-300 hover:text-gray-100"
                 >
                   <span>{intl.formatMessage(messages.viewfullcrew)}</span>
@@ -643,7 +647,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
             <div className="mt-6">
               {data.keywords.map((keyword) => (
                 <Link
-                  href={`/discover/movies?keywords=${keyword.id}`}
+                  to={`/discover/movies?keywords=${keyword.id}`}
                   key={`keyword-id-${keyword.id}`}
                   className="mb-2 mr-2 inline-flex last:mr-0"
                 >
@@ -656,7 +660,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
         <div className="media-overview-right">
           {data.collection && (
             <div className="mb-6">
-              <Link href={`/collection/${data.collection.id}`}>
+              <Link to={`/collection/${data.collection.id}`}>
                 <div className="group relative z-0 scale-100 transform-gpu cursor-pointer overflow-hidden rounded-lg bg-gray-800 bg-cover bg-center shadow-md ring-1 ring-gray-700 transition duration-300 hover:scale-105 hover:ring-gray-500">
                   <div className="absolute inset-0 z-0">
                     <CachedImage
@@ -813,7 +817,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                 <span>{intl.formatMessage(messages.originallanguage)}</span>
                 <span className="media-fact-value">
                   <Link
-                    href={`/discover/movies/language/${data.originalLanguage}`}
+                    to={`/discover/movies/language/${data.originalLanguage}`}
                   >
                     {intl.formatDisplayName(data.originalLanguage, {
                       type: 'language',
@@ -875,7 +879,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                     .map((s) => {
                       return (
                         <Link
-                          href={`/discover/movies/studio/${s.id}`}
+                          to={`/discover/movies/studio/${s.id}`}
                           key={`studio-${s.id}`}
                           className="block"
                         >
@@ -951,11 +955,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
       {data.credits.cast.length > 0 && (
         <>
           <div className="slider-header">
-            <Link
-              href="/movie/[movieId]/cast"
-              as={`/movie/${data.id}/cast`}
-              className="slider-title"
-            >
+            <Link to={`/movie/${data.id}/cast`} className="slider-title">
               <span>{intl.formatMessage(messages.cast)}</span>
               <ArrowRightCircleIcon />
             </Link>
@@ -979,14 +979,14 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
       <MediaSlider
         sliderKey="recommendations"
         title={intl.formatMessage(messages.recommendations)}
-        url={`/api/v1/movie/${router.query.movieId}/recommendations`}
+        url={`/api/v1/movie/${routeQuery.movieId}/recommendations`}
         linkUrl={`/movie/${data.id}/recommendations`}
         hideWhenEmpty
       />
       <MediaSlider
         sliderKey="similar"
         title={intl.formatMessage(messages.similar)}
-        url={`/api/v1/movie/${router.query.movieId}/similar`}
+        url={`/api/v1/movie/${routeQuery.movieId}/similar`}
         linkUrl={`/movie/${data.id}/similar`}
         hideWhenEmpty
       />

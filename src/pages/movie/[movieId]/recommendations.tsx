@@ -1,7 +1,6 @@
 import MovieRecommendations from '@app/components/MovieDetails/MovieRecommendations';
-import type { NextPage } from 'next';
 
-const MovieRecommendationsPage: NextPage = () => {
+const MovieRecommendationsPage = () => {
   return <MovieRecommendations />;
 };
 

@@ -20,9 +20,9 @@ import {
 import { MediaRequestStatus } from '@server/constants/media';
 import type { MediaRequest } from '@server/entity/MediaRequest';
 import axios from 'axios';
-import Link from 'next/link';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import { mutate } from 'swr';
 
 const messages = defineMessages('components.RequestBlock', {
@@ -103,7 +103,7 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
                   <UserIcon className="mr-1.5 h-5 w-5 min-w-0 flex-shrink-0" />
                 </Tooltip>
                 <Link
-                  href={
+                  to={
                     request.requestedBy.id === user?.id
                       ? '/profile'
                       : `/users/${request.requestedBy.id}`
@@ -133,7 +133,7 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
                     <EyeIcon className="mr-1.5 h-5 w-5 flex-shrink-0" />
                   </Tooltip>
                   <Link
-                    href={
+                    to={
                       request.modifiedBy.id === user?.id
                         ? '/profile'
                         : `/users/${request.modifiedBy.id}`

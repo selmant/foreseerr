@@ -48,8 +48,6 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store CYPRESS_INSTALL_BINARY=0 pnpm 
 
 RUN pnpm build
 
-RUN rm -rf .next/cache
-
 FROM node:22.23.2-alpine3.23@sha256:46825fbbd4e996a78b7a2cdc08d75e38a5a505bdab95dcda55605359bf124bc6
 ARG SOURCE_DATE_EPOCH
 ARG COMMIT_TAG
@@ -64,7 +62,6 @@ WORKDIR /app
 
 COPY --chown=node:node . .
 COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
-COPY --chown=node:node --from=build /app/.next ./.next
 COPY --chown=node:node --from=build /app/dist ./dist
 
 RUN touch config/DOCKER && \
