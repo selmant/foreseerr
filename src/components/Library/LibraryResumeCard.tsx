@@ -42,7 +42,7 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
           ref={ref}
           data-testid="library-resume-card"
           className={`w-72 overflow-hidden rounded-lg bg-library-charcoal ring-1 ring-gray-800 sm:w-80 ${className}`}
-          tabIndex={isTvShell ? 0 : undefined}
+          tabIndex={isTvShell ? -1 : undefined}
         >
           <button
             type="button"

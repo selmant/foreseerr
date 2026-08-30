@@ -36,7 +36,9 @@ const TvFocusableInner = ({
       });
     },
   });
-  const className = focused ? 'tv-focused' : '';
+  const className = ['tv-focus-target', focused ? 'tv-focused' : '']
+    .filter(Boolean)
+    .join(' ');
 
   if (typeof children === 'function') {
     return children({ ref, focused, className });
@@ -51,9 +53,7 @@ const TvFocusableInner = ({
   }>;
   return cloneElement(child, {
     ref,
-    className: [child.props.className, 'tv-focus-target', className]
-      .filter(Boolean)
-      .join(' '),
+    className: [child.props.className, className].filter(Boolean).join(' '),
   });
 };
 

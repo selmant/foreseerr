@@ -1,6 +1,7 @@
 import Button from '@app/components/Common/Button';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import JellyfinQuickConnectModal from '@app/components/Login/JellyfinQuickConnectModal';
+import TvFocusable from '@app/components/Tv/TvFocusable';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
@@ -133,16 +134,22 @@ const JellyfinLogin = ({ revalidate, serverType }: JellyfinLoginProps) => {
                   </h2>
 
                   <div className="mb-4 mt-1">
-                    <div className="form-input-field">
-                      <Field
-                        id="username"
-                        name="username"
-                        type="text"
-                        placeholder={intl.formatMessage(messages.username)}
-                        className="!bg-gray-700/80 placeholder:text-gray-400"
-                        data-form-type="username"
-                      />
-                    </div>
+                    <TvFocusable
+                      onEnterPress={() =>
+                        document.getElementById('username')?.focus()
+                      }
+                    >
+                      <div className="form-input-field">
+                        <Field
+                          id="username"
+                          name="username"
+                          type="text"
+                          placeholder={intl.formatMessage(messages.username)}
+                          className="!bg-gray-700/80 placeholder:text-gray-400"
+                          data-form-type="username"
+                        />
+                      </div>
+                    </TvFocusable>
                     {touched.username && values.username.match(/\s$/) && (
                       <div className="warning label-tip flex items-center">
                         <ExclamationTriangleIcon className="mr-1 h-4 w-4" />
@@ -157,20 +164,26 @@ const JellyfinLogin = ({ revalidate, serverType }: JellyfinLoginProps) => {
                   </div>
 
                   <div className="mb-2 mt-1">
-                    <div className="form-input-field">
-                      <SensitiveInput
-                        as="field"
-                        id="password"
-                        name="password"
-                        type="password"
-                        autoComplete="current-password"
-                        placeholder={intl.formatMessage(messages.password)}
-                        className="!bg-gray-700/80 placeholder:text-gray-400"
-                        data-form-type="password"
-                        data-1pignore="false"
-                        data-lpignore="false"
-                      />
-                    </div>
+                    <TvFocusable
+                      onEnterPress={() =>
+                        document.getElementById('password')?.focus()
+                      }
+                    >
+                      <div className="form-input-field">
+                        <SensitiveInput
+                          as="field"
+                          id="password"
+                          name="password"
+                          type="password"
+                          autoComplete="current-password"
+                          placeholder={intl.formatMessage(messages.password)}
+                          className="!bg-gray-700/80 placeholder:text-gray-400"
+                          data-form-type="password"
+                          data-1pignore="false"
+                          data-lpignore="false"
+                        />
+                      </div>
+                    </TvFocusable>
                     <div className="flex">
                       {errors.password && touched.password && (
                         <div className="error">{errors.password}</div>
@@ -197,19 +210,21 @@ const JellyfinLogin = ({ revalidate, serverType }: JellyfinLoginProps) => {
                   </div>
                 </div>
 
-                <Button
-                  buttonType="primary"
-                  type="submit"
-                  disabled={isSubmitting || !isValid}
-                  className="mt-2 w-full shadow-sm"
-                >
-                  <ArrowLeftOnRectangleIcon />
-                  <span>
-                    {isSubmitting
-                      ? intl.formatMessage(messages.signingin)
-                      : intl.formatMessage(messages.signin)}
-                  </span>
-                </Button>
+                <TvFocusable>
+                  <Button
+                    buttonType="primary"
+                    type="submit"
+                    disabled={isSubmitting || !isValid}
+                    className="mt-2 w-full shadow-sm"
+                  >
+                    <ArrowLeftOnRectangleIcon />
+                    <span>
+                      {isSubmitting
+                        ? intl.formatMessage(messages.signingin)
+                        : intl.formatMessage(messages.signin)}
+                    </span>
+                  </Button>
+                </TvFocusable>
               </Form>
             </>
           );
@@ -218,15 +233,17 @@ const JellyfinLogin = ({ revalidate, serverType }: JellyfinLoginProps) => {
 
       <div className="mt-4">
         {serverType === MediaServerType.JELLYFIN && (
-          <Button
-            buttonType="ghost"
-            type="button"
-            onClick={() => setShowQuickConnect(true)}
-            className="w-full"
-          >
-            <QrCodeIcon />
-            <span>{intl.formatMessage(messages.quickconnect)}</span>
-          </Button>
+          <TvFocusable>
+            <Button
+              buttonType="ghost"
+              type="button"
+              onClick={() => setShowQuickConnect(true)}
+              className="w-full"
+            >
+              <QrCodeIcon />
+              <span>{intl.formatMessage(messages.quickconnect)}</span>
+            </Button>
+          </TvFocusable>
         )}
       </div>
 

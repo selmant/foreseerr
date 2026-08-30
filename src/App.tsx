@@ -4,10 +4,14 @@ import LoadingBar from '@app/components/LoadingBar';
 import PWAHeader from '@app/components/PWAHeader';
 import ServiceWorkerSetup from '@app/components/ServiceWorkerSetup';
 import StatusChecker from '@app/components/StatusChecker';
+import TvLayout from '@app/components/Tv/TvLayout';
 import TvNavigationGate from '@app/components/Tv/TvNavigationGate';
 import { InteractionProvider } from '@app/context/InteractionContext';
 import { LanguageContext } from '@app/context/LanguageContext';
-import { NativeRuntimeProvider } from '@app/context/NativeRuntimeContext';
+import {
+  NativeRuntimeProvider,
+  useNativeRuntime,
+} from '@app/context/NativeRuntimeContext';
 import { SettingsProvider } from '@app/context/SettingsContext';
 import { UserContext } from '@app/context/UserContext';
 import type { User } from '@app/hooks/useUser';
@@ -23,7 +27,7 @@ import { MediaServerType } from '@server/constants/server';
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
 import type { AvailableLocale } from '@server/types/languages';
 import axios from 'axios';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Toaster } from 'react-hot-toast';
 import { IntlProvider } from 'react-intl';
@@ -168,6 +172,14 @@ const isSetupExemptRoute = (pathname: string): boolean =>
 const isLoginExemptRoute = (pathname: string): boolean =>
   /\/(login|setup|resetpassword)/.test(pathname);
 
+const AuthenticatedShell = ({ children }: { children: ReactNode }) => {
+  const { isTvShell } = useNativeRuntime();
+  if (isTvShell) {
+    return <TvLayout>{children}</TvLayout>;
+  }
+  return <Layout>{children}</Layout>;
+};
+
 const AppShell = ({
   user,
   currentSettings,
@@ -229,9 +241,9 @@ const AppShell = ({
   const content = isPublicRoute(location.pathname) ? (
     <Outlet />
   ) : (
-    <Layout>
+    <AuthenticatedShell>
       <Outlet />
-    </Layout>
+    </AuthenticatedShell>
   );
 
   return (

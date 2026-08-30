@@ -593,8 +593,7 @@
     }
   }
 
-  html.tv-shell .tv-focus-target.tv-focused,
-  html.tv-shell .tv-focused {
+  html.tv-shell .tv-focus-target.tv-focused {
     outline: 3px solid theme('colors.indigo.400');
     outline-offset: 4px;
   }
@@ -611,6 +610,24 @@
   html.tv-shell a,
   html.tv-shell [role='button'] {
     @apply focus-visible:outline-none;
+  }
+
+  html.tv-shell button:not(.tv-focus-target),
+  html.tv-shell a:not(.tv-focus-target),
+  html.tv-shell [role='button']:not(.tv-focus-target) {
+    outline: none;
+  }
+
+  html.tv-shell .media-status a {
+    pointer-events: none;
+  }
+
+  html.tv-shell input[type='text'],
+  html.tv-shell input[type='password'],
+  html.tv-shell input[type='email'],
+  html.tv-shell input[type='search'] {
+    min-height: 3.5rem;
+    font-size: 1.25rem;
   }
 
   .extra-bottom-space {

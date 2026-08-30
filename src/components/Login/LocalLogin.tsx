@@ -1,5 +1,6 @@
 import Button from '@app/components/Common/Button';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
+import TvFocusable from '@app/components/Tv/TvFocusable';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline';
@@ -90,18 +91,24 @@ const LocalLogin = ({ revalidate }: LocalLoginProps) => {
                 </h2>
 
                 <div className="mb-4 mt-1">
-                  <div className="form-input-field">
-                    <Field
-                      id="email"
-                      name="email"
-                      placeholder={intl.formatMessage(messages.email)}
-                      type="text"
-                      inputMode="email"
-                      data-testid="email"
-                      data-form-type="username,email"
-                      className="!bg-gray-700/80 placeholder:text-gray-400"
-                    />
-                  </div>
+                  <TvFocusable
+                    onEnterPress={() =>
+                      document.getElementById('email')?.focus()
+                    }
+                  >
+                    <div className="form-input-field">
+                      <Field
+                        id="email"
+                        name="email"
+                        placeholder={intl.formatMessage(messages.email)}
+                        type="text"
+                        inputMode="email"
+                        data-testid="email"
+                        data-form-type="username,email"
+                        className="!bg-gray-700/80 placeholder:text-gray-400"
+                      />
+                    </div>
+                  </TvFocusable>
                   {touched.email && values.email.match(/\s$/) && (
                     <div className="warning label-tip flex items-center">
                       <ExclamationTriangleIcon className="mr-1 h-4 w-4" />
@@ -131,21 +138,27 @@ const LocalLogin = ({ revalidate }: LocalLoginProps) => {
                   )}
                 </div>
                 <div className="mb-2 mt-1">
-                  <div className="form-input-field">
-                    <SensitiveInput
-                      as="field"
-                      id="password"
-                      name="password"
-                      type="password"
-                      placeholder={intl.formatMessage(messages.password)}
-                      autoComplete="current-password"
-                      data-testid="password"
-                      data-form-type="password"
-                      className="!bg-gray-700/80 placeholder:text-gray-400"
-                      data-1pignore="false"
-                      data-lpignore="false"
-                    />
-                  </div>
+                  <TvFocusable
+                    onEnterPress={() =>
+                      document.getElementById('password')?.focus()
+                    }
+                  >
+                    <div className="form-input-field">
+                      <SensitiveInput
+                        as="field"
+                        id="password"
+                        name="password"
+                        type="password"
+                        placeholder={intl.formatMessage(messages.password)}
+                        autoComplete="current-password"
+                        data-testid="password"
+                        data-form-type="password"
+                        className="!bg-gray-700/80 placeholder:text-gray-400"
+                        data-1pignore="false"
+                        data-lpignore="false"
+                      />
+                    </div>
+                  </TvFocusable>
                   <div className="flex">
                     {errors.password &&
                       touched.password &&
@@ -170,20 +183,22 @@ const LocalLogin = ({ revalidate }: LocalLoginProps) => {
                 )}
               </div>
 
-              <Button
-                buttonType="primary"
-                type="submit"
-                disabled={isSubmitting || !isValid}
-                data-testid="local-signin-button"
-                className="mt-2 w-full shadow-sm"
-              >
-                <ArrowLeftOnRectangleIcon />
-                <span>
-                  {isSubmitting
-                    ? intl.formatMessage(messages.signingin)
-                    : intl.formatMessage(messages.signin)}
-                </span>
-              </Button>
+              <TvFocusable>
+                <Button
+                  buttonType="primary"
+                  type="submit"
+                  disabled={isSubmitting || !isValid}
+                  data-testid="local-signin-button"
+                  className="mt-2 w-full shadow-sm"
+                >
+                  <ArrowLeftOnRectangleIcon />
+                  <span>
+                    {isSubmitting
+                      ? intl.formatMessage(messages.signingin)
+                      : intl.formatMessage(messages.signin)}
+                  </span>
+                </Button>
+              </TvFocusable>
             </Form>
           </>
         );

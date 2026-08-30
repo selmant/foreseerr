@@ -7,6 +7,7 @@ import MetacriticLogo from '@app/assets/services/metacritic.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import TmdbLogo from '@app/assets/tmdb_logo.svg';
 import Tooltip from '@app/components/Common/Tooltip';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import {
   buildRatingBadges,
   type RatingBadge,
@@ -67,6 +68,7 @@ const RatingBadges = ({
   tmdbHref,
   className = '',
 }: RatingBadgesProps) => {
+  const { isTvShell } = useNativeRuntime();
   const activeSettings = resolveRatingBadgeSettings(
     {
       ...DEFAULT_RATING_BADGE_SETTINGS,
@@ -95,17 +97,20 @@ const RatingBadges = ({
           );
           return (
             <Tooltip key={badge.key} content={badge.title}>
-              {href ? (
+              {href && !isTvShell ? (
                 <a
                   href={href}
                   className="media-rating"
                   target="_blank"
                   rel="noreferrer"
+                  tabIndex={-1}
                 >
                   {content}
                 </a>
               ) : (
-                <span className="media-rating">{content}</span>
+                <span className="media-rating pointer-events-none">
+                  {content}
+                </span>
               )}
             </Tooltip>
           );
@@ -146,18 +151,21 @@ const RatingBadges = ({
 
         return (
           <Tooltip key={badge.key} content={badge.title}>
-            {badge.href && !compact ? (
+            {badge.href && !compact && !isTvShell ? (
               <a
                 href={badge.href}
                 className={classes}
                 target="_blank"
                 rel="noreferrer"
+                tabIndex={-1}
                 onClick={(e) => e.stopPropagation()}
               >
                 {content}
               </a>
             ) : (
-              <span className={classes}>{content}</span>
+              <span className={`${classes} pointer-events-none`}>
+                {content}
+              </span>
             )}
           </Tooltip>
         );

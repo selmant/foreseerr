@@ -12,6 +12,7 @@ import defineMessages from '@app/utils/defineMessages';
 import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import type {
+  LibraryEpisode,
   LibraryItemInspectorResponse,
   LibrarySeasonEpisodesResponse,
   LibraryTitle,
@@ -33,6 +34,7 @@ const messages = defineMessages('components.Library.LibraryInspector', {
   close: 'Close inspector',
   episodes: 'Episodes',
   watched: 'Watched',
+  closeEpisode: 'Close',
   emptySeason: 'No episodes in this season.',
   loadFailed: 'Could not load this title. Try again.',
   notFound: 'This title is no longer in your library.',
@@ -54,11 +56,14 @@ const LibraryInspector = ({
   onManage,
 }: LibraryInspectorProps) => {
   const intl = useIntl();
-  const { play } = useNativeRuntime();
+  const { play, isTvShell } = useNativeRuntime();
   const { hasPermission } = useUser();
   const panelRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<Element | null>(null);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [selectedEpisode, setSelectedEpisode] = useState<LibraryEpisode | null>(
+    null
+  );
   const [episodeWatchOverrides, setEpisodeWatchOverrides] = useState<
     Map<string, boolean>
   >(new Map());
@@ -129,6 +134,7 @@ const LibraryInspector = ({
 
   useEffect(() => {
     setEpisodeWatchOverrides(new Map());
+    setSelectedEpisode(null);
   }, [selectedSeasonId]);
 
   useEffect(() => {
@@ -153,7 +159,7 @@ const LibraryInspector = ({
   );
 
   const playTarget = (
-    event: React.MouseEvent<HTMLAnchorElement | HTMLButtonElement>,
+    event: { preventDefault: () => void },
     itemId: string,
     label: string,
     fallbackUrl: string
@@ -348,18 +354,20 @@ const LibraryInspector = ({
                         </Button>
                       </TvFocusable>
                     ) : null}
-                    {tmdbId ? (
+                    {tmdbId && !isTvShell ? (
                       <MediaActionDetailBar
                         tmdbId={tmdbId}
                         mediaType={data.mediaType}
                       />
                     ) : null}
                     {detailsHref ? (
-                      <Button as="a" href={detailsHref} buttonType="default">
-                        {intl.formatMessage(messages.viewDetails)}
-                      </Button>
+                      <TvFocusable>
+                        <Button as="a" href={detailsHref} buttonType="default">
+                          {intl.formatMessage(messages.viewDetails)}
+                        </Button>
+                      </TvFocusable>
                     ) : null}
-                    {canManage && managedTitle ? (
+                    {!isTvShell && canManage && managedTitle ? (
                       <Button
                         buttonType="default"
                         onClick={() => onManage(managedTitle)}
@@ -395,24 +403,30 @@ const LibraryInspector = ({
                         className="hidden flex-wrap gap-2 sm:flex"
                       >
                         {data.seasons.map((season) => (
-                          <button
+                          <TvFocusable
                             key={season.jellyfinSeasonId}
-                            type="button"
-                            role="tab"
-                            aria-selected={
-                              selectedSeasonId === season.jellyfinSeasonId
-                            }
-                            className={`min-h-11 rounded-md px-3 text-sm ${
-                              selectedSeasonId === season.jellyfinSeasonId
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-gray-800 text-gray-300'
-                            }`}
-                            onClick={() =>
+                            onEnterPress={() =>
                               setSelectedSeasonId(season.jellyfinSeasonId)
                             }
                           >
-                            {season.name}
-                          </button>
+                            <button
+                              type="button"
+                              role="tab"
+                              aria-selected={
+                                selectedSeasonId === season.jellyfinSeasonId
+                              }
+                              className={`min-h-11 rounded-md px-3 text-sm ${
+                                selectedSeasonId === season.jellyfinSeasonId
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-gray-800 text-gray-300'
+                              }`}
+                              onClick={() =>
+                                setSelectedSeasonId(season.jellyfinSeasonId)
+                              }
+                            >
+                              {season.name}
+                            </button>
+                          </TvFocusable>
                         ))}
                       </div>
                       <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
@@ -435,10 +449,15 @@ const LibraryInspector = ({
                               episodeWatchOverrides.get(
                                 episode.jellyfinItemId
                               ) ?? Boolean(episode.watched);
-                            return (
+                            const selected =
+                              selectedEpisode?.jellyfinItemId ===
+                              episode.jellyfinItemId;
+                            const row = (
                               <li
                                 key={episode.jellyfinItemId}
-                                className="flex min-h-11 items-center gap-3 px-3 py-2"
+                                className={`flex min-h-11 items-center gap-3 px-3 py-2 ${
+                                  selected ? 'bg-gray-800/80' : ''
+                                }`}
                               >
                                 <div className="min-w-0 flex-1">
                                   <div className="truncate text-sm text-gray-100">
@@ -462,7 +481,8 @@ const LibraryInspector = ({
                                     </div>
                                   ) : null}
                                 </div>
-                                {tmdbId &&
+                                {!isTvShell &&
+                                tmdbId &&
                                 episode.parentIndexNumber != null &&
                                 episode.indexNumber != null ? (
                                   <LibraryEpisodeWatchToggle
@@ -484,7 +504,7 @@ const LibraryInspector = ({
                                     }
                                   />
                                 ) : null}
-                                {episode.mediaUrl ? (
+                                {!isTvShell && episode.mediaUrl ? (
                                   <Button
                                     as="a"
                                     href={episode.mediaUrl}
@@ -506,9 +526,97 @@ const LibraryInspector = ({
                                 ) : null}
                               </li>
                             );
+                            if (!isTvShell) {
+                              return row;
+                            }
+                            return (
+                              <TvFocusable
+                                key={episode.jellyfinItemId}
+                                onEnterPress={() => setSelectedEpisode(episode)}
+                              >
+                                {row}
+                              </TvFocusable>
+                            );
                           })}
                         </ul>
                       )}
+                      {isTvShell && selectedEpisode ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {selectedEpisode.mediaUrl ? (
+                            <TvFocusable
+                              onEnterPress={() =>
+                                playTarget(
+                                  { preventDefault: () => undefined },
+                                  selectedEpisode.jellyfinItemId,
+                                  `${title} ${
+                                    selectedEpisode.subtitle ??
+                                    selectedEpisode.name
+                                  }`,
+                                  selectedEpisode.mediaUrl as string
+                                )
+                              }
+                            >
+                              <Button
+                                as="a"
+                                href={selectedEpisode.mediaUrl}
+                                buttonType="primary"
+                                onClick={(event) =>
+                                  playTarget(
+                                    event,
+                                    selectedEpisode.jellyfinItemId,
+                                    `${title} ${
+                                      selectedEpisode.subtitle ??
+                                      selectedEpisode.name
+                                    }`,
+                                    selectedEpisode.mediaUrl as string
+                                  )
+                                }
+                              >
+                                {intl.formatMessage(messages.play)}
+                              </Button>
+                            </TvFocusable>
+                          ) : null}
+                          {tmdbId &&
+                          selectedEpisode.parentIndexNumber != null &&
+                          selectedEpisode.indexNumber != null ? (
+                            <TvFocusable>
+                              <LibraryEpisodeWatchToggle
+                                tmdbId={tmdbId}
+                                jellyfinItemId={selectedEpisode.jellyfinItemId}
+                                seasonNumber={selectedEpisode.parentIndexNumber}
+                                episodeNumber={selectedEpisode.indexNumber}
+                                watched={
+                                  episodeWatchOverrides.get(
+                                    selectedEpisode.jellyfinItemId
+                                  ) ?? Boolean(selectedEpisode.watched)
+                                }
+                                episodesKey={episodesKey}
+                                showLabel
+                                onLocalChange={(nextWatched) =>
+                                  setEpisodeWatchOverrides((current) => {
+                                    const next = new Map(current);
+                                    next.set(
+                                      selectedEpisode.jellyfinItemId,
+                                      nextWatched
+                                    );
+                                    return next;
+                                  })
+                                }
+                              />
+                            </TvFocusable>
+                          ) : null}
+                          <TvFocusable
+                            onEnterPress={() => setSelectedEpisode(null)}
+                          >
+                            <Button
+                              buttonType="default"
+                              onClick={() => setSelectedEpisode(null)}
+                            >
+                              {intl.formatMessage(messages.closeEpisode)}
+                            </Button>
+                          </TvFocusable>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>

@@ -38,6 +38,7 @@ interface LibraryEpisodeWatchToggleProps {
   watched: boolean;
   episodesKey: string;
   onLocalChange?: (watched: boolean) => void;
+  showLabel?: boolean;
 }
 
 const LibraryEpisodeWatchToggle = ({
@@ -48,6 +49,7 @@ const LibraryEpisodeWatchToggle = ({
   watched,
   episodesKey,
   onLocalChange,
+  showLabel = false,
 }: LibraryEpisodeWatchToggleProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
@@ -143,11 +145,19 @@ const LibraryEpisodeWatchToggle = ({
       ) : (
         <CheckBadgeOutline className="h-4 w-4" />
       )}
-      <span className="sr-only">
-        {intl.formatMessage(
-          localWatched ? messages.watched : messages.notWatched
-        )}
-      </span>
+      {showLabel ? (
+        <span>
+          {intl.formatMessage(
+            localWatched ? messages.markUnwatched : messages.markWatched
+          )}
+        </span>
+      ) : (
+        <span className="sr-only">
+          {intl.formatMessage(
+            localWatched ? messages.watched : messages.notWatched
+          )}
+        </span>
+      )}
     </Button>
   );
 };

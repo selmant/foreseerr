@@ -23,6 +23,7 @@ import TraktWatchlistSlider from '@app/components/Discover/TraktWatchlistSlider'
 import TvGenreSlider from '@app/components/Discover/TvGenreSlider';
 import { sliderTitles } from '@app/components/Discover/constants';
 import MediaSlider from '@app/components/MediaSlider';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { encodeURIExtraParams } from '@app/hooks/useDiscover';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -67,6 +68,7 @@ const messages = defineMessages('components.Discover', {
 const Discover = () => {
   const intl = useIntl();
   const { hasPermission } = useUser();
+  const { isTvShell } = useNativeRuntime();
   const { addToast } = useToasts();
   const {
     data: discoverData,
@@ -135,7 +137,7 @@ const Discover = () => {
   return (
     <>
       <PageTitle title={intl.formatMessage(messages.discover)} />
-      {hasPermission(Permission.ADMIN) && (
+      {hasPermission(Permission.ADMIN) && !isTvShell && (
         <>
           {isEditing && (
             <div className="my-6 rounded-lg bg-gray-800">

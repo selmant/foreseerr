@@ -12,6 +12,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -58,12 +59,37 @@ const NativeRuntimeContext = createContext<NativeRuntimeContextValue>({
 
 const createRequestId = () => crypto.randomUUID();
 
+const hostHasTvFocus = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const host = window.foreseerNative;
+  return isUsableForeseerNative(host) && host.capabilities.includes('tv-focus');
+};
+
+const hostCanQuit = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const host = window.foreseerNative;
+  return isUsableForeseerNative(host) && host.capabilities.includes('quit');
+};
+
+const applyNativeShellClasses = (native: boolean, tv: boolean) => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const root = document.documentElement;
+  root.classList.toggle('native-shell', native);
+  root.classList.toggle('tv-shell', tv);
+};
+
 export const NativeRuntimeProvider = ({
   children,
 }: React.PropsWithChildren) => {
   const [state, setState] = useState<NativeRuntimeState>('web');
-  const [canQuit, setCanQuit] = useState(false);
-  const [isTvShell, setIsTvShell] = useState(false);
+  const [canQuit, setCanQuit] = useState(hostCanQuit);
+  const [isTvShell, setIsTvShell] = useState(hostHasTvFocus);
   const activePlayRequestId = useRef<string | undefined>(undefined);
   const activePlayTimeout = useRef<number | undefined>(undefined);
   const queuedPlayTarget = useRef<NativePlayTarget | undefined>(undefined);
@@ -71,28 +97,20 @@ export const NativeRuntimeProvider = ({
   const userId = userError ? undefined : user?.id;
   const previousUserId = useRef<number | undefined>(undefined);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = window.foreseerNative;
     if (isUsableForeseerNative(host)) {
+      const tv = host.capabilities.includes('tv-focus');
       setCanQuit(host.capabilities.includes('quit'));
-      // Native desktop has no browser chrome — share PWA chromeless UI (e.g. Back).
-      document.documentElement.classList.add('native-shell');
-      if (host.capabilities.includes('tv-focus')) {
-        document.documentElement.classList.add('tv-shell');
-        setIsTvShell(true);
-      } else {
-        document.documentElement.classList.remove('tv-shell');
-        setIsTvShell(false);
-      }
+      setIsTvShell(tv);
+      applyNativeShellClasses(true, tv);
     } else {
       setCanQuit(false);
       setIsTvShell(false);
-      document.documentElement.classList.remove('native-shell');
-      document.documentElement.classList.remove('tv-shell');
+      applyNativeShellClasses(false, false);
     }
     return () => {
-      document.documentElement.classList.remove('native-shell');
-      document.documentElement.classList.remove('tv-shell');
+      applyNativeShellClasses(false, false);
     };
   }, []);
 

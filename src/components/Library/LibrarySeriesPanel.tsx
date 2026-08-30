@@ -53,7 +53,7 @@ const LibrarySeriesPanel = ({
   onClose,
 }: LibrarySeriesPanelProps) => {
   const intl = useIntl();
-  const { play } = useNativeRuntime();
+  const { play, isTvShell } = useNativeRuntime();
   const { hasPermission } = useUser();
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
   const [episodeWatchOverrides, setEpisodeWatchOverrides] = useState<
@@ -281,7 +281,8 @@ const LibrarySeriesPanel = ({
                               </div>
                             ) : null}
                           </div>
-                          {tmdbId &&
+                          {!isTvShell &&
+                          tmdbId &&
                           episode.parentIndexNumber != null &&
                           episode.indexNumber != null ? (
                             <LibraryEpisodeWatchToggle
@@ -300,7 +301,7 @@ const LibrarySeriesPanel = ({
                               }
                             />
                           ) : null}
-                          {episode.mediaUrl ? (
+                          {!isTvShell && episode.mediaUrl ? (
                             <Button
                               as="a"
                               href={episode.mediaUrl}

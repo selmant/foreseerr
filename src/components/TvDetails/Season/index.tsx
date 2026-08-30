@@ -3,6 +3,8 @@ import Badge from '@app/components/Common/Badge';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import RequestModal from '@app/components/RequestModal';
+import TvFocusable from '@app/components/Tv/TvFocusable';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -51,6 +53,7 @@ const messages = defineMessages('components.TvDetails.Season', {
   markWatched: 'Mark watched',
   markUnwatched: 'Mark unwatched',
   watched: 'Watched',
+  closeEpisode: 'Close',
   watchActionError: 'Could not update this episode. Try again.',
   watchActionPartial: 'Updated, but {providers} could not be synchronized.',
   seasonWatched: 'Watched',
@@ -132,6 +135,7 @@ const Season = ({
   onRequestComplete,
 }: SeasonProps) => {
   const intl = useIntl();
+  const { isTvShell } = useNativeRuntime();
   const { data: capabilities } = useMediaActionCapabilities();
   const { addToast } = useToasts();
   const { user, hasPermission } = useUser();
@@ -153,6 +157,9 @@ const Season = ({
   const [fallbackSelection, setFallbackSelection] = useState<
     EpisodeSelection | undefined
   >();
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState<number | null>(
+    null
+  );
   const requestStateByEpisode = useMemo(() => {
     const states = [...episodeRequestStates, ...localRequestStates].sort(
       (a, b) => a.requestId - b.requestId
@@ -191,6 +198,9 @@ const Season = ({
   const canRequest =
     episodeRequestsEnabled &&
     hasPermission([Permission.REQUEST, Permission.REQUEST_TV], { type: 'or' });
+  const selectedEpisode = data?.episodes.find(
+    (episode) => episode.id === selectedEpisodeId
+  );
 
   useEffect(() => {
     const serverIds = new Set(
@@ -412,99 +422,200 @@ const Season = ({
                             }
                           : undefined;
               return (
-                <div
-                  className="group flex flex-col gap-4 py-4 xl:flex-row xl:items-center"
+                <TvFocusable
                   key={`season-${seasonNumber}-episode-${episode.episodeNumber}`}
+                  onEnterPress={() => setSelectedEpisodeId(episode.id)}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-col space-y-2 xl:flex-row xl:items-center xl:space-x-2 xl:space-y-0">
-                      <h3 className="text-lg">
-                        {episode.episodeNumber} - {episode.name}
-                      </h3>
-                      {episode.airDate && (
-                        <AirDateBadge airDate={episode.airDate} />
-                      )}
-                      {requestStatusPresentation && (
-                        <span
-                          data-testid={`episode-request-status-${episode.id}`}
-                          className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-xs font-medium ${requestStatusPresentation.className}`}
-                        >
-                          <requestStatusPresentation.Icon className="mr-1 h-3.5 w-3.5" />
-                          {intl.formatMessage(requestStatusPresentation.label)}
-                        </span>
-                      )}
+                  <div
+                    className={`group flex flex-col gap-4 py-4 xl:flex-row xl:items-center ${
+                      isTvShell && selectedEpisodeId === episode.id
+                        ? 'rounded-lg bg-gray-800/70'
+                        : ''
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-col space-y-2 xl:flex-row xl:items-center xl:space-x-2 xl:space-y-0">
+                        <h3 className="text-lg">
+                          {episode.episodeNumber} - {episode.name}
+                        </h3>
+                        {episode.airDate && (
+                          <AirDateBadge airDate={episode.airDate} />
+                        )}
+                        {requestStatusPresentation && (
+                          <span
+                            data-testid={`episode-request-status-${episode.id}`}
+                            className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-xs font-medium ${requestStatusPresentation.className}`}
+                          >
+                            <requestStatusPresentation.Icon className="mr-1 h-3.5 w-3.5" />
+                            {intl.formatMessage(
+                              requestStatusPresentation.label
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      {episode.overview && <p>{episode.overview}</p>}
                     </div>
-                    {episode.overview && <p>{episode.overview}</p>}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {watchStatus?.available && (
-                      <button
-                        type="button"
-                        disabled={isWatching}
-                        onClick={() =>
-                          void toggleWatched(episode.id, episode.episodeNumber)
-                        }
-                        className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-wait disabled:opacity-60 ${
-                          isWatched
-                            ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20'
-                            : 'border-gray-600 bg-gray-800/70 text-gray-300 hover:border-gray-500 hover:text-white'
-                        }`}
-                        aria-pressed={isWatched}
-                        aria-label={intl.formatMessage(
-                          isWatched
-                            ? messages.markUnwatched
-                            : messages.markWatched
+                    {!isTvShell ? (
+                      <div className="flex shrink-0 items-center gap-2">
+                        {watchStatus?.available && (
+                          <button
+                            type="button"
+                            disabled={isWatching}
+                            onClick={() =>
+                              void toggleWatched(
+                                episode.id,
+                                episode.episodeNumber
+                              )
+                            }
+                            className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-wait disabled:opacity-60 ${
+                              isWatched
+                                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20'
+                                : 'border-gray-600 bg-gray-800/70 text-gray-300 hover:border-gray-500 hover:text-white'
+                            }`}
+                            aria-pressed={isWatched}
+                            aria-label={intl.formatMessage(
+                              isWatched
+                                ? messages.markUnwatched
+                                : messages.markWatched
+                            )}
+                          >
+                            {isWatched ? (
+                              <CheckCircleSolid className="mr-1.5 h-4 w-4" />
+                            ) : (
+                              <CheckCircleOutline className="mr-1.5 h-4 w-4" />
+                            )}
+                            {intl.formatMessage(
+                              isWatched
+                                ? messages.watched
+                                : messages.markWatched
+                            )}
+                          </button>
                         )}
-                      >
-                        {isWatched ? (
-                          <CheckCircleSolid className="mr-1.5 h-4 w-4" />
-                        ) : (
-                          <CheckCircleOutline className="mr-1.5 h-4 w-4" />
+                        {canRequest && !isRequested && (
+                          <button
+                            type="button"
+                            data-testid={`episode-quick-request-${episode.id}`}
+                            disabled={isRequesting}
+                            onClick={() =>
+                              void requestEpisode(
+                                episode.id,
+                                `${episodeCode} — ${episode.name}`
+                              )
+                            }
+                            className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-indigo-400/40 bg-indigo-500/10 px-3 text-sm font-semibold text-indigo-200 transition hover:border-indigo-400 hover:bg-indigo-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-wait disabled:opacity-60"
+                            aria-label={`${intl.formatMessage(
+                              messages.request
+                            )} ${episodeCode}`}
+                          >
+                            <ArrowDownTrayIcon className="mr-1.5 h-4 w-4" />
+                            {intl.formatMessage(
+                              isRequesting
+                                ? messages.requesting
+                                : messages.request
+                            )}
+                          </button>
                         )}
-                        {intl.formatMessage(
-                          isWatched ? messages.watched : messages.markWatched
-                        )}
-                      </button>
+                      </div>
+                    ) : null}
+                    {episode.stillPath && (
+                      <div className="relative aspect-video xl:h-32">
+                        <CachedImage
+                          type="tmdb"
+                          className="rounded-lg object-contain"
+                          src={episode.stillPath}
+                          alt=""
+                          fill
+                        />
+                      </div>
                     )}
-                    {canRequest && !isRequested && (
-                      <button
-                        type="button"
-                        data-testid={`episode-quick-request-${episode.id}`}
-                        disabled={isRequesting}
-                        onClick={() =>
-                          void requestEpisode(
-                            episode.id,
-                            `${episodeCode} — ${episode.name}`
-                          )
-                        }
-                        className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-indigo-400/40 bg-indigo-500/10 px-3 text-sm font-semibold text-indigo-200 transition hover:border-indigo-400 hover:bg-indigo-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-wait disabled:opacity-60"
-                        aria-label={`${intl.formatMessage(
-                          messages.request
-                        )} ${episodeCode}`}
-                      >
-                        <ArrowDownTrayIcon className="mr-1.5 h-4 w-4" />
-                        {intl.formatMessage(
-                          isRequesting ? messages.requesting : messages.request
-                        )}
-                      </button>
-                    )}
                   </div>
-                  {episode.stillPath && (
-                    <div className="relative aspect-video xl:h-32">
-                      <CachedImage
-                        type="tmdb"
-                        className="rounded-lg object-contain"
-                        src={episode.stillPath}
-                        alt=""
-                        fill
-                      />
-                    </div>
-                  )}
-                </div>
+                </TvFocusable>
               );
             })
         )}
       </div>
+      {isTvShell && selectedEpisode ? (
+        <div className="mt-4 flex flex-wrap gap-3">
+          {watchStatus?.available ? (
+            <TvFocusable
+              onEnterPress={() =>
+                void toggleWatched(
+                  selectedEpisode.id,
+                  selectedEpisode.episodeNumber
+                )
+              }
+            >
+              <button
+                type="button"
+                disabled={watchingEpisodeId === selectedEpisode.id}
+                className="tv-focus-target min-h-14 min-w-[8rem] rounded-lg bg-gray-800 px-5 text-lg font-medium text-white"
+                onClick={() =>
+                  void toggleWatched(
+                    selectedEpisode.id,
+                    selectedEpisode.episodeNumber
+                  )
+                }
+              >
+                {intl.formatMessage(
+                  watchedEpisodeNumbers.has(selectedEpisode.episodeNumber)
+                    ? messages.markUnwatched
+                    : messages.markWatched
+                )}
+              </button>
+            </TvFocusable>
+          ) : null}
+          {canRequest &&
+          !watchedEpisodeNumbers.has(selectedEpisode.episodeNumber) &&
+          (() => {
+            const requestState = requestStateByEpisode.get(selectedEpisode.id);
+            const requestStatus = effectiveRequestStatus(requestState);
+            return (
+              requestStatus === undefined ||
+              requestStatus === MediaRequestStatus.DECLINED
+            );
+          })() ? (
+            <TvFocusable
+              onEnterPress={() =>
+                void requestEpisode(
+                  selectedEpisode.id,
+                  `S${String(seasonNumber).padStart(2, '0')}E${String(
+                    selectedEpisode.episodeNumber
+                  ).padStart(2, '0')} — ${selectedEpisode.name}`
+                )
+              }
+            >
+              <button
+                type="button"
+                disabled={requestingEpisodeId === selectedEpisode.id}
+                className="tv-focus-target min-h-14 min-w-[8rem] rounded-lg bg-gray-800 px-5 text-lg font-medium text-white"
+                onClick={() =>
+                  void requestEpisode(
+                    selectedEpisode.id,
+                    `S${String(seasonNumber).padStart(2, '0')}E${String(
+                      selectedEpisode.episodeNumber
+                    ).padStart(2, '0')} — ${selectedEpisode.name}`
+                  )
+                }
+              >
+                {intl.formatMessage(
+                  requestingEpisodeId === selectedEpisode.id
+                    ? messages.requesting
+                    : messages.request
+                )}
+              </button>
+            </TvFocusable>
+          ) : null}
+          <TvFocusable onEnterPress={() => setSelectedEpisodeId(null)}>
+            <button
+              type="button"
+              className="tv-focus-target min-h-14 min-w-[8rem] rounded-lg bg-gray-800 px-5 text-lg font-medium text-white"
+              onClick={() => setSelectedEpisodeId(null)}
+            >
+              {intl.formatMessage(messages.closeEpisode)}
+            </button>
+          </TvFocusable>
+        </div>
+      ) : null}
     </>
   );
 };

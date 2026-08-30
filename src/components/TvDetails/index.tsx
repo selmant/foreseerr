@@ -21,11 +21,13 @@ import RequestButton from '@app/components/RequestButton';
 import RequestModal from '@app/components/RequestModal';
 import Slider from '@app/components/Slider';
 import StatusBadge from '@app/components/StatusBadge';
+import TvActionRow from '@app/components/Tv/TvActionRow';
 import Season, {
   SeasonWatchProgress,
   type EpisodeRequestState,
   type SeasonRequestState,
 } from '@app/components/TvDetails/Season';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import useDeepLinks from '@app/hooks/useDeepLinks';
 import useLocale from '@app/hooks/useLocale';
 import useMediaListActions from '@app/hooks/useMediaListActions';
@@ -113,6 +115,7 @@ interface TvDetailsProps {
 const TvDetails = ({ tv }: TvDetailsProps) => {
   const settings = useSettings();
   const { user, hasPermission } = useUser();
+  const { isTvShell } = useNativeRuntime();
   const navigate = useNavigate();
   const location = useLocation();
   const routeQuery = useRouteQuery();
@@ -531,124 +534,146 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
           </span>
         </div>
         <div className="media-actions">
-          <MediaActionDetailBar tmdbId={data.id} mediaType="tv" />
-          {showHideButton &&
-            data?.mediaInfo?.status !== MediaStatus.PROCESSING &&
-            data?.mediaInfo?.status !== MediaStatus.AVAILABLE &&
-            data?.mediaInfo?.status !== MediaStatus.PARTIALLY_AVAILABLE &&
-            data?.mediaInfo?.status !== MediaStatus.PENDING &&
-            data?.mediaInfo?.status !== MediaStatus.BLOCKLISTED && (
-              <Tooltip
-                content={intl.formatMessage(globalMessages.addToBlocklist)}
-              >
-                <Button
-                  buttonType={'ghost'}
-                  className="z-40 mr-2"
-                  buttonSize={'md'}
-                  onClick={() => setShowBlocklistModal(true)}
-                >
-                  <EyeSlashIcon />
-                </Button>
-              </Tooltip>
-            )}
-          {data?.mediaInfo?.status !== MediaStatus.BLOCKLISTED &&
-            user?.userType !== UserType.PLEX && (
-              <>
-                {!isOnWatchlist ? (
+          {isTvShell ? (
+            <TvActionRow
+              tmdbId={data.id}
+              mediaType="tv"
+              playLinks={mediaLinks}
+              media={data.mediaInfo}
+              tvdbId={data.externalIds.tvdbId}
+              onUpdate={() => revalidate()}
+            />
+          ) : (
+            <>
+              <MediaActionDetailBar tmdbId={data.id} mediaType="tv" />
+              {showHideButton &&
+                data?.mediaInfo?.status !== MediaStatus.PROCESSING &&
+                data?.mediaInfo?.status !== MediaStatus.AVAILABLE &&
+                data?.mediaInfo?.status !== MediaStatus.PARTIALLY_AVAILABLE &&
+                data?.mediaInfo?.status !== MediaStatus.PENDING &&
+                data?.mediaInfo?.status !== MediaStatus.BLOCKLISTED && (
                   <Tooltip
-                    content={intl.formatMessage(messages.addtowatchlist)}
+                    content={intl.formatMessage(globalMessages.addToBlocklist)}
                   >
                     <Button
                       buttonType={'ghost'}
                       className="z-40 mr-2"
                       buttonSize={'md'}
-                      onClick={addToWatchlist}
+                      onClick={() => setShowBlocklistModal(true)}
                     >
-                      {isWatchlistUpdating ? (
-                        <Spinner />
-                      ) : (
-                        <StarIcon className={'text-amber-300'} />
-                      )}
-                    </Button>
-                  </Tooltip>
-                ) : (
-                  <Tooltip
-                    content={intl.formatMessage(messages.removefromwatchlist)}
-                  >
-                    <Button
-                      className="z-40 mr-2"
-                      buttonSize={'md'}
-                      onClick={removeFromWatchlist}
-                    >
-                      {isWatchlistUpdating ? <Spinner /> : <MinusCircleIcon />}
+                      <EyeSlashIcon />
                     </Button>
                   </Tooltip>
                 )}
-              </>
-            )}
-          <div className="z-20">
-            <PlayButton links={mediaLinks} />
-          </div>
-          <RequestButton
-            mediaType="tv"
-            onUpdate={() => revalidate()}
-            tmdbId={data?.id}
-            media={data?.mediaInfo}
-            isShowComplete={isComplete}
-            is4kShowComplete={is4kComplete}
-            episodeRequestsEnabled={data.episodeRequestsEnabled}
-          />
-          {(data.mediaInfo?.status === MediaStatus.AVAILABLE ||
-            data.mediaInfo?.status === MediaStatus.PARTIALLY_AVAILABLE ||
-            (settings.currentSettings.series4kEnabled &&
-              hasPermission([Permission.REQUEST_4K, Permission.REQUEST_4K_TV], {
-                type: 'or',
-              }) &&
-              (data.mediaInfo?.status4k === MediaStatus.AVAILABLE ||
-                data?.mediaInfo?.status4k ===
-                  MediaStatus.PARTIALLY_AVAILABLE))) &&
-            hasPermission(
-              [Permission.CREATE_ISSUES, Permission.MANAGE_ISSUES],
-              {
-                type: 'or',
-              }
-            ) && (
-              <Tooltip content={intl.formatMessage(messages.reportissue)}>
-                <Button
-                  buttonType="warning"
-                  onClick={() => setShowIssueModal(true)}
-                  className="ml-2 first:ml-0"
-                >
-                  <ExclamationTriangleIcon />
-                </Button>
-              </Tooltip>
-            )}
-          {hasPermission(Permission.MANAGE_REQUESTS) && data.mediaInfo && (
-            <Tooltip content={intl.formatMessage(messages.manageseries)}>
-              <Button
-                buttonType="ghost"
-                onClick={() => setShowManager(true)}
-                className="relative ml-2 first:ml-0"
-              >
-                <CogIcon className="!mr-0" />
-                {hasPermission(
-                  [Permission.MANAGE_ISSUES, Permission.VIEW_ISSUES],
+              {data?.mediaInfo?.status !== MediaStatus.BLOCKLISTED &&
+                user?.userType !== UserType.PLEX && (
+                  <>
+                    {!isOnWatchlist ? (
+                      <Tooltip
+                        content={intl.formatMessage(messages.addtowatchlist)}
+                      >
+                        <Button
+                          buttonType={'ghost'}
+                          className="z-40 mr-2"
+                          buttonSize={'md'}
+                          onClick={addToWatchlist}
+                        >
+                          {isWatchlistUpdating ? (
+                            <Spinner />
+                          ) : (
+                            <StarIcon className={'text-amber-300'} />
+                          )}
+                        </Button>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip
+                        content={intl.formatMessage(
+                          messages.removefromwatchlist
+                        )}
+                      >
+                        <Button
+                          className="z-40 mr-2"
+                          buttonSize={'md'}
+                          onClick={removeFromWatchlist}
+                        >
+                          {isWatchlistUpdating ? (
+                            <Spinner />
+                          ) : (
+                            <MinusCircleIcon />
+                          )}
+                        </Button>
+                      </Tooltip>
+                    )}
+                  </>
+                )}
+              <div className="z-20">
+                <PlayButton links={mediaLinks} />
+              </div>
+              <RequestButton
+                mediaType="tv"
+                onUpdate={() => revalidate()}
+                tmdbId={data?.id}
+                media={data?.mediaInfo}
+                isShowComplete={isComplete}
+                is4kShowComplete={is4kComplete}
+                episodeRequestsEnabled={data.episodeRequestsEnabled}
+              />
+              {(data.mediaInfo?.status === MediaStatus.AVAILABLE ||
+                data.mediaInfo?.status === MediaStatus.PARTIALLY_AVAILABLE ||
+                (settings.currentSettings.series4kEnabled &&
+                  hasPermission(
+                    [Permission.REQUEST_4K, Permission.REQUEST_4K_TV],
+                    {
+                      type: 'or',
+                    }
+                  ) &&
+                  (data.mediaInfo?.status4k === MediaStatus.AVAILABLE ||
+                    data?.mediaInfo?.status4k ===
+                      MediaStatus.PARTIALLY_AVAILABLE))) &&
+                hasPermission(
+                  [Permission.CREATE_ISSUES, Permission.MANAGE_ISSUES],
                   {
                     type: 'or',
                   }
-                ) &&
-                  (
-                    data.mediaInfo?.issues.filter(
-                      (issue) => issue.status === IssueStatus.OPEN
-                    ) ?? []
-                  ).length > 0 && (
-                    <>
-                      <div className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-red-600" />
-                      <div className="absolute -right-1 -top-1 h-3 w-3 animate-ping rounded-full bg-red-600" />
-                    </>
-                  )}
-              </Button>
-            </Tooltip>
+                ) && (
+                  <Tooltip content={intl.formatMessage(messages.reportissue)}>
+                    <Button
+                      buttonType="warning"
+                      onClick={() => setShowIssueModal(true)}
+                      className="ml-2 first:ml-0"
+                    >
+                      <ExclamationTriangleIcon />
+                    </Button>
+                  </Tooltip>
+                )}
+              {hasPermission(Permission.MANAGE_REQUESTS) && data.mediaInfo && (
+                <Tooltip content={intl.formatMessage(messages.manageseries)}>
+                  <Button
+                    buttonType="ghost"
+                    onClick={() => setShowManager(true)}
+                    className="relative ml-2 first:ml-0"
+                  >
+                    <CogIcon className="!mr-0" />
+                    {hasPermission(
+                      [Permission.MANAGE_ISSUES, Permission.VIEW_ISSUES],
+                      {
+                        type: 'or',
+                      }
+                    ) &&
+                      (
+                        data.mediaInfo?.issues.filter(
+                          (issue) => issue.status === IssueStatus.OPEN
+                        ) ?? []
+                      ).length > 0 && (
+                        <>
+                          <div className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-red-600" />
+                          <div className="absolute -right-1 -top-1 h-3 w-3 animate-ping rounded-full bg-red-600" />
+                        </>
+                      )}
+                  </Button>
+                </Tooltip>
+              )}
+            </>
           )}
         </div>
       </div>

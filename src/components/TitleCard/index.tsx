@@ -9,6 +9,7 @@ import RequestModal from '@app/components/RequestModal';
 import ErrorCard from '@app/components/TitleCard/ErrorCard';
 import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
+import TvFocusable from '@app/components/Tv/TvFocusable';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
@@ -40,7 +41,7 @@ import axios from 'axios';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { mutate } from 'swr';
 
 interface TitleCardProps {
@@ -120,9 +121,10 @@ const TitleCard = ({
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
+  const navigate = useNavigate();
   const settings = useSettings();
   const { user, hasPermission } = useUser();
-  const { play } = useNativeRuntime();
+  const { play, isTvShell } = useNativeRuntime();
   const [isUpdating, setIsUpdating] = useState(false);
   const { data: mediaActionCapabilities } = useMediaActionCapabilities();
   const surfaceCapabilities =
@@ -130,6 +132,7 @@ const TitleCard = ({
       ? mediaActionCapabilities?.movie
       : mediaActionCapabilities?.tv;
   const mediaActionsEnabled = Boolean(
+    !isTvShell &&
     (surfaceCapabilities?.watched || surfaceCapabilities?.rating) &&
     (mediaType === 'movie' || mediaType === 'tv')
   );
@@ -536,6 +539,7 @@ const TitleCard = ({
       : mediaType === 'collection'
         ? `/collection/${id}`
         : `/tv/${id}`;
+  const overlayOpen = isTvShell ? false : showDetail;
   const playFallbackUrl = mediaUrl || detailHref;
 
   const onLibraryPlay = (event: React.MouseEvent) => {
@@ -576,515 +580,560 @@ const TitleCard = ({
     onLibraryManage?.();
   };
 
-  return (
-    <div
-      className={canExpand ? 'w-full' : 'w-36 sm:w-36 md:w-44'}
-      data-testid="title-card"
-      ref={cardRef}
-    >
-      <RequestModal
-        tmdbId={id}
-        show={showRequestModal}
-        type={
-          mediaType === 'movie'
-            ? 'movie'
-            : mediaType === 'collection'
-              ? 'collection'
-              : 'tv'
-        }
-        initialSeasonSelection={
-          mediaType === 'tv' ? initialSeasonSelection : 'none'
-        }
-        initialRequestScope={initialRequestScope}
-        onComplete={requestComplete}
-        onUpdating={requestUpdating}
-        onCancel={closeModal}
-      />
-      <BlocklistModal
-        tmdbId={id}
-        type={
-          mediaType === 'movie'
-            ? 'movie'
-            : mediaType === 'collection'
-              ? 'collection'
-              : 'tv'
-        }
-        show={showBlocklistModal}
-        onCancel={closeBlocklistModal}
-        onComplete={onClickHideItemBtn}
-        isUpdating={isUpdating}
-      />
-      <div
-        className={`relative transform-gpu cursor-default overflow-hidden rounded-xl bg-gray-800 bg-cover outline-none ring-1 transition duration-300 ${
-          showDetail
-            ? 'scale-105 shadow-lg ring-gray-500'
-            : 'scale-100 shadow ring-gray-700'
-        }`}
-        style={{
-          paddingBottom: '150%',
-        }}
-        onMouseEnter={() => {
-          if (!isTouch) {
-            setShowDetail(true);
-          }
-        }}
-        onMouseLeave={() => {
-          if (!showTvMenu) {
-            setShowDetail(false);
-          }
-        }}
-        onClick={() => setShowDetail(true)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            setShowDetail(true);
-          }
-        }}
-        role="link"
-        tabIndex={0}
-      >
-        <div className="absolute inset-0 h-full w-full overflow-hidden">
-          <CachedImage
-            type="tmdb"
-            className="absolute inset-0 h-full w-full"
-            alt=""
-            src={
-              image
-                ? `https://image.tmdb.org/t/p/w300_and_h450_face${image}`
-                : `/images/seerr_poster_not_found_logo_top.png`
-            }
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            fill
-          />
-          {progressPercent != null && progressPercent > 0 ? (
-            <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 h-1 bg-black/70">
-              <div
-                className="h-full bg-indigo-500"
-                style={{ width: `${Math.min(100, progressPercent)}%` }}
-              />
-            </div>
-          ) : null}
-          <div className="absolute left-0 right-0 z-30 flex items-start justify-between gap-2 p-2">
-            <div className="flex min-w-0 flex-col items-start gap-1.5">
-              <div
-                className={`pointer-events-none self-start rounded-full border shadow-md ${
-                  mediaType === 'movie' || mediaType === 'collection'
-                    ? 'border-blue-500 bg-blue-600/80'
-                    : 'border-purple-600 bg-purple-600/80'
-                }`}
-              >
-                <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
-                  {mediaType === 'movie'
-                    ? intl.formatMessage(globalMessages.movie)
-                    : mediaType === 'collection'
-                      ? intl.formatMessage(globalMessages.collection)
-                      : intl.formatMessage(globalMessages.tvshow)}
-                </div>
-              </div>
-              <RatingBadges
-                item={{ tmdbRating: userScore, ratings }}
-                badgeSettings={settings.currentSettings.ratingBadges}
-                compact
-                expanded={showDetail}
-              />
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              {showDetail && currentStatus !== MediaStatus.BLOCKLISTED && (
-                <div className="flex flex-col gap-1">
-                  {mediaActionsEnabled && (
-                    <MediaActionControls
-                      tmdbId={id}
-                      mediaType={mediaType as 'movie' | 'tv'}
-                      enabled={mediaActionsEnabled}
-                      onStatusChange={mutateParent}
-                    />
-                  )}
-                  {user?.userType !== UserType.PLEX &&
-                    !libraryMode &&
-                    (toggleWatchlist ? (
-                      <Button
-                        buttonType={'ghost'}
-                        className="z-40"
-                        buttonSize={'sm'}
-                        onClick={onClickWatchlistBtn}
-                      >
-                        <StarIcon className={'h-3 text-amber-300'} />
-                      </Button>
-                    ) : (
-                      <Button
-                        className="z-40"
-                        buttonSize={'sm'}
-                        onClick={onClickDeleteWatchlistBtn}
-                      >
-                        <MinusCircleIcon className={'h-3'} />
-                      </Button>
-                    ))}
-                  {showHideButton &&
-                    currentStatus !== MediaStatus.PROCESSING &&
-                    currentStatus !== MediaStatus.AVAILABLE &&
-                    currentStatus !== MediaStatus.PARTIALLY_AVAILABLE &&
-                    currentStatus !== MediaStatus.PENDING && (
-                      <Button
-                        buttonType={'ghost'}
-                        className="z-40"
-                        buttonSize={'sm'}
-                        onClick={() => setShowBlocklistModal(true)}
-                      >
-                        <EyeSlashIcon className={'h-3'} />
-                      </Button>
-                    )}
-                </div>
-              )}
-              {showDetail &&
-                showHideButton &&
-                currentStatus == MediaStatus.BLOCKLISTED && (
-                  <Tooltip
-                    content={intl.formatMessage(
-                      globalMessages.removefromBlocklist
-                    )}
-                  >
-                    <Button
-                      buttonType={'ghost'}
-                      className="z-40"
-                      buttonSize={'sm'}
-                      onClick={() => onClickShowBlocklistBtn()}
-                    >
-                      <EyeIcon className={'h-3'} />
-                    </Button>
-                  </Tooltip>
-                )}
-              {currentStatus && currentStatus !== MediaStatus.UNKNOWN && (
-                <div className="pointer-events-none z-40 flex">
-                  <StatusBadgeMini
-                    status={currentStatus}
-                    inProgress={inProgress}
-                    shrink
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-          <Transition
-            as={Fragment}
-            show={isUpdating}
-            enter="transition-opacity ease-in-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="transition-opacity ease-in-out duration-300"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-gray-800/75 text-white">
-              <Spinner className="h-10 w-10" />
-            </div>
-          </Transition>
+  const onTvEnter = () => {
+    if (
+      libraryMode &&
+      mediaType === 'tv' &&
+      jellyfinSeriesId &&
+      onLibraryOpenSeries
+    ) {
+      onLibraryOpenSeries(jellyfinSeriesId);
+      return;
+    }
+    if (showLibraryPlay) {
+      if (
+        libraryPlayId &&
+        play({
+          provider: 'jellyfin',
+          itemId: libraryPlayId,
+          fallbackUrl: playFallbackUrl,
+          label: title,
+          quality: 'standard',
+        })
+      ) {
+        return;
+      }
+      if (mediaUrl) {
+        window.open(mediaUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    }
+    navigate(detailHref);
+  };
 
-          <Transition
-            as={Fragment}
-            show={!image || showDetail || showRequestModal || showTvMenu}
-            enter="transition-opacity"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="transition-opacity"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="absolute inset-0 overflow-hidden rounded-xl">
-              <Link
-                to={detailHref}
-                onClick={onLibraryCardNavigate}
-                className="absolute inset-0 h-full w-full cursor-pointer overflow-hidden text-left"
-                style={{
-                  background:
-                    'linear-gradient(180deg, rgba(45, 55, 72, 0.4) 0%, rgba(45, 55, 72, 0.9) 100%)',
-                }}
-              >
+  return (
+    <TvFocusable onEnterPress={onTvEnter}>
+      <div
+        className={canExpand ? 'w-full' : 'w-36 sm:w-36 md:w-44'}
+        data-testid="title-card"
+        ref={cardRef}
+      >
+        <RequestModal
+          tmdbId={id}
+          show={showRequestModal}
+          type={
+            mediaType === 'movie'
+              ? 'movie'
+              : mediaType === 'collection'
+                ? 'collection'
+                : 'tv'
+          }
+          initialSeasonSelection={
+            mediaType === 'tv' ? initialSeasonSelection : 'none'
+          }
+          initialRequestScope={initialRequestScope}
+          onComplete={requestComplete}
+          onUpdating={requestUpdating}
+          onCancel={closeModal}
+        />
+        <BlocklistModal
+          tmdbId={id}
+          type={
+            mediaType === 'movie'
+              ? 'movie'
+              : mediaType === 'collection'
+                ? 'collection'
+                : 'tv'
+          }
+          show={showBlocklistModal}
+          onCancel={closeBlocklistModal}
+          onComplete={onClickHideItemBtn}
+          isUpdating={isUpdating}
+        />
+        <div
+          className={`relative transform-gpu cursor-default overflow-hidden rounded-xl bg-gray-800 bg-cover outline-none ring-1 transition duration-300 ${
+            overlayOpen
+              ? 'scale-105 shadow-lg ring-gray-500'
+              : 'scale-100 shadow ring-gray-700'
+          }`}
+          style={{
+            paddingBottom: '150%',
+          }}
+          onMouseEnter={() => {
+            if (!isTouch && !isTvShell) {
+              setShowDetail(true);
+            }
+          }}
+          onMouseLeave={() => {
+            if (!showTvMenu && !isTvShell) {
+              setShowDetail(false);
+            }
+          }}
+          onClick={() => {
+            if (!isTvShell) {
+              setShowDetail(true);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !isTvShell) {
+              setShowDetail(true);
+            }
+          }}
+          role="link"
+          tabIndex={isTvShell ? -1 : 0}
+        >
+          <div className="absolute inset-0 h-full w-full overflow-hidden">
+            <CachedImage
+              type="tmdb"
+              className="absolute inset-0 h-full w-full"
+              alt=""
+              src={
+                image
+                  ? `https://image.tmdb.org/t/p/w300_and_h450_face${image}`
+                  : `/images/seerr_poster_not_found_logo_top.png`
+              }
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              fill
+            />
+            {progressPercent != null && progressPercent > 0 ? (
+              <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 h-1 bg-black/70">
                 <div
-                  className={`flex h-full w-full flex-col ${
-                    showDetail ? 'pt-28' : 'pt-14'
+                  className="h-full bg-indigo-500"
+                  style={{ width: `${Math.min(100, progressPercent)}%` }}
+                />
+              </div>
+            ) : null}
+            <div className="absolute left-0 right-0 z-30 flex items-start justify-between gap-2 p-2">
+              <div className="flex min-w-0 flex-col items-start gap-1.5">
+                <div
+                  className={`pointer-events-none self-start rounded-full border shadow-md ${
+                    mediaType === 'movie' || mediaType === 'collection'
+                      ? 'border-blue-500 bg-blue-600/80'
+                      : 'border-purple-600 bg-purple-600/80'
                   }`}
                 >
-                  <div
-                    className={`flex min-h-0 flex-1 flex-col justify-end overflow-hidden px-2 text-white ${
-                      showLibraryPlay ||
-                      !showRequestButton ||
-                      (currentStatus &&
-                        currentStatus !== MediaStatus.UNKNOWN &&
-                        currentStatus !== MediaStatus.DELETED)
-                        ? showLibraryPlay
-                          ? 'pb-11'
-                          : 'pb-2'
-                        : 'pb-11'
-                    }`}
-                  >
-                    {year && (
-                      <div className="shrink-0 text-sm font-medium">{year}</div>
-                    )}
-
-                    <h1
-                      className="shrink-0 whitespace-normal text-xl font-bold leading-tight"
-                      style={{
-                        WebkitLineClamp: 2,
-                        display: '-webkit-box',
-                        overflow: 'hidden',
-                        WebkitBoxOrient: 'vertical',
-                        wordBreak: 'break-word',
-                      }}
-                      data-testid="title-card-title"
-                    >
-                      {title}
-                    </h1>
-                    {subtitle ? (
-                      <div className="shrink-0 truncate text-xs text-gray-200">
-                        {subtitle}
-                      </div>
-                    ) : null}
-                    {summary && (
-                      <div className="min-h-0 shrink overflow-hidden">
-                        <div
-                          className="whitespace-normal text-xs"
-                          style={{
-                            WebkitLineClamp:
-                              !showRequestButton ||
-                              (currentStatus &&
-                                currentStatus !== MediaStatus.UNKNOWN &&
-                                currentStatus !== MediaStatus.DELETED)
-                                ? 5
-                                : 3,
-                            display: '-webkit-box',
-                            overflow: 'hidden',
-                            WebkitBoxOrient: 'vertical',
-                            wordBreak: 'break-word',
-                          }}
-                        >
-                          {summary}
-                        </div>
-                      </div>
-                    )}
+                  <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
+                    {mediaType === 'movie'
+                      ? intl.formatMessage(globalMessages.movie)
+                      : mediaType === 'collection'
+                        ? intl.formatMessage(globalMessages.collection)
+                        : intl.formatMessage(globalMessages.tvshow)}
                   </div>
                 </div>
-              </Link>
-
-              <div className="absolute bottom-0 left-0 right-0 z-40 flex justify-between gap-1 px-2 py-2">
-                {showLibraryPlay ? (
-                  <Button
-                    buttonType="primary"
-                    buttonSize="sm"
-                    className="z-40 flex-1"
-                    onClick={onLibraryPlay}
-                  >
-                    <PlayIcon className="h-4 w-4" />{' '}
-                    <span>{intl.formatMessage(messages.play)}</span>
-                  </Button>
-                ) : null}
-                {libraryMode && onLibraryManage ? (
-                  <Tooltip
-                    content={intl.formatMessage(messages.manage, {
-                      service: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
-                    })}
-                  >
-                    <Button
-                      buttonType="default"
-                      buttonSize="sm"
-                      className="z-40 shrink-0"
-                      aria-label={intl.formatMessage(messages.manage, {
-                        service: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
-                      })}
-                      onClick={onLibraryManageClick}
+                <RatingBadges
+                  item={{ tmdbRating: userScore, ratings }}
+                  badgeSettings={settings.currentSettings.ratingBadges}
+                  compact
+                  expanded={overlayOpen}
+                />
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                {overlayOpen && currentStatus !== MediaStatus.BLOCKLISTED && (
+                  <div className="flex flex-col gap-1">
+                    {mediaActionsEnabled && (
+                      <MediaActionControls
+                        tmdbId={id}
+                        mediaType={mediaType as 'movie' | 'tv'}
+                        enabled={mediaActionsEnabled}
+                        onStatusChange={mutateParent}
+                      />
+                    )}
+                    {user?.userType !== UserType.PLEX &&
+                      !libraryMode &&
+                      (toggleWatchlist ? (
+                        <Button
+                          buttonType={'ghost'}
+                          className="z-40"
+                          buttonSize={'sm'}
+                          onClick={onClickWatchlistBtn}
+                        >
+                          <StarIcon className={'h-3 text-amber-300'} />
+                        </Button>
+                      ) : (
+                        <Button
+                          className="z-40"
+                          buttonSize={'sm'}
+                          onClick={onClickDeleteWatchlistBtn}
+                        >
+                          <MinusCircleIcon className={'h-3'} />
+                        </Button>
+                      ))}
+                    {showHideButton &&
+                      currentStatus !== MediaStatus.PROCESSING &&
+                      currentStatus !== MediaStatus.AVAILABLE &&
+                      currentStatus !== MediaStatus.PARTIALLY_AVAILABLE &&
+                      currentStatus !== MediaStatus.PENDING && (
+                        <Button
+                          buttonType={'ghost'}
+                          className="z-40"
+                          buttonSize={'sm'}
+                          onClick={() => setShowBlocklistModal(true)}
+                        >
+                          <EyeSlashIcon className={'h-3'} />
+                        </Button>
+                      )}
+                  </div>
+                )}
+                {overlayOpen &&
+                  showHideButton &&
+                  currentStatus == MediaStatus.BLOCKLISTED && (
+                    <Tooltip
+                      content={intl.formatMessage(
+                        globalMessages.removefromBlocklist
+                      )}
                     >
-                      <CogIcon className="!mr-0 h-4 w-4" />
-                    </Button>
-                  </Tooltip>
-                ) : null}
-                {showRequestButton &&
-                  (!currentStatus ||
-                    currentStatus === MediaStatus.UNKNOWN ||
-                    currentStatus === MediaStatus.DELETED) &&
-                  (mediaType === 'tv' &&
-                  settings.currentSettings.seriesInstantRequestEnabled ? (
-                    <div className="relative z-40 flex w-full">
-                      <button
-                        type="button"
-                        disabled={isQuickRequesting}
-                        className="button-md relative z-40 inline-flex h-7 flex-1 items-center justify-center rounded-l-md border border-indigo-500 bg-indigo-600/80 px-2 text-xs font-medium leading-5 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setShowTvMenu(false);
-                          requestSeason1();
-                        }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                        }}
+                      <Button
+                        buttonType={'ghost'}
+                        className="z-40"
+                        buttonSize={'sm'}
+                        onClick={() => onClickShowBlocklistBtn()}
                       >
-                        <ArrowDownTrayIcon className="h-4 w-4" />
-                        <span className="ml-1">
-                          {isQuickRequesting
-                            ? intl.formatMessage(globalMessages.requesting)
-                            : intl.formatMessage(messages.requestseason1)}
-                        </span>
-                      </button>
-                      <button
-                        ref={tvMenuButtonRef}
-                        type="button"
-                        disabled={isQuickRequesting}
-                        aria-expanded={showTvMenu}
-                        aria-haspopup="menu"
-                        aria-label={intl.formatMessage(
-                          messages.moreRequestOptions
-                        )}
-                        className="button-md relative z-40 inline-flex h-7 items-center justify-center rounded-r-md border border-l-0 border-indigo-500 bg-indigo-600/80 px-2 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        onClick={toggleTvMenu}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
+                        <EyeIcon className={'h-3'} />
+                      </Button>
+                    </Tooltip>
+                  )}
+                {currentStatus && currentStatus !== MediaStatus.UNKNOWN && (
+                  <div className="pointer-events-none z-40 flex">
+                    <StatusBadgeMini
+                      status={currentStatus}
+                      inProgress={inProgress}
+                      shrink
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+            <Transition
+              as={Fragment}
+              show={isUpdating}
+              enter="transition-opacity ease-in-out duration-300"
+              enterFrom="opacity-0"
+              enterTo="opacity-100"
+              leave="transition-opacity ease-in-out duration-300"
+              leaveFrom="opacity-100"
+              leaveTo="opacity-0"
+            >
+              <div className="absolute inset-0 z-40 flex items-center justify-center rounded-xl bg-gray-800/75 text-white">
+                <Spinner className="h-10 w-10" />
+              </div>
+            </Transition>
+
+            <Transition
+              as={Fragment}
+              show={
+                !isTvShell &&
+                (!image || overlayOpen || showRequestModal || showTvMenu)
+              }
+              enter="transition-opacity"
+              enterFrom="opacity-0"
+              enterTo="opacity-100"
+              leave="transition-opacity"
+              leaveFrom="opacity-100"
+              leaveTo="opacity-0"
+            >
+              <div className="absolute inset-0 overflow-hidden rounded-xl">
+                <Link
+                  to={detailHref}
+                  onClick={onLibraryCardNavigate}
+                  className="absolute inset-0 h-full w-full cursor-pointer overflow-hidden text-left"
+                  style={{
+                    background:
+                      'linear-gradient(180deg, rgba(45, 55, 72, 0.4) 0%, rgba(45, 55, 72, 0.9) 100%)',
+                  }}
+                >
+                  <div
+                    className={`flex h-full w-full flex-col ${
+                      overlayOpen ? 'pt-28' : 'pt-14'
+                    }`}
+                  >
+                    <div
+                      className={`flex min-h-0 flex-1 flex-col justify-end overflow-hidden px-2 text-white ${
+                        showLibraryPlay ||
+                        !showRequestButton ||
+                        (currentStatus &&
+                          currentStatus !== MediaStatus.UNKNOWN &&
+                          currentStatus !== MediaStatus.DELETED)
+                          ? showLibraryPlay
+                            ? 'pb-11'
+                            : 'pb-2'
+                          : 'pb-11'
+                      }`}
+                    >
+                      {year && (
+                        <div className="shrink-0 text-sm font-medium">
+                          {year}
+                        </div>
+                      )}
+
+                      <h1
+                        className="shrink-0 whitespace-normal text-xl font-bold leading-tight"
+                        style={{
+                          WebkitLineClamp: 2,
+                          display: '-webkit-box',
+                          overflow: 'hidden',
+                          WebkitBoxOrient: 'vertical',
+                          wordBreak: 'break-word',
                         }}
+                        data-testid="title-card-title"
                       >
-                        <ChevronDownIcon className="h-4 w-4" />
-                      </button>
-                      {showTvMenu &&
-                        tvMenuPos &&
-                        createPortal(
+                        {title}
+                      </h1>
+                      {subtitle ? (
+                        <div className="shrink-0 truncate text-xs text-gray-200">
+                          {subtitle}
+                        </div>
+                      ) : null}
+                      {summary && (
+                        <div className="min-h-0 shrink overflow-hidden">
                           <div
-                            ref={tvMenuRef}
-                            role="menu"
-                            className="fixed z-[100] w-44 -translate-x-full -translate-y-full rounded-md border border-indigo-500 bg-indigo-600 p-1 shadow-lg"
+                            className="whitespace-normal text-xs"
                             style={{
-                              top: tvMenuPos.top,
-                              left: tvMenuPos.left,
+                              WebkitLineClamp:
+                                !showRequestButton ||
+                                (currentStatus &&
+                                  currentStatus !== MediaStatus.UNKNOWN &&
+                                  currentStatus !== MediaStatus.DELETED)
+                                  ? 5
+                                  : 3,
+                              display: '-webkit-box',
+                              overflow: 'hidden',
+                              WebkitBoxOrient: 'vertical',
+                              wordBreak: 'break-word',
                             }}
                           >
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void requestAllSeasons();
+                            {summary}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+
+                <div className="absolute bottom-0 left-0 right-0 z-40 flex justify-between gap-1 px-2 py-2">
+                  {showLibraryPlay ? (
+                    <Button
+                      buttonType="primary"
+                      buttonSize="sm"
+                      className="z-40 flex-1"
+                      onClick={onLibraryPlay}
+                    >
+                      <PlayIcon className="h-4 w-4" />{' '}
+                      <span>{intl.formatMessage(messages.play)}</span>
+                    </Button>
+                  ) : null}
+                  {libraryMode && onLibraryManage ? (
+                    <Tooltip
+                      content={intl.formatMessage(messages.manage, {
+                        service: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
+                      })}
+                    >
+                      <Button
+                        buttonType="default"
+                        buttonSize="sm"
+                        className="z-40 shrink-0"
+                        aria-label={intl.formatMessage(messages.manage, {
+                          service: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
+                        })}
+                        onClick={onLibraryManageClick}
+                      >
+                        <CogIcon className="!mr-0 h-4 w-4" />
+                      </Button>
+                    </Tooltip>
+                  ) : null}
+                  {showRequestButton &&
+                    (!currentStatus ||
+                      currentStatus === MediaStatus.UNKNOWN ||
+                      currentStatus === MediaStatus.DELETED) &&
+                    (mediaType === 'tv' &&
+                    settings.currentSettings.seriesInstantRequestEnabled ? (
+                      <div className="relative z-40 flex w-full">
+                        <button
+                          type="button"
+                          disabled={isQuickRequesting}
+                          className="button-md relative z-40 inline-flex h-7 flex-1 items-center justify-center rounded-l-md border border-indigo-500 bg-indigo-600/80 px-2 text-xs font-medium leading-5 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setShowTvMenu(false);
+                            requestSeason1();
+                          }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
+                          <ArrowDownTrayIcon className="h-4 w-4" />
+                          <span className="ml-1">
+                            {isQuickRequesting
+                              ? intl.formatMessage(globalMessages.requesting)
+                              : intl.formatMessage(messages.requestseason1)}
+                          </span>
+                        </button>
+                        <button
+                          ref={tvMenuButtonRef}
+                          type="button"
+                          disabled={isQuickRequesting}
+                          aria-expanded={showTvMenu}
+                          aria-haspopup="menu"
+                          aria-label={intl.formatMessage(
+                            messages.moreRequestOptions
+                          )}
+                          className="button-md relative z-40 inline-flex h-7 items-center justify-center rounded-r-md border border-l-0 border-indigo-500 bg-indigo-600/80 px-2 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={toggleTvMenu}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
+                          <ChevronDownIcon className="h-4 w-4" />
+                        </button>
+                        {showTvMenu &&
+                          tvMenuPos &&
+                          createPortal(
+                            <div
+                              ref={tvMenuRef}
+                              role="menu"
+                              className="fixed z-[100] w-44 -translate-x-full -translate-y-full rounded-md border border-indigo-500 bg-indigo-600 p-1 shadow-lg"
+                              style={{
+                                top: tvMenuPos.top,
+                                left: tvMenuPos.left,
                               }}
                             >
-                              <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
-                              {intl.formatMessage(messages.requestall)}
-                            </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                window.setTimeout(
-                                  () => openTvRequestModal('none'),
-                                  0
-                                );
-                              }}
-                            >
-                              <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
-                              {intl.formatMessage(messages.selectseasons)}
-                            </button>
-                            {settings.currentSettings
-                              .episodeRequestsEnabled && (
                               <button
                                 type="button"
                                 role="menuitem"
-                                data-testid="title-card-request-episodes"
+                                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void requestAllSeasons();
+                                }}
+                              >
+                                <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
+                                {intl.formatMessage(messages.requestall)}
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
                                 className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
                                   window.setTimeout(
-                                    () =>
-                                      openTvRequestModal('none', 'episodes'),
+                                    () => openTvRequestModal('none'),
                                     0
                                   );
                                 }}
                               >
-                                <QueueListIcon className="mr-2 h-4 w-4" />
-                                {intl.formatMessage(messages.requestepisodes)}
+                                <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
+                                {intl.formatMessage(messages.selectseasons)}
                               </button>
-                            )}
-                          </div>,
-                          document.body
-                        )}
-                    </div>
-                  ) : mediaType === 'tv' &&
-                    settings.currentSettings.episodeRequestsEnabled ? (
-                    <div className="relative z-40 flex w-full overflow-hidden rounded-md border border-indigo-500 bg-indigo-600/80">
-                      <button
-                        type="button"
-                        className="flex h-7 flex-1 items-center justify-center px-2 text-xs font-medium text-white transition hover:bg-indigo-600"
+                              {settings.currentSettings
+                                .episodeRequestsEnabled && (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  data-testid="title-card-request-episodes"
+                                  className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    window.setTimeout(
+                                      () =>
+                                        openTvRequestModal('none', 'episodes'),
+                                      0
+                                    );
+                                  }}
+                                >
+                                  <QueueListIcon className="mr-2 h-4 w-4" />
+                                  {intl.formatMessage(messages.requestepisodes)}
+                                </button>
+                              )}
+                            </div>,
+                            document.body
+                          )}
+                      </div>
+                    ) : mediaType === 'tv' &&
+                      settings.currentSettings.episodeRequestsEnabled ? (
+                      <div className="relative z-40 flex w-full overflow-hidden rounded-md border border-indigo-500 bg-indigo-600/80">
+                        <button
+                          type="button"
+                          className="flex h-7 flex-1 items-center justify-center px-2 text-xs font-medium text-white transition hover:bg-indigo-600"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openTvRequestModal('none', 'seasons');
+                          }}
+                        >
+                          <ArrowDownTrayIcon className="mr-1 h-4 w-4" />
+                          {intl.formatMessage(messages.seasons)}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="title-card-request-episodes"
+                          className="flex h-7 flex-1 items-center justify-center border-l border-indigo-400 px-2 text-xs font-medium text-white transition hover:bg-indigo-600"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openTvRequestModal('none', 'episodes');
+                          }}
+                        >
+                          <QueueListIcon className="mr-1 h-4 w-4" />
+                          {intl.formatMessage(messages.requestepisodes)}
+                        </button>
+                      </div>
+                    ) : mediaType === 'tv' ? (
+                      <Button
+                        buttonType="primary"
+                        buttonSize="sm"
+                        className="z-40 w-full"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          openTvRequestModal('none', 'seasons');
+                          openTvRequestModal('none');
                         }}
                       >
-                        <ArrowDownTrayIcon className="mr-1 h-4 w-4" />
-                        {intl.formatMessage(messages.seasons)}
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="title-card-request-episodes"
-                        className="flex h-7 flex-1 items-center justify-center border-l border-indigo-400 px-2 text-xs font-medium text-white transition hover:bg-indigo-600"
+                        <ArrowDownTrayIcon />{' '}
+                        <span>
+                          {intl.formatMessage(messages.selectseasons)}
+                        </span>
+                      </Button>
+                    ) : mediaType === 'movie' || mediaType === 'collection' ? (
+                      <Button
+                        buttonType="primary"
+                        buttonSize="sm"
+                        disabled={isQuickRequesting}
+                        className="z-40 w-full"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          openTvRequestModal('none', 'episodes');
-                        }}
-                      >
-                        <QueueListIcon className="mr-1 h-4 w-4" />
-                        {intl.formatMessage(messages.requestepisodes)}
-                      </button>
-                    </div>
-                  ) : mediaType === 'tv' ? (
-                    <Button
-                      buttonType="primary"
-                      buttonSize="sm"
-                      className="z-40 w-full"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openTvRequestModal('none');
-                      }}
-                    >
-                      <ArrowDownTrayIcon />{' '}
-                      <span>{intl.formatMessage(messages.selectseasons)}</span>
-                    </Button>
-                  ) : mediaType === 'movie' || mediaType === 'collection' ? (
-                    <Button
-                      buttonType="primary"
-                      buttonSize="sm"
-                      disabled={isQuickRequesting}
-                      className="z-40 w-full"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (mediaType === 'movie') {
-                          if (
-                            settings.currentSettings.movieInstantRequestEnabled
-                          ) {
-                            void requestMovieInstant();
+                          if (mediaType === 'movie') {
+                            if (
+                              settings.currentSettings
+                                .movieInstantRequestEnabled
+                            ) {
+                              void requestMovieInstant();
+                            } else {
+                              setShowRequestModal(true);
+                            }
                           } else {
                             setShowRequestModal(true);
                           }
-                        } else {
-                          setShowRequestModal(true);
-                        }
-                      }}
-                    >
-                      <ArrowDownTrayIcon />{' '}
-                      <span>
-                        {isQuickRequesting
-                          ? intl.formatMessage(globalMessages.requesting)
-                          : intl.formatMessage(globalMessages.request)}
-                      </span>
-                    </Button>
-                  ) : null)}
+                        }}
+                      >
+                        <ArrowDownTrayIcon />{' '}
+                        <span>
+                          {isQuickRequesting
+                            ? intl.formatMessage(globalMessages.requesting)
+                            : intl.formatMessage(globalMessages.request)}
+                        </span>
+                      </Button>
+                    ) : null)}
+                </div>
               </div>
-            </div>
-          </Transition>
+            </Transition>
+          </div>
         </div>
       </div>
-    </div>
+    </TvFocusable>
   );
 };
 

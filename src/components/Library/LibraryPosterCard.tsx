@@ -104,7 +104,7 @@ const LibraryPosterCard = ({
           data-surface={mode}
           data-watch-mark={watchMark}
           className={`group relative ${isBrowse ? 'w-full' : 'w-36 sm:w-44'} ${className}`}
-          tabIndex={isTvShell ? 0 : undefined}
+          tabIndex={isTvShell ? -1 : undefined}
         >
           <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-library-navy ring-1 ring-gray-800">
             <button
