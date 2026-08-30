@@ -108,3 +108,34 @@ export function resolveSonarrSeriesRouting(
         : [],
   };
 }
+
+export type SonarrRequestOverrides = {
+  serverId?: number;
+  profileId?: number;
+  rootFolder?: string;
+  languageProfileId?: number;
+  tags?: number[];
+};
+
+/**
+ * Fill omitted instant-request fields from Sonarr defaults.
+ * Anime must get the anime quality profile and anime tags together — not tags only.
+ */
+export function applySonarrRequestDefaults(
+  sonarrSettings: SonarrSettings,
+  isAnime: boolean,
+  overrides: SonarrRequestOverrides
+): SonarrRequestOverrides {
+  const routing = resolveSonarrSeriesRouting(sonarrSettings, isAnime);
+
+  return {
+    serverId: overrides.serverId ?? sonarrSettings.id,
+    profileId: overrides.profileId ?? routing.qualityProfile,
+    rootFolder:
+      overrides.rootFolder && overrides.rootFolder !== ''
+        ? overrides.rootFolder
+        : routing.rootFolder,
+    languageProfileId: overrides.languageProfileId ?? routing.languageProfile,
+    tags: overrides.tags ?? routing.tags,
+  };
+}

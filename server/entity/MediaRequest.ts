@@ -22,6 +22,7 @@ import notificationManager, { Notification } from '@server/lib/notifications';
 import { Permission } from '@server/lib/permissions';
 import { isSeasonCoveredForFullRequest } from '@server/lib/seasonRequests';
 import { getSettings } from '@server/lib/settings';
+import { applySonarrRequestDefaults } from '@server/lib/sonarrRequestRouting';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
 import { truncate } from 'lodash';
@@ -729,8 +730,30 @@ export class MediaRequest {
       }
     }
 
-    const serverId = requestBody.serverId;
-    const languageProfileId = requestBody.languageProfileId;
+    let serverId = requestBody.serverId;
+    let languageProfileId = requestBody.languageProfileId;
+
+    if (requestBody.mediaType === MediaType.TV) {
+      const sonarrSettings =
+        serverId != null
+          ? settings.sonarr.find((sonarr) => sonarr.id === serverId)
+          : settings.sonarr.find(
+              (sonarr) =>
+                sonarr.isDefault && sonarr.is4k === Boolean(requestBody.is4k)
+            );
+      if (sonarrSettings) {
+        const defaults = applySonarrRequestDefaults(
+          sonarrSettings,
+          mediaIsAnime,
+          { serverId, profileId, rootFolder, languageProfileId, tags }
+        );
+        serverId = defaults.serverId;
+        profileId = defaults.profileId;
+        rootFolder = defaults.rootFolder;
+        languageProfileId = defaults.languageProfileId;
+        tags = defaults.tags;
+      }
+    }
 
     const planInput: RequestPlanInput = {
       media,
