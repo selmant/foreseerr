@@ -30,8 +30,10 @@ import {
   Outlet,
   RouterProvider,
   createBrowserRouter,
+  isRouteErrorResponse,
   useLocation,
   useNavigate,
+  useRouteError,
 } from 'react-router';
 import { SWRConfig } from 'swr';
 
@@ -390,13 +392,38 @@ const Bootstrap = () => {
   );
 };
 
+const AppRouteError = () => {
+  const error = useRouteError();
+  const message = isRouteErrorResponse(error)
+    ? `${error.status} ${error.statusText}`
+    : error instanceof Error
+      ? error.message
+      : 'Unknown error';
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-900 px-6 text-white">
+      <h1 className="text-2xl font-bold">Something went wrong</h1>
+      <pre className="mt-4 max-w-xl whitespace-pre-wrap text-sm text-red-300">
+        {message}
+      </pre>
+    </div>
+  );
+};
+
 const App = () => {
   const router = useMemo(
     () =>
       createBrowserRouter([
         {
+          path: '/',
           element: <Bootstrap />,
-          children: buildRoutes(),
+          HydrateFallback: LoadingSpinner,
+          children: [
+            {
+              errorElement: <AppRouteError />,
+              children: buildRoutes(),
+            },
+          ],
         },
       ]),
     []

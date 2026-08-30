@@ -3,8 +3,8 @@
 // previously cached resources to be updated from the network.
 // This variable is intentionally declared and unused.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const OFFLINE_VERSION = 5;
-const CACHE_NAME = 'offline';
+const OFFLINE_VERSION = 6;
+const CACHE_NAME = 'offline-v6';
 // Customize this with a different URL if needed.
 const OFFLINE_URL = '/offline.html';
 
@@ -25,6 +25,12 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames
+          .filter((name) => name !== CACHE_NAME)
+          .map((name) => caches.delete(name))
+      );
       // Enable navigation preload if it's supported.
       // See https://developers.google.com/web/updates/2017/02/navigation-preload
       if ('navigationPreload' in self.registration) {

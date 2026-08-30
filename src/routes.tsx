@@ -1,3 +1,4 @@
+import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import type { ComponentType } from 'react';
 import type { RouteObject } from 'react-router';
 import { Navigate } from 'react-router';
@@ -28,6 +29,12 @@ const filePathToRoutePath = (filePath: string): string | null => {
   return route;
 };
 
+const loadPage =
+  (importer: () => Promise<{ default: ComponentType }>) => async () => {
+    const pageModule = await importer();
+    return { Component: pageModule.default };
+  };
+
 const buildRoutes = (): RouteObject[] => {
   const routes: RouteObject[] = [];
 
@@ -37,20 +44,20 @@ const buildRoutes = (): RouteObject[] => {
       continue;
     }
 
-    routes.push({
-      path: routePath === '/' ? '/' : routePath,
-      lazy: async () => {
-        const pageModule = await importer();
-        return { Component: pageModule.default };
-      },
-    });
+    if (routePath === '/') {
+      routes.push({
+        index: true,
+        lazy: loadPage(importer),
+        HydrateFallback: LoadingSpinner,
+      });
+    } else {
+      routes.push({
+        path: routePath.replace(/^\//, ''),
+        lazy: loadPage(importer),
+        HydrateFallback: LoadingSpinner,
+      });
+    }
   }
-
-  routes.sort((a, b) => {
-    const aPath = a.path ?? '';
-    const bPath = b.path ?? '';
-    return bPath.length - aPath.length;
-  });
 
   routes.push({
     path: '*',

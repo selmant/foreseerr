@@ -483,10 +483,29 @@ const startForeseerrInternal = async (
   server.use('/avatarproxy', clearCookies, avatarproxy);
 
   if (!dev) {
-    server.use(express.static(PUBLIC_PATH, { index: false }));
+    server.use(
+      express.static(PUBLIC_PATH, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith(`${path.sep}index.html`)) {
+            res.setHeader('Cache-Control', 'no-store');
+            return;
+          }
+          if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+            res.setHeader(
+              'Cache-Control',
+              'public, max-age=31536000, immutable'
+            );
+          }
+        },
+      })
+    );
+    // Missing hashed assets must 404. Falling back to index.html makes the
+    // browser try to parse HTML as a module and leaves a blank page.
     server.get(
-      /^(?!\/api(?:\/|$)|\/api-docs|\/imageproxy|\/avatarproxy).*/,
+      /^(?!\/api(?:\/|$)|\/api-docs|\/imageproxy|\/avatarproxy|\/assets\/).*/,
       (_req, res) => {
+        res.setHeader('Cache-Control', 'no-store');
         res.sendFile(path.join(PUBLIC_PATH, 'index.html'));
       }
     );
