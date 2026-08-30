@@ -1,5 +1,4 @@
 import Button from '@app/components/Common/Button';
-import Modal from '@app/components/Common/Modal';
 import useToasts from '@app/hooks/useToasts';
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -416,13 +415,56 @@ const ManualImport = ({
               buttonSize="sm"
               type="button"
               disabled={
-                !selected.length || submitting || rematchingToken !== undefined
+                !selected.length ||
+                submitting ||
+                rematchingToken !== undefined ||
+                confirmOpen
               }
               onClick={() => setConfirmOpen(true)}
             >
               Import selected ({selected.length})
             </Button>
           </div>
+          {confirmOpen && (
+            <div className="space-y-2 rounded border border-gray-600 bg-gray-900/80 p-3 text-sm">
+              <div className="font-medium text-white">
+                Import {selectedFiles.length} file(s) using {mode}?
+              </div>
+              <p className="text-gray-300">
+                {context.service.name} will {mode} the selected files
+                {selectedWarnings.length
+                  ? ' even though Arr reported warnings.'
+                  : '.'}
+              </p>
+              {selectedWarnings.length > 0 && (
+                <ul className="list-disc space-y-1 pl-5 text-yellow-300">
+                  {selectedWarnings.map((warning, index) => (
+                    <li key={`${index}-${warning}`}>{warning}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  buttonType="default"
+                  buttonSize="sm"
+                  disabled={submitting}
+                  onClick={() => setConfirmOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  buttonType="success"
+                  buttonSize="sm"
+                  disabled={!selectedFiles.length || submitting}
+                  onClick={() => void submitImport()}
+                >
+                  {submitting ? 'Importing…' : `Import (${mode})`}
+                </Button>
+              </div>
+            </div>
+          )}
           {candidates.map((candidate) => {
             const assigned =
               episodeMappings[candidate.token] ??
@@ -533,31 +575,6 @@ const ManualImport = ({
             );
           })}
         </div>
-      )}
-      {confirmOpen && (
-        <Modal
-          title={`Import ${selectedFiles.length} file(s)?`}
-          backgroundClickable={!submitting}
-          okText={`Import (${mode})`}
-          okButtonType="success"
-          okDisabled={!selectedFiles.length || submitting}
-          onOk={() => void submitImport()}
-          onCancel={() => setConfirmOpen(false)}
-        >
-          <p>
-            {context.service.name} will {mode} the selected files
-            {selectedWarnings.length
-              ? ' even though Arr reported warnings.'
-              : '.'}
-          </p>
-          {selectedWarnings.length > 0 && (
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-yellow-300">
-              {selectedWarnings.map((warning, index) => (
-                <li key={`${index}-${warning}`}>{warning}</li>
-              ))}
-            </ul>
-          )}
-        </Modal>
       )}
     </div>
   );
