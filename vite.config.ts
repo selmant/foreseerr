@@ -27,6 +27,12 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@app': path.resolve(__dirname, 'src'),
         '@server': path.resolve(__dirname, 'server'),
+        // The package "module" entry is ESM that still calls require() for
+        // dayjs locales/plugins. Force the CJS build so Rollup rewrites them.
+        '@seerr-team/react-tailwindcss-datepicker': path.resolve(
+          __dirname,
+          'node_modules/@seerr-team/react-tailwindcss-datepicker/dist/index.cjs.js'
+        ),
       },
     },
     publicDir: 'public',
@@ -34,6 +40,12 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist/public',
       emptyOutDir: true,
       sourcemap: true,
+      commonjsOptions: {
+        transformMixedEsModules: true,
+      },
+    },
+    optimizeDeps: {
+      include: ['@seerr-team/react-tailwindcss-datepicker', 'dayjs'],
     },
     server: {
       port: 3000,
