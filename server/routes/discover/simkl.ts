@@ -9,12 +9,14 @@ import type {
   WatchlistItem,
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
+import { withTmdbPosters } from '@server/lib/discover/posters';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import {
   hasDiscoverTmdbId,
   omitUnmappedDiscoverItems,
   shouldHideUnmappedFromQuery,
 } from '@server/lib/discover/unmapped';
+import { confirmTmdbId } from '@server/lib/discover/validity';
 import { recordMappingGap } from '@server/lib/mapping/gaps';
 import {
   catalogCandidates,
@@ -96,15 +98,7 @@ export const tmdbResolvers = (tmdb: TheMovieDb): SimklTmdbResolvers => ({
       return [];
     }
   },
-  confirm: async (mediaType, tmdbId) => {
-    try {
-      if (mediaType === 'movie') await tmdb.getMovie({ movieId: tmdbId });
-      else await tmdb.getTvShow({ tvId: tmdbId });
-      return true;
-    } catch {
-      return false;
-    }
-  },
+  confirm: (mediaType, tmdbId) => confirmTmdbId(mediaType, tmdbId, tmdb),
 });
 
 /** Annotate each tile with how (or whether) it resolved, for the UI and repair queue. */
@@ -122,6 +116,18 @@ function withMappingState(resolved: ResolvedSimklItem[]): WatchlistItem[] {
       ...(item.sourceId ? { externalId: item.sourceId } : {}),
     },
   }));
+}
+
+/** Moonfin draws `posterPath` from the list payload, not Simkl `image`. */
+export async function toSimklWatchlistItems(
+  resolved: ResolvedSimklItem[],
+  hideUnmapped: boolean,
+  tmdb: TheMovieDb
+): Promise<WatchlistItem[]> {
+  return withTmdbPosters(
+    omitUnmappedDiscoverItems(withMappingState(resolved), hideUnmapped),
+    tmdb
+  );
 }
 
 function recordSimklGaps(
@@ -164,10 +170,7 @@ async function mappedCatalogPage(
   return {
     page: paged.page,
     hasMore: paged.hasMore,
-    results: omitUnmappedDiscoverItems(
-      withMappingState(resolved),
-      hideUnmapped
-    ),
+    results: await toSimklWatchlistItems(resolved, hideUnmapped, tmdb),
   };
 }
 
@@ -212,18 +215,17 @@ simklDiscoverRoutes.get('/library', async (req, res, next) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const start = (page - 1) * 20;
   const slice = rows.slice(start, start + 20).map(toSyncCandidate);
+  const tmdb = createTmdbWithRegionLanguage(req.user);
   const hydrated = await hydrateSimklCandidates(
     slice,
     loadSimklTitle(new SimklAPI())
   );
-  const resolved = await resolveSimklCandidates(
-    hydrated,
-    tmdbResolvers(createTmdbWithRegionLanguage(req.user))
-  );
+  const resolved = await resolveSimklCandidates(hydrated, tmdbResolvers(tmdb));
   recordSimklGaps(resolved, 'simkl/library');
-  const results = omitUnmappedDiscoverItems(
-    withMappingState(resolved),
-    shouldHideUnmappedFromQuery(req.query)
+  const results = await toSimklWatchlistItems(
+    resolved,
+    shouldHideUnmappedFromQuery(req.query),
+    tmdb
   );
   const repository = getRepository(SimklSyncItem);
   await Promise.all(
