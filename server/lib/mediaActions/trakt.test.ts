@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
-import { describe, it, mock } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 import { TraktMediaActionProvider } from './trakt';
 
 describe('TraktMediaActionProvider isAvailable', () => {
+  afterEach(() => {
+    mock.reset();
+  });
+
   it('is false when the admin disables Trakt actions', async () => {
     const settingsLib = await import('@server/lib/settings');
     mock.method(settingsLib, 'getSettings', () => ({
@@ -66,5 +70,12 @@ describe('TraktMediaActionProvider isAvailable', () => {
 
     const provider = new TraktMediaActionProvider();
     assert.equal(await provider.isAvailable(7), true);
+  });
+
+  it('can load trakt episode actions while @server/lib/trakt is mocked', async () => {
+    const trakt = await import('@server/lib/trakt');
+    mock.method(trakt, 'createTraktUserClient', async () => ({}) as never);
+    const { traktEpisodeActions } = await import('./traktEpisodes');
+    assert.equal(typeof traktEpisodeActions.isAvailable, 'function');
   });
 });

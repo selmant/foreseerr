@@ -41,35 +41,41 @@ function watchedAtIso(
   return new Date().toISOString();
 }
 
+export async function isTraktMediaActionsAvailable(
+  userId: number
+): Promise<boolean> {
+  const settings = getSettings();
+  if (settings.mediaActions?.providers?.trakt === false) {
+    return false;
+  }
+  if (!isJellyfinTraktProvider()) {
+    try {
+      getTraktAppCredentials();
+    } catch (e) {
+      if (e instanceof TraktNotConfiguredError) {
+        return false;
+      }
+      throw e;
+    }
+  }
+  const userSettings = await getUserTraktSettings(userId);
+  if (userSettings?.mediaActionsTraktEnabled === false) {
+    return false;
+  }
+  try {
+    await createTraktUserClient(userId);
+    return true;
+  } catch (e) {
+    return traktAvailabilityFromError(e);
+  }
+}
+
 export class TraktMediaActionProvider implements MediaActionProvider {
   readonly id = 'trakt' as const;
   readonly capabilities = TRAKT_MEDIA_ACTION_CAPABILITIES;
 
   async isAvailable(userId: number): Promise<boolean> {
-    const settings = getSettings();
-    if (settings.mediaActions?.providers?.trakt === false) {
-      return false;
-    }
-    if (!isJellyfinTraktProvider()) {
-      try {
-        getTraktAppCredentials();
-      } catch (e) {
-        if (e instanceof TraktNotConfiguredError) {
-          return false;
-        }
-        throw e;
-      }
-    }
-    const userSettings = await getUserTraktSettings(userId);
-    if (userSettings?.mediaActionsTraktEnabled === false) {
-      return false;
-    }
-    try {
-      await createTraktUserClient(userId);
-      return true;
-    } catch (e) {
-      return traktAvailabilityFromError(e);
-    }
+    return isTraktMediaActionsAvailable(userId);
   }
 
   async getStatus(
