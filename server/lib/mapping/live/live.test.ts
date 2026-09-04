@@ -270,6 +270,21 @@ const wrappedTmdbError = (status?: number, message = 'failed'): Error =>
     }),
   });
 
+describe('tmdbRecord', () => {
+  it('keeps the poster path the details call already returned', async () => {
+    const tmdb = {
+      getMovie: async () => ({
+        id: 76341,
+        title: 'Mad Max: Fury Road',
+        poster_path: '/madmax.jpg',
+      }),
+    } as unknown as TheMovieDb;
+    const record = await tmdbRecord('movie', 76341, tmdb);
+    assert.equal(record.alive, true);
+    assert.equal(record.posterPath, '/madmax.jpg');
+  });
+});
+
 describe('tmdbRecord negative cache', () => {
   it('negative-caches a confirmed 404, including wrapped Error.cause', async () => {
     let calls = 0;

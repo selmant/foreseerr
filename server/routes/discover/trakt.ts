@@ -12,6 +12,7 @@ import type {
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import { parseDiscoverTruthyQuery } from '@server/lib/discover/filterOptions';
+import { withTmdbPosters } from '@server/lib/discover/posters';
 import { handleTraktDiscoverRouteError } from '@server/lib/discover/providerErrors';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import {
@@ -129,10 +130,13 @@ const mapFilteredTraktItems = async (
         skipWatchedFilter: options.skipWatchedFilter,
       });
 
-  const mapped = await enrichResultsWithRatings(mapTraktItems(filtered), {
-    query: options.query,
-    skipExisting: true,
-  });
+  const mapped = await withTmdbPosters(
+    await enrichResultsWithRatings(mapTraktItems(filtered), {
+      query: options.query,
+      skipExisting: true,
+    }),
+    tmdb
+  );
   recordUnmappedItems(mapped, {
     namespace: 'trakt',
     discoverSource: options.discoverSource ?? 'trakt',

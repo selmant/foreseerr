@@ -45,6 +45,8 @@ export interface WatchlistItem {
   sourceUrl?: string;
   sourceId?: string;
   image?: string;
+  /** Bare TMDB poster path when the id has been confirmed. */
+  posterPath?: string;
   mappingState?: DiscoverMappingInfo;
 }
 

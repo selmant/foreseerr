@@ -55,6 +55,16 @@ export async function confirmTmdbId(
   return (await probe(mediaType, tmdbId, tmdb)).alive;
 }
 
+/** Cached TMDB poster from the confirm probe. No extra request when the id was already checked. */
+export async function tmdbPosterPath(
+  mediaType: 'movie' | 'tv',
+  tmdbId: number,
+  tmdb?: TheMovieDb
+): Promise<string | undefined> {
+  const record = await probe(mediaType, tmdbId, tmdb);
+  return record.alive ? record.posterPath : undefined;
+}
+
 /**
  * Whether what the source calls an item and what TMDB calls it are far enough
  * apart to be worth a human look.

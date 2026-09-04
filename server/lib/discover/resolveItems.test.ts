@@ -19,6 +19,7 @@ const fakeTmdb = {
   getTvShow: async ({ tvId }: { tvId: number }) => ({
     id: tvId,
     name: 'Breaking Bad',
+    poster_path: '/bb.jpg',
   }),
 } as unknown as TheMovieDb;
 
@@ -64,6 +65,7 @@ describe('resolveDiscoverItems', () => {
       assert.deepEqual(asked, ['tmdb_movie', 'tmdb_show']);
       assert.equal(item.tmdbId, 1396);
       assert.equal(item.mediaType, 'tv');
+      assert.equal(item.posterPath, '/bb.jpg');
     } finally {
       mappingService.resolve = original;
     }

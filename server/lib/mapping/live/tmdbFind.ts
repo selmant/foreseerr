@@ -107,6 +107,8 @@ export interface TmdbProbe {
   title?: string;
   originalTitle?: string;
   year?: number;
+  /** Bare TMDB path (`/abc.jpg`). List tiles need this; `/movie/{id}` already paid for it. */
+  posterPath?: string;
 }
 
 /**
@@ -152,11 +154,14 @@ export async function tmdbRecord(
     const released =
       'release_date' in record ? record.release_date : record.first_air_date;
     const year = Number(String(released ?? '').slice(0, 4));
+    const posterPath =
+      typeof record.poster_path === 'string' ? record.poster_path.trim() : '';
     return {
       alive: true,
       title,
       originalTitle,
       year: Number.isFinite(year) && year > 0 ? year : undefined,
+      ...(posterPath ? { posterPath } : {}),
     };
   } catch (error) {
     // Only a confirmed 404 is a dead id. Timeouts, 429, 5xx, a tripped

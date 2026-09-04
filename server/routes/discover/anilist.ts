@@ -10,6 +10,7 @@ import {
   toWatchlistItems,
 } from '@server/lib/anilist/discover';
 import { getAnilistUserContext } from '@server/lib/anilist/userContext';
+import { withTmdbPoster } from '@server/lib/discover/posters';
 import { handleAnilistDiscoverRouteError } from '@server/lib/discover/providerErrors';
 import {
   omitUnmappedDiscoverItems,
@@ -45,7 +46,7 @@ async function anilistResults(
               { discoverSource }
             )
           : undefined;
-      return {
+      return withTmdbPoster({
         ...item,
         ...(confirmed ? { tmdbId: confirmed.tmdbId } : {}),
         mappingState: confirmed?.mappingState ?? {
@@ -53,7 +54,7 @@ async function anilistResults(
           namespace: 'anilist',
           ...(item.sourceId ? { externalId: item.sourceId } : {}),
         },
-      };
+      });
     })
   );
   recordUnmappedItems(mapped, {

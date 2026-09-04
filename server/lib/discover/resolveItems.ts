@@ -11,6 +11,7 @@ import {
   type Namespace,
 } from '@server/lib/mapping/types';
 import logger from '@server/logger';
+import { withTmdbPoster } from './posters';
 import { hasDiscoverTmdbId } from './unmapped';
 import { confirmOrRepair, confirmTmdbId } from './validity';
 
@@ -155,5 +156,7 @@ export async function resolveDiscoverItems(
     });
   }
 
-  return resolved;
+  return Promise.all(
+    resolved.map((item) => withTmdbPoster(item, options.tmdb))
+  );
 }
