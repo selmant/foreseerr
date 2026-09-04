@@ -3,7 +3,7 @@ title: Stable release gate
 ---
 
 :::info Status
-Maintainer-facing checklist for cutting a Foreseerr stable release. The alpha-removal procedure that lived here was completed for **`v0.1.0`**; the app is currently **`v0.7.1`** stable. Use this document when preparing the **next** stable tag, not as a gate to “leave alpha.”
+Maintainer-facing checklist for cutting a Foreseerr stable release. The alpha-removal procedure that lived here was completed for **`v0.1.0`**; the app is currently **`v0.7.2`** stable. Use this document when preparing the **next** stable tag, not as a gate to “leave alpha.”
 :::
 
 ## Current state
@@ -11,7 +11,7 @@ Maintainer-facing checklist for cutting a Foreseerr stable release. The alpha-re
 | Item | Status |
 | --- | --- |
 | First stable (`v0.1.0`) | Shipped; alpha label removed |
-| Current app version | `package.json` → `0.7.1` |
+| Current app version | `package.json` → `0.7.2` |
 | Supported upgrade sources | See [`docs/stable-contract.md`](./stable-contract.md) |
 | Historical alpha checklist | Retired; automation snapshot below was for `0.1.0-alpha.5` and is not a live gate |
 
