@@ -173,6 +173,11 @@ export async function assertUpgradeIsIntact(
     null,
     'skipped episode threshold should default to unset after upgrade'
   );
+  assert.equal(
+    upgradedSettings.watchAheadEpisodeCount ?? null,
+    null,
+    'watch-ahead default should be unset after upgrade'
+  );
   assert.deepEqual(upgradedSettings.discoverFilterDefaults, {});
 
   const upgradedSlider = await dataSource

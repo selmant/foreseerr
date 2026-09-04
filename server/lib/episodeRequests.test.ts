@@ -130,7 +130,7 @@ describe('TVDB episode selection resolver', () => {
     );
   });
 
-  it('rejects coerced, oversized, and extra input fields', () => {
+  it('rejects coerced, oversized, extra, and invalid watch-ahead input', () => {
     assert.throws(() =>
       parseEpisodeSelection({ type: 'single', episodeTvdbId: '12' })
     );
@@ -146,6 +146,26 @@ describe('TVDB episode selection resolver', () => {
         type: 'after',
         startEpisodeTvdbId: Number.MAX_SAFE_INTEGER,
       })
+    );
+    assert.throws(() =>
+      parseEpisodeSelection({ type: 'watchAhead', count: 0 })
+    );
+    assert.throws(() =>
+      parseEpisodeSelection({ type: 'watchAhead', count: 51 })
+    );
+  });
+
+  it('resolves a watch-ahead window from the start of the catalog', () => {
+    const result = resolveEpisodeSelection(
+      { type: 'watchAhead', count: 2 },
+      catalog,
+      false
+    );
+    assert.equal(result.type, 'watchAhead');
+    assert.equal(result.watchAheadCount, 2);
+    assert.deepEqual(
+      result.episodes.map((episode) => episode.tvdbId),
+      [11, 12]
     );
   });
 });

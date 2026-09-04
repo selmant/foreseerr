@@ -285,17 +285,19 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
             </div>
           </div>
         )}
-        {(request.episodes ?? []).length > 0 && (
+        {((request.episodes ?? []).length > 0 ||
+          request.episodeSelectionType === 'watchAhead') && (
           <div className="card-field">
             <span className="card-field-name">
               {intl.formatMessage(messages.episodes, {
-                episodeCount: request.episodes.length,
+                episodeCount: request.episodes?.length ?? 0,
               })}
             </span>
             <Badge>
               {episodeRequestSummary({
                 episodes: request.episodes,
                 type: request.episodeSelectionType,
+                watchAheadCount: request.watchAheadCount,
               })}
             </Badge>
           </div>

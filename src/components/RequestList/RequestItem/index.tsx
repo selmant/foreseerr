@@ -515,21 +515,24 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                   </div>
                 </div>
               )}
-              {!isMovie(title) && (request.episodes?.length ?? 0) > 0 && (
-                <div className="card-field">
-                  <span className="card-field-name">
-                    {intl.formatMessage(messages.episodes, {
-                      episodeCount: request.episodes.length,
-                    })}
-                  </span>
-                  <Badge>
-                    {episodeRequestSummary({
-                      episodes: request.episodes,
-                      type: request.episodeSelectionType,
-                    })}
-                  </Badge>
-                </div>
-              )}
+              {!isMovie(title) &&
+                ((request.episodes?.length ?? 0) > 0 ||
+                  request.episodeSelectionType === 'watchAhead') && (
+                  <div className="card-field">
+                    <span className="card-field-name">
+                      {intl.formatMessage(messages.episodes, {
+                        episodeCount: request.episodes?.length ?? 0,
+                      })}
+                    </span>
+                    <Badge>
+                      {episodeRequestSummary({
+                        episodes: request.episodes,
+                        type: request.episodeSelectionType,
+                        watchAheadCount: request.watchAheadCount,
+                      })}
+                    </Badge>
+                  </div>
+                )}
             </div>
           </div>
           <div className="z-10 ml-4 mt-4 flex w-full flex-col justify-center gap-1 overflow-hidden pr-4 text-sm sm:ml-2 sm:mt-0 xl:flex-1 xl:pr-0">

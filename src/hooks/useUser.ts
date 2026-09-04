@@ -38,6 +38,7 @@ export interface UserSettings {
   watchlistSyncTv?: boolean;
   autoCompleteSkippedEpisodeEndings?: boolean;
   autoCompleteSkippedEpisodeThreshold?: number;
+  watchAheadEpisodeCount?: number;
   servarrInterventionsSeenAt?: Date | null;
 }
 

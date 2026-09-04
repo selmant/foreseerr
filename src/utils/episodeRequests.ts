@@ -8,10 +8,15 @@ const code = (episode: EpisodeRequest) =>
 export const episodeRequestSummary = ({
   episodes,
   type,
+  watchAheadCount,
 }: {
   episodes: EpisodeRequest[];
-  type?: 'single' | 'range' | 'after';
+  type?: 'single' | 'range' | 'after' | 'watchAhead';
+  watchAheadCount?: number;
 }): string => {
+  if (type === 'watchAhead') {
+    return `Keep ${watchAheadCount ?? 10} ahead`;
+  }
   if (!episodes.length) {
     return '';
   }

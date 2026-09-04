@@ -19,6 +19,7 @@ export interface UserSettingsGeneralResponse {
   watchlistSyncTv?: boolean;
   autoCompleteSkippedEpisodeEndings?: boolean;
   autoCompleteSkippedEpisodeThreshold?: number;
+  watchAheadEpisodeCount?: number;
 }
 
 export type NotificationAgentTypes = Record<NotificationAgentKey, number>;

@@ -207,6 +207,7 @@ export class User {
               settings.autoCompleteSkippedEpisodeEndings,
             autoCompleteSkippedEpisodeThreshold:
               settings.autoCompleteSkippedEpisodeThreshold,
+            watchAheadEpisodeCount: settings.watchAheadEpisodeCount,
             servarrInterventionsSeenAt: settings.servarrInterventionsSeenAt,
             discoverFilterDefaults: settings.discoverFilterDefaults,
           }

@@ -50,3 +50,7 @@ This is off by default.
 Library does not request missing titles. Use [Discover](discover.md) for that.
 The calendar still lists upcoming Radarr/Sonarr dates for titles you already
 requested.
+
+For long series, open the TV request modal and choose **Watch ahead** to keep a
+buffer of unwatched episodes requested as you watch in Jellyfin. That is opt-in
+per title; it is not a Discover auto-request bot.

@@ -40,7 +40,7 @@ behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
 
 ## Foreseerr extras (on top of Seerr)
 
-Shipped on top of Seerr (requests stay manual; no scheduled auto-request bot):
+Shipped on top of Seerr (requests stay manual; no Discover auto-request bot):
 
 - **Trakt Discover** — recommendations, watchlist, history, and pin public or personal lists (Direct Trakt app or Better Trakt via Jellyfin)
 - **AniList Discover** — trending, this season, popular, top 100, next season; linked watching / planning / completed and custom lists
@@ -51,9 +51,10 @@ Shipped on top of Seerr (requests stay manual; no scheduled auto-request bot):
 - **Release calendar** — Radarr/Sonarr dates in month or agenda view, with request and manage actions
 - **Interventions** — review mapped Radarr/Sonarr queue warnings, import, or reject and blocklist
 - Watched / unwatched / score actions (Trakt, optional AniList, Simkl, Jellyfin where linked)
+- **Watch ahead** — opt-in from the TV request modal: keep N unwatched episodes requested as you watch in Jellyfin
 - Optional [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) companion for same-window Jellyfin playback
 
-Requests stay manual; there is no scheduled auto-request bot and no LLM recommendations.
+You still click Request on a title. There is no scheduled Discover auto-request bot and no LLM recommendations. Watch ahead is an enrolled per-series buffer, not a recommendation engine.
 
 See [Discover](docs/using-seerr/discover.md), [Library](docs/using-seerr/library.md), [Calendar](docs/using-seerr/calendar.md), [Integrations](docs/using-seerr/settings/integrations.md), and [Mapping](docs/using-seerr/settings/mapping.md).
 

@@ -79,6 +79,10 @@ const messages = defineMessages(
     autoCompleteSkippedEpisodeThresholdTip:
       'Only leftovers at this percentage or higher are auto-completed.',
     validationSkippedEpisodeThreshold: 'Enter a whole number from 1 to 100.',
+    watchAheadEpisodeCount: 'Watch-ahead episode buffer',
+    watchAheadEpisodeCountTip:
+      'Default number of unwatched episodes to keep requested when you choose Watch ahead on a series. You can override this per request.',
+    validationWatchAheadEpisodeCount: 'Enter a whole number from 1 to 50.',
   }
 );
 
@@ -149,6 +153,14 @@ const UserGeneralSettings = () => {
             ),
         otherwise: (schema) => schema.notRequired(),
       }),
+    watchAheadEpisodeCount: Yup.number()
+      .transform((value, original) =>
+        original === '' || original == null ? undefined : Number(original)
+      )
+      .integer(intl.formatMessage(messages.validationWatchAheadEpisodeCount))
+      .min(1, intl.formatMessage(messages.validationWatchAheadEpisodeCount))
+      .max(50, intl.formatMessage(messages.validationWatchAheadEpisodeCount))
+      .required(intl.formatMessage(messages.validationWatchAheadEpisodeCount)),
   });
 
   useEffect(() => {
@@ -199,6 +211,7 @@ const UserGeneralSettings = () => {
             data?.autoCompleteSkippedEpisodeEndings === true,
           autoCompleteSkippedEpisodeThreshold:
             data?.autoCompleteSkippedEpisodeThreshold ?? 50,
+          watchAheadEpisodeCount: data?.watchAheadEpisodeCount ?? 10,
         }}
         validationSchema={UserGeneralSettingsSchema}
         enableReinitialize
@@ -225,6 +238,7 @@ const UserGeneralSettings = () => {
               autoCompleteSkippedEpisodeThreshold: Number(
                 values.autoCompleteSkippedEpisodeThreshold
               ),
+              watchAheadEpisodeCount: Number(values.watchAheadEpisodeCount),
             });
 
             if (currentUser?.id === user?.id && setLocale) {
@@ -731,6 +745,34 @@ const UserGeneralSettings = () => {
                         </div>
                       )}
                   </div>
+                </div>
+              </div>
+              <div className="form-row">
+                <label htmlFor="watchAheadEpisodeCount" className="text-label">
+                  <span>
+                    {intl.formatMessage(messages.watchAheadEpisodeCount)}
+                  </span>
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.watchAheadEpisodeCountTip)}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <div className="form-input-field max-w-fit">
+                    <Field
+                      id="watchAheadEpisodeCount"
+                      name="watchAheadEpisodeCount"
+                      type="text"
+                      inputMode="numeric"
+                      className="short"
+                    />
+                  </div>
+                  {errors.watchAheadEpisodeCount &&
+                    touched.watchAheadEpisodeCount &&
+                    typeof errors.watchAheadEpisodeCount === 'string' && (
+                      <div className="error">
+                        {errors.watchAheadEpisodeCount}
+                      </div>
+                    )}
                 </div>
               </div>
               <div className="actions">

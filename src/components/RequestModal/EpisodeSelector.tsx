@@ -100,7 +100,9 @@ const EpisodeSelector = ({
   const initialStartId =
     initialSelection?.type === 'single'
       ? initialSelection.episodeTvdbId
-      : initialSelection?.startEpisodeTvdbId;
+      : initialSelection?.type === 'range' || initialSelection?.type === 'after'
+        ? initialSelection.startEpisodeTvdbId
+        : undefined;
   const [startId, setStartId] = useState<number | undefined>(initialStartId);
   const [endId, setEndId] = useState<number | undefined>(
     initialSelection?.type === 'range'

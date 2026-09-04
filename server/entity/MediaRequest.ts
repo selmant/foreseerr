@@ -8,11 +8,15 @@ import {
 } from '@server/constants/media';
 import dataSource, { getRepository } from '@server/datasource';
 import OverrideRule from '@server/entity/OverrideRule';
-import type { MediaRequestBody } from '@server/interfaces/api/requestInterfaces';
+import type {
+  EpisodeSelection,
+  MediaRequestBody,
+} from '@server/interfaces/api/requestInterfaces';
 import { isAnimeMedia } from '@server/lib/anime/detect';
 import {
   episodeRequestsAvailable,
   getResolvedTvdbEpisodeSelection,
+  isRollingEpisodeSelection,
   ongoingEpisodeRequestLockKey,
   parseEpisodeSelection,
   withOngoingEpisodeRequestLock,
@@ -192,8 +196,10 @@ export const buildEpisodeRequestPlan = ({
   quotas: Awaited<ReturnType<User['getQuota']>>;
 }): RequestPlan => {
   if (
-    selection.type === 'after' &&
-    activeRequests.some((request) => request.episodeSelectionType === 'after')
+    isRollingEpisodeSelection(selection.type) &&
+    activeRequests.some((request) =>
+      isRollingEpisodeSelection(request.episodeSelectionType)
+    )
   ) {
     throw new DuplicateMediaRequestError(
       'An ongoing episode request already exists for this series.'
@@ -225,7 +231,7 @@ export const buildEpisodeRequestPlan = ({
             )
         );
 
-  if (episodes.length === 0) {
+  if (episodes.length === 0 && selection.type !== 'watchAhead') {
     throw new NoSeasonsAvailableError('No episodes available to request');
   }
 
@@ -346,10 +352,12 @@ export const materializeRequestPlan = (plan: RequestPlan): MediaRequest => {
     request.episodeSelectionType = plan.episodeSelection.type;
     request.episodeStartTvdbId = plan.episodeSelection.startTvdbId;
     request.episodeEndTvdbId = plan.episodeSelection.endTvdbId;
-    request.ongoingEpisodeRequestKey =
-      plan.episodeSelection.type === 'after'
-        ? ongoingEpisodeRequestLockKey(plan.media.tmdbId, plan.is4k)
-        : undefined;
+    request.watchAheadCount = plan.episodeSelection.watchAheadCount;
+    request.ongoingEpisodeRequestKey = isRollingEpisodeSelection(
+      plan.episodeSelection.type
+    )
+      ? ongoingEpisodeRequestLockKey(plan.media.tmdbId, plan.is4k)
+      : undefined;
     request.tvQuotaUnits = new Set(
       plan.episodes.map((episode) => episode.seasonNumber)
     ).size;
@@ -370,7 +378,8 @@ export const materializeRequestPlan = (plan: RequestPlan): MediaRequest => {
   ['ongoingEpisodeRequestKey'],
   {
     unique: true,
-    where: '"episodeSelectionType" = \'after\' AND "status" NOT IN (3, 5)',
+    where:
+      '"episodeSelectionType" IN (\'after\', \'watchAhead\') AND "status" NOT IN (3, 5)',
   }
 )
 export class MediaRequest {
@@ -487,6 +496,7 @@ export class MediaRequest {
     const isAutoRequest = options.isAutoRequest ?? false;
     const mediaIsAnime = isAnimeMedia(tmdbMedia);
     let resolvedEpisodeSelection: ResolvedEpisodeSelection | undefined;
+    let pendingEpisodeSelection: EpisodeSelection | undefined;
 
     if (requestBody.episodeSelection !== undefined) {
       if (
@@ -505,12 +515,16 @@ export class MediaRequest {
       }
 
       try {
-        const selection = parseEpisodeSelection(requestBody.episodeSelection);
-        resolvedEpisodeSelection = await getResolvedTvdbEpisodeSelection({
-          tvId: requestBody.mediaId,
-          selection,
-          allowSpecials: settings.main.enableSpecialEpisodes,
-        });
+        pendingEpisodeSelection = parseEpisodeSelection(
+          requestBody.episodeSelection
+        );
+        if (pendingEpisodeSelection.type !== 'watchAhead') {
+          resolvedEpisodeSelection = await getResolvedTvdbEpisodeSelection({
+            tvId: requestBody.mediaId,
+            selection: pendingEpisodeSelection,
+            allowSpecials: settings.main.enableSpecialEpisodes,
+          });
+        }
       } catch (error) {
         throw new InvalidEpisodeSelectionError(
           error instanceof Error ? error.message : 'Invalid episode selection.'
@@ -559,6 +573,24 @@ export class MediaRequest {
         requestBody.is4k
       ) {
         media.status4k = MediaStatus.PENDING;
+      }
+    }
+
+    if (pendingEpisodeSelection?.type === 'watchAhead') {
+      try {
+        resolvedEpisodeSelection = await getResolvedTvdbEpisodeSelection({
+          tvId: requestBody.mediaId,
+          selection: pendingEpisodeSelection,
+          allowSpecials: settings.main.enableSpecialEpisodes,
+          userId: requestUser.id,
+          jellyfinSeriesId: requestBody.is4k
+            ? media.jellyfinMediaId4k
+            : media.jellyfinMediaId,
+        });
+      } catch (error) {
+        throw new InvalidEpisodeSelectionError(
+          error instanceof Error ? error.message : 'Invalid episode selection.'
+        );
       }
     }
 
@@ -803,7 +835,7 @@ export class MediaRequest {
           return await MediaRequest.persistPlan(plan);
         } catch (error) {
           if (
-            episodeSelection.type === 'after' &&
+            isRollingEpisodeSelection(episodeSelection.type) &&
             isOngoingEpisodeRequestConflict(error)
           ) {
             throw new DuplicateMediaRequestError(
@@ -814,7 +846,7 @@ export class MediaRequest {
         }
       };
 
-      if (resolvedEpisodeSelection.type === 'after') {
+      if (isRollingEpisodeSelection(resolvedEpisodeSelection.type)) {
         return withOngoingEpisodeRequestLock(
           tmdbMedia.id,
           requestBody.is4k ?? false,
@@ -899,13 +931,16 @@ export class MediaRequest {
   public episodes: EpisodeRequest[];
 
   @Column({ type: 'varchar', nullable: true })
-  public episodeSelectionType?: 'single' | 'range' | 'after';
+  public episodeSelectionType?: 'single' | 'range' | 'after' | 'watchAhead';
 
   @Column({ nullable: true })
   public episodeStartTvdbId?: number;
 
   @Column({ nullable: true })
   public episodeEndTvdbId?: number;
+
+  @Column({ nullable: true })
+  public watchAheadCount?: number;
 
   /**
    * Logical series/quality key protected by the active-ongoing partial index.
@@ -1174,12 +1209,14 @@ export class MediaRequest {
                   value:
                     entity.episodeSelectionType === 'after'
                       ? `S${String(entity.episodes[0].seasonNumber).padStart(2, '0')}E${String(entity.episodes[0].episodeNumber).padStart(2, '0')} onward`
-                      : entity.episodes
-                          .map(
-                            (episode) =>
-                              `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`
-                          )
-                          .join(', '),
+                      : entity.episodeSelectionType === 'watchAhead'
+                        ? `Keep ${entity.watchAheadCount ?? 10} ahead`
+                        : entity.episodes
+                            .map(
+                              (episode) =>
+                                `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`
+                            )
+                            .join(', '),
                 }
               : {
                   name: 'Requested Seasons',

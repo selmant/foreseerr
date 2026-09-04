@@ -93,4 +93,50 @@ describe('ongoing episode request constraint', () => {
       )
     );
   });
+
+  it('does not allow watch-ahead and after to share an active series/quality', async () => {
+    sendNotificationMock.resetCalls();
+    const user = await getRepository(User).findOneByOrFail({
+      email: 'admin@seerr.dev',
+    });
+    const media = await getRepository(Media).save(
+      new Media({
+        tmdbId: 987655,
+        mediaType: MediaType.TV,
+        status: MediaStatus.UNKNOWN,
+        status4k: MediaStatus.UNKNOWN,
+      })
+    );
+    const requestRepository = getRepository(MediaRequest);
+    await requestRepository.save(
+      new MediaRequest({
+        type: MediaType.TV,
+        media,
+        requestedBy: user,
+        status: MediaRequestStatus.APPROVED,
+        is4k: false,
+        seasons: [],
+        episodes: [],
+        episodeSelectionType: 'after',
+        ongoingEpisodeRequestKey: '987655:sd',
+      })
+    );
+
+    await assert.rejects(
+      requestRepository.save(
+        new MediaRequest({
+          type: MediaType.TV,
+          media,
+          requestedBy: user,
+          status: MediaRequestStatus.PENDING,
+          is4k: false,
+          seasons: [],
+          episodes: [],
+          episodeSelectionType: 'watchAhead',
+          watchAheadCount: 10,
+          ongoingEpisodeRequestKey: '987655:sd',
+        })
+      )
+    );
+  });
 });

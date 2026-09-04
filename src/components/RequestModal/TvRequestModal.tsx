@@ -57,12 +57,20 @@ const messages = defineMessages('components.RequestModal', {
   pendingapproval: 'Your request is pending approval.',
   seasonsTab: 'Seasons',
   episodesTab: 'Episodes',
+  watchAheadTab: 'Watch ahead',
   requestepisodes:
     'Request {episodeCount} {episodeCount, plural, one {Episode} other {Episodes}}',
   requestepisodes4k:
     'Request {episodeCount} {episodeCount, plural, one {Episode} other {Episodes}} in 4K',
   requestongoing: 'Request This & Future Episodes',
   requestongoing4k: 'Request This & Future Episodes in 4K',
+  requestwatchahead: 'Keep {count} Episodes Ahead',
+  requestwatchahead4k: 'Keep {count} Episodes Ahead in 4K',
+  watchAheadHint:
+    'As you watch in Jellyfin, Foreseerr requests the next unwatched episodes so you do not have to pick ranges.',
+  watchAheadCountLabel: 'Keep this many unwatched episodes requested',
+  watchAheadNotLinked:
+    'Jellyfin is not linked, so this starts from the first episodes until watch progress is available.',
 });
 
 interface RequestModalProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -73,7 +81,7 @@ interface RequestModalProps extends React.HTMLAttributes<HTMLDivElement> {
   is4k?: boolean;
   /** When `all`, pre-check every requestable season once details load. */
   initialSeasonSelection?: 'none' | 'all';
-  initialRequestScope?: 'seasons' | 'episodes';
+  initialRequestScope?: 'seasons' | 'episodes' | 'watchAhead';
   initialEpisodeSelection?: EpisodeSelection;
   editRequest?: NonFunctionProperties<MediaRequest>;
 }
@@ -100,11 +108,26 @@ const TvRequestModal = ({
   const [selectedSeasons, setSelectedSeasons] = useState<number[]>(
     editRequest ? editingSeasons : []
   );
-  const [requestScope, setRequestScope] = useState<'seasons' | 'episodes'>(
-    editRequest?.episodeSelectionType ? 'episodes' : initialRequestScope
+  const [requestScope, setRequestScope] = useState<
+    'seasons' | 'episodes' | 'watchAhead'
+  >(
+    editRequest?.episodeSelectionType === 'watchAhead'
+      ? 'watchAhead'
+      : editRequest?.episodeSelectionType
+        ? 'episodes'
+        : initialRequestScope
   );
   const editEpisodeSelection = useMemo<EpisodeSelection | undefined>(() => {
-    if (!editRequest?.episodeSelectionType || !editRequest.episodeStartTvdbId) {
+    if (!editRequest?.episodeSelectionType) {
+      return undefined;
+    }
+    if (editRequest.episodeSelectionType === 'watchAhead') {
+      return {
+        type: 'watchAhead',
+        count: editRequest.watchAheadCount ?? 10,
+      };
+    }
+    if (!editRequest.episodeStartTvdbId) {
       return undefined;
     }
     if (editRequest.episodeSelectionType === 'single') {
@@ -164,6 +187,9 @@ const TvRequestModal = ({
     useState(false);
   const intl = useIntl();
   const { user, hasPermission } = useUser();
+  const [watchAheadCount, setWatchAheadCount] = useState(
+    editRequest?.watchAheadCount ?? 10
+  );
   const [searchModal, setSearchModal] = useState<{
     show: boolean;
   }>({
@@ -178,14 +204,42 @@ const TvRequestModal = ({
   );
 
   useEffect(() => {
-    if (data && !data.episodeRequestsEnabled && requestScope === 'episodes') {
+    if (
+      data &&
+      !data.episodeRequestsEnabled &&
+      (requestScope === 'episodes' || requestScope === 'watchAhead')
+    ) {
       setRequestScope('seasons');
       setEpisodeSelection(undefined);
     }
   }, [data, requestScope]);
 
+  useEffect(() => {
+    if (editRequest?.watchAheadCount != null) {
+      return;
+    }
+    const fromSettings = user?.settings?.watchAheadEpisodeCount;
+    if (fromSettings != null) {
+      setWatchAheadCount(fromSettings);
+    }
+  }, [editRequest?.watchAheadCount, user?.settings?.watchAheadEpisodeCount]);
+
+  useEffect(() => {
+    if (requestScope !== 'watchAhead') {
+      return;
+    }
+    const count = Math.min(50, Math.max(1, Math.round(watchAheadCount) || 10));
+    setEpisodeSelection({ type: 'watchAhead', count });
+    setEpisodeCount(count);
+    setEpisodeSeasonCount(0);
+  }, [requestScope, watchAheadCount]);
+
   const selectionQuotaUnits =
-    requestScope === 'episodes' ? episodeSeasonCount : selectedSeasons.length;
+    requestScope === 'episodes'
+      ? episodeSeasonCount
+      : requestScope === 'watchAhead'
+        ? 0
+        : selectedSeasons.length;
   const currentlyRemaining =
     (quota?.tv.remaining ?? 0) -
     selectionQuotaUnits +
@@ -216,7 +270,7 @@ const TvRequestModal = ({
 
     try {
       if (
-        (requestScope === 'episodes' && episodeSelection) ||
+        (requestScope !== 'seasons' && episodeSelection) ||
         (requestScope === 'seasons' && selectedSeasons.length > 0)
       ) {
         await axios.put(`/api/v1/request/${editRequest.id}`, {
@@ -227,9 +281,9 @@ const TvRequestModal = ({
           languageProfileId: requestOverrides?.language,
           userId: requestOverrides?.user?.id,
           tags: requestOverrides?.tags,
-          ...(requestScope === 'episodes'
-            ? { episodeSelection }
-            : { seasons: selectedSeasons.sort((a, b) => a - b) }),
+          ...(requestScope === 'seasons'
+            ? { seasons: selectedSeasons.sort((a, b) => a - b) }
+            : { episodeSelection }),
         });
 
         if (alsoApproveRequest) {
@@ -244,7 +298,7 @@ const TvRequestModal = ({
       addToast(
         <span>
           {(
-            requestScope === 'episodes'
+            requestScope !== 'seasons'
               ? !!episodeSelection
               : selectedSeasons.length > 0
           )
@@ -283,7 +337,7 @@ const TvRequestModal = ({
   };
 
   const sendRequest = async () => {
-    if (requestScope === 'episodes' && !episodeSelection) {
+    if (requestScope !== 'seasons' && !episodeSelection) {
       return;
     }
     if (
@@ -317,7 +371,7 @@ const TvRequestModal = ({
         mediaType: 'tv',
         is4k,
         ignoreQuota: requestOverrides?.ignoreQuota,
-        ...(requestScope === 'episodes'
+        ...(requestScope !== 'seasons'
           ? { episodeSelection }
           : {
               seasons: settings.currentSettings.partialRequestsEnabled
@@ -531,9 +585,11 @@ const TvRequestModal = ({
 
   const isOwner = editRequest && editRequest.requestedBy.id === user?.id;
   const hasSelection =
-    requestScope === 'episodes'
-      ? !!episodeSelection
-      : selectedSeasons.length > 0;
+    requestScope === 'watchAhead'
+      ? watchAheadCount >= 1 && watchAheadCount <= 50
+      : requestScope === 'episodes'
+        ? !!episodeSelection
+        : selectedSeasons.length > 0;
   const allSeasonsRequested =
     getAllRequestedSeasons().length >= getAllSeasons().length;
 
@@ -579,52 +635,61 @@ const TvRequestModal = ({
             : hasPermission(Permission.MANAGE_REQUESTS)
               ? intl.formatMessage(messages.approve)
               : intl.formatMessage(messages.edit)
-          : requestScope === 'episodes'
-            ? !episodeSelection
-              ? intl.formatMessage(messages.selectseason)
-              : episodeSelection.type === 'after'
-                ? intl.formatMessage(
-                    is4k ? messages.requestongoing4k : messages.requestongoing
-                  )
-                : intl.formatMessage(
-                    is4k
-                      ? messages.requestepisodes4k
-                      : messages.requestepisodes,
-                    { episodeCount }
-                  )
-            : allSeasonsRequested
-              ? intl.formatMessage(messages.alreadyrequested)
-              : !settings.currentSettings.partialRequestsEnabled
-                ? intl.formatMessage(
-                    is4k ? globalMessages.request4k : globalMessages.request
-                  )
-                : selectedSeasons.length === 0
-                  ? intl.formatMessage(messages.selectseason)
+          : requestScope === 'watchAhead'
+            ? intl.formatMessage(
+                is4k
+                  ? messages.requestwatchahead4k
+                  : messages.requestwatchahead,
+                { count: watchAheadCount }
+              )
+            : requestScope === 'episodes'
+              ? !episodeSelection
+                ? intl.formatMessage(messages.selectseason)
+                : episodeSelection.type === 'after'
+                  ? intl.formatMessage(
+                      is4k ? messages.requestongoing4k : messages.requestongoing
+                    )
                   : intl.formatMessage(
                       is4k
-                        ? messages.requestseasons4k
-                        : messages.requestseasons,
-                      {
-                        seasonCount: selectedSeasons.length,
-                      }
+                        ? messages.requestepisodes4k
+                        : messages.requestepisodes,
+                      { episodeCount }
                     )
+              : allSeasonsRequested
+                ? intl.formatMessage(messages.alreadyrequested)
+                : !settings.currentSettings.partialRequestsEnabled
+                  ? intl.formatMessage(
+                      is4k ? globalMessages.request4k : globalMessages.request
+                    )
+                  : selectedSeasons.length === 0
+                    ? intl.formatMessage(messages.selectseason)
+                    : intl.formatMessage(
+                        is4k
+                          ? messages.requestseasons4k
+                          : messages.requestseasons,
+                        {
+                          seasonCount: selectedSeasons.length,
+                        }
+                      )
       }
       okDisabled={
         editRequest
           ? false
-          : requestScope === 'episodes'
-            ? !episodeSelection ||
-              (!!quota?.tv.limit &&
-                episodeSeasonCount > (quota.tv.remaining ?? 0) &&
-                !requestOverrides?.ignoreQuota)
-            : !settings.currentSettings.partialRequestsEnabled &&
-                quota?.tv.limit &&
-                unrequestedSeasons.length > quota.tv.limit &&
-                !requestOverrides?.ignoreQuota
-              ? true
-              : allSeasonsRequested ||
-                (settings.currentSettings.partialRequestsEnabled &&
-                  selectedSeasons.length === 0)
+          : requestScope === 'watchAhead'
+            ? watchAheadCount < 1 || watchAheadCount > 50
+            : requestScope === 'episodes'
+              ? !episodeSelection ||
+                (!!quota?.tv.limit &&
+                  episodeSeasonCount > (quota.tv.remaining ?? 0) &&
+                  !requestOverrides?.ignoreQuota)
+              : !settings.currentSettings.partialRequestsEnabled &&
+                  quota?.tv.limit &&
+                  unrequestedSeasons.length > quota.tv.limit &&
+                  !requestOverrides?.ignoreQuota
+                ? true
+                : allSeasonsRequested ||
+                  (settings.currentSettings.partialRequestsEnabled &&
+                    selectedSeasons.length === 0)
       }
       okButtonType={
         editRequest
@@ -652,10 +717,13 @@ const TvRequestModal = ({
             })
         : null}
       {data?.episodeRequestsEnabled && !editRequest && (
-        <div className="mt-5 grid grid-cols-2 rounded-lg border border-gray-700 bg-gray-950/40 p-1">
+        <div className="mt-5 grid grid-cols-3 rounded-lg border border-gray-700 bg-gray-950/40 p-1">
           <button
             type="button"
-            onClick={() => setRequestScope('seasons')}
+            onClick={() => {
+              setRequestScope('seasons');
+              setEpisodeSelection(undefined);
+            }}
             className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
               requestScope === 'seasons'
                 ? 'bg-gray-700 text-white shadow'
@@ -674,6 +742,17 @@ const TvRequestModal = ({
             }`}
           >
             {intl.formatMessage(messages.episodesTab)}
+          </button>
+          <button
+            type="button"
+            onClick={() => setRequestScope('watchAhead')}
+            className={`rounded-md px-2 py-2 text-sm font-semibold transition ${
+              requestScope === 'watchAhead'
+                ? 'bg-indigo-500 text-white shadow'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            {intl.formatMessage(messages.watchAheadTab)}
           </button>
         </div>
       )}
@@ -942,6 +1021,35 @@ const TvRequestModal = ({
               </div>
             </div>
           </div>
+        </div>
+      ) : requestScope === 'watchAhead' ? (
+        <div className="mt-4 rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+          <p className="text-sm text-gray-300">
+            {intl.formatMessage(messages.watchAheadHint)}
+          </p>
+          {!user?.jellyfinUsername && (
+            <p className="mt-2 text-sm text-yellow-500">
+              {intl.formatMessage(messages.watchAheadNotLinked)}
+            </p>
+          )}
+          <label
+            htmlFor="watchAheadCount"
+            className="mt-4 block text-sm font-medium text-gray-200"
+          >
+            {intl.formatMessage(messages.watchAheadCountLabel)}
+          </label>
+          <input
+            id="watchAheadCount"
+            type="number"
+            min={1}
+            max={50}
+            value={watchAheadCount}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              setWatchAheadCount(Number.isFinite(next) ? next : 10);
+            }}
+            className="mt-2 w-24 rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
         </div>
       ) : (
         <EpisodeSelector

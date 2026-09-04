@@ -162,6 +162,58 @@ describe('MediaRequest request plans', () => {
     );
   });
 
+  it('rejects watch-ahead when an after request is already active', () => {
+    const media = new Media({ tmdbId: 4041, mediaType: MediaType.TV });
+    const ongoing = new MediaRequest({
+      status: MediaRequestStatus.APPROVED,
+      is4k: false,
+      episodeSelectionType: 'after',
+      seasons: [],
+      episodes: [],
+    });
+
+    assert.throws(
+      () =>
+        buildEpisodeRequestPlan({
+          input: inputFor(media),
+          selection: {
+            type: 'watchAhead',
+            startTvdbId: 101,
+            watchAheadCount: 10,
+            episodes: [
+              { tvdbId: 101, seasonNumber: 1, episodeNumber: 1, title: 'One' },
+            ],
+            quotaUnits: 1,
+          },
+          activeRequests: [ongoing],
+          quotas,
+        }),
+      DuplicateMediaRequestError
+    );
+  });
+
+  it('allows an empty watch-ahead window when the current buffer is already covered', () => {
+    const media = new Media({ tmdbId: 4042, mediaType: MediaType.TV });
+    const plan = buildEpisodeRequestPlan({
+      input: inputFor(media),
+      selection: {
+        type: 'watchAhead',
+        startTvdbId: 101,
+        watchAheadCount: 10,
+        episodes: [],
+        quotaUnits: 0,
+      },
+      activeRequests: [],
+      quotas,
+    });
+    const request = materializeRequestPlan(plan);
+
+    assert.equal(request.episodeSelectionType, 'watchAhead');
+    assert.equal(request.watchAheadCount, 10);
+    assert.equal(request.ongoingEpisodeRequestKey, '4042:sd');
+    assert.equal(request.episodes.length, 0);
+  });
+
   it('materializes an ongoing plan with the constrained key and child statuses', () => {
     const media = new Media({ tmdbId: 5050, mediaType: MediaType.TV });
     const plan = buildEpisodeRequestPlan({

@@ -29,6 +29,7 @@ import type {
 import {
   episodeRequestsAvailable,
   getResolvedTvdbEpisodeSelection,
+  isRollingEpisodeSelection,
   ongoingEpisodeRequestLockKey,
   parseEpisodeSelection,
 } from '@server/lib/episodeRequests';
@@ -576,6 +577,10 @@ requestRoutes.put<{ requestId: string }>(
               tvId: request.media.tmdbId,
               selection,
               allowSpecials: getSettings().main.enableSpecialEpisodes,
+              userId: requestUser.id,
+              jellyfinSeriesId: request.is4k
+                ? request.media.jellyfinMediaId4k
+                : request.media.jellyfinMediaId,
             });
           } catch (error) {
             return next({
@@ -611,11 +616,13 @@ requestRoutes.put<{ requestId: string }>(
           request.episodeSelectionType = resolved.type;
           request.episodeStartTvdbId = resolved.startTvdbId;
           request.episodeEndTvdbId = resolved.endTvdbId;
+          request.watchAheadCount = resolved.watchAheadCount;
           request.tvQuotaUnits = resolved.quotaUnits;
-          request.ongoingEpisodeRequestKey =
-            resolved.type === 'after'
-              ? ongoingEpisodeRequestLockKey(request.media.tmdbId, request.is4k)
-              : undefined;
+          request.ongoingEpisodeRequestKey = isRollingEpisodeSelection(
+            resolved.type
+          )
+            ? ongoingEpisodeRequestLockKey(request.media.tmdbId, request.is4k)
+            : undefined;
           try {
             await dataSource.transaction(async (manager) => {
               await manager.getRepository(EpisodeRequest).delete({

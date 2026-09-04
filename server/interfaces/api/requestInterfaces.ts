@@ -9,7 +9,8 @@ export type EpisodeSelection =
       startEpisodeTvdbId: number;
       endEpisodeTvdbId: number;
     }
-  | { type: 'after'; startEpisodeTvdbId: number };
+  | { type: 'after'; startEpisodeTvdbId: number }
+  | { type: 'watchAhead'; count: number };
 
 export interface RequestResultsResponse extends PaginatedResponse {
   results: (NonFunctionProperties<MediaRequest> & {

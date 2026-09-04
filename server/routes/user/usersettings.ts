@@ -63,6 +63,10 @@ import {
   traktDeviceCodeCreationLimiter,
   traktDevicePollLimiter,
 } from '@server/lib/trakt/deviceAuthThrottle';
+import {
+  optionalWatchAheadEpisodeCount,
+  watchAheadEpisodeCount,
+} from '@server/lib/watchAhead';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { quickConnectSecret } from '@server/routes/auth';
@@ -246,6 +250,9 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
         autoCompleteSkippedEpisodeThreshold: skippedEpisodeProgressThreshold(
           user.settings?.autoCompleteSkippedEpisodeThreshold
         ),
+        watchAheadEpisodeCount: watchAheadEpisodeCount(
+          user.settings?.watchAheadEpisodeCount
+        ),
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -306,6 +313,9 @@ userSettingsRoutes.post<
     const skippedEpisodeThreshold = optionalSkippedEpisodeProgressThreshold(
       req.body.autoCompleteSkippedEpisodeThreshold
     );
+    const watchAheadCount = optionalWatchAheadEpisodeCount(
+      req.body.watchAheadEpisodeCount
+    );
 
     if (!user.settings) {
       user.settings = new UserSettings({
@@ -325,6 +335,9 @@ userSettingsRoutes.post<
         ...(skippedEpisodeThreshold !== undefined
           ? { autoCompleteSkippedEpisodeThreshold: skippedEpisodeThreshold }
           : {}),
+        ...(watchAheadCount !== undefined
+          ? { watchAheadEpisodeCount: watchAheadCount }
+          : {}),
       });
     } else {
       user.settings.locale = req.body.locale;
@@ -340,6 +353,9 @@ userSettingsRoutes.post<
       if (skippedEpisodeThreshold !== undefined) {
         user.settings.autoCompleteSkippedEpisodeThreshold =
           skippedEpisodeThreshold;
+      }
+      if (watchAheadCount !== undefined) {
+        user.settings.watchAheadEpisodeCount = watchAheadCount;
       }
     }
 
@@ -357,6 +373,9 @@ userSettingsRoutes.post<
         savedUser.settings?.autoCompleteSkippedEpisodeEndings,
       autoCompleteSkippedEpisodeThreshold: skippedEpisodeProgressThreshold(
         savedUser.settings?.autoCompleteSkippedEpisodeThreshold
+      ),
+      watchAheadEpisodeCount: watchAheadEpisodeCount(
+        savedUser.settings?.watchAheadEpisodeCount
       ),
       email: savedUser.email,
     });

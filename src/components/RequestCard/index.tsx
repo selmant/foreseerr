@@ -435,21 +435,24 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
               </div>
             </div>
           )}
-          {!isMovie(title) && (request.episodes?.length ?? 0) > 0 && (
-            <div className="card-field">
-              <span className="card-field-name">
-                {intl.formatMessage(messages.episodes, {
-                  episodeCount: request.episodes.length,
-                })}
-              </span>
-              <Badge>
-                {episodeRequestSummary({
-                  episodes: request.episodes,
-                  type: request.episodeSelectionType,
-                })}
-              </Badge>
-            </div>
-          )}
+          {!isMovie(title) &&
+            ((request.episodes?.length ?? 0) > 0 ||
+              request.episodeSelectionType === 'watchAhead') && (
+              <div className="card-field">
+                <span className="card-field-name">
+                  {intl.formatMessage(messages.episodes, {
+                    episodeCount: request.episodes?.length ?? 0,
+                  })}
+                </span>
+                <Badge>
+                  {episodeRequestSummary({
+                    episodes: request.episodes,
+                    type: request.episodeSelectionType,
+                    watchAheadCount: request.watchAheadCount,
+                  })}
+                </Badge>
+              </div>
+            )}
           <div className="mt-2 flex items-center text-sm sm:mt-1">
             <span className="mr-2 hidden font-bold sm:block">
               {intl.formatMessage(globalMessages.status)}

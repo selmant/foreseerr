@@ -94,6 +94,9 @@ export class UserSettings {
   @Column({ type: 'integer', nullable: true })
   public autoCompleteSkippedEpisodeThreshold?: number;
 
+  @Column({ type: 'integer', nullable: true })
+  public watchAheadEpisodeCount?: number;
+
   @DbAwareColumn({ type: 'datetime', nullable: true })
   public servarrInterventionsSeenAt?: Date | null;
 

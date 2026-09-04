@@ -79,4 +79,6 @@ This setting is **disabled** by default.
 
 When enabled, users will be able to submit requests for specific seasons of TV series. If disabled, users will only be able to submit requests for all unavailable seasons.
 
+Episode picks and **Watch ahead** also require this setting plus the TVDB metadata provider. Watch ahead is enrolled from the TV request modal.
+
 This setting is **enabled** by default.

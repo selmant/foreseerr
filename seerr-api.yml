@@ -544,6 +544,13 @@ components:
           maximum: 100
           description: 'Minimum leftover progress percent required before a skipped episode is auto-completed. Defaults to 50 when unset.'
           example: 50
+        watchAheadEpisodeCount:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 50
+          description: 'Default number of unwatched episodes to keep requested when using Watch ahead. Defaults to 10 when unset.'
+          example: 10
     DiscoverFilterDefaults:
       type: object
       description: >
@@ -2177,7 +2184,7 @@ components:
             $ref: '#/components/schemas/EpisodeRequest'
         episodeSelectionType:
           type: string
-          enum: [single, range, after]
+          enum: [single, range, after, watchAhead]
           nullable: true
         episodeStartTvdbId:
           type: number
@@ -2185,6 +2192,11 @@ components:
         episodeEndTvdbId:
           type: number
           nullable: true
+        watchAheadCount:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 50
         tvQuotaUnits:
           type: number
           readOnly: true
@@ -9591,6 +9603,17 @@ paths:
                         startEpisodeTvdbId:
                           type: integer
                           minimum: 1
+                    - type: object
+                      additionalProperties: false
+                      required: [type, count]
+                      properties:
+                        type:
+                          type: string
+                          enum: [watchAhead]
+                        count:
+                          type: integer
+                          minimum: 1
+                          maximum: 50
                 is4k:
                   type: boolean
                   example: false
@@ -9701,6 +9724,52 @@ paths:
                   items:
                     type: number
                     minimum: 0
+                episodeSelection:
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [type, episodeTvdbId]
+                      properties:
+                        type:
+                          type: string
+                          enum: [single]
+                        episodeTvdbId:
+                          type: integer
+                          minimum: 1
+                    - type: object
+                      additionalProperties: false
+                      required: [type, startEpisodeTvdbId, endEpisodeTvdbId]
+                      properties:
+                        type:
+                          type: string
+                          enum: [range]
+                        startEpisodeTvdbId:
+                          type: integer
+                          minimum: 1
+                        endEpisodeTvdbId:
+                          type: integer
+                          minimum: 1
+                    - type: object
+                      additionalProperties: false
+                      required: [type, startEpisodeTvdbId]
+                      properties:
+                        type:
+                          type: string
+                          enum: [after]
+                        startEpisodeTvdbId:
+                          type: integer
+                          minimum: 1
+                    - type: object
+                      additionalProperties: false
+                      required: [type, count]
+                      properties:
+                        type:
+                          type: string
+                          enum: [watchAhead]
+                        count:
+                          type: integer
+                          minimum: 1
+                          maximum: 50
                 is4k:
                   type: boolean
                   example: false

@@ -5,6 +5,7 @@ import SonarrAPI, {
   type EpisodeResult,
   type SonarrSeries,
 } from '@server/api/servarr/sonarr';
+import Tvdb from '@server/api/tvdb';
 import {
   MediaRequestStatus,
   MediaStatus,
@@ -16,6 +17,7 @@ import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
 import { getSettings } from '@server/lib/settings';
+import * as watchAhead from '@server/lib/watchAhead';
 import { setupTestDb } from '@server/test/db';
 import episodeRequestSync from './episodeRequestSync';
 
@@ -247,5 +249,115 @@ describe('episode request synchronization', () => {
       getSeriesById.mock.calls.map((call) => call.arguments[0]),
       [99]
     );
+  });
+
+  it('slides a watch-ahead buffer from watch progress without exceeding N', async (t: TestContext) => {
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    const media = await getRepository(Media).save(
+      new Media({
+        tmdbId: 9003,
+        tvdbId: 8003,
+        mediaType: MediaType.TV,
+        status: MediaStatus.PROCESSING,
+        status4k: MediaStatus.UNKNOWN,
+        serviceId: 0,
+        externalServiceId: 55,
+        jellyfinMediaId: 'series-1',
+      })
+    );
+    const created = await getRepository(MediaRequest).save(
+      new MediaRequest({
+        media,
+        requestedBy: user,
+        type: MediaType.TV,
+        status: MediaRequestStatus.APPROVED,
+        is4k: false,
+        seasons: [],
+        episodeSelectionType: 'watchAhead',
+        watchAheadCount: 2,
+        tvQuotaUnits: 1,
+        episodes: [
+          new EpisodeRequest({
+            tvdbId: 102,
+            seasonNumber: 1,
+            episodeNumber: 2,
+            status: MediaRequestStatus.APPROVED,
+          }),
+        ],
+      })
+    );
+
+    getSettings().sonarr = [
+      {
+        id: 0,
+        name: 'Test Sonarr',
+        hostname: '127.0.0.1',
+        port: 8989,
+        apiKey: 'test',
+        useSsl: false,
+        activeProfileId: 1,
+        activeProfileName: 'Any',
+        activeDirectory: '/tv',
+        tags: [],
+        is4k: false,
+        isDefault: true,
+        syncEnabled: true,
+        preventSearch: false,
+        tagRequests: false,
+        overrideRule: [],
+        enableSeasonFolders: true,
+        monitorNewItems: 'all',
+        seriesType: 'standard',
+        animeSeriesType: 'anime',
+      },
+    ];
+
+    t.mock.method(Tvdb, 'getInstance', async () => ({
+      getEpisodeCatalog: async () => ({
+        tvdbSeriesId: 8003,
+        episodes: [
+          { tvdbId: 101, seasonNumber: 1, episodeNumber: 1, title: 'One' },
+          { tvdbId: 102, seasonNumber: 1, episodeNumber: 2, title: 'Two' },
+          { tvdbId: 103, seasonNumber: 1, episodeNumber: 3, title: 'Three' },
+          { tvdbId: 104, seasonNumber: 1, episodeNumber: 4, title: 'Four' },
+        ],
+      }),
+    }));
+    t.mock.method(
+      watchAhead,
+      'loadPlayedTvdbIdsForSeries',
+      async () => new Set([101])
+    );
+    t.mock.method(
+      SonarrAPI.prototype,
+      'getSeriesById',
+      async () => ({ id: 55, status: 'continuing' }) as SonarrSeries
+    );
+    t.mock.method(SonarrAPI.prototype, 'getEpisodes', async () => [
+      { ...sonarrEpisode(1, 101, 1, true), monitored: true },
+      sonarrEpisode(2, 102, 2, false),
+      sonarrEpisode(3, 103, 3, false),
+      sonarrEpisode(4, 104, 4, false),
+    ]);
+    const monitor = t.mock.method(
+      SonarrAPI.prototype,
+      'monitorEpisodes',
+      async () => undefined
+    );
+    t.mock.method(SonarrAPI.prototype, 'searchEpisodes', async () => undefined);
+
+    await episodeRequestSync.run();
+    const updated = await getRepository(MediaRequest).findOneByOrFail({
+      id: created.id,
+    });
+    assert.equal(updated.status, MediaRequestStatus.APPROVED);
+    assert.deepEqual(
+      updated.episodes.map((episode) => episode.tvdbId).sort((a, b) => a - b),
+      [102, 103]
+    );
+    assert.equal(updated.tvQuotaUnits, 1);
+    assert.deepEqual(monitor.mock.calls[0].arguments[0], [2, 3]);
   });
 });

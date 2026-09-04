@@ -15,9 +15,11 @@ import { MediaRequest } from '@server/entity/MediaRequest';
 import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import { isAnimeMedia } from '@server/lib/anime/detect';
+import { isRollingEpisodeSelection } from '@server/lib/episodeRequests';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { getSettings } from '@server/lib/settings';
 import {
+  hasEpisodeSelection,
   resolveSonarrSeasons,
   resolveSonarrSeriesRouting,
   shouldShortCircuitAvailableTvRequest,
@@ -195,12 +197,14 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
                 value:
                   entity.episodeSelectionType === 'after'
                     ? `S${String(entity.episodes[0].seasonNumber).padStart(2, '0')}E${String(entity.episodes[0].episodeNumber).padStart(2, '0')} onward`
-                    : entity.episodes
-                        .map(
-                          (episode) =>
-                            `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`
-                        )
-                        .join(', '),
+                    : entity.episodeSelectionType === 'watchAhead'
+                      ? `Keep ${entity.watchAheadCount ?? 10} ahead`
+                      : entity.episodes
+                          .map(
+                            (episode) =>
+                              `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`
+                          )
+                          .join(', '),
               }
             : {
                 name: 'Requested Seasons',
@@ -737,20 +741,20 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           rootFolderPath: rootFolder,
           title: series.name,
           tvdbid: tvdbId,
-          seasons: entity.episodes?.length
+          seasons: hasEpisodeSelection(entity)
             ? []
             : await resolveSonarrSeasons(
                 media.tmdbId,
                 entity.seasons.map((season) => season.seasonNumber)
               ),
-          episodeTvdbIds: entity.episodes?.length
+          episodeTvdbIds: hasEpisodeSelection(entity)
             ? entity.episodes.map((episode) => episode.tvdbId)
             : undefined,
           seasonFolder: sonarrSettings.enableSeasonFolders,
           seriesType,
           tags,
           monitored: true,
-          monitorNewItems: entity.episodes?.length
+          monitorNewItems: hasEpisodeSelection(entity)
             ? 'none'
             : sonarrSettings.monitorNewItems,
           searchNow: !sonarrSettings.preventSearch,
@@ -810,8 +814,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
                 (episode) => episode.status === MediaRequestStatus.COMPLETED
               );
               const mayComplete =
-                entity.episodeSelectionType !== 'after' ||
-                sonarrSeries.status.toLowerCase() === 'ended';
+                !isRollingEpisodeSelection(entity.episodeSelectionType) ||
+                (entity.episodeSelectionType === 'after' &&
+                  sonarrSeries.status.toLowerCase() === 'ended');
               if (allComplete && mayComplete) {
                 entity.status = MediaRequestStatus.COMPLETED;
                 await requestRepository.save(entity);

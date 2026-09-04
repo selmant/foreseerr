@@ -1,10 +1,17 @@
 import type { EpisodeResult, SonarrSeries } from '@server/api/servarr/sonarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
+import Tvdb from '@server/api/tvdb';
 import { MediaRequestStatus, MediaType } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import EpisodeRequest from '@server/entity/EpisodeRequest';
 import { MediaRequest } from '@server/entity/MediaRequest';
+import { isRollingEpisodeSelection } from '@server/lib/episodeRequests';
 import { getSettings } from '@server/lib/settings';
+import {
+  loadPlayedTvdbIdsForSeries,
+  resolveWatchAheadWindow,
+  watchAheadEpisodeCount,
+} from '@server/lib/watchAhead';
 import logger from '@server/logger';
 import { IsNull, Not } from 'typeorm';
 
@@ -151,6 +158,8 @@ class EpisodeRequestSync {
     );
 
     const additionTvdbIds = new Set<number>();
+    let watchAheadCatalogReady = true;
+    let watchAheadCaughtUp = false;
     if (request.episodeSelectionType === 'after') {
       const boundary = byTvdbId.get(request.episodeStartTvdbId ?? -1);
       if (!boundary) {
@@ -189,6 +198,14 @@ class EpisodeRequestSync {
           additionTvdbIds.add(episode.tvdbId);
         }
       }
+    } else if (request.episodeSelectionType === 'watchAhead') {
+      const result = await this.expandWatchAhead(
+        request,
+        context,
+        additionTvdbIds
+      );
+      watchAheadCatalogReady = result.ready;
+      watchAheadCaughtUp = result.caughtUp;
     }
 
     const unmonitored: number[] = [];
@@ -201,7 +218,12 @@ class EpisodeRequestSync {
         continue;
       }
       const isNewFutureEpisode = additionTvdbIds.has(child.tvdbId);
-      if (isNewFutureEpisode && !episode.monitored) {
+      const keepWatchAheadMonitored =
+        request.episodeSelectionType === 'watchAhead' && !episode.hasFile;
+      if (
+        (isNewFutureEpisode || keepWatchAheadMonitored) &&
+        !episode.monitored
+      ) {
         unmonitored.push(episode.id);
       }
       if (episode.hasFile) {
@@ -212,7 +234,7 @@ class EpisodeRequestSync {
         continue;
       }
       if (
-        (isNewFutureEpisode || episode.monitored) &&
+        (isNewFutureEpisode || episode.monitored || keepWatchAheadMonitored) &&
         !context.preventSearch &&
         !child.searchTriggeredAt &&
         (!episode.airDateUtc || new Date(episode.airDateUtc).getTime() <= now)
@@ -235,12 +257,93 @@ class EpisodeRequestSync {
       (episode) => episode.status === MediaRequestStatus.COMPLETED
     );
     const mayComplete =
-      request.episodeSelectionType !== 'after' ||
-      context.series.status.toLowerCase() === 'ended';
+      !isRollingEpisodeSelection(request.episodeSelectionType) ||
+      (request.episodeSelectionType === 'after' &&
+        context.series.status.toLowerCase() === 'ended') ||
+      (request.episodeSelectionType === 'watchAhead' &&
+        watchAheadCatalogReady &&
+        watchAheadCaughtUp &&
+        context.series.status.toLowerCase() === 'ended');
     if (complete && mayComplete) {
       request.status = MediaRequestStatus.COMPLETED;
       await requestRepository.save(request);
     }
+  }
+
+  private async expandWatchAhead(
+    request: MediaRequest,
+    context: {
+      episodes: EpisodeResult[];
+    },
+    additionTvdbIds: Set<number>
+  ): Promise<{ ready: boolean; caughtUp: boolean }> {
+    const media = request.media;
+    if (!media.tmdbId) {
+      return { ready: false, caughtUp: false };
+    }
+
+    let catalog;
+    try {
+      const tvdb = await Tvdb.getInstance();
+      catalog = await tvdb.getEpisodeCatalog({ tvId: media.tmdbId });
+    } catch (error) {
+      logger.warn('Failed to load TVDB catalog for watch-ahead sync', {
+        label: 'Episode Request Sync',
+        requestId: request.id,
+        tmdbId: media.tmdbId,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      return { ready: false, caughtUp: false };
+    }
+
+    const playedTvdbIds = await loadPlayedTvdbIdsForSeries({
+      userId: request.requestedBy.id,
+      jellyfinSeriesId: request.is4k
+        ? media.jellyfinMediaId4k
+        : media.jellyfinMediaId,
+      catalog,
+    });
+    const window = resolveWatchAheadWindow({
+      catalog,
+      count: watchAheadEpisodeCount(request.watchAheadCount),
+      playedTvdbIds,
+    });
+    const knownIds = new Set(request.episodes.map((episode) => episode.tvdbId));
+    const bySonarrTvdbId = new Map(
+      context.episodes.map((episode) => [episode.tvdbId, episode])
+    );
+    const additions = window.desired.filter((episode) => {
+      if (knownIds.has(episode.tvdbId)) {
+        return false;
+      }
+      return !bySonarrTvdbId.get(episode.tvdbId)?.hasFile;
+    });
+    if (additions.length === 0) {
+      return { ready: true, caughtUp: window.desired.length === 0 };
+    }
+
+    const episodeRepository = getRepository(EpisodeRequest);
+    const saved = await episodeRepository.save(
+      additions.map((episode) => {
+        const sonarrEpisode = bySonarrTvdbId.get(episode.tvdbId);
+        return new EpisodeRequest({
+          request,
+          tvdbId: episode.tvdbId,
+          seasonNumber: episode.seasonNumber,
+          episodeNumber: episode.episodeNumber,
+          title: episode.title,
+          airDate: episode.airDate ?? sonarrEpisode?.airDate,
+          status: sonarrEpisode?.hasFile
+            ? MediaRequestStatus.COMPLETED
+            : MediaRequestStatus.APPROVED,
+        });
+      })
+    );
+    request.episodes.push(...saved);
+    for (const episode of additions) {
+      additionTvdbIds.add(episode.tvdbId);
+    }
+    return { ready: true, caughtUp: false };
   }
 }
 

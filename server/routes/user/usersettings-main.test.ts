@@ -125,6 +125,32 @@ describe('user general settings skipped episode preference', () => {
     assert.equal(omitted.body.autoCompleteSkippedEpisodeThreshold, 80);
   });
 
+  it('round-trips a watch-ahead default and preserves it when omitted', async () => {
+    const agent = await authenticatedAgent('admin@seerr.dev');
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    const initial = await agent.get(`/api/v1/user/${user.id}/settings/main`);
+    assert.equal(initial.status, 200);
+    assert.equal(initial.body.watchAheadEpisodeCount, 10);
+
+    const updated = await agent
+      .post(`/api/v1/user/${user.id}/settings/main`)
+      .send({
+        username: user.username,
+        email: user.email,
+        watchAheadEpisodeCount: 20,
+      });
+    assert.equal(updated.status, 200, JSON.stringify(updated.body));
+    assert.equal(updated.body.watchAheadEpisodeCount, 20);
+
+    const omitted = await agent
+      .post(`/api/v1/user/${user.id}/settings/main`)
+      .send({ username: user.username, email: user.email });
+    assert.equal(omitted.status, 200, JSON.stringify(omitted.body));
+    assert.equal(omitted.body.watchAheadEpisodeCount, 20);
+  });
+
   it('keeps existing profile authorization rules', async () => {
     const friend = await getRepository(User).findOneOrFail({
       where: { email: 'friend@seerr.dev' },

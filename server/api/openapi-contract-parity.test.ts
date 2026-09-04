@@ -108,4 +108,12 @@ describe('OpenAPI contract parity', () => {
       'integer'
     );
   });
+
+  it('documents the watch-ahead preference on general user settings', () => {
+    const count: keyof UserSettingsGeneralResponse = 'watchAheadEpisodeCount';
+    assert.equal(
+      apiDocs.components.schemas.UserSettings.properties?.[count]?.type,
+      'integer'
+    );
+  });
 });

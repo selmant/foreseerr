@@ -9,6 +9,13 @@ import {
   type AnimeDetectionInput,
 } from '@server/lib/anime/detect';
 import { MetadataProviderType, type AllSettings } from '@server/lib/settings';
+import {
+  MAX_WATCH_AHEAD_EPISODE_COUNT,
+  MIN_WATCH_AHEAD_EPISODE_COUNT,
+  loadPlayedTvdbIdsForSeries,
+  resolveWatchAheadWindow,
+  watchAheadEpisodeCount,
+} from '@server/lib/watchAhead';
 import { z } from 'zod';
 
 const episodeId = z.number().int().positive().max(2_147_483_647);
@@ -25,15 +32,30 @@ export const episodeSelectionSchema = z.discriminatedUnion('type', [
   z
     .object({ type: z.literal('after'), startEpisodeTvdbId: episodeId })
     .strict(),
+  z
+    .object({
+      type: z.literal('watchAhead'),
+      count: z
+        .number()
+        .int()
+        .min(MIN_WATCH_AHEAD_EPISODE_COUNT)
+        .max(MAX_WATCH_AHEAD_EPISODE_COUNT),
+    })
+    .strict(),
 ]);
 
 export interface ResolvedEpisodeSelection {
   type: EpisodeSelection['type'];
   startTvdbId: number;
   endTvdbId?: number;
+  watchAheadCount?: number;
   episodes: TvdbEpisodeCatalogItem[];
   quotaUnits: number;
 }
+
+export const isRollingEpisodeSelection = (
+  type?: string | null
+): type is 'after' | 'watchAhead' => type === 'after' || type === 'watchAhead';
 
 /**
  * Episode requests rely on the TVDB catalog. Anime titles can be configured
@@ -55,8 +77,29 @@ export const parseEpisodeSelection = (input: unknown): EpisodeSelection =>
 export const resolveEpisodeSelection = (
   selection: EpisodeSelection,
   catalog: TvdbEpisodeCatalog,
-  allowSpecials: boolean
+  allowSpecials: boolean,
+  playedTvdbIds?: ReadonlySet<number>
 ): ResolvedEpisodeSelection => {
+  if (selection.type === 'watchAhead') {
+    const window = resolveWatchAheadWindow({
+      catalog,
+      count: selection.count,
+      playedTvdbIds,
+    });
+    if (window.catalogEpisodes.length === 0) {
+      throw new Error('No episodes are available for this selection.');
+    }
+    const count = watchAheadEpisodeCount(selection.count);
+    return {
+      type: 'watchAhead',
+      startTvdbId: (window.desired[0] ?? window.catalogEpisodes[0]).tvdbId,
+      watchAheadCount: count,
+      episodes: window.desired,
+      quotaUnits: new Set(window.desired.map((episode) => episode.seasonNumber))
+        .size,
+    };
+  }
+
   const byId = new Map(
     catalog.episodes.map((episode, index) => [
       episode.tvdbId,
@@ -128,7 +171,7 @@ export const ongoingEpisodeRequestLockKey = (
 ): string => `${tmdbId}:${is4k ? '4k' : 'sd'}`;
 
 /**
- * Serialize concurrent "after"/ongoing episode creates for one series+quality.
+ * Serialize concurrent after/watch-ahead creates for one series+quality.
  * Re-check the duplicate inside the lock; this is single-process only.
  */
 export async function withOngoingEpisodeRequestLock<T>(
@@ -163,13 +206,27 @@ export const getResolvedTvdbEpisodeSelection = async ({
   language,
   selection,
   allowSpecials,
+  playedTvdbIds,
+  userId,
+  jellyfinSeriesId,
 }: {
   tvId: number;
   language?: string;
   selection: EpisodeSelection;
   allowSpecials: boolean;
+  playedTvdbIds?: ReadonlySet<number>;
+  userId?: number;
+  jellyfinSeriesId?: string | null;
 }): Promise<ResolvedEpisodeSelection> => {
   const tvdb = await Tvdb.getInstance();
   const catalog = await tvdb.getEpisodeCatalog({ tvId, language });
-  return resolveEpisodeSelection(selection, catalog, allowSpecials);
+  let played = playedTvdbIds;
+  if (selection.type === 'watchAhead' && !played && userId != null) {
+    played = await loadPlayedTvdbIdsForSeries({
+      userId,
+      jellyfinSeriesId,
+      catalog,
+    });
+  }
+  return resolveEpisodeSelection(selection, catalog, allowSpecials, played);
 };
