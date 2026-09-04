@@ -55,6 +55,15 @@ describe('parseMdblistRatings', () => {
 });
 
 describe('MdblistAPI batch ratings', () => {
+  it('sets a finite axios timeout so a hung origin cannot stall Discover', () => {
+    const api = new MdblistAPI('test-api-key');
+    const timeout = (
+      api as unknown as { axios: { defaults: { timeout?: number } } }
+    ).axios.defaults.timeout;
+    assert.ok(timeout && timeout > 0);
+    assert.ok(timeout <= 4000);
+  });
+
   it('uses one batch call and fills the per-title cache', async () => {
     const api = new MdblistAPI('test-api-key');
     let batchCalls = 0;

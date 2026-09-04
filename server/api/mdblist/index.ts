@@ -163,6 +163,11 @@ class MdblistAPI extends ExternalAPI {
   constructor(apiKey?: string) {
     const settings = getSettings();
     const key = (apiKey ?? settings.mdblist?.apiKey ?? '').trim();
+    const configuredTimeout = settings.network?.apiRequestTimeout;
+    const timeout =
+      configuredTimeout && configuredTimeout > 0
+        ? Math.min(configuredTimeout, 4_000)
+        : 4_000;
 
     super(
       'https://api.mdblist.com',
@@ -172,6 +177,7 @@ class MdblistAPI extends ExternalAPI {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
+        timeout,
         // Ratings use an explicit age-based TTL in getRatings.
         nodeCache: cacheManager.getCache('mdblist').data,
       }
@@ -374,6 +380,11 @@ class MdblistAPI extends ExternalAPI {
         }
 
         recordMdblistMetric('failures');
+        if (
+          (e as { response?: { status?: number } })?.response?.status == null
+        ) {
+          this.openCircuit();
+        }
         // 404 / network — degrade gracefully (callers fall back or hide badges)
         logger.debug('MDBList ratings unavailable', {
           label: 'MDBList',
@@ -473,7 +484,7 @@ class MdblistAPI extends ExternalAPI {
       if (isQuotaExceeded(e)) {
         this.openCircuit(getRetryAfterMs(e));
       } else {
-        if (circuitSlot === 'probe') this.openCircuit();
+        this.openCircuit();
         recordMdblistMetric('failures');
         logger.debug('MDBList batch ratings unavailable', {
           label: 'MDBList',
