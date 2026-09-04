@@ -4,6 +4,8 @@ title: Foreseerr v0.7.1 release notes
 
 ## Fixes
 
+- Puts TMDB `posterPath` on mapped Simkl Discover tiles so clients that draw
+  the list payload (not TmdbTitleCard) show posters.
 - Puts TMDB `posterPath` on mapped Discover list tiles (Trakt, AniList,
   MDBList) so clients do not have to fetch movie details per card.
 - Does not let a hung MDBList origin blank Discover posters.
