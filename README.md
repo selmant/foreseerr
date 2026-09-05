@@ -58,11 +58,26 @@ You still click Request on a title. There is no scheduled Discover auto-request 
 
 See [Discover](docs/using-seerr/discover.md), [Library](docs/using-seerr/library.md), [Calendar](docs/using-seerr/calendar.md), [Integrations](docs/using-seerr/settings/integrations.md), and [Mapping](docs/using-seerr/settings/mapping.md).
 
+## Optional Jellyfin sidecar plugin
+
+Foreseerr can also run **inside Jellyfin** as a third-party plugin that supervises the compiled server on localhost and serves it at `/Foreseerr` with SSO. See [plugin/README.md](plugin/README.md). This is not an official Jellyfin catalog plugin.
+
 ## Installation
 
 Foreseerr is currently distributed as a **Docker image** (recommended). Docker and Docker Compose must be installed on the host; see the [Docker installation guide](https://docs.docker.com/get-docker/) if needed.
 
-GitHub Releases also attach optional standalone SQLite server archives (`foreseerr-linux-x64.tar.gz`, `foreseerr-linux-arm64.tar.gz`, `foreseerr-windows-x64.zip`) plus `SHA256SUMS`. Those are the Foreseerr **server**, not [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop): after starting the binary, open `http://127.0.0.1:5055` in a browser. Config defaults to a `config/` directory next to the executable (`CONFIG_DIRECTORY` overrides it). Postgres still needs a real Postgres; Windows SmartScreen will warn on the unsigned `.exe`.
+GitHub Releases also attach optional server archives plus `SHA256SUMS`:
+
+- **`foreseerr-server.tar.gz`** — `bun run build` tree (`dist/launcher.js`). Extract, `bun install --production --frozen-lockfile`, then `bun dist/launcher.js`. Same runtime as Docker, not a packed exe.
+- **`foreseerr-linux-x64.tar.gz` / `foreseerr-linux-arm64.tar.gz` / `foreseerr-windows-x64.zip`** — `bun --compile` standalone (SPA + API in one binary). Open `http://127.0.0.1:5055` after start. Config defaults to `config/` next to the executable (`CONFIG_DIRECTORY` overrides it).
+
+Those are the Foreseerr **server**, not [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop). Postgres still needs a real Postgres; Windows SmartScreen will warn on the unsigned `.exe`.
+
+```bash
+tar -xzf foreseerr-server.tar.gz
+bun install --production --frozen-lockfile
+CONFIG_DIRECTORY=./foreseerr-config bun dist/launcher.js
+```
 
 ```bash
 tar -xzf foreseerr-linux-x64.tar.gz

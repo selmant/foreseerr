@@ -5,6 +5,9 @@ import svgr from 'vite-plugin-svgr';
 
 const API_PORT = process.env.PORT || '5055';
 const API_HOST = process.env.HOST || '127.0.0.1';
+const PUBLIC_BASE = process.env.FORESEERR_BASE_PATH
+  ? `${process.env.FORESEERR_BASE_PATH.replace(/\/$/, '')}/`
+  : '/';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -36,6 +39,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     publicDir: 'public',
+    base: PUBLIC_BASE,
     build: {
       outDir: 'dist/public',
       emptyOutDir: true,

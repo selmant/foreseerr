@@ -1,0 +1,11 @@
+[
+  {
+    "guid": "a7c3e2f1-9b4d-4e8a-8c1f-2b6d9e0f4a11",
+    "name": "Foreseerr",
+    "overview": "Run Foreseerr as a localhost sidecar inside Jellyfin with SSO from Jellyfin Web.",
+    "description": "Ships a bun-compiled Foreseerr binary, bootstraps Jellyfin connection settings from this server, and reverse-proxies /Foreseerr. Third-party repository only.",
+    "owner": "selmant",
+    "category": "General",
+    "versions": []
+  }
+]
