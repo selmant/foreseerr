@@ -471,8 +471,6 @@ export interface AllSettings {
   migrations: string[];
 }
 
-import { configDirectory } from '@server/utils/runtimePaths';
-
 class Settings {
   private data: AllSettings;
   private saveLock: Promise<void> = Promise.resolve();

@@ -13,10 +13,10 @@ import { startForeseerr } from '@server/index';
 import logger from '@server/logger';
 
 setCompileOrm({
-  entities: compileEntities,
-  subscribers: compileSubscribers,
-  sqliteMigrations: compileSqliteMigrations,
-  postgresMigrations: compilePostgresMigrations,
+  entities: [...compileEntities],
+  subscribers: [...compileSubscribers],
+  sqliteMigrations: [...compileSqliteMigrations],
+  postgresMigrations: [...compilePostgresMigrations],
 });
 
 startForeseerr().catch((error: Error & { exitCode?: number }) => {
