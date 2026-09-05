@@ -5,11 +5,11 @@
   "packageManager": "bun@1.4.1",
   "scripts": {
     "preinstall": "bun scripts/only-bun.mjs",
-    "dev": "bunx --bun concurrently -k -n api,web -c blue,green \"bun run dev:server\" \"bun run dev:web\"",
+    "dev": "bun x --bun concurrently -k -n api,web -c blue,green \"bun run dev:server\" \"bun run dev:web\"",
     "dev:server": "bun --watch server/launcher.ts",
-    "dev:web": "bunx --bun vite",
-    "build:server": "rm -f dist/tsconfig.build.tsbuildinfo && bunx --bun tsc --project server/tsconfig.build.json && bunx --bun copyfiles -u 2 server/templates/**/*.{html,pug} dist/templates && bunx --bun copyfiles -u 2 \"server/i18n/locale/*.json\" dist/i18n && bunx --bun tsc-alias -p server/tsconfig.build.json && test -f dist/launcher.js",
-    "build:web": "bunx --bun vite build",
+    "dev:web": "bun x --bun vite",
+    "build:server": "rm -f dist/tsconfig.build.tsbuildinfo && bun x --bun tsc --project server/tsconfig.build.json && bun x --bun copyfiles -u 2 server/templates/**/*.{html,pug} dist/templates && bun x --bun copyfiles -u 2 \"server/i18n/locale/*.json\" dist/i18n && bun x --bun tsc-alias -p server/tsconfig.build.json && test -f dist/launcher.js",
+    "build:web": "bun x --bun vite build",
     "build": "bun run build:web && bun run build:server",
     "lint": "bun scripts/eslint.mjs \"./server/**/*.{ts,tsx}\" \"./src/**/*.{ts,tsx}\" --cache",
     "lintfix": "bun scripts/eslint.mjs \"./server/**/*.{ts,tsx}\" \"./src/**/*.{ts,tsx}\" --fix",
@@ -19,17 +19,17 @@
     "migration:generate": "bun --bun ./node_modules/typeorm/cli.js migration:generate -d server/datasource.ts",
     "migration:create": "bun --bun ./node_modules/typeorm/cli.js migration:create -d server/datasource.ts",
     "migration:run": "bun --bun ./node_modules/typeorm/cli.js migration:run -d server/datasource.ts",
-    "format": "bunx --bun prettier --log-level warn --write --cache .",
-    "format:check": "bunx --bun prettier --check --cache .",
+    "format": "bun x --bun prettier --log-level warn --write --cache .",
+    "format:check": "bun x --bun prettier --check --cache .",
     "typecheck": "bun run typecheck:server && bun run typecheck:client",
     "check:versions": "bun scripts/check-version-consistency.mjs",
     "measure:mapping": "bun scripts/measure-mapping.ts",
     "mirror:packs": "bun scripts/mirror-mapping-packs.ts",
     "check:migrations": "bun scripts/check-migrations.ts sqlite && DB_TYPE=postgres bun scripts/check-migrations.ts postgres",
-    "typecheck:server": "bunx --bun tsc --project server/tsconfig.json --noEmit",
-    "typecheck:client": "bunx --bun tsc --noEmit",
+    "typecheck:server": "bun x --bun tsc --project server/tsconfig.json --noEmit",
+    "typecheck:client": "bun x --bun tsc --noEmit",
     "prepare": "bun bin/prepare.mjs",
-    "cypress:open": "bunx --bun cypress open",
+    "cypress:open": "bun x --bun cypress open",
     "cypress:prepare": "bun server/scripts/prepareTestDb.ts",
     "cypress:build": "bun run build && bun run cypress:prepare"
   },
@@ -203,11 +203,11 @@
   },
   "lint-staged": {
     "**/*.{ts,tsx,js}": [
-      "bunx --bun prettier --write",
+      "bun x --bun prettier --write",
       "bun scripts/eslint.mjs"
     ],
     "**/*.{json,md,css}": [
-      "bunx --bun prettier --write"
+      "bun x --bun prettier --write"
     ]
   },
   "commitlint": {
