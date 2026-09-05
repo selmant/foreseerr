@@ -20,9 +20,18 @@ export function typeormSourceFiles(pattern: string): string[] {
 
 export const SOURCE_ENTITY_GLOB = 'server/entity/**/*.ts';
 export const SOURCE_SUBSCRIBER_GLOB = 'server/subscriber/**/*.ts';
+export const SOURCE_SQLITE_MIGRATION_GLOB = 'server/migration/sqlite/**/*.ts';
+export const SOURCE_POSTGRES_MIGRATION_GLOB =
+  'server/migration/postgres/**/*.ts';
 
 export const sourceEntityFiles = (): string[] =>
   typeormSourceFiles(SOURCE_ENTITY_GLOB);
 
 export const sourceSubscriberFiles = (): string[] =>
   typeormSourceFiles(SOURCE_SUBSCRIBER_GLOB);
+
+export const sourceSqliteMigrationFiles = (): string[] =>
+  typeormSourceFiles(SOURCE_SQLITE_MIGRATION_GLOB);
+
+export const sourcePostgresMigrationFiles = (): string[] =>
+  typeormSourceFiles(SOURCE_POSTGRES_MIGRATION_GLOB);

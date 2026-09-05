@@ -1,5 +1,6 @@
 import logger from '@server/logger';
 import { proxyRequestInterceptor } from '@server/utils/customProxyAgent';
+import { configDirectory } from '@server/utils/runtimePaths';
 import axios, { type AxiosInstance } from 'axios';
 import rateLimit, { type rateLimitOptions } from 'axios-rate-limit';
 import { createHash } from 'crypto';
@@ -22,9 +23,7 @@ type ImageResponse = {
 
 const baseCacheDirectory = process.env.CACHE_DIRECTORY
   ? `${process.env.CACHE_DIRECTORY}/images`
-  : process.env.CONFIG_DIRECTORY
-    ? `${process.env.CONFIG_DIRECTORY}/cache/images`
-    : path.join(__dirname, '../../config/cache/images');
+  : path.join(configDirectory(), 'cache/images');
 const DEFAULT_TRANSIENT_CACHE_BYTES = 2 * 1024 * 1024 * 1024;
 const configuredTransientCacheBytes = Number(
   process.env.FORESEER_CACHE_LIMIT_BYTES ?? DEFAULT_TRANSIENT_CACHE_BYTES

@@ -1,9 +1,7 @@
 import type { AllSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import fs from 'fs/promises';
-import path from 'path';
 
-const migrationsDir = path.join(__dirname, 'migrations');
 const migrationFilePattern = /^\d{4}_.+\.(?:js|ts)$/;
 
 export const isSettingsMigrationFile = (file: string): boolean =>
@@ -69,14 +67,10 @@ export const runMigrations = async (
   delete (migrated as { requestRouting?: unknown }).requestRouting;
   delete (migrated as { requestFilters?: unknown }).requestFilters;
 
-  // Only numbered migration modules are executable. This directory also
-  // contains shared helpers such as `types.ts`, which compile to JavaScript
-  // in production but do not export a default migration function.
-  const migrations = (await fs.readdir(migrationsDir)).filter(
-    isSettingsMigrationFile
-  );
-  const knownMigrationNames = migrations.map((file) =>
-    file.replace(/\.(js|ts)$/, '')
+  const { SETTINGS_MIGRATIONS } =
+    await import('@server/lib/settings/settingsMigrationModules');
+  const knownMigrationNames = SETTINGS_MIGRATIONS.map(
+    (migration) => migration.name
   );
 
   assertNoUnsupportedMigrations(migrated, knownMigrationNames);
@@ -94,17 +88,14 @@ export const runMigrations = async (
 
     const settingsBefore = settingsBeforeCleanup;
 
-    for (const migration of migrations) {
+    for (const migration of SETTINGS_MIGRATIONS) {
       try {
-        logger.debug(`Checking migration '${migration}'...`, {
+        logger.debug(`Checking migration '${migration.name}'...`, {
           label: 'Settings Migrator',
         });
-        const { default: migrationFn } = await import(
-          path.join(migrationsDir, migration)
-        );
-        const newSettings = await migrationFn(structuredClone(migrated));
+        const newSettings = await migration.run(structuredClone(migrated));
         if (JSON.stringify(migrated) !== JSON.stringify(newSettings)) {
-          logger.debug(`Migration '${migration}' has been applied.`, {
+          logger.debug(`Migration '${migration.name}' has been applied.`, {
             label: 'Settings Migrator',
           });
         }
@@ -112,7 +103,7 @@ export const runMigrations = async (
       } catch (e) {
         // we stop Foreseerr if the migration failed
         logger.error(
-          `Error while running migration '${migration}': ${e.message}\n${e.stack}`,
+          `Error while running migration '${migration.name}': ${e.message}\n${e.stack}`,
           {
             label: 'Settings Migrator',
           }

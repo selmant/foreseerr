@@ -13,9 +13,9 @@ import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
 import { hashPassword, verifyPassword } from '@server/lib/password';
 import { AfterDate } from '@server/utils/dateHelpers';
+import { emailTemplatePath } from '@server/utils/runtimePaths';
 import { randomUUID } from 'crypto';
 import { nanoid } from 'nanoid';
-import path from 'path';
 import {
   AfterLoad,
   Column,
@@ -247,7 +247,7 @@ export class User {
 
       const email = new PreparedEmail(getSettings().notifications.agents.email);
       await email.send({
-        template: path.join(__dirname, '../templates/email/generatedpassword'),
+        template: emailTemplatePath('generatedpassword'),
         message: {
           to: this.email,
         },
@@ -284,7 +284,7 @@ export class User {
       });
       const email = new PreparedEmail(getSettings().notifications.agents.email);
       await email.send({
-        template: path.join(__dirname, '../templates/email/resetpassword'),
+        template: emailTemplatePath('resetpassword'),
         message: {
           to: this.email,
         },

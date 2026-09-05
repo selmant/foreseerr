@@ -60,7 +60,16 @@ See [Discover](docs/using-seerr/discover.md), [Library](docs/using-seerr/library
 
 ## Installation
 
-Foreseerr is currently distributed as a Docker image. Docker and Docker Compose must be installed on the host; see the [Docker installation guide](https://docs.docker.com/get-docker/) if needed.
+Foreseerr is currently distributed as a **Docker image** (recommended). Docker and Docker Compose must be installed on the host; see the [Docker installation guide](https://docs.docker.com/get-docker/) if needed.
+
+GitHub Releases also attach optional standalone SQLite server archives (`foreseerr-linux-x64.tar.gz`, `foreseerr-linux-arm64.tar.gz`, `foreseerr-windows-x64.zip`) plus `SHA256SUMS`. Those are the Foreseerr **server**, not [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop): after starting the binary, open `http://127.0.0.1:5055` in a browser. Config defaults to a `config/` directory next to the executable (`CONFIG_DIRECTORY` overrides it). Postgres still needs a real Postgres; Windows SmartScreen will warn on the unsigned `.exe`.
+
+```bash
+tar -xzf foreseerr-linux-x64.tar.gz
+CONFIG_DIRECTORY=./foreseerr-config ./foreseerr-linux-x64
+```
+
+On Windows, extract `foreseerr-windows-x64.zip` and run `foreseerr-windows-x64.exe`.
 
 ### Docker CLI
 

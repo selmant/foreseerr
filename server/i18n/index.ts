@@ -2,6 +2,10 @@ import { createIntl, createIntlCache } from '@formatjs/intl';
 import { getSettings } from '@server/lib/settings';
 import type { AvailableLocale } from '@server/types/languages';
 import { availableLocales } from '@server/types/languages';
+import {
+  bundledLocaleDirectory,
+  isStandaloneExecutable,
+} from '@server/utils/runtimePaths';
 import fs from 'fs';
 import path from 'path';
 
@@ -12,7 +16,10 @@ const intls = new Map<string, IntlInstance>();
 
 export function initI18n(): void {
   for (const locale of availableLocales) {
-    const filePath = path.join(__dirname, `locale/${locale}.json`);
+    const localeDir = isStandaloneExecutable()
+      ? bundledLocaleDirectory()
+      : path.join(__dirname, 'locale');
+    const filePath = path.join(localeDir, `${locale}.json`);
 
     if (!fs.existsSync(filePath)) continue;
 

@@ -49,7 +49,16 @@ import createCustomProxyAgent, {
   setForceIpv4First,
 } from '@server/utils/customProxyAgent';
 import { initializeDnsCache } from '@server/utils/dnsCache';
+import {
+  embeddedPublicStatic,
+  sendPublicFile,
+} from '@server/utils/embeddedPublic';
 import restartFlag from '@server/utils/restartFlag';
+import {
+  bundledApiSpecPath,
+  bundledPublicPath,
+  isStandaloneExecutable,
+} from '@server/utils/runtimePaths';
 import { getClientIp } from '@supercharge/request-ip';
 import { TypeormStore } from 'connect-typeorm/out';
 import cookieParser from 'cookie-parser';
@@ -64,8 +73,12 @@ import yaml from 'js-yaml';
 import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 
-const API_SPEC_PATH = path.join(__dirname, '../seerr-api.yml');
-const PUBLIC_PATH = path.join(__dirname, 'public');
+const API_SPEC_PATH = isStandaloneExecutable()
+  ? bundledApiSpecPath()
+  : path.join(__dirname, '../seerr-api.yml');
+const PUBLIC_PATH = isStandaloneExecutable()
+  ? bundledPublicPath()
+  : path.join(__dirname, 'public');
 
 logger.info(`Starting Seerr version ${getAppVersion()}`);
 const dev = process.env.NODE_ENV !== 'production';
@@ -483,29 +496,40 @@ const startForeseerrInternal = async (
   server.use('/avatarproxy', clearCookies, avatarproxy);
 
   if (!dev) {
-    server.use(
-      express.static(PUBLIC_PATH, {
-        index: false,
-        setHeaders: (res, filePath) => {
-          if (filePath.endsWith(`${path.sep}index.html`)) {
-            res.setHeader('Cache-Control', 'no-store');
-            return;
-          }
-          if (filePath.includes(`${path.sep}assets${path.sep}`)) {
-            res.setHeader(
-              'Cache-Control',
-              'public, max-age=31536000, immutable'
-            );
-          }
-        },
-      })
-    );
+    if (isStandaloneExecutable()) {
+      server.use(embeddedPublicStatic(PUBLIC_PATH));
+    } else {
+      server.use(
+        express.static(PUBLIC_PATH, {
+          index: false,
+          setHeaders: (res, filePath) => {
+            if (filePath.endsWith(`${path.sep}index.html`)) {
+              res.setHeader('Cache-Control', 'no-store');
+              return;
+            }
+            if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+              res.setHeader(
+                'Cache-Control',
+                'public, max-age=31536000, immutable'
+              );
+            }
+          },
+        })
+      );
+    }
     // Missing hashed assets must 404. Falling back to index.html makes the
     // browser try to parse HTML as a module and leaves a blank page.
     server.get(
       /^(?!\/api(?:\/|$)|\/api-docs|\/imageproxy|\/avatarproxy|\/assets\/).*/,
-      (_req, res) => {
+      async (_req, res) => {
         res.setHeader('Cache-Control', 'no-store');
+        if (isStandaloneExecutable()) {
+          const sent = await sendPublicFile(PUBLIC_PATH, 'index.html', res);
+          if (!sent) {
+            res.status(500).json({ message: 'Missing embedded index.html' });
+          }
+          return;
+        }
         res.sendFile(path.join(PUBLIC_PATH, 'index.html'));
       }
     );

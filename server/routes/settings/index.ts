@@ -63,7 +63,6 @@ import rateLimit from 'express-rate-limit';
 import fs from 'fs';
 import { escapeRegExp, merge, omit, set, sortBy } from 'lodash';
 import { rescheduleJob } from 'node-schedule';
-import path from 'path';
 import semver from 'semver';
 import { URL } from 'url';
 import mappingRoutes from './mapping';
@@ -1140,9 +1139,7 @@ settingsRoutes.get(
         filter = ['debug', 'info', 'warn', 'error'];
     }
 
-    const logFile = process.env.CONFIG_DIRECTORY
-      ? `${process.env.CONFIG_DIRECTORY}/logs/.machinelogs.json`
-      : path.join(__dirname, '../../../config/logs/.machinelogs.json');
+    const logFile = `${appDataPath()}/logs/.machinelogs.json`;
     const logs: LogMessage[] = [];
     const logMessageProperties = [
       'timestamp',

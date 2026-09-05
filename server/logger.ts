@@ -1,4 +1,5 @@
 /* eslint-disable no-console */
+import { configDirectory } from '@server/utils/runtimePaths';
 import path from 'path';
 import * as winston from 'winston';
 import 'winston-daily-rotate-file';
@@ -21,9 +22,7 @@ const hformat = winston.format.printf(
 // explicitly-owned log directory.
 const logDirectory = process.env.LOG_DIRECTORY
   ? process.env.LOG_DIRECTORY
-  : process.env.CONFIG_DIRECTORY
-    ? `${process.env.CONFIG_DIRECTORY}/logs`
-    : path.join(__dirname, '../config/logs');
+  : path.join(configDirectory(), 'logs');
 
 const seerrFileTransport = new winston.transports.DailyRotateFile({
   filename: path.join(logDirectory, 'seerr-%DATE%.log'),

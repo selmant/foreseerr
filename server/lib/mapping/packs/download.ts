@@ -1,4 +1,5 @@
 import logger from '@server/logger';
+import { configDirectory } from '@server/utils/runtimePaths';
 import axios from 'axios';
 import { createHash, randomBytes } from 'crypto';
 import { createWriteStream, promises as fsp } from 'fs';
@@ -8,9 +9,7 @@ import { Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 
 export const getPackDirectory = (): string =>
-  process.env.CONFIG_DIRECTORY
-    ? path.join(process.env.CONFIG_DIRECTORY, 'mapping-packs')
-    : path.join(__dirname, '../../../../config/mapping-packs');
+  path.join(configDirectory(), 'mapping-packs');
 
 export const PACK_DIRECTORY = getPackDirectory();
 

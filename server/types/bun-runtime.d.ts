@@ -19,6 +19,7 @@ declare module 'bun:sqlite' {
 }
 
 declare namespace Bun {
+  const isStandaloneExecutable: boolean;
   const password: {
     hash(
       password: string,

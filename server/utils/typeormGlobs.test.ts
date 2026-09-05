@@ -2,6 +2,8 @@ import {
   SOURCE_ENTITY_GLOB,
   SOURCE_SUBSCRIBER_GLOB,
   sourceEntityFiles,
+  sourcePostgresMigrationFiles,
+  sourceSqliteMigrationFiles,
   sourceSubscriberFiles,
   typeormSourceFiles,
 } from '@server/utils/typeormGlobs';
@@ -31,5 +33,14 @@ describe('typeormSourceFiles', () => {
     const files = typeormSourceFiles('server/entity/MediaRequest*.ts');
     assert.ok(files.some((file) => file.endsWith('MediaRequest.ts')));
     assert.ok(files.every((file) => !file.includes('.test.')));
+  });
+
+  it('lists sqlite and postgres migrations without tests', () => {
+    const sqlite = sourceSqliteMigrationFiles();
+    const postgres = sourcePostgresMigrationFiles();
+    assert.ok(sqlite.some((file) => file.endsWith('InitialMigration.ts')));
+    assert.ok(postgres.some((file) => file.endsWith('InitialMigration.ts')));
+    assert.equal(sqlite.filter((file) => file.includes('.test.')).length, 0);
+    assert.equal(postgres.filter((file) => file.includes('.test.')).length, 0);
   });
 });

@@ -11,6 +11,9 @@
     "build:server": "rm -f dist/tsconfig.build.tsbuildinfo && bun --bun ./node_modules/typescript/bin/tsc --project server/tsconfig.build.json && bun --bun ./node_modules/copyfiles/copyfiles -u 2 server/templates/**/*.{html,pug} dist/templates && bun --bun ./node_modules/copyfiles/copyfiles -u 2 \"server/i18n/locale/*.json\" dist/i18n && bun --bun ./node_modules/tsc-alias/dist/bin/index.js -p server/tsconfig.build.json && test -f dist/launcher.js",
     "build:web": "bun --bun ./node_modules/vite/bin/vite.js build",
     "build": "bun run build:web && bun run build:server",
+    "compile": "bun scripts/compile.mjs",
+    "compile:prove": "bun scripts/prove-compile.mjs",
+    "compile:pack": "bun scripts/pack-binaries.mjs",
     "lint": "bun scripts/eslint.mjs \"./server/**/*.{ts,tsx}\" \"./src/**/*.{ts,tsx}\" --cache",
     "lintfix": "bun scripts/eslint.mjs \"./server/**/*.{ts,tsx}\" \"./src/**/*.{ts,tsx}\" --fix",
     "test": "bun server/test/index.mts",
@@ -203,11 +206,11 @@
   },
   "lint-staged": {
     "**/*.{ts,tsx,js}": [
-      "bun --bun ./node_modules/prettier/bin/prettier.cjs --write",
+      "bun --bun ./node_modules/prettier/bin/prettier.cjs --write --no-cache",
       "bun scripts/eslint.mjs"
     ],
     "**/*.{json,md,css}": [
-      "bun --bun ./node_modules/prettier/bin/prettier.cjs --write"
+      "bun --bun ./node_modules/prettier/bin/prettier.cjs --write --no-cache"
     ]
   },
   "commitlint": {

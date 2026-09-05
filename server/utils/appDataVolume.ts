@@ -1,9 +1,7 @@
+import { configDirectory } from '@server/utils/runtimePaths';
 import { accessSync, existsSync } from 'fs';
-import path from 'path';
 
-const CONFIG_PATH = process.env.CONFIG_DIRECTORY
-  ? process.env.CONFIG_DIRECTORY
-  : path.join(__dirname, '../../config');
+const CONFIG_PATH = configDirectory();
 
 const DOCKER_PATH = `${CONFIG_PATH}/DOCKER`;
 

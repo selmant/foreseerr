@@ -9,8 +9,8 @@ import type { NotificationAgentEmail } from '@server/lib/settings';
 import { NotificationAgentKey, getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import type { AvailableLocale } from '@server/types/languages';
+import { emailTemplatePath } from '@server/utils/runtimePaths';
 import type { EmailOptions } from 'email-templates';
-import path from 'path';
 import validator from 'validator';
 import { Notification, shouldSendAdminNotification } from '..';
 import type { NotificationAgent, NotificationPayload } from './agent';
@@ -108,7 +108,7 @@ class EmailAgent
 
     if (type === Notification.TEST_NOTIFICATION) {
       return {
-        template: path.join(__dirname, '../../../templates/email/test-email'),
+        template: emailTemplatePath('test-email'),
         message: {
           to: recipientEmail,
         },
@@ -185,10 +185,7 @@ class EmailAgent
       }
 
       return {
-        template: path.join(
-          __dirname,
-          '../../../templates/email/media-request'
-        ),
+        template: emailTemplatePath('media-request'),
         message: {
           to: recipientEmail,
         },
@@ -258,7 +255,7 @@ class EmailAgent
       }
 
       return {
-        template: path.join(__dirname, '../../../templates/email/media-issue'),
+        template: emailTemplatePath('media-issue'),
         message: {
           to: recipientEmail,
         },

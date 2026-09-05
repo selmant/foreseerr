@@ -8,14 +8,16 @@ import {
 import { Permission } from '@server/lib/permissions';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
+import { configDirectory } from '@server/utils/runtimePaths';
 import { randomBytes, randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import { mergeWith } from 'lodash';
-import path from 'path';
 import webpush from 'web-push';
 
 export { DEFAULT_RATING_BADGE_SETTINGS };
 export type { RatingBadgeSettings };
+
+const SETTINGS_PATH = `${configDirectory()}/settings.json`;
 
 // Prevents stale array entries when incoming data has fewer elements
 const mergeSettings = <T>(current: T, incoming: Partial<T>): T =>
@@ -469,9 +471,7 @@ export interface AllSettings {
   migrations: string[];
 }
 
-const SETTINGS_PATH = process.env.CONFIG_DIRECTORY
-  ? `${process.env.CONFIG_DIRECTORY}/settings.json`
-  : path.join(__dirname, '../../../config/settings.json');
+import { configDirectory } from '@server/utils/runtimePaths';
 
 class Settings {
   private data: AllSettings;

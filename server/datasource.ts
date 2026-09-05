@@ -1,5 +1,9 @@
 import { bunSqlite3 } from '@server/lib/bunSqlite3';
 import {
+  configDirectory,
+  isStandaloneExecutable,
+} from '@server/utils/runtimePaths';
+import {
   sourceEntityFiles,
   sourceSubscriberFiles,
 } from '@server/utils/typeormGlobs';
@@ -9,6 +13,19 @@ import type { DataSourceOptions, EntityTarget, Repository } from 'typeorm';
 import { DataSource } from 'typeorm';
 
 const DB_SSL_PREFIX = 'DB_SSL_';
+
+type CompileOrmModules = {
+  entities: NonNullable<DataSourceOptions['entities']>;
+  subscribers: NonNullable<DataSourceOptions['subscribers']>;
+  sqliteMigrations: NonNullable<DataSourceOptions['migrations']>;
+  postgresMigrations: NonNullable<DataSourceOptions['migrations']>;
+};
+
+let compileOrm: CompileOrmModules | undefined;
+
+function sqliteDatabasePath(): string {
+  return `${configDirectory()}/db/db.sqlite3`;
+}
 
 function boolFromEnv(envVar: string, defaultVal = false) {
   if (process.env[envVar]) {
@@ -65,9 +82,7 @@ const testConfig: DataSourceOptions = {
 const devConfig: DataSourceOptions = {
   type: 'sqlite',
   driver: bunSqlite3,
-  database: process.env.CONFIG_DIRECTORY
-    ? `${process.env.CONFIG_DIRECTORY}/db/db.sqlite3`
-    : 'config/db/db.sqlite3',
+  database: sqliteDatabasePath(),
   synchronize: true,
   migrationsRun: false,
   logging: boolFromEnv('DB_LOG_QUERIES'),
@@ -78,9 +93,7 @@ const devConfig: DataSourceOptions = {
 const prodConfig: DataSourceOptions = {
   type: 'sqlite',
   driver: bunSqlite3,
-  database: process.env.CONFIG_DIRECTORY
-    ? `${process.env.CONFIG_DIRECTORY}/db/db.sqlite3`
-    : 'config/db/db.sqlite3',
+  database: sqliteDatabasePath(),
   synchronize: false,
   migrationsRun: false,
   logging: boolFromEnv('DB_LOG_QUERIES'),
@@ -136,22 +149,79 @@ function withSourceOrmFiles(config: DataSourceOptions): DataSourceOptions {
   };
 }
 
-function getDataSource(): DataSourceOptions {
-  if (process.env.NODE_ENV === 'test') {
-    return withSourceOrmFiles(testConfig);
-  } else if (process.env.NODE_ENV === 'production') {
-    return isPgsql ? postgresProdConfig : prodConfig;
-  } else {
-    return withSourceOrmFiles(isPgsql ? postgresDevConfig : devConfig);
+function withCompileOrm(config: DataSourceOptions): DataSourceOptions {
+  if (!compileOrm) {
+    return {
+      ...config,
+      entities: [],
+      subscribers: [],
+      migrations: [],
+    };
   }
+  return {
+    ...config,
+    entities: compileOrm.entities,
+    subscribers: compileOrm.subscribers,
+    migrations: isPgsql
+      ? compileOrm.postgresMigrations
+      : compileOrm.sqliteMigrations,
+  };
 }
 
-const dataSource = new DataSource(getDataSource());
+function resolveDataSourceOptions(): DataSourceOptions {
+  if (process.env.NODE_ENV === 'test') {
+    return withSourceOrmFiles(testConfig);
+  }
+  if (compileOrm || isStandaloneExecutable()) {
+    return withCompileOrm(isPgsql ? postgresProdConfig : prodConfig);
+  }
+  if (process.env.NODE_ENV === 'production') {
+    return isPgsql ? postgresProdConfig : prodConfig;
+  }
+  return withSourceOrmFiles(isPgsql ? postgresDevConfig : devConfig);
+}
+
+let dataSourceInstance: DataSource | undefined;
+
+function getDataSourceInstance(): DataSource {
+  if (!dataSourceInstance) {
+    dataSourceInstance = new DataSource(resolveDataSourceOptions());
+  }
+  return dataSourceInstance;
+}
+
+export function setCompileOrm(modules: CompileOrmModules): void {
+  if (dataSourceInstance?.isInitialized) {
+    throw new Error('Cannot set compile ORM after DataSource.initialize()');
+  }
+  compileOrm = modules;
+  dataSourceInstance = new DataSource(resolveDataSourceOptions());
+}
+
+const dataSource = new Proxy({} as DataSource, {
+  get(_target, property) {
+    if (property === 'then') {
+      return undefined;
+    }
+    const instance = getDataSourceInstance();
+    const value = Reflect.get(instance, property, instance);
+    return typeof value === 'function' ? value.bind(instance) : value;
+  },
+  set(_target, property, value) {
+    return Reflect.set(getDataSourceInstance(), property, value);
+  },
+  has(_target, property) {
+    if (property === 'then') {
+      return false;
+    }
+    return property in getDataSourceInstance();
+  },
+});
 
 export const getRepository = <Entity extends object>(
   target: EntityTarget<Entity>
 ): Repository<Entity> => {
-  return dataSource.getRepository(target);
+  return getDataSourceInstance().getRepository(target);
 };
 
 export default dataSource;
