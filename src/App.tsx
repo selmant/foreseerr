@@ -13,6 +13,7 @@ import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
 import buildRoutes from '@app/routes';
 import '@app/styles/globals.css';
+import { publicBasePath } from '@app/utils/publicBasePath';
 import { polyfillIntl } from '@app/utils/polyfillIntl';
 import '@fontsource-variable/inter';
 import '@fontsource/barlow-condensed/600.css';
@@ -415,9 +416,10 @@ const AppRouteError = () => {
 };
 
 const App = () => {
-  const router = useMemo(
-    () =>
-      createBrowserRouter([
+  const router = useMemo(() => {
+    const basename = publicBasePath() || undefined;
+    return createBrowserRouter(
+      [
         {
           path: '/',
           element: <Bootstrap />,
@@ -429,9 +431,10 @@ const App = () => {
             },
           ],
         },
-      ]),
-    []
-  );
+      ],
+      basename ? { basename } : undefined
+    );
+  }, []);
 
   return <RouterProvider router={router} />;
 };

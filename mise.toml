@@ -1,0 +1,6 @@
+[tools]
+bun = "1.4.1"
+dotnet = "8.0"
+
+[env]
+DOTNET_CLI_TELEMETRY_OPTOUT = "1"
