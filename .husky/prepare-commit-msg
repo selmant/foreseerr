@@ -5,4 +5,4 @@ if [ -n "$CI" ] || [ ! -t 1 ]; then
   exit 0
 fi
 
-exec < /dev/tty && bun x --bun cz --hook || true
+exec < /dev/tty && bun --bun ./node_modules/commitizen/bin/git-cz --hook || true

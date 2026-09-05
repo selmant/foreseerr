@@ -1,1 +1,1 @@
-bun x --bun lint-staged
+bun --bun ./node_modules/lint-staged/bin/lint-staged.js

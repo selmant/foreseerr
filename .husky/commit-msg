@@ -1,1 +1,1 @@
-[ -n "$HUSKY_BYPASS" ] || bun x --bun commitlint --edit $1
+[ -n "$HUSKY_BYPASS" ] || bun --bun ./node_modules/@commitlint/cli/cli.js --edit $1
