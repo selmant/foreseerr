@@ -29,7 +29,6 @@ import ErrorPage from '@app/pages/_error';
 import { sortCrewPriority } from '@app/utils/creditHelpers';
 import defineMessages from '@app/utils/defineMessages';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
-import { buildPath } from '@app/utils/routing';
 import {
   ArrowRightCircleIcon,
   CloudIcon,
@@ -144,9 +143,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
   useEffect(() => {
     if (routeQuery.manage === '1') {
       setShowManager(true);
-      navigate(buildPath(location.pathname, { movieId: routeQuery.movieId }), {
-        replace: true,
-      });
+      navigate(location.pathname, { replace: true });
     }
   }, [routeQuery.manage]);
 
@@ -391,12 +388,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
         mediaType="movie"
         onClose={() => {
           setShowManager(false);
-          navigate(
-            buildPath(location.pathname, { movieId: routeQuery.movieId }),
-            {
-              replace: true,
-            }
-          );
+          navigate(location.pathname, { replace: true });
         }}
         revalidate={() => revalidate()}
         show={showManager}

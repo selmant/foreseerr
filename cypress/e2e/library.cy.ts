@@ -30,21 +30,29 @@ describe('Library', () => {
     cy.intercept('GET', '/api/v1/media-actions/capabilities', {
       fixture: 'media-action-capabilities.json',
     }).as('capabilities');
+    const actionStatus = (tmdbId: number, mediaType: 'movie' | 'tv') => ({
+      tmdbId,
+      mediaType,
+      watched: false,
+      rating: null,
+      ratingStars: null,
+      providers: [],
+      actions: {
+        watched: { available: true },
+        rating: { available: true },
+      },
+    });
     cy.intercept('GET', '/api/v1/media-actions/**/status', (req) => {
       const isMovie = req.url.includes('/movie/');
-      req.reply({
-        tmdbId: isMovie ? 123 : 456,
-        mediaType: isMovie ? 'movie' : 'tv',
-        watched: false,
-        rating: null,
-        ratingStars: null,
-        providers: [],
-        actions: {
-          watched: { available: true },
-          rating: { available: true },
-        },
-      });
+      req.reply(actionStatus(isMovie ? 123 : 456, isMovie ? 'movie' : 'tv'));
     }).as('actionStatus');
+    cy.intercept('POST', '/api/v1/media-actions/status-batch', (req) => {
+      const items: { tmdbId: number; mediaType: 'movie' | 'tv' }[] =
+        req.body?.items ?? [];
+      req.reply({
+        results: items.map((item) => actionStatus(item.tmdbId, item.mediaType)),
+      });
+    }).as('actionStatusBatch');
     cy.intercept('GET', '/api/v1/library/watch-now', {
       shelves: [
         {

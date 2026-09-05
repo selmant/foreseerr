@@ -37,7 +37,6 @@ import ErrorPage from '@app/pages/_error';
 import { sortCrewPriority } from '@app/utils/creditHelpers';
 import defineMessages from '@app/utils/defineMessages';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
-import { buildPath } from '@app/utils/routing';
 import { Disclosure, Transition } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import {
@@ -148,9 +147,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
   useEffect(() => {
     if (routeQuery.manage === '1') {
       setShowManager(true);
-      navigate(buildPath(location.pathname, { tvId: routeQuery.tvId }), {
-        replace: true,
-      });
+      navigate(location.pathname, { replace: true });
     }
   }, [routeQuery.manage]);
 
@@ -445,9 +442,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
         mediaType="tv"
         onClose={() => {
           setShowManager(false);
-          navigate(buildPath(location.pathname, { tvId: routeQuery.tvId }), {
-            replace: true,
-          });
+          navigate(location.pathname, { replace: true });
         }}
         revalidate={() => revalidate()}
         show={showManager}

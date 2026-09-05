@@ -48,7 +48,9 @@ jobs:
         working-directory: bin/duplicate-detector
         env:
           CI: true
-        run: pnpm install --frozen-lockfile
+        # Nested under the root workspace; ignore parent so transformers
+        # lands in bin/duplicate-detector/node_modules.
+        run: pnpm install --frozen-lockfile --ignore-workspace
 
       - name: Build issue index
         working-directory: bin/duplicate-detector

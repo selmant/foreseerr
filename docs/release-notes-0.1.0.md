@@ -3,7 +3,7 @@ title: Foreseerr v0.1.0 release notes
 ---
 
 :::info Status
-First stable Foreseerr release. Maintainer tracking for the cut lives in [`docs/stable-release-gate.md`](/stable-release-gate); this page is the user-facing summary of supported upgrades and policy.
+First stable Foreseerr release. Maintainer tracking for the cut lives in [`docs/stable-release-gate.md`](https://github.com/selmant/foreseerr/blob/develop/docs/stable-release-gate.md); this page is the user-facing summary of supported upgrades and policy.
 :::
 
 ## Highlights
@@ -34,4 +34,4 @@ See the [migration guide](/migration-guide) for the evergreen Seerr → Foreseer
 ## Breaking / policy notes for this release
 
 - Database migrations and `settings.json` migrators are append-only from this release forward.
-- REST API and settings deprecations follow the one-minor-release window documented in [`docs/stable-release-gate.md`](/stable-release-gate).
+- REST API and settings deprecations follow the one-minor-release window documented in [`docs/stable-release-gate.md`](https://github.com/selmant/foreseerr/blob/develop/docs/stable-release-gate.md).
