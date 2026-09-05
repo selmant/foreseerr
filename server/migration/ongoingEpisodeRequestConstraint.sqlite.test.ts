@@ -1,3 +1,4 @@
+import { bunSqlite3 } from '@server/lib/bunSqlite3';
 import assert from 'node:assert/strict';
 import { after, describe, it } from 'node:test';
 import { DataSource } from 'typeorm';
@@ -6,6 +7,7 @@ import { AddActiveOngoingEpisodeRequestConstraint1786200000000 } from './sqlite/
 
 const dataSource = new DataSource({
   type: 'sqlite',
+  driver: bunSqlite3,
   database: ':memory:',
 });
 

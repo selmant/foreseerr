@@ -17,6 +17,7 @@
  * package.json).
  */
 import { sourceEntityFiles } from '@server/utils/typeormGlobs';
+import { bunSqlite3 } from '@server/lib/bunSqlite3';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -98,6 +99,7 @@ async function checkSqliteMigrations(): Promise<void> {
 
   const dataSource = await runMigrations('SQLite', {
     type: 'sqlite',
+    driver: bunSqlite3,
     database,
     synchronize: false,
     logging: false,

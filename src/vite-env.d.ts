@@ -24,3 +24,6 @@ declare module '*.svg' {
 }
 
 declare module '*.css' {}
+
+declare module '@fontsource-variable/inter';
+declare module '@fontsource/barlow-condensed/*';

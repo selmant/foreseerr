@@ -11,8 +11,8 @@ import { Permission, hasPermission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { DbAwareColumn, resolveDbType } from '@server/utils/DbColumnHelper';
+import { hashPassword, verifyPassword } from '@server/lib/password';
 import { AfterDate } from '@server/utils/dateHelpers';
-import bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { nanoid } from 'nanoid';
 import path from 'path';
@@ -224,19 +224,15 @@ export class User {
     return !!hasPermission(permissions, this.permissions, options);
   }
 
-  public passwordMatch(password: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      if (this.password) {
-        resolve(bcrypt.compare(password, this.password));
-      } else {
-        return resolve(false);
-      }
-    });
+  public async passwordMatch(password: string): Promise<boolean> {
+    if (!this.password) {
+      return false;
+    }
+    return verifyPassword(password, this.password);
   }
 
   public async setPassword(password: string): Promise<void> {
-    const hashedPassword = await bcrypt.hash(password, 12);
-    this.password = hashedPassword;
+    this.password = await hashPassword(password);
   }
 
   public async generatePassword(): Promise<void> {

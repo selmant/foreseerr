@@ -18,13 +18,16 @@
     "emitDecoratorMetadata": true,
     "useUnknownInCatchVariables": false,
     "incremental": true,
-    "baseUrl": "src",
-    "downlevelIteration": true,
     "paths": {
-      "@server/*": ["../server/*"],
-      "@app/*": ["*"]
+      "@server/*": ["./server/*"],
+      "@app/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/vite-env.d.ts"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/vite-env.d.ts",
+    "server/types/bun-runtime.d.ts"
+  ],
   "exclude": ["node_modules"]
 }

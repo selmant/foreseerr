@@ -11,7 +11,7 @@
 
     // Database packages
     {
-      matchPackageNames: ['pg', 'sqlite3', 'typeorm'],
+      matchPackageNames: ['pg', 'typeorm'],
       groupName: 'Database',
     },
   ],

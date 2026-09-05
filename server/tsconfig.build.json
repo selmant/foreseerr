@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "exclude": ["**/*.test.ts", "test/**"],
   "compilerOptions": {
-    "incremental": false
+    "incremental": false,
+    "rootDir": "."
   }
 }

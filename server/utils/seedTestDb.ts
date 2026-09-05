@@ -10,8 +10,8 @@ export interface SeedDbOptions {
   withMigrations?: boolean;
 }
 
-// Precomputed bcrypt hash of 'test1234'. We precompute this to avoid
-// having to hash the password every time we seed the database.
+// Precomputed bcrypt hash of 'test1234' (cost 12). Bun.password.verify
+// accepts hashes produced by the old node-bcrypt package.
 const TEST_USER_PASSWORD_HASH =
   '$2b$12$Z5V2P5HZgmx4/AnWFMZN1.aD5AM1NucNi.mhNTSQ9oVtmdzu7Le/a';
 

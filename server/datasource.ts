@@ -1,3 +1,4 @@
+import { bunSqlite3 } from '@server/lib/bunSqlite3';
 import {
   sourceEntityFiles,
   sourceSubscriberFiles,
@@ -53,6 +54,7 @@ function buildSslConfig(): TlsOptions | undefined {
 
 const testConfig: DataSourceOptions = {
   type: 'sqlite',
+  driver: bunSqlite3,
   database: ':memory:',
   synchronize: true,
   dropSchema: true,
@@ -62,6 +64,7 @@ const testConfig: DataSourceOptions = {
 
 const devConfig: DataSourceOptions = {
   type: 'sqlite',
+  driver: bunSqlite3,
   database: process.env.CONFIG_DIRECTORY
     ? `${process.env.CONFIG_DIRECTORY}/db/db.sqlite3`
     : 'config/db/db.sqlite3',
@@ -74,6 +77,7 @@ const devConfig: DataSourceOptions = {
 
 const prodConfig: DataSourceOptions = {
   type: 'sqlite',
+  driver: bunSqlite3,
   database: process.env.CONFIG_DIRECTORY
     ? `${process.env.CONFIG_DIRECTORY}/db/db.sqlite3`
     : 'config/db/db.sqlite3',

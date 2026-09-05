@@ -11,8 +11,8 @@
     "build:server": "rm -f dist/tsconfig.build.tsbuildinfo && tsc --project server/tsconfig.build.json && copyfiles -u 2 server/templates/**/*.{html,pug} dist/templates && copyfiles -u 2 \"server/i18n/locale/*.json\" dist/i18n && tsc-alias -p server/tsconfig.build.json && test -f dist/launcher.js",
     "build:web": "vite build",
     "build": "bun run build:web && bun run build:server",
-    "lint": "eslint \"./server/**/*.{ts,tsx}\" \"./src/**/*.{ts,tsx}\" --cache",
-    "lintfix": "eslint \"./server/**/*.{ts,tsx}\" \"./src/**/*.{ts,tsx}\" --fix",
+    "lint": "bun scripts/eslint.mjs \"./server/**/*.{ts,tsx}\" \"./src/**/*.{ts,tsx}\" --cache",
+    "lintfix": "bun scripts/eslint.mjs \"./server/**/*.{ts,tsx}\" \"./src/**/*.{ts,tsx}\" --fix",
     "test": "bun server/test/index.mts",
     "start": "NODE_ENV=production bun dist/launcher.js",
     "i18n:extract": "bun server/i18n/extractMessages.ts",
@@ -54,7 +54,6 @@
     "ace-builds": "1.43.6",
     "axios": "1.18.0",
     "axios-rate-limit": "1.9.0",
-    "bcrypt": "6.0.0",
     "bowser": "2.14.1",
     "connect-typeorm": "2.0.0",
     "cookie-parser": "1.4.7",
@@ -79,7 +78,6 @@
     "mime": "^4.1.0",
     "nanoid": "^5.1.7",
     "node-cache": "5.1.2",
-    "node-gyp": "12.2.0",
     "node-schedule": "2.1.1",
     "nodemailer": "9.0.1",
     "openpgp": "6.3.0",
@@ -103,7 +101,6 @@
     "react-use-clipboard": "1.0.9",
     "reflect-metadata": "^0.2.2",
     "semver": "7.7.4",
-    "sqlite3": "^5.1.7",
     "swagger-ui-express": "5.0.1",
     "swr": "2.4.1",
     "tailwind-merge": "^2.6.1",
@@ -126,7 +123,6 @@
     "@tailwindcss/aspect-ratio": "^0.4.2",
     "@tailwindcss/forms": "^0.5.11",
     "@tailwindcss/typography": "^0.5.19",
-    "@types/bcrypt": "6.0.0",
     "@types/cookie-parser": "1.4.10",
     "@types/country-flag-icons": "1.2.2",
     "@types/csurf": "1.11.5",
@@ -180,7 +176,8 @@
     "supertest": "^7.2.2",
     "tailwindcss": "3.4.19",
     "tsc-alias": "1.8.16",
-    "typescript": "5.4.5",
+    "typescript": "7.0.2",
+    "typescript-classic": "npm:typescript@6.0.3",
     "typescript-eslint": "^8.58.2",
     "vite": "^7.1.5",
     "vite-plugin-svgr": "^4.5.0"
@@ -190,16 +187,11 @@
   },
   "trustedDependencies": [
     "@swc/core",
-    "bcrypt",
     "cypress",
     "esbuild",
-    "sharp",
-    "sqlite3"
+    "sharp"
   ],
   "overrides": {
-    "sqlite3": {
-      "node-gyp": "8.4.1"
-    },
     "@types/express-session": "1.18.2",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3"
@@ -212,7 +204,7 @@
   "lint-staged": {
     "**/*.{ts,tsx,js}": [
       "prettier --write",
-      "eslint"
+      "bun scripts/eslint.mjs"
     ],
     "**/*.{json,md,css}": [
       "prettier --write"

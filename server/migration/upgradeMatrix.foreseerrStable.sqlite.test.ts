@@ -1,3 +1,4 @@
+import { bunSqlite3 } from '@server/lib/bunSqlite3';
 import { FORESEERR_V0_1_0_LAST_MIGRATION_TIMESTAMP } from '@server/migration/foreseerrStableBaseline';
 import { loadMigrationClasses } from '@server/migration/loadMigrationClasses';
 import {
@@ -29,6 +30,7 @@ describe('Upgrade matrix: Foreseerr v0.1.0 stable -> current schema (SQLite)', (
     // --- Phase 1: simulate a database created by Foreseerr v0.1.0. ---
     const stableDataSource = new DataSource({
       type: 'sqlite',
+      driver: bunSqlite3,
       database,
       synchronize: false,
       logging: false,
@@ -54,6 +56,7 @@ describe('Upgrade matrix: Foreseerr v0.1.0 stable -> current schema (SQLite)', (
 
     const upgradedDataSource = new DataSource({
       type: 'sqlite',
+      driver: bunSqlite3,
       database,
       synchronize: false,
       logging: false,

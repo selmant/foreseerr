@@ -9,8 +9,6 @@ WORKDIR /app
 
 FROM base AS prod-deps
 
-RUN apk add --no-cache python3 make g++ gcc
-
 RUN --mount=type=cache,id=bun,target=/root/.bun/install/cache \
   CI=true bun install --production --frozen-lockfile
 
@@ -30,13 +28,6 @@ FROM base AS build
 
 ARG COMMIT_TAG
 ENV COMMIT_TAG=${COMMIT_TAG}
-
-RUN \
-  case "${TARGETPLATFORM}" in \
-  'linux/arm64' | 'linux/arm/v7') \
-  apk add --no-cache python3 make g++ gcc bash \
-  ;; \
-  esac
 
 RUN --mount=type=cache,id=bun,target=/root/.bun/install/cache \
   CYPRESS_INSTALL_BINARY=0 bun install --frozen-lockfile

@@ -1,3 +1,4 @@
+import { bunSqlite3 } from '@server/lib/bunSqlite3';
 import { loadMigrationClasses } from '@server/migration/loadMigrationClasses';
 import {
   assertUpgradeIsIntact,
@@ -30,6 +31,7 @@ describe('Upgrade matrix: upstream Seerr baseline -> current schema (SQLite)', (
     // baseline commit, using only the migrations that existed then. ---
     const baselineDataSource = new DataSource({
       type: 'sqlite',
+      driver: bunSqlite3,
       database,
       synchronize: false,
       logging: false,
@@ -54,6 +56,7 @@ describe('Upgrade matrix: upstream Seerr baseline -> current schema (SQLite)', (
 
     const upgradedDataSource = new DataSource({
       type: 'sqlite',
+      driver: bunSqlite3,
       database,
       synchronize: false,
       logging: false,
