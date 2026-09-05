@@ -2,6 +2,7 @@ import { getRepository } from '@server/datasource';
 import { MappingGap } from '@server/entity/MappingGap';
 import { MappingOverride } from '@server/entity/MappingOverride';
 import { MappingSource } from '@server/entity/MappingSource';
+import { resetMappingGapBuffer } from '@server/lib/mapping/gaps';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import { checkUser, isAuthenticated } from '@server/middleware/auth';
@@ -102,6 +103,7 @@ const seedGap = async (overrides: Partial<MappingGap> = {}) => {
 };
 
 beforeEach(async () => {
+  resetMappingGapBuffer();
   await getRepository(MappingGap).clear();
   await getRepository(MappingOverride).clear();
 });

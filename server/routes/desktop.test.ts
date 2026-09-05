@@ -70,6 +70,10 @@ beforeEach(async () => {
   const settings = getSettings();
   settings.main.mediaServerType = MediaServerType.JELLYFIN;
   settings.jellyfin.serverId = 'server-1';
+  settings.jellyfin.ip = '';
+  settings.jellyfin.port = 8096;
+  settings.jellyfin.useSsl = false;
+  settings.jellyfin.urlBase = '';
   settings.jellyfin.externalHostname = 'https://jellyfin.example.test';
   await getRepository(User)
     .createQueryBuilder()

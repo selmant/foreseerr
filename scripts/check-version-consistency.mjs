@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Verify package.json, Helm chart appVersion, and default image tag stay aligned.
  *
@@ -8,8 +8,8 @@
  * Chart version is validated independently and is not compared to app version.
  *
  * Usage:
- *   node scripts/check-version-consistency.mjs
- *   node scripts/check-version-consistency.mjs v0.1.0-alpha.5
+ *   bun scripts/check-version-consistency.mjs
+ *   bun scripts/check-version-consistency.mjs v0.1.0-alpha.5
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

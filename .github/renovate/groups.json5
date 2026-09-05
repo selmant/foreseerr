@@ -2,12 +2,11 @@
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
 
   packageRules: [
-    // Node.js
     {
-      matchPackageNames: ['node'],
-      matchManagers: ['dockerfile', 'npm'],
-      groupName: 'Node.js',
-      commitMessageTopic: 'Node.js',
+      matchPackageNames: ['bun'],
+      matchManagers: ['dockerfile', 'bun-version', 'npm'],
+      groupName: 'Bun',
+      commitMessageTopic: 'Bun',
     },
 
     // Database packages

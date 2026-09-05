@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import Issue from './Issue';
+import type Issue from './Issue';
 import { User } from './User';
 
 @Entity()
@@ -22,7 +22,7 @@ class IssueComment {
   @Index()
   public user: User;
 
-  @ManyToOne(() => Issue, (issue) => issue.comments, {
+  @ManyToOne('Issue', 'comments', {
     onDelete: 'CASCADE',
   })
   @Index()

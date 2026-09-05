@@ -28,6 +28,6 @@
 - [ ] Disclosed any use of AI (see our [policy](https://github.com/selmant/foreseerr/blob/develop/CONTRIBUTING.md#ai-assistance-notice))
 - [ ] I have updated the documentation accordingly.
 - [ ] All new and existing tests passed.
-- [ ] Successful build `pnpm build`
-- [ ] Translation keys `pnpm i18n:extract`
+- [ ] Successful build `bun run build`
+- [ ] Translation keys `bun run i18n:extract`
 - [ ] Database migration (if required)

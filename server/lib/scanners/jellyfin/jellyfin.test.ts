@@ -43,46 +43,20 @@ let getEpisodesImpl: (
   seasonID: string
 ) => Promise<JellyfinLibraryItem[]> = async () => [];
 
-Object.defineProperty(JellyfinAPI.prototype, 'getLibraryContents', {
-  get() {
-    return async (id: string) => getLibraryContentsImpl(id);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(JellyfinAPI.prototype, 'getItemData', {
-  get() {
-    return async (id: string) => getItemDataImpl(id);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(JellyfinAPI.prototype, 'getSeasons', {
-  get() {
-    return async (seriesID: string) => getSeasonsImpl(seriesID);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(JellyfinAPI.prototype, 'getEpisodes', {
-  get() {
-    return async (seriesID: string, seasonID: string) =>
-      getEpisodesImpl(seriesID, seasonID);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(JellyfinAPI.prototype, 'setUserId', {
-  get() {
-    return () => {};
-  },
-  set() {},
-  configurable: true,
-});
+JellyfinAPI.prototype.getLibraryContents = async (id: string) =>
+  getLibraryContentsImpl(id);
+JellyfinAPI.prototype.getItemData = async (id: string) => getItemDataImpl(id);
+JellyfinAPI.prototype.getSeasons = async (seriesID: string) =>
+  getSeasonsImpl(seriesID);
+JellyfinAPI.prototype.getEpisodes = (async (
+  seriesID: string,
+  seasonID: string
+) =>
+  getEpisodesImpl(
+    seriesID,
+    seasonID
+  )) as typeof JellyfinAPI.prototype.getEpisodes;
+JellyfinAPI.prototype.setUserId = () => {};
 
 // --- Mock TheMovieDb ---
 let getTvShowImpl: (args: {
@@ -90,14 +64,10 @@ let getTvShowImpl: (args: {
   language?: string;
 }) => Promise<TmdbTvDetails> = async () => fakeTmdbShow(1);
 
-Object.defineProperty(TheMovieDb.prototype, 'getTvShow', {
-  get() {
-    return async (args: { tvId: number; language?: string }) =>
-      getTvShowImpl(args);
-  },
-  set() {},
-  configurable: true,
-});
+TheMovieDb.prototype.getTvShow = async (args: {
+  tvId: number;
+  language?: string;
+}) => getTvShowImpl(args);
 
 import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 

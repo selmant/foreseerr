@@ -3,9 +3,9 @@ import SonarrAPI from '@server/api/servarr/sonarr';
 import { MediaStatus, MediaType } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
-import { Blocklist } from '@server/entity/Blocklist';
+import type { Blocklist } from '@server/entity/Blocklist';
 import type { User } from '@server/entity/User';
-import { Watchlist } from '@server/entity/Watchlist';
+import type { Watchlist } from '@server/entity/Watchlist';
 import type { DownloadingItem } from '@server/lib/downloadtracker';
 import downloadTracker from '@server/lib/downloadtracker';
 import { getSettings } from '@server/lib/settings';
@@ -22,9 +22,9 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import Issue from './Issue';
-import { MediaRequest } from './MediaRequest';
-import Season from './Season';
+import type Issue from './Issue';
+import type { MediaRequest } from './MediaRequest';
+import type Season from './Season';
 
 @Entity()
 @Index(['tmdbId', 'mediaType'])
@@ -107,24 +107,24 @@ class Media {
   @Index()
   public status4k: MediaStatus;
 
-  @OneToMany(() => MediaRequest, (request) => request.media, {
+  @OneToMany('MediaRequest', 'media', {
     cascade: ['insert', 'remove'],
   })
   public requests: MediaRequest[];
 
-  @OneToMany(() => Watchlist, (watchlist) => watchlist.media)
+  @OneToMany('Watchlist', 'media')
   public watchlists: null | Watchlist[];
 
-  @OneToMany(() => Season, (season) => season.media, {
+  @OneToMany('Season', 'media', {
     cascade: true,
     eager: true,
   })
   public seasons: Season[];
 
-  @OneToMany(() => Issue, (issue) => issue.media, { cascade: true })
+  @OneToMany('Issue', 'media', { cascade: true })
   public issues: Issue[];
 
-  @OneToOne(() => Blocklist, (blocklist) => blocklist.media)
+  @OneToOne('Blocklist', 'media')
   public blocklist: Promise<Blocklist>;
 
   @DbAwareColumn({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })

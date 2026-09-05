@@ -16,7 +16,7 @@ At the first stable release, Foreseerr supports upgrading in place from:
 
 Automated coverage:
 
-- `pnpm check:migrations` — fresh-install matrix for both engines (`server/migration/*` + `scripts/check-migrations.ts`), asserting key indexes/foreign keys exist, not just that the migration runner exits 0.
+- `bun run check:migrations` — fresh-install matrix for both engines (`server/migration/*` + `scripts/check-migrations.ts`), asserting key indexes/foreign keys exist, not just that the migration runner exits 0.
 - `server/migration/upgradeMatrix.sqlite.test.ts` / `.postgres.test.ts` — upgrade-from-Seerr-baseline matrix, asserting users/settings/requests/media/service config survive the upgrade, not just that migrations run.
 - `server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts` / `.postgres.test.ts` — upgrade-from-Foreseerr-`v0.1.0` matrix (identity while HEAD is still on that cutoff’s schema; meaningful once later releases add migrations).
 
@@ -30,7 +30,7 @@ When pulling a newer Seerr merge-base into this fork:
 
 1. Update `UPSTREAM_BASELINE_COMMIT` and `UPSTREAM_BASELINE_LAST_SHARED_MIGRATION_TIMESTAMP` in `server/migration/upstreamBaseline.ts` so the cutoff matches the last migration still byte-identical with upstream.
 2. Refresh or extend `server/migration/upgradeMatrix.sqlite.test.ts` / `.postgres.test.ts` (and fixtures) so upgrade-from-baseline still asserts users/settings/requests/media/service config survive.
-3. Run `pnpm check:migrations` and the upgrade-matrix tests; keep them green before shipping the sync.
+3. Run `bun run check:migrations` and the upgrade-matrix tests; keep them green before shipping the sync.
 4. Leave the user migration guide unchanged unless the operational steps above actually changed.
 
 Seerr instances newer than the published baseline remain unsupported until the next sync that advances that baseline.

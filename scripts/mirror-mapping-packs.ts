@@ -7,8 +7,8 @@
  * under our control.
  *
  * Usage:
- *   MAPPING_MIRROR_DIR=/srv/packs ts-node scripts/mirror-mapping-packs.ts
- *   MAPPING_MIRROR_S3=s3://garage/foreseerr-packs ts-node scripts/mirror-mapping-packs.ts
+ *   MAPPING_MIRROR_DIR=/srv/packs bun run mirror:packs
+ *   MAPPING_MIRROR_S3=s3://garage/foreseerr-packs bun run mirror:packs
  *
  * The S3 form shells out to the `aws` CLI, which the homelab runner already
  * has configured against Garage; no SDK dependency is added for a cron script.

@@ -23,34 +23,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - parallel:
-          - name: Pnpm Setup
-            uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
-
-          - name: Set up Node.js
-            uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-            with:
-              node-version-file: '.node-version'
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+          bun-version-file: .bun-version
 
       - name: Install dependencies
         working-directory: bin/duplicate-detector
         env:
           CI: true
-        # Nested under the root workspace; ignore parent so transformers
-        # lands in bin/duplicate-detector/node_modules.
-        run: pnpm install --frozen-lockfile --ignore-workspace
+        run: bun install --frozen-lockfile
 
       - name: Build issue index
         working-directory: bin/duplicate-detector
@@ -58,7 +40,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           INDEX_PATH: issue_index.json
-        run: node build-index.mjs
+        run: bun build-index.mjs
 
       - name: Upload index artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

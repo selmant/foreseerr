@@ -17,17 +17,11 @@ import { beforeEach, describe, it } from 'node:test';
 
 let watchlistItems: PlexWatchlistItem[] = [];
 
-Object.defineProperty(PlexTvAPI.prototype, 'getWatchlist', {
-  get() {
-    return async () => ({
-      offset: 0,
-      size: 20,
-      totalSize: watchlistItems.length,
-      items: watchlistItems,
-    });
-  },
-  set() {},
-  configurable: true,
+PlexTvAPI.prototype.getWatchlist = async () => ({
+  offset: 0,
+  size: 20,
+  totalSize: watchlistItems.length,
+  items: watchlistItems,
 });
 
 let requestCalls: { mediaId: number; mediaType: MediaType }[] = [];

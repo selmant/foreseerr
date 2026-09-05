@@ -58,7 +58,7 @@ config/mapping-packs
 # dist files
 dist
 
-# generated test report (pnpm test, CI=true)
+# generated test report (bun test, CI=true)
 report.xml
 
 # sqlite journal

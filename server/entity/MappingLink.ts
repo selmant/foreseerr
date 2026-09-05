@@ -8,7 +8,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { MappingCluster } from './MappingCluster';
+import type { MappingCluster } from './MappingCluster';
 
 /**
  * An edge from an external id to a cluster.
@@ -28,7 +28,7 @@ export class MappingLink {
   @PrimaryGeneratedColumn()
   public id: number;
 
-  @ManyToOne(() => MappingCluster, (cluster) => cluster.links, {
+  @ManyToOne('MappingCluster', 'links', {
     onDelete: 'CASCADE',
   })
   @JoinColumn()

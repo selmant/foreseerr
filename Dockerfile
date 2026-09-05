@@ -1,25 +1,21 @@
-FROM node:22.23.2-alpine3.23@sha256:46825fbbd4e996a78b7a2cdc08d75e38a5a505bdab95dcda55605359bf124bc6 AS base
+FROM oven/bun:1.4.1-alpine AS base
+USER root
 ARG SOURCE_DATE_EPOCH
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
-
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
 
 COPY . ./app
 WORKDIR /app
 
 FROM base AS prod-deps
 
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store CI=true pnpm install --prod --frozen-lockfile
+RUN apk add --no-cache python3 make g++ gcc
 
-# Remove large native modules for linux-x64-gnu platform (we use alpine which is musl-based)
-# not supported in pnpm for now due to this bug: https://github.com/pnpm/pnpm/issues/9654
-RUN du -shL ./node_modules/.pnpm/* | grep '[0-9]M.*' | grep 'linux-x64-gnu@' | awk '{print $2}' | xargs rm -rf
-# Remove large module files not needed for production
-RUN if [ -d node_modules/.pnpm ]; then \
-  find node_modules/.pnpm -type d \( \
+RUN --mount=type=cache,id=bun,target=/root/.bun/install/cache \
+  CI=true bun install --production --frozen-lockfile
+
+RUN if [ -d node_modules ]; then \
+  find node_modules -type d \( \
   -path "*ace-builds/src-noconflict" -o \
   -path "*ace-builds/src" -o \
   -path "*ace-builds/src-min" -o \
@@ -38,17 +34,17 @@ ENV COMMIT_TAG=${COMMIT_TAG}
 RUN \
   case "${TARGETPLATFORM}" in \
   'linux/arm64' | 'linux/arm/v7') \
-  apk update && \
-  apk add --no-cache python3 make g++ gcc libc6-compat bash && \
-  npm install --global node-gyp \
+  apk add --no-cache python3 make g++ gcc bash \
   ;; \
   esac
 
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store CYPRESS_INSTALL_BINARY=0 pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=bun,target=/root/.bun/install/cache \
+  CYPRESS_INSTALL_BINARY=0 bun install --frozen-lockfile
 
-RUN pnpm build
+RUN bun run build
 
-FROM node:22.23.2-alpine3.23@sha256:46825fbbd4e996a78b7a2cdc08d75e38a5a505bdab95dcda55605359bf124bc6
+FROM oven/bun:1.4.1-alpine
+USER root
 ARG SOURCE_DATE_EPOCH
 ARG COMMIT_TAG
 ENV NODE_ENV=production
@@ -56,17 +52,17 @@ ENV COMMIT_TAG=${COMMIT_TAG}
 
 RUN apk add --no-cache tzdata
 
-USER node:node
+USER bun:bun
 
 WORKDIR /app
 
-COPY --chown=node:node . .
-COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
-COPY --chown=node:node --from=build /app/dist ./dist
+COPY --chown=bun:bun . .
+COPY --chown=bun:bun --from=prod-deps /app/node_modules ./node_modules
+COPY --chown=bun:bun --from=build /app/dist ./dist
 
 RUN touch config/DOCKER && \
   echo "{\"commitTag\": \"${COMMIT_TAG}\"}" > committag.json
 
 EXPOSE 5055
 
-CMD [ "npm", "start" ]
+CMD [ "bun", "dist/launcher.js" ]

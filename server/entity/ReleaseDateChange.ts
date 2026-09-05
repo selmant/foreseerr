@@ -7,7 +7,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import ReleaseOccurrence from './ReleaseOccurrence';
+import type ReleaseOccurrence from './ReleaseOccurrence';
 
 export type ReleaseDateChangeKind =
   | 'announced'
@@ -24,7 +24,9 @@ class ReleaseDateChange {
   @Index()
   public occurrenceId: number;
 
-  @ManyToOne(() => ReleaseOccurrence, { onDelete: 'CASCADE' })
+  @ManyToOne('ReleaseOccurrence', {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'occurrenceId' })
   public occurrence: ReleaseOccurrence;
 

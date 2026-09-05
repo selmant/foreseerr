@@ -2,7 +2,7 @@
   "name": "gen-docs",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@10.24.0",
+  "packageManager": "bun@1.4.1",
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
@@ -50,6 +50,6 @@
     ]
   },
   "engines": {
-    "node": ">=22.0"
+    "bun": ">=1.4.0"
   }
 }

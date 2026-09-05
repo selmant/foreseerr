@@ -42,18 +42,55 @@ export function anilistAvailabilityFromError(error: unknown): false {
   throw error;
 }
 
+export const anilistFns = {
+  getAnilistAppCredentials(): {
+    clientId: string;
+    clientSecret: string;
+  } {
+    const { clientId, clientSecret } = getSettings().anilist;
+    if (!clientId?.trim() || !clientSecret?.trim()) {
+      throw new AnilistNotConfiguredError();
+    }
+    return {
+      clientId: clientId.trim(),
+      clientSecret: clientSecret.trim(),
+    };
+  },
+  async getUserAnilistSettings(userId: number): Promise<UserSettings | null> {
+    return getRepository(UserSettings)
+      .createQueryBuilder('settings')
+      .addSelect('settings.anilistAccessToken')
+      .addSelect('settings.anilistTokenExpiresAt')
+      .leftJoinAndSelect('settings.user', 'user')
+      .where('user.id = :userId', { userId })
+      .getOne();
+  },
+  async createAnilistUserClient(userId: number): Promise<AnilistAPI> {
+    getAnilistAppCredentials();
+    const settings = await getUserAnilistSettings(userId);
+    const accessToken = settings?.anilistAccessToken?.trim();
+    if (!settings || !accessToken) {
+      throw new AnilistNotLinkedError();
+    }
+    if (isAnilistTokenExpired(settings.anilistTokenExpiresAt)) {
+      logger.info('AniList token expired; clearing linked account', {
+        label: 'AniList',
+        userId,
+      });
+      await clearUserAnilistCredentials(settings.id, userId);
+      throw new AnilistNotLinkedError(
+        'AniList authorization expired; reconnect your account'
+      );
+    }
+    return new AnilistAPI({ accessToken });
+  },
+};
+
 export function getAnilistAppCredentials(): {
   clientId: string;
   clientSecret: string;
 } {
-  const { clientId, clientSecret } = getSettings().anilist;
-  if (!clientId?.trim() || !clientSecret?.trim()) {
-    throw new AnilistNotConfiguredError();
-  }
-  return {
-    clientId: clientId.trim(),
-    clientSecret: clientSecret.trim(),
-  };
+  return anilistFns.getAnilistAppCredentials();
 }
 
 export function createAnilistAppClient(): AnilistAPI {
@@ -64,13 +101,7 @@ export function createAnilistAppClient(): AnilistAPI {
 export async function getUserAnilistSettings(
   userId: number
 ): Promise<UserSettings | null> {
-  return getRepository(UserSettings)
-    .createQueryBuilder('settings')
-    .addSelect('settings.anilistAccessToken')
-    .addSelect('settings.anilistTokenExpiresAt')
-    .leftJoinAndSelect('settings.user', 'user')
-    .where('user.id = :userId', { userId })
-    .getOne();
+  return anilistFns.getUserAnilistSettings(userId);
 }
 
 export async function countLinkedAnilistAccounts(): Promise<number> {
@@ -146,23 +177,7 @@ export async function disconnectAllAnilistLinks(): Promise<number> {
 export async function createAnilistUserClient(
   userId: number
 ): Promise<AnilistAPI> {
-  getAnilistAppCredentials();
-  const settings = await getUserAnilistSettings(userId);
-  const accessToken = settings?.anilistAccessToken?.trim();
-  if (!settings || !accessToken) {
-    throw new AnilistNotLinkedError();
-  }
-  if (isAnilistTokenExpired(settings.anilistTokenExpiresAt)) {
-    logger.info('AniList token expired; clearing linked account', {
-      label: 'AniList',
-      userId,
-    });
-    await clearUserAnilistCredentials(settings.id, userId);
-    throw new AnilistNotLinkedError(
-      'AniList authorization expired; reconnect your account'
-    );
-  }
-  return new AnilistAPI({ accessToken });
+  return anilistFns.createAnilistUserClient(userId);
 }
 
 export { AnilistAuthError };

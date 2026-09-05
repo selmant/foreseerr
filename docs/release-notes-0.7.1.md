@@ -40,5 +40,4 @@ title: Foreseerr v0.7.1 release notes
 - No public API removals are included. `posterPath` on mapped list tiles is
   additive.
 - Downgrades are not supported.
-- Supported runtimes remain Node.js `^22.19.0 || ^24.0.0`, pnpm `^10.0.0`,
-  bundled SQLite, and PostgreSQL 16.
+- Supported runtimes are Bun `>=1.4.0`, bundled SQLite, and PostgreSQL 16.

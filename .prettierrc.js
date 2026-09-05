@@ -4,7 +4,7 @@ module.exports = {
   trailingComma: 'es5',
   overrides: [
     {
-      files: 'pnpm-lock.yaml',
+      files: 'bun.lock',
       options: {
         rangeEnd: 0, // default: Infinity
       },
@@ -16,7 +16,7 @@ module.exports = {
       },
     },
     {
-      files: 'gen-docs/pnpm-lock.yaml',
+      files: 'gen-docs/bun.lock',
       options: {
         rangeEnd: 0, // default: Infinity
       },

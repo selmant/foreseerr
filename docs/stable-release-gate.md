@@ -23,13 +23,13 @@ Re-run these on the exact commit you will tag. Prefer GitHub Actions results ove
 
 | # | Item | How |
 | --- | --- | --- |
-| 1 | Frozen install | `pnpm install --frozen-lockfile` |
+| 1 | Frozen install | `bun install --frozen-lockfile` |
 | 2 | Format / lint / typecheck / unit tests / build | `.github/workflows/ci.yml` `test` + `unit-test` jobs |
-| 3 | Fresh-install migrations (SQLite + PostgreSQL) | `pnpm check:migrations` (migration-test job) |
+| 3 | Fresh-install migrations (SQLite + PostgreSQL) | `bun run check:migrations` (migration-test job) |
 | 4 | Upgrade matrices | Seerr baseline SQLite/Postgres + Foreseerr stable SQLite/Postgres (`server/migration/upgradeMatrix*.test.ts`) |
-| 5 | Version consistency | `pnpm check:versions` |
+| 5 | Version consistency | `bun run check:versions` |
 | 6 | Helm lint + default image tag | `helm-lint` job |
-| 7 | OpenAPI / contract suites | Covered by `pnpm test` (request validation on; response validation not global) |
+| 7 | OpenAPI / contract suites | Covered by `bun run test` (request validation on; response validation not global) |
 
 ### Required manual smoke (human)
 
@@ -46,7 +46,7 @@ Keep this short; full Trakt/MDBList/Arr matrices from the alpha era are not a re
 2. Bump `package.json#version` and `charts/foreseerr-chart/Chart.yaml#appVersion` (`v` + same version). Leave `values.yaml#image.tag` empty so it defaults to AppVersion.
 3. Optionally bump the chart’s own `Chart.yaml#version`.
 4. Update release notes under `docs/release-notes-*.md` and any versioned README banners.
-5. Run `pnpm check:versions`.
+5. Run `bun run check:versions`.
 6. Tag `vX.Y.Z` to trigger `.github/workflows/release.yml`.
 7. If this tag should become a new Foreseerr→Foreseerr upgrade source, add a cutoff constant beside `FORESEERR_V0_1_0_LAST_MIGRATION_TIMESTAMP` in `server/migration/foreseerrStableBaseline.ts` and extend the upgrade-matrix tests.
 

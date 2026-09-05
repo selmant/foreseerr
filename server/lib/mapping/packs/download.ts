@@ -7,9 +7,12 @@ import type { Readable } from 'stream';
 import { Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 
-export const PACK_DIRECTORY = process.env.CONFIG_DIRECTORY
-  ? path.join(process.env.CONFIG_DIRECTORY, 'mapping-packs')
-  : path.join(__dirname, '../../../../config/mapping-packs');
+export const getPackDirectory = (): string =>
+  process.env.CONFIG_DIRECTORY
+    ? path.join(process.env.CONFIG_DIRECTORY, 'mapping-packs')
+    : path.join(__dirname, '../../../../config/mapping-packs');
+
+export const PACK_DIRECTORY = getPackDirectory();
 
 export interface PackCacheState {
   etag?: string;
@@ -50,7 +53,7 @@ const filenameFor = (key: string, format: string): string => {
 };
 
 export const packPath = (key: string, format: string): string =>
-  path.join(PACK_DIRECTORY, filenameFor(key, format));
+  path.join(getPackDirectory(), filenameFor(key, format));
 
 /** Retained beside the live copy so a bad refresh can never leave nothing. */
 export const lastGoodPath = (key: string, format: string): string =>
@@ -127,7 +130,7 @@ export async function fetchPack({
   timeoutMsec = 60_000,
   onProgress,
 }: FetchPackOptions): Promise<PackFetchResult> {
-  await fsp.mkdir(PACK_DIRECTORY, { recursive: true });
+  await fsp.mkdir(getPackDirectory(), { recursive: true });
   const target = packPath(key, format);
   const lastGood = lastGoodPath(key, format);
   const attempts: { mirror: string; error: string }[] = [];

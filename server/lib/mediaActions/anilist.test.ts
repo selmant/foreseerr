@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it, mock } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 import {
   ANILIST_NOT_MAPPED_ERROR,
   AnilistMediaActionProvider,
@@ -11,6 +11,10 @@ import {
 
 const movie = { mediaType: 'movie' as const, tmdbId: 128 };
 const tv = { mediaType: 'tv' as const, tmdbId: 26209 };
+
+afterEach(() => {
+  mock.restoreAll();
+});
 
 describe('AnilistMediaActionProvider', () => {
   it('reports unmapped writes as unavailable', async () => {
@@ -51,8 +55,12 @@ describe('AnilistMediaActionProvider', () => {
     mock.method(mapping.default, 'getAnilistId', () => 164);
 
     const anilist = await import('@server/lib/anilist');
-    mock.method(anilist, 'createAnilistUserClient', async () => ({}) as never);
-    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+    mock.method(
+      anilist.anilistFns,
+      'createAnilistUserClient',
+      async () => ({}) as never
+    );
+    mock.method(anilist.anilistFns, 'getUserAnilistSettings', async () => ({
       anilistUserId: '12',
     }));
 
@@ -100,11 +108,11 @@ describe('AnilistMediaActionProvider', () => {
     });
     const anilist = await import('@server/lib/anilist');
     mock.method(
-      anilist,
+      anilist.anilistFns,
       'createAnilistUserClient',
       async () => ({ saveMediaListEntry, deleteMediaListEntry }) as never
     );
-    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+    mock.method(anilist.anilistFns, 'getUserAnilistSettings', async () => ({
       anilistUserId: '12',
     }));
 
@@ -157,11 +165,11 @@ describe('AnilistMediaActionProvider', () => {
     });
     const anilist = await import('@server/lib/anilist');
     mock.method(
-      anilist,
+      anilist.anilistFns,
       'createAnilistUserClient',
       async () => ({ saveMediaListEntry, deleteMediaListEntry }) as never
     );
-    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+    mock.method(anilist.anilistFns, 'getUserAnilistSettings', async () => ({
       anilistUserId: '12',
     }));
 
@@ -193,11 +201,11 @@ describe('AnilistMediaActionProvider', () => {
     }));
     const anilist = await import('@server/lib/anilist');
     mock.method(
-      anilist,
+      anilist.anilistFns,
       'createAnilistUserClient',
       async () => ({ saveMediaListEntry }) as never
     );
-    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+    mock.method(anilist.anilistFns, 'getUserAnilistSettings', async () => ({
       anilistUserId: '12',
     }));
 
@@ -215,12 +223,12 @@ describe('AnilistMediaActionProvider', () => {
 
   it('isAvailable is false when the admin disables AniList actions', async () => {
     const settingsLib = await import('@server/lib/settings');
-    mock.method(settingsLib, 'getSettings', () => ({
+    mock.method(settingsLib.settingsFns, 'getSettings', () => ({
       mediaActions: { providers: { anilist: false } },
     }));
     const anilist = await import('@server/lib/anilist');
     const createClient = mock.method(
-      anilist,
+      anilist.anilistFns,
       'createAnilistUserClient',
       async () => ({}) as never
     );
@@ -232,19 +240,19 @@ describe('AnilistMediaActionProvider', () => {
 
   it('isAvailable is false when the user disables AniList watch sync', async () => {
     const settingsLib = await import('@server/lib/settings');
-    mock.method(settingsLib, 'getSettings', () => ({
+    mock.method(settingsLib.settingsFns, 'getSettings', () => ({
       mediaActions: { providers: { anilist: true } },
     }));
     const anilist = await import('@server/lib/anilist');
-    mock.method(anilist, 'getAnilistAppCredentials', () => ({
+    mock.method(anilist.anilistFns, 'getAnilistAppCredentials', () => ({
       clientId: 'id',
       clientSecret: 'secret',
     }));
-    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+    mock.method(anilist.anilistFns, 'getUserAnilistSettings', async () => ({
       mediaActionsAnilistEnabled: false,
     }));
     const createClient = mock.method(
-      anilist,
+      anilist.anilistFns,
       'createAnilistUserClient',
       async () => ({}) as never
     );
@@ -256,18 +264,22 @@ describe('AnilistMediaActionProvider', () => {
 
   it('isAvailable is true when the user toggle is missing and the account is linked', async () => {
     const settingsLib = await import('@server/lib/settings');
-    mock.method(settingsLib, 'getSettings', () => ({
+    mock.method(settingsLib.settingsFns, 'getSettings', () => ({
       mediaActions: { providers: { anilist: true } },
     }));
     const anilist = await import('@server/lib/anilist');
-    mock.method(anilist, 'getAnilistAppCredentials', () => ({
+    mock.method(anilist.anilistFns, 'getAnilistAppCredentials', () => ({
       clientId: 'id',
       clientSecret: 'secret',
     }));
-    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+    mock.method(anilist.anilistFns, 'getUserAnilistSettings', async () => ({
       mediaActionsAnilistEnabled: null,
     }));
-    mock.method(anilist, 'createAnilistUserClient', async () => ({}) as never);
+    mock.method(
+      anilist.anilistFns,
+      'createAnilistUserClient',
+      async () => ({}) as never
+    );
 
     const provider = new AnilistMediaActionProvider();
     assert.equal(await provider.isAvailable(7), true);

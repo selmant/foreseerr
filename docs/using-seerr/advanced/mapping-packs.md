@@ -87,8 +87,8 @@ each pack from its upstream mirrors, validates the body, and publishes it to a
 directory, an S3 bucket, or both:
 
 ```bash
-MAPPING_MIRROR_DIR=/srv/packs pnpm mirror:packs
-MAPPING_MIRROR_S3=s3://foreseerr-packs pnpm mirror:packs
+MAPPING_MIRROR_DIR=/srv/packs bun run mirror:packs
+MAPPING_MIRROR_S3=s3://foreseerr-packs bun run mirror:packs
 ```
 
 The S3 form shells out to the `aws` CLI, so any S3-compatible store (Garage,
@@ -98,7 +98,7 @@ daily Forgejo workflow lives at
 
 ## Measuring coverage
 
-`pnpm measure:mapping` downloads every pack in the manifest and reports how
+`bun run measure:mapping` downloads every pack in the manifest and reports how
 much of it reaches TMDB, without needing a database or any API key:
 
 ```text

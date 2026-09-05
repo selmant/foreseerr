@@ -16,7 +16,7 @@ jobs:
   mirror:
     runs-on: docker
     container:
-      image: node:22-bookworm
+      image: oven/bun:1.4.1
     steps:
       - uses: actions/checkout@v4
 
@@ -26,9 +26,7 @@ jobs:
           apt-get install -y --no-install-recommends awscli
 
       - name: Install dependencies
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Mirror packs to Garage
         env:
@@ -37,4 +35,4 @@ jobs:
           AWS_ENDPOINT_URL: ${{ vars.GARAGE_ENDPOINT_URL }}
           AWS_DEFAULT_REGION: garage
           MAPPING_MIRROR_S3: ${{ vars.MAPPING_MIRROR_S3 }}
-        run: pnpm mirror:packs
+        run: bun run mirror:packs

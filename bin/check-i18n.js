@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /* eslint-disable @typescript-eslint/no-require-imports, no-console */
 /**
  * Check that i18n locale files are in sync with extracted messages.
@@ -17,7 +17,7 @@ const backups = targets.map((p) => `${p}.bak`);
 
 try {
   targets.forEach((p, i) => fs.copyFileSync(p, backups[i]));
-  execSync('pnpm i18n:extract', { stdio: 'inherit' });
+  execSync('bun run i18n:extract', { stdio: 'inherit' });
 
   let outOfSync = false;
   for (let i = 0; i < targets.length; i++) {
@@ -27,7 +27,7 @@ try {
 
     if (original !== extracted) {
       console.error(
-        `i18n messages are out of sync for ${path.basename(path.dirname(path.dirname(targets[i])))}. Please run 'pnpm i18n:extract' and commit the changes.`
+        `i18n messages are out of sync for ${path.basename(path.dirname(path.dirname(targets[i])))}. Please run 'bun run i18n:extract' and commit the changes.`
       );
       outOfSync = true;
     }

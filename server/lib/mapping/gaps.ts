@@ -154,6 +154,15 @@ export async function flushMappingGaps(): Promise<void> {
   await flush();
 }
 
+/** Drop pending telemetry so it cannot flush into another test's SQLite. */
+export function resetMappingGapBuffer(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = undefined;
+  }
+  pending.clear();
+}
+
 export interface MappingGapQuery {
   status?: MappingGapStatus;
   discoverSource?: string;

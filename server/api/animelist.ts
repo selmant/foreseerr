@@ -22,9 +22,9 @@ export interface AnidbItem {
 class AnimeListMapping {
   public isLoaded = (): boolean => true;
 
-  public sync = async (): Promise<void> => {
+  public async sync(): Promise<void> {
     await ensureMappingLayer();
-  };
+  }
 
   public getFromAnidbId = async (
     anidbId: number

@@ -1,8 +1,15 @@
 import type TheMovieDb from '@server/api/themoviedb';
+import { clearNegativeCache, resetBudgets } from '@server/lib/mapping/budget';
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import { withTmdbPoster } from './posters';
 import { resetTmdbValidityCache } from './validity';
+
+beforeEach(() => {
+  resetBudgets();
+  clearNegativeCache();
+  resetTmdbValidityCache();
+});
 
 afterEach(() => {
   resetTmdbValidityCache();
@@ -23,9 +30,9 @@ describe('withTmdbPoster', () => {
   it('copies the poster the confirm probe already fetched', async () => {
     const item = await withTmdbPoster(
       {
-        id: 76341,
-        ratingKey: 'trakt-movie-76341',
-        tmdbId: 76341,
+        id: 900001,
+        ratingKey: 'trakt-movie-900001',
+        tmdbId: 900001,
         mediaType: 'movie',
         title: 'Mad Max: Fury Road',
         source: 'trakt',

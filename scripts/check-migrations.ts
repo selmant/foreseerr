@@ -12,7 +12,7 @@
  * to silently reuse SQLite-flavored column types (e.g. `datetime` instead of
  * `timestamp with time zone`), which TypeORM then rejects as unsupported.
  *
- * `pnpm check:migrations` therefore invokes this script twice, once per
+ * `bun run check:migrations` therefore invokes this script twice, once per
  * engine, each in its own process (see the `check:migrations` script in
  * package.json).
  */

@@ -8,7 +8,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { MappingCluster } from './MappingCluster';
+import type { MappingCluster } from './MappingCluster';
 
 /**
  * One episode-range translation, expressing anibridge semantics such as
@@ -23,7 +23,7 @@ export class MappingEpisodeRule {
   @PrimaryGeneratedColumn()
   public id: number;
 
-  @ManyToOne(() => MappingCluster, (cluster) => cluster.episodeRules, {
+  @ManyToOne('MappingCluster', 'episodeRules', {
     onDelete: 'CASCADE',
   })
   @JoinColumn()

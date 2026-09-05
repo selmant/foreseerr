@@ -47,46 +47,19 @@ let getEpisodesImpl: (
   seasonID: string
 ) => Promise<JellyfinLibraryItem[]> = async () => [];
 
-Object.defineProperty(JellyfinAPI.prototype, 'getSystemInfo', {
-  get() {
-    return async () => getSystemInfoImpl();
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(JellyfinAPI.prototype, 'getItemData', {
-  get() {
-    return async (id: string) => getItemDataImpl(id);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(JellyfinAPI.prototype, 'getSeasons', {
-  get() {
-    return async (seriesID: string) => getSeasonsImpl(seriesID);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(JellyfinAPI.prototype, 'getEpisodes', {
-  get() {
-    return async (seriesID: string, seasonID: string) =>
-      getEpisodesImpl(seriesID, seasonID);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(JellyfinAPI.prototype, 'setUserId', {
-  get() {
-    return () => {};
-  },
-  set() {},
-  configurable: true,
-});
+JellyfinAPI.prototype.getSystemInfo = async () => getSystemInfoImpl();
+JellyfinAPI.prototype.getItemData = async (id: string) => getItemDataImpl(id);
+JellyfinAPI.prototype.getSeasons = async (seriesID: string) =>
+  getSeasonsImpl(seriesID);
+JellyfinAPI.prototype.getEpisodes = (async (
+  seriesID: string,
+  seasonID: string
+) =>
+  getEpisodesImpl(
+    seriesID,
+    seasonID
+  )) as typeof JellyfinAPI.prototype.getEpisodes;
+JellyfinAPI.prototype.setUserId = () => {};
 
 // --- Mock PlexAPI ---
 let getMetadataImpl: (
@@ -99,48 +72,27 @@ let getChildrenMetadataImpl: (
   key: string
 ) => Promise<PlexMetadata[]> = async () => [];
 
-Object.defineProperty(PlexAPI.prototype, 'getMetadata', {
-  get() {
-    return async (key: string, options?: { includeChildren?: boolean }) =>
-      getMetadataImpl(key, options);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(PlexAPI.prototype, 'getChildrenMetadata', {
-  get() {
-    return async (key: string) => getChildrenMetadataImpl(key);
-  },
-  set() {},
-  configurable: true,
-});
+PlexAPI.prototype.getMetadata = async (
+  key: string,
+  options?: { includeChildren?: boolean }
+) => getMetadataImpl(key, options);
+PlexAPI.prototype.getChildrenMetadata = async (key: string) =>
+  getChildrenMetadataImpl(key);
 
 // --- Mock SonarrAPI ---
 let getSeriesByIdImpl: (id: number) => Promise<SonarrSeries> = async () => {
   throw new Error('404');
 };
 
-Object.defineProperty(SonarrAPI.prototype, 'getSeriesById', {
-  get() {
-    return async (id: number) => getSeriesByIdImpl(id);
-  },
-  set() {},
-  configurable: true,
-});
+SonarrAPI.prototype.getSeriesById = async (id: number) => getSeriesByIdImpl(id);
 
 // --- Mock RadarrAPI ---
 let getMovieImpl: (id: number) => Promise<RadarrMovie> = async () => {
   throw new Error('404');
 };
 
-Object.defineProperty(RadarrAPI.prototype, 'getMovie', {
-  get() {
-    return async ({ id }: { id: number }) => getMovieImpl(id);
-  },
-  set() {},
-  configurable: true,
-});
+RadarrAPI.prototype.getMovie = async ({ id }: { id: number }) =>
+  getMovieImpl(id);
 
 // --- Mock TheMovieDb ---
 let getTvShowImpl: (args: {
@@ -152,23 +104,14 @@ let getShowByTvdbIdImpl: (args: {
   language?: string;
 }) => Promise<TmdbTvDetails> = async () => fakeTmdbShow(1);
 
-Object.defineProperty(TheMovieDb.prototype, 'getTvShow', {
-  get() {
-    return async (args: { tvId: number; language?: string }) =>
-      getTvShowImpl(args);
-  },
-  set() {},
-  configurable: true,
-});
-
-Object.defineProperty(TheMovieDb.prototype, 'getShowByTvdbId', {
-  get() {
-    return async (args: { tvdbId: number; language?: string }) =>
-      getShowByTvdbIdImpl(args);
-  },
-  set() {},
-  configurable: true,
-});
+TheMovieDb.prototype.getTvShow = async (args: {
+  tvId: number;
+  language?: string;
+}) => getTvShowImpl(args);
+TheMovieDb.prototype.getShowByTvdbId = async (args: {
+  tvdbId: number;
+  language?: string;
+}) => getShowByTvdbIdImpl(args);
 
 // --- Helpers ---
 

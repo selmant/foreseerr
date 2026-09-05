@@ -8,7 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { MediaRequest } from './MediaRequest';
+import type { MediaRequest } from './MediaRequest';
 
 @Entity()
 class SeasonRequest {
@@ -21,7 +21,7 @@ class SeasonRequest {
   @Column({ type: 'int', default: MediaRequestStatus.PENDING })
   public status: MediaRequestStatus;
 
-  @ManyToOne(() => MediaRequest, (request) => request.seasons, {
+  @ManyToOne('MediaRequest', 'seasons', {
     onDelete: 'CASCADE',
   })
   @Index()

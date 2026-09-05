@@ -9,7 +9,7 @@ import {
   Unique,
   UpdateDateColumn,
 } from 'typeorm';
-import { MediaRequest } from './MediaRequest';
+import type { MediaRequest } from './MediaRequest';
 
 @Entity()
 @Unique('UQ_episode_request_request_tvdb', ['request', 'tvdbId'])
@@ -39,7 +39,7 @@ class EpisodeRequest {
   @DbAwareColumn({ type: 'datetime', nullable: true })
   public searchTriggeredAt?: Date;
 
-  @ManyToOne(() => MediaRequest, (request) => request.episodes, {
+  @ManyToOne('MediaRequest', 'episodes', {
     onDelete: 'CASCADE',
     orphanedRowAction: 'delete',
   })

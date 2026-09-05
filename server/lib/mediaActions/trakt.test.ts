@@ -9,13 +9,13 @@ describe('TraktMediaActionProvider isAvailable', () => {
 
   it('is false when the admin disables Trakt actions', async () => {
     const settingsLib = await import('@server/lib/settings');
-    mock.method(settingsLib, 'getSettings', () => ({
+    mock.method(settingsLib.settingsFns, 'getSettings', () => ({
       mediaActions: { providers: { trakt: false } },
       trakt: { provider: 'direct' },
     }));
     const trakt = await import('@server/lib/trakt');
     const createClient = mock.method(
-      trakt,
+      trakt.traktFns,
       'createTraktUserClient',
       async () => ({}) as never
     );
@@ -27,21 +27,21 @@ describe('TraktMediaActionProvider isAvailable', () => {
 
   it('is false when the user disables Trakt watch sync', async () => {
     const settingsLib = await import('@server/lib/settings');
-    mock.method(settingsLib, 'getSettings', () => ({
+    mock.method(settingsLib.settingsFns, 'getSettings', () => ({
       mediaActions: { providers: { trakt: true } },
       trakt: { provider: 'direct' },
     }));
     const trakt = await import('@server/lib/trakt');
-    mock.method(trakt, 'isJellyfinTraktProvider', () => false);
-    mock.method(trakt, 'getTraktAppCredentials', () => ({
+    mock.method(trakt.traktFns, 'isJellyfinTraktProvider', () => false);
+    mock.method(trakt.traktFns, 'getTraktAppCredentials', () => ({
       clientId: 'id',
       clientSecret: 'secret',
     }));
-    mock.method(trakt, 'getUserTraktSettings', async () => ({
+    mock.method(trakt.traktFns, 'getUserTraktSettings', async () => ({
       mediaActionsTraktEnabled: false,
     }));
     const createClient = mock.method(
-      trakt,
+      trakt.traktFns,
       'createTraktUserClient',
       async () => ({}) as never
     );
@@ -53,20 +53,24 @@ describe('TraktMediaActionProvider isAvailable', () => {
 
   it('is true when the user toggle is missing and the account is linked', async () => {
     const settingsLib = await import('@server/lib/settings');
-    mock.method(settingsLib, 'getSettings', () => ({
+    mock.method(settingsLib.settingsFns, 'getSettings', () => ({
       mediaActions: { providers: { trakt: true } },
       trakt: { provider: 'direct' },
     }));
     const trakt = await import('@server/lib/trakt');
-    mock.method(trakt, 'isJellyfinTraktProvider', () => false);
-    mock.method(trakt, 'getTraktAppCredentials', () => ({
+    mock.method(trakt.traktFns, 'isJellyfinTraktProvider', () => false);
+    mock.method(trakt.traktFns, 'getTraktAppCredentials', () => ({
       clientId: 'id',
       clientSecret: 'secret',
     }));
-    mock.method(trakt, 'getUserTraktSettings', async () => ({
+    mock.method(trakt.traktFns, 'getUserTraktSettings', async () => ({
       mediaActionsTraktEnabled: null,
     }));
-    mock.method(trakt, 'createTraktUserClient', async () => ({}) as never);
+    mock.method(
+      trakt.traktFns,
+      'createTraktUserClient',
+      async () => ({}) as never
+    );
 
     const provider = new TraktMediaActionProvider();
     assert.equal(await provider.isAvailable(7), true);
@@ -74,7 +78,11 @@ describe('TraktMediaActionProvider isAvailable', () => {
 
   it('can load trakt episode actions while @server/lib/trakt is mocked', async () => {
     const trakt = await import('@server/lib/trakt');
-    mock.method(trakt, 'createTraktUserClient', async () => ({}) as never);
+    mock.method(
+      trakt.traktFns,
+      'createTraktUserClient',
+      async () => ({}) as never
+    );
     const { traktEpisodeActions } = await import('./traktEpisodes');
     assert.equal(typeof traktEpisodeActions.isAvailable, 'function');
   });

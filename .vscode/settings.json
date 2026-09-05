@@ -28,7 +28,7 @@
   "jestrunner.defaultTestPatterns": [
     "server/**/*.{test,spec}.?(c|m)[jt]s?(x)",
   ],
-  "jestrunner.nodeTestCommand": "pnpm test",
+  "jestrunner.nodeTestCommand": "bun run test",
   "jestrunner.changeDirectoryToWorkspaceRoot": true,
   "jestrunner.projectPath": "."
 }

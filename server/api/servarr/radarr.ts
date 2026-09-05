@@ -144,7 +144,7 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
     super({ url, apiKey, cacheName: 'radarr', apiName: 'Radarr' });
   }
 
-  public getMovies = async (): Promise<RadarrMovie[]> => {
+  public async getMovies(): Promise<RadarrMovie[]> {
     try {
       const response = await this.axios.get<RadarrMovie[]>('/movie');
 
@@ -154,7 +154,7 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
         cause: e,
       });
     }
-  };
+  }
 
   public async getCalendar(
     start: Date | string,
@@ -178,7 +178,7 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
     }
   }
 
-  public getMovie = async ({ id }: { id: number }): Promise<RadarrMovie> => {
+  public async getMovie({ id }: { id: number }): Promise<RadarrMovie> {
     try {
       const response = await this.axios.get<RadarrMovie>(`/movie/${id}`);
 
@@ -188,7 +188,7 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
         cause: e,
       });
     }
-  };
+  }
 
   public async getMovieByTmdbId(id: number): Promise<RadarrMovie> {
     let response: AxiosResponse<RadarrMovie[]>;

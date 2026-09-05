@@ -9,6 +9,16 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 
+function isHttpsProxyAgent(agent: unknown): boolean {
+  return (
+    agent instanceof HttpsProxyAgent ||
+    (typeof agent === 'object' &&
+      agent !== null &&
+      (agent as { constructor?: { name?: string } }).constructor?.name ===
+        'HttpsProxyAgent')
+  );
+}
+
 class TestExternalAPI extends ExternalAPI {
   public constructor() {
     super('https://api.themoviedb.org/3', {}, {});
@@ -59,7 +69,7 @@ describe('proxy routing (construction-order independence)', () => {
     await createCustomProxyAgent(proxySettings);
     const agent = await preProxyClient.resolvedHttpsAgent();
     assert.ok(
-      agent instanceof HttpsProxyAgent,
+      isHttpsProxyAgent(agent),
       'client created before proxy setup must still route through the proxy'
     );
   });
@@ -67,6 +77,6 @@ describe('proxy routing (construction-order independence)', () => {
   it('routes a client constructed AFTER the proxy was configured', async () => {
     await createCustomProxyAgent(proxySettings);
     const agent = await new TestExternalAPI().resolvedHttpsAgent();
-    assert.ok(agent instanceof HttpsProxyAgent);
+    assert.ok(isHttpsProxyAgent(agent));
   });
 });

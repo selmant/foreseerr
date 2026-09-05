@@ -1,7 +1,9 @@
 import { MediaRequestStatus, MediaType } from '@server/constants/media';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
-import { Watchlist } from '@server/entity/Watchlist';
+// Type-only entity imports: Bun evaluates TS as ESM and hits TDZ on
+// TypeORM circular graphs if these are value-imported at module load.
+import type { Watchlist } from '@server/entity/Watchlist';
 import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
 import PreparedEmail from '@server/lib/email';
 import type { PermissionCheckOptions } from '@server/lib/permissions';
@@ -25,10 +27,10 @@ import {
   RelationCount,
   UpdateDateColumn,
 } from 'typeorm';
-import Issue from './Issue';
-import { MediaRequest } from './MediaRequest';
-import { UserPushSubscription } from './UserPushSubscription';
-import { UserSettings } from './UserSettings';
+import type Issue from './Issue';
+import type { MediaRequest } from './MediaRequest';
+import type { UserPushSubscription } from './UserPushSubscription';
+import type { UserSettings } from './UserSettings';
 
 @Entity()
 export class User {
@@ -115,10 +117,10 @@ export class User {
   @RelationCount((user: User) => user.requests)
   public requestCount: number;
 
-  @OneToMany(() => MediaRequest, (request) => request.requestedBy)
+  @OneToMany('MediaRequest', 'requestedBy')
   public requests: MediaRequest[];
 
-  @OneToMany(() => Watchlist, (watchlist) => watchlist.requestedBy)
+  @OneToMany('Watchlist', 'requestedBy')
   public watchlists: Watchlist[];
 
   @Column({ nullable: true })
@@ -133,17 +135,17 @@ export class User {
   @Column({ nullable: true })
   public tvQuotaDays?: number;
 
-  @OneToOne(() => UserSettings, (settings) => settings.user, {
+  @OneToOne('UserSettings', 'user', {
     cascade: true,
     eager: true,
     onDelete: 'CASCADE',
   })
   public settings?: UserSettings;
 
-  @OneToMany(() => UserPushSubscription, (pushSub) => pushSub.user)
+  @OneToMany('UserPushSubscription', 'user')
   public pushSubscriptions: UserPushSubscription[];
 
-  @OneToMany(() => Issue, (issue) => issue.createdBy, { cascade: true })
+  @OneToMany('Issue', 'createdBy', { cascade: true })
   public createdIssues: Issue[];
 
   @DbAwareColumn({ type: 'datetime', default: () => 'CURRENT_TIMESTAMP' })
@@ -316,6 +318,7 @@ export class User {
     const {
       main: { defaultQuotas },
     } = getSettings();
+    const { MediaRequest } = await import('./MediaRequest');
     const requestRepository = getRepository(MediaRequest);
     const canBypass = this.hasPermission([Permission.MANAGE_USERS], {
       type: 'or',

@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it, mock, type TestContext } from 'node:test';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  it,
+  mock,
+  type TestContext,
+} from 'node:test';
 
 import SonarrAPI, {
   type EpisodeResult,
@@ -17,11 +24,13 @@ import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
 import { getSettings } from '@server/lib/settings';
-import * as watchAhead from '@server/lib/watchAhead';
+import { watchAheadFns } from '@server/lib/watchAhead';
 import { setupTestDb } from '@server/test/db';
 import episodeRequestSync from './episodeRequestSync';
 
 setupTestDb();
+
+afterEach(() => mock.restoreAll());
 
 beforeEach(() => {
   getSettings().sonarr = [];
@@ -326,7 +335,7 @@ describe('episode request synchronization', () => {
       }),
     }));
     t.mock.method(
-      watchAhead,
+      watchAheadFns,
       'loadPlayedTvdbIdsForSeries',
       async () => new Set([101])
     );

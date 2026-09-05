@@ -63,22 +63,79 @@ export function traktAvailabilityFromError(error: unknown): false {
   throw error;
 }
 
+export const traktFns = {
+  getTraktAppCredentials(): {
+    clientId: string;
+    clientSecret: string;
+  } {
+    const { clientId, clientSecret } = getSettings().trakt;
+    if (!clientId?.trim() || !clientSecret?.trim()) {
+      throw new TraktNotConfiguredError();
+    }
+    return {
+      clientId: clientId.trim(),
+      clientSecret: clientSecret.trim(),
+    };
+  },
+  isJellyfinTraktProvider(): boolean {
+    return getSettings().trakt.provider === 'jellyfin';
+  },
+  async getUserTraktSettings(userId: number): Promise<UserSettings | null> {
+    const settingsRepository = getRepository(UserSettings);
+    return settingsRepository
+      .createQueryBuilder('settings')
+      .addSelect('settings.traktAccessToken')
+      .addSelect('settings.traktRefreshToken')
+      .addSelect('settings.traktTokenExpiresAt')
+      .leftJoinAndSelect('settings.user', 'user')
+      .where('user.id = :userId', { userId })
+      .getOne();
+  },
+  async createTraktUserClient(userId: number): Promise<TraktAPI> {
+    if (isJellyfinTraktProvider()) {
+      const token = await getJellyfinTraktToken(userId);
+      return new TraktAPI({
+        clientId: token.clientId,
+        clientSecret: '',
+        accessToken: token.accessToken,
+        refreshToken: token.refreshToken,
+        expiresAt: token.expiresAt,
+        refreshTokens: async () => {
+          const refreshed = await getJellyfinTraktToken(userId);
+          return refreshed;
+        },
+      });
+    }
+
+    const { clientId, clientSecret } = getTraktAppCredentials();
+    const settings = await getUserTraktSettings(userId);
+
+    if (!settings?.traktAccessToken || !settings.traktRefreshToken) {
+      throw new TraktNotLinkedError();
+    }
+
+    return new TraktAPI({
+      clientId,
+      clientSecret,
+      accessToken: settings.traktAccessToken,
+      refreshToken: settings.traktRefreshToken,
+      expiresAt: settings.traktTokenExpiresAt
+        ? Number(settings.traktTokenExpiresAt)
+        : undefined,
+      refreshTokens: (tokens) => refreshUserTraktTokens(userId, tokens),
+    });
+  },
+};
+
 export function getTraktAppCredentials(): {
   clientId: string;
   clientSecret: string;
 } {
-  const { clientId, clientSecret } = getSettings().trakt;
-  if (!clientId?.trim() || !clientSecret?.trim()) {
-    throw new TraktNotConfiguredError();
-  }
-  return {
-    clientId: clientId.trim(),
-    clientSecret: clientSecret.trim(),
-  };
+  return traktFns.getTraktAppCredentials();
 }
 
 export const isJellyfinTraktProvider = (): boolean =>
-  getSettings().trakt.provider === 'jellyfin';
+  traktFns.isJellyfinTraktProvider();
 
 type JellyfinTraktTokenResponse = {
   AccessToken?: unknown;
@@ -236,15 +293,7 @@ export function createTraktAppClient(): TraktAPI {
 export async function getUserTraktSettings(
   userId: number
 ): Promise<UserSettings | null> {
-  const settingsRepository = getRepository(UserSettings);
-  return settingsRepository
-    .createQueryBuilder('settings')
-    .addSelect('settings.traktAccessToken')
-    .addSelect('settings.traktRefreshToken')
-    .addSelect('settings.traktTokenExpiresAt')
-    .leftJoinAndSelect('settings.user', 'user')
-    .where('user.id = :userId', { userId })
-    .getOne();
+  return traktFns.getUserTraktSettings(userId);
 }
 
 export async function countLinkedTraktAccounts(): Promise<number> {
@@ -420,38 +469,7 @@ export async function refreshUserTraktTokens(
 }
 
 export async function createTraktUserClient(userId: number): Promise<TraktAPI> {
-  if (isJellyfinTraktProvider()) {
-    const token = await getJellyfinTraktToken(userId);
-    return new TraktAPI({
-      clientId: token.clientId,
-      clientSecret: '',
-      accessToken: token.accessToken,
-      refreshToken: token.refreshToken,
-      expiresAt: token.expiresAt,
-      refreshTokens: async () => {
-        const refreshed = await getJellyfinTraktToken(userId);
-        return refreshed;
-      },
-    });
-  }
-
-  const { clientId, clientSecret } = getTraktAppCredentials();
-  const settings = await getUserTraktSettings(userId);
-
-  if (!settings?.traktAccessToken || !settings.traktRefreshToken) {
-    throw new TraktNotLinkedError();
-  }
-
-  return new TraktAPI({
-    clientId,
-    clientSecret,
-    accessToken: settings.traktAccessToken,
-    refreshToken: settings.traktRefreshToken,
-    expiresAt: settings.traktTokenExpiresAt
-      ? Number(settings.traktTokenExpiresAt)
-      : undefined,
-    refreshTokens: (tokens) => refreshUserTraktTokens(userId, tokens),
-  });
+  return traktFns.createTraktUserClient(userId);
 }
 
 export async function ensureUserSettings(

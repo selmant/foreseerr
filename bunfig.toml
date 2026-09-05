@@ -1,0 +1,6 @@
+[install]
+linker = "hoisted"
+
+[run]
+# Execute package scripts with Bun instead of Node.
+bun = true

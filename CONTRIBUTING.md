@@ -23,7 +23,7 @@ All help is welcome and greatly appreciated! If you would like to contribute to 
 > - Blank or template-default PR descriptions
 > - AI-generated PR descriptions that replace our template with their own structure (e.g., "Summary / What changed / Root cause / Test plan" instead of following the PR template; this is the default output format of tools like Claude Code and is an immediate indicator that the PR was not reviewed by a human)
 > - Unchecked checklists or missing checklist entirely
-> - Failing CI checks that would have been caught by running `pnpm build`
+> - Failing CI checks that would have been caught by running `bun run build`
 > - Code that does not match the described changes
 > - Inability to answer questions about the submitted code
 >
@@ -114,8 +114,7 @@ Please be respectful to maintainers and disclose AI assistance.
 
 - HTML/Typescript/Javascript editor
 - [VSCode](https://code.visualstudio.com/) is recommended. Upon opening the project, a few extensions will be automatically recommended for install.
-- [NodeJS](https://nodejs.org/en/download/) (Node 22.19+ or Node 24)
-- [Pnpm](https://pnpm.io/cli/install)
+- [Bun](https://bun.sh/docs/installation) 1.4+
 - [Git](https://git-scm.com/downloads)
 
 ### Getting Started
@@ -154,11 +153,11 @@ Please be respectful to maintainers and disclose AI assistance.
 4. Run the development environment:
 
    ```bash
-   pnpm install
-   pnpm dev
+   bun install
+   bun run dev
    ```
 
-   - Alternatively, you can use [Docker](https://www.docker.com/) with `docker compose up -d`. This method does not require installing Node.js or pnpm on your machine directly.
+   - Alternatively, you can use [Docker](https://www.docker.com/) with `docker compose up -d`. This method does not require installing Bun on your machine directly.
 
 5. Create your patch and test your changes.
 
@@ -222,7 +221,7 @@ Upstream Seerr still hosts [Weblate](https://translate.seerr.dev/projects/seerr/
 Roughly ~492 Foreseerr-only message keys exist in `src/i18n/locale/en.json` and are English-only across the other locale files. The UI still works because `react-intl` falls back to each message’s `defaultMessage`. When you add or change UI copy:
 
 1. Use `defineMessages` / `intl.formatMessage` with a clear `defaultMessage` (do not hardcode English in JSX).
-2. Run `pnpm i18n:extract` and commit `src/i18n/locale/en.json`.
+2. Run `bun run i18n:extract` and commit `src/i18n/locale/en.json`.
 3. Do **not** invent translations for other locales unless you are updating Weblate-backed Seerr-shared keys; leave non-`en` files alone for Foreseerr-only keys so they keep falling back to English.
 
 <a href="https://translate.seerr.dev/engage/seerr/"><img src="https://translate.seerr.dev/widget/seerr/multi-auto.svg" alt="Translation status" /></a>
@@ -250,10 +249,10 @@ PGPASSWORD=postgres sudo docker exec -it postgres-seerr /usr/bin/psql -h 127.0.0
 
 ```bash
 git switch develop
-pnpm i
-rm -r dist/public dist; pnpm build
-pnpm start
-DB_TYPE="postgres" DB_USER=postgres DB_PASS=postgres pnpm start
+bun install
+rm -r dist/public dist; bun run build
+bun run start
+DB_TYPE="postgres" DB_USER=postgres DB_PASS=postgres bun run start
 ```
 
 (You can shutdown the server once the message "Server ready on 5055" appears)
@@ -262,9 +261,9 @@ DB_TYPE="postgres" DB_USER=postgres DB_PASS=postgres pnpm start
 
 ```bash
 git switch -c your-feature-branch
-pnpm i
-pnpm migration:generate server/migration/sqlite/YourMigrationName
-DB_TYPE="postgres" DB_USER=postgres DB_PASS=postgres pnpm migration:generate server/migration/postgres/YourMigrationName
+bun install
+bun run migration:generate server/migration/sqlite/YourMigrationName
+DB_TYPE="postgres" DB_USER=postgres DB_PASS=postgres bun run migration:generate server/migration/postgres/YourMigrationName
 ```
 
 ## Attribution

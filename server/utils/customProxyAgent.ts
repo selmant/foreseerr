@@ -128,7 +128,11 @@ export default async function createCustomProxyAgent(
       connect: forceIpv4First ? { family: 4 } : undefined,
     });
 
-    setGlobalDispatcher(proxyAgent.compose(noProxyInterceptor));
+    const dispatcher =
+      typeof proxyAgent.compose === 'function'
+        ? proxyAgent.compose(noProxyInterceptor)
+        : proxyAgent;
+    setGlobalDispatcher(dispatcher);
 
     const agentOptions = {
       headers: token ? { 'proxy-authorization': token } : undefined,

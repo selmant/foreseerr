@@ -7,13 +7,13 @@ Foreseerr docs are published at [selmant.github.io/foreseerr](https://selmant.gi
 ### Installation
 
 ```bash
-pnpm install
+bun install
 ```
 
 ### Local Development
 
 ```bash
-pnpm start
+bun run start
 ```
 
 This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
@@ -21,7 +21,7 @@ This command starts a local development server and opens up a browser window. Mo
 ### Build
 
 ```bash
-pnpm build
+bun run build
 ```
 
 This command generates static content in the `build` directory, which can then be served using any static content hosting service.
@@ -31,13 +31,13 @@ This command generates static content in the `build` directory, which can then b
 This command generates REST API documentation.
 
 ```bash
-pnpm gen-api-docs all
+bun run gen-api-docs all
 ```
 
 This command cleans REST API documentation.
 
 ```bash
-pnpm clean-api-docs all
+bun run clean-api-docs all
 ```
 
 See [docusaurus-openapi-docs](https://github.com/PaloAltoNetworks/docusaurus-openapi-docs/tree/main#cli-usage) for more information.

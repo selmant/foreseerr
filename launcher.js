@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 function ignoreBrokenStdio(stream) {
   if (!stream || typeof stream.on !== 'function') {
     return;

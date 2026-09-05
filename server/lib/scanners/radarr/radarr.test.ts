@@ -17,13 +17,7 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it, mock } from 'node:test';
 
 let getMoviesImpl: () => Promise<RadarrMovie[]> = async () => [];
-Object.defineProperty(RadarrAPI.prototype, 'getMovies', {
-  set() {},
-  get() {
-    return async () => getMoviesImpl();
-  },
-  configurable: true,
-});
+RadarrAPI.prototype.getMovies = async () => getMoviesImpl();
 
 mock.method(MediaRequest, 'sendNotification', async () => undefined);
 

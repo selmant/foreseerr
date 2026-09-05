@@ -133,33 +133,42 @@ const jellyfinPlayedFields = (
   played: item.UserData?.Played === true,
 });
 
-export const loadPlayedTvdbIdsForSeries = async ({
-  userId,
-  jellyfinSeriesId,
-  catalog,
-}: {
-  userId: number;
-  jellyfinSeriesId?: string | null;
-  catalog: TvdbEpisodeCatalog;
-}): Promise<Set<number>> => {
-  if (!jellyfinSeriesId) {
-    return new Set();
-  }
-
-  try {
-    const linked = await createUserJellyfinClient(userId);
-    if (!linked.ok) {
+export const watchAheadFns = {
+  loadPlayedTvdbIdsForSeries: async ({
+    userId,
+    jellyfinSeriesId,
+    catalog,
+  }: {
+    userId: number;
+    jellyfinSeriesId?: string | null;
+    catalog: TvdbEpisodeCatalog;
+  }): Promise<Set<number>> => {
+    if (!jellyfinSeriesId) {
       return new Set();
     }
-    const items = await linked.client.getSeriesEpisodes(jellyfinSeriesId);
-    return playedTvdbIdsFromJellyfin(catalog, items.map(jellyfinPlayedFields));
-  } catch (error) {
-    logger.warn('Failed to load Jellyfin watch progress for watch-ahead', {
-      label: 'Watch Ahead',
-      userId,
-      jellyfinSeriesId,
-      errorMessage: error instanceof Error ? error.message : String(error),
-    });
-    return new Set();
-  }
+
+    try {
+      const linked = await createUserJellyfinClient(userId);
+      if (!linked.ok) {
+        return new Set();
+      }
+      const items = await linked.client.getSeriesEpisodes(jellyfinSeriesId);
+      return playedTvdbIdsFromJellyfin(
+        catalog,
+        items.map(jellyfinPlayedFields)
+      );
+    } catch (error) {
+      logger.warn('Failed to load Jellyfin watch progress for watch-ahead', {
+        label: 'Watch Ahead',
+        userId,
+        jellyfinSeriesId,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      return new Set();
+    }
+  },
 };
+
+export const loadPlayedTvdbIdsForSeries = (
+  args: Parameters<(typeof watchAheadFns)['loadPlayedTvdbIdsForSeries']>[0]
+): Promise<Set<number>> => watchAheadFns.loadPlayedTvdbIdsForSeries(args);

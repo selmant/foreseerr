@@ -436,13 +436,13 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
     }
   };
 
-  public getTvShow = async ({
+  public async getTvShow({
     tvId,
     language = this.locale,
   }: {
     tvId: number;
     language?: string;
-  }): Promise<TmdbTvDetails> => {
+  }): Promise<TmdbTvDetails> {
     try {
       const data = await this.get<TmdbTvDetails>(
         `/tv/${tvId}`,
@@ -501,7 +501,7 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         cause: e,
       });
     }
-  };
+  }
 
   public getTvSeason = async ({
     tvId,

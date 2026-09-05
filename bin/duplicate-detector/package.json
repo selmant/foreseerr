@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.24.0",
+  "packageManager": "bun@1.4.1",
   "scripts": {
-    "build-index": "node build-index.mjs",
-    "detect": "node detect.mjs"
+    "build-index": "bun build-index.mjs",
+    "detect": "bun detect.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1"
   },
   "engines": {
-    "node": ">=22.0"
+    "bun": ">=1.4.0"
   }
 }

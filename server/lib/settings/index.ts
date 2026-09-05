@@ -1255,12 +1255,21 @@ class Settings {
 
 let settings: Settings | undefined;
 
-export const getSettings = (initialSettings?: AllSettings): Settings => {
-  if (!settings) {
-    settings = new Settings(initialSettings);
-  }
+export const settingsFns = {
+  getSettings(initialSettings?: AllSettings): Settings {
+    if (!settings) {
+      settings = new Settings(initialSettings);
+    }
 
-  return settings;
+    return settings;
+  },
+};
+
+export const getSettings = (initialSettings?: AllSettings): Settings =>
+  settingsFns.getSettings(initialSettings);
+
+export const resetSettings = (): void => {
+  settings = undefined;
 };
 
 export default Settings;

@@ -1,5 +1,4 @@
-import * as anilist from '@server/lib/anilist';
-import { AnilistNotLinkedError } from '@server/lib/anilist';
+import { anilistFns, AnilistNotLinkedError } from '@server/lib/anilist';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it, mock } from 'node:test';
 import { getAnilistUserContext } from './userContext';
@@ -10,11 +9,11 @@ describe('getAnilistUserContext', () => {
   it('returns one client and validated remote user identity', async () => {
     const client = { marker: 'client' };
     mock.method(
-      anilist,
+      anilistFns,
       'createAnilistUserClient',
       async () => client as never
     );
-    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+    mock.method(anilistFns, 'getUserAnilistSettings', async () => ({
       anilistUserId: 42,
     }));
 
@@ -25,8 +24,12 @@ describe('getAnilistUserContext', () => {
   });
 
   it('rejects missing or invalid remote identity', async () => {
-    mock.method(anilist, 'createAnilistUserClient', async () => ({}) as never);
-    mock.method(anilist, 'getUserAnilistSettings', async () => ({
+    mock.method(
+      anilistFns,
+      'createAnilistUserClient',
+      async () => ({}) as never
+    );
+    mock.method(anilistFns, 'getUserAnilistSettings', async () => ({
       anilistUserId: 'not-a-number',
     }));
 

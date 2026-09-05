@@ -23,13 +23,7 @@ import assert from 'node:assert/strict';
 import { beforeEach, describe, it, mock } from 'node:test';
 
 let getSeriesImpl: () => Promise<SonarrSeries[]> = async () => [];
-Object.defineProperty(SonarrAPI.prototype, 'getSeries', {
-  set() {},
-  get() {
-    return async () => getSeriesImpl();
-  },
-  configurable: true,
-});
+SonarrAPI.prototype.getSeries = async () => getSeriesImpl();
 
 function fakeTmdbShow(
   tmdbId: number,
@@ -94,14 +88,10 @@ let getTvShowImpl: (args: {
   language?: string;
 }) => Promise<TmdbTvDetails> = async () => fakeTmdbShow(1);
 
-Object.defineProperty(TheMovieDb.prototype, 'getTvShow', {
-  set() {},
-  get() {
-    return async (args: { tvId: number; language?: string }) =>
-      getTvShowImpl(args);
-  },
-  configurable: true,
-});
+TheMovieDb.prototype.getTvShow = async (args: {
+  tvId: number;
+  language?: string;
+}) => getTvShowImpl(args);
 
 mock.method(MediaRequest, 'sendNotification', async () => undefined);
 

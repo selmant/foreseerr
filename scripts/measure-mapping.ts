@@ -6,7 +6,7 @@
  * TMDB id, and from which pack". Live per-slider rates still have to be read
  * off the mapping health page once the instance has served traffic.
  *
- * Usage: pnpm measure:mapping
+ * Usage: bun run measure:mapping
  */
 import { fetchPack } from '@server/lib/mapping/packs/download';
 import {

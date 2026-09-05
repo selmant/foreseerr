@@ -1,16 +1,12 @@
-// Runs unit tests using the `node:test` runner.
+// Runs unit tests with Bun. CLI flags stay compatible with the previous
+// node:test wrapper so editors and CI can pass files / name patterns through.
 
 import { Command, Option } from 'commander';
-import { createWriteStream } from 'node:fs';
-import { glob } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { run } from 'node:test';
-import * as reporters from 'node:test/reporters';
 import { fileURLToPath } from 'node:url';
 
-const resolveImport = (specifier: string) =>
-  fileURLToPath(import.meta.resolve(specifier));
 const BASE_DIR = join(import.meta.dirname, '../..');
+const SETUP = fileURLToPath(new URL('./setup.ts', import.meta.url));
 
 const program = new Command();
 program
@@ -24,13 +20,13 @@ program
   )
   .option(
     '--test-reporter <reporter>',
-    'Test reporter to use (repeatable)',
+    'Ignored; Bun uses its built-in reporters',
     (v, acc: string[]) => [...acc, v],
     [] as string[]
   )
   .option(
     '--test-reporter-destination <dest>',
-    'Test reporter destination: stdout, stderr, or a file path (repeatable)',
+    'Ignored; CI writes report.xml via Bun junit reporter',
     (v, acc: string[]) => [...acc, v],
     [] as string[]
   )
@@ -38,91 +34,52 @@ program
     '--coverage, --experimental-test-coverage',
     'Enable code coverage collection'
   )
-  // ignore additional options passed by vscode test runner
   .addOption(new Option('--test').hideHelp())
   .parse();
 
 const positionals: string[] = program.args;
 const opts = program.opts<{
   testNamePattern: string[];
-  testReporter: string[];
-  testReporterDestination: string[];
   experimentalTestCoverage: boolean;
 }>();
 
-let files: string[];
-
-if (positionals.length > 0) {
-  files = positionals.map((f) => resolve(f));
-} else {
-  files = [];
-  for await (const entry of glob(join(BASE_DIR, 'server/**/*.test.ts'))) {
-    files.push(resolve(entry));
-  }
-  files.sort();
-}
-
 // @ts-expect-error NODE_ENV is narrowed by the ambient process type.
 process.env.NODE_ENV = 'test';
-// configure ts
-process.env.TS_NODE_PROJECT = resolveImport('../tsconfig.json');
-process.env.TS_NODE_FILES = 'true';
 
-const stream = run({
-  files,
-  execArgv: [
-    '--experimental-test-module-mocks',
-    '-r',
-    'ts-node/register',
-    '-r',
-    'tsconfig-paths/register',
-    '-r',
-    resolveImport('./setup.ts'),
-  ],
-  coverage: opts.experimentalTestCoverage,
-  coverageExcludeGlobs: [
-    join(BASE_DIR, 'server/test/**'),
-    join(BASE_DIR, 'server/migration/**'),
-  ],
-  testNamePatterns: opts.testNamePattern,
-});
+const bunArgs = [
+  'test',
+  `--preload=${SETUP}`,
+  '--max-concurrency=1',
+  '--timeout=30000',
+];
 
-// `node:test` reports failures on the stream but does not set the parent
-// process exit code when driven programmatically through `run()`.
-stream.on('test:fail', () => {
-  process.exitCode = 1;
-});
-
-// In CI, write a JUnit report to a file for use by GitHub
 if (process.env.CI) {
-  const reportStream = createWriteStream(join(BASE_DIR, 'report.xml'));
-  stream.compose(reporters.junit).pipe(reportStream);
+  bunArgs.push(
+    '--reporter=junit',
+    `--reporter-outfile=${join(BASE_DIR, 'report.xml')}`
+  );
 }
 
-if (opts.testReporter.length > 0) {
-  for (let i = 0; i < opts.testReporter.length; i++) {
-    const reporterName = opts.testReporter[i];
-    // check built-in reporters, otherwise import
-    const reporter =
-      reporterName in reporters
-        ? reporters[reporterName as keyof typeof reporters]
-        : await import(reporterName).then((m) => m.default);
+for (const pattern of opts.testNamePattern) {
+  bunArgs.push('-t', pattern);
+}
 
-    if (reporter == null) {
-      console.error('Invalid test reporter: ', reporterName);
-      process.exit(1);
-    }
+if (opts.experimentalTestCoverage) {
+  bunArgs.push('--coverage');
+}
 
-    const destArg = opts.testReporterDestination[i];
-    const dest =
-      destArg === 'stdout' || destArg == null
-        ? process.stdout
-        : destArg === 'stderr'
-          ? process.stderr
-          : createWriteStream(destArg);
-
-    stream.compose(reporter).pipe(dest);
-  }
+if (positionals.length > 0) {
+  bunArgs.push(...positionals.map((f) => resolve(f)));
 } else {
-  stream.compose(reporters.spec).pipe(process.stdout);
+  bunArgs.push(join(BASE_DIR, 'server'));
 }
+
+const proc = Bun.spawn([process.execPath, ...bunArgs], {
+  cwd: BASE_DIR,
+  stdout: 'inherit',
+  stderr: 'inherit',
+  stdin: 'inherit',
+  env: process.env,
+});
+
+process.exit(await proc.exited);
