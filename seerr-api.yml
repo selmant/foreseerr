@@ -6109,6 +6109,50 @@ paths:
               required:
                 - username
                 - password
+  /auth/jellyfin/plugin:
+    post:
+      summary: Sign in from the Jellyfin sidecar plugin
+      description: Loopback-only HMAC mint used by the Foreseerr Jellyfin plugin. Maps a Jellyfin user to a Foreseerr session without a password.
+      security: []
+      tags:
+        - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jellyfinUserId:
+                  type: string
+                jellyfinUsername:
+                  type: string
+                jellyfinAccessToken:
+                  type: string
+                isAdministrator:
+                  type: boolean
+                timestamp:
+                  type: number
+                signature:
+                  type: string
+                email:
+                  type: string
+              required:
+                - jellyfinUserId
+                - jellyfinUsername
+                - timestamp
+                - signature
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid signature
+        '403':
+          description: Not loopback or user import disabled
   /auth/jellyfin/quickconnect/initiate:
     post:
       summary: Initiate Jellyfin Quick Connect

@@ -44,6 +44,15 @@ import avatarproxy from '@server/routes/avatarproxy';
 import { bindDesktopSessionStore } from '@server/routes/desktop';
 import imageproxy from '@server/routes/imageproxy';
 import { appDataPermissions } from '@server/utils/appDataVolume';
+import {
+  ensurePluginAdminUser,
+  loadJellyfinHostBootstrap,
+} from '@server/lib/jellyfinHostBootstrap';
+import {
+  isPluginMode,
+  pluginCookiePath,
+  pluginPublicBasePath,
+} from '@server/lib/pluginMode';
 import { getAppVersion } from '@server/utils/appVersion';
 import createCustomProxyAgent, {
   setForceIpv4First,
@@ -261,6 +270,8 @@ const startForeseerrInternal = async (
 
   // Load Settings
   const settings = await getSettings().load();
+  await loadJellyfinHostBootstrap();
+  await ensurePluginAdminUser();
   restartFlag.initializeSettings(settings);
 
   initI18n();
@@ -343,7 +354,8 @@ const startForeseerrInternal = async (
   await ImageProxy.maintainCache();
 
   const server = express();
-  if (!desktopRuntime && settings.network.trustProxy) {
+  const pluginMode = isPluginMode();
+  if ((!desktopRuntime && settings.network.trustProxy) || pluginMode) {
     server.enable('trust proxy');
   }
   if (desktopRuntime) {
@@ -396,7 +408,7 @@ const startForeseerrInternal = async (
       next();
     }
   });
-  if (desktopRuntime || settings.network.csrfProtection) {
+  if (!pluginMode && (desktopRuntime || settings.network.csrfProtection)) {
     server.use(
       csurf({
         cookie: {
@@ -444,7 +456,7 @@ const startForeseerrInternal = async (
       cookie: {
         maxAge: 1000 * 60 * 60 * 24 * 30,
         httpOnly: true,
-        path: '/',
+        path: pluginCookiePath(),
         sameSite:
           desktopRuntime || settings.network.csrfProtection ? 'strict' : 'lax',
         secure: desktopRuntime ? false : 'auto',
@@ -570,23 +582,37 @@ const startForeseerrInternal = async (
       ? configuredPort
       : 5055;
   const host =
-    options.host ?? (desktopRuntime ? '127.0.0.1' : process.env.HOST);
-  if (desktopRuntime && host !== '127.0.0.1') {
-    throw new Error('Desktop runtime must bind exact IPv4 loopback');
+    options.host ??
+    (desktopRuntime || pluginMode ? '127.0.0.1' : process.env.HOST);
+  if ((desktopRuntime || pluginMode) && host !== '127.0.0.1') {
+    throw new Error(
+      desktopRuntime
+        ? 'Desktop runtime must bind exact IPv4 loopback'
+        : 'Plugin mode must bind exact IPv4 loopback'
+    );
   }
+  const listenApp = express();
+  const publicBasePath = pluginPublicBasePath();
+  if (publicBasePath) {
+    listenApp.use(publicBasePath, server);
+  }
+  const boundApp = publicBasePath ? listenApp : server;
   let httpServer: HttpServer;
   const logBoundAddress = () => {
     const address = httpServer.address();
     const boundPort =
       typeof address === 'object' && address ? address.port : port;
-    logger.info(`Server ready on ${host ?? '127.0.0.1'} port ${boundPort}`, {
-      label: 'Server',
-    });
+    logger.info(
+      `Server ready on ${host ?? '127.0.0.1'} port ${boundPort}${publicBasePath}`,
+      {
+        label: 'Server',
+      }
+    );
   };
   if (host) {
-    httpServer = server.listen(port, host, logBoundAddress);
+    httpServer = boundApp.listen(port, host, logBoundAddress);
   } else {
-    httpServer = server.listen(port, logBoundAddress);
+    httpServer = boundApp.listen(port, logBoundAddress);
   }
   httpServer.on('error', (err) => {
     logger.error('Failed to start server', {

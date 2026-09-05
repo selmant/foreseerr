@@ -17,6 +17,8 @@ Jellyfin playback on a desktop computer, install the optional
 uses this hosted UI and preserves ordinary browser playback whenever the native
 runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
 
+Optional: run Foreseerr **inside Jellyfin** with the third-party [sidecar plugin](using-seerr/jellyfin-plugin.md).
+
 ## Features
 
 - **Full Jellyfin/Emby/Plex integration**. Login and manage user access with Jellyfin/Emby/Plex.

@@ -114,7 +114,8 @@ Please be respectful to maintainers and disclose AI assistance.
 
 - HTML/Typescript/Javascript editor
 - [VSCode](https://code.visualstudio.com/) is recommended. Upon opening the project, a few extensions will be automatically recommended for install.
-- [Bun](https://bun.sh/docs/installation) 1.4+
+- [Bun](https://bun.sh/docs/installation) 1.4+ (or `mise install` from this repo)
+- .NET 8 SDK if you are building the optional Jellyfin sidecar plugin (`mise.toml` pins it)
 - [Git](https://git-scm.com/downloads)
 
 ### Getting Started

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { before, beforeEach, describe, it, mock } from 'node:test';
+import { after, before, beforeEach, describe, it, mock } from 'node:test';
 
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
@@ -11,6 +11,7 @@ import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { stopJobs } from '@server/job/schedule';
 import PreparedEmail from '@server/lib/email';
+import { signPluginMint } from '@server/lib/pluginMode';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
@@ -937,5 +938,70 @@ describe('POST /auth/reset-password/:guid', () => {
       .post(`/auth/reset-password/${guid}`)
       .send({ password: 'anotherpassword' });
     assert.strictEqual(second.status, 500);
+  });
+});
+
+describe('POST /auth/jellyfin/plugin', () => {
+  const secret = 'plugin-test-secret';
+  const previousPlugin = process.env.FORESEERR_PLUGIN;
+  const previousSecret = process.env.FORESEERR_PLUGIN_SECRET;
+
+  beforeEach(() => {
+    process.env.FORESEERR_PLUGIN = '1';
+    process.env.FORESEERR_PLUGIN_SECRET = secret;
+    configureJellyfin();
+  });
+
+  after(() => {
+    if (previousPlugin === undefined) delete process.env.FORESEERR_PLUGIN;
+    else process.env.FORESEERR_PLUGIN = previousPlugin;
+    if (previousSecret === undefined)
+      delete process.env.FORESEERR_PLUGIN_SECRET;
+    else process.env.FORESEERR_PLUGIN_SECRET = previousSecret;
+  });
+
+  it('returns 404 when plugin mode is off', async () => {
+    delete process.env.FORESEERR_PLUGIN;
+    const res = await request(app).post('/auth/jellyfin/plugin').send({
+      jellyfinUserId: 'jf-1',
+      jellyfinUsername: 'alice',
+      timestamp: 1,
+      signature: '00',
+    });
+    assert.equal(res.status, 404);
+  });
+
+  it('mints a session for a signed payload', async () => {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const agent = request.agent(app);
+    const login = await agent
+      .post('/auth/jellyfin/plugin')
+      .set('x-foreseerr-plugin-secret', secret)
+      .send({
+        jellyfinUserId: 'jf-plugin-user',
+        jellyfinUsername: 'pluginuser',
+        jellyfinAccessToken: 'jf-token',
+        timestamp,
+        signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
+      });
+    assert.equal(login.status, 200);
+    assert.equal(login.body.jellyfinUsername, 'pluginuser');
+    const meRes = await agent.get('/auth/me');
+    assert.equal(meRes.status, 200);
+    assert.equal(meRes.body.jellyfinUsername, 'pluginuser');
+  });
+
+  it('rejects a bad signature', async () => {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const res = await request(app)
+      .post('/auth/jellyfin/plugin')
+      .set('x-foreseerr-plugin-secret', secret)
+      .send({
+        jellyfinUserId: 'jf-plugin-user',
+        jellyfinUsername: 'pluginuser',
+        timestamp,
+        signature: 'aa'.repeat(32),
+      });
+    assert.equal(res.status, 401);
   });
 });

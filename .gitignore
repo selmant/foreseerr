@@ -92,7 +92,10 @@ compose.override.yaml
 devenv.local.nix
 devenv.local.yaml
 
-# direnv
+# plugin build output
+plugin/dist
+plugin/bin
+plugin/obj
 .direnv
 
 # pre-commit

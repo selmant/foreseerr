@@ -14,6 +14,14 @@ import { isAuthenticated } from '@server/middleware/auth';
 import { checkAvatarChanged } from '@server/routes/avatarproxy';
 import { ApiError } from '@server/types/error';
 import { getAppVersion } from '@server/utils/appVersion';
+import { jellyfinUserIdCandidates } from '@server/lib/jellyfinHostBootstrap';
+import {
+  isLoopbackAddress,
+  isPluginMode,
+  pluginSharedSecret,
+  verifyPluginMintSignature,
+} from '@server/lib/pluginMode';
+import { In } from 'typeorm';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 import { Router, type Response } from 'express';
@@ -660,6 +668,104 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
           message: 'Something went wrong.',
         });
     }
+  }
+});
+
+authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
+  if (!isPluginMode()) {
+    return next({ status: 404, message: 'Plugin auth is disabled.' });
+  }
+  const secret = pluginSharedSecret();
+  if (!secret) {
+    return next({ status: 503, message: 'Plugin secret is not configured.' });
+  }
+  const headerSecret = req.get('x-foreseerr-plugin-secret');
+  const secretOk = headerSecret === secret;
+  if (!secretOk && !isLoopbackAddress(req.ip)) {
+    return next({ status: 403, message: 'Plugin auth is loopback-only.' });
+  }
+
+  const body = req.body as {
+    jellyfinUserId?: string;
+    jellyfinUsername?: string;
+    jellyfinAccessToken?: string;
+    isAdministrator?: boolean;
+    timestamp?: number;
+    signature?: string;
+    email?: string;
+  };
+  if (
+    !body.jellyfinUserId ||
+    !body.jellyfinUsername ||
+    typeof body.timestamp !== 'number' ||
+    !body.signature
+  ) {
+    return next({ status: 400, message: 'Invalid plugin mint payload.' });
+  }
+  if (
+    !verifyPluginMintSignature({
+      secret,
+      jellyfinUserId: body.jellyfinUserId,
+      timestamp: body.timestamp,
+      signature: body.signature,
+    })
+  ) {
+    return next({ status: 401, message: 'Invalid plugin mint signature.' });
+  }
+
+  try {
+    const settings = getSettings();
+    const userRepository = getRepository(User);
+    let user = await userRepository.findOne({
+      where: {
+        jellyfinUserId: In(jellyfinUserIdCandidates(body.jellyfinUserId)),
+      },
+    });
+    const deviceId = Buffer.from(`BOT_seerr_${body.jellyfinUsername}`).toString(
+      'base64'
+    );
+
+    if (!user) {
+      const userCount = await userRepository.count();
+      const isFirst = userCount === 0;
+      if (!isFirst && !settings.main.newPlexLogin) {
+        return next({ status: 403, message: 'Access denied.' });
+      }
+      user = new User({
+        ...(isFirst ? { id: 1 } : {}),
+        email: (body.email || body.jellyfinUsername).toLowerCase(),
+        jellyfinUsername: body.jellyfinUsername,
+        jellyfinUserId: body.jellyfinUserId,
+        jellyfinDeviceId: deviceId,
+        jellyfinAuthToken: body.jellyfinAccessToken ?? '',
+        permissions:
+          isFirst || body.isAdministrator
+            ? Permission.ADMIN
+            : settings.main.defaultPermissions,
+        userType: UserType.JELLYFIN,
+      });
+      user.avatar = getUserAvatarUrl(user);
+      await userRepository.save(user);
+    } else {
+      await userRepository.update(
+        { id: user.id },
+        {
+          jellyfinUsername: body.jellyfinUsername,
+          jellyfinAuthToken: body.jellyfinAccessToken ?? user.jellyfinAuthToken,
+          jellyfinDeviceId: user.jellyfinDeviceId || deviceId,
+          avatar: getUserAvatarUrl(user),
+        }
+      );
+      user = await userRepository.findOneOrFail({ where: { id: user.id } });
+    }
+
+    if (req.session) {
+      req.session.userId = user.id;
+    }
+    return res.status(200).json(user.toPublicJSON());
+  } catch (e) {
+    logger.error((e as Error).message, { label: 'Plugin auth' });
+    return next({ status: 500, message: 'Plugin sign-in failed.' });
   }
 });
 
