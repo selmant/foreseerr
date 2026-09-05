@@ -29,3 +29,20 @@ Sidecar data lives under Jellyfin plugin configuration (`…/plugins/configurati
 ## Limits
 
 Jellyfin Web (desktop) is the supported UI. Android TV / official apps do not load this SPA. Reverse proxies must forward `/Foreseerr` and `/ForeseerrPlugin`.
+
+## Remaining work
+
+Not proven on a live Jellyfin yet. Track these before calling the plugin done:
+
+- [ ] Install the zip on a real Jellyfin 10.10 host and exercise SSO, libraries, API key, health, `/Foreseerr` behind a reverse proxy, and File Transformation.
+- [ ] Replace the fake Quick Connect fallback (initiate probe + `/Foreseerr/login`) with a real QC or password login path when HMAC mint fails.
+- [ ] Either consume Foreseerr webhook payloads in `POST /ForeseerrPlugin/Webhook` (Moonfin-style) or stop auto-enabling a no-op agent.
+- [ ] Copy Jellyfin `urlBase` into `jellyfin-host.json` so sidecar→JF works when Jellyfin is on a subpath.
+- [ ] Bind an ephemeral loopback port (`127.0.0.1:0`) or detect collisions instead of always using `5055`.
+- [ ] Apply the plugin/Moonbase TMDB key in `applyJellyfinHostFile`, or drop the field if Foreseerr should keep the bundled key only.
+- [ ] Fill `manifest.json` `versions` (checksum + `sourceUrl`) so a third-party repo can install the zip.
+- [ ] Build and smoke-test against Jellyfin 10.11, or document 10.10-only.
+- [ ] Decide WebSocket/proxy streaming: HTTP-only `HttpClient` proxy will break any WS (or similar) Foreseerr uses.
+- [ ] Expire or invalidate cached sidecar session cookies on logout / user change, not only on plugin restart.
+
+Out of scope (plan): Android TV / official apps, official Jellyfin catalog, password replay as the happy path.

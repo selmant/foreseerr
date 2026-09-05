@@ -34,3 +34,5 @@ Reverse proxies must forward `/Foreseerr` and `/ForeseerrPlugin`.
 ## Limits
 
 Jellyfin Web (desktop browser) is the supported UI. Official Android TV / mobile apps do not load this SPA. CSRF is disabled in plugin mode because the plugin already authenticated the Jellyfin user and the sidecar only binds loopback.
+
+Open implementation gaps are listed in [plugin/README.md](../../plugin/README.md#remaining-work).
