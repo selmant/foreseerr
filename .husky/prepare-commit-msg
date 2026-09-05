@@ -5,4 +5,4 @@ if [ -n "$CI" ] || [ ! -t 1 ]; then
   exit 0
 fi
 
-exec < /dev/tty && npx cz --hook || true
+exec < /dev/tty && bunx --bun cz --hook || true

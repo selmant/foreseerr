@@ -1,1 +1,1 @@
-[ -n "$HUSKY_BYPASS" ] || npx commitlint --edit $1
+[ -n "$HUSKY_BYPASS" ] || bunx --bun commitlint --edit $1
