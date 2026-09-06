@@ -7,7 +7,7 @@ import AnilistListSlider from '@app/components/Discover/AnilistListSlider';
 import AnilistSlider from '@app/components/Discover/AnilistSlider';
 import AnilistUserSlider from '@app/components/Discover/AnilistUserSlider';
 import CreateSlider from '@app/components/Discover/CreateSlider';
-import DiscoverSliderEdit from '@app/components/Discover/DiscoverSliderEdit';
+import DiscoverSliderRow from '@app/components/Discover/DiscoverSliderRow';
 import MdblistListSlider from '@app/components/Discover/MdblistListSlider';
 import MovieGenreSlider from '@app/components/Discover/MovieGenreSlider';
 import NetworkSlider from '@app/components/Discover/NetworkSlider';
@@ -38,6 +38,7 @@ import {
 } from '@heroicons/react/24/solid';
 import {
   DiscoverSliderType,
+  repairedDiscoverSliderType,
   retiredDiscoverSliderTypes,
 } from '@server/constants/discover';
 import type DiscoverSlider from '@server/entity/DiscoverSlider';
@@ -131,6 +132,8 @@ const Discover = () => {
   if (!discoverData && !discoverError) {
     return <LoadingSpinner />;
   }
+
+  let eagerRowCount = 0;
 
   return (
     <>
@@ -228,7 +231,13 @@ const Discover = () => {
           return null;
         }
 
-        switch (slider.type) {
+        const sliderType = repairedDiscoverSliderType({
+          type: slider.type as DiscoverSliderType,
+          isBuiltIn: slider.isBuiltIn,
+          data: slider.data,
+        });
+
+        switch (sliderType) {
           case DiscoverSliderType.RECENTLY_ADDED:
             sliderComponent = <RecentlyAddedSlider />;
             break;
@@ -633,8 +642,13 @@ const Discover = () => {
           return null;
         }
 
+        const eager = eagerRowCount < 4;
+        eagerRowCount += 1;
+
         return (
-          <div key={`discover-slider-${slider.id}`}>{sliderComponent}</div>
+          <DiscoverSliderRow key={`discover-slider-${slider.id}`} eager={eager}>
+            {sliderComponent}
+          </DiscoverSliderRow>
         );
       })}
     </>

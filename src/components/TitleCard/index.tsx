@@ -654,6 +654,7 @@ const TitleCard = ({
             }
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             fill
+            loading="lazy"
           />
           {progressPercent != null && progressPercent > 0 ? (
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 h-1 bg-black/70">

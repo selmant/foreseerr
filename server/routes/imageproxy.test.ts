@@ -64,5 +64,17 @@ describe('imageproxy route', () => {
       getImage.mock.calls[0]?.arguments[0],
       'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21.jpg'
     );
+    assert.equal(
+      res.headers['cache-control'],
+      'public, max-age=86400, immutable'
+    );
+    assert.equal(res.headers.etag, '"etag"');
+
+    const cached = await request(app)
+      .get(
+        '/imageproxy/anilist/s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21.jpg'
+      )
+      .set('If-None-Match', '"etag"');
+    assert.equal(cached.status, 304);
   });
 });

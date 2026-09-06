@@ -76,10 +76,25 @@ router.get<{
       requestPathForFetch(resolved.source, resolved.fetchUrl, imagePath, search)
     );
 
+    const maxAge = Math.max(Number(imageData.meta.curRevalidate) || 0, 86400);
+    const etag = `"${imageData.meta.etag || imageData.meta.cacheKey}"`;
+    const cacheControl = `public, max-age=${maxAge}, immutable`;
+
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, {
+        ETag: etag,
+        'Cache-Control': cacheControl,
+        'OS-Cache-Key': imageData.meta.cacheKey,
+        'OS-Cache-Status': imageData.meta.cacheMiss ? 'MISS' : 'HIT',
+      });
+      return res.end();
+    }
+
     res.writeHead(200, {
       'Content-Type': `image/${imageData.meta.extension}`,
       'Content-Length': imageData.imageBuffer.length,
-      'Cache-Control': `public, max-age=${imageData.meta.curRevalidate}`,
+      'Cache-Control': cacheControl,
+      ETag: etag,
       'OS-Cache-Key': imageData.meta.cacheKey,
       'OS-Cache-Status': imageData.meta.cacheMiss ? 'MISS' : 'HIT',
     });

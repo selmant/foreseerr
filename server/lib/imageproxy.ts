@@ -44,6 +44,49 @@ const imageCacheTrimTargetBytes = (): number =>
   Math.floor(transientCacheBytes() * 0.5);
 let cleanupInProgress = false;
 
+const MEMORY_CACHE_MAX_ENTRIES = 256;
+const memoryCache = new Map<
+  string,
+  { image: ImageResponse; expireAt: number }
+>();
+
+const memoryCacheKey = (group: string, cacheKey: string): string =>
+  `${group}:${cacheKey}`;
+
+const rememberImage = (
+  group: string,
+  cacheKey: string,
+  image: ImageResponse,
+  expireAt: number
+): void => {
+  const key = memoryCacheKey(group, cacheKey);
+  if (memoryCache.has(key)) {
+    memoryCache.delete(key);
+  }
+  memoryCache.set(key, { image, expireAt });
+  while (memoryCache.size > MEMORY_CACHE_MAX_ENTRIES) {
+    const oldest = memoryCache.keys().next().value;
+    if (oldest == null) {
+      break;
+    }
+    memoryCache.delete(oldest);
+  }
+};
+
+const recallImage = (
+  group: string,
+  cacheKey: string
+): { image: ImageResponse; expireAt: number } | null => {
+  const key = memoryCacheKey(group, cacheKey);
+  const entry = memoryCache.get(key);
+  if (!entry) {
+    return null;
+  }
+  memoryCache.delete(key);
+  memoryCache.set(key, entry);
+  return entry;
+};
+
 /** Coerce Axios 1.18+ header values (string | number | boolean | string[]) to string. */
 const headerToString = (value: unknown, fallback = ''): string => {
   if (typeof value === 'string') {
@@ -318,6 +361,22 @@ class ImageProxy {
   ): Promise<ImageResponse> {
     const cacheKey = this.getCacheKey(path);
 
+    const hot = recallImage(this.key, cacheKey);
+    if (hot) {
+      const imageResponse = {
+        ...hot.image,
+        meta: {
+          ...hot.image.meta,
+          isStale: Date.now() > hot.expireAt,
+          cacheMiss: false,
+        },
+      };
+      if (imageResponse.meta.isStale) {
+        this.set(path, cacheKey);
+      }
+      return imageResponse;
+    }
+
     const imageResponse = await this.get(cacheKey);
 
     if (!imageResponse) {
@@ -402,7 +461,7 @@ class ImageProxy {
         const expireAt = Number(expireAtSt);
         const maxAge = Number(maxAgeSt);
 
-        return {
+        const image = {
           meta: {
             curRevalidate: maxAge,
             revalidateAfter: maxAge * 1000 + now,
@@ -414,6 +473,8 @@ class ImageProxy {
           },
           imageBuffer: buffer,
         };
+        rememberImage(this.key, cacheKey, image, expireAt);
+        return image;
       }
     } catch {
       // No files. Treat as empty cache.
@@ -458,7 +519,7 @@ class ImageProxy {
       );
       void ImageProxy.maintainCache();
 
-      return {
+      const image = {
         meta: {
           curRevalidate: maxAge,
           revalidateAfter: expireAt,
@@ -470,6 +531,8 @@ class ImageProxy {
         },
         imageBuffer: buffer,
       };
+      rememberImage(this.key, cacheKey, image, expireAt);
+      return image;
     } catch (e) {
       logger.debug('Something went wrong caching image.', {
         label: 'Image Cache',

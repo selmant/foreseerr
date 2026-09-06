@@ -55,7 +55,7 @@ const MediaSlider = ({
       }`;
     },
     {
-      initialSize: 2,
+      initialSize: 1,
       revalidateFirstPage: false,
     }
   );
@@ -85,7 +85,7 @@ const MediaSlider = ({
   useEffect(() => {
     if (
       titles.length < 24 &&
-      size < 5 &&
+      size < 2 &&
       (data?.[0]?.totalResults ?? 0) > size * 20
     ) {
       setSize(size + 1);

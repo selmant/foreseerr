@@ -60,6 +60,7 @@ const PersonCard = ({
                       objectFit: 'cover',
                     }}
                     fill
+                    loading="lazy"
                   />
                 </div>
               ) : (
