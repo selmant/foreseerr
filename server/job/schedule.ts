@@ -148,8 +148,6 @@ const runScheduledJobById = (id: JobId): Promise<boolean> => {
       );
     case 'image-cache-cleanup':
       return runScheduledJob(id, 'light', 'Image Cache Cleanup', async () => {
-        ImageProxy.clearCache('tmdb');
-        ImageProxy.clearCache('avatar');
         await ImageProxy.maintainCache();
       });
     case 'process-blocklisted-tags':

@@ -26,11 +26,11 @@ You must configure this setting in order to enable password reset and generation
 
 ## Enable Image Caching
 
-When enabled, Foreseerr will proxy and cache images from pre-configured sources (such as TMDB). This can use a significant amount of disk space.
+When enabled, Foreseerr will proxy and cache images from TMDB, TheTVDB, AniList, and Simkl. Mapped Trakt posters already use TMDB, so they are included automatically. This can use a significant amount of disk space.
 
-Images are saved in the `config/cache/images` and stale images are cleared out every 24 hours.
+Images are saved in `config/cache/images`. Files that have not been requested for the configured idle window (default 7 days, 1–90) are deleted. The daily Image Cache Cleanup job also trims the cache if it grows past the size high-water mark.
 
-You should enable this if you are having issues with loading images directly from TMDB in your browser.
+You should enable this if you are having issues with loading images directly from those CDNs in your browser.
 
 ## Display Language
 

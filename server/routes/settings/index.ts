@@ -12,6 +12,8 @@ import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
 import type { PlexConnection } from '@server/interfaces/api/plexInterfaces';
 import type {
+  ImageCacheGroupStats,
+  ImageCacheSource,
   LogMessage,
   LogsResultsResponse,
   SettingsAboutResponse,
@@ -27,6 +29,7 @@ import cacheManager, {
   type AvailableCacheIds,
 } from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
+import { IMAGE_CACHE_STAT_SOURCES } from '@server/lib/imageproxySources';
 import {
   clearIntegrationHealthCache,
   getIntegrationHealth,
@@ -1366,9 +1369,13 @@ settingsRoutes.get(
       stats: cache.getStats(),
     }));
 
-    const tmdbImageCache = await ImageProxy.getImageStats('tmdb');
-    const avatarImageCache = await ImageProxy.getImageStats('avatar');
-    const imageStats = await ImageProxy.getCombinedStats();
+    const [imageStats, ...groupStats] = await Promise.all([
+      ImageProxy.getCombinedStats(),
+      ...IMAGE_CACHE_STAT_SOURCES.map((key) => ImageProxy.getImageStats(key)),
+    ]);
+    const imageCache = Object.fromEntries(
+      IMAGE_CACHE_STAT_SOURCES.map((key, index) => [key, groupStats[index]])
+    ) as Record<ImageCacheSource, ImageCacheGroupStats>;
     const memoryStats = getMemoryCacheStats();
 
     const stats: DnsStats | undefined = dnsCache?.getStats();
@@ -1376,10 +1383,7 @@ settingsRoutes.get(
 
     return res.status(200).json({
       apiCaches,
-      imageCache: {
-        tmdb: tmdbImageCache,
-        avatar: avatarImageCache,
-      },
+      imageCache,
       memory: memoryStats,
       images: imageStats,
       browser: { limitBytes: 768 * 1024 * 1024 },

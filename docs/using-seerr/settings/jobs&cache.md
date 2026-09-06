@@ -12,4 +12,4 @@ Jobs include media-server library scans, Radarr/Sonarr scans, availability and d
 
 Foreseerr also caches requests to external API endpoints to optimize performance and avoid making unnecessary API calls. If necessary, the cache for any particular endpoint can be cleared by clicking the "Flush Cache" button.
 
-You can also view the current image cache size as well as the total number of cached images. **Clear Browser HTTP Cache** is available only in Foreseer Desktop.
+You can also view the current image cache size, per-source counts, and the idle window / size high-water used by cleanup. **Clear Browser HTTP Cache** is available only in Foreseer Desktop.

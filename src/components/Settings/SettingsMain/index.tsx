@@ -65,6 +65,10 @@ const messages = defineMessages('components.Settings.SettingsMain', {
   cacheImages: 'Enable Image Caching',
   cacheImagesTip:
     'Cache externally sourced images (requires a significant amount of disk space)',
+  imageCacheIdleDays: 'Remove Unused Cached Images After',
+  imageCacheIdleDaysTip:
+    'Cached images that have not been requested for this many days are deleted. Recently viewed posters stay.',
+  imageCacheIdleDaysUnit: '{days, plural, one {day} other {days}}',
   validationApplicationTitle: 'You must provide an application title',
   validationApplicationUrl: 'You must provide a valid URL',
   validationApplicationUrlTrailingSlash: 'URL must not end in a trailing slash',
@@ -131,6 +135,9 @@ const SettingsMain = () => {
         intl.formatMessage(messages.validationUrlTrailingSlash),
         (value) => !value || !value.endsWith('/')
       ),
+    imageCacheIdleDays: Yup.number()
+      .min(1, 'Number must be at least 1.')
+      .max(90, 'Number must be less than or equal to 90.'),
   });
 
   const regenerate = async () => {
@@ -197,6 +204,7 @@ const SettingsMain = () => {
             partialRequestsEnabled: data?.partialRequestsEnabled,
             enableSpecialEpisodes: data?.enableSpecialEpisodes,
             cacheImages: data?.cacheImages,
+            imageCacheIdleDays: data?.imageCacheIdleDays ?? 7,
             youtubeUrl: data?.youtubeUrl,
             versionCheck: data?.versionCheck,
           }}
@@ -220,6 +228,7 @@ const SettingsMain = () => {
                 partialRequestsEnabled: values.partialRequestsEnabled,
                 enableSpecialEpisodes: values.enableSpecialEpisodes,
                 cacheImages: values.cacheImages,
+                imageCacheIdleDays: Number(values.imageCacheIdleDays),
                 youtubeUrl: values.youtubeUrl,
                 versionCheck: values?.versionCheck,
               });
@@ -340,7 +349,6 @@ const SettingsMain = () => {
                     <span className="mr-2">
                       {intl.formatMessage(messages.cacheImages)}
                     </span>
-                    <SettingsBadge badgeType="experimental" />
                     <span className="label-tip">
                       {intl.formatMessage(messages.cacheImagesTip)}
                     </span>
@@ -354,6 +362,37 @@ const SettingsMain = () => {
                         setFieldValue('cacheImages', !values.cacheImages);
                       }}
                     />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label htmlFor="imageCacheIdleDays" className="text-label">
+                    <span className="mr-2">
+                      {intl.formatMessage(messages.imageCacheIdleDays)}
+                    </span>
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.imageCacheIdleDaysTip)}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <div className="form-input-field">
+                      <Field
+                        id="imageCacheIdleDays"
+                        name="imageCacheIdleDays"
+                        type="text"
+                        inputMode="numeric"
+                        className="short"
+                      />
+                      <span className="inline-flex items-center px-3 text-gray-100">
+                        {intl.formatMessage(messages.imageCacheIdleDaysUnit, {
+                          days: Number(values.imageCacheIdleDays) || 7,
+                        })}
+                      </span>
+                    </div>
+                    {errors.imageCacheIdleDays &&
+                      touched.imageCacheIdleDays &&
+                      typeof errors.imageCacheIdleDays === 'string' && (
+                        <div className="error">{errors.imageCacheIdleDays}</div>
+                      )}
                   </div>
                 </div>
                 <div className="form-row">

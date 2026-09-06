@@ -19,6 +19,7 @@ import { MediaServerType } from '@server/constants/server';
 import type {
   CacheItem,
   CacheResponse,
+  ImageCacheSource,
 } from '@server/interfaces/api/settingsInterfaces';
 import type { JobId } from '@server/lib/settings';
 import axios from 'axios';
@@ -107,10 +108,17 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
       'Every {jobScheduleSeconds, plural, one {second} other {{jobScheduleSeconds} seconds}}',
     imagecache: 'Image Cache',
     imagecacheDescription:
-      'When enabled in settings, Foreseerr will proxy and cache images from pre-configured external sources. Cached images are saved into your config folder. You can find the files in <code>{appDataPath}/cache/images</code>.',
+      'When enabled in settings, Foreseerr will proxy and cache images from TMDB, TVDB, AniList, and Simkl. Unused images are removed after the idle window. Cached images are saved into your config folder. You can find the files in <code>{appDataPath}/cache/images</code>.',
     imagecachecount: 'Images Cached',
     imagecachesize: 'Total Cache Size',
+    imagecacheusage: '{used} used · trims above {highWater}',
+    imagecacheidle:
+      'Unused images are removed after {days, plural, one {# day} other {# days}}.',
     usersavatars: "Users' Avatars",
+    imagetmdb: 'The Movie Database (tmdb)',
+    imagetvdb: 'TheTVDB (tvdb)',
+    imageanilist: 'AniList (anilist)',
+    imagesimkl: 'Simkl (simkl)',
     clearimagecache: 'Clear Image Cache',
     clearbrowsercache: 'Clear Browser HTTP Cache',
     clearallcaches: 'Clear All Transient Caches',
@@ -858,6 +866,17 @@ const SettingsJobs = () => {
             appDataPath: appData ? appData.appDataPath : '/app/config',
           })}
         </p>
+        {cacheData?.images ? (
+          <p className="description">
+            {intl.formatMessage(messages.imagecacheusage, {
+              used: formatBytes(cacheData.images.usedBytes),
+              highWater: formatBytes(cacheData.images.highWaterBytes),
+            })}{' '}
+            {intl.formatMessage(messages.imagecacheidle, {
+              days: cacheData.images.idleDays,
+            })}
+          </p>
+        ) : null}
       </div>
       <div className="section">
         <Table>
@@ -871,28 +890,35 @@ const SettingsJobs = () => {
             </tr>
           </thead>
           <Table.TBody>
-            <tr>
-              <Table.TD>The Movie Database (tmdb)</Table.TD>
-              <Table.TD>
-                {intl.formatNumber(cacheData?.imageCache.tmdb.imageCount ?? 0)}
-              </Table.TD>
-              <Table.TD>
-                {formatBytes(cacheData?.imageCache.tmdb.size ?? 0)}
-              </Table.TD>
-            </tr>
-            <tr>
-              <Table.TD>
-                {intl.formatMessage(messages.usersavatars)} (avatar)
-              </Table.TD>
-              <Table.TD>
-                {intl.formatNumber(
-                  cacheData?.imageCache.avatar.imageCount ?? 0
-                )}
-              </Table.TD>
-              <Table.TD>
-                {formatBytes(cacheData?.imageCache.avatar.size ?? 0)}
-              </Table.TD>
-            </tr>
+            {(
+              [
+                ['tmdb', messages.imagetmdb],
+                ['tvdb', messages.imagetvdb],
+                ['avatar', messages.usersavatars],
+                ['anilist', messages.imageanilist],
+                ['simkl', messages.imagesimkl],
+              ] as const
+            ).map(([source, label]) => (
+              <tr key={source}>
+                <Table.TD>
+                  {source === 'avatar'
+                    ? `${intl.formatMessage(label)} (avatar)`
+                    : intl.formatMessage(label)}
+                </Table.TD>
+                <Table.TD>
+                  {intl.formatNumber(
+                    cacheData?.imageCache?.[source as ImageCacheSource]
+                      ?.imageCount ?? 0
+                  )}
+                </Table.TD>
+                <Table.TD>
+                  {formatBytes(
+                    cacheData?.imageCache?.[source as ImageCacheSource]?.size ??
+                      0
+                  )}
+                </Table.TD>
+              </tr>
+            ))}
           </Table.TBody>
         </Table>
       </div>

@@ -79,9 +79,23 @@ export interface CacheItem {
   };
 }
 
+export interface ImageCacheGroupStats {
+  size: number;
+  imageCount: number;
+}
+
+export type ImageCacheSource = 'tmdb' | 'tvdb' | 'avatar' | 'anilist' | 'simkl';
+
 export interface CacheResponse {
   apiCaches: CacheItem[];
-  imageCache: Record<'tmdb' | 'avatar', { size: number; imageCount: number }>;
+  imageCache: Record<ImageCacheSource, ImageCacheGroupStats>;
+  images?: {
+    usedBytes: number;
+    entries: number;
+    highWaterBytes: number;
+    trimTargetBytes: number;
+    idleDays: number;
+  };
   dnsCache: {
     stats: DnsStats | undefined;
     entries: DnsEntries | undefined;

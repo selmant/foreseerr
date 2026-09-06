@@ -1,4 +1,5 @@
 import useSettings from '@app/hooks/useSettings';
+import { rewriteCachedImageSrc } from '@server/lib/imageproxySources';
 import type { CSSProperties, ImgHTMLAttributes } from 'react';
 
 export type CachedImageProps = ImgHTMLAttributes<HTMLImageElement> & {
@@ -22,26 +23,16 @@ const CachedImage = ({
 }: CachedImageProps) => {
   const { currentSettings } = useSettings();
 
-  let imageUrl: string;
-
-  if (type === 'tmdb') {
-    imageUrl =
-      currentSettings.cacheImages && !src.startsWith('/')
-        ? src.replace(/^https:\/\/image\.tmdb\.org\//, '/imageproxy/tmdb/')
-        : src;
-  } else if (type === 'tvdb') {
-    imageUrl =
-      currentSettings.cacheImages && !src.startsWith('/')
-        ? src.replace(
-            /^https:\/\/artworks\.thetvdb\.com\//,
-            '/imageproxy/tvdb/'
-          )
-        : src;
-  } else if (type === 'avatar' || type === 'library') {
-    imageUrl = src;
-  } else {
+  if (
+    type !== 'tmdb' &&
+    type !== 'tvdb' &&
+    type !== 'avatar' &&
+    type !== 'library'
+  ) {
     return null;
   }
+
+  const imageUrl = rewriteCachedImageSrc(src, currentSettings.cacheImages);
 
   const imageStyle: CSSProperties = fill
     ? {

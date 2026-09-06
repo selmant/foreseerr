@@ -1,60 +1,80 @@
 import ImageProxy from '@server/lib/imageproxy';
+import {
+  resolveImageProxyFetch,
+  type ImageProxySource,
+} from '@server/lib/imageproxySources';
 import logger from '@server/logger';
 import { Router } from 'express';
 
 const router = Router();
 
-// Delay the initialization of ImageProxy instances until the proxy (if any) is properly configured
-let _tmdbImageProxy: ImageProxy;
-function initTmdbImageProxy() {
-  if (!_tmdbImageProxy) {
-    _tmdbImageProxy = new ImageProxy('tmdb', 'https://image.tmdb.org', {
-      rateLimitOptions: {
-        maxRequests: 20,
-        maxRPS: 50,
-      },
-    });
-  }
-  return _tmdbImageProxy;
+const RATE_LIMIT = {
+  maxRequests: 20,
+  maxRPS: 50,
+};
+
+const proxies = new Map<ImageProxySource, ImageProxy>();
+
+const SOURCE_BASE_URL: Record<ImageProxySource, string> = {
+  tmdb: 'https://image.tmdb.org',
+  tvdb: 'https://artworks.thetvdb.com',
+  anilist: '',
+  simkl: '',
+};
+
+function initImageProxy(source: ImageProxySource): ImageProxy {
+  const existing = proxies.get(source);
+  if (existing) return existing;
+  const proxy = new ImageProxy(source, SOURCE_BASE_URL[source], {
+    maxRedirects: 0,
+    rateLimitOptions: RATE_LIMIT,
+  });
+  proxies.set(source, proxy);
+  return proxy;
 }
-let _tvdbImageProxy: ImageProxy;
-function initTvdbImageProxy() {
-  if (!_tvdbImageProxy) {
-    _tvdbImageProxy = new ImageProxy('tvdb', 'https://artworks.thetvdb.com', {
-      rateLimitOptions: {
-        maxRequests: 20,
-        maxRPS: 50,
-      },
-    });
+
+const requestPathForFetch = (
+  source: ImageProxySource,
+  fetchUrl: string,
+  imagePath: string,
+  search: string
+): string => {
+  if (source === 'tmdb' || source === 'tvdb') {
+    return `${imagePath}${search}`;
   }
-  return _tvdbImageProxy;
-}
+  return fetchUrl;
+};
 
 router.get<{
   type: string;
   path: string[];
 }>('/:type/*path', async (req, res) => {
   const imagePath = '/' + req.params.path.join('/');
+  const searchIndex = req.url.indexOf('?');
+  const search = searchIndex === -1 ? '' : req.url.slice(searchIndex);
 
   if (imagePath.startsWith('//') || imagePath.includes('://')) {
     logger.error('Invalid URL for image proxy', { imagePath });
     return res.status(403).send('Invalid URL for image proxy');
   }
 
-  try {
-    let imageData;
-    if (req.params.type === 'tmdb') {
-      imageData = await initTmdbImageProxy().getImage(imagePath);
-    } else if (req.params.type === 'tvdb') {
-      imageData = await initTvdbImageProxy().getImage(imagePath);
-    } else {
+  const resolved = resolveImageProxyFetch(req.params.type, imagePath, search);
+  if ('error' in resolved) {
+    if (resolved.error === 'unsupported') {
       logger.error('Unsupported image type', {
         imagePath,
         type: req.params.type,
       });
-      res.status(400).send('Unsupported image type');
-      return;
+      return res.status(400).send('Unsupported image type');
     }
+    logger.error('Invalid URL for image proxy', { imagePath });
+    return res.status(403).send('Invalid URL for image proxy');
+  }
+
+  try {
+    const imageData = await initImageProxy(resolved.source).getImage(
+      requestPathForFetch(resolved.source, resolved.fetchUrl, imagePath, search)
+    );
 
     res.writeHead(200, {
       'Content-Type': `image/${imageData.meta.extension}`,

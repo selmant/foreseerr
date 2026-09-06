@@ -5,6 +5,7 @@ import {
   effectiveApplicationUrl,
   isDesktopRuntime,
 } from '@server/lib/desktopState';
+import { clampImageCacheIdleDays } from '@server/lib/imageproxySources';
 import { Permission } from '@server/lib/permissions';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
@@ -191,6 +192,7 @@ export interface MainSettings {
   applicationTitle: string;
   applicationUrl: string;
   cacheImages: boolean;
+  imageCacheIdleDays: number;
   defaultPermissions: number;
   defaultQuotas: {
     movie: Quota;
@@ -486,6 +488,7 @@ class Settings {
         applicationTitle: 'Foreseerr',
         applicationUrl: '',
         cacheImages: false,
+        imageCacheIdleDays: 7,
         defaultPermissions: Permission.REQUEST,
         defaultQuotas: {
           movie: {},
@@ -795,6 +798,12 @@ class Settings {
       )
     ) {
       data = { ...data, applicationUrl: this.data.main.applicationUrl };
+    }
+    if ('imageCacheIdleDays' in data && data.imageCacheIdleDays !== undefined) {
+      data = {
+        ...data,
+        imageCacheIdleDays: clampImageCacheIdleDays(data.imageCacheIdleDays),
+      };
     }
     this.data.main = mergeSettings(this.data.main, data);
   }

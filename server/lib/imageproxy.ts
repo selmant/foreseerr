@@ -1,3 +1,5 @@
+import { clampImageCacheIdleDays } from '@server/lib/imageproxySources';
+import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { proxyRequestInterceptor } from '@server/utils/customProxyAgent';
 import { configDirectory } from '@server/utils/runtimePaths';
@@ -21,20 +23,25 @@ type ImageResponse = {
   imageBuffer: Buffer;
 };
 
-const baseCacheDirectory = process.env.CACHE_DIRECTORY
-  ? `${process.env.CACHE_DIRECTORY}/images`
-  : path.join(configDirectory(), 'cache/images');
+const imageCacheDirectory = (): string =>
+  process.env.CACHE_DIRECTORY
+    ? `${process.env.CACHE_DIRECTORY}/images`
+    : path.join(configDirectory(), 'cache/images');
 const DEFAULT_TRANSIENT_CACHE_BYTES = 2 * 1024 * 1024 * 1024;
-const configuredTransientCacheBytes = Number(
-  process.env.FORESEER_CACHE_LIMIT_BYTES ?? DEFAULT_TRANSIENT_CACHE_BYTES
-);
-const transientCacheBytes = Number.isFinite(configuredTransientCacheBytes)
-  ? Math.max(configuredTransientCacheBytes, 128 * 1024 * 1024)
-  : DEFAULT_TRANSIENT_CACHE_BYTES;
-// The combined desktop budget reserves 62.5% for images and 37.5% for CEF.
-// Cleanup returns images to 50% of the combined budget to avoid thrashing.
-const IMAGE_CACHE_HIGH_WATER_BYTES = Math.floor(transientCacheBytes * 0.625);
-const IMAGE_CACHE_TRIM_TARGET_BYTES = Math.floor(transientCacheBytes * 0.5);
+
+const transientCacheBytes = (): number => {
+  const configured = Number(
+    process.env.FORESEER_CACHE_LIMIT_BYTES ?? DEFAULT_TRANSIENT_CACHE_BYTES
+  );
+  return Number.isFinite(configured)
+    ? Math.max(configured, 128 * 1024 * 1024)
+    : DEFAULT_TRANSIENT_CACHE_BYTES;
+};
+
+const imageCacheHighWaterBytes = (): number =>
+  Math.floor(transientCacheBytes() * 0.625);
+const imageCacheTrimTargetBytes = (): number =>
+  Math.floor(transientCacheBytes() * 0.5);
 let cleanupInProgress = false;
 
 /** Coerce Axios 1.18+ header values (string | number | boolean | string[]) to string. */
@@ -53,7 +60,7 @@ const headerToString = (value: unknown, fallback = ''): string => {
 
 class ImageProxy {
   public static async clearAll(): Promise<void> {
-    await promises.rm(baseCacheDirectory, { recursive: true, force: true });
+    await promises.rm(imageCacheDirectory(), { recursive: true, force: true });
   }
 
   public static async getCombinedStats(): Promise<{
@@ -61,27 +68,54 @@ class ImageProxy {
     entries: number;
     highWaterBytes: number;
     trimTargetBytes: number;
+    idleDays: number;
   }> {
     const entries = await ImageProxy.listEntries();
     return {
       usedBytes: entries.reduce((total, entry) => total + entry.size, 0),
       entries: entries.length,
-      highWaterBytes: IMAGE_CACHE_HIGH_WATER_BYTES,
-      trimTargetBytes: IMAGE_CACHE_TRIM_TARGET_BYTES,
+      highWaterBytes: imageCacheHighWaterBytes(),
+      trimTargetBytes: imageCacheTrimTargetBytes(),
+      idleDays: clampImageCacheIdleDays(getSettings().main.imageCacheIdleDays),
     };
   }
 
-  public static async maintainCache(): Promise<void> {
+  public static async maintainCache(options?: {
+    idleMs?: number;
+    highWaterBytes?: number;
+    trimTargetBytes?: number;
+  }): Promise<void> {
     if (cleanupInProgress) return;
     cleanupInProgress = true;
     try {
+      const idleMs =
+        options?.idleMs ??
+        clampImageCacheIdleDays(getSettings().main.imageCacheIdleDays) *
+          24 *
+          60 *
+          60 *
+          1000;
+      const highWaterBytes =
+        options?.highWaterBytes ?? imageCacheHighWaterBytes();
+      const trimTargetBytes =
+        options?.trimTargetBytes ?? imageCacheTrimTargetBytes();
       const entries = await ImageProxy.listEntries(true);
       let usedBytes = entries.reduce((total, entry) => total + entry.size, 0);
-      if (usedBytes > IMAGE_CACHE_HIGH_WATER_BYTES) {
-        for (const entry of entries.sort(
+      const remaining: typeof entries = [];
+      const now = Date.now();
+      for (const entry of entries) {
+        if (now - entry.accessedAt > idleMs) {
+          await promises.rm(entry.directory, { recursive: true, force: true });
+          usedBytes -= entry.size;
+        } else {
+          remaining.push(entry);
+        }
+      }
+      if (usedBytes > highWaterBytes) {
+        for (const entry of remaining.sort(
           (a, b) => a.accessedAt - b.accessedAt
         )) {
-          if (usedBytes <= IMAGE_CACHE_TRIM_TARGET_BYTES) break;
+          if (usedBytes <= trimTargetBytes) break;
           await promises.rm(entry.directory, { recursive: true, force: true });
           usedBytes -= entry.size;
         }
@@ -106,19 +140,19 @@ class ImageProxy {
     }[] = [];
     let groups: string[];
     try {
-      groups = await promises.readdir(baseCacheDirectory);
+      groups = await promises.readdir(imageCacheDirectory());
     } catch {
       return result;
     }
     for (const group of groups) {
       let keys: string[];
       try {
-        keys = await promises.readdir(join(baseCacheDirectory, group));
+        keys = await promises.readdir(join(imageCacheDirectory(), group));
       } catch {
         continue;
       }
       for (const key of keys) {
-        const directory = join(baseCacheDirectory, group, key);
+        const directory = join(imageCacheDirectory(), group, key);
         let files: string[];
         try {
           files = await promises.readdir(directory);
@@ -149,7 +183,7 @@ class ImageProxy {
   }
   public static async clearCache(key: string) {
     let deletedImages = 0;
-    const cacheDirectory = path.join(baseCacheDirectory, key);
+    const cacheDirectory = path.join(imageCacheDirectory(), key);
 
     try {
       const files = await promises.readdir(cacheDirectory);
@@ -193,7 +227,7 @@ class ImageProxy {
   public static async getImageStats(
     key: string
   ): Promise<{ size: number; imageCount: number }> {
-    const cacheDirectory = path.join(baseCacheDirectory, key);
+    const cacheDirectory = path.join(imageCacheDirectory(), key);
 
     const imageTotalSize = await ImageProxy.getDirectorySize(cacheDirectory);
     const imageCount = await ImageProxy.getImageCount(cacheDirectory);
@@ -261,6 +295,7 @@ class ImageProxy {
       cacheVersion?: number;
       rateLimitOptions?: rateLimitOptions;
       headers?: Record<string, string>;
+      maxRedirects?: number;
     } = {}
   ) {
     this.cacheVersion = options.cacheVersion ?? 1;
@@ -268,6 +303,7 @@ class ImageProxy {
     this.axios = axios.create({
       baseURL: baseUrl,
       headers: options.headers,
+      maxRedirects: options.maxRedirects ?? 5,
     });
     this.axios.interceptors.request.use(proxyRequestInterceptor);
 
@@ -478,7 +514,7 @@ class ImageProxy {
   }
 
   private getCacheDirectory() {
-    return path.join(baseCacheDirectory, this.key);
+    return path.join(imageCacheDirectory(), this.key);
   }
 }
 
