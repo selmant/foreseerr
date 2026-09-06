@@ -12,5 +12,6 @@
       "@server/*": ["./*"]
     }
   },
-  "include": ["**/*.ts", "types/**/*.d.ts"]
+  "include": ["**/*.ts", "types/**/*.d.ts"],
+  "exclude": ["**/*.test.ts", "test/**"]
 }

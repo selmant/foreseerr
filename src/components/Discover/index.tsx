@@ -7,6 +7,7 @@ import AnilistListSlider from '@app/components/Discover/AnilistListSlider';
 import AnilistSlider from '@app/components/Discover/AnilistSlider';
 import AnilistUserSlider from '@app/components/Discover/AnilistUserSlider';
 import CreateSlider from '@app/components/Discover/CreateSlider';
+import DiscoverSliderEdit from '@app/components/Discover/DiscoverSliderEdit';
 import DiscoverSliderRow from '@app/components/Discover/DiscoverSliderRow';
 import MdblistListSlider from '@app/components/Discover/MdblistListSlider';
 import MovieGenreSlider from '@app/components/Discover/MovieGenreSlider';
