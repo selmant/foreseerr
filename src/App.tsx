@@ -243,8 +243,8 @@ const AppShell = ({
         <LoadingBar />
         <SettingsProvider currentSettings={currentSettings}>
           <InteractionProvider>
-            <Helmet>
-              <title>{currentSettings.applicationTitle}</title>
+            <Helmet defaultTitle="Foreseerr">
+              <title>{currentSettings.applicationTitle || 'Foreseerr'}</title>
               <meta
                 name="viewport"
                 content="initial-scale=1, viewport-fit=cover, width=device-width"
@@ -370,6 +370,9 @@ const Bootstrap = () => {
   if (!ready) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
+        <Helmet defaultTitle="Foreseerr">
+          <title>Foreseerr</title>
+        </Helmet>
         <LoadingSpinner />
       </div>
     );

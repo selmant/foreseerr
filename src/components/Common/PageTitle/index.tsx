@@ -8,9 +8,10 @@ interface PageTitleProps {
 const PageTitle = ({ title }: PageTitleProps) => {
   const settings = useSettings();
 
+  const appTitle = settings.currentSettings.applicationTitle || 'Foreseerr';
   const titleText = `${
     Array.isArray(title) ? title.filter(Boolean).join(' - ') : title
-  } - ${settings.currentSettings.applicationTitle}`;
+  } - ${appTitle}`;
 
   return (
     <Helmet>
