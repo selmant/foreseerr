@@ -14,8 +14,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 ### Prerequisites
-    - [Node.js 22.x or 24.x](https://nodejs.org/en/download/) (`^22.19.0 || ^24.0.0`)
-    - [Pnpm 10.x](https://pnpm.io/installation)
+    - [Bun 1.4+](https://bun.sh/) (`>=1.4.0`)
     - [Git](https://git-scm.com/downloads)
 
 ## Unix (Linux, macOS)
@@ -27,19 +26,19 @@ sudo mkdir -p /opt/foreseerr && cd /opt/foreseerr
 2. Clone the Foreseerr repository. Use a release tag for production, or `develop` for the latest unreleased work:
 ```bash
 git clone https://github.com/selmant/foreseerr.git .
-git checkout v0.7.1
+git checkout v0.8.0
 ```
 3. Install the dependencies:
 ```bash
-CYPRESS_INSTALL_BINARY=0 pnpm install --frozen-lockfile
+CYPRESS_INSTALL_BINARY=0 bun install --frozen-lockfile
 ```
 4. Build the project:
 ```bash
-pnpm build
+bun run build
 ```
 5. Start Foreseerr:
 ```bash
-pnpm start
+bun run start
 ```
 
 :::info
@@ -64,9 +63,9 @@ PORT=5055
 ```
 2. Then run the following commands:
 ```bash
-which node
+which bun
 ```
-Copy the path to node, it should be something like `/usr/bin/node`.
+Copy the path to bun, it should be something like `/usr/bin/bun`.
 
 3. Create the systemd service file at `/etc/systemd/system/foreseerr.service`, using either `sudo systemctl edit --force --full foreseerr` or `sudo nano /etc/systemd/system/foreseerr.service`:
 ```bash
@@ -81,13 +80,13 @@ Environment=NODE_ENV=production
 Type=exec
 Restart=on-failure
 WorkingDirectory=/opt/foreseerr
-ExecStart=/usr/bin/node dist/launcher.js
+ExecStart=/usr/bin/bun dist/launcher.js
 
 [Install]
 WantedBy=multi-user.target
 ```
 :::note
-If you are using a different path to node, replace `/usr/bin/node` with the path to node.
+If you are using a different path to bun, replace `/usr/bin/bun` with the path to bun.
 :::
 
 4. Enable and start the service:
@@ -98,11 +97,11 @@ sudo systemctl start foreseerr
   </TabItem>
   <TabItem value="macos" label="macOS">
 To run Foreseerr as a launchd service:
-1. Find the path to node:
+1. Find the path to bun:
 ```bash
-which node
+which bun
 ```
-Copy the path to node, it should be something like `/usr/local/bin/node`.
+Copy the path to bun, it should be something like `/usr/local/bin/bun`.
 
 2. Create a launchd plist file at `~/Library/LaunchAgents/com.foreseerr.plist`:
 ```xml
@@ -114,7 +113,7 @@ Copy the path to node, it should be something like `/usr/local/bin/node`.
   <string>com.foreseerr</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/node</string>
+    <string>/usr/local/bin/bun</string>
     <string>/opt/foreseerr/dist/launcher.js</string>
   </array>
   <key>WorkingDirectory</key>
@@ -134,7 +133,7 @@ Copy the path to node, it should be something like `/usr/local/bin/node`.
 </plist>
 ```
 :::note
-If you are using a different path to node, replace `/usr/local/bin/node` with the path to node.
+If you are using a different path to bun, replace `/usr/local/bin/bun` with the path to bun.
 :::
 3. Load the service:
 ```bash
@@ -197,20 +196,19 @@ cd C:\foreseerr
 2. Clone the Foreseerr repository. Use a release tag for production, or `develop` for the latest unreleased work:
 ```powershell
 git clone https://github.com/selmant/foreseerr.git .
-git checkout v0.7.1
+git checkout v0.8.0
 ```
 3. Install the dependencies:
 ```powershell
-npm install -g win-node-env
-$env:CYPRESS_INSTALL_BINARY = 0; pnpm install --frozen-lockfile
+$env:CYPRESS_INSTALL_BINARY = 0; bun install --frozen-lockfile
 ```
 4. Build the project:
 ```powershell
-pnpm build
+bun run build
 ```
 5. Start Foreseerr:
 ```powershell
-pnpm start
+bun run start
 ```
 
 :::tip
@@ -230,7 +228,7 @@ To run Foreseerr as a bat script:
 @echo off
 set PORT=5055
 set NODE_ENV=production
-node dist/launcher.js
+bun dist/launcher.js
 ```
 2. Create a task in Task Scheduler:
 - Open Task Scheduler
@@ -250,7 +248,7 @@ To run Foreseerr as a service:
 1. Download the [Non-Sucking Service Manager](https://nssm.cc/download)
 2. Install NSSM:
 ```powershell
-nssm install Foreseerr "C:\Program Files\nodejs\node.exe" "C:\foreseerr\dist\launcher.js"
+nssm install Foreseerr "C:\Users\%USERNAME%\.bun\bin\bun.exe" "C:\foreseerr\dist\launcher.js"
 nssm set Foreseerr AppDirectory "C:\foreseerr"
 nssm set Foreseerr AppEnvironmentExtra NODE_ENV=production
 ```
@@ -309,8 +307,8 @@ pm2 status foreseerr
 To update Foreseerr, navigate to the Foreseerr directory, fetch the tag or branch you want, then rebuild and restart:
 ```bash
 git fetch --tags
-git checkout v0.7.1
-pnpm install --frozen-lockfile
-pnpm build
+git checkout v0.8.0
+bun install --frozen-lockfile
+bun run build
 ```
 Then restart the process or service you configured above.
