@@ -116,11 +116,9 @@ const requestedSqlite = resolvedPositionals.filter(
 let exitCode = 0;
 
 if (positionals.length === 0) {
-  exitCode = await runBunTest(
-    [join(BASE_DIR, 'server')],
-    {},
-    ['--path-ignore-patterns=**/upgradeMatrix*.postgres.test.ts']
-  );
+  exitCode = await runBunTest([join(BASE_DIR, 'server')], {}, [
+    '--path-ignore-patterns=**/upgradeMatrix*.postgres.test.ts',
+  ]);
   if (exitCode === 0) {
     exitCode = await runBunTest(POSTGRES_UPGRADE_FILES, {
       DB_TYPE: 'postgres',
