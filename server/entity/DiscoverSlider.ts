@@ -1,6 +1,5 @@
 import {
   defaultSliders,
-  repairedDiscoverSliderType,
   retiredDiscoverSliderTypes,
   type DiscoverSliderType,
 } from '@server/constants/discover';
@@ -22,25 +21,6 @@ class DiscoverSlider {
     await sliderRepository.delete({
       type: In([...retiredDiscoverSliderTypes]),
     });
-
-    const customSliders = await sliderRepository.find({
-      where: { isBuiltIn: false },
-    });
-    for (const slider of customSliders) {
-      const repaired = repairedDiscoverSliderType(slider);
-      if (repaired !== slider.type) {
-        logger.info('Repairing custom discovery slider type', {
-          label: 'Discover Slider',
-          id: slider.id,
-          from: slider.type,
-          to: repaired,
-          title: slider.title,
-        });
-        slider.type = repaired;
-        await sliderRepository.save(slider);
-      }
-    }
-
     for (const slider of defaultSliders) {
       const existingBuiltIn = await sliderRepository.findOne({
         where: {

@@ -38,7 +38,6 @@ import {
 } from '@heroicons/react/24/solid';
 import {
   DiscoverSliderType,
-  repairedDiscoverSliderType,
   retiredDiscoverSliderTypes,
 } from '@server/constants/discover';
 import type DiscoverSlider from '@server/entity/DiscoverSlider';
@@ -231,13 +230,7 @@ const Discover = () => {
           return null;
         }
 
-        const sliderType = repairedDiscoverSliderType({
-          type: slider.type as DiscoverSliderType,
-          isBuiltIn: slider.isBuiltIn,
-          data: slider.data,
-        });
-
-        switch (sliderType) {
+        switch (slider.type) {
           case DiscoverSliderType.RECENTLY_ADDED:
             sliderComponent = <RecentlyAddedSlider />;
             break;

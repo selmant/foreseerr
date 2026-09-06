@@ -56,55 +56,6 @@ export enum DiscoverSliderType {
   SIMKL_DROPPED,
 }
 
-const LIST_SLUG = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
-
-export const looksLikeExternalListData = (data?: string | null): boolean => {
-  const value = data?.trim() ?? '';
-  if (!value) {
-    return false;
-  }
-  if (LIST_SLUG.test(value)) {
-    return true;
-  }
-  try {
-    const url = new URL(value);
-    if (url.hostname.endsWith('trakt.tv') && url.pathname.includes('/lists/')) {
-      return true;
-    }
-    if (
-      url.hostname === 'mdblist.com' ||
-      url.hostname.endsWith('.mdblist.com')
-    ) {
-      return url.pathname.includes('/lists/');
-    }
-  } catch {
-    return false;
-  }
-  return false;
-};
-
-/**
- * Custom Trakt/MDBList rows were saved with the numeric type of a later
- * built-in (watchlist / AniList next-season). Restore the list types so
- * Discover does not mount 20 copies of the same watchlist.
- */
-export const repairedDiscoverSliderType = (slider: {
-  type: DiscoverSliderType;
-  isBuiltIn?: boolean;
-  data?: string | null;
-}): DiscoverSliderType => {
-  if (slider.isBuiltIn || !looksLikeExternalListData(slider.data)) {
-    return slider.type;
-  }
-  if (slider.type === DiscoverSliderType.TRAKT_WATCHLIST) {
-    return DiscoverSliderType.TRAKT_LIST;
-  }
-  if (slider.type === DiscoverSliderType.ANILIST_NEXT_SEASON) {
-    return DiscoverSliderType.MDBLIST_LIST;
-  }
-  return slider.type;
-};
-
 /** Built-in rows Simkl told us not to use (no TMDB/TVDB ids). */
 export const retiredDiscoverSliderTypes = new Set<DiscoverSliderType>([
   DiscoverSliderType.SIMKL_BEST_TV,
