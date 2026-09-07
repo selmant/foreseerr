@@ -7,6 +7,13 @@ const activeControllers = new Map<string, AbortController>();
 let activeHeavyJobs = 0;
 let activeLightJobs = 0;
 
+type PendingRun = {
+  weight: ManagedJobWeight;
+  run: (signal: AbortSignal) => Promise<unknown>;
+};
+
+const pendingJobs = new Map<string, PendingRun>();
+
 export type ManagedJobWeight = 'heavy' | 'light';
 
 const summarizeFailure = (error: unknown): string =>
@@ -16,6 +23,29 @@ const summarizeFailure = (error: unknown): string =>
       '[redacted]'
     )
     .slice(0, 512);
+
+const canAdmit = (id: string, weight: ManagedJobWeight): boolean => {
+  if (activeJobs.has(id)) {
+    return false;
+  }
+  if (weight === 'heavy' && activeHeavyJobs >= 1) {
+    return false;
+  }
+  if (weight === 'light' && activeLightJobs >= 2) {
+    return false;
+  }
+  return true;
+};
+
+const drainPendingJobs = (): void => {
+  for (const [id, pending] of [...pendingJobs]) {
+    if (!canAdmit(id, pending.weight)) {
+      continue;
+    }
+    pendingJobs.delete(id);
+    void executeManagedJob(id, pending.weight, pending.run);
+  }
+};
 
 /** Signals managed work; callers also cancel their underlying scanner. */
 export const cancelManagedJobs = (): void => {
@@ -35,11 +65,12 @@ export const executeManagedJob = async (
   weight: ManagedJobWeight,
   run: (signal: AbortSignal) => Promise<unknown>
 ): Promise<boolean> => {
-  if (
-    activeJobs.has(id) ||
-    (weight === 'heavy' && activeHeavyJobs >= 1) ||
-    (weight === 'light' && activeLightJobs >= 2)
-  ) {
+  if (!canAdmit(id, weight)) {
+    pendingJobs.set(id, { weight, run });
+    logger.info(`Deferring scheduled job until a slot is free: ${id}`, {
+      label: 'Jobs',
+      weight,
+    });
     return false;
   }
   activeJobs.add(id);
@@ -87,5 +118,6 @@ export const executeManagedJob = async (
     activeControllers.delete(id);
     if (weight === 'heavy') activeHeavyJobs -= 1;
     else activeLightJobs -= 1;
+    drainPendingJobs();
   }
 };
