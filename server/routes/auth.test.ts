@@ -15,6 +15,7 @@ import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
 import { ApiError } from '@server/types/error';
+import axios from 'axios';
 import type { Express } from 'express';
 import express from 'express';
 import session from 'express-session';
@@ -774,6 +775,50 @@ describe('POST /auth/logout', () => {
     // Session should be invalidated — /me should fail
     const meAfterRes = await agent.get('/auth/me');
     assert.strictEqual(meAfterRes.status, 403);
+  });
+
+  it('deletes the Jellyfin device with the Authorization header', async () => {
+    const deleteMock = mock.method(axios, 'delete', async () => ({
+      status: 204,
+    }));
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+    const settings = getSettings();
+    settings.main.mediaServerType = MediaServerType.JELLYFIN;
+    settings.jellyfin = {
+      ...settings.jellyfin,
+      ip: 'jellyfin.example.test',
+      port: 8096,
+      useSsl: false,
+      urlBase: '',
+      apiKey: 'jellyfin-api-key',
+    };
+    const userRepo = getRepository(User);
+    const user = await userRepo.findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    user.jellyfinUserId = 'jf-user-001';
+    user.jellyfinDeviceId = 'jf-device-001';
+    await userRepo.save(user);
+
+    const logoutRes = await agent.post('/auth/logout');
+    assert.strictEqual(logoutRes.status, 200);
+    assert.strictEqual(deleteMock.mock.callCount(), 1);
+    const [requestUrl, requestConfig] = deleteMock.mock.calls[0].arguments as [
+      string,
+      {
+        params?: { Id?: string };
+        headers?: { Authorization?: string; 'X-Emby-Authorization'?: string };
+      },
+    ];
+    assert.equal(requestUrl, 'http://jellyfin.example.test:8096/Devices');
+    assert.equal(requestConfig.params?.Id, 'jf-device-001');
+    assert.equal(requestConfig.headers?.['X-Emby-Authorization'], undefined);
+    assert.match(
+      requestConfig.headers?.Authorization ?? '',
+      /MediaBrowser Client="Foreseerr".*DeviceId="foreseerr".*Token="jellyfin-api-key"/
+    );
+
+    deleteMock.mock.restore();
   });
 });
 

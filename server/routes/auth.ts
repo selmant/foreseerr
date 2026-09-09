@@ -1,4 +1,6 @@
-import JellyfinAPI from '@server/api/jellyfin';
+import JellyfinAPI, {
+  buildJellyfinAuthorizationHeader,
+} from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType, ServerType } from '@server/constants/server';
@@ -13,7 +15,6 @@ import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { checkAvatarChanged } from '@server/routes/avatarproxy';
 import { ApiError } from '@server/types/error';
-import { getAppVersion } from '@server/utils/appVersion';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 import { Router, type Response } from 'express';
@@ -941,11 +942,10 @@ authRoutes.post('/logout', async (req, res, next) => {
             await axios.delete(`${baseUrl}/Devices`, {
               params: { Id: user.jellyfinDeviceId },
               headers: {
-                'X-Emby-Authorization': `MediaBrowser Client="Foreseerr", Device="Foreseerr", DeviceId="foreseerr", Version="${
-                  settings.main.mediaServerType === MediaServerType.EMBY
-                    ? '1.0.0'
-                    : getAppVersion()
-                }", Token="${settings.jellyfin.apiKey}"`,
+                Authorization: buildJellyfinAuthorizationHeader(
+                  settings.jellyfin.apiKey,
+                  'foreseerr'
+                ),
               },
             });
           } catch (error) {
