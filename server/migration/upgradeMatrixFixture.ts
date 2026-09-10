@@ -184,6 +184,7 @@ export async function assertUpgradeIsIntact(
     .getRepository(DiscoverSlider)
     .findOneOrFail({ where: { title: 'Trending' } });
   assert.equal(upgradedSlider.sort ?? null, null);
+  assert.equal(upgradedSlider.type, 1);
 
   // Smoke boot: exercise the app's real ORM/entity layer against the
   // upgraded database, not just the migration runner, to catch schema/entity

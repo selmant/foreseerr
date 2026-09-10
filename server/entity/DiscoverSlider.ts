@@ -18,6 +18,10 @@ import {
 class DiscoverSlider {
   public static async bootstrapSliders(): Promise<void> {
     const sliderRepository = getRepository(DiscoverSlider);
+    // SQLite-dev skips TypeORM migrations; remap leftover 22–47 types to 1001+.
+    await sliderRepository.query(
+      `UPDATE "discover_slider" SET "type" = "type" + 979 WHERE "type" >= 22 AND "type" < 1001`
+    );
     await sliderRepository.delete({
       type: In([...retiredDiscoverSliderTypes]),
     });

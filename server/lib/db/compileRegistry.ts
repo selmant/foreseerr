@@ -29,10 +29,52 @@ import { User } from '@server/entity/User';
 import { UserPushSubscription } from '@server/entity/UserPushSubscription';
 import { UserSettings } from '@server/entity/UserSettings';
 import { Watchlist } from '@server/entity/Watchlist';
-import { IssueCommentSubscriber as sub_IssueCommentSubscriber_IssueCommentSubscriber } from '@server/subscriber/IssueCommentSubscriber';
-import { IssueSubscriber as sub_IssueSubscriber_IssueSubscriber } from '@server/subscriber/IssueSubscriber';
-import { MediaRequestSubscriber as sub_MediaRequestSubscriber_MediaRequestSubscriber } from '@server/subscriber/MediaRequestSubscriber';
-import { MediaSubscriber as sub_MediaSubscriber_MediaSubscriber } from '@server/subscriber/MediaSubscriber';
+import { InitialMigration1734786061496 as pg_1734786061496_InitialMigration_InitialMigration1734786061496 } from '@server/migration/postgres/1734786061496-InitialMigration';
+import { AddTelegramMessageThreadId1734786596045 as pg_1734786596045_AddTelegramMessageThreadId_AddTelegramMessageThreadId1734786596045 } from '@server/migration/postgres/1734786596045-AddTelegramMessageThreadId';
+import { AddOverrideRules1734805738349 as pg_1734805738349_AddOverrideRules_AddOverrideRules1734805738349 } from '@server/migration/postgres/1734805738349-AddOverrideRules';
+import { FixNullFields1734809898562 as pg_1734809898562_FixNullFields_FixNullFields1734809898562 } from '@server/migration/postgres/1734809898562-FixNullFields';
+import { AddBlacklistTagsColumn1737320080282 as pg_1737320080282_AddBlacklistTagsColumn_AddBlacklistTagsColumn1737320080282 } from '@server/migration/postgres/1737320080282-AddBlacklistTagsColumn';
+import { UpdateWebPush1743023615532 as pg_1743023615532_UpdateWebPush_UpdateWebPush1743023615532 } from '@server/migration/postgres/1743023615532-UpdateWebPush';
+import { AddUserAvatarCacheFields1743107707465 as pg_1743107707465_AddUserAvatarCacheFields_AddUserAvatarCacheFields1743107707465 } from '@server/migration/postgres/1743107707465-AddUserAvatarCacheFields';
+import { UpdateWebPush1745492376568 as pg_1745492376568_UpdateWebPush_UpdateWebPush1745492376568 } from '@server/migration/postgres/1745492376568-UpdateWebPush';
+import { FixIssueTimestamps1746811308203 as pg_1746811308203_FixIssueTimestamps_FixIssueTimestamps1746811308203 } from '@server/migration/postgres/1746811308203-FixIssueTimestamps';
+import { AddUniqueConstraintToPushSubscription1765233385034 as pg_1765233385034_AddUniqueConstraintToPushSubscription_AddUniqueConstraintToPushSubscription1765233385034 } from '@server/migration/postgres/1765233385034-AddUniqueConstraintToPushSubscription';
+import { AddPerformanceIndexes1770627987304 as pg_1770627987304_AddPerformanceIndexes_AddPerformanceIndexes1770627987304 } from '@server/migration/postgres/1770627987304-AddPerformanceIndexes';
+import { RenameBlacklistToBlocklist1771080196816 as pg_1771080196816_RenameBlacklistToBlocklist_RenameBlacklistToBlocklist1771080196816 } from '@server/migration/postgres/1771080196816-RenameBlacklistToBlocklist';
+import { AddForeignKeyIndexes1771259406751 as pg_1771259406751_AddForeignKeyIndexes_AddForeignKeyIndexes1771259406751 } from '@server/migration/postgres/1771259406751-AddForeignKeyIndexes';
+import { RecoveryLinkExpirationDateTime1771337333450 as pg_1771337333450_RecoveryLinkExpirationDateTime_RecoveryLinkExpirationDateTime1771337333450 } from '@server/migration/postgres/1771337333450-RecoveryLinkExpirationDateTime';
+import { FixBlocklistIdDefault1772000000000 as pg_1772000000000_FixBlocklistIdDefault_FixBlocklistIdDefault1772000000000 } from '@server/migration/postgres/1772000000000-FixBlocklistIdDefault';
+import { AddMediaTypeToUniqueConstraints1772048000333 as pg_1772048000333_AddMediaTypeToUniqueConstraints_AddMediaTypeToUniqueConstraints1772048000333 } from '@server/migration/postgres/1772048000333-AddMediaTypeToUniqueConstraints';
+import { UpgradeConnectTypeORM1777045867383 as pg_1777045867383_UpgradeConnectTypeORM_UpgradeConnectTypeORM1777045867383 } from '@server/migration/postgres/1777045867383-UpgradeConnectTypeORM';
+import { AddDiscordIdsColumn1779783365432 as pg_1779783365432_AddDiscordIdsColumn_AddDiscordIdsColumn1779783365432 } from '@server/migration/postgres/1779783365432-AddDiscordIdsColumn';
+import { AddIgnoreQuotaToMediaRequest1781732098511 as pg_1781732098511_AddIgnoreQuotaToMediaRequest_AddIgnoreQuotaToMediaRequest1781732098511 } from '@server/migration/postgres/1781732098511-AddIgnoreQuotaToMediaRequest';
+import { AddTraktUserSettings1784100000000 as pg_1784100000000_AddTraktUserSettings_AddTraktUserSettings1784100000000 } from '@server/migration/postgres/1784100000000-AddTraktUserSettings';
+import { AddHideTraktWatchedUserSetting1784200000000 as pg_1784200000000_AddHideTraktWatchedUserSetting_AddHideTraktWatchedUserSetting1784200000000 } from '@server/migration/postgres/1784200000000-AddHideTraktWatchedUserSetting';
+import { AddDiscoverFilterDefaultsUserSetting1784300000000 as pg_1784300000000_AddDiscoverFilterDefaultsUserSetting_AddDiscoverFilterDefaultsUserSetting1784300000000 } from '@server/migration/postgres/1784300000000-AddDiscoverFilterDefaultsUserSetting';
+import { AddDiscoverSliderSort1784400000000 as pg_1784400000000_AddDiscoverSliderSort_AddDiscoverSliderSort1784400000000 } from '@server/migration/postgres/1784400000000-AddDiscoverSliderSort';
+import { AddTraktUserIdUserSetting1784500000000 as pg_1784500000000_AddTraktUserIdUserSetting_AddTraktUserIdUserSetting1784500000000 } from '@server/migration/postgres/1784500000000-AddTraktUserIdUserSetting';
+import { AddEpisodeRequests1785250000000 as pg_1785250000000_AddEpisodeRequests_AddEpisodeRequests1785250000000 } from '@server/migration/postgres/1785250000000-AddEpisodeRequests';
+import { AddReleaseCalendar1785300000000 as pg_1785300000000_AddReleaseCalendar_AddReleaseCalendar1785300000000 } from '@server/migration/postgres/1785300000000-AddReleaseCalendar';
+import { CreateDesktopAuthTickets1785700000000 as pg_1785700000000_CreateDesktopAuthTickets_CreateDesktopAuthTickets1785700000000 } from '@server/migration/postgres/1785700000000-CreateDesktopAuthTickets';
+import { BindDesktopTicketsToSession1785800000000 as pg_1785800000000_BindDesktopTicketsToSession_BindDesktopTicketsToSession1785800000000 } from '@server/migration/postgres/1785800000000-BindDesktopTicketsToSession';
+import { AddReleaseSyncState1785900000000 as pg_1785900000000_AddReleaseSyncState_AddReleaseSyncState1785900000000 } from '@server/migration/postgres/1785900000000-AddReleaseSyncState';
+import { AddReleaseSyncFence1785910000000 as pg_1785910000000_AddReleaseSyncFence_AddReleaseSyncFence1785910000000 } from '@server/migration/postgres/1785910000000-AddReleaseSyncFence';
+import { AddAnilistUserSettings1786000000000 as pg_1786000000000_AddAnilistUserSettings_AddAnilistUserSettings1786000000000 } from '@server/migration/postgres/1786000000000-AddAnilistUserSettings';
+import { AddUserMediaActionsEnabled1786100000000 as pg_1786100000000_AddUserMediaActionsEnabled_AddUserMediaActionsEnabled1786100000000 } from '@server/migration/postgres/1786100000000-AddUserMediaActionsEnabled';
+import { AddActiveOngoingEpisodeRequestConstraint1786200000000 as pg_1786200000000_AddActiveOngoingEpisodeRequestConstraint_AddActiveOngoingEpisodeRequestConstraint1786200000000 } from '@server/migration/postgres/1786200000000-AddActiveOngoingEpisodeRequestConstraint';
+import { CreateJobExecutionState1786200000000 as pg_1786200000000_CreateJobExecutionState_CreateJobExecutionState1786200000000 } from '@server/migration/postgres/1786200000000-CreateJobExecutionState';
+import { AddAutoCompleteSkippedEpisodeEndings1787000000000 as pg_1787000000000_AddAutoCompleteSkippedEpisodeEndings_AddAutoCompleteSkippedEpisodeEndings1787000000000 } from '@server/migration/postgres/1787000000000-AddAutoCompleteSkippedEpisodeEndings';
+import { AddAutoCompleteSkippedEpisodeThreshold1787100000000 as pg_1787100000000_AddAutoCompleteSkippedEpisodeThreshold_AddAutoCompleteSkippedEpisodeThreshold1787100000000 } from '@server/migration/postgres/1787100000000-AddAutoCompleteSkippedEpisodeThreshold';
+import { AddServarrInterventions1787200000000 as pg_1787200000000_AddServarrInterventions_AddServarrInterventions1787200000000 } from '@server/migration/postgres/1787200000000-AddServarrInterventions';
+import { AddSimklUserSettings1787300000000 as pg_1787300000000_AddSimklUserSettings_AddSimklUserSettings1787300000000 } from '@server/migration/postgres/1787300000000-AddSimklUserSettings';
+import { CreateSimklSyncCache1787310000000 as pg_1787310000000_CreateSimklSyncCache_CreateSimklSyncCache1787310000000 } from '@server/migration/postgres/1787310000000-CreateSimklSyncCache';
+import { CreateMappingGap1787400000000 as pg_1787400000000_CreateMappingGap_CreateMappingGap1787400000000 } from '@server/migration/postgres/1787400000000-CreateMappingGap';
+import { CreateMappingGraph1787410000000 as pg_1787410000000_CreateMappingGraph_CreateMappingGraph1787410000000 } from '@server/migration/postgres/1787410000000-CreateMappingGraph';
+import { AddMappingGapSuggestion1787420000000 as pg_1787420000000_AddMappingGapSuggestion_AddMappingGapSuggestion1787420000000 } from '@server/migration/postgres/1787420000000-AddMappingGapSuggestion';
+import { IndexMappingSourceKey1787430000000 as pg_1787430000000_IndexMappingSourceKey_IndexMappingSourceKey1787430000000 } from '@server/migration/postgres/1787430000000-IndexMappingSourceKey';
+import { MappingLinkProvenance1787440000000 as pg_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000 } from '@server/migration/postgres/1787440000000-MappingLinkProvenance';
+import { AddWatchAheadEpisodeRequests1787500000000 as pg_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000 } from '@server/migration/postgres/1787500000000-AddWatchAheadEpisodeRequests';
+import { RemapDiscoverSliderTypes1787510000000 as pg_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000 } from '@server/migration/postgres/1787510000000-RemapDiscoverSliderTypes';
 import { InitialMigration1603944374840 as sqlite_1603944374840_InitialMigration_InitialMigration1603944374840 } from '@server/migration/sqlite/1603944374840-InitialMigration';
 import { SeasonStatus1605085519544 as sqlite_1605085519544_SeasonStatus_SeasonStatus1605085519544 } from '@server/migration/sqlite/1605085519544-SeasonStatus';
 import { CascadeMigration1606730060700 as sqlite_1606730060700_CascadeMigration_CascadeMigration1606730060700 } from '@server/migration/sqlite/1606730060700-CascadeMigration';
@@ -112,51 +154,11 @@ import { AddMappingGapSuggestion1787420000000 as sqlite_1787420000000_AddMapping
 import { IndexMappingSourceKey1787430000000 as sqlite_1787430000000_IndexMappingSourceKey_IndexMappingSourceKey1787430000000 } from '@server/migration/sqlite/1787430000000-IndexMappingSourceKey';
 import { MappingLinkProvenance1787440000000 as sqlite_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000 } from '@server/migration/sqlite/1787440000000-MappingLinkProvenance';
 import { AddWatchAheadEpisodeRequests1787500000000 as sqlite_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000 } from '@server/migration/sqlite/1787500000000-AddWatchAheadEpisodeRequests';
-import { InitialMigration1734786061496 as pg_1734786061496_InitialMigration_InitialMigration1734786061496 } from '@server/migration/postgres/1734786061496-InitialMigration';
-import { AddTelegramMessageThreadId1734786596045 as pg_1734786596045_AddTelegramMessageThreadId_AddTelegramMessageThreadId1734786596045 } from '@server/migration/postgres/1734786596045-AddTelegramMessageThreadId';
-import { AddOverrideRules1734805738349 as pg_1734805738349_AddOverrideRules_AddOverrideRules1734805738349 } from '@server/migration/postgres/1734805738349-AddOverrideRules';
-import { FixNullFields1734809898562 as pg_1734809898562_FixNullFields_FixNullFields1734809898562 } from '@server/migration/postgres/1734809898562-FixNullFields';
-import { AddBlacklistTagsColumn1737320080282 as pg_1737320080282_AddBlacklistTagsColumn_AddBlacklistTagsColumn1737320080282 } from '@server/migration/postgres/1737320080282-AddBlacklistTagsColumn';
-import { UpdateWebPush1743023615532 as pg_1743023615532_UpdateWebPush_UpdateWebPush1743023615532 } from '@server/migration/postgres/1743023615532-UpdateWebPush';
-import { AddUserAvatarCacheFields1743107707465 as pg_1743107707465_AddUserAvatarCacheFields_AddUserAvatarCacheFields1743107707465 } from '@server/migration/postgres/1743107707465-AddUserAvatarCacheFields';
-import { UpdateWebPush1745492376568 as pg_1745492376568_UpdateWebPush_UpdateWebPush1745492376568 } from '@server/migration/postgres/1745492376568-UpdateWebPush';
-import { FixIssueTimestamps1746811308203 as pg_1746811308203_FixIssueTimestamps_FixIssueTimestamps1746811308203 } from '@server/migration/postgres/1746811308203-FixIssueTimestamps';
-import { AddUniqueConstraintToPushSubscription1765233385034 as pg_1765233385034_AddUniqueConstraintToPushSubscription_AddUniqueConstraintToPushSubscription1765233385034 } from '@server/migration/postgres/1765233385034-AddUniqueConstraintToPushSubscription';
-import { AddPerformanceIndexes1770627987304 as pg_1770627987304_AddPerformanceIndexes_AddPerformanceIndexes1770627987304 } from '@server/migration/postgres/1770627987304-AddPerformanceIndexes';
-import { RenameBlacklistToBlocklist1771080196816 as pg_1771080196816_RenameBlacklistToBlocklist_RenameBlacklistToBlocklist1771080196816 } from '@server/migration/postgres/1771080196816-RenameBlacklistToBlocklist';
-import { AddForeignKeyIndexes1771259406751 as pg_1771259406751_AddForeignKeyIndexes_AddForeignKeyIndexes1771259406751 } from '@server/migration/postgres/1771259406751-AddForeignKeyIndexes';
-import { RecoveryLinkExpirationDateTime1771337333450 as pg_1771337333450_RecoveryLinkExpirationDateTime_RecoveryLinkExpirationDateTime1771337333450 } from '@server/migration/postgres/1771337333450-RecoveryLinkExpirationDateTime';
-import { FixBlocklistIdDefault1772000000000 as pg_1772000000000_FixBlocklistIdDefault_FixBlocklistIdDefault1772000000000 } from '@server/migration/postgres/1772000000000-FixBlocklistIdDefault';
-import { AddMediaTypeToUniqueConstraints1772048000333 as pg_1772048000333_AddMediaTypeToUniqueConstraints_AddMediaTypeToUniqueConstraints1772048000333 } from '@server/migration/postgres/1772048000333-AddMediaTypeToUniqueConstraints';
-import { UpgradeConnectTypeORM1777045867383 as pg_1777045867383_UpgradeConnectTypeORM_UpgradeConnectTypeORM1777045867383 } from '@server/migration/postgres/1777045867383-UpgradeConnectTypeORM';
-import { AddDiscordIdsColumn1779783365432 as pg_1779783365432_AddDiscordIdsColumn_AddDiscordIdsColumn1779783365432 } from '@server/migration/postgres/1779783365432-AddDiscordIdsColumn';
-import { AddIgnoreQuotaToMediaRequest1781732098511 as pg_1781732098511_AddIgnoreQuotaToMediaRequest_AddIgnoreQuotaToMediaRequest1781732098511 } from '@server/migration/postgres/1781732098511-AddIgnoreQuotaToMediaRequest';
-import { AddTraktUserSettings1784100000000 as pg_1784100000000_AddTraktUserSettings_AddTraktUserSettings1784100000000 } from '@server/migration/postgres/1784100000000-AddTraktUserSettings';
-import { AddHideTraktWatchedUserSetting1784200000000 as pg_1784200000000_AddHideTraktWatchedUserSetting_AddHideTraktWatchedUserSetting1784200000000 } from '@server/migration/postgres/1784200000000-AddHideTraktWatchedUserSetting';
-import { AddDiscoverFilterDefaultsUserSetting1784300000000 as pg_1784300000000_AddDiscoverFilterDefaultsUserSetting_AddDiscoverFilterDefaultsUserSetting1784300000000 } from '@server/migration/postgres/1784300000000-AddDiscoverFilterDefaultsUserSetting';
-import { AddDiscoverSliderSort1784400000000 as pg_1784400000000_AddDiscoverSliderSort_AddDiscoverSliderSort1784400000000 } from '@server/migration/postgres/1784400000000-AddDiscoverSliderSort';
-import { AddTraktUserIdUserSetting1784500000000 as pg_1784500000000_AddTraktUserIdUserSetting_AddTraktUserIdUserSetting1784500000000 } from '@server/migration/postgres/1784500000000-AddTraktUserIdUserSetting';
-import { AddEpisodeRequests1785250000000 as pg_1785250000000_AddEpisodeRequests_AddEpisodeRequests1785250000000 } from '@server/migration/postgres/1785250000000-AddEpisodeRequests';
-import { AddReleaseCalendar1785300000000 as pg_1785300000000_AddReleaseCalendar_AddReleaseCalendar1785300000000 } from '@server/migration/postgres/1785300000000-AddReleaseCalendar';
-import { CreateDesktopAuthTickets1785700000000 as pg_1785700000000_CreateDesktopAuthTickets_CreateDesktopAuthTickets1785700000000 } from '@server/migration/postgres/1785700000000-CreateDesktopAuthTickets';
-import { BindDesktopTicketsToSession1785800000000 as pg_1785800000000_BindDesktopTicketsToSession_BindDesktopTicketsToSession1785800000000 } from '@server/migration/postgres/1785800000000-BindDesktopTicketsToSession';
-import { AddReleaseSyncState1785900000000 as pg_1785900000000_AddReleaseSyncState_AddReleaseSyncState1785900000000 } from '@server/migration/postgres/1785900000000-AddReleaseSyncState';
-import { AddReleaseSyncFence1785910000000 as pg_1785910000000_AddReleaseSyncFence_AddReleaseSyncFence1785910000000 } from '@server/migration/postgres/1785910000000-AddReleaseSyncFence';
-import { AddAnilistUserSettings1786000000000 as pg_1786000000000_AddAnilistUserSettings_AddAnilistUserSettings1786000000000 } from '@server/migration/postgres/1786000000000-AddAnilistUserSettings';
-import { AddUserMediaActionsEnabled1786100000000 as pg_1786100000000_AddUserMediaActionsEnabled_AddUserMediaActionsEnabled1786100000000 } from '@server/migration/postgres/1786100000000-AddUserMediaActionsEnabled';
-import { AddActiveOngoingEpisodeRequestConstraint1786200000000 as pg_1786200000000_AddActiveOngoingEpisodeRequestConstraint_AddActiveOngoingEpisodeRequestConstraint1786200000000 } from '@server/migration/postgres/1786200000000-AddActiveOngoingEpisodeRequestConstraint';
-import { CreateJobExecutionState1786200000000 as pg_1786200000000_CreateJobExecutionState_CreateJobExecutionState1786200000000 } from '@server/migration/postgres/1786200000000-CreateJobExecutionState';
-import { AddAutoCompleteSkippedEpisodeEndings1787000000000 as pg_1787000000000_AddAutoCompleteSkippedEpisodeEndings_AddAutoCompleteSkippedEpisodeEndings1787000000000 } from '@server/migration/postgres/1787000000000-AddAutoCompleteSkippedEpisodeEndings';
-import { AddAutoCompleteSkippedEpisodeThreshold1787100000000 as pg_1787100000000_AddAutoCompleteSkippedEpisodeThreshold_AddAutoCompleteSkippedEpisodeThreshold1787100000000 } from '@server/migration/postgres/1787100000000-AddAutoCompleteSkippedEpisodeThreshold';
-import { AddServarrInterventions1787200000000 as pg_1787200000000_AddServarrInterventions_AddServarrInterventions1787200000000 } from '@server/migration/postgres/1787200000000-AddServarrInterventions';
-import { AddSimklUserSettings1787300000000 as pg_1787300000000_AddSimklUserSettings_AddSimklUserSettings1787300000000 } from '@server/migration/postgres/1787300000000-AddSimklUserSettings';
-import { CreateSimklSyncCache1787310000000 as pg_1787310000000_CreateSimklSyncCache_CreateSimklSyncCache1787310000000 } from '@server/migration/postgres/1787310000000-CreateSimklSyncCache';
-import { CreateMappingGap1787400000000 as pg_1787400000000_CreateMappingGap_CreateMappingGap1787400000000 } from '@server/migration/postgres/1787400000000-CreateMappingGap';
-import { CreateMappingGraph1787410000000 as pg_1787410000000_CreateMappingGraph_CreateMappingGraph1787410000000 } from '@server/migration/postgres/1787410000000-CreateMappingGraph';
-import { AddMappingGapSuggestion1787420000000 as pg_1787420000000_AddMappingGapSuggestion_AddMappingGapSuggestion1787420000000 } from '@server/migration/postgres/1787420000000-AddMappingGapSuggestion';
-import { IndexMappingSourceKey1787430000000 as pg_1787430000000_IndexMappingSourceKey_IndexMappingSourceKey1787430000000 } from '@server/migration/postgres/1787430000000-IndexMappingSourceKey';
-import { MappingLinkProvenance1787440000000 as pg_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000 } from '@server/migration/postgres/1787440000000-MappingLinkProvenance';
-import { AddWatchAheadEpisodeRequests1787500000000 as pg_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000 } from '@server/migration/postgres/1787500000000-AddWatchAheadEpisodeRequests';
+import { RemapDiscoverSliderTypes1787510000000 as sqlite_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000 } from '@server/migration/sqlite/1787510000000-RemapDiscoverSliderTypes';
+import { IssueCommentSubscriber as sub_IssueCommentSubscriber_IssueCommentSubscriber } from '@server/subscriber/IssueCommentSubscriber';
+import { IssueSubscriber as sub_IssueSubscriber_IssueSubscriber } from '@server/subscriber/IssueSubscriber';
+import { MediaRequestSubscriber as sub_MediaRequestSubscriber_MediaRequestSubscriber } from '@server/subscriber/MediaRequestSubscriber';
+import { MediaSubscriber as sub_MediaSubscriber_MediaSubscriber } from '@server/subscriber/MediaSubscriber';
 
 function asEntity<T extends { name: string }>(ctor: T, name: string): T {
   Object.defineProperty(ctor, 'name', { value: name, configurable: true });
@@ -283,6 +285,7 @@ export const compileSqliteMigrations = [
   sqlite_1787430000000_IndexMappingSourceKey_IndexMappingSourceKey1787430000000,
   sqlite_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000,
   sqlite_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000,
+  sqlite_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000,
 ] as const;
 
 export const compilePostgresMigrations = [
@@ -331,4 +334,5 @@ export const compilePostgresMigrations = [
   pg_1787430000000_IndexMappingSourceKey_IndexMappingSourceKey1787430000000,
   pg_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000,
   pg_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000,
+  pg_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000,
 ] as const;
