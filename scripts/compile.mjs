@@ -1,7 +1,7 @@
 /**
  * Cross-compile Foreseerr to linux x64/arm64 and windows-x64 binaries.
  */
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,16 +24,14 @@ const TARGETS = [
 ];
 
 async function ensureWebBuild() {
-  if (!existsSync(join(REPO_ROOT, 'dist/public/index.html'))) {
-    const proc = Bun.spawn(['bun', 'run', 'build:web'], {
-      cwd: REPO_ROOT,
-      stdout: 'inherit',
-      stderr: 'inherit',
-    });
-    const code = await proc.exited;
-    if (code !== 0) {
-      throw new Error(`build:web failed with ${code}`);
-    }
+  const proc = Bun.spawn(['bun', 'run', 'build:web'], {
+    cwd: REPO_ROOT,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  const code = await proc.exited;
+  if (code !== 0) {
+    throw new Error(`build:web failed with ${code}`);
   }
 }
 
