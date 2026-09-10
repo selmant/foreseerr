@@ -1,6 +1,6 @@
-import AnilistAPI from '@server/api/anilist';
+import type AnilistAPI from '@server/api/anilist';
 import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
-import { createAnilistAppClient } from '@server/lib/anilist';
+import { createAnilistDiscoverClient } from '@server/lib/anilist';
 import {
   collectUserListItems,
   listUserAniListLists,
@@ -79,9 +79,9 @@ async function publicPage(
   errorMessage: string
 ) {
   try {
-    createAnilistAppClient();
     const page = req.query.page ? Number(req.query.page) : 1;
-    const mediaPage = await fetchPage(new AnilistAPI(), page);
+    const client = await createAnilistDiscoverClient(req.user?.id);
+    const mediaPage = await fetchPage(client, page);
     const mapped = await mapAnilistMediaList(mediaPage.media);
     return res.status(200).json({
       page,

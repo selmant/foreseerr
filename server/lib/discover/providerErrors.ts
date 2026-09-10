@@ -1,4 +1,8 @@
-import { AnilistAuthError, AnilistRateLimitedError } from '@server/api/anilist';
+import {
+  AnilistAuthError,
+  AnilistOutageError,
+  AnilistRateLimitedError,
+} from '@server/api/anilist';
 import {
   MdblistListNotFoundError,
   MdblistNotConfiguredError,
@@ -89,6 +93,7 @@ export const handleAnilistDiscoverRouteError = (
       status: 400,
     },
     { matches: (value) => value instanceof AnilistNotLinkedError, status: 404 },
+    { matches: (value) => value instanceof AnilistOutageError, status: 503 },
     { matches: (value) => value instanceof AnilistAuthError, status: 401 },
     {
       matches: (value) => value instanceof AnilistRateLimitedError,

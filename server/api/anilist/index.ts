@@ -21,6 +21,22 @@ import cacheManager from '@server/lib/cache';
 import logger from '@server/logger';
 import { proxyRequestInterceptor } from '@server/utils/customProxyAgent';
 import axios from 'axios';
+import {
+  AnilistAuthError,
+  AnilistGraphQLError,
+  AnilistOutageError,
+  AnilistRateLimitedError,
+  classifyAnilistFailure,
+  firstAnilistGraphQlError,
+} from './failures';
+
+export {
+  AnilistAuthError,
+  AnilistGraphQLError,
+  AnilistOutageError,
+  AnilistRateLimitedError,
+  classifyAnilistFailure,
+} from './failures';
 
 const ANILIST_PAGE_SIZE = 20;
 const ANILIST_TOKEN_TTL_FALLBACK_SECONDS = 365 * 24 * 60 * 60;
@@ -120,32 +136,6 @@ const DELETE_MEDIA_LIST_ENTRY_MUTATION = `
     DeleteMediaListEntry(id: $id) { deleted }
   }
 `;
-
-export class AnilistRateLimitedError extends Error {
-  public readonly retryAfterSeconds: number;
-
-  constructor(retryAfterSeconds = 60) {
-    super(`AniList API rate limited; retry after ${retryAfterSeconds}s`);
-    this.name = 'AnilistRateLimitedError';
-    this.retryAfterSeconds = retryAfterSeconds;
-  }
-}
-
-export class AnilistAuthError extends Error {
-  constructor(
-    message = 'AniList authorization expired; reconnect your account'
-  ) {
-    super(message);
-    this.name = 'AnilistAuthError';
-  }
-}
-
-export class AnilistGraphQLError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AnilistGraphQLError';
-  }
-}
 
 interface GraphQLResponse<T> {
   data?: T;
@@ -446,9 +436,13 @@ class AnilistAPI extends ExternalAPI {
         ttl
       );
 
-      const graphQlStatus = response.errors?.[0]?.status;
-      if (graphQlStatus === 401 || graphQlStatus === 403) {
-        throw new AnilistAuthError();
+      const graphQlError = firstAnilistGraphQlError(response);
+      const classified = classifyAnilistFailure({
+        graphQlStatus: graphQlError.status,
+        message: graphQlError.message,
+      });
+      if (classified) {
+        throw classified;
       }
       if (response.errors?.length) {
         throw new AnilistGraphQLError(
@@ -463,6 +457,7 @@ class AnilistAPI extends ExternalAPI {
       if (
         e instanceof AnilistAuthError ||
         e instanceof AnilistGraphQLError ||
+        e instanceof AnilistOutageError ||
         e instanceof AnilistRateLimitedError
       ) {
         throw e;
@@ -479,8 +474,16 @@ class AnilistAPI extends ExternalAPI {
           Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60
         );
       }
-      if (status === 401 || status === 403) {
-        throw new AnilistAuthError();
+      const graphQlError = firstAnilistGraphQlError(
+        axios.isAxiosError(e) ? e.response?.data : undefined
+      );
+      const classified = classifyAnilistFailure({
+        httpStatus: status,
+        graphQlStatus: graphQlError.status,
+        message: graphQlError.message,
+      });
+      if (classified) {
+        throw classified;
       }
       throw e;
     }

@@ -98,6 +98,26 @@ export function createAnilistAppClient(): AnilistAPI {
   return new AnilistAPI();
 }
 
+/**
+ * Public discover rows (trending, season, …) do not need a user token, but
+ * AniList currently rejects anonymous GraphQL. Prefer the caller's linked
+ * account when one exists; fall back to the app client when it does not.
+ */
+export async function createAnilistDiscoverClient(
+  userId?: number
+): Promise<AnilistAPI> {
+  if (userId != null) {
+    try {
+      return await createAnilistUserClient(userId);
+    } catch (e) {
+      if (!(e instanceof AnilistNotLinkedError)) {
+        throw e;
+      }
+    }
+  }
+  return createAnilistAppClient();
+}
+
 export async function getUserAnilistSettings(
   userId: number
 ): Promise<UserSettings | null> {
