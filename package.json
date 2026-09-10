@@ -82,7 +82,7 @@
     "nanoid": "^5.1.7",
     "node-cache": "5.1.2",
     "node-schedule": "2.1.1",
-    "nodemailer": "9.0.1",
+    "nodemailer": "9.1.1",
     "openpgp": "6.3.0",
     "pg": "8.20.0",
     "pug": "3.0.4",
