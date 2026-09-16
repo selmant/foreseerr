@@ -19,7 +19,6 @@ import { MediaServerType } from '@server/constants/server';
 import axios from 'axios';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { useIntl } from 'react-intl';
-import { useNavigate } from 'react-router';
 import { CSSTransition, SwitchTransition } from 'react-transition-group';
 import useSWR from 'swr';
 
@@ -35,7 +34,6 @@ const messages = defineMessages('components.Login', {
 
 const Login = () => {
   const intl = useIntl();
-  const navigate = useNavigate();
   const settings = useSettings();
   const { user, revalidate } = useUser();
 
@@ -86,10 +84,12 @@ const Login = () => {
   }, [authToken, revalidate]);
 
   // Effect that is triggered whenever `useUser`'s user changes. If we get a new
-  // valid user, we redirect the user to the home page as the login was successful.
+  // valid user, reload the app at its home page. Bootstrap owns the initial auth
+  // state, so a client-side navigation would leave it with the pre-login user
+  // and cause it to redirect straight back to /login.
   useEffect(() => {
     if (user) {
-      navigate('/');
+      window.location.replace('/');
     }
   }, [user]);
 
