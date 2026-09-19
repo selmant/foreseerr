@@ -34,7 +34,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `0f79ee66` | Applied | Adapted the test database guard so accidental seed/reset outside test mode fails before database access; the intentional Cypress prepare script opts in. Foreseerr already has generated explicit registration for its compiled binary (including 16 fork-specific entities), source globs exclude tests, and its server build excludes test files, so upstream's shorter hard-coded registry and build changes would regress fork coverage. |
 | `cc592e8d` | Applied | Added 30 Catalan server notification translations and corrected the movie label casing. All keys match the English catalog and preserve its interpolation variables; the `{applicationTitle}` messages use Foreseerr's configured title. Corrected two obvious translation typos. |
 | `da4b555c` | Applied | Removed `appear` from the Modal and SlideOver `Transition.Child` elements: Headless UI 1.7.19 forwards it to their DOM nodes. Parent `Transition` elements retain `appear` for entrance animations. |
-| `d7b08bdd` | Pending | fix(datasource): break import cycle mistyping postgres timestamps (#3449) |
+| `d7b08bdd` | Applied | Moved the PostgreSQL flag into an import-free module so entity decorators resolve timestamp columns without a datasource import cycle. Foreseerr's lazy datasource and release-state code also use this flag, so their imports were adapted. |
 | `1cc2f116` | Pending | chore(deps): upgrade @headlessui/react to 2.2.10  (#3450) |
 | `df743f46` | Pending | fix(ui): stop the slideover backdrop flashing back on close (#3451) |
 | `aa8e0de0` | Pending | refactor(ui): use headlessui flat named exports (#3453) |

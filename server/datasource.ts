@@ -1,4 +1,5 @@
 import { bunSqlite3 } from '@server/lib/bunSqlite3';
+import { isPgsql } from '@server/utils/dbType';
 import {
   configDirectory,
   isStandaloneExecutable,
@@ -140,8 +141,6 @@ const postgresProdConfig: DataSourceOptions = {
   migrations: ['dist/migration/postgres/**/*.js'],
   subscribers: ['dist/subscriber/**/*.js'],
 };
-
-export const isPgsql = process.env.DB_TYPE === 'postgres';
 
 function withSourceOrmFiles(config: DataSourceOptions): DataSourceOptions {
   return {

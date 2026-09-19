@@ -1,4 +1,5 @@
-import dataSource, { isPgsql } from '@server/datasource';
+import dataSource from '@server/datasource';
+import { isPgsql } from '@server/utils/dbType';
 import type { ReleaseSource } from '@server/entity/ReleaseOccurrence';
 import ReleaseSyncState from '@server/entity/ReleaseSyncState';
 import { Brackets, type EntityManager } from 'typeorm';
