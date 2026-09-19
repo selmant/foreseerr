@@ -52,7 +52,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `c604bccc` | Applied | Scoped both request card layouts, including their missing-title states, to the request's own TV seasons or exact Foreseerr episode selections; movie downloads remain unfiltered. Excluded TV downloads without episode metadata and empty TV selections to avoid showing unrelated series progress. Added focused regressions and included client utility tests in the default Bun test run. |
 | `6bf3d048` | Applied | Updated 35 applicable pinned Action references across 17 Foreseerr workflows: checkout v7, cache v6, stale v11, and the issue-index artifact downloader v24. Upstream's setup-node v7 changes do not apply because these jobs use Bun. Preserved Foreseerr's jobs, permissions, cache keys, and release flow. |
 | `979978fc` | Applied | TypeORM 0.3.31 was already pinned in Foreseerr. Updated the remaining PostgreSQL driver pin from `pg` 8.20.0 to 8.23.0 and regenerated the Bun lockfile, including its `pg-cloudflare`, `pg-connection-string`, `pg-pool`, and `pg-protocol` updates. Kept Foreseerr's Bun package manager and existing database configuration. |
-| `a3dbbd94` | Pending | ci(actions): update github actions (#3478) |
+| `a3dbbd94` | Applied | Updated the six applicable pinned Action references in CI, CodeQL, tag creation, and Trivy scanning to the upstream versions. Foreseerr runs these same actions; its Bun test command, workflow jobs, permissions, and release flow are unchanged. |
 | `5f972275` | Pending | chore(i18n): update translations from Weblate |
 | `6f5a1773` | Pending | feat(settings): hide already requested media (#1855) |
 | `68c5bc8c` | Pending | chore(i18n): update translations from Weblate |
