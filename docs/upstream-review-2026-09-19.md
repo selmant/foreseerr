@@ -11,7 +11,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `42bee2aa` | Skipped | Already implemented: `resolveSonarrSeriesRouting` uses configured `seriesType` for non-anime requests; covered by existing test |
 | `7baed837` | Skipped | Already implemented verbatim in Foreseerr `4906d7aa`; scanner recognizes custom Plex provider GUIDs and resolves their external IDs |
 | `090c659b` | Applied | Suppress verbose stdout from GHCR and Docker Hub Cosign attestation checks; Foreseerr runs both checks in its release job |
-| `c8c8f7a1` | Pending | chore(helm): bump seerr to 3.4.1 (#3352) |
+| `c8c8f7a1` | Skipped | Seerr-only release bump (`seerr-chart` 3.9.1 / app `v3.4.1`); Foreseerr's own chart is 0.9.1 / `v0.9.1`, tied to its package and image versions by the release workflow and version-consistency check. |
 | `dea59605` | Pending | docs: clarify ai disclosure policy further (#3358) |
 | `afb17aa4` | Pending | feat(notifications): add embed poster option for Gotify (#3332) |
 | `bd971f86` | Pending | build(docker): update node.js to v22.23.2 (#3077) |
