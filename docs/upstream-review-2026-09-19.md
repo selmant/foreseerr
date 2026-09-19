@@ -27,7 +27,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `aae88167` | Applied | Added a debounced user-list search adapted to Foreseerr's React Router pagination; its existing `q` API searches username, email, Plex username, and Jellyfin username. Preserved Foreseerr's media-server import controls. |
 | `59ad5f19` | Applied | Adapted a 15-minute, 2,000-entry TMDB scan tier within Foreseerr's existing shared 256 MiB weighted LRU budget; scanner TV and external-ID lookups use narrow responses, while anime metadata provider fallback remains intact. Dropped the redundant Plex GUID cache, requested inline GUIDs for recent movies, and stripped unread TV credits. Kept Foreseerr's cache implementation and `node-cache` dependency (still used by the Servarr route). |
 | `92bad10c` | Applied | Added optional comma-separated ntfy tags through settings, API schema, UI, and docs; the agent trims and omits empty tags before sending. Foreseerr uses the same ntfy integration, so the upstream change applies directly. |
-| `a123d20b` | Pending | feat(api): send a Seerr user agent on outbound requests (#3395) |
+| `a123d20b` | Applied | Send `Foreseerr/<version>` on outbound Axios calls, including shared API, Tautulli, and image clients; preserve explicit service-specific or caller-provided User-Agent headers. |
 | `5af32cb2` | Pending | fix(settings): mutate the query-string status key for modal immediately (#3432) |
 | `0be53e6e` | Pending | fix: prevent hideAvailable/hideBlocklisted from filtering person results (#3434) |
 | `2759058a` | Pending | fix(discover): fix tv title sorting and validate sortBy per media type (#3305) |

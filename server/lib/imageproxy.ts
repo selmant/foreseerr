@@ -2,6 +2,7 @@ import { clampImageCacheIdleDays } from '@server/lib/imageproxySources';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { proxyRequestInterceptor } from '@server/utils/customProxyAgent';
+import { userAgentRequestInterceptor } from '@server/utils/userAgent';
 import { configDirectory } from '@server/utils/runtimePaths';
 import axios, { type AxiosInstance } from 'axios';
 import rateLimit, { type rateLimitOptions } from 'axios-rate-limit';
@@ -349,6 +350,7 @@ class ImageProxy {
       maxRedirects: options.maxRedirects ?? 5,
     });
     this.axios.interceptors.request.use(proxyRequestInterceptor);
+    this.axios.interceptors.request.use(userAgentRequestInterceptor);
 
     if (options.rateLimitOptions) {
       this.axios = rateLimit(this.axios, options.rateLimitOptions);

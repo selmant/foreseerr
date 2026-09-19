@@ -54,6 +54,7 @@ import {
   sendPublicFile,
 } from '@server/utils/embeddedPublic';
 import restartFlag from '@server/utils/restartFlag';
+import '@server/utils/userAgent';
 import {
   bundledApiSpecPath,
   bundledPublicPath,
