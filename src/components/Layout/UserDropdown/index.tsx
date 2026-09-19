@@ -2,7 +2,13 @@ import CachedImage from '@app/components/Common/CachedImage';
 import MiniQuotaDisplay from '@app/components/Layout/UserDropdown/MiniQuotaDisplay';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import { Menu, Transition } from '@headlessui/react';
+import {
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuItems,
+  Transition,
+} from '@headlessui/react';
 import {
   ArrowRightOnRectangleIcon,
   ClockIcon,
@@ -48,7 +54,7 @@ const UserDropdown = () => {
   return (
     <Menu as="div" className="relative ml-3">
       <div>
-        <Menu.Button
+        <MenuButton
           className="flex max-w-xs items-center rounded-full text-sm ring-1 ring-gray-700 hover:ring-gray-500 focus:outline-none focus:ring-gray-500"
           data-testid="user-menu"
         >
@@ -60,7 +66,7 @@ const UserDropdown = () => {
             width={40}
             height={40}
           />
-        </Menu.Button>
+        </MenuButton>
       </div>
       <Transition
         as={Fragment}
@@ -72,7 +78,7 @@ const UserDropdown = () => {
         leaveTo="opacity-0 scale-95"
         appear
       >
-        <Menu.Items className="absolute right-0 mt-2 w-72 origin-top-right rounded-md shadow-lg">
+        <MenuItems className="absolute right-0 mt-2 w-72 origin-top-right rounded-md shadow-lg">
           <div className="divide-y divide-gray-700 rounded-md bg-gray-800/80 ring-1 ring-gray-700 backdrop-blur">
             <div className="flex flex-col space-y-4 px-4 py-4">
               <div className="flex items-center space-x-2">
@@ -98,7 +104,7 @@ const UserDropdown = () => {
               {user && <MiniQuotaDisplay userId={user?.id} />}
             </div>
             <div className="p-1">
-              <Menu.Item>
+              <MenuItem>
                 {({ active }) => (
                   <ForwardedLink
                     to={`/profile`}
@@ -113,8 +119,8 @@ const UserDropdown = () => {
                     <span>{intl.formatMessage(messages.myprofile)}</span>
                   </ForwardedLink>
                 )}
-              </Menu.Item>
-              <Menu.Item>
+              </MenuItem>
+              <MenuItem>
                 {({ active }) => (
                   <ForwardedLink
                     to={
@@ -136,8 +142,8 @@ const UserDropdown = () => {
                     <span>{intl.formatMessage(messages.requests)}</span>
                   </ForwardedLink>
                 )}
-              </Menu.Item>
-              <Menu.Item>
+              </MenuItem>
+              <MenuItem>
                 {({ active }) => (
                   <ForwardedLink
                     to={`/profile/settings`}
@@ -152,8 +158,8 @@ const UserDropdown = () => {
                     <span>{intl.formatMessage(messages.settings)}</span>
                   </ForwardedLink>
                 )}
-              </Menu.Item>
-              <Menu.Item>
+              </MenuItem>
+              <MenuItem>
                 {({ active }) => (
                   <a
                     href="#"
@@ -168,10 +174,10 @@ const UserDropdown = () => {
                     <span>{intl.formatMessage(messages.signout)}</span>
                   </a>
                 )}
-              </Menu.Item>
+              </MenuItem>
             </div>
           </div>
-        </Menu.Items>
+        </MenuItems>
       </Transition>
     </Menu>
   );
