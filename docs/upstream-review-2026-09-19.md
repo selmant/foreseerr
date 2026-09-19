@@ -46,7 +46,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `5c04640b` | Applied | Applied all 531 changed translation entries across 12 locales. Adapted 20 entries for Foreseerr branding or small wording corrections, retaining the fork's existing branded strings where upstream overlapped them. All files parse as JSON; all changed nonempty messages parse as ICU and match English interpolation arguments where an English key exists. |
 | `e73825b2` | Applied | Load the issue reporter when fetching a new comment so comment webhook payloads can resolve `reportedBy_settings_discordIds`; Foreseerr has the same explicit relation and webhook field. |
 | `970bb545` | Applied | Reset orphaned pending/processing TV season status after request deletion, limited to the removed request's seasons and quality. Adapted coverage checks for Foreseerr's episode requests: an active episode request keeps its season processing, while deleting the last episode request also clears its orphaned season. Request-route regressions cover re-requesting, other seasons, 4K isolation, and overlapping requests. |
-| `17fc4cc6` | Pending | fix(requests): stop editing a request from stealing another's season (#3376) |
+| `17fc4cc6` | Applied | Full-season request edits now add only seasons that are not held by another active request of the same quality. Foreseerr's episode-selection edit path is separate; the route regression verifies both requests keep their own seasons. |
 | `d7dc7bdd` | Pending | fix(requests): serialize request creation per user (#3377) |
 | `a4f5eaa2` | Pending | docs(docker): add cap-drop and security-opt to docker command (#3472) |
 | `c604bccc` | Pending | fix(requests): scope download status to requested seasons on request cards (#3412) |
