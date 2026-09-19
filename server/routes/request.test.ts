@@ -13,7 +13,11 @@ import {
 } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
-import { MediaRequest } from '@server/entity/MediaRequest';
+import {
+  DuplicateMediaRequestError,
+  MediaRequest,
+  QuotaRestrictedError,
+} from '@server/entity/MediaRequest';
 import OverrideRule from '@server/entity/OverrideRule';
 import EpisodeRequest from '@server/entity/EpisodeRequest';
 import Season from '@server/entity/Season';
@@ -134,6 +138,57 @@ beforeEach(() => {
 });
 
 setupTestDb();
+
+describe('concurrent request creation', () => {
+  it('counts earlier collection movie requests before accepting the next one', async () => {
+    const users = getRepository(User);
+    const requester = await users.findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+    });
+    requester.movieQuotaLimit = 1;
+    await users.save(requester);
+
+    const results = await Promise.allSettled(
+      [11111, 22222].map((mediaId) =>
+        MediaRequest.request(
+          { mediaId, mediaType: MediaType.MOVIE, is4k: false },
+          requester
+        )
+      )
+    );
+
+    assert.strictEqual(
+      results.filter((r) => r.status === 'fulfilled').length,
+      1
+    );
+    const rejected = results.find((r) => r.status === 'rejected');
+    assert.ok(rejected?.reason instanceof QuotaRestrictedError);
+    assert.strictEqual(await getRepository(MediaRequest).count(), 1);
+  });
+
+  it('rejects a concurrent duplicate movie request', async () => {
+    const requester = await getRepository(User).findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+    });
+
+    const results = await Promise.allSettled(
+      [33333, 33333].map((mediaId) =>
+        MediaRequest.request(
+          { mediaId, mediaType: MediaType.MOVIE, is4k: false },
+          requester
+        )
+      )
+    );
+
+    assert.strictEqual(
+      results.filter((r) => r.status === 'fulfilled').length,
+      1
+    );
+    const rejected = results.find((r) => r.status === 'rejected');
+    assert.ok(rejected?.reason instanceof DuplicateMediaRequestError);
+    assert.strictEqual(await getRepository(MediaRequest).count(), 1);
+  });
+});
 
 async function loginAs(email: string, password: string) {
   const settings = getSettings();
