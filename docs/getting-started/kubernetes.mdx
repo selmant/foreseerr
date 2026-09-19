@@ -9,7 +9,7 @@ This method is not recommended for most users. It is intended for advanced users
 :::
 
 :::info
-All official Foreseerr charts are cryptographically signed and include a verified [Software Bill of Materials (SBOM)](https://cyclonedx.org/).
+Official Foreseerr charts are cryptographically signed.
 
 To confirm that the chart you are using is authentic and unmodified, please refer to the [Verifying Signed Artifacts](/using-seerr/advanced/verifying-signed-artifacts#verifying-signed-helm-charts) guide.
 :::
@@ -19,8 +19,3 @@ To confirm that the chart you are using is authentic and unmodified, please refe
 helm install foreseerr oci://ghcr.io/selmant/foreseerr/foreseerr-chart --version 0.9.0
 ```
 Helm values can be found in the Foreseerr repository under [charts/foreseerr-chart/README.md](https://github.com/selmant/foreseerr/tree/develop/charts/foreseerr-chart).
-
-Verify the signature with [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) (replace [tag], with the TAG you want to verify) :
-```console
-cosign verify ghcr.io/selmant/foreseerr/foreseerr-chart:[tag] --certificate-identity=https://github.com/selmant/foreseerr/.github/workflows/helm.yml@refs/heads/develop --certificate-oidc-issuer=https://token.actions.githubusercontent.com
-```

@@ -259,14 +259,14 @@ Official Foreseerr helm charts are available from:
 
 - GitHub Container Registry (GHCR): `ghcr.io/selmant/foreseerr/foreseerr-chart:<tag>`
 
-You can view all available tags on the [Foreseerr package page](https://github.com/selmant/foreseerr/pkgs/container/seerr%2Fforeseerr-chart).
+You can view all available tags on the [Foreseerr package page](https://github.com/selmant/foreseerr/pkgs/container/foreseerr%2Fforeseerr-chart).
 
 ---
 
 ### Verifying a Specific Release Tag
 
-Each tagged release (for example `3.7.0`) is immutable and cryptographically signed.
-Verification should always be performed using the image digest (SHA256).
+Each published chart version (for example `0.9.0`) is cryptographically signed.
+Verification should always be performed using the chart digest (SHA256).
 
 #### Retrieve the Helm Chart Digest
 
@@ -274,14 +274,14 @@ Verification should always be performed using the image digest (SHA256).
   <TabItem value="docker" label="Docker">
 
 ```bash
-docker buildx imagetools inspect ghcr.io/selmant/foreseerr/foreseerr-chart:3.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"'
+docker buildx imagetools inspect ghcr.io/selmant/foreseerr/foreseerr-chart:0.9.0 --format '{{json .Manifest.Digest}}' | tr -d '"'
 ```
   </TabItem>
 
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-skopeo inspect docker://ghcr.io/selmant/foreseerr/foreseerr-chart:3.7.0 --format '{{.Digest}}'
+skopeo inspect docker://ghcr.io/selmant/foreseerr/foreseerr-chart:0.9.0 --format '{{.Digest}}'
 ```
   </TabItem>
 </Tabs>
@@ -322,9 +322,9 @@ The expected certificate identity for all signed Foreseerr charts is:
 https://github.com/selmant/foreseerr/.github/workflows/helm.yml@refs/heads/develop
 ```
 
-This confirms that the image was:
+This confirms that the chart was:
 
-- Built by the official Foreseerr Release workflow
+- Published by the official Foreseerr Helm workflow
 - Produced from the selmant/foreseerr repository
 - Signed using GitHub’s OIDC identity via Sigstore Fulcio
 
@@ -336,14 +336,9 @@ This confirms that the image was:
   <TabItem value="docker" label="Docker">
 
 ```bash
-DIGEST=$(docker buildx imagetools inspect ghcr.io/selmant/foreseerr/foreseerr-chart:3.7.0 --format '{{json .Manifest.Digest}}' | tr -d '"')
+DIGEST=$(docker buildx imagetools inspect ghcr.io/selmant/foreseerr/foreseerr-chart:0.9.0 --format '{{json .Manifest.Digest}}' | tr -d '"')
 
 cosign verify ghcr.io/selmant/foreseerr/foreseerr-chart@"$DIGEST" \
-  --certificate-identity-regexp "https://github.com/selmant/foreseerr/.github/workflows/helm.yml@refs/heads/develop" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
-
-cosign verify-attestation ghcr.io/selmant/foreseerr/foreseerr-chart@"$DIGEST" \
-  --type cyclonedx \
   --certificate-identity-regexp "https://github.com/selmant/foreseerr/.github/workflows/helm.yml@refs/heads/develop" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 ```
@@ -352,7 +347,7 @@ cosign verify-attestation ghcr.io/selmant/foreseerr/foreseerr-chart@"$DIGEST" \
   <TabItem value="podman" label="Podman / Skopeo">
 
 ```bash
-DIGEST=$(skopeo inspect docker://ghcr.io/selmant/foreseerr/foreseerr-chart:3.7.0 --format '{{.Digest}}')
+DIGEST=$(skopeo inspect docker://ghcr.io/selmant/foreseerr/foreseerr-chart:0.9.0 --format '{{.Digest}}')
 
 cosign verify ghcr.io/selmant/foreseerr/foreseerr-chart@"$DIGEST" \
   --certificate-identity-regexp "https://github.com/selmant/foreseerr/.github/workflows/helm.yml@refs/heads/develop" \
