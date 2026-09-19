@@ -25,6 +25,7 @@ import {
   shouldShortCircuitAvailableTvRequest,
 } from '@server/lib/sonarrRequestRouting';
 import logger from '@server/logger';
+import { withNestedTransaction } from '@server/utils/nestedTransaction';
 import { isEqual, truncate } from 'lodash';
 import type {
   EntityManager,
@@ -249,8 +250,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           return;
         }
 
-        const tmdb = new TheMovieDb();
-        const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
         let radarrSettings = settings.radarr.find(
           (radarr) => radarr.isDefault && radarr.is4k === entity.is4k
         );
@@ -331,11 +330,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           });
         }
 
-        const radarr = new RadarrAPI({
-          apiKey: radarrSettings.apiKey,
-          url: RadarrAPI.buildUrl(radarrSettings, '/api/v3'),
-        });
-
         const media = await mediaRepository.findOne({
           where: { id: entity.media.id },
         });
@@ -348,6 +342,28 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           });
           return;
         }
+
+        if (
+          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
+        ) {
+          logger.warn('Media already exists, marking request as COMPLETED', {
+            label: 'Media Request',
+            requestId: entity.id,
+            mediaId: entity.media.id,
+          });
+
+          const requestRepository = subscriberRepos(manager).request;
+          entity.status = MediaRequestStatus.COMPLETED;
+          await requestRepository.save(entity);
+          return;
+        }
+
+        const tmdb = new TheMovieDb();
+        const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
+        const radarr = new RadarrAPI({
+          apiKey: radarrSettings.apiKey,
+          url: RadarrAPI.buildUrl(radarrSettings, '/api/v3'),
+        });
 
         if (radarrSettings.tagRequests) {
           const radarrTags = await radarr.getTags();
@@ -392,21 +408,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
               radarrServer: radarrSettings.hostname + ':' + radarrSettings.port,
             });
           }
-        }
-
-        if (
-          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
-        ) {
-          logger.warn('Media already exists, marking request as COMPLETED', {
-            label: 'Media Request',
-            requestId: entity.id,
-            mediaId: entity.media.id,
-          });
-
-          const requestRepository = subscriberRepos(manager).request;
-          entity.status = MediaRequestStatus.COMPLETED;
-          await requestRepository.save(entity);
-          return;
         }
 
         const radarrMovieOptions: RadarrMovieOptions = {
@@ -1127,9 +1128,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.updateParentStatus(
-        event.entity as MediaRequest,
-        event.manager
+      await withNestedTransaction(event.manager, (manager) =>
+        this.updateParentStatus(event.entity as MediaRequest, manager)
       );
 
       if (event.entity.status === MediaRequestStatus.COMPLETED) {
@@ -1169,9 +1169,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.updateParentStatus(
-        event.entity as MediaRequest,
-        event.manager
+      await withNestedTransaction(event.manager, (manager) =>
+        this.updateParentStatus(event.entity as MediaRequest, manager)
       );
     } catch (e) {
       logger.error(

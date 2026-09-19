@@ -6,11 +6,42 @@ import {
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import { MediaRequestSubscriber } from '@server/subscriber/MediaRequestSubscriber';
+import { MediaSubscriber } from '@server/subscriber/MediaSubscriber';
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
-import type { EntityManager } from 'typeorm';
+import type { EntityManager, UpdateEvent } from 'typeorm';
 
-describe('MediaRequestSubscriber transactional lookups', () => {
+describe('Media subscriber transactional lookups', () => {
+  it('approves child requests through the media save manager', async () => {
+    const request = { is4k: false, status: MediaRequestStatus.PENDING };
+    const find = mock.fn(async () => [request]);
+    const save = mock.fn(async (value: typeof request) => value);
+    const manager = {
+      connection: { options: { type: 'sqlite' } },
+      getRepository: () => ({
+        find,
+        save,
+        createQueryBuilder: () => ({
+          leftJoin: () => ({
+            where: () => ({ getMany: async () => [] }),
+          }),
+        }),
+      }),
+    } as unknown as EntityManager;
+    const media = new Media({ id: 87, status: MediaStatus.AVAILABLE });
+    const previous = new Media({ id: 87, status: MediaStatus.PENDING });
+
+    await new MediaSubscriber().beforeUpdate({
+      entity: media,
+      databaseEntity: previous,
+      manager,
+    } as UpdateEvent<Media>);
+
+    assert.equal(find.mock.callCount(), 1);
+    assert.equal(save.mock.callCount(), 1);
+    assert.equal(request.status, MediaRequestStatus.APPROVED);
+  });
+
   it('updateParentStatus reads media through the subscriber EntityManager', async () => {
     const media = new Media({
       id: 87,

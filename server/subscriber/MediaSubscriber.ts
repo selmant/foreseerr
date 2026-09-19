@@ -3,19 +3,27 @@ import {
   MediaStatus,
   MediaType,
 } from '@server/constants/media';
-import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import logger from '@server/logger';
-import type { EntitySubscriberInterface, UpdateEvent } from 'typeorm';
+import { withNestedTransaction } from '@server/utils/nestedTransaction';
+import type {
+  EntityManager,
+  EntitySubscriberInterface,
+  UpdateEvent,
+} from 'typeorm';
 import { EventSubscriber, In } from 'typeorm';
 
 @EventSubscriber()
 export class MediaSubscriber implements EntitySubscriberInterface<Media> {
-  private async updateChildRequestStatus(event: Media, is4k: boolean) {
-    const requestRepository = getRepository(MediaRequest);
+  private async updateChildRequestStatus(
+    manager: EntityManager,
+    event: Media,
+    is4k: boolean
+  ) {
+    const requestRepository = manager.getRepository(MediaRequest);
 
     const requests = await requestRepository.find({
       where: { media: { id: event.id } },
@@ -33,12 +41,13 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
   }
 
   private async updateRelatedMediaRequest(
+    manager: EntityManager,
     event: Media,
     databaseEvent: Media,
     is4k: boolean
   ) {
-    const requestRepository = getRepository(MediaRequest);
-    const seasonRequestRepository = getRepository(SeasonRequest);
+    const requestRepository = manager.getRepository(MediaRequest);
+    const seasonRequestRepository = manager.getRepository(SeasonRequest);
 
     const relatedRequests = await requestRepository.find({
       relations: {
@@ -135,7 +144,9 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
         event.entity.status === MediaStatus.AVAILABLE &&
         event.databaseEntity?.status === MediaStatus.PENDING
       ) {
-        await this.updateChildRequestStatus(event.entity as Media, false);
+        await withNestedTransaction(event.manager, (manager) =>
+          this.updateChildRequestStatus(manager, event.entity as Media, false)
+        );
       }
     } catch (e) {
       logger.error(
@@ -154,7 +165,9 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
         event.entity.status4k === MediaStatus.AVAILABLE &&
         event.databaseEntity?.status4k === MediaStatus.PENDING
       ) {
-        await this.updateChildRequestStatus(event.entity as Media, true);
+        await withNestedTransaction(event.manager, (manager) =>
+          this.updateChildRequestStatus(manager, event.entity as Media, true)
+        );
       }
     } catch (e) {
       logger.error(
@@ -209,10 +222,13 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
             seasonStatusCheck(false))) &&
         validStatuses.includes(event.entity.status)
       ) {
-        await this.updateRelatedMediaRequest(
-          event.entity as Media,
-          event.databaseEntity as Media,
-          false
+        await withNestedTransaction(event.manager, (manager) =>
+          this.updateRelatedMediaRequest(
+            manager,
+            event.entity as Media,
+            event.databaseEntity as Media,
+            false
+          )
         );
       }
     } catch (e) {
@@ -234,10 +250,13 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
             seasonStatusCheck(true))) &&
         validStatuses.includes(event.entity.status4k)
       ) {
-        await this.updateRelatedMediaRequest(
-          event.entity as Media,
-          event.databaseEntity as Media,
-          true
+        await withNestedTransaction(event.manager, (manager) =>
+          this.updateRelatedMediaRequest(
+            manager,
+            event.entity as Media,
+            event.databaseEntity as Media,
+            true
+          )
         );
       }
     } catch (e) {
