@@ -228,8 +228,8 @@ class PlexAPI extends ExternalAPI {
     mediaType: 'movie' | 'show'
   ): Promise<PlexLibraryItem[]> {
     const response = await this.get<PlexLibraryResponse>(
-      `/library/sections/${id}/all?type=${
-        mediaType === 'show' ? '4' : '1'
+      `/library/sections/${id}/all?type=${mediaType === 'show' ? '4' : '1'}${
+        mediaType === 'movie' ? '&includeGuids=1' : ''
       }&sort=addedAt%3Adesc&addedAt>>=${Math.floor(options.addedAt / 1000)}`,
       {
         headers: {

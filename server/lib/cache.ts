@@ -6,13 +6,13 @@ import {
 
 export type AvailableCacheIds =
   | 'tmdb'
+  | 'tmdbscan'
   | 'radarr'
   | 'sonarr'
   | 'rt'
   | 'imdb'
   | 'mdblist'
   | 'github'
-  | 'plexguid'
   | 'plextv'
   | 'plexwatchlist'
   | 'tvdb'
@@ -32,13 +32,14 @@ class Cache {
   constructor(
     id: AvailableCacheIds,
     name: string,
-    options: { stdTtl?: number; checkPeriod?: number } = {}
+    options: { stdTtl?: number; checkPeriod?: number; maxEntries?: number } = {}
   ) {
     this.id = id;
     this.name = name;
     this.data = new WeightedLruCacheStore(
       memoryCacheBudget,
-      options.stdTtl ?? DEFAULT_TTL
+      options.stdTtl ?? DEFAULT_TTL,
+      { maxEntries: options.maxEntries }
     );
   }
 
@@ -57,6 +58,10 @@ class CacheManager {
       stdTtl: 21600,
       checkPeriod: 60 * 30,
     }),
+    tmdbscan: new Cache('tmdbscan', 'The Movie Database API (Library Scans)', {
+      stdTtl: 900,
+      maxEntries: 2000,
+    }),
     radarr: new Cache('radarr', 'Radarr API'),
     sonarr: new Cache('sonarr', 'Sonarr API'),
     rt: new Cache('rt', 'Rotten Tomatoes API', {
@@ -73,10 +78,6 @@ class CacheManager {
     }),
     github: new Cache('github', 'GitHub API', {
       stdTtl: 21600,
-      checkPeriod: 60 * 30,
-    }),
-    plexguid: new Cache('plexguid', 'Plex GUID', {
-      stdTtl: 86400 * 7, // 1 week cache
       checkPeriod: 60 * 30,
     }),
     plextv: new Cache('plextv', 'Plex TV', {

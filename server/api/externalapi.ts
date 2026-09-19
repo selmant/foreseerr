@@ -56,24 +56,30 @@ class ExternalAPI {
   protected async get<T>(
     endpoint: string,
     config?: AxiosRequestConfig,
-    ttl?: number
+    ttl?: number,
+    options?: { cache?: CacheStore; transform?: (data: T) => T }
   ): Promise<T> {
+    const cache = options?.cache ?? this.cache;
     const cacheKey = this.serializeCacheKey(endpoint, {
       ...config?.params,
       headers: config?.headers,
     });
-    const cachedItem = this.cache?.get<T>(cacheKey);
+    const cachedItem = cache?.get<T>(cacheKey);
     if (cachedItem) {
       return cachedItem;
     }
 
     const response = await this.axios.get<T>(endpoint, config);
 
-    if (this.cache && ttl !== 0) {
-      this.cache.set(cacheKey, response.data, ttl ?? DEFAULT_TTL);
+    const data = options?.transform
+      ? options.transform(response.data)
+      : response.data;
+
+    if (cache && ttl !== 0) {
+      cache.set(cacheKey, data, ttl ?? DEFAULT_TTL);
     }
 
-    return response.data;
+    return data;
   }
 
   protected getCached<T>(

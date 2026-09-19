@@ -79,7 +79,7 @@ let getShowByTvdbIdImpl: (args: {
   language?: string;
 }) => Promise<TmdbTvDetails> = async () => fakeTmdbShow(1);
 
-TheMovieDb.prototype.getShowByTvdbId = async function (args) {
+TheMovieDb.prototype.getShowByTvdbIdForScan = async function (args) {
   return getShowByTvdbIdImpl(args);
 };
 
@@ -88,7 +88,7 @@ let getTvShowImpl: (args: {
   language?: string;
 }) => Promise<TmdbTvDetails> = async () => fakeTmdbShow(1);
 
-TheMovieDb.prototype.getTvShow = async (args: {
+TheMovieDb.prototype.getTvShowForScan = async (args: {
   tvId: number;
   language?: string;
 }) => getTvShowImpl(args);

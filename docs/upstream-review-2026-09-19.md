@@ -25,7 +25,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `7fae95bb` | Applied | Override lookup now uses the configured Radarr/Sonarr server ID instead of its array index, and skips lookup when no default exists. Adapted six request tests for Foreseerr's request flow; movie and TV overrides work with non-index IDs and ID 0. |
 | `92f84043` | Applied | Guard regular and 4K collection availability checks against empty `parts`; Foreseerr has the same `every()` logic and otherwise shows empty collections as available. |
 | `aae88167` | Applied | Added a debounced user-list search adapted to Foreseerr's React Router pagination; its existing `q` API searches username, email, Plex username, and Jellyfin username. Preserved Foreseerr's media-server import controls. |
-| `59ad5f19` | Pending | perf: bound tmdb cache & split scan lookups into their own tier (#3367) |
+| `59ad5f19` | Applied | Adapted a 15-minute, 2,000-entry TMDB scan tier within Foreseerr's existing shared 256 MiB weighted LRU budget; scanner TV and external-ID lookups use narrow responses, while anime metadata provider fallback remains intact. Dropped the redundant Plex GUID cache, requested inline GUIDs for recent movies, and stripped unread TV credits. Kept Foreseerr's cache implementation and `node-cache` dependency (still used by the Servarr route). |
 | `92bad10c` | Pending | feat(notifications): add support for ntfy.sh tags (#3350) |
 | `a123d20b` | Pending | feat(api): send a Seerr user agent on outbound requests (#3395) |
 | `5af32cb2` | Pending | fix(settings): mutate the query-string status key for modal immediately (#3432) |

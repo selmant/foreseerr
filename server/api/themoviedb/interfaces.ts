@@ -317,6 +317,14 @@ export interface TmdbTvDetails {
   };
 }
 
+export interface TmdbTvScanDetails {
+  id: number;
+  name: string;
+  seasons: TmdbTvSeasonResult[];
+  external_ids: TmdbExternalIds;
+  keywords: { results: TmdbKeyword[] };
+}
+
 export interface TmdbVideoResult {
   results: TmdbVideo[];
 }
