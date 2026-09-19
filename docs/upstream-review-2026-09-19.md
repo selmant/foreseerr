@@ -17,7 +17,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `bd971f86` | Skipped | Node 22.23.2 Docker image pin does not apply: Foreseerr's production and local Dockerfiles use `oven/bun:1.4.1-alpine` for build and runtime, matching its Bun package scripts and lockfile. |
 | `d3c070e1` | Skipped | Already ported in Foreseerr `dce92404`: Plex Web App URL tip names `https://app.plex.tv/desktop`, and the input suggests a server-hosted `/web/index.html` URL; both are present in the current UI and English locale. |
 | `d103787a` | Applied | Behavior already ported in Foreseerr `4906d7aa`: both Emby UI buttons are hidden, all login and account-linking Quick Connect endpoints reject Emby, and new Quick Connect users are Jellyfin users. Adapted the remaining upstream account-linking regression tests; the three login endpoint guards already had tests. |
-| `39ff48c6` | Pending | test(cypress): stop dirty restartRequired flag cascading across specs (#3368) |
+| `39ff48c6` | Skipped | Already ported verbatim in Foreseerr `4906d7aa`: the General Settings Cypress suite resets `trustProxy` through `/api/v1/settings/network` in `afterEach`, so a failed test cannot leave the restart-required state for later tests. |
 | `985ddef3` | Pending | fix(api): stop library reads from resetting enabled flags (#3321) |
 | `c9f2ac58` | Pending | fix: keep library settings when renamed on media server (#3323) |
 | `4d17e08b` | Pending | fix: stop masking connection failures across media server sync and login (#3324) |
