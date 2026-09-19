@@ -46,26 +46,37 @@ interface SingleSearchOptions extends SearchOptions {
   year?: number;
 }
 
-export const SortOptionsIterable = [
+const CommonSortOptionsIterable = [
   'popularity.desc',
   'popularity.asc',
+  'vote_average.desc',
+  'vote_average.asc',
+  'vote_count.desc',
+  'vote_count.asc',
+] as const;
+
+export const MovieSortOptionsIterable = [
+  ...CommonSortOptionsIterable,
   'release_date.desc',
   'release_date.asc',
   'revenue.desc',
   'revenue.asc',
   'primary_release_date.desc',
   'primary_release_date.asc',
-  'original_title.asc',
   'original_title.desc',
-  'vote_average.desc',
-  'vote_average.asc',
-  'vote_count.desc',
-  'vote_count.asc',
-  'first_air_date.desc',
-  'first_air_date.asc',
+  'original_title.asc',
 ] as const;
 
-export type SortOptions = (typeof SortOptionsIterable)[number];
+export const TvSortOptionsIterable = [
+  ...CommonSortOptionsIterable,
+  'first_air_date.desc',
+  'first_air_date.asc',
+  'original_name.desc',
+  'original_name.asc',
+] as const;
+
+export type MovieSortOptions = (typeof MovieSortOptionsIterable)[number];
+export type TvSortOptions = (typeof TvSortOptionsIterable)[number];
 
 export interface TmdbCertificationResponse {
   certifications: {
@@ -95,7 +106,7 @@ interface DiscoverMovieOptions {
   studio?: string;
   keywords?: string;
   excludeKeywords?: string;
-  sortBy?: SortOptions;
+  sortBy?: MovieSortOptions;
   watchRegion?: string;
   watchProviders?: string;
   certification?: string;
@@ -121,7 +132,7 @@ interface DiscoverTvOptions {
   network?: number;
   keywords?: string;
   excludeKeywords?: string;
-  sortBy?: SortOptions;
+  sortBy?: TvSortOptions;
   watchRegion?: string;
   watchProviders?: string;
   withStatus?: string; // Returning Series: 0 Planned: 1 In Production: 2 Ended: 3 Cancelled: 4 Pilot: 5

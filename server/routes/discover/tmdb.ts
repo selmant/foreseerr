@@ -1,4 +1,3 @@
-import type { SortOptions } from '@server/api/themoviedb';
 import TheMovieDb from '@server/api/themoviedb';
 import type {
   TmdbKeyword,
@@ -9,7 +8,10 @@ import type {
 import { MediaType } from '@server/constants/media';
 import type Media from '@server/entity/Media';
 import type { GenreSliderItem } from '@server/interfaces/api/discoverInterfaces';
-import { ApiQuerySchema } from '@server/lib/discover/filterOptions';
+import {
+  MovieApiQuerySchema,
+  TvApiQuerySchema,
+} from '@server/lib/discover/filterOptions';
 import { paginateTmdbDiscover } from '@server/lib/discover/filteredPagination';
 import {
   findRelatedMedia,
@@ -36,7 +38,7 @@ tmdbDiscoverRoutes.get('/movies', async (req, res, next) => {
   const tmdb = createTmdbWithRegionLanguage(req.user);
 
   try {
-    const query = ApiQuerySchema.parse(req.query);
+    const query = MovieApiQuerySchema.parse(req.query);
     const keywords = query.keywords;
     const excludeKeywords = query.excludeKeywords;
 
@@ -63,7 +65,7 @@ tmdbDiscoverRoutes.get('/movies', async (req, res, next) => {
       fetchMappedPage: async (upstreamPage) => {
         const data = await tmdb.getDiscoverMovies({
           page: upstreamPage,
-          sortBy: query.sortBy as SortOptions,
+          sortBy: query.sortBy,
           language: req.locale ?? query.language,
           originalLanguage: query.language,
           genre: toTmdbDiscoverGenres(query.genre, 'movie'),
@@ -382,7 +384,7 @@ tmdbDiscoverRoutes.get('/tv', async (req, res, next) => {
   const tmdb = createTmdbWithRegionLanguage(req.user);
 
   try {
-    const query = ApiQuerySchema.parse(req.query);
+    const query = TvApiQuerySchema.parse(req.query);
     const keywords = query.keywords;
     const excludeKeywords = query.excludeKeywords;
     let keywordData: TmdbKeyword[] = [];
@@ -408,7 +410,7 @@ tmdbDiscoverRoutes.get('/tv', async (req, res, next) => {
       fetchMappedPage: async (upstreamPage) => {
         const data = await tmdb.getDiscoverTv({
           page: upstreamPage,
-          sortBy: query.sortBy as SortOptions,
+          sortBy: query.sortBy,
           language: req.locale ?? query.language,
           genre: toTmdbDiscoverGenres(query.genre, 'tv'),
           network: query.network ? Number(query.network) : undefined,

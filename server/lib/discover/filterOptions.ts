@@ -1,3 +1,7 @@
+import {
+  MovieSortOptionsIterable,
+  TvSortOptionsIterable,
+} from '@server/api/themoviedb';
 import { z } from 'zod';
 
 /** Shared Discover query parsing for provider routers. */
@@ -32,8 +36,17 @@ export const QueryFilterOptions = z.object({
 
 export type FilterOptions = z.infer<typeof QueryFilterOptions>;
 
-export const ApiQuerySchema = QueryFilterOptions.omit({
+const BaseApiQuerySchema = QueryFilterOptions.omit({
   certificationMode: true,
+  sortBy: true,
+});
+
+export const MovieApiQuerySchema = BaseApiQuerySchema.extend({
+  sortBy: z.enum(MovieSortOptionsIterable).optional().catch(undefined),
+});
+
+export const TvApiQuerySchema = BaseApiQuerySchema.extend({
+  sortBy: z.enum(TvSortOptionsIterable).optional().catch(undefined),
 });
 
 /** Express/OpenAPI can expose a boolean query parameter as either shape. */

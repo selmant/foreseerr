@@ -21,7 +21,7 @@ import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import { BarsArrowDownIcon, FunnelIcon } from '@heroicons/react/24/solid';
-import type { SortOptions as TMDBSortOptions } from '@server/api/themoviedb';
+import type { MovieSortOptions as TMDBSortOptions } from '@server/api/themoviedb';
 import type { MovieResult } from '@server/models/Search';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';

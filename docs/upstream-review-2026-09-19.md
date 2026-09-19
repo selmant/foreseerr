@@ -30,7 +30,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `a123d20b` | Applied | Send `Foreseerr/<version>` on outbound Axios calls, including shared API, Tautulli, and image clients; preserve explicit service-specific or caller-provided User-Agent headers. |
 | `5af32cb2` | Skipped | Already implemented in Foreseerr `66693021`: both General and Network saves revalidate all `/api/v1/status` SWR keys, including the modal's `/api/v1/status?checkUpdateAvailable=false` key and the version-status variant. |
 | `0be53e6e` | Applied | Keep person results when hide-available or hide-blocklisted is enabled in both discover pages and mixed sliders; continue filtering movie/TV statuses. Foreseerr's trending results include people, and its extra AniList, Simkl, and MDBList sources may also have items without a declared media type, which these settings should not discard. |
-| `2759058a` | Pending | fix(discover): fix tv title sorting and validate sortBy per media type (#3305) |
+| `2759058a` | Applied | Adapted TMDB movie/TV sort lists and per-type query validation to Foreseerr's split Discover router; TV title sorting now uses `original_name`. Updated blocklisted-tag scans to use valid sort keys per media type and corrected page iteration, retaining Foreseerr's existing filtering and pagination. |
 | `0f79ee66` | Pending | fix(datasource): register entities and subscribers explicitly (#3375) |
 | `cc592e8d` | Pending | chore(i18n): update translations from Weblate |
 | `da4b555c` | Pending | fix(ui): stop appear leaking onto the DOM in Modal and SlideOver (#3446) |
