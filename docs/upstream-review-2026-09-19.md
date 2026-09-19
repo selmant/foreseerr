@@ -8,7 +8,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | --- | --- | --- |
 | `1fd35f9a` | Applied | `8b279581` — fix invalid alert nesting in TV request modal |
 | `93c0b6a6` | Skipped | Already implemented: anime routing uses `isAnime` independent of `seriesType`; covered by existing test |
-| `42bee2aa` | Pending | fix(sonarr): apply configured series type to non-anime requests (#3329) |
+| `42bee2aa` | Skipped | Already implemented: `resolveSonarrSeriesRouting` uses configured `seriesType` for non-anime requests; covered by existing test |
 | `7baed837` | Pending | feat: add support for custom plex metadata provider guid scheme in scanner (#3316) |
 | `090c659b` | Pending | ci: fix release workflow verify attestation (#3337) |
 | `c8c8f7a1` | Pending | chore(helm): bump seerr to 3.4.1 (#3352) |
