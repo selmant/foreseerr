@@ -24,7 +24,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `059008cb` | Applied | Adapted media subscriber request updates and nested status saves to use the owning TypeORM manager, retaining Foreseerr's episode request logic and existing transactional request lookups. SQLite keeps its shared manager; PostgreSQL uses a nested transaction. Added the PostgreSQL pool acquisition timeout and documented it. |
 | `7fae95bb` | Applied | Override lookup now uses the configured Radarr/Sonarr server ID instead of its array index, and skips lookup when no default exists. Adapted six request tests for Foreseerr's request flow; movie and TV overrides work with non-index IDs and ID 0. |
 | `92f84043` | Applied | Guard regular and 4K collection availability checks against empty `parts`; Foreseerr has the same `every()` logic and otherwise shows empty collections as available. |
-| `aae88167` | Pending | feat(users): add search box for user lookup by username or email (#2482) |
+| `aae88167` | Applied | Added a debounced user-list search adapted to Foreseerr's React Router pagination; its existing `q` API searches username, email, Plex username, and Jellyfin username. Preserved Foreseerr's media-server import controls. |
 | `59ad5f19` | Pending | perf: bound tmdb cache & split scan lookups into their own tier (#3367) |
 | `92bad10c` | Pending | feat(notifications): add support for ntfy.sh tags (#3350) |
 | `a123d20b` | Pending | feat(api): send a Seerr user agent on outbound requests (#3395) |
