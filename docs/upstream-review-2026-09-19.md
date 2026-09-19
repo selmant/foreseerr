@@ -44,7 +44,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `9f6403e1` | Applied | Enforced pending-only edits and approve/decline, failed-only retry, and rejection of unsupported status verbs. These shared routes cover Foreseerr's movie, TV season, and episode requests; collection requests create individual movie requests. Preserved the episode-selection edit flow and documented the new responses. |
 | `5a5f0590` | Applied | Updated 75 applicable pinned action references across the 17 affected workflows, including checkout, Docker, CodeQL, cache, Helm, Cypress, and release tooling. Foreseerr's Bun setup and lockfile references replace upstream's pnpm/Node actions, and its job permissions and release behavior remain intact. |
 | `5c04640b` | Applied | Applied all 531 changed translation entries across 12 locales. Adapted 20 entries for Foreseerr branding or small wording corrections, retaining the fork's existing branded strings where upstream overlapped them. All files parse as JSON; all changed nonempty messages parse as ICU and match English interpolation arguments where an English key exists. |
-| `e73825b2` | Pending | fix: fix empty discordId in comment webhooks (#3467) |
+| `e73825b2` | Applied | Load the issue reporter when fetching a new comment so comment webhook payloads can resolve `reportedBy_settings_discordIds`; Foreseerr has the same explicit relation and webhook field. |
 | `970bb545` | Pending | fix(requests): reset orphaned season statuses when a request is deleted (#3279) |
 | `17fc4cc6` | Pending | fix(requests): stop editing a request from stealing another's season (#3376) |
 | `d7dc7bdd` | Pending | fix(requests): serialize request creation per user (#3377) |
