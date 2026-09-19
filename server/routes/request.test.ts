@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { before, beforeEach, describe, it, mock } from 'node:test';
 
+import TheMovieDb from '@server/api/themoviedb';
+import type {
+  TmdbMovieDetails,
+  TmdbTvDetails,
+} from '@server/api/themoviedb/interfaces';
 import {
   MediaRequestStatus,
   MediaStatus,
@@ -9,7 +14,9 @@ import {
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
+import OverrideRule from '@server/entity/OverrideRule';
 import { User } from '@server/entity/User';
+import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
@@ -25,6 +32,62 @@ const sendNotificationMock = mock.method(
   'sendNotification',
   async () => undefined
 ).mock;
+
+Object.defineProperty(TheMovieDb.prototype, 'getMovie', {
+  get() {
+    return async ({ movieId }: { movieId: number }) =>
+      ({
+        id: movieId,
+        genres: [],
+        original_language: 'en',
+        keywords: { keywords: [] },
+        external_ids: {},
+      }) as unknown as TmdbMovieDetails;
+  },
+  set() {},
+  configurable: true,
+});
+
+Object.defineProperty(TheMovieDb.prototype, 'getTvShow', {
+  get() {
+    return async ({ tvId }: { tvId: number }) =>
+      ({
+        id: tvId,
+        genres: [],
+        original_language: 'en',
+        keywords: { results: [] },
+        external_ids: {},
+      }) as unknown as TmdbTvDetails;
+  },
+  set() {},
+  configurable: true,
+});
+
+function configureOverrideServer(mediaType: MediaType, id: number): void {
+  const common = {
+    id,
+    name: `Server ${id}`,
+    hostname: 'localhost',
+    port: mediaType === MediaType.MOVIE ? 7878 : 8989,
+    apiKey: 'test-key',
+    activeProfileId: 1,
+    activeDirectory: mediaType === MediaType.MOVIE ? '/movies' : '/tv',
+    is4k: false,
+    isDefault: true,
+    tags: [],
+    syncEnabled: true,
+    preventSearch: false,
+  };
+  if (mediaType === MediaType.MOVIE) {
+    getSettings().radarr = [
+      { ...common, minimumAvailability: 'released' } as RadarrSettings,
+    ];
+  } else {
+    getSettings().sonarr = [
+      { ...common, enableSeasonFolders: true } as SonarrSettings,
+    ];
+  }
+}
 
 let app: Express;
 
@@ -536,4 +599,70 @@ describe('DELETE /request/:requestId, deleted media status restoration', () => {
     const updated = await mediaRepo.findOneOrFail({ where: { id: media.id } });
     assert.strictEqual(updated.status, MediaStatus.PARTIALLY_AVAILABLE);
   });
+});
+
+describe('POST /request, override server IDs', () => {
+  for (const { mediaType, serviceField, folder, mediaId } of [
+    {
+      mediaType: MediaType.MOVIE,
+      serviceField: 'radarrServiceId',
+      folder: '/overridden/movies',
+      mediaId: 88001,
+    },
+    {
+      mediaType: MediaType.TV,
+      serviceField: 'sonarrServiceId',
+      folder: '/overridden/tv',
+      mediaId: 88002,
+    },
+  ] as const) {
+    for (const id of [5, 0]) {
+      it(`applies the ${mediaType} override for configured server ID ${id}`, async () => {
+        configureOverrideServer(mediaType, id);
+        const friend = await getRepository(User).findOneOrFail({
+          where: { email: 'friend@seerr.dev' },
+        });
+        await getRepository(OverrideRule).save(
+          new OverrideRule({
+            [serviceField]: id,
+            users: String(friend.id),
+            rootFolder: folder,
+          })
+        );
+
+        const agent = await loginAs('friend@seerr.dev', 'test1234');
+        const res = await agent.post('/request').send({
+          mediaType,
+          mediaId,
+          ...(mediaType === MediaType.TV ? { seasons: [1] } : {}),
+        });
+
+        assert.strictEqual(res.status, 201);
+        assert.strictEqual(res.body.rootFolder, folder);
+      });
+    }
+
+    it(`does not apply an unrelated ${mediaType} rule without a default server`, async () => {
+      const friend = await getRepository(User).findOneOrFail({
+        where: { email: 'friend@seerr.dev' },
+      });
+      await getRepository(OverrideRule).save(
+        new OverrideRule({
+          [serviceField]: 999,
+          users: String(friend.id),
+          rootFolder: folder,
+        })
+      );
+
+      const agent = await loginAs('friend@seerr.dev', 'test1234');
+      const res = await agent.post('/request').send({
+        mediaType,
+        mediaId,
+        ...(mediaType === MediaType.TV ? { seasons: [1] } : {}),
+      });
+
+      assert.strictEqual(res.status, 201);
+      assert.strictEqual(res.body.rootFolder, null);
+    });
+  }
 });

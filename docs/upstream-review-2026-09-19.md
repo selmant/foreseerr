@@ -22,7 +22,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `c9f2ac58` | Applied | Plex and Jellyfin library sync now match saved settings by stable server library ID, preserving the enabled flag across a rename while updating the display name; Jellyfin also retains the existing `lastScan` value. Fits Foreseerr's explicit sync flow introduced by `985ddef3`. |
 | `4d17e08b` | Applied | Propagate Plex and Jellyfin connection failures through sync and login, retain Plex library settings when migration cannot reach its server, and show the setup connection error. Adapted startup and setup UI conflicts to Foreseerr's managed runtime and React Router; changed the Jellyfin toast to name Foreseerr. |
 | `059008cb` | Applied | Adapted media subscriber request updates and nested status saves to use the owning TypeORM manager, retaining Foreseerr's episode request logic and existing transactional request lookups. SQLite keeps its shared manager; PostgreSQL uses a nested transaction. Added the PostgreSQL pool acquisition timeout and documented it. |
-| `7fae95bb` | Pending | fix(override-rules): match default *arr server by id (#3428) |
+| `7fae95bb` | Applied | Override lookup now uses the configured Radarr/Sonarr server ID instead of its array index, and skips lookup when no default exists. Adapted six request tests for Foreseerr's request flow; movie and TV overrides work with non-index IDs and ID 0. |
 | `92f84043` | Pending | fix(ui): don't mark empty collections as available (#3431) |
 | `aae88167` | Pending | feat(users): add search box for user lookup by username or email (#2482) |
 | `59ad5f19` | Pending | perf: bound tmdb cache & split scan lookups into their own tier (#3367) |
