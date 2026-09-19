@@ -15,7 +15,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `dea59605` | Applied | Adapted AI disclosure and security-report guidance to Foreseerr; kept the Bun build command and pointed the PR-label response at Foreseerr's own policy. |
 | `afb17aa4` | Skipped | Already ported in Foreseerr `87058c58` (included in `4906d7aa`): Gotify settings toggle, Markdown poster image, `client::notification.bigImageUrl`, and English label are present; Gotify's default `embedPoster: false` and settings save path support the option. |
 | `bd971f86` | Skipped | Node 22.23.2 Docker image pin does not apply: Foreseerr's production and local Dockerfiles use `oven/bun:1.4.1-alpine` for build and runtime, matching its Bun package scripts and lockfile. |
-| `d3c070e1` | Pending | fix: changes the suggested url from plex's "hosted" app (#3250) |
+| `d3c070e1` | Skipped | Already ported in Foreseerr `dce92404`: Plex Web App URL tip names `https://app.plex.tv/desktop`, and the input suggests a server-hosted `/web/index.html` URL; both are present in the current UI and English locale. |
 | `d103787a` | Pending | fix(login): hide quick connect button for emby servers (#3369) |
 | `39ff48c6` | Pending | test(cypress): stop dirty restartRequired flag cascading across specs (#3368) |
 | `985ddef3` | Pending | fix(api): stop library reads from resetting enabled flags (#3321) |
