@@ -276,6 +276,27 @@ describe('PUT /request/:requestId (movie)', () => {
     assert.strictEqual(saved.profileId, 7);
     assert.strictEqual(saved.rootFolder, '/updated/movies');
   });
+
+  it('refuses to modify a request that is no longer pending', async () => {
+    const requestRepo = getRepository(MediaRequest);
+    const mediaRequest = await seedRequest(MediaRequestStatus.APPROVED);
+
+    const agent = await loginAs('admin@seerr.dev', 'test1234');
+    const res = await agent.put(`/request/${mediaRequest.id}`).send({
+      mediaType: MediaType.MOVIE,
+      serverId: 3,
+      rootFolder: '/updated/movies',
+    });
+
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.message, /pending/i);
+
+    const saved = await requestRepo.findOneOrFail({
+      where: { id: mediaRequest.id },
+    });
+    assert.strictEqual(saved.serverId, null);
+    assert.strictEqual(saved.rootFolder, null);
+  });
 });
 
 describe('POST /request/:requestId/:status', () => {
@@ -306,6 +327,52 @@ describe('POST /request/:requestId/:status', () => {
       assert.ok(persisted.updatedAt > pending.updatedAt);
     });
   }
+
+  it('rejects a status the route does not define', async () => {
+    const repo = getRepository(MediaRequest);
+    const pending = await seedRequest();
+    const admin = await loginAs('admin@seerr.dev', 'test1234');
+
+    const res = await admin.post(`/request/${pending.id}/frobnicate`);
+
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.message, /approve/i);
+
+    const persisted = await repo.findOneOrFail({
+      where: { id: pending.id },
+      relations: { modifiedBy: true },
+    });
+    assert.strictEqual(persisted.status, MediaRequestStatus.PENDING);
+    assert.ok(!persisted.modifiedBy);
+  });
+
+  it('refuses to act on a request that is no longer pending', async () => {
+    const repo = getRepository(MediaRequest);
+    const approved = await seedRequest(MediaRequestStatus.APPROVED);
+    const admin = await loginAs('admin@seerr.dev', 'test1234');
+
+    const res = await admin.post(`/request/${approved.id}/decline`);
+
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.message, /pending/i);
+
+    const persisted = await repo.findOneOrFail({ where: { id: approved.id } });
+    assert.strictEqual(persisted.status, MediaRequestStatus.APPROVED);
+  });
+
+  it('rejects the removed pending verb even on a non-pending request', async () => {
+    const repo = getRepository(MediaRequest);
+    const declined = await seedRequest(MediaRequestStatus.DECLINED);
+    const admin = await loginAs('admin@seerr.dev', 'test1234');
+
+    const res = await admin.post(`/request/${declined.id}/pending`);
+
+    assert.strictEqual(res.status, 400);
+    assert.match(res.body.message, /approve/i);
+
+    const persisted = await repo.findOneOrFail({ where: { id: declined.id } });
+    assert.strictEqual(persisted.status, MediaRequestStatus.DECLINED);
+  });
 });
 
 describe('POST /request/:requestId/retry', () => {
@@ -328,6 +395,20 @@ describe('POST /request/:requestId/retry', () => {
     assert.strictEqual(persisted.status, MediaRequestStatus.APPROVED);
     assert.strictEqual(persisted.modifiedBy?.email, 'admin@seerr.dev');
     assert.ok(persisted.updatedAt > failed.updatedAt);
+  });
+
+  it('refuses to retry a request that has not failed', async () => {
+    const repo = getRepository(MediaRequest);
+    const pending = await seedRequest();
+    const admin = await loginAs('admin@seerr.dev', 'test1234');
+
+    const res = await admin.post(`/request/${pending.id}/retry`);
+
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.message, /failed/i);
+
+    const persisted = await repo.findOneOrFail({ where: { id: pending.id } });
+    assert.strictEqual(persisted.status, MediaRequestStatus.PENDING);
   });
 });
 
