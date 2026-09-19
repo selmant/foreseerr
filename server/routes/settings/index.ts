@@ -483,7 +483,7 @@ settingsRoutes.post('/jellyfin/library/sync', async (_req, res, next) => {
 
   const newLibraries: Library[] = libraries.map((library) => {
     const existing = settings.jellyfin.libraries.find(
-      (l) => l.id === library.key && l.name === library.title
+      (l) => l.id === library.key
     );
 
     return {
@@ -491,6 +491,7 @@ settingsRoutes.post('/jellyfin/library/sync', async (_req, res, next) => {
       name: library.title,
       enabled: existing?.enabled ?? false,
       type: library.type,
+      lastScan: existing?.lastScan,
     };
   });
 

@@ -19,7 +19,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `d103787a` | Applied | Behavior already ported in Foreseerr `4906d7aa`: both Emby UI buttons are hidden, all login and account-linking Quick Connect endpoints reject Emby, and new Quick Connect users are Jellyfin users. Adapted the remaining upstream account-linking regression tests; the three login endpoint guards already had tests. |
 | `39ff48c6` | Skipped | Already ported verbatim in Foreseerr `4906d7aa`: the General Settings Cypress suite resets `trustProxy` through `/api/v1/settings/network` in `afterEach`, so a failed test cannot leave the restart-required state for later tests. |
 | `985ddef3` | Applied | Plex and Jellyfin library GETs now only read settings; explicit PUT toggles a single library and POST sync refreshes the list, so opening settings no longer disables libraries. Adapted the import conflict with Foreseerr's mapping settings route. |
-| `c9f2ac58` | Pending | fix: keep library settings when renamed on media server (#3323) |
+| `c9f2ac58` | Applied | Plex and Jellyfin library sync now match saved settings by stable server library ID, preserving the enabled flag across a rename while updating the display name; Jellyfin also retains the existing `lastScan` value. Fits Foreseerr's explicit sync flow introduced by `985ddef3`. |
 | `4d17e08b` | Pending | fix: stop masking connection failures across media server sync and login (#3324) |
 | `059008cb` | Pending | fix(subscriber): keep request status updates on the owning save's connection (#3366) |
 | `7fae95bb` | Pending | fix(override-rules): match default *arr server by id (#3428) |
