@@ -24,13 +24,13 @@ jobs:
     steps:
       - parallel:
           - name: Checkout
-            uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+            uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
             with:
               fetch-depth: 0
               persist-credentials: false
 
           - name: Install git-cliff
-            uses: taiki-e/install-action@25435dc8dd3baed7417e0c96d3fe89013a5b2e09 # v2.81.3
+            uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc # v2.86.7
             with:
               tool: git-cliff
 
@@ -56,7 +56,7 @@ jobs:
       TAG_VERSION: ${{ needs.determine-tag-version.outputs.tag_version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ssh-key: '${{ secrets.COMMIT_KEY }}'
 

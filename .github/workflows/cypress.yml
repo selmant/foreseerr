@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
       - parallel:
@@ -56,7 +56,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Setup cypress cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ~/.cache/Cypress
           key: ${{ runner.os }}-cypress-store-${{ hashFiles('**/bun.lock') }}
@@ -69,7 +69,7 @@ jobs:
         run: bunx cypress install
 
       - name: Cypress run
-        uses: cypress-io/github-action@948d67d3074f1bbb6379c8bdbb04e95d2f8e593f # v7.4.0
+        uses: cypress-io/github-action@09090944bd8aaa2a517cefb6e38bf1aae336b42b # v7.4.3
         with:
           install: false
           build: bun run cypress:build
