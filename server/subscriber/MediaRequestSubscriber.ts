@@ -1057,7 +1057,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
   ): Promise<void> {
     const fullMedia = await manager.findOneOrFail(Media, {
       where: { id: entity.media.id },
-      relations: { requests: true },
+      relations: { requests: { seasons: true, episodes: true }, seasons: true },
     });
 
     const hasActive = fullMedia.requests.some(
@@ -1108,6 +1108,44 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       }
 
       await manager.save(cleanMedia);
+    }
+
+    if (fullMedia.mediaType === MediaType.TV) {
+      const statusKey = entity.is4k ? 'status4k' : 'status';
+      const removedSeasonNumbers = new Set([
+        ...(entity.seasons ?? []).map((season) => season.seasonNumber),
+        ...(entity.episodes ?? []).map((episode) => episode.seasonNumber),
+      ]);
+      const activeSeasonNumbers = new Set(
+        fullMedia.requests
+          .filter(
+            (request) =>
+              request.is4k === entity.is4k &&
+              request.status !== MediaRequestStatus.COMPLETED &&
+              request.status !== MediaRequestStatus.DECLINED
+          )
+          .flatMap((request) => [
+            ...request.seasons.map((season) => season.seasonNumber),
+            ...request.episodes.map((episode) => episode.seasonNumber),
+          ])
+      );
+
+      const changedSeasons: Season[] = [];
+      for (const season of fullMedia.seasons) {
+        if (
+          removedSeasonNumbers.has(season.seasonNumber) &&
+          !activeSeasonNumbers.has(season.seasonNumber) &&
+          (season[statusKey] === MediaStatus.PENDING ||
+            season[statusKey] === MediaStatus.PROCESSING)
+        ) {
+          season[statusKey] = MediaStatus.UNKNOWN;
+          changedSeasons.push(season);
+        }
+      }
+
+      if (changedSeasons.length > 0) {
+        await manager.save(changedSeasons);
+      }
     }
   }
 

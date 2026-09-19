@@ -15,6 +15,9 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
 import OverrideRule from '@server/entity/OverrideRule';
+import EpisodeRequest from '@server/entity/EpisodeRequest';
+import Season from '@server/entity/Season';
+import SeasonRequest from '@server/entity/SeasonRequest';
 import { User } from '@server/entity/User';
 import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
@@ -746,4 +749,156 @@ describe('POST /request, override server IDs', () => {
       assert.strictEqual(res.body.rootFolder, null);
     });
   }
+});
+
+describe('DELETE /request/:requestId, orphaned season status reset', () => {
+  async function seedTvShow(
+    tmdbId: number,
+    seasons: Partial<Season>[]
+  ): Promise<Media> {
+    return getRepository(Media).save(
+      new Media({
+        mediaType: MediaType.TV,
+        tmdbId,
+        status: MediaStatus.PROCESSING,
+        status4k: MediaStatus.UNKNOWN,
+        seasons: seasons.map((season) => new Season(season)),
+      })
+    );
+  }
+
+  async function seedTvRequest(
+    media: Media,
+    seasonNumbers: number[],
+    options: { is4k?: boolean; episodeNumber?: number } = {}
+  ): Promise<MediaRequest> {
+    const admin = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+
+    return getRepository(MediaRequest).save(
+      new MediaRequest({
+        type: MediaType.TV,
+        status: MediaRequestStatus.APPROVED,
+        media,
+        requestedBy: admin,
+        is4k: options.is4k ?? false,
+        seasons: options.episodeNumber
+          ? []
+          : seasonNumbers.map(
+              (seasonNumber) =>
+                new SeasonRequest({
+                  seasonNumber,
+                  status: MediaRequestStatus.APPROVED,
+                })
+            ),
+        episodes: options.episodeNumber
+          ? seasonNumbers.map(
+              (seasonNumber) =>
+                new EpisodeRequest({
+                  tvdbId: media.tmdbId * 100 + seasonNumber,
+                  seasonNumber,
+                  episodeNumber: options.episodeNumber,
+                  status: MediaRequestStatus.APPROVED,
+                })
+            )
+          : [],
+      })
+    );
+  }
+
+  async function deleteRequest(requestId: number): Promise<void> {
+    const admin = await loginAs('admin@seerr.dev', 'test1234');
+    const response = await admin.delete(`/request/${requestId}`);
+    assert.strictEqual(response.status, 204);
+  }
+
+  async function readSeason(mediaId: number, seasonNumber: number) {
+    const media = await getRepository(Media).findOneOrFail({
+      where: { id: mediaId },
+    });
+    return media.seasons.find((season) => season.seasonNumber === seasonNumber);
+  }
+
+  it('resets an orphaned processing season so it can be requested again', async () => {
+    const media = await seedTvShow(99101, [
+      { seasonNumber: 1, status: MediaStatus.PROCESSING },
+    ]);
+    const tvRequest = await seedTvRequest(media, [1]);
+
+    await deleteRequest(tvRequest.id);
+    assert.strictEqual(
+      (await readSeason(media.id, 1))?.status,
+      MediaStatus.UNKNOWN
+    );
+
+    const friend = await loginAs('friend@seerr.dev', 'test1234');
+    const response = await friend.post('/request').send({
+      mediaType: MediaType.TV,
+      mediaId: media.tmdbId,
+      seasons: [1],
+    });
+    assert.strictEqual(response.status, 201);
+  });
+
+  it('preserves other seasons and the opposite quality', async () => {
+    const media = await seedTvShow(99102, [
+      {
+        seasonNumber: 1,
+        status: MediaStatus.PROCESSING,
+        status4k: MediaStatus.PROCESSING,
+      },
+      { seasonNumber: 2, status: MediaStatus.PROCESSING },
+    ]);
+    const tvRequest = await seedTvRequest(media, [1]);
+
+    await deleteRequest(tvRequest.id);
+    assert.strictEqual(
+      (await readSeason(media.id, 1))?.status,
+      MediaStatus.UNKNOWN
+    );
+    assert.strictEqual(
+      (await readSeason(media.id, 1))?.status4k,
+      MediaStatus.PROCESSING
+    );
+    assert.strictEqual(
+      (await readSeason(media.id, 2))?.status,
+      MediaStatus.PROCESSING
+    );
+  });
+
+  it('keeps processing when another full-season or episode request covers the season', async () => {
+    const media = await seedTvShow(99103, [
+      { seasonNumber: 1, status: MediaStatus.PROCESSING },
+      { seasonNumber: 2, status: MediaStatus.PROCESSING },
+    ]);
+    const first = await seedTvRequest(media, [1, 2]);
+    await seedTvRequest(media, [1]);
+    await seedTvRequest(media, [2], { episodeNumber: 1 });
+
+    await deleteRequest(first.id);
+    assert.strictEqual(
+      (await readSeason(media.id, 1))?.status,
+      MediaStatus.PROCESSING
+    );
+    assert.strictEqual(
+      (await readSeason(media.id, 2))?.status,
+      MediaStatus.PROCESSING
+    );
+  });
+
+  it('resets an orphaned season when its episode request is deleted', async () => {
+    const media = await seedTvShow(99104, [
+      { seasonNumber: 1, status: MediaStatus.PROCESSING },
+    ]);
+    const episodeRequest = await seedTvRequest(media, [1], {
+      episodeNumber: 1,
+    });
+
+    await deleteRequest(episodeRequest.id);
+    assert.strictEqual(
+      (await readSeason(media.id, 1))?.status,
+      MediaStatus.UNKNOWN
+    );
+  });
 });
