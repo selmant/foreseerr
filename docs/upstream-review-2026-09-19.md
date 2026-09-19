@@ -40,7 +40,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `aa8e0de0` | Applied | Switched shared Headless UI menus, listboxes, transitions, disclosure, and labels to flat named exports after the 2.2.10 upgrade. Kept Foreseerr's click-only dropdown button, custom item styles, and TV season test hook through conflict resolution. Left `RadioGroup.Option` for the following upstream Radio refactor. |
 | `46d5915d` | Applied | Replaced the issue modal's `RadioGroup.Option` with the Headless UI 2.2 `Radio` component and changed its focus indicator to use `focus`; Foreseerr retains the same issue-type selector and this was its only remaining `RadioGroup.Option` usage. |
 | `7997f756` | Applied | Ignore scanner file counts for provider seasons with zero episodes, and compare the actual requestable season numbers in the TV page and modal so phantom specials cannot block requests. Adapted the TV page's coverage check to Foreseerr's episode requests: a processing season with an active partial episode request remains eligible for a full-season request. |
-| `5f4cb1ea` | Pending | fix(db): drop stale auth unique on sqlite push subscriptions (#3391) |
+| `5f4cb1ea` | Applied | SQLite's latest push-subscription table still enforced `UNIQUE(auth)` despite the entity requiring only `UNIQUE(endpoint, userId)`. Added the upstream table rebuild, preserving rows, foreign key, and user index while removing the stale constraint; registered it for the compiled binary. |
 | `9f6403e1` | Pending | fix(requests): enforce pending and failed states on request routes (#3385) |
 | `5a5f0590` | Pending | ci(actions): update github actions (#3306) |
 | `5c04640b` | Pending | chore(i18n): update translations from Weblate |
