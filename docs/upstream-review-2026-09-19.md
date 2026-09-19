@@ -29,7 +29,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `92bad10c` | Applied | Added optional comma-separated ntfy tags through settings, API schema, UI, and docs; the agent trims and omits empty tags before sending. Foreseerr uses the same ntfy integration, so the upstream change applies directly. |
 | `a123d20b` | Applied | Send `Foreseerr/<version>` on outbound Axios calls, including shared API, Tautulli, and image clients; preserve explicit service-specific or caller-provided User-Agent headers. |
 | `5af32cb2` | Skipped | Already implemented in Foreseerr `66693021`: both General and Network saves revalidate all `/api/v1/status` SWR keys, including the modal's `/api/v1/status?checkUpdateAvailable=false` key and the version-status variant. |
-| `0be53e6e` | Pending | fix: prevent hideAvailable/hideBlocklisted from filtering person results (#3434) |
+| `0be53e6e` | Applied | Keep person results when hide-available or hide-blocklisted is enabled in both discover pages and mixed sliders; continue filtering movie/TV statuses. Foreseerr's trending results include people, and its extra AniList, Simkl, and MDBList sources may also have items without a declared media type, which these settings should not discard. |
 | `2759058a` | Pending | fix(discover): fix tv title sorting and validate sortBy per media type (#3305) |
 | `0f79ee66` | Pending | fix(datasource): register entities and subscribers explicitly (#3375) |
 | `cc592e8d` | Pending | chore(i18n): update translations from Weblate |
