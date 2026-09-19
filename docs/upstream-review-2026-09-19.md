@@ -35,7 +35,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `cc592e8d` | Applied | Added 30 Catalan server notification translations and corrected the movie label casing. All keys match the English catalog and preserve its interpolation variables; the `{applicationTitle}` messages use Foreseerr's configured title. Corrected two obvious translation typos. |
 | `da4b555c` | Applied | Removed `appear` from the Modal and SlideOver `Transition.Child` elements: Headless UI 1.7.19 forwards it to their DOM nodes. Parent `Transition` elements retain `appear` for entrance animations. |
 | `d7b08bdd` | Applied | Moved the PostgreSQL flag into an import-free module so entity decorators resolve timestamp columns without a datasource import cycle. Foreseerr's lazy datasource and release-state code also use this flag, so their imports were adapted. |
-| `1cc2f116` | Pending | chore(deps): upgrade @headlessui/react to 2.2.10  (#3450) |
+| `1cc2f116` | Applied | Upgraded Headless UI from 1.7.19 to 2.2.10 in Foreseerr's Bun manifest and lockfile. React 19 now satisfies its declared peer range. Added explicit `div` transition wrappers in the seven affected UI components and fixed the Jellyfin link modal's opacity class typo; retained Foreseerr's existing transition and fork-specific components. |
 | `df743f46` | Pending | fix(ui): stop the slideover backdrop flashing back on close (#3451) |
 | `aa8e0de0` | Pending | refactor(ui): use headlessui flat named exports (#3453) |
 | `46d5915d` | Pending | refactor(ui): use the Radio component instead of RadioGroup.Option (#3454) |

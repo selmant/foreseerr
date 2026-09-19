@@ -1023,6 +1023,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                           />
                         </Disclosure.Button>
                         <Transition
+                          as="div"
                           show={open}
                           enter="transition-opacity duration-100 ease-out"
                           enterFrom="opacity-0"
