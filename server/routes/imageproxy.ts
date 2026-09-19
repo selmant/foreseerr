@@ -48,14 +48,14 @@ const requestPathForFetch = (
 router.get<{
   type: string;
   path: string[];
-}>('/:type/*path', async (req, res) => {
+}>('/:type/*path', async (req, res, next) => {
   const imagePath = '/' + req.params.path.join('/');
   const searchIndex = req.url.indexOf('?');
   const search = searchIndex === -1 ? '' : req.url.slice(searchIndex);
 
   if (imagePath.startsWith('//') || imagePath.includes('://')) {
     logger.error('Invalid URL for image proxy', { imagePath });
-    return res.status(403).send('Invalid URL for image proxy');
+    return next({ status: 403, message: 'Invalid URL for image proxy.' });
   }
 
   const resolved = resolveImageProxyFetch(req.params.type, imagePath, search);
@@ -65,10 +65,10 @@ router.get<{
         imagePath,
         type: req.params.type,
       });
-      return res.status(400).send('Unsupported image type');
+      return next({ status: 400, message: 'Unsupported image type.' });
     }
     logger.error('Invalid URL for image proxy', { imagePath });
-    return res.status(403).send('Invalid URL for image proxy');
+    return next({ status: 403, message: 'Invalid URL for image proxy.' });
   }
 
   try {
@@ -105,7 +105,10 @@ router.get<{
       imagePath,
       errorMessage: e.message,
     });
-    res.status(500).send();
+    if (!res.headersSent) {
+      return next({ status: 500, message: 'Failed to proxy image.' });
+    }
+    next(e);
   }
 });
 

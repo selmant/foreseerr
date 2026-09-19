@@ -35,6 +35,18 @@ describe('imageproxy route', () => {
     assert.equal(randomHost.status, 403);
   });
 
+  it('finishes a failed image fetch with a server error', async () => {
+    mock.method(ImageProxy.prototype, 'getImage', async () => {
+      throw new Error('upstream image unavailable');
+    });
+
+    const response = await request(createApp()).get(
+      '/imageproxy/tmdb/t/p/x.jpg'
+    );
+
+    assert.equal(response.status, 500);
+  });
+
   it('allows AniList hosts and fetches through ImageProxy', async () => {
     const getImage = mock.method(
       ImageProxy.prototype,
