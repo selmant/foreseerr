@@ -16,7 +16,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `afb17aa4` | Skipped | Already ported in Foreseerr `87058c58` (included in `4906d7aa`): Gotify settings toggle, Markdown poster image, `client::notification.bigImageUrl`, and English label are present; Gotify's default `embedPoster: false` and settings save path support the option. |
 | `bd971f86` | Skipped | Node 22.23.2 Docker image pin does not apply: Foreseerr's production and local Dockerfiles use `oven/bun:1.4.1-alpine` for build and runtime, matching its Bun package scripts and lockfile. |
 | `d3c070e1` | Skipped | Already ported in Foreseerr `dce92404`: Plex Web App URL tip names `https://app.plex.tv/desktop`, and the input suggests a server-hosted `/web/index.html` URL; both are present in the current UI and English locale. |
-| `d103787a` | Pending | fix(login): hide quick connect button for emby servers (#3369) |
+| `d103787a` | Applied | Behavior already ported in Foreseerr `4906d7aa`: both Emby UI buttons are hidden, all login and account-linking Quick Connect endpoints reject Emby, and new Quick Connect users are Jellyfin users. Adapted the remaining upstream account-linking regression tests; the three login endpoint guards already had tests. |
 | `39ff48c6` | Pending | test(cypress): stop dirty restartRequired flag cascading across specs (#3368) |
 | `985ddef3` | Pending | fix(api): stop library reads from resetting enabled flags (#3321) |
 | `c9f2ac58` | Pending | fix: keep library settings when renamed on media server (#3323) |
