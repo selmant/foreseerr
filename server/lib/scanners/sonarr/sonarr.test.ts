@@ -19,6 +19,7 @@ import { sonarrScanner } from '@server/lib/scanners/sonarr';
 import type { SonarrSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import { setupTestDb } from '@server/test/db';
+import { runWithMockTimers } from '@server/test/runWithMockTimers';
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it, mock } from 'node:test';
 
@@ -183,7 +184,7 @@ describe('Sonarr Scanner', () => {
 
       getSeriesImpl = async () => [];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1050 },
@@ -213,7 +214,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true }]);
       getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 999 })];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1000 },
@@ -243,7 +244,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true }]);
       getSeriesImpl = async () => [];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1001 },
@@ -293,7 +294,7 @@ describe('Sonarr Scanner', () => {
       getShowByTvdbIdImpl = async () => fakeTmdbShow(1);
       getTvShowImpl = async () => fakeTmdbShow(1);
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1 },
@@ -327,7 +328,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true }]);
       getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 999 })];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1003 },
@@ -353,7 +354,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true }]);
       getSeriesImpl = async () => [];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1004 },
@@ -402,7 +403,7 @@ describe('Sonarr Scanner', () => {
       getShowByTvdbIdImpl = async () => fakeTmdbShow(2);
       getTvShowImpl = async () => fakeTmdbShow(2);
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updatedOrphan = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1010 },
@@ -430,7 +431,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true }]);
       getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 999 })];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1020 },
@@ -461,7 +462,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true, is4k: true }]);
       getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 999 })];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1030 },
@@ -497,7 +498,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true, is4k: true }]);
       getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 999 })];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updated = await mediaRepository.findOneOrFail({
         where: { tmdbId: 1031 },
@@ -552,7 +553,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true }]);
       getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 999 })];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updatedMedia = await mediaRepository.findOneOrFail({
         where: { tmdbId: 2000 },
@@ -626,7 +627,7 @@ describe('Sonarr Scanner', () => {
       getShowByTvdbIdImpl = async () => fakeTmdbShow(2001);
       getTvShowImpl = async () => fakeTmdbShow(2001);
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updatedRequest = await requestRepository.findOneOrFail({
         where: { id: request.id },
@@ -675,7 +676,7 @@ describe('Sonarr Scanner', () => {
       configureSonarr([{ syncEnabled: true }]);
       getSeriesImpl = async () => [];
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updatedMedia = await mediaRepository.findOneOrFail({
         where: { tmdbId: 2005 },
@@ -794,7 +795,7 @@ describe('Sonarr Scanner', () => {
         tvdbId === 666 ? fakeTmdbShow(2002) : fakeTmdbShow(997);
       getTvShowImpl = async ({ tvId }) => fakeTmdbShow(tvId);
 
-      await sonarrScanner.run();
+      await runWithMockTimers(() => sonarrScanner.run());
 
       const updatedMedia = await mediaRepository.findOneOrFail({
         where: { tmdbId: 2002 },
