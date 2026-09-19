@@ -39,6 +39,10 @@ const sendNotificationMock = mock.method(
   'sendNotification',
   async () => undefined
 ).mock;
+const tvSeasonsById = new Map<
+  number,
+  { season_number: number; episode_count: number }[]
+>();
 
 Object.defineProperty(TheMovieDb.prototype, 'getMovie', {
   get() {
@@ -64,6 +68,7 @@ Object.defineProperty(TheMovieDb.prototype, 'getTvShow', {
         original_language: 'en',
         keywords: { results: [] },
         external_ids: {},
+        seasons: tvSeasonsById.get(tvId) ?? [],
       }) as unknown as TmdbTvDetails;
   },
   set() {},
@@ -133,11 +138,42 @@ before(async () => {
 
 beforeEach(() => {
   sendNotificationMock.resetCalls();
+  tvSeasonsById.clear();
   getSettings().radarr = [];
   getSettings().sonarr = [];
 });
 
 setupTestDb();
+
+describe('all-season TV requests', () => {
+  it('omits empty TMDB seasons from the saved request and quota units', async () => {
+    const mediaId = 20269901;
+    tvSeasonsById.set(mediaId, [
+      { season_number: 0, episode_count: 2 },
+      { season_number: 1, episode_count: 10 },
+      { season_number: 2, episode_count: 0 },
+      { season_number: 3, episode_count: 8 },
+    ]);
+    const requester = await getRepository(User).findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+    });
+
+    const result = await MediaRequest.request(
+      { mediaId, mediaType: MediaType.TV, seasons: 'all', is4k: false },
+      requester
+    );
+    const saved = await getRepository(MediaRequest).findOneOrFail({
+      where: { id: result.id },
+      relations: ['seasons'],
+    });
+
+    assert.deepEqual(
+      saved.seasons.map((season) => season.seasonNumber).sort(),
+      [1, 3]
+    );
+    assert.strictEqual(saved.tvQuotaUnits, 2);
+  });
+});
 
 describe('concurrent request creation', () => {
   it('counts earlier collection movie requests before accepting the next one', async () => {
