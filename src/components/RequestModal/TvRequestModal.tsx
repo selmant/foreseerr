@@ -590,8 +590,7 @@ const TvRequestModal = ({
       : requestScope === 'episodes'
         ? !!episodeSelection
         : selectedSeasons.length > 0;
-  const allSeasonsRequested =
-    getAllRequestedSeasons().length >= getAllSeasons().length;
+  const allSeasonsRequested = unrequestedSeasons.length === 0;
 
   return data && !error && !data.externalIds.tvdbId && searchModal.show ? (
     <SearchByNameModal
