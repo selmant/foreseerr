@@ -49,10 +49,13 @@ const TraktSlider = ({
     canLoad ? endpoint : null,
     { revalidateOnMount: true }
   );
+  const titles = settings.currentSettings.hideRequested
+    ? data?.results.filter((item) => !item.hasActiveRequest)
+    : data?.results;
 
   useEffect(() => {
-    onNewTitles?.(data?.results.length ?? 0);
-  }, [data?.results.length, onNewTitles]);
+    onNewTitles?.(titles?.length ?? 0);
+  }, [titles?.length, onNewTitles]);
 
   if (
     !settings.currentSettings.traktConfigured ||
@@ -73,9 +76,9 @@ const TraktSlider = ({
       <Slider
         sliderKey={sliderKey}
         isLoading={!data}
-        isEmpty={!!data && data.results.length === 0}
+        isEmpty={!!data && titles?.length === 0}
         emptyMessage={emptyMessage}
-        items={data?.results.map((item) => (
+        items={titles?.map((item) => (
           <TmdbTitleCard
             key={`${sliderKey}-item-${item.ratingKey}`}
             {...watchlistTitleCardProps(item)}

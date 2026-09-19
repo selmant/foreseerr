@@ -123,6 +123,7 @@ const defaultSettings: PublicSettingsResponse = {
   applicationUrl: '',
   hideAvailable: false,
   hideBlocklisted: false,
+  hideRequested: false,
   movie4kEnabled: false,
   series4kEnabled: false,
   movieInstantRequestEnabled: true,

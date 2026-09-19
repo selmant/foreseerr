@@ -7,6 +7,7 @@ import type {
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import { handleMdblistDiscoverRouteError } from '@server/lib/discover/providerErrors';
+import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
 import {
   resolveDiscoverItems,
   type ResolvableDiscoverItem,
@@ -66,7 +67,7 @@ const resolvedMdblistItems = async (
   recordUnmappedItems(resolved, {
     discoverSource: 'mdblist/list',
   });
-  return resolved;
+  return annotateProviderActiveRequests(resolved);
 };
 
 mdblistDiscoverRoutes.get('/lists/search', async (req, res, next) => {

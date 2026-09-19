@@ -10,6 +10,7 @@ import type {
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
 import { withTmdbPosters } from '@server/lib/discover/posters';
+import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import {
   hasDiscoverTmdbId,
@@ -124,9 +125,11 @@ export async function toSimklWatchlistItems(
   hideUnmapped: boolean,
   tmdb: TheMovieDb
 ): Promise<WatchlistItem[]> {
-  return withTmdbPosters(
-    omitUnmappedDiscoverItems(withMappingState(resolved), hideUnmapped),
-    tmdb
+  return annotateProviderActiveRequests(
+    await withTmdbPosters(
+      omitUnmappedDiscoverItems(withMappingState(resolved), hideUnmapped),
+      tmdb
+    )
   );
 }
 

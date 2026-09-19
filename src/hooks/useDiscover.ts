@@ -20,7 +20,9 @@ interface BaseMedia {
   mediaType?: string;
   mediaInfo?: {
     status: MediaStatus;
+    hasActiveRequest?: boolean;
   };
+  hasActiveRequest?: boolean;
 }
 
 interface DiscoverResult<T, S> {
@@ -59,7 +61,7 @@ const useDiscover = <
 >(
   endpoint: string,
   options?: O,
-  { hideAvailable = true, hideBlocklisted = true } = {}
+  { hideAvailable = true, hideBlocklisted = true, hideRequested = true } = {}
 ): DiscoverResult<T, S> => {
   const settings = useSettings();
   const { hasPermission } = useUser();
@@ -158,6 +160,14 @@ const useDiscover = <
       (i) =>
         !(i.mediaType === 'movie' || i.mediaType === 'tv') ||
         i.mediaInfo?.status !== MediaStatus.BLOCKLISTED
+    );
+  }
+
+  if (settings.currentSettings.hideRequested && hideRequested) {
+    titles = titles.filter(
+      (item) =>
+        !(item.mediaType === 'movie' || item.mediaType === 'tv') ||
+        !(item.mediaInfo?.hasActiveRequest || item.hasActiveRequest)
     );
   }
 

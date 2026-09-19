@@ -1,8 +1,24 @@
-import { MediaType } from '@server/constants/media';
-import type Media from '@server/entity/Media';
+import {
+  MediaRequestStatus,
+  MediaStatus,
+  MediaType,
+} from '@server/constants/media';
+import { getRepository } from '@server/datasource';
+import Media from '@server/entity/Media';
+import { MediaRequest } from '@server/entity/MediaRequest';
+import { User } from '@server/entity/User';
+import { getSettings } from '@server/lib/settings';
+import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { findRelatedMedia, indexRelatedMedia } from './mediaResults';
+import {
+  annotateProviderActiveRequests,
+  findRelatedMedia,
+  getRelatedMediaIndex,
+  indexRelatedMedia,
+} from './mediaResults';
+
+setupTestDb();
 
 describe('Discover related media lookup', () => {
   it('keeps movie and TV entries with the same TMDB id separate', () => {
@@ -12,5 +28,105 @@ describe('Discover related media lookup', () => {
 
     assert.equal(findRelatedMedia(index, 42, MediaType.MOVIE), movie);
     assert.equal(findRelatedMedia(index, 42, MediaType.TV), tv);
+  });
+
+  it('marks only active requests for the matching media type', async () => {
+    const original = getSettings().main.hideRequested;
+    getSettings().main = { ...getSettings().main, hideRequested: true };
+    try {
+      const user = await getRepository(User).findOneByOrFail({
+        email: 'admin@seerr.dev',
+      });
+      const mediaRepository = getRepository(Media);
+      const movie = await mediaRepository.save(
+        new Media({
+          tmdbId: 987651,
+          mediaType: MediaType.MOVIE,
+          status: MediaStatus.PENDING,
+        })
+      );
+      await mediaRepository.save(
+        new Media({
+          tmdbId: 987651,
+          mediaType: MediaType.TV,
+          status: MediaStatus.UNKNOWN,
+        })
+      );
+      const requestRepository = getRepository(MediaRequest);
+      const request = await requestRepository.save(
+        new MediaRequest({
+          type: MediaType.MOVIE,
+          media: movie,
+          requestedBy: user,
+          status: MediaRequestStatus.PENDING,
+          is4k: false,
+          seasons: [],
+          episodes: [],
+        })
+      );
+
+      const index = await getRelatedMediaIndex(user, [
+        { tmdbId: 987651, mediaType: MediaType.MOVIE },
+        { tmdbId: 987651, mediaType: MediaType.TV },
+      ]);
+      assert.equal(
+        findRelatedMedia(index, 987651, MediaType.MOVIE)?.hasActiveRequest,
+        true
+      );
+      assert.equal(
+        findRelatedMedia(index, 987651, MediaType.TV)?.hasActiveRequest,
+        false
+      );
+
+      const tiles = await annotateProviderActiveRequests([
+        {
+          id: 1,
+          tmdbId: 987651,
+          mediaType: 'movie' as const,
+          title: 'Movie',
+          ratingKey: 'm',
+        },
+        {
+          id: 2,
+          tmdbId: 987651,
+          mediaType: 'tv' as const,
+          title: 'TV',
+          ratingKey: 't',
+        },
+        { id: 3, title: 'Unmapped', ratingKey: 'u' },
+      ]);
+      assert.deepEqual(
+        tiles.map((item) => item.hasActiveRequest),
+        [true, undefined, undefined]
+      );
+
+      request.status = MediaRequestStatus.APPROVED;
+      await requestRepository.save(request);
+      assert.equal(
+        findRelatedMedia(
+          await getRelatedMediaIndex(user, [
+            { tmdbId: 987651, mediaType: MediaType.MOVIE },
+          ]),
+          987651,
+          MediaType.MOVIE
+        )?.hasActiveRequest,
+        true
+      );
+
+      request.status = MediaRequestStatus.DECLINED;
+      await requestRepository.save(request);
+      assert.equal(
+        findRelatedMedia(
+          await getRelatedMediaIndex(user, [
+            { tmdbId: 987651, mediaType: MediaType.MOVIE },
+          ]),
+          987651,
+          MediaType.MOVIE
+        )?.hasActiveRequest,
+        false
+      );
+    } finally {
+      getSettings().main = { ...getSettings().main, hideRequested: original };
+    }
   });
 });

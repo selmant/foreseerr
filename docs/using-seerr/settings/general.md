@@ -75,6 +75,12 @@ When enabled, media that has been blocklisted will not appear on the "Discover" 
 
 This setting is **disabled** by default.
 
+## Hide Requested Media
+
+When enabled, media with a pending or approved request is hidden from Discover pages, sliders, collections, and recommended or similar titles on detail pages. Search results still show these titles so they remain findable.
+
+This setting is **disabled** by default.
+
 ## Allow Partial Series Requests
 
 When enabled, users will be able to submit requests for specific seasons of TV series. If disabled, users will only be able to submit requests for all unavailable seasons.

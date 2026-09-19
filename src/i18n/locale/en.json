@@ -1416,6 +1416,8 @@
   "components.Settings.SettingsMain.hideAvailableTip": "Hide available media from the discover pages but not search results",
   "components.Settings.SettingsMain.hideBlocklisted": "Hide Blocklisted Items",
   "components.Settings.SettingsMain.hideBlocklistedTip": "Hide blocklisted items from discover pages for all users with the \"Manage Blocklist\" permission",
+  "components.Settings.SettingsMain.hideRequested": "Hide Requested Media",
+  "components.Settings.SettingsMain.hideRequestedTip": "Hide media with pending or approved requests from discover pages but not search results",
   "components.Settings.SettingsMain.imageCacheIdleDays": "Remove Unused Cached Images After",
   "components.Settings.SettingsMain.imageCacheIdleDaysTip": "Cached images that have not been requested for this many days are deleted. Recently viewed posters stay.",
   "components.Settings.SettingsMain.imageCacheIdleDaysUnit": "{days, plural, one {day} other {days}}",

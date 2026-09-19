@@ -9,6 +9,7 @@ import {
   shouldHideUnmappedFromQuery,
 } from '@server/lib/discover/unmapped';
 import { enrichResultsWithRatings } from '@server/lib/ratings';
+import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
 import { Router } from 'express';
 
 const plexDiscoverRoutes = Router();
@@ -34,7 +35,7 @@ plexDiscoverRoutes.get<unknown, WatchlistResponse>('/', async (req, res) => {
         page,
         totalPages: Math.ceil(total / itemsPerPage),
         totalResults: total,
-        results,
+        results: await annotateProviderActiveRequests(results),
       });
     }
   }
@@ -67,7 +68,7 @@ plexDiscoverRoutes.get<unknown, WatchlistResponse>('/', async (req, res) => {
     page,
     totalPages: Math.ceil(watchlist.totalSize / itemsPerPage),
     totalResults: watchlist.totalSize,
-    results,
+    results: await annotateProviderActiveRequests(results),
   });
 });
 

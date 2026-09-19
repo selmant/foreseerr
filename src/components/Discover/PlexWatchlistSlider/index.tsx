@@ -3,6 +3,7 @@ import TmdbTitleCard, {
   watchlistTitleCardProps,
 } from '@app/components/TitleCard/TmdbTitleCard';
 import { useUser } from '@app/hooks/useUser';
+import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
@@ -19,6 +20,7 @@ const messages = defineMessages('components.Discover.PlexWatchlistSlider', {
 const PlexWatchlistSlider = () => {
   const intl = useIntl();
   const { user } = useUser();
+  const settings = useSettings();
 
   const { data: watchlistItems, error: watchlistError } = useSWR<{
     page: number;
@@ -28,10 +30,13 @@ const PlexWatchlistSlider = () => {
   }>('/api/v1/discover/watchlist', {
     revalidateOnMount: true,
   });
+  const titles = settings.currentSettings.hideRequested
+    ? watchlistItems?.results.filter((item) => !item.hasActiveRequest)
+    : watchlistItems?.results;
 
   if (
     (watchlistItems &&
-      watchlistItems.results.length === 0 &&
+      titles?.length === 0 &&
       !user?.settings?.watchlistSyncMovies &&
       !user?.settings?.watchlistSyncTv) ||
     watchlistError
@@ -50,7 +55,7 @@ const PlexWatchlistSlider = () => {
       <Slider
         sliderKey="watchlist"
         isLoading={!watchlistItems}
-        isEmpty={!!watchlistItems && watchlistItems.results.length === 0}
+        isEmpty={!!watchlistItems && titles?.length === 0}
         emptyMessage={intl.formatMessage(messages.emptywatchlist, {
           PlexWatchlistSupportLink: (msg: React.ReactNode) => (
             <a
@@ -63,7 +68,7 @@ const PlexWatchlistSlider = () => {
             </a>
           ),
         })}
-        items={watchlistItems?.results.map((item) => (
+        items={titles?.map((item) => (
           <TmdbTitleCard
             key={`watchlist-slider-item-${item.ratingKey}`}
             {...watchlistTitleCardProps(item)}

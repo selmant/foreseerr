@@ -1,6 +1,10 @@
 import RadarrAPI from '@server/api/servarr/radarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
-import { MediaStatus, MediaType } from '@server/constants/media';
+import {
+  MediaRequestStatus,
+  MediaStatus,
+  MediaType,
+} from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import type { Blocklist } from '@server/entity/Blocklist';
@@ -31,7 +35,8 @@ import type Season from './Season';
 class Media {
   public static async getRelatedMedia(
     user: User | undefined,
-    items: { tmdbId: number; mediaType: string }[]
+    items: { tmdbId: number; mediaType: string }[],
+    { includeActiveRequest = false }: { includeActiveRequest?: boolean } = {}
   ): Promise<Media[]> {
     const mediaRepository = getRepository(Media);
 
@@ -49,13 +54,38 @@ class Media {
           'watchlist',
           'media.id= watchlist.media and watchlist.requestedBy = :userId',
           { userId: user?.id }
-        ) //,
+        )
         .where(' media.tmdbId in (:...finalIds)', { finalIds })
         .getMany();
 
-      return media.filter((m) =>
+      const relatedMedia = media.filter((m) =>
         items.some((i) => i.tmdbId === m.tmdbId && i.mediaType === m.mediaType)
       );
+
+      if (
+        includeActiveRequest &&
+        getSettings().main.hideRequested &&
+        relatedMedia.length
+      ) {
+        const rows = await mediaRepository
+          .createQueryBuilder('media')
+          .select('media.id', 'id')
+          .distinct(true)
+          .innerJoin('media.requests', 'request')
+          .where('media.id IN (:...mediaIds)', {
+            mediaIds: relatedMedia.map((m) => m.id),
+          })
+          .andWhere('request.status IN (:...statuses)', {
+            statuses: [MediaRequestStatus.PENDING, MediaRequestStatus.APPROVED],
+          })
+          .getRawMany<{ id: number }>();
+        const activeIds = new Set(rows.map((row) => Number(row.id)));
+        relatedMedia.forEach((item) => {
+          item.hasActiveRequest = activeIds.has(item.id);
+        });
+      }
+
+      return relatedMedia;
     } catch (e) {
       logger.error(e.message);
       return [];
@@ -187,6 +217,7 @@ class Media {
 
   public serviceUrl?: string;
   public serviceUrl4k?: string;
+  public hasActiveRequest?: boolean;
   public downloadStatus?: DownloadingItem[] = [];
   public downloadStatus4k?: DownloadingItem[] = [];
 

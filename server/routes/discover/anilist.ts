@@ -11,6 +11,7 @@ import {
 } from '@server/lib/anilist/discover';
 import { getAnilistUserContext } from '@server/lib/anilist/userContext';
 import { withTmdbPoster } from '@server/lib/discover/posters';
+import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
 import { handleAnilistDiscoverRouteError } from '@server/lib/discover/providerErrors';
 import {
   omitUnmappedDiscoverItems,
@@ -62,9 +63,8 @@ async function anilistResults(
     discoverSource,
     sourceKey: 'anilist-pack',
   });
-  return omitUnmappedDiscoverItems(
-    mapped,
-    shouldHideUnmappedFromQuery(req.query)
+  return annotateProviderActiveRequests(
+    omitUnmappedDiscoverItems(mapped, shouldHideUnmappedFromQuery(req.query))
   );
 }
 
