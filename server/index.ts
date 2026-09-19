@@ -297,7 +297,15 @@ const startForeseerrInternal = async (
       });
 
       const plexapi = new PlexAPI({ plexToken: admin.plexToken });
-      await plexapi.syncLibraries();
+      try {
+        await plexapi.syncLibraries();
+      } catch {
+        // Preserve configured libraries and retry this migration on startup.
+        logger.warn(
+          'Failed to migrate Plex libraries; will retry on next startup',
+          { label: 'Settings' }
+        );
+      }
     }
   }
 

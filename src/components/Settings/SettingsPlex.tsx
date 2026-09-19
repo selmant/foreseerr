@@ -42,6 +42,7 @@ const messages = defineMessages('components.Settings', {
   toastPlexRefreshSuccess: 'Plex server list retrieved successfully!',
   toastPlexRefreshFailure: 'Failed to retrieve Plex server list.',
   toastPlexSyncFailure: 'Failed to sync Plex libraries.',
+  invalidurlerror: 'Unable to connect to {mediaServerName} server.',
   toggleLibraryFailure: 'Failed to update library.',
   toastPlexConnecting: 'Attempting to connect to Plex…',
   toastPlexConnectingSuccess: 'Plex connection established successfully!',
@@ -110,10 +111,10 @@ interface PresetServerDisplay {
   message?: string;
 }
 interface SettingsPlexProps {
-  onComplete?: () => void;
+  isSetupSettings?: boolean;
 }
 
-const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
+const SettingsPlex = ({ isSetupSettings }: SettingsPlexProps) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRefreshingPresets, setIsRefreshingPresets] = useState(false);
   const [availableServers, setAvailableServers] = useState<PlexDevice[] | null>(
@@ -124,12 +125,17 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
     error,
     mutate: revalidate,
   } = useSWR<PlexSettings>('/api/v1/settings/plex');
-  const { data: dataTautulli, mutate: revalidateTautulli } =
-    useSWR<TautulliSettings>('/api/v1/settings/tautulli');
+  const {
+    data: dataTautulli,
+    error: errorTautulli,
+    mutate: revalidateTautulli,
+  } = useSWR<TautulliSettings>(
+    isSetupSettings ? null : '/api/v1/settings/tautulli'
+  );
   const { data: dataSync, mutate: revalidateSync } = useSWR<SyncStatus>(
     '/api/v1/settings/plex/sync',
     {
-      refreshInterval: 1000,
+      refreshInterval: (latestData) => (latestData?.running ? 1000 : 10000),
     }
   );
   const intl = useIntl();
@@ -244,11 +250,18 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
 
     try {
       await axios.post('/api/v1/settings/plex/library/sync');
-    } catch {
-      addToast(intl.formatMessage(messages.toastPlexSyncFailure), {
-        autoDismiss: true,
-        appearance: 'error',
-      });
+    } catch (e) {
+      addToast(
+        e?.response?.data?.message === 'CONNECTION_ERROR'
+          ? intl.formatMessage(messages.invalidurlerror, {
+              mediaServerName: 'Plex',
+            })
+          : intl.formatMessage(messages.toastPlexSyncFailure),
+        {
+          autoDismiss: true,
+          appearance: 'error',
+        }
+      );
     } finally {
       setIsSyncing(false);
       revalidate();
@@ -315,10 +328,6 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
       await axios.put(`/api/v1/settings/plex/library/${libraryId}`, {
         enabled: !activeLibraries.includes(libraryId),
       });
-
-      if (onComplete) {
-        onComplete();
-      }
     } catch {
       addToast(intl.formatMessage(messages.toggleLibraryFailure), {
         autoDismiss: true,
@@ -330,7 +339,11 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
     }
   };
 
-  if ((!data || !dataTautulli) && !error) {
+  if (
+    (!data || (!isSetupSettings && !dataTautulli)) &&
+    !error &&
+    !errorTautulli
+  ) {
     return <LoadingSpinner />;
   }
   return (
@@ -346,7 +359,7 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
         <p className="description">
           {intl.formatMessage(messages.plexsettingsDescription)}
         </p>
-        {!!onComplete && (
+        {isSetupSettings && (
           <div className="section">
             <Alert
               title={intl.formatMessage(messages.settingUpPlexDescription, {
@@ -730,7 +743,7 @@ const SettingsPlex = ({ onComplete }: SettingsPlexProps) => {
           </div>
         </div>
       </div>
-      {!onComplete && (
+      {!isSetupSettings && (
         <>
           <div className="mb-6 mt-10">
             <h3 className="heading">

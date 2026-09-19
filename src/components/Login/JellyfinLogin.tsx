@@ -99,6 +99,7 @@ const JellyfinLogin = ({ revalidate, serverType }: JellyfinLoginProps) => {
             let errorMessage = messages.loginerror;
             switch (e?.response?.data?.message) {
               case ApiErrorCode.InvalidUrl:
+              case ApiErrorCode.ConnectionError:
                 errorMessage = messages.invalidurlerror;
                 break;
               case ApiErrorCode.InvalidCredentials:
