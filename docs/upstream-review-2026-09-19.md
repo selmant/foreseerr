@@ -67,4 +67,4 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `34b28d0a` | Applied | Confirm PROCESSING movies/shows against Radarr/Sonarr by TMDB/TVDB id before orphan cleanup. A lookup miss still resets; a hit or unreachable server leaves the item processing. Scanner tests use Foreseerr mock timers. |
 | `2bebae83` | Applied | Remap leftover Overseerr `DELETED=6` media/season rows to Seerr `DELETED=7`, leaving true blocklist rows at 6. Registered the SQLite and Postgres migrations in the compiled binary registry. |
 | `6fa7473d` | Applied | Replace `dawidd6/action-download-artifact` in the duplicate-issue workflow with `actions/download-artifact` plus a `gh` lookup of the last successful index rebuild. Foreseerr still installs the detector with Bun. |
-| `59d5947b` | Pending | fix(webpush): resolve push subscription bugs for multi-device and shared browsers (#3142) |
+| `59d5947b` | Applied | Register push subscriptions by endpoint, rotate stale rows by `auth` instead of user-agent, resubscribe only when the browser subscription belongs to this user, and time-box push cleanup on logout. Adapted to Foreseerr's React Router dropdown. |

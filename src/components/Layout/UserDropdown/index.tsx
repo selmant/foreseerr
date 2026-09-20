@@ -2,6 +2,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import MiniQuotaDisplay from '@app/components/Layout/UserDropdown/MiniQuotaDisplay';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { unsubscribeToPushNotifications } from '@app/utils/pushSubscriptionHelpers';
 import {
   Menu,
   MenuButton,
@@ -18,6 +19,12 @@ import axios from 'axios';
 import { Fragment, forwardRef } from 'react';
 import { useIntl } from 'react-intl';
 import { Link, type LinkProps } from 'react-router';
+
+const PUSH_CLEANUP_REQUEST_TIMEOUT_MS = 3000;
+// exceeds the request timeout so that fires first; the remainder covers the
+// unsubscribe step, whose serviceWorker.ready never settles without an active
+// registration
+const PUSH_CLEANUP_TOTAL_TIMEOUT_MS = PUSH_CLEANUP_REQUEST_TIMEOUT_MS + 2000;
 
 const messages = defineMessages('components.Layout.UserDropdown', {
   myprofile: 'Profile',
@@ -44,6 +51,38 @@ const UserDropdown = () => {
   const { user, revalidate, hasPermission } = useUser();
 
   const logout = async () => {
+    const cleanUpPushSubscription = async () => {
+      try {
+        const unsubscribedEndpoint = await unsubscribeToPushNotifications(
+          user?.id
+        );
+
+        if (unsubscribedEndpoint) {
+          await axios.delete(
+            `/api/v1/user/${user?.id}/pushSubscription/${encodeURIComponent(
+              unsubscribedEndpoint
+            )}`,
+            { timeout: PUSH_CLEANUP_REQUEST_TIMEOUT_MS }
+          );
+        }
+      } catch {
+        // continue logout regardless
+      }
+    };
+
+    await Promise.race([
+      cleanUpPushSubscription(),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, PUSH_CLEANUP_TOTAL_TIMEOUT_MS);
+      }),
+    ]);
+
+    try {
+      localStorage.removeItem('pushNotificationsEnabled');
+    } catch {
+      // continue logout regardless
+    }
+
     const response = await axios.post('/api/v1/auth/logout');
 
     if (response.data?.status === 'ok') {
