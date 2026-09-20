@@ -23,7 +23,7 @@ import * as OpenApiValidator from 'express-openapi-validator';
 import session from 'express-session';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { before, beforeEach, describe, it, mock } from 'node:test';
+import { after, before, beforeEach, describe, it, mock } from 'node:test';
 import request from 'supertest';
 
 const API_SPEC_PATH = join(__dirname, '../../../seerr-api.yml');
@@ -101,6 +101,12 @@ function createApp() {
 
 before(async () => {
   app = createApp();
+});
+
+after(() => {
+  requestDeviceCodeMock.mock.restore();
+  pollForTokenMock.mock.restore();
+  getUserSettingsMock.mock.restore();
 });
 
 setupTestDb();

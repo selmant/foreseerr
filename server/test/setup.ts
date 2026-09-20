@@ -1,5 +1,6 @@
 import dataSource, { getRepository } from '@server/datasource';
 import { MappingSourceUsage } from '@server/entity/MappingSourceUsage';
+import { scheduledJobs, stopJobs } from '@server/job/schedule';
 import { resetTmdbValidityCache } from '@server/lib/discover/validity';
 import { clearNegativeCache, resetBudgets } from '@server/lib/mapping/budget';
 import { resetMappingGapBuffer } from '@server/lib/mapping/gaps';
@@ -13,7 +14,7 @@ import { after, afterEach, before } from 'node:test';
 // can be refused
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1']);
 
-const blocked = new Set<string>();
+const blocked = new Map<string, string>();
 
 function stripPort(host: string): string {
   const bracketed = host.match(/^\[(.+)\]/);
@@ -57,7 +58,9 @@ function blockOutboundRequests(
 
       if (!LOOPBACK.has(hostname)) {
         const target = `${scheme}//${hostname}`;
-        blocked.add(target);
+        if (!blocked.has(target)) {
+          blocked.set(target, new Error(`blocked ${target}`).stack ?? target);
+        }
         throw new Error(
           `Blocked outbound request to ${target}. Stub the API client this test uses, or set ALLOW_NETWORK=true.`
         );
@@ -78,7 +81,9 @@ if (process.env.ALLOW_NETWORK != 'true') {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (!LOOPBACK.has(url.hostname)) {
       const target = `${url.protocol}//${url.hostname}`;
-      blocked.add(target);
+      if (!blocked.has(target)) {
+        blocked.set(target, new Error(`blocked ${target}`).stack ?? target);
+      }
       throw new Error(
         `Blocked outbound request to ${target}. Stub the API client this test uses, or set ALLOW_NETWORK=true.`
       );
@@ -92,6 +97,9 @@ before(() => {
 });
 
 afterEach(async () => {
+  if (scheduledJobs.length > 0) {
+    stopJobs();
+  }
   resetMappingGapBuffer();
   resetSettings();
   resetBudgets();
@@ -111,8 +119,12 @@ after(() => {
 
   // callers that swallow the error would otherwise leave the suite green
   if (blocked.size) {
+    const hosts = [...blocked.keys()].join(', ');
+    const stacks = [...blocked.entries()]
+      .map(([host, stack]) => `${host}\n${stack}`)
+      .join('\n');
     throw new Error(
-      `Test reached the network: ${[...blocked].join(', ')}. Stub the API client this test uses.`
+      `Test reached the network: ${hosts}. Stub the API client this test uses.\n${stacks}`
     );
   }
 });

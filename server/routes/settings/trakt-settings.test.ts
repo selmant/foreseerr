@@ -1,3 +1,4 @@
+import AnilistAPI from '@server/api/anilist';
 import JellyfinAPI from '@server/api/jellyfin';
 import MdblistAPI from '@server/api/mdblist';
 import TraktAPI from '@server/api/trakt';
@@ -24,7 +25,7 @@ import * as OpenApiValidator from 'express-openapi-validator';
 import session from 'express-session';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { before, beforeEach, describe, it, mock } from 'node:test';
+import { after, before, beforeEach, describe, it, mock } from 'node:test';
 import request from 'supertest';
 
 const API_SPEC_PATH = join(__dirname, '../../../seerr-api.yml');
@@ -96,6 +97,14 @@ async function loginAsAdmin() {
 }
 
 describe('Trakt settings credential safety', () => {
+  const pingAnilist = mock.method(AnilistAPI.prototype, 'ping', async () => {
+    return undefined;
+  });
+
+  after(() => {
+    pingAnilist.mock.restore();
+  });
+
   beforeEach(() => {
     clearSyncCache();
     clearIntegrationHealthCache();
