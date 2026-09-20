@@ -4,8 +4,15 @@ import { MappingCluster } from '@server/entity/MappingCluster';
 import { MappingLink } from '@server/entity/MappingLink';
 import { upsertCluster } from '@server/lib/mapping/graph';
 import { setupTestDb } from '@server/test/db';
+import axios, { type AxiosAdapter } from 'axios';
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it, type TestContext } from 'node:test';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  it,
+  type TestContext,
+} from 'node:test';
 import {
   catalogCandidates,
   catalogWatchlistItems,
@@ -23,16 +30,37 @@ import {
 
 setupTestDb();
 
+const previousAxiosAdapter = axios.defaults.adapter;
+
 beforeEach(async () => {
+  if (process.env.ALLOW_NETWORK != 'true') {
+    // Title-search and live mapping fallthroughs swallow HTTP errors. Stub
+    // axios so those paths cannot reach the shared outbound-request guard.
+    axios.defaults.adapter = (async (config) => {
+      throw new Error(
+        `Blocked outbound request to ${String(config.baseURL ?? config.url)}. Stub the API client this test uses.`
+      );
+    }) as AxiosAdapter;
+  }
   for (const entity of [MappingLink, MappingCluster]) {
     await getRepository(entity).clear();
   }
+});
+
+afterEach(() => {
+  axios.defaults.adapter = previousAxiosAdapter;
 });
 
 const API_HEADERS = {
   Accept: 'application/json',
   'User-Agent': 'Foreseerr/dev (Simkl integration)',
   'simkl-api-key': 'invalid-test',
+};
+
+const skipUnlessNetwork = (t: TestContext): boolean => {
+  if (process.env.ALLOW_NETWORK == 'true') return true;
+  t.skip('Live network checks require ALLOW_NETWORK=true');
+  return false;
 };
 
 /** Captured `/movies/trending` row: list payloads use `ids.simkl_id`, not `ids.simkl`. */
@@ -50,6 +78,7 @@ const liveJson = async (
   url: string,
   reason: string
 ): Promise<unknown | undefined> => {
+  if (!skipUnlessNetwork(t)) return undefined;
   try {
     const response = await fetch(url, { headers: API_HEADERS });
     if (response.status !== 200) {
@@ -70,6 +99,7 @@ const skipUnlessHttpOk = async (
   url: string,
   reason: string
 ): Promise<boolean> => {
+  if (!skipUnlessNetwork(t)) return false;
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': API_HEADERS['User-Agent'] },
@@ -235,6 +265,7 @@ describe('simkl catalog mapping', () => {
   });
 
   it('loads CDN trending through SimklAPI.getCdnCatalog', async (t) => {
+    if (!skipUnlessNetwork(t)) return;
     let payload: unknown;
     try {
       payload = await new SimklAPI({
@@ -255,6 +286,7 @@ describe('simkl catalog mapping', () => {
   });
 
   it('loads /movies/trending through SimklAPI.getCatalog', async (t) => {
+    if (!skipUnlessNetwork(t)) return;
     let payload: unknown;
     try {
       payload = await new SimklAPI({
@@ -344,6 +376,7 @@ describe('simkl catalog mapping', () => {
   });
 
   it('CDN movie tmdb ids exist on themoviedb.org', async (t) => {
+    if (!skipUnlessNetwork(t)) return;
     let payload: unknown;
     try {
       payload = await new SimklAPI({
@@ -368,6 +401,7 @@ describe('simkl catalog mapping', () => {
   });
 
   it('loads live anime detail ids.tmdb', async (t) => {
+    if (!skipUnlessNetwork(t)) return;
     const client = new SimklAPI({ clientId: 'invalid-test' });
     let payload: unknown;
     try {
@@ -880,6 +914,7 @@ describe('simkl TMDB resolution never infers media type', () => {
   });
 
   it('uses a high-confidence TMDB title hit in the declared type only', async (t) => {
+    if (!skipUnlessNetwork(t)) return;
     const resolution = await resolveSimklTmdbId(
       {
         ...animeCandidate({}, 'THE RIBBON HERO'),

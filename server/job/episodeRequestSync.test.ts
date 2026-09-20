@@ -12,6 +12,7 @@ import SonarrAPI, {
   type EpisodeResult,
   type SonarrSeries,
 } from '@server/api/servarr/sonarr';
+import TheMovieDb from '@server/api/themoviedb';
 import Tvdb from '@server/api/tvdb';
 import {
   MediaRequestStatus,
@@ -30,11 +31,45 @@ import episodeRequestSync from './episodeRequestSync';
 
 setupTestDb();
 
-afterEach(() => mock.restoreAll());
+afterEach(() => {
+  delete (TheMovieDb.prototype as { get?: unknown }).get;
+  mock.restoreAll();
+});
 
 beforeEach(() => {
   getSettings().sonarr = [];
   mock.method(MediaRequest, 'sendNotification', async () => undefined);
+  // Saving an approved request runs MediaRequestSubscriber.sendToSonarr,
+  // which fetches TMDB and swallows failures.
+  Object.defineProperty(TheMovieDb.prototype, 'get', {
+    configurable: true,
+    value: async (endpoint: string) => {
+      const tvMatch = /^\/tv\/(\d+)/.exec(endpoint);
+      if (tvMatch) {
+        return {
+          id: Number(tvMatch[1]),
+          name: 'Test Show',
+          original_language: 'en',
+          genres: [],
+          keywords: { results: [] },
+          external_ids: {},
+          seasons: [],
+        };
+      }
+      const movieMatch = /^\/movie\/(\d+)/.exec(endpoint);
+      if (movieMatch) {
+        return {
+          id: Number(movieMatch[1]),
+          title: 'Test Movie',
+          original_language: 'en',
+          genres: [],
+          keywords: { keywords: [] },
+          external_ids: {},
+        };
+      }
+      throw new Error(`Unexpected TMDB endpoint ${endpoint}`);
+    },
+  });
 });
 
 const sonarrEpisode = (

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { before, beforeEach, describe, it, mock } from 'node:test';
+import { afterEach, before, beforeEach, describe, it, mock } from 'node:test';
 
-import TheMovieDb from '@server/api/themoviedb';
 import type {
   TmdbMovieDetails,
   TmdbTvDetails,
@@ -27,6 +26,11 @@ import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
+import axios, {
+  type AxiosAdapter,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import type { Express } from 'express';
 import express from 'express';
 import session from 'express-session';
@@ -44,36 +48,49 @@ const tvSeasonsById = new Map<
   { season_number: number; episode_count: number }[]
 >();
 
-Object.defineProperty(TheMovieDb.prototype, 'getMovie', {
-  get() {
-    return async ({ movieId }: { movieId: number }) =>
-      ({
-        id: movieId,
+const previousAxiosAdapter = axios.defaults.adapter;
+
+function tmdbAxiosAdapter(
+  config: InternalAxiosRequestConfig
+): Promise<AxiosResponse> {
+  const url = new URL(
+    String(config.url ?? ''),
+    config.baseURL || 'https://api.themoviedb.org'
+  );
+  const movieMatch = /\/movie\/(\d+)/.exec(url.pathname);
+  const data = movieMatch
+    ? ({
+        id: Number(movieMatch[1]),
         genres: [],
         original_language: 'en',
         keywords: { keywords: [] },
         external_ids: {},
-      }) as unknown as TmdbMovieDetails;
-  },
-  set() {},
-  configurable: true,
-});
+      } as unknown as TmdbMovieDetails)
+    : (() => {
+        const tvMatch = /\/tv\/(\d+)/.exec(url.pathname);
+        if (!tvMatch) {
+          throw new Error(`Unexpected TMDB endpoint ${url.pathname}`);
+        }
+        const tvId = Number(tvMatch[1]);
+        return {
+          id: tvId,
+          genres: [],
+          original_language: 'en',
+          keywords: { results: [] },
+          external_ids: {},
+          seasons: tvSeasonsById.get(tvId) ?? [],
+        } as unknown as TmdbTvDetails;
+      })();
 
-Object.defineProperty(TheMovieDb.prototype, 'getTvShow', {
-  get() {
-    return async ({ tvId }: { tvId: number }) =>
-      ({
-        id: tvId,
-        genres: [],
-        original_language: 'en',
-        keywords: { results: [] },
-        external_ids: {},
-        seasons: tvSeasonsById.get(tvId) ?? [],
-      }) as unknown as TmdbTvDetails;
-  },
-  set() {},
-  configurable: true,
-});
+  return Promise.resolve({
+    data,
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config,
+    request: {},
+  } as AxiosResponse);
+}
 
 function configureOverrideServer(mediaType: MediaType, id: number): void {
   const common = {
@@ -141,6 +158,11 @@ beforeEach(() => {
   tvSeasonsById.clear();
   getSettings().radarr = [];
   getSettings().sonarr = [];
+  axios.defaults.adapter = tmdbAxiosAdapter as AxiosAdapter;
+});
+
+afterEach(() => {
+  axios.defaults.adapter = previousAxiosAdapter;
 });
 
 setupTestDb();

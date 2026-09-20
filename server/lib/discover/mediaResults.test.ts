@@ -1,3 +1,4 @@
+import TheMovieDb from '@server/api/themoviedb';
 import {
   MediaRequestStatus,
   MediaStatus,
@@ -10,7 +11,7 @@ import { User } from '@server/entity/User';
 import { getSettings } from '@server/lib/settings';
 import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import {
   annotateProviderActiveRequests,
   findRelatedMedia,
@@ -19,6 +20,30 @@ import {
 } from './mediaResults';
 
 setupTestDb();
+
+beforeEach(() => {
+  Object.defineProperty(TheMovieDb.prototype, 'get', {
+    configurable: true,
+    value: async (endpoint: string) => {
+      const movieMatch = /^\/movie\/(\d+)/.exec(endpoint);
+      if (movieMatch) {
+        return {
+          id: Number(movieMatch[1]),
+          title: 'Test Movie',
+          original_language: 'en',
+          genres: [],
+          keywords: { keywords: [] },
+          external_ids: {},
+        };
+      }
+      throw new Error(`Unexpected TMDB endpoint ${endpoint}`);
+    },
+  });
+});
+
+afterEach(() => {
+  delete (TheMovieDb.prototype as { get?: unknown }).get;
+});
 
 describe('Discover related media lookup', () => {
   it('keeps movie and TV entries with the same TMDB id separate', () => {

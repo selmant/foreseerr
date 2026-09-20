@@ -15,12 +15,13 @@ import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import Season from '@server/entity/Season';
 import { User } from '@server/entity/User';
+import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import type { Library } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import { setupTestDb } from '@server/test/db';
 import { runWithMockTimers } from '@server/test/runWithMockTimers';
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it } from 'node:test';
+import { after, beforeEach, describe, it } from 'node:test';
 
 // --- Mock animeList.sync to avoid filesystem/network I/O in tests ---
 Object.defineProperty(animeList, 'sync', {
@@ -65,12 +66,26 @@ let getTvShowImpl: (args: {
   language?: string;
 }) => Promise<TmdbTvDetails> = async () => fakeTmdbShow(1);
 
+const originalGetTvShowForScan = TheMovieDb.prototype.getTvShowForScan;
+
 TheMovieDb.prototype.getTvShowForScan = async (args: {
   tvId: number;
   language?: string;
 }) => getTvShowImpl(args);
 
-import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
+after(() => {
+  TheMovieDb.prototype.getTvShowForScan = originalGetTvShowForScan;
+});
+
+// both are assigned in the constructor, so the prototype stubs miss the
+// instance jellyfinFullScanner built when it was first imported
+for (const method of ['getTvShow', 'getTvShowForScan'] as const) {
+  Object.defineProperty(jellyfinFullScanner.tmdb, method, {
+    value: async (args: { tvId: number; language?: string }) =>
+      getTvShowImpl(args),
+    configurable: true,
+  });
+}
 
 setupTestDb();
 

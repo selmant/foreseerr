@@ -21,7 +21,7 @@ import { getSettings } from '@server/lib/settings';
 import { setupTestDb } from '@server/test/db';
 import { runWithMockTimers } from '@server/test/runWithMockTimers';
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it, mock } from 'node:test';
+import { after, beforeEach, describe, it, mock } from 'node:test';
 
 let getSeriesImpl: () => Promise<SonarrSeries[]> = async () => [];
 SonarrAPI.prototype.getSeries = async () => getSeriesImpl();
@@ -80,6 +80,10 @@ let getShowByTvdbIdImpl: (args: {
   language?: string;
 }) => Promise<TmdbTvDetails> = async () => fakeTmdbShow(1);
 
+const originalGetShowByTvdbIdForScan =
+  TheMovieDb.prototype.getShowByTvdbIdForScan;
+const originalGetTvShowForScan = TheMovieDb.prototype.getTvShowForScan;
+
 TheMovieDb.prototype.getShowByTvdbIdForScan = async function (args) {
   return getShowByTvdbIdImpl(args);
 };
@@ -93,6 +97,21 @@ TheMovieDb.prototype.getTvShowForScan = async (args: {
   tvId: number;
   language?: string;
 }) => getTvShowImpl(args);
+
+after(() => {
+  TheMovieDb.prototype.getShowByTvdbIdForScan = originalGetShowByTvdbIdForScan;
+  TheMovieDb.prototype.getTvShowForScan = originalGetTvShowForScan;
+});
+
+// both are assigned in the constructor, so the prototype stubs miss the instance
+// sonarrScanner built when it was first imported
+for (const method of ['getTvShow', 'getTvShowForScan'] as const) {
+  Object.defineProperty(sonarrScanner.tmdb, method, {
+    value: async (args: { tvId: number; language?: string }) =>
+      getTvShowImpl(args),
+    configurable: true,
+  });
+}
 
 mock.method(MediaRequest, 'sendNotification', async () => undefined);
 

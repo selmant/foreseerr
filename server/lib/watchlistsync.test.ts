@@ -11,12 +11,14 @@ import { MediaRequest } from '@server/entity/MediaRequest';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { Permission } from '@server/lib/permissions';
+import watchlistSync from '@server/lib/watchlistsync';
 import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it } from 'node:test';
+import { after, beforeEach, describe, it } from 'node:test';
 
 let watchlistItems: PlexWatchlistItem[] = [];
 
+const originalGetWatchlist = PlexTvAPI.prototype.getWatchlist;
 PlexTvAPI.prototype.getWatchlist = async () => ({
   offset: 0,
   size: 20,
@@ -26,6 +28,10 @@ PlexTvAPI.prototype.getWatchlist = async () => ({
 
 let requestCalls: { mediaId: number; mediaType: MediaType }[] = [];
 
+const originalMediaRequest = Object.getOwnPropertyDescriptor(
+  MediaRequest,
+  'request'
+);
 Object.defineProperty(MediaRequest, 'request', {
   value: async (body: { mediaId: number; mediaType: MediaType }) => {
     requestCalls.push({ mediaId: body.mediaId, mediaType: body.mediaType });
@@ -35,7 +41,12 @@ Object.defineProperty(MediaRequest, 'request', {
   configurable: true,
 });
 
-import watchlistSync from '@server/lib/watchlistsync';
+after(() => {
+  PlexTvAPI.prototype.getWatchlist = originalGetWatchlist;
+  if (originalMediaRequest) {
+    Object.defineProperty(MediaRequest, 'request', originalMediaRequest);
+  }
+});
 
 setupTestDb();
 

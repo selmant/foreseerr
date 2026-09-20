@@ -1,4 +1,4 @@
-import type TheMovieDb from '@server/api/themoviedb';
+import TheMovieDb from '@server/api/themoviedb';
 import { getRepository } from '@server/datasource';
 import { MappingCluster } from '@server/entity/MappingCluster';
 import { MappingGap } from '@server/entity/MappingGap';
@@ -10,7 +10,7 @@ import { upsertCluster } from '@server/lib/mapping/graph';
 import mappingService from '@server/lib/mapping/service';
 import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import { confirmOrRepair, resetTmdbValidityCache } from './validity';
 
 setupTestDb();
@@ -40,7 +40,23 @@ const fakeTmdb = (alive: (key: string) => boolean = (key) => !DEAD.has(key)) =>
     },
   }) as unknown as TheMovieDb;
 
+afterEach(() => {
+  delete (TheMovieDb.prototype as { get?: unknown }).get;
+});
+
 beforeEach(async () => {
+  Object.defineProperty(TheMovieDb.prototype, 'get', {
+    configurable: true,
+    value: async (endpoint: string) => {
+      if (endpoint.startsWith('/find/') || endpoint.startsWith('/movie/')) {
+        return { movie_results: [], tv_results: [], id: 0 };
+      }
+      if (endpoint.startsWith('/tv/')) {
+        return { id: 0, seasons: [], external_ids: {} };
+      }
+      throw new Error(`Unexpected TMDB endpoint ${endpoint}`);
+    },
+  });
   resetTmdbValidityCache();
   clearNegativeCache();
   mappingService.invalidate();
