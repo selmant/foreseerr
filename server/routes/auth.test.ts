@@ -11,6 +11,7 @@ import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { stopJobs } from '@server/job/schedule';
 import PreparedEmail from '@server/lib/email';
+import ImageProxy from '@server/lib/imageproxy';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
@@ -440,6 +441,61 @@ describe('POST /auth/jellyfin/quickconnect/authenticate', () => {
     });
     assert.strictEqual(updatedUser.jellyfinAuthToken, 'fake-qc-access-token');
     assert.notStrictEqual(updatedUser.jellyfinDeviceId, 'old-device-id');
+  });
+
+  it('refreshes avatarVersion/avatarETag when the remote avatar has changed', async (t) => {
+    t.mock.method(axios, 'head', async () => ({
+      status: 200,
+      headers: { 'last-modified': 'Wed, 01 Jan 2025 00:00:00 GMT' },
+    }));
+    t.mock.method(
+      ImageProxy.prototype,
+      'clearCachedImage',
+      async () => undefined
+    );
+    t.mock.method(ImageProxy.prototype, 'getImage', async () => ({
+      imageBuffer: Buffer.from('fake-quickconnect-avatar-bytes'),
+      meta: {
+        revalidateAfter: 3600,
+        curRevalidate: 3600,
+        isStale: false,
+        etag: 'mock-meta-etag',
+        extension: 'jpg',
+        cacheKey: 'mock-cache-key',
+        cacheMiss: true,
+      },
+    }));
+
+    const userRepo = getRepository(User);
+    const existingUser = new User({
+      email: 'qc-avatar-change@seerr.dev',
+      jellyfinUsername: 'quickconnectuser',
+      jellyfinUserId: 'jf-qc-user-001',
+      jellyfinDeviceId: 'old-device-id',
+      permissions: 0,
+      avatar: '/avatarproxy/jf-qc-user-001?v=old',
+      avatarVersion: 'old-version',
+      avatarETag: 'old-etag',
+      userType: UserType.JELLYFIN,
+    });
+    await userRepo.save(existingUser);
+
+    const agent = request.agent(app);
+    const res = await agent
+      .post('/auth/jellyfin/quickconnect/authenticate')
+      .send({ secret: 'abc123def456abc123def456' });
+
+    assert.strictEqual(res.status, 200);
+
+    const updatedUser = await userRepo.findOneOrFail({
+      where: { jellyfinUserId: 'jf-qc-user-001' },
+    });
+    assert.notStrictEqual(updatedUser.avatarVersion, 'old-version');
+    assert.notStrictEqual(updatedUser.avatarETag, 'old-etag');
+    assert.notStrictEqual(
+      updatedUser.avatar,
+      '/avatarproxy/jf-qc-user-001?v=old'
+    );
   });
 
   it('creates a new user when newPlexLogin is enabled and user does not exist', async () => {

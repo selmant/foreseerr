@@ -862,6 +862,26 @@ authRoutes.post(
         await userRepository.save(user);
       }
 
+      if (user.jellyfinUserId && process.env.FORESEERR_RUNTIME !== 'desktop') {
+        try {
+          const { changed } = await checkAvatarChanged(user);
+
+          if (changed) {
+            user.avatar = getUserAvatarUrl(user);
+            await userRepository.save(user);
+            logger.debug('Avatar updated during Quick Connect login', {
+              userId: user.id,
+              jellyfinUserId: user.jellyfinUserId,
+            });
+          }
+        } catch (error) {
+          logger.error('Error handling avatar during Quick Connect login', {
+            label: 'Auth',
+            errorMessage: error.message,
+          });
+        }
+      }
+
       // Set session
       if (req.session) {
         req.session.userId = user.id;
