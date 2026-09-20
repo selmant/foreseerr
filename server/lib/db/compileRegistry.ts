@@ -114,6 +114,7 @@ import { IndexMappingSourceKey1787430000000 as sqlite_1787430000000_IndexMapping
 import { MappingLinkProvenance1787440000000 as sqlite_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000 } from '@server/migration/sqlite/1787440000000-MappingLinkProvenance';
 import { AddWatchAheadEpisodeRequests1787500000000 as sqlite_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000 } from '@server/migration/sqlite/1787500000000-AddWatchAheadEpisodeRequests';
 import { RemapDiscoverSliderTypes1787510000000 as sqlite_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000 } from '@server/migration/sqlite/1787510000000-RemapDiscoverSliderTypes';
+import { RemapOverseerrDeletedStatus1789257612345 as sqlite_1789254652493_RemapOverseerrDeletedStatus_RemapOverseerrDeletedStatus1789257612345 } from '@server/migration/sqlite/1789254652493-RemapOverseerrDeletedStatus';
 import { InitialMigration1734786061496 as pg_1734786061496_InitialMigration_InitialMigration1734786061496 } from '@server/migration/postgres/1734786061496-InitialMigration';
 import { AddTelegramMessageThreadId1734786596045 as pg_1734786596045_AddTelegramMessageThreadId_AddTelegramMessageThreadId1734786596045 } from '@server/migration/postgres/1734786596045-AddTelegramMessageThreadId';
 import { AddOverrideRules1734805738349 as pg_1734805738349_AddOverrideRules_AddOverrideRules1734805738349 } from '@server/migration/postgres/1734805738349-AddOverrideRules';
@@ -160,6 +161,7 @@ import { IndexMappingSourceKey1787430000000 as pg_1787430000000_IndexMappingSour
 import { MappingLinkProvenance1787440000000 as pg_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000 } from '@server/migration/postgres/1787440000000-MappingLinkProvenance';
 import { AddWatchAheadEpisodeRequests1787500000000 as pg_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000 } from '@server/migration/postgres/1787500000000-AddWatchAheadEpisodeRequests';
 import { RemapDiscoverSliderTypes1787510000000 as pg_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000 } from '@server/migration/postgres/1787510000000-RemapDiscoverSliderTypes';
+import { RemapOverseerrDeletedStatus1789257612345 as pg_1789254652580_RemapOverseerrDeletedStatus_RemapOverseerrDeletedStatus1789257612345 } from '@server/migration/postgres/1789254652580-RemapOverseerrDeletedStatus';
 
 function asEntity<T extends { name: string }>(ctor: T, name: string): T {
   Object.defineProperty(ctor, 'name', { value: name, configurable: true });
@@ -288,6 +290,7 @@ export const compileSqliteMigrations = [
   sqlite_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000,
   sqlite_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000,
   sqlite_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000,
+  sqlite_1789254652493_RemapOverseerrDeletedStatus_RemapOverseerrDeletedStatus1789257612345,
 ] as const;
 
 export const compilePostgresMigrations = [
@@ -337,4 +340,5 @@ export const compilePostgresMigrations = [
   pg_1787440000000_MappingLinkProvenance_MappingLinkProvenance1787440000000,
   pg_1787500000000_AddWatchAheadEpisodeRequests_AddWatchAheadEpisodeRequests1787500000000,
   pg_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000,
+  pg_1789254652580_RemapOverseerrDeletedStatus_RemapOverseerrDeletedStatus1789257612345,
 ] as const;

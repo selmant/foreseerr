@@ -65,6 +65,6 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `d4eeea85` | Applied | Refresh the Jellyfin avatar on Quick Connect login the same way password login already does, skipping the desktop runtime so a slow media-server image route cannot stall the session response. Route regression covers a changed remote avatar. |
 | `b2116523` | Applied | Drop the unused media-server auth header from the avatar ImageProxy. Foreseerr had already switched that header to `Authorization` / `MediaBrowser`; the proxy still does not need it to fetch avatars. |
 | `34b28d0a` | Applied | Confirm PROCESSING movies/shows against Radarr/Sonarr by TMDB/TVDB id before orphan cleanup. A lookup miss still resets; a hit or unreachable server leaves the item processing. Scanner tests use Foreseerr mock timers. |
-| `2bebae83` | Pending | fix(db): remap leftover Overseerr DELETED status after migration (#3510) |
+| `2bebae83` | Applied | Remap leftover Overseerr `DELETED=6` media/season rows to Seerr `DELETED=7`, leaving true blocklist rows at 6. Registered the SQLite and Postgres migrations in the compiled binary registry. |
 | `6fa7473d` | Pending | ci: remove third party action dawidd6/action-download-artifact (#3480) |
 | `59d5947b` | Pending | fix(webpush): resolve push subscription bugs for multi-device and shared browsers (#3142) |
