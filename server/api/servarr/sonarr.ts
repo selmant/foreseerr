@@ -150,6 +150,23 @@ class SonarrAPI extends ServarrBase<{
     super({ url, apiKey, apiName: 'Sonarr', cacheName: 'sonarr' });
   }
 
+  public async getLibrarySeriesByTvdbId(
+    tvdbId: number
+  ): Promise<SonarrSeries[]> {
+    try {
+      const response = await this.axios.get<SonarrSeries[]>('/series', {
+        params: { tvdbId },
+      });
+
+      return response.data;
+    } catch (e) {
+      throw new Error(
+        `[Sonarr] Failed to retrieve series by TVDB ID: ${e.message}`,
+        { cause: e }
+      );
+    }
+  }
+
   public async getSeries(): Promise<SonarrSeries[]> {
     try {
       const response = await this.axios.get<SonarrSeries[]>('/series');

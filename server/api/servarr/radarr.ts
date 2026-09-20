@@ -156,6 +156,23 @@ class RadarrAPI extends ServarrBase<{ movieId: number }> {
     }
   }
 
+  public async getLibraryMoviesByTmdbId(
+    tmdbId: number
+  ): Promise<RadarrMovie[]> {
+    try {
+      const response = await this.axios.get<RadarrMovie[]>('/movie', {
+        params: { tmdbId },
+      });
+
+      return response.data;
+    } catch (e) {
+      throw new Error(
+        `[Radarr] Failed to retrieve movies by TMDB ID: ${e.message}`,
+        { cause: e }
+      );
+    }
+  }
+
   public async getCalendar(
     start: Date | string,
     end: Date | string,

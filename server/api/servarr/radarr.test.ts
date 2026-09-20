@@ -119,6 +119,25 @@ describe('RadarrAPI getMovieByTmdbId', () => {
   });
 });
 
+describe('RadarrAPI getLibraryMoviesByTmdbId', () => {
+  afterEach(() => mock.restoreAll());
+
+  it('requests /movie filtered by tmdbId', async () => {
+    const radarr = buildRadarr();
+    const get = mock.method(getAxios(radarr), 'get', async () => ({
+      data: [{ id: 1, tmdbId: 550, title: 'Fight Club' }],
+    }));
+
+    const result = await radarr.getLibraryMoviesByTmdbId(550);
+
+    assert.strictEqual(result[0].tmdbId, 550);
+    assert.strictEqual(get.mock.calls[0].arguments[0], '/movie');
+    assert.deepStrictEqual(get.mock.calls[0].arguments[1], {
+      params: { tmdbId: 550 },
+    });
+  });
+});
+
 describe('RadarrAPI getCalendar', () => {
   afterEach(() => mock.restoreAll());
 

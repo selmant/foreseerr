@@ -26,6 +26,14 @@ import { after, beforeEach, describe, it, mock } from 'node:test';
 let getSeriesImpl: () => Promise<SonarrSeries[]> = async () => [];
 SonarrAPI.prototype.getSeries = async () => getSeriesImpl();
 
+let getLibrarySeriesByTvdbIdImpl: (
+  tvdbId: number
+) => Promise<SonarrSeries[]> = async () => [];
+const originalGetLibrarySeriesByTvdbId =
+  SonarrAPI.prototype.getLibrarySeriesByTvdbId;
+SonarrAPI.prototype.getLibrarySeriesByTvdbId = async (tvdbId) =>
+  getLibrarySeriesByTvdbIdImpl(tvdbId);
+
 function fakeTmdbShow(
   tmdbId: number,
   seasons: TmdbTvSeasonResult[] = [
@@ -101,6 +109,8 @@ TheMovieDb.prototype.getTvShowForScan = async (args: {
 after(() => {
   TheMovieDb.prototype.getShowByTvdbIdForScan = originalGetShowByTvdbIdForScan;
   TheMovieDb.prototype.getTvShowForScan = originalGetTvShowForScan;
+  SonarrAPI.prototype.getLibrarySeriesByTvdbId =
+    originalGetLibrarySeriesByTvdbId;
 });
 
 // both are assigned in the constructor, so the prototype stubs miss the instance
@@ -174,6 +184,7 @@ function configureSonarr(overrides: Partial<SonarrSettings>[] = [{}]): void {
 describe('Sonarr Scanner', () => {
   beforeEach(() => {
     getSeriesImpl = async () => [];
+    getLibrarySeriesByTvdbIdImpl = async () => [];
     getShowByTvdbIdImpl = async () => fakeTmdbShow(1);
     getTvShowImpl = async () => fakeTmdbShow(1);
   });
@@ -435,6 +446,79 @@ describe('Sonarr Scanner', () => {
         relations: ['seasons'],
       });
       assert.notStrictEqual(updatedExisting.status, MediaStatus.UNKNOWN);
+    });
+
+    it('does not reset a show added to Sonarr after the scan started', async () => {
+      const mediaRepository = getRepository(Media);
+
+      const media = new Media();
+      media.tmdbId = 1023;
+      media.tvdbId = 623;
+      media.mediaType = MediaType.TV;
+      media.status = MediaStatus.PROCESSING;
+      await mediaRepository.save(media);
+
+      configureSonarr([{ syncEnabled: true }]);
+      getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 111 })];
+      getLibrarySeriesByTvdbIdImpl = async (tvdbId) => [
+        fakeSonarrSeries({ tvdbId }),
+      ];
+
+      await runWithMockTimers(() => sonarrScanner.run());
+
+      const updated = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 1023 },
+      });
+      assert.strictEqual(updated.status, MediaStatus.PROCESSING);
+    });
+
+    it('does not reset a show when the server cannot be reached', async () => {
+      const mediaRepository = getRepository(Media);
+
+      const media = new Media();
+      media.tmdbId = 1024;
+      media.tvdbId = 624;
+      media.mediaType = MediaType.TV;
+      media.status = MediaStatus.PROCESSING;
+      await mediaRepository.save(media);
+
+      configureSonarr([{ syncEnabled: true }]);
+      getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 111 })];
+      getLibrarySeriesByTvdbIdImpl = async () => {
+        throw new Error('connect ECONNREFUSED');
+      };
+
+      await runWithMockTimers(() => sonarrScanner.run());
+
+      const updated = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 1024 },
+      });
+      assert.strictEqual(updated.status, MediaStatus.PROCESSING);
+    });
+
+    it('resets a show when the server returns no row matching its id', async () => {
+      const mediaRepository = getRepository(Media);
+
+      const media = new Media();
+      media.tmdbId = 1025;
+      media.tvdbId = 625;
+      media.mediaType = MediaType.TV;
+      media.status = MediaStatus.PROCESSING;
+      await mediaRepository.save(media);
+
+      configureSonarr([{ syncEnabled: true }]);
+      getSeriesImpl = async () => [fakeSonarrSeries({ tvdbId: 111 })];
+      getLibrarySeriesByTvdbIdImpl = async () => [
+        fakeSonarrSeries({ tvdbId: 111 }),
+        fakeSonarrSeries({ tvdbId: 222 }),
+      ];
+
+      await runWithMockTimers(() => sonarrScanner.run());
+
+      const updated = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 1025 },
+      });
+      assert.strictEqual(updated.status, MediaStatus.UNKNOWN);
     });
 
     it('skips shows without a tvdbId during cleanup', async () => {

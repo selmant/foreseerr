@@ -14,6 +14,25 @@ function getAxios(sonarr: SonarrAPI): AxiosInstance {
   return (sonarr as unknown as { axios: AxiosInstance }).axios;
 }
 
+describe('SonarrAPI getLibrarySeriesByTvdbId', () => {
+  afterEach(() => mock.restoreAll());
+
+  it('requests /series filtered by tvdbId', async () => {
+    const sonarr = buildSonarr();
+    const get = mock.method(getAxios(sonarr), 'get', async () => ({
+      data: [{ id: 1, tvdbId: 1234, title: 'Test Series' }],
+    }));
+
+    const result = await sonarr.getLibrarySeriesByTvdbId(1234);
+
+    assert.strictEqual(result[0].tvdbId, 1234);
+    assert.strictEqual(get.mock.calls[0].arguments[0], '/series');
+    assert.deepStrictEqual(get.mock.calls[0].arguments[1], {
+      params: { tvdbId: 1234 },
+    });
+  });
+});
+
 describe('SonarrAPI removeSeries', () => {
   afterEach(() => mock.restoreAll());
 
