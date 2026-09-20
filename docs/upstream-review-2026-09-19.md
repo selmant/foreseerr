@@ -63,7 +63,7 @@ Each row records an individual review. Applied commits carry an `Upstream-Commit
 | `a53f49bd` | Applied | Forward invalid avatar IDs and proxy fetch failures to the HTTP error handler so requests finish; delegate errors after headers have been sent. Applied the same handling to Foreseerr's additional AniList/Simkl image proxy validation, preserving its host allowlist, cache headers, and 400/403 statuses. |
 | `abe2f3bb` | Applied | Block outbound HTTP/HTTPS in unit tests, plus Bun `fetch`, and fail the suite if a swallowed call still reached the network. Stubbed imported scanner TMDB instances; restored `MediaRequest.request` after the watchlist suite so later files are not left with a stub. Live Simkl checks skip unless `ALLOW_NETWORK=true`. |
 | `d4eeea85` | Applied | Refresh the Jellyfin avatar on Quick Connect login the same way password login already does, skipping the desktop runtime so a slow media-server image route cannot stall the session response. Route regression covers a changed remote avatar. |
-| `b2116523` | Pending | refactor(avatarproxy): remove unused auth header from avatarproxy (#3503) |
+| `b2116523` | Applied | Drop the unused media-server auth header from the avatar ImageProxy. Foreseerr had already switched that header to `Authorization` / `MediaBrowser`; the proxy still does not need it to fetch avatars. |
 | `34b28d0a` | Pending | fix(scanner): confirm orphan candidates against the servers before declining (#3399) |
 | `2bebae83` | Pending | fix(db): remap leftover Overseerr DELETED status after migration (#3510) |
 | `6fa7473d` | Pending | ci: remove third party action dawidd6/action-download-artifact (#3480) |

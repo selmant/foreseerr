@@ -1,4 +1,3 @@
-import { buildJellyfinAuthorizationHeader } from '@server/api/jellyfin';
 import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
@@ -15,23 +14,15 @@ const router = Router();
 
 let _avatarImageProxy: ImageProxy | null = null;
 
-async function initAvatarImageProxy() {
+function initAvatarImageProxy() {
   if (!_avatarImageProxy) {
-    const userRepository = getRepository(User);
-    const admin = await userRepository.findOne({
-      where: { id: 1 },
-      select: ['id', 'jellyfinUserId', 'jellyfinDeviceId'],
-      order: { id: 'ASC' },
-    });
-    const deviceId = admin?.jellyfinDeviceId || 'BOT_seerr';
-    const authToken = getSettings().jellyfin.apiKey;
-    _avatarImageProxy = new ImageProxy('avatar', '', {
-      headers: {
-        Authorization: buildJellyfinAuthorizationHeader(authToken, deviceId),
-      },
-    });
+    _avatarImageProxy = new ImageProxy('avatar', '');
   }
   return _avatarImageProxy;
+}
+
+export function resetAvatarImageProxy(): void {
+  _avatarImageProxy = null;
 }
 
 function getJellyfinAvatarUrl(userId: string) {
@@ -84,7 +75,7 @@ export async function checkAvatarChanged(
       return { changed: false, etag: user.avatarETag ?? undefined };
     }
 
-    const avatarImageCache = await initAvatarImageProxy();
+    const avatarImageCache = initAvatarImageProxy();
     await avatarImageCache.clearCachedImage(jellyfinAvatarUrl);
     const imageData = await avatarImageCache.getImage(
       jellyfinAvatarUrl,
@@ -122,7 +113,7 @@ router.get('/:jellyfinUserId', async (req, res, next) => {
     });
   }
   try {
-    const avatarImageCache = await initAvatarImageProxy();
+    const avatarImageCache = initAvatarImageProxy();
 
     const userEtag = req.headers['if-none-match'];
 
