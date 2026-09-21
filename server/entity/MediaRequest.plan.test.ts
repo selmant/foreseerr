@@ -140,7 +140,7 @@ describe('MediaRequest request plans', () => {
     assert.deepEqual(plan.seasons, [1, 3]);
   });
 
-  it('rejects a second active ongoing episode plan before persistence', () => {
+  it('rejects a second active ongoing episode plan from another user', () => {
     const media = new Media({ tmdbId: 4040, mediaType: MediaType.TV });
     const ongoing = new MediaRequest({
       status: MediaRequestStatus.APPROVED,
@@ -148,6 +148,7 @@ describe('MediaRequest request plans', () => {
       episodeSelectionType: 'after',
       seasons: [],
       episodes: [],
+      requestedBy: { id: 99 } as MediaRequest['requestedBy'],
     });
 
     assert.throws(
@@ -162,34 +163,88 @@ describe('MediaRequest request plans', () => {
     );
   });
 
-  it('rejects watch-ahead when an after request is already active', () => {
+  it('replaces an owned watch-ahead request with a new count', () => {
     const media = new Media({ tmdbId: 4041, mediaType: MediaType.TV });
-    const ongoing = new MediaRequest({
+    const existing = new MediaRequest({
+      id: 12,
       status: MediaRequestStatus.APPROVED,
       is4k: false,
-      episodeSelectionType: 'after',
+      episodeSelectionType: 'watchAhead',
+      watchAheadCount: 3,
+      tvQuotaUnits: 1,
       seasons: [],
-      episodes: [],
+      episodes: [
+        new EpisodeRequest({
+          tvdbId: 101,
+          seasonNumber: 1,
+          episodeNumber: 1,
+          title: 'One',
+        }),
+      ],
+      requestedBy: { id: 1 } as MediaRequest['requestedBy'],
     });
 
-    assert.throws(
-      () =>
-        buildEpisodeRequestPlan({
-          input: inputFor(media),
-          selection: {
-            type: 'watchAhead',
-            startTvdbId: 101,
-            watchAheadCount: 10,
-            episodes: [
-              { tvdbId: 101, seasonNumber: 1, episodeNumber: 1, title: 'One' },
-            ],
-            quotaUnits: 1,
-          },
-          activeRequests: [ongoing],
-          quotas,
-        }),
-      DuplicateMediaRequestError
-    );
+    const plan = buildEpisodeRequestPlan({
+      input: inputFor(media),
+      selection: {
+        type: 'watchAhead',
+        startTvdbId: 101,
+        watchAheadCount: 5,
+        episodes: [
+          { tvdbId: 101, seasonNumber: 1, episodeNumber: 1, title: 'One' },
+          { tvdbId: 102, seasonNumber: 1, episodeNumber: 2, title: 'Two' },
+          { tvdbId: 103, seasonNumber: 1, episodeNumber: 3, title: 'Three' },
+          { tvdbId: 104, seasonNumber: 1, episodeNumber: 4, title: 'Four' },
+          { tvdbId: 105, seasonNumber: 1, episodeNumber: 5, title: 'Five' },
+        ],
+        quotaUnits: 1,
+      },
+      activeRequests: [existing],
+      quotas,
+    });
+
+    assert.equal(plan.kind, 'episodes');
+    if (plan.kind !== 'episodes') {
+      throw new Error('Expected episode plan');
+    }
+    assert.equal(plan.replaceRequest, existing);
+    assert.equal(plan.episodeSelection.watchAheadCount, 5);
+    assert.equal(plan.episodes.length, 5);
+  });
+
+  it('lets managers replace another user watch-ahead with after', () => {
+    const media = new Media({ tmdbId: 4043, mediaType: MediaType.TV });
+    const existing = new MediaRequest({
+      id: 13,
+      status: MediaRequestStatus.APPROVED,
+      is4k: false,
+      episodeSelectionType: 'watchAhead',
+      watchAheadCount: 3,
+      seasons: [],
+      episodes: [],
+      requestedBy: { id: 99 } as MediaRequest['requestedBy'],
+    });
+    const managerInput = {
+      ...inputFor(media),
+      actor: {
+        id: 2,
+        hasPermission: () => true,
+      } as unknown as RequestPlanInput['actor'],
+    };
+
+    const plan = buildEpisodeRequestPlan({
+      input: managerInput,
+      selection: resolvedSelection('after'),
+      activeRequests: [existing],
+      quotas,
+    });
+
+    assert.equal(plan.kind, 'episodes');
+    if (plan.kind !== 'episodes') {
+      throw new Error('Expected episode plan');
+    }
+    assert.equal(plan.replaceRequest, existing);
+    assert.equal(plan.episodeSelection.type, 'after');
   });
 
   it('allows an empty watch-ahead window when the current buffer is already covered', () => {

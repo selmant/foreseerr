@@ -115,6 +115,8 @@ export type RequestPlan =
       kind: 'episodes';
       episodes: ResolvedEpisodeSelection['episodes'];
       episodeSelection: ResolvedEpisodeSelection;
+      /** When set, update this active rolling request instead of inserting a new one. */
+      replaceRequest?: MediaRequest;
     })
   | (RequestPlanBase & { kind: 'seasons'; seasons: number[] });
 
@@ -196,24 +198,34 @@ export const buildEpisodeRequestPlan = ({
   activeRequests: MediaRequest[];
   quotas: Awaited<ReturnType<User['getQuota']>>;
 }): RequestPlan => {
-  if (
-    isRollingEpisodeSelection(selection.type) &&
-    activeRequests.some((request) =>
-      isRollingEpisodeSelection(request.episodeSelectionType)
-    )
-  ) {
-    throw new DuplicateMediaRequestError(
-      'An ongoing episode request already exists for this series.'
-    );
+  const existingRolling = activeRequests.find((request) =>
+    isRollingEpisodeSelection(request.episodeSelectionType)
+  );
+
+  let replaceRequest: MediaRequest | undefined;
+  if (isRollingEpisodeSelection(selection.type) && existingRolling) {
+    const canReplace =
+      existingRolling.requestedBy?.id === input.requestUser.id ||
+      input.actor.hasPermission(Permission.MANAGE_REQUESTS);
+    if (!canReplace) {
+      throw new DuplicateMediaRequestError(
+        'An ongoing episode request already exists for this series.'
+      );
+    }
+    replaceRequest = existingRolling;
   }
 
+  const coverageRequests = replaceRequest
+    ? activeRequests.filter((request) => request.id !== replaceRequest.id)
+    : activeRequests;
+
   const coveredSeasons = new Set(
-    activeRequests.flatMap((request) =>
+    coverageRequests.flatMap((request) =>
       (request.seasons ?? []).map((season) => season.seasonNumber)
     )
   );
   const coveredEpisodes = new Set(
-    activeRequests.flatMap((request) =>
+    coverageRequests.flatMap((request) =>
       (request.episodes ?? []).map((episode) => episode.tvdbId)
     )
   );
@@ -238,11 +250,9 @@ export const buildEpisodeRequestPlan = ({
 
   const tvQuotaUnits = new Set(episodes.map((episode) => episode.seasonNumber))
     .size;
-  if (
-    !input.ignoreQuota &&
-    quotas.tv.limit &&
-    tvQuotaUnits > (quotas.tv.remaining ?? 0)
-  ) {
+  const remainingQuota =
+    (quotas.tv.remaining ?? 0) + (replaceRequest?.tvQuotaUnits ?? 0);
+  if (!input.ignoreQuota && quotas.tv.limit && tvQuotaUnits > remainingQuota) {
     throw new QuotaRestrictedError('Series Quota exceeded.');
   }
 
@@ -251,6 +261,7 @@ export const buildEpisodeRequestPlan = ({
     ...baseRequestPlan(input, MediaType.TV),
     episodes,
     episodeSelection: selection,
+    ...(replaceRequest ? { replaceRequest } : {}),
   };
 };
 
@@ -386,11 +397,77 @@ export const materializeRequestPlan = (plan: RequestPlan): MediaRequest => {
 export class MediaRequest {
   /** Persist the already-validated plan atomically with its Media row. */
   private static async persistPlan(plan: RequestPlan): Promise<MediaRequest> {
+    if (plan.kind === 'episodes' && plan.replaceRequest) {
+      return MediaRequest.persistEpisodeReplacement(plan);
+    }
+
     const request = materializeRequestPlan(plan);
     await dataSource.transaction(async (manager) => {
       request.media = await manager.getRepository(Media).save(plan.media);
       await manager.getRepository(MediaRequest).save(request);
     });
+    return request;
+  }
+
+  /** Update an active rolling request in place (watch-ahead count / ongoing start). */
+  private static async persistEpisodeReplacement(
+    plan: Extract<RequestPlan, { kind: 'episodes' }>
+  ): Promise<MediaRequest> {
+    const request = plan.replaceRequest;
+    if (!request) {
+      throw new Error('Missing replaceRequest for episode replacement plan.');
+    }
+
+    await dataSource.transaction(async (manager) => {
+      request.media = await manager.getRepository(Media).save(plan.media);
+      request.serverId = plan.serverId;
+      request.profileId = plan.profileId;
+      request.rootFolder = plan.rootFolder;
+      request.languageProfileId = plan.languageProfileId;
+      request.tags = plan.tags;
+      request.requestedBy = plan.requestedBy;
+
+      if (request.status !== MediaRequestStatus.APPROVED) {
+        request.status = plan.status;
+      }
+      if (plan.modifiedBy) {
+        request.modifiedBy = plan.modifiedBy;
+      }
+
+      request.seasons = [];
+      request.episodes = plan.episodes.map(
+        (episode) =>
+          new EpisodeRequest({
+            tvdbId: episode.tvdbId,
+            seasonNumber: episode.seasonNumber,
+            episodeNumber: episode.episodeNumber,
+            title: episode.title,
+            airDate: episode.airDate,
+            status:
+              request.status === MediaRequestStatus.APPROVED
+                ? MediaRequestStatus.APPROVED
+                : plan.status,
+          })
+      );
+      request.episodeSelectionType = plan.episodeSelection.type;
+      request.episodeStartTvdbId = plan.episodeSelection.startTvdbId;
+      request.episodeEndTvdbId = plan.episodeSelection.endTvdbId;
+      request.watchAheadCount = plan.episodeSelection.watchAheadCount;
+      request.ongoingEpisodeRequestKey = isRollingEpisodeSelection(
+        plan.episodeSelection.type
+      )
+        ? ongoingEpisodeRequestLockKey(plan.media.tmdbId, plan.is4k)
+        : undefined;
+      request.tvQuotaUnits = new Set(
+        plan.episodes.map((episode) => episode.seasonNumber)
+      ).size;
+
+      await manager.getRepository(EpisodeRequest).delete({
+        request: { id: request.id },
+      });
+      await manager.getRepository(MediaRequest).save(request);
+    });
+
     return request;
   }
 
@@ -827,6 +904,7 @@ export class MediaRequest {
         const latestRequests = await requestRepository
           .createQueryBuilder('request')
           .leftJoinAndSelect('request.media', 'linkedMedia')
+          .leftJoinAndSelect('request.requestedBy', 'requestedBy')
           .leftJoinAndSelect('request.seasons', 'seasons')
           .leftJoinAndSelect('request.episodes', 'episodes')
           .where('request.is4k = :is4k', { is4k: requestBody.is4k })
