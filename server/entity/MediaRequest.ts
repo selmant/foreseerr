@@ -420,11 +420,21 @@ export class MediaRequest {
 
     await dataSource.transaction(async (manager) => {
       request.media = await manager.getRepository(Media).save(plan.media);
-      request.serverId = plan.serverId;
-      request.profileId = plan.profileId;
-      request.rootFolder = plan.rootFolder;
-      request.languageProfileId = plan.languageProfileId;
-      request.tags = plan.tags;
+      if (plan.serverId !== undefined) {
+        request.serverId = plan.serverId;
+      }
+      if (plan.profileId !== undefined) {
+        request.profileId = plan.profileId;
+      }
+      if (plan.rootFolder !== undefined) {
+        request.rootFolder = plan.rootFolder;
+      }
+      if (plan.languageProfileId !== undefined) {
+        request.languageProfileId = plan.languageProfileId;
+      }
+      if (plan.tags !== undefined) {
+        request.tags = plan.tags;
+      }
       request.requestedBy = plan.requestedBy;
 
       if (request.status !== MediaRequestStatus.APPROVED) {
