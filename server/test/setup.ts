@@ -11,7 +11,7 @@ import { resetSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import http from 'node:http';
 import https from 'node:https';
-import { after, afterEach, before, beforeEach, mock } from 'node:test';
+import { after, afterEach, before } from 'node:test';
 
 // supertest serves the app over a real loopback socket, so only external hosts
 // can be refused
@@ -95,35 +95,13 @@ if (process.env.ALLOW_NETWORK != 'true') {
   }) as typeof fetch;
 }
 
-// Health probes swallow outbound errors into "degraded"/"failing". Keep these
-// stubs for the whole process; individual tests can mock.method() on top when
-// they need specific behavior. Some suites call mock.restoreAll(), so restore
-// the process-wide stubs before the next test if that happened.
-const originalValidateApplicationCredentials =
-  TraktAPI.prototype.validateApplicationCredentials;
-const originalSearchLists = TraktAPI.prototype.searchLists;
-const originalAnilistPing = AnilistAPI.prototype.ping;
-
-function ensureHealthStubs(): void {
-  if (
-    TraktAPI.prototype.validateApplicationCredentials ===
-    originalValidateApplicationCredentials
-  ) {
-    mock.method(
-      TraktAPI.prototype,
-      'validateApplicationCredentials',
-      async () => undefined
-    );
-  }
-  if (TraktAPI.prototype.searchLists === originalSearchLists) {
-    mock.method(TraktAPI.prototype, 'searchLists', async () => []);
-  }
-  if (AnilistAPI.prototype.ping === originalAnilistPing) {
-    mock.method(AnilistAPI.prototype, 'ping', async () => undefined);
-  }
-}
-
-ensureHealthStubs();
+// Health probes swallow outbound errors into "degraded"/"failing". Install
+// these as plain prototype replacements rather than node:test mocks: test
+// suites are free to layer mocks on top, and mock.restoreAll() then returns to
+// these safe defaults instead of restoring the real network methods.
+TraktAPI.prototype.validateApplicationCredentials = async () => undefined;
+TraktAPI.prototype.searchLists = async () => [];
+AnilistAPI.prototype.ping = async () => undefined;
 
 async function settleDeferredNetwork(): Promise<void> {
   // Axios HTTP adapter dispatches on the promise queue; drain a few turns so
@@ -151,10 +129,6 @@ before(() => {
   if (process.env.VERBOSE != 'true') logger.silent = true;
 });
 
-beforeEach(() => {
-  ensureHealthStubs();
-});
-
 afterEach(async () => {
   if (scheduledJobs.length > 0) {
     stopJobs();
@@ -175,7 +149,6 @@ afterEach(async () => {
 
   await settleDeferredNetwork();
   assertNoBlockedHosts();
-  ensureHealthStubs();
 });
 
 after(async () => {
