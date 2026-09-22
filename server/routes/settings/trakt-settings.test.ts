@@ -97,17 +97,27 @@ async function loginAsAdmin() {
 }
 
 describe('Trakt settings credential safety', () => {
+  // Keep these stubs for the whole file: integration health swallows Trakt/AniList
+  // failures, and a prototype mock restored mid-file can leave a later health
+  // check hitting the network block (CI after-hook flake).
   const pingAnilist = mock.method(AnilistAPI.prototype, 'ping', async () => {
     return undefined;
   });
+  const validateTrakt = mock.method(
+    TraktAPI.prototype,
+    'validateApplicationCredentials',
+    async () => undefined
+  );
 
   after(() => {
     pingAnilist.mock.restore();
+    validateTrakt.mock.restore();
   });
 
   beforeEach(() => {
     clearSyncCache();
     clearIntegrationHealthCache();
+    validateTrakt.mock.resetCalls();
     const settings = getSettings();
     settings.trakt = {
       clientId: 'test-client-id',
@@ -153,11 +163,6 @@ describe('Trakt settings credential safety', () => {
   });
 
   it('disconnects linked accounts only after settings persistence succeeds', async () => {
-    const validateMock = mock.method(
-      TraktAPI.prototype,
-      'validateApplicationCredentials',
-      async () => undefined
-    );
     const agent = await loginAsAdmin();
     const user = await getRepository(User).findOneOrFail({
       where: { email: 'admin@seerr.dev' },
@@ -182,7 +187,7 @@ describe('Trakt settings credential safety', () => {
 
     assert.equal(res.status, 200);
     assert.equal(res.body.linkedAccountCount, 0);
-    assert.equal(validateMock.mock.calls.length, 1);
+    assert.equal(validateTrakt.mock.calls.length, 1);
 
     const persisted = await getRepository(UserSettings)
       .createQueryBuilder('settings')
@@ -191,16 +196,9 @@ describe('Trakt settings credential safety', () => {
       .where('user.id = :userId', { userId: user.id })
       .getOneOrFail();
     assert.equal(persisted.traktAccessToken, null);
-
-    validateMock.mock.restore();
   });
 
   it('preserves linked accounts when settings save fails', async () => {
-    const validateMock = mock.method(
-      TraktAPI.prototype,
-      'validateApplicationCredentials',
-      async () => undefined
-    );
     const settings = getSettings();
     const saveMock = mock.method(settings, 'save', async () => {
       throw new Error('disk full');
@@ -239,7 +237,6 @@ describe('Trakt settings credential safety', () => {
     assert.equal(persisted.traktAccessToken, 'linked-access');
 
     saveMock.mock.restore();
-    validateMock.mock.restore();
   });
 
   it('clears user Trakt state when switching to the Jellyfin provider', async () => {
@@ -312,11 +309,6 @@ describe('Trakt settings credential safety', () => {
   });
 
   it('reports live health for direct Trakt and MDBList', async () => {
-    const traktMock = mock.method(
-      TraktAPI.prototype,
-      'validateApplicationCredentials',
-      async () => undefined
-    );
     const mdblistMock = mock.method(
       MdblistAPI.prototype,
       'validateApiKey',
@@ -343,10 +335,9 @@ describe('Trakt settings credential safety', () => {
     assert.equal(res.body.trakt.jellyfin.state, 'not_configured');
     assert.equal(res.body.mdblist.state, 'healthy');
     assert.equal(mdblistMock.mock.calls.length, 1);
-    assert.equal(traktMock.mock.calls.length, 1);
+    assert.equal(validateTrakt.mock.calls.length, 1);
 
     mdblistMock.mock.restore();
-    traktMock.mock.restore();
   });
 
   it('reports a reachable Better Trakt bridge separately from user access', async () => {

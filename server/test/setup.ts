@@ -112,6 +112,20 @@ afterEach(async () => {
       // Schema may not exist in files that never open the test DB.
     }
   }
+
+  // Fail on the leaking test instead of only at process teardown. Callers that
+  // swallow outbound errors (integration health, etc.) would otherwise leave
+  // the suite green until the after() hook.
+  if (blocked.size) {
+    const hosts = [...blocked.keys()].join(', ');
+    const stacks = [...blocked.entries()]
+      .map(([host, stack]) => `${host}\n${stack}`)
+      .join('\n');
+    blocked.clear();
+    throw new Error(
+      `Test reached the network: ${hosts}. Stub the API client this test uses.\n${stacks}`
+    );
+  }
 });
 
 after(() => {
