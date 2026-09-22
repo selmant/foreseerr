@@ -112,8 +112,7 @@ async function runBunTest(
     stdin: 'inherit',
     env: {
       ...process.env,
-      CONFIG_DIRECTORY:
-        process.env.CONFIG_DIRECTORY ?? TEST_CONFIG_DIRECTORY,
+      CONFIG_DIRECTORY: process.env.CONFIG_DIRECTORY ?? TEST_CONFIG_DIRECTORY,
       ...extraEnv,
     },
   });
