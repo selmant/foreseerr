@@ -60,6 +60,14 @@ const opts = program.opts<{
 // @ts-expect-error NODE_ENV is narrowed by the ambient process type.
 process.env.NODE_ENV = 'test';
 
+// Keep unit-test settings.save() off the developer/CI config/ tree. Must be set
+// before the preload imports @server/lib/settings (SETTINGS_PATH is fixed at
+// module load).
+const TEST_CONFIG_DIRECTORY = join(BASE_DIR, '.test-config');
+if (!process.env.CONFIG_DIRECTORY) {
+  process.env.CONFIG_DIRECTORY = TEST_CONFIG_DIRECTORY;
+}
+
 function isPostgresUpgradeFile(file: string): boolean {
   return POSTGRES_UPGRADE_TEST.test(file.replaceAll('\\', '/'));
 }
@@ -102,7 +110,12 @@ async function runBunTest(
     stdout: 'inherit',
     stderr: 'inherit',
     stdin: 'inherit',
-    env: { ...process.env, ...extraEnv },
+    env: {
+      ...process.env,
+      CONFIG_DIRECTORY:
+        process.env.CONFIG_DIRECTORY ?? TEST_CONFIG_DIRECTORY,
+      ...extraEnv,
+    },
   });
   return proc.exited;
 }

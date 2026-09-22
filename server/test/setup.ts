@@ -1,14 +1,17 @@
+import AnilistAPI from '@server/api/anilist';
+import TraktAPI from '@server/api/trakt';
 import dataSource, { getRepository } from '@server/datasource';
 import { MappingSourceUsage } from '@server/entity/MappingSourceUsage';
 import { scheduledJobs, stopJobs } from '@server/job/schedule';
 import { resetTmdbValidityCache } from '@server/lib/discover/validity';
 import { clearNegativeCache, resetBudgets } from '@server/lib/mapping/budget';
 import { resetMappingGapBuffer } from '@server/lib/mapping/gaps';
+import { resetProviderHealthCache } from '@server/lib/mapping/providerHealth';
 import { resetSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import http from 'node:http';
 import https from 'node:https';
-import { after, afterEach, before } from 'node:test';
+import { after, afterEach, before, mock } from 'node:test';
 
 // supertest serves the app over a real loopback socket, so only external hosts
 // can be refused
@@ -92,6 +95,40 @@ if (process.env.ALLOW_NETWORK != 'true') {
   }) as typeof fetch;
 }
 
+// Health probes swallow outbound errors into "degraded"/"failing". Axios also
+// schedules https.request on a later tick, so a probe that races past afterEach
+// would only fail the suite after-hook. Keep these stubs for the whole process;
+// individual tests can mock.method() on top when they need specific behavior.
+mock.method(
+  TraktAPI.prototype,
+  'validateApplicationCredentials',
+  async () => undefined
+);
+mock.method(TraktAPI.prototype, 'searchLists', async () => []);
+mock.method(AnilistAPI.prototype, 'ping', async () => undefined);
+
+async function settleDeferredNetwork(): Promise<void> {
+  // Axios HTTP adapter dispatches on the promise queue; drain a few turns so
+  // any in-flight blocked request is recorded before we assert.
+  for (let i = 0; i < 10; i++) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
+
+function assertNoBlockedHosts(): void {
+  if (!blocked.size) {
+    return;
+  }
+  const hosts = [...blocked.keys()].join(', ');
+  const stacks = [...blocked.entries()]
+    .map(([host, stack]) => `${host}\n${stack}`)
+    .join('\n');
+  blocked.clear();
+  throw new Error(
+    `Test reached the network: ${hosts}. Stub the API client this test uses.\n${stacks}`
+  );
+}
+
 before(() => {
   if (process.env.VERBOSE != 'true') logger.silent = true;
 });
@@ -101,6 +138,7 @@ afterEach(async () => {
     stopJobs();
   }
   resetMappingGapBuffer();
+  resetProviderHealthCache();
   resetSettings();
   resetBudgets();
   clearNegativeCache();
@@ -113,32 +151,13 @@ afterEach(async () => {
     }
   }
 
-  // Fail on the leaking test instead of only at process teardown. Callers that
-  // swallow outbound errors (integration health, etc.) would otherwise leave
-  // the suite green until the after() hook.
-  if (blocked.size) {
-    const hosts = [...blocked.keys()].join(', ');
-    const stacks = [...blocked.entries()]
-      .map(([host, stack]) => `${host}\n${stack}`)
-      .join('\n');
-    blocked.clear();
-    throw new Error(
-      `Test reached the network: ${hosts}. Stub the API client this test uses.\n${stacks}`
-    );
-  }
+  await settleDeferredNetwork();
+  assertNoBlockedHosts();
 });
 
-after(() => {
+after(async () => {
   if (process.env.VERBOSE != 'true') logger.silent = false;
 
-  // callers that swallow the error would otherwise leave the suite green
-  if (blocked.size) {
-    const hosts = [...blocked.keys()].join(', ');
-    const stacks = [...blocked.entries()]
-      .map(([host, stack]) => `${host}\n${stack}`)
-      .join('\n');
-    throw new Error(
-      `Test reached the network: ${hosts}. Stub the API client this test uses.\n${stacks}`
-    );
-  }
+  await settleDeferredNetwork();
+  assertNoBlockedHosts();
 });
