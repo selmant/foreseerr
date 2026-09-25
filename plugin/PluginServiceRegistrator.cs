@@ -13,10 +13,11 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         IServiceCollection serviceCollection,
         IServerApplicationHost applicationHost)
     {
-        serviceCollection.AddHttpClient(SidecarHttpClient)
+        serviceCollection.AddHttpClient(SidecarHttpClient, client => client.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
             {
                 UseCookies = false,
+                UseProxy = false,
                 AllowAutoRedirect = false,
             });
         serviceCollection.AddSingleton<SidecarSupervisor>();

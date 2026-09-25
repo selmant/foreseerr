@@ -13,6 +13,7 @@ import { isUsableForeseerNative } from '@app/context/nativeRuntimeProtocol';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { withPublicBasePath } from '@app/utils/publicBasePath';
 import { Transition } from '@headlessui/react';
 import { XCircleIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
@@ -89,7 +90,7 @@ const Login = () => {
   // and cause it to redirect straight back to /login.
   useEffect(() => {
     if (user) {
-      window.location.replace('/');
+      window.location.replace(withPublicBasePath('/'));
     }
   }, [user]);
 

@@ -23,6 +23,10 @@ import {
   setDesktopStopping,
 } from '@server/lib/desktopState';
 import ImageProxy from '@server/lib/imageproxy';
+import {
+  ensurePluginAdminUser,
+  loadJellyfinHostBootstrap,
+} from '@server/lib/jellyfinHostBootstrap';
 import { jsonSafeClone } from '@server/lib/jsonSafe';
 import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
@@ -36,6 +40,15 @@ import TelegramAgent from '@server/lib/notifications/agents/telegram';
 import WebhookAgent from '@server/lib/notifications/agents/webhook';
 import WebPushAgent from '@server/lib/notifications/agents/webpush';
 import checkOverseerrMerge from '@server/lib/overseerrMerge';
+import {
+  isPluginMode,
+  pluginApiSpec,
+  pluginCookiePath,
+  pluginIndexHtml,
+  pluginPublicBasePath,
+  pluginSharedSecret,
+  requirePluginProxy,
+} from '@server/lib/pluginMode';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import clearCookies from '@server/middleware/clearcookies';
@@ -44,15 +57,6 @@ import avatarproxy from '@server/routes/avatarproxy';
 import { bindDesktopSessionStore } from '@server/routes/desktop';
 import imageproxy from '@server/routes/imageproxy';
 import { appDataPermissions } from '@server/utils/appDataVolume';
-import {
-  ensurePluginAdminUser,
-  loadJellyfinHostBootstrap,
-} from '@server/lib/jellyfinHostBootstrap';
-import {
-  isPluginMode,
-  pluginCookiePath,
-  pluginPublicBasePath,
-} from '@server/lib/pluginMode';
 import { getAppVersion } from '@server/utils/appVersion';
 import createCustomProxyAgent, {
   setForceIpv4First,
@@ -64,12 +68,12 @@ import {
   sendPublicFile,
 } from '@server/utils/embeddedPublic';
 import restartFlag from '@server/utils/restartFlag';
-import '@server/utils/userAgent';
 import {
   bundledApiSpecPath,
   bundledPublicPath,
   isStandaloneExecutable,
 } from '@server/utils/runtimePaths';
+import '@server/utils/userAgent';
 import { getClientIp } from '@supercharge/request-ip';
 import { TypeormStore } from 'connect-typeorm/out';
 import cookieParser from 'cookie-parser';
@@ -83,6 +87,10 @@ import type { Server as HttpServer } from 'http';
 import yaml from 'js-yaml';
 import path from 'path';
 import swaggerUi from 'swagger-ui-express';
+
+type ValidatorApiSpec = Parameters<
+  typeof OpenApiValidator.middleware
+>[0]['apiSpec'];
 
 const API_SPEC_PATH = isStandaloneExecutable()
   ? bundledApiSpecPath()
@@ -365,6 +373,10 @@ const startForeseerrInternal = async (
 
   const server = express();
   const pluginMode = isPluginMode();
+  if (pluginMode && !pluginSharedSecret()) {
+    throw new Error('Plugin mode requires FORESEERR_PLUGIN_SECRET');
+  }
+  server.use(requirePluginProxy);
   if ((!desktopRuntime && settings.network.trustProxy) || pluginMode) {
     server.enable('trust proxy');
   }
@@ -495,7 +507,9 @@ const startForeseerrInternal = async (
   server.use(
     '/api',
     OpenApiValidator.middleware({
-      apiSpec: API_SPEC_PATH,
+      apiSpec: pluginMode
+        ? (pluginApiSpec(apiDocs) as unknown as ValidatorApiSpec)
+        : API_SPEC_PATH,
       validateRequests: true,
     })
   );
@@ -518,6 +532,21 @@ const startForeseerrInternal = async (
   server.use('/avatarproxy', clearCookies, avatarproxy);
 
   if (!dev) {
+    if (pluginMode) {
+      server.get(
+        /^(?!\/api(?:\/|$)|\/api-docs|\/imageproxy|\/avatarproxy|\/assets\/).*$/,
+        async (req, res, next) => {
+          if (path.extname(req.path) && !req.path.endsWith('.html'))
+            return next();
+          const html = await fs.readFile(
+            path.join(PUBLIC_PATH, 'index.html'),
+            'utf8'
+          );
+          res.setHeader('Cache-Control', 'no-store');
+          res.type('html').send(pluginIndexHtml(html));
+        }
+      );
+    }
     if (isStandaloneExecutable()) {
       server.use(embeddedPublicStatic(PUBLIC_PATH));
     } else {
@@ -613,6 +642,14 @@ const startForeseerrInternal = async (
     const address = httpServer.address();
     const boundPort =
       typeof address === 'object' && address ? address.port : port;
+    if (pluginMode) {
+      process.stdout.write(
+        `FORESEERR_PLUGIN_READY ${JSON.stringify({
+          port: boundPort,
+          instance: process.env.FORESEERR_PLUGIN_INSTANCE,
+        })}\n`
+      );
+    }
     logger.info(
       `Server ready on ${host ?? '127.0.0.1'} port ${boundPort}${publicBasePath}`,
       {

@@ -1,15 +1,15 @@
-import type { Library } from '@server/lib/settings';
-import { getSettings } from '@server/lib/settings';
 import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
-import { In } from 'typeorm';
 import { User } from '@server/entity/User';
 import { Permission } from '@server/lib/permissions';
+import type { Library } from '@server/lib/settings';
+import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { configDirectory } from '@server/utils/runtimePaths';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { In } from 'typeorm';
 import { isPluginMode } from './pluginMode';
 
 export interface JellyfinHostLibrary {
@@ -49,11 +49,13 @@ export interface JellyfinHostFile {
   mdblist?: {
     apiKey?: string;
   };
-  webhook?: {
-    url?: string;
-    secret?: string;
-  };
   adminUser?: JellyfinHostAdminUser;
+}
+
+/** Jellyfin's API and the avatar proxy use the compact 32-hex form. */
+export function canonicalJellyfinUserId(id: string): string {
+  const compact = id.replace(/-/g, '').toLowerCase();
+  return /^[0-9a-f]{32}$/.test(compact) ? compact : id;
 }
 
 export function jellyfinUserIdCandidates(id: string): string[] {
@@ -89,7 +91,7 @@ const mergeLibraries = (
     id: library.id,
     name: library.name,
     type: library.type,
-    enabled: library.enabled !== false,
+    enabled: previous.get(library.id)?.enabled ?? library.enabled !== false,
     lastScan: previous.get(library.id)?.lastScan,
   }));
 };
@@ -142,26 +144,12 @@ export function applyJellyfinHostFile(host: JellyfinHostFile): boolean {
     changed = true;
   }
 
-  if (host.webhook?.url) {
-    const current = settings.notifications.agents.webhook;
-    const managed = (current.options.webhookUrl ?? '').includes(
-      '/ForeseerrPlugin/Webhook'
-    );
-    if (!current.enabled || managed) {
-      settings.notifications.agents.webhook = {
-        ...current,
-        enabled: true,
-        types: 3918,
-        options: {
-          ...current.options,
-          webhookUrl: host.webhook.url,
-          authHeader: host.webhook.secret
-            ? `Bearer ${host.webhook.secret}`
-            : current.options.authHeader,
-        },
-      };
-      changed = true;
-    }
+  // Remove only the prototype's managed no-op notification destination.
+  // User-configured webhook destinations remain untouched.
+  const webhook = settings.notifications.agents.webhook;
+  if (webhook.options.webhookUrl?.endsWith('/ForeseerrPlugin/Webhook')) {
+    settings.notifications.agents.webhook = { ...webhook, enabled: false };
+    changed = true;
   }
 
   if (!settings.public.initialized && settings.jellyfin.apiKey) {
@@ -199,17 +187,26 @@ export async function ensurePluginAdminUser(): Promise<void> {
   if (!admin?.jellyfinUserId || !admin.jellyfinUsername) {
     return;
   }
+  const jellyfinUserId = canonicalJellyfinUserId(admin.jellyfinUserId);
   const userRepository = getRepository(User);
   const existing = await userRepository.findOne({
     where: {
-      jellyfinUserId: In(jellyfinUserIdCandidates(admin.jellyfinUserId)),
+      jellyfinUserId: In(jellyfinUserIdCandidates(jellyfinUserId)),
     },
   });
   if (existing) {
+    let changed = false;
     if (existing.id === 1 && existing.permissions !== Permission.ADMIN) {
       existing.permissions = Permission.ADMIN;
-      await userRepository.save(existing);
+      changed = true;
     }
+    // Earlier plugin builds stored dashed ids, which the avatar proxy rejects.
+    if (existing.jellyfinUserId !== jellyfinUserId) {
+      existing.jellyfinUserId = jellyfinUserId;
+      existing.avatar = `/avatarproxy/${jellyfinUserId}`;
+      changed = true;
+    }
+    if (changed) await userRepository.save(existing);
     return;
   }
   const userCount = await userRepository.count();
@@ -217,12 +214,12 @@ export async function ensurePluginAdminUser(): Promise<void> {
     ...(userCount === 0 ? { id: 1 } : {}),
     email: (admin.email || admin.jellyfinUsername).toLowerCase(),
     jellyfinUsername: admin.jellyfinUsername,
-    jellyfinUserId: admin.jellyfinUserId,
+    jellyfinUserId,
     jellyfinDeviceId: 'BOT_seerr',
     permissions: Permission.ADMIN,
     userType: UserType.JELLYFIN,
   });
-  user.avatar = `/avatarproxy/${admin.jellyfinUserId}`;
+  user.avatar = `/avatarproxy/${jellyfinUserId}`;
   await userRepository.save(user);
   logger.info('Created plugin admin user from Jellyfin host bootstrap', {
     label: 'Plugin',

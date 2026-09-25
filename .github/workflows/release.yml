@@ -469,7 +469,7 @@ jobs:
       COMMIT_TAG: ${{ github.sha }}
     steps:
       - name: Checkout tagged commit
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
@@ -479,10 +479,12 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - name: Set up .NET 8
+      - name: Set up .NET 9 and 10
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            9.0.x
+            10.0.x
 
       - name: Install dependencies
         env:
@@ -492,14 +494,27 @@ jobs:
       - name: Compile Foreseerr binaries with /Foreseerr base
         run: bun run compile:plugin
 
-      - name: Publish plugin zip
-        run: plugin/build.sh
+      - name: Test plugin host integrations
+        run: |
+          dotnet test plugin.tests/Foreseerr.Jellyfin.Tests.csproj -c Release
+          dotnet test plugin.tests/Foreseerr.Jellyfin.Tests.csproj -c Release -p:JellyfinTarget=12
+
+      - name: Publish plugin archives and repository manifest
+        run: |
+          plugin/build.sh 10.11
+          plugin/build.sh 12
+          bun scripts/merge-plugin-manifests.mjs
+
+      - name: Prove Jellyfin installation and SSO
+        run: |
+          bun scripts/prove-jellyfin-plugin.mjs 10.11
+          bun scripts/prove-jellyfin-plugin.mjs 12
 
       - name: Upload plugin zip
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: foreseerr-jellyfin-plugin-${{ env.VERSION }}
-          path: plugin/dist/Foreseerr-0.7.1.0.zip
+          path: plugin/dist/release/*
           if-no-files-found: error
           retention-days: 1
 
@@ -535,7 +550,8 @@ jobs:
           set -euo pipefail
           mkdir -p dist/bin
           cp dist/server-artifact/foreseerr-server.tar.gz dist/bin/
-          cp dist/plugin-artifact/Foreseerr-0.7.1.0.zip dist/bin/foreseerr-jellyfin-plugin.zip
+          cp dist/plugin-artifact/foreseerr-jellyfin-*.zip dist/bin/
+          cp dist/plugin-artifact/foreseerr-jellyfin-manifest.json dist/bin/
           cd dist/bin
           if [[ -f ../server-artifact/SHA256SUMS ]]; then
             grep 'foreseerr-server.tar.gz' ../server-artifact/SHA256SUMS >> SHA256SUMS || true
@@ -543,14 +559,16 @@ jobs:
           if ! grep -q 'foreseerr-server.tar.gz' SHA256SUMS; then
             sha256sum foreseerr-server.tar.gz >> SHA256SUMS
           fi
-          sha256sum foreseerr-jellyfin-plugin.zip >> SHA256SUMS
+          sha256sum foreseerr-jellyfin-*.zip foreseerr-jellyfin-manifest.json >> SHA256SUMS
           sort -u -o SHA256SUMS SHA256SUMS
           gh release upload "${{ env.VERSION }}" \
             foreseerr-linux-x64.tar.gz \
             foreseerr-linux-arm64.tar.gz \
             foreseerr-windows-x64.zip \
             foreseerr-server.tar.gz \
-            foreseerr-jellyfin-plugin.zip \
+            foreseerr-jellyfin-10.11.zip \
+            foreseerr-jellyfin-12.zip \
+            foreseerr-jellyfin-manifest.json \
             SHA256SUMS \
             --repo "${{ github.repository }}" \
             --clobber

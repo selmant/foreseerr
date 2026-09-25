@@ -13,18 +13,13 @@
                 </div>
                 <div class="inputContainer">
                     <label class="inputLabel" for="SidecarPort">Sidecar port</label>
-                    <input is="emby-input" type="number" id="SidecarPort" />
-                    <div class="fieldDescription">Loopback port for the Foreseerr process (default 5055). Restart is automatic after save if the port changes.</div>
+                    <input is="emby-input" type="number" min="0" max="65535" id="SidecarPort" />
+                    <div class="fieldDescription">Use 0 to automatically choose an available loopback port. Saving restarts Foreseerr.</div>
                 </div>
                 <div class="inputContainer">
                     <label class="inputLabel" for="MdblistApiKey">MDBList API key (optional)</label>
                     <input is="emby-input" type="text" id="MdblistApiKey" />
                     <div class="fieldDescription">Imported from Moonbase if that plugin is installed and this field is empty.</div>
-                </div>
-                <div class="inputContainer">
-                    <label class="inputLabel" for="TmdbApiKey">TMDB API key (optional)</label>
-                    <input is="emby-input" type="text" id="TmdbApiKey" />
-                    <div class="fieldDescription">Stored on the plugin. Foreseerr still uses its bundled TMDB key for metadata; this is for Moonbase-style extras and future use.</div>
                 </div>
                 <p id="ForeseerrStatus">Checking sidecar…</p>
                 <div>
@@ -44,9 +39,8 @@
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     page.querySelector('#PublicServerUrl').value = config.PublicServerUrl || '';
-                    page.querySelector('#SidecarPort').value = config.SidecarPort || 5055;
+                    page.querySelector('#SidecarPort').value = config.SidecarPort || 0;
                     page.querySelector('#MdblistApiKey').value = config.MdblistApiKey || '';
-                    page.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
                     Dashboard.hideLoadingMsg();
                 });
                 ApiClient.ajax({
@@ -77,9 +71,8 @@
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     config.PublicServerUrl = page.querySelector('#PublicServerUrl').value;
-                    config.SidecarPort = parseInt(page.querySelector('#SidecarPort').value, 10) || 5055;
+                    config.SidecarPort = parseInt(page.querySelector('#SidecarPort').value, 10) || 0;
                     config.MdblistApiKey = page.querySelector('#MdblistApiKey').value;
-                    config.TmdbApiKey = page.querySelector('#TmdbApiKey').value;
                     ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
@@ -87,17 +80,19 @@
                 return false;
             });
             page.querySelector('#OpenForeseerr').addEventListener('click', function () {
-                fetch('/ForeseerrPlugin/sso', {
+                fetch(ApiClient.getUrl('Foreseerr/sso'), {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: {
-                        'X-Emby-Token': ApiClient.accessToken(),
                         Authorization: 'MediaBrowser Token="' + ApiClient.accessToken() + '"'
                     }
                 }).then(function (res) {
-                    return res.json().catch(function () { return {}; });
+                    if (!res.ok) throw new Error('Foreseerr sign-in is unavailable. Check the plugin status and retry.');
+                    return res.json();
                 }).then(function (body) {
-                    window.location.href = (body && body.url) || '/Foreseerr/';
+                    window.location.href = body.url;
+                }).catch(function (error) {
+                    page.querySelector('#ForeseerrStatus').textContent = error.message;
                 });
             });
         })();
