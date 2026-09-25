@@ -56,8 +56,9 @@ public class FileTransformationHostedService : IHostedService
         }
 
         var pluginInterfaceType = ftAssembly.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface");
-        pluginInterfaceType?.GetMethod("RegisterTransformation")
-            ?.Invoke(null, [payload]);
+        var register = pluginInterfaceType?.GetMethod("RegisterTransformation")
+            ?? throw new InvalidOperationException("File Transformation registration API is unavailable.");
+        register.Invoke(null, [payload]);
         _logger.LogInformation("Foreseerr: registered index.html transformation");
     }
 }
@@ -66,6 +67,8 @@ public static class TransformationPatches
 {
     public static string IndexHtml(PatchRequestPayload payload)
     {
+        if (payload.Contents?.Contains("ForeseerrPlugin/loader.js", StringComparison.Ordinal) == true)
+            return payload.Contents;
         if (string.IsNullOrEmpty(payload.Contents))
         {
             return payload.Contents ?? string.Empty;

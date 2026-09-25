@@ -1,6 +1,17 @@
 # Foreseerr Jellyfin sidecar plugin
 
-Third-party Jellyfin plugin. It starts the bun-compiled Foreseerr binary on `127.0.0.1`, reverse-proxies `/Foreseerr`, and signs users in with the current Jellyfin session. Official Jellyfin catalog will not accept this (native binary supervisor).
+Third-party plugin for **Jellyfin 10.11 and newer**. It starts the bun-compiled Foreseerr binary on `127.0.0.1` (OS-assigned port), reverse-proxies `/Foreseerr`, and signs users in with their Jellyfin session. The official Jellyfin catalog will not accept it (native binary supervisor).
+
+## Builds
+
+Each release ships one build per Jellyfin ABI:
+
+| Jellyfin | Archive                        | Framework | Plugin version |
+| -------- | ------------------------------ | --------- | -------------- |
+| 10.11.x  | `foreseerr-jellyfin-10.11.zip` | net9.0    | `X.Y.Z.0`      |
+| 12.x     | `foreseerr-jellyfin-12.zip`    | net10.0   | `X.Y.Z.1`      |
+
+Jellyfin treats `targetAbi` as a minimum, so a 12 server also accepts the 10.11 build. The higher revision makes installs and auto-updates pick the matching build. `plugin/Build.props` owns this mapping; `scripts/merge-plugin-manifests.mjs` refuses to publish two builds with the same version.
 
 ## Build
 
@@ -8,41 +19,44 @@ From the Foreseerr repo root:
 
 ```bash
 mise install
-bun run compile:plugin
-plugin/build.sh
+bun run compile:plugin                   # SPA with relative assets + sidecar binaries
+plugin/build.sh 10.11                    # -> plugin/dist/jellyfin-10.11/
+plugin/build.sh 12                       # -> plugin/dist/jellyfin-12/
+bun scripts/merge-plugin-manifests.mjs   # -> plugin/dist/release/ (zips + repository manifest)
 ```
 
-`mise.toml` pins Bun `1.4.1` and .NET 8. `compile:plugin` rebuilds the SPA with `base=/Foreseerr/` then compiles linux/windows binaries. `plugin/build.sh` publishes the C# plugin (via `mise exec -- dotnet` when mise is present) and copies binaries from `dist/bin/` into `plugin/dist/Foreseerr/sidecar/`.
+`mise.toml` pins Bun and the .NET 10 SDK, which also builds the net9.0 target. For a quicker local build, limit the sidecar targets: `bun run compile:plugin -- bun-linux-x64` then `plugin/build.sh 12 linux-x64`.
 
-Install `plugin/dist/Foreseerr-0.7.1.0.zip` (extract into `plugins/Foreseerr/`) or copy the `plugin/dist/Foreseerr` folder.
+## Test
 
-## Install
+```bash
+dotnet test plugin.tests/Foreseerr.Jellyfin.Tests.csproj -p:JellyfinTarget=10.11
+dotnet test plugin.tests/Foreseerr.Jellyfin.Tests.csproj -p:JellyfinTarget=12
+bun scripts/prove-jellyfin-plugin.mjs 10.11
+bun scripts/prove-jellyfin-plugin.mjs 12
+```
 
-1. Dashboard → Plugins → Repositories → add a repo pointing at this plugin’s `manifest.json` when you host one, or copy the folder into Jellyfin’s plugins directory.
-2. Restart Jellyfin.
-3. Optional: install [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) for a header button.
-4. Dashboard → Plugins → Foreseerr: set **Public server URL** (https origin of Jellyfin). MDBList/TMDB keys are optional; Moonbase keys are imported when present.
-5. Open Foreseerr. Jellyfin connection, libraries, and the first admin are loaded from this server. Configure Radarr/Sonarr inside Foreseerr.
+The 10.11 tests need the .NET 9 runtime (or `DOTNET_ROLL_FORWARD=Major`). The proof script uses Docker: it installs the built plugin into a disposable Jellyfin served under `/jellyfin`, then checks sidecar readiness, the subpath SPA and assets, SSO, CSRF, mint isolation, logout, and Jellyfin token revocation. Set `FORESEERR_TEST_FT_ARCHIVE` to a [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) release zip to also check the header-button injection. Pull requests run both ABIs in `.github/workflows/jellyfin-plugin.yml`; the release workflow runs them before publishing.
 
-Sidecar data lives under Jellyfin plugin configuration (`…/plugins/configurations/Foreseerr/foreseerr`). SQLite by default.
+## Security model
+
+- The sidecar binds loopback only and rejects every request without the per-install shared secret, including health checks.
+- `POST /Foreseerr/sso` (Jellyfin-authenticated) mints a Foreseerr session over an HMAC-signed loopback call. The browser only gets an opaque `HttpOnly`, `SameSite=Strict` ticket cookie scoped to `<base>/Foreseerr`; Jellyfin tokens and the sidecar session cookie never reach JavaScript.
+- Every proxied request revalidates the Jellyfin token bound to the ticket, so Jellyfin logout, token revocation, or disabling the user ends the Foreseerr session. Tickets expire after 8 hours.
+- Foreseerr's own CSRF middleware is off in plugin mode. The proxy instead requires unsafe methods to be same-origin (`Sec-Fetch-Site`, falling back to `Origin`), strips browser credential and forwarding headers, and never exposes the mint endpoint.
+- The first plugin login must be a Jellyfin administrator.
 
 ## Limits
 
-Jellyfin Web (desktop) is the supported UI. Android TV / official apps do not load this SPA. Reverse proxies must forward `/Foreseerr` and `/ForeseerrPlugin`.
+- Jellyfin Web (desktop) is the supported UI. Android TV and the official mobile apps do not load this SPA.
+- Sidecar binaries exist for linux-x64, linux-arm64, and windows-x64 only.
+- Reverse proxies must forward `/Foreseerr` and `/ForeseerrPlugin`. Configure Jellyfin's Known Proxies so it sees HTTPS; otherwise the ticket cookie is not marked `Secure`.
+- WebSocket upgrades are not proxied. Foreseerr does not use them.
 
 ## Remaining work
 
-Not proven on a live Jellyfin yet. Track these before calling the plugin done:
+- [ ] Run the tagged release workflow once and install from the published repository manifest. The plugin release path has not run on CI yet.
+- [ ] Exercise a real TLS-terminating reverse proxy.
+- [ ] Automate the browser flow (header button, click-through, dashboard page). It was checked by hand in headless Chromium on 10.11.11 and 12.1; the proofs are HTTP-only.
 
-- [ ] Install the zip on a real Jellyfin 10.10 host and exercise SSO, libraries, API key, health, `/Foreseerr` behind a reverse proxy, and File Transformation.
-- [ ] Replace the fake Quick Connect fallback (initiate probe + `/Foreseerr/login`) with a real QC or password login path when HMAC mint fails.
-- [ ] Either consume Foreseerr webhook payloads in `POST /ForeseerrPlugin/Webhook` (Moonfin-style) or stop auto-enabling a no-op agent.
-- [ ] Copy Jellyfin `urlBase` into `jellyfin-host.json` so sidecar→JF works when Jellyfin is on a subpath.
-- [ ] Bind an ephemeral loopback port (`127.0.0.1:0`) or detect collisions instead of always using `5055`.
-- [ ] Apply the plugin/Moonbase TMDB key in `applyJellyfinHostFile`, or drop the field if Foreseerr should keep the bundled key only.
-- [ ] Fill `manifest.json` `versions` (checksum + `sourceUrl`) so a third-party repo can install the zip.
-- [ ] Build and smoke-test against Jellyfin 10.11, or document 10.10-only.
-- [ ] Decide WebSocket/proxy streaming: HTTP-only `HttpClient` proxy will break any WS (or similar) Foreseerr uses.
-- [ ] Expire or invalidate cached sidecar session cookies on logout / user change, not only on plugin restart.
-
-Out of scope (plan): Android TV / official apps, official Jellyfin catalog, password replay as the happy path.
+Out of scope: Android TV / official apps, the official Jellyfin catalog, password replay.

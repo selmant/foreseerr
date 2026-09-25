@@ -1,3 +1,4 @@
+import { withPublicBasePath } from '@app/utils/publicBasePath';
 import type { CSSProperties, ImgHTMLAttributes } from 'react';
 
 type AppImageProps = ImgHTMLAttributes<HTMLImageElement> & {
@@ -6,6 +7,7 @@ type AppImageProps = ImgHTMLAttributes<HTMLImageElement> & {
 };
 
 const AppImage = ({
+  src,
   fill,
   priority,
   alt = '',
@@ -28,6 +30,7 @@ const AppImage = ({
   return (
     <img
       {...props}
+      src={src ? withPublicBasePath(src) : src}
       alt={alt}
       className={className}
       style={imageStyle}

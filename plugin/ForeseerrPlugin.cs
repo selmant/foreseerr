@@ -42,32 +42,16 @@ public class ForeseerrPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public override Guid Id => Guid.Parse(PluginGuid);
 
-    public new string DataFolderPath =>
-        Path.Combine(ApplicationPaths.PluginConfigurationsPath, "Foreseerr");
-
     public override void UpdateConfiguration(BasePluginConfiguration configuration)
     {
-        var previousPort = Configuration.SidecarPort;
+        if (configuration is not PluginConfiguration incoming || incoming.SidecarPort is < 0 or > 65535)
+            throw new ArgumentException("Sidecar port must be 0–65535.", nameof(configuration));
         base.UpdateConfiguration(configuration);
         Configuration.EnsureSecrets();
         SaveConfiguration();
-        try
-        {
-            Services?.GetService<JellyfinHostBootstrap>()?.WriteHostFile();
-        }
-        catch
-        {
-            // Saving config must succeed even if the sidecar is down.
-        }
-
-        if (previousPort != Configuration.SidecarPort)
-        {
-            var supervisor = Services?.GetService<SidecarSupervisor>();
-            if (supervisor != null)
-            {
-                _ = supervisor.RestartAsync();
-            }
-        }
+        // Restart once for any managed setting change so the child reloads its
+        // host file. The supervisor owns and serializes all process transitions.
+        Services?.GetService<SidecarSupervisor>()?.RequestRestart();
     }
 
     public IEnumerable<PluginPageInfo> GetPages()

@@ -9,24 +9,28 @@ import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { startDesktopCatchUp, startJobs } from '@server/job/schedule';
 import { forgetDesktopUser } from '@server/lib/desktopLogin';
+import {
+  canonicalJellyfinUserId,
+  jellyfinUserIdCandidates,
+} from '@server/lib/jellyfinHostBootstrap';
 import { Permission } from '@server/lib/permissions';
-import { getSettings } from '@server/lib/settings';
-import logger from '@server/logger';
-import { isAuthenticated } from '@server/middleware/auth';
-import { checkAvatarChanged } from '@server/routes/avatarproxy';
-import { ApiError } from '@server/types/error';
-import { jellyfinUserIdCandidates } from '@server/lib/jellyfinHostBootstrap';
 import {
   isLoopbackAddress,
   isPluginMode,
   pluginSharedSecret,
   verifyPluginMintSignature,
+  verifyPluginSecret,
 } from '@server/lib/pluginMode';
-import { In } from 'typeorm';
+import { getSettings } from '@server/lib/settings';
+import logger from '@server/logger';
+import { isAuthenticated } from '@server/middleware/auth';
+import { checkAvatarChanged } from '@server/routes/avatarproxy';
+import { ApiError } from '@server/types/error';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 import { Router, type Response } from 'express';
 import net from 'net';
+import { In } from 'typeorm';
 import validator from 'validator';
 import { z } from 'zod';
 
@@ -705,28 +709,28 @@ authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
     return next({ status: 503, message: 'Plugin secret is not configured.' });
   }
   const headerSecret = req.get('x-foreseerr-plugin-secret');
-  const secretOk = headerSecret === secret;
-  if (!secretOk && !isLoopbackAddress(req.ip)) {
+  if (
+    !verifyPluginSecret(headerSecret) ||
+    req.get('x-foreseerr-mint') !== '1' ||
+    !isLoopbackAddress(req.socket.remoteAddress)
+  ) {
     return next({ status: 403, message: 'Plugin auth is loopback-only.' });
   }
 
-  const body = req.body as {
-    jellyfinUserId?: string;
-    jellyfinUsername?: string;
-    jellyfinAccessToken?: string;
-    isAdministrator?: boolean;
-    timestamp?: number;
-    signature?: string;
-    email?: string;
-  };
-  if (
-    !body.jellyfinUserId ||
-    !body.jellyfinUsername ||
-    typeof body.timestamp !== 'number' ||
-    !body.signature
-  ) {
+  const parsed = z
+    .object({
+      jellyfinUserId: z.string().min(1).max(128),
+      jellyfinUsername: z.string().min(1).max(256),
+      jellyfinAccessToken: z.string().min(1).max(4096),
+      isAdministrator: z.boolean().default(false),
+      timestamp: z.number().int(),
+      signature: z.string().regex(/^[a-f0-9]{64}$/i),
+    })
+    .safeParse(req.body);
+  if (!parsed.success) {
     return next({ status: 400, message: 'Invalid plugin mint payload.' });
   }
+  const body = parsed.data;
   if (
     !verifyPluginMintSignature({
       secret,
@@ -740,10 +744,11 @@ authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
 
   try {
     const settings = getSettings();
+    const jellyfinUserId = canonicalJellyfinUserId(body.jellyfinUserId);
     const userRepository = getRepository(User);
     let user = await userRepository.findOne({
       where: {
-        jellyfinUserId: In(jellyfinUserIdCandidates(body.jellyfinUserId)),
+        jellyfinUserId: In(jellyfinUserIdCandidates(jellyfinUserId)),
       },
     });
     const deviceId = Buffer.from(`BOT_seerr_${body.jellyfinUsername}`).toString(
@@ -753,14 +758,20 @@ authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
     if (!user) {
       const userCount = await userRepository.count();
       const isFirst = userCount === 0;
+      if (isFirst && !body.isAdministrator) {
+        return next({
+          status: 403,
+          message: 'The first plugin login must be a Jellyfin administrator.',
+        });
+      }
       if (!isFirst && !settings.main.newPlexLogin) {
         return next({ status: 403, message: 'Access denied.' });
       }
       user = new User({
         ...(isFirst ? { id: 1 } : {}),
-        email: (body.email || body.jellyfinUsername).toLowerCase(),
+        email: body.jellyfinUsername.toLowerCase(),
         jellyfinUsername: body.jellyfinUsername,
-        jellyfinUserId: body.jellyfinUserId,
+        jellyfinUserId,
         jellyfinDeviceId: deviceId,
         jellyfinAuthToken: body.jellyfinAccessToken ?? '',
         permissions:
@@ -771,10 +782,14 @@ authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
       });
       user.avatar = getUserAvatarUrl(user);
       await userRepository.save(user);
+      if (isFirst) startJobs();
     } else {
+      // Earlier plugin builds stored dashed ids, which the avatar proxy rejects.
+      user.jellyfinUserId = jellyfinUserId;
       await userRepository.update(
         { id: user.id },
         {
+          jellyfinUserId,
           jellyfinUsername: body.jellyfinUsername,
           jellyfinAuthToken: body.jellyfinAccessToken ?? user.jellyfinAuthToken,
           jellyfinDeviceId: user.jellyfinDeviceId || deviceId,
@@ -785,7 +800,13 @@ authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
     }
 
     if (req.session) {
+      await new Promise<void>((resolve, reject) => {
+        req.session.regenerate((error) => (error ? reject(error) : resolve()));
+      });
       req.session.userId = user.id;
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((error) => (error ? reject(error) : resolve()));
+      });
     }
     return res.status(200).json(user.toPublicJSON());
   } catch (e) {
@@ -1078,7 +1099,7 @@ authRoutes.post('/logout', async (req, res, next) => {
       settings.main.mediaServerType === MediaServerType.JELLYFIN ||
       settings.main.mediaServerType === MediaServerType.EMBY;
 
-    if (isJellyfinOrEmby) {
+    if (isJellyfinOrEmby && !isPluginMode()) {
       const user = await getRepository(User)
         .createQueryBuilder('user')
         .addSelect(['user.jellyfinUserId', 'user.jellyfinDeviceId'])

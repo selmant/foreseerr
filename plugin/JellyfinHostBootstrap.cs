@@ -3,8 +3,10 @@ using System.Runtime.Loader;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
-using Jellyfin.Data.Enums;
+using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Common.Net;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
@@ -40,8 +42,9 @@ public class JellyfinHostBootstrap
         _logger = logger;
     }
 
+    /// <summary>Survives plugin upgrades, unlike the versioned plugin install folder.</summary>
     public string ConfigDirectory =>
-        Path.Combine(ForeseerrPlugin.Instance?.DataFolderPath ?? "foreseerr", "foreseerr");
+        Path.Combine(_applicationPaths.PluginConfigurationsPath, "Foreseerr", "foreseerr");
 
     public void WriteHostFile()
     {
@@ -62,11 +65,7 @@ public class JellyfinHostBootstrap
             plugin.SaveConfiguration();
         }
 
-        var moonbase = TryReadMoonbaseKeys();
-        var mdblistKey = FirstNonEmpty(config?.MdblistApiKey, moonbase.MdbListApiKey);
-        var tmdbKey = FirstNonEmpty(config?.TmdbApiKey, moonbase.TmdbApiKey);
-        var webhookSecret = config?.WebhookSecret ?? "";
-        var webhookUrl = $"http://127.0.0.1:{GetHttpPort()}/ForeseerrPlugin/Webhook";
+        var mdblistKey = FirstNonEmpty(config?.MdblistApiKey, TryReadMoonbaseMdbListKey());
 
         var host = new Dictionary<string, object?>
         {
@@ -83,16 +82,11 @@ public class JellyfinHostBootstrap
                 ["ip"] = "127.0.0.1",
                 ["port"] = GetHttpPort(),
                 ["useSsl"] = false,
-                ["urlBase"] = "",
+                ["urlBase"] = GetBasePath(),
                 ["externalHostname"] = publicUrl,
                 ["serverId"] = _appHost.SystemId,
                 ["apiKey"] = apiKey ?? config?.ApiKeyToken ?? "",
                 ["libraries"] = CollectLibraries(),
-            },
-            ["webhook"] = new Dictionary<string, string>
-            {
-                ["url"] = webhookUrl,
-                ["secret"] = webhookSecret,
             },
         };
 
@@ -106,16 +100,19 @@ public class JellyfinHostBootstrap
             host["mdblist"] = new Dictionary<string, string> { ["apiKey"] = mdblistKey };
         }
 
-        if (!string.IsNullOrEmpty(tmdbKey))
-        {
-            host["tmdb"] = new Dictionary<string, string> { ["apiKey"] = tmdbKey };
-        }
-
-        var admin = _userManager.Users.FirstOrDefault(user =>
+        // Jellyfin changed Users to GetUsers in a 10.11 patch release.
+        // Resolve only this API boundary dynamically to support both forms.
+        var managerType = typeof(IUserManager);
+        var users = (managerType.GetMethod("GetUsers")?.Invoke(_userManager, null)
+            ?? managerType.GetProperty("Users")?.GetValue(_userManager))
+            as IEnumerable<global::Jellyfin.Database.Implementations.Entities.User>
+            ?? throw new InvalidOperationException("Jellyfin user enumeration API is unavailable.");
+        var admin = users.FirstOrDefault(user =>
         {
             try
             {
-                return user.HasPermission(PermissionKind.IsAdministrator);
+                return user.HasPermission(PermissionKind.IsAdministrator)
+                    && !user.HasPermission(PermissionKind.IsDisabled);
             }
             catch
             {
@@ -126,18 +123,22 @@ public class JellyfinHostBootstrap
         {
             host["adminUser"] = new Dictionary<string, string>
             {
-                ["jellyfinUserId"] = admin.Id.ToString("D"),
+                ["jellyfinUserId"] = admin.Id.ToString("N"),
                 ["jellyfinUsername"] = admin.Username,
                 ["email"] = string.IsNullOrWhiteSpace(admin.Username)
-                    ? admin.Id.ToString("D")
+                    ? admin.Id.ToString("N")
                     : admin.Username,
             };
         }
 
         var path = Path.Combine(ConfigDirectory, "jellyfin-host.json");
-        File.WriteAllText(
-            path,
-            JsonConvert.SerializeObject(host, Formatting.Indented));
+        var temporary = path + ".tmp";
+        var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        using (var stream = new FileStream(temporary, options))
+        using (var writer = new StreamWriter(stream))
+            writer.Write(JsonConvert.SerializeObject(host, Formatting.Indented));
+        File.Move(temporary, path, overwrite: true);
         _logger.LogInformation("Wrote Foreseerr jellyfin-host.json to {Path}", path);
     }
 
@@ -280,7 +281,7 @@ public class JellyfinHostBootstrap
             });
     }
 
-    private (string? MdbListApiKey, string? TmdbApiKey) TryReadMoonbaseKeys()
+    private string? TryReadMoonbaseMdbListKey()
     {
         try
         {
@@ -294,19 +295,11 @@ public class JellyfinHostBootstrap
                     continue;
                 }
 
-                var doc = XDocument.Load(file);
-                var root = doc.Root;
-                if (root == null)
+                var mdb = XDocument.Load(file).Root?.Element("MdblistApiKey")?.Value;
+                if (!string.IsNullOrWhiteSpace(mdb))
                 {
-                    continue;
-                }
-
-                var mdb = root.Element("MdblistApiKey")?.Value;
-                var tmdb = root.Element("TmdbApiKey")?.Value;
-                if (!string.IsNullOrWhiteSpace(mdb) || !string.IsNullOrWhiteSpace(tmdb))
-                {
-                    _logger.LogInformation("Imported rating keys from {File}", name);
-                    return (string.IsNullOrWhiteSpace(mdb) ? null : mdb, string.IsNullOrWhiteSpace(tmdb) ? null : tmdb);
+                    _logger.LogInformation("Imported MDBList key from {File}", name);
+                    return mdb;
                 }
             }
         }
@@ -315,7 +308,7 @@ public class JellyfinHostBootstrap
             _logger.LogDebug(ex, "Moonbase config import skipped");
         }
 
-        return (null, null);
+        return null;
     }
 
     private string? EnsureApiKey()
@@ -372,48 +365,12 @@ public class JellyfinHostBootstrap
         return null;
     }
 
-    private object? ReadNetworkConfiguration()
-    {
-        var configManager = _services.GetService<IServerConfigurationManager>();
-        if (configManager == null)
-        {
-            return null;
-        }
+    private NetworkConfiguration? ReadNetworkConfiguration() =>
+        _services.GetService<IServerConfigurationManager>()?.GetNetworkConfiguration();
 
-        foreach (var method in configManager.GetType().GetMethods())
-        {
-            if (method.Name != "GetNetworkConfiguration" || method.GetParameters().Length != 0)
-            {
-                continue;
-            }
+    public string GetBasePath() =>
+        (ReadNetworkConfiguration()?.BaseUrl ?? "").TrimEnd('/');
 
-            return method.Invoke(configManager, null);
-        }
-
-        var getGeneric = configManager.GetType().GetMethods()
-            .FirstOrDefault(method =>
-                method.Name == "GetConfiguration"
-                && method.IsGenericMethodDefinition
-                && method.GetParameters().Length == 0);
-        if (getGeneric == null)
-        {
-            return null;
-        }
-
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            var networkType = assembly.GetType("Jellyfin.Networking.Configuration.NetworkConfiguration")
-                ?? assembly.GetType("MediaBrowser.Model.Configuration.NetworkConfiguration");
-            if (networkType == null)
-            {
-                continue;
-            }
-
-            return getGeneric.MakeGenericMethod(networkType).Invoke(configManager, null);
-        }
-
-        return null;
-    }
 }
 
 public static class PluginHmac

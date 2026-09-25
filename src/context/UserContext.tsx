@@ -1,5 +1,6 @@
 import type { User } from '@app/hooks/useUser';
 import { useUser } from '@app/hooks/useUser';
+import { withPublicBasePath } from '@app/utils/publicBasePath';
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router';
 
@@ -31,7 +32,7 @@ export const UserContext = ({ initialUser, children }: UserContextProps) => {
       !routing.current
     ) {
       routing.current = true;
-      window.location.href = '/login';
+      window.location.href = withPublicBasePath('/login');
     }
   }, [location.pathname, location.search, user, error]);
 

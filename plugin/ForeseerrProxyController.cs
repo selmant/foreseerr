@@ -1,281 +1,199 @@
 using System.Reflection;
-using System.Text;
-using Jellyfin.Data.Enums;
-using MediaBrowser.Controller.Library;
+using System.Text.Encodings.Web;
+using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Enums;
+using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 
 namespace Foreseerr.Jellyfin;
 
 [ApiController]
 [Route("")]
-public class ForeseerrProxyController : ControllerBase
+public class ForeseerrProxyController(
+    SidecarSupervisor supervisor,
+    SidecarSessionService sessions,
+    IHttpClientFactory clients,
+    IAuthService auth) : ControllerBase
 {
     private static readonly HashSet<string> HopByHop = new(StringComparer.OrdinalIgnoreCase)
     {
         "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-        "te", "trailers", "transfer-encoding", "upgrade", "host",
+        "te", "trailer", "trailers", "transfer-encoding", "upgrade", "host",
     };
-
-    private readonly SidecarSupervisor _supervisor;
-    private readonly SidecarSessionService _sessions;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IUserManager _userManager;
-    private readonly ILogger<ForeseerrProxyController> _logger;
-
-    public ForeseerrProxyController(
-        SidecarSupervisor supervisor,
-        SidecarSessionService sessions,
-        IHttpClientFactory httpClientFactory,
-        IUserManager userManager,
-        ILogger<ForeseerrProxyController> logger)
-    {
-        _supervisor = supervisor;
-        _sessions = sessions;
-        _httpClientFactory = httpClientFactory;
-        _userManager = userManager;
-        _logger = logger;
-    }
 
     [HttpGet("ForeseerrPlugin/loader.js")]
     [AllowAnonymous]
     public IActionResult Loader()
     {
-        var stream = Assembly.GetExecutingAssembly()
+        using var stream = Assembly.GetExecutingAssembly()
             .GetManifestResourceStream("Foreseerr.Jellyfin.Web.loader.js");
-        if (stream == null)
-        {
-            return NotFound();
-        }
-
+        if (stream == null) return NotFound();
         using var reader = new StreamReader(stream);
         return Content(reader.ReadToEnd(), "application/javascript");
     }
 
     [HttpGet("ForeseerrPlugin/Status")]
-    [Authorize]
-    public IActionResult Status()
+    [Authorize(Policy = "RequiresElevation")]
+    public IActionResult Status() => Ok(new
     {
-        var config = ForeseerrPlugin.Instance?.Configuration;
-        return Ok(new
-        {
-            running = _supervisor.IsRunning,
-            pid = _supervisor.Pid,
-            origin = _supervisor.Origin,
-            lastError = _supervisor.LastError ?? config?.LastError,
-            betterTrakt = JellyfinHostBootstrap.BetterTraktPresent(),
-            publicServerUrl = config?.PublicServerUrl,
-            sidecarPort = _supervisor.Port,
-            version = typeof(ForeseerrPlugin).Assembly.GetName().Version?.ToString(),
-        });
-    }
+        running = supervisor.IsRunning,
+        ready = supervisor.IsReady,
+        pid = supervisor.Pid,
+        lastError = supervisor.LastError,
+        betterTrakt = JellyfinHostBootstrap.BetterTraktPresent(),
+        sidecarPort = supervisor.Port,
+        version = typeof(ForeseerrPlugin).Assembly.GetName().Version?.ToString(),
+    });
 
-    [HttpPost("ForeseerrPlugin/Webhook")]
-    [AllowAnonymous]
-    public IActionResult Webhook()
-    {
-        var expected = ForeseerrPlugin.Instance?.Configuration.WebhookSecret;
-        var provided = Request.Query["secret"].ToString();
-        if (string.IsNullOrEmpty(provided)
-            && Request.Headers.TryGetValue("Authorization", out var auth))
-        {
-            var header = auth.ToString();
-            provided = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-                ? header["Bearer ".Length..].Trim()
-                : header;
-        }
-
-        if (string.IsNullOrEmpty(expected)
-            || !string.Equals(provided, expected, StringComparison.Ordinal))
-        {
-            return Unauthorized();
-        }
-
-        _logger.LogInformation("Accepted Foreseerr webhook notification");
-        return NoContent();
-    }
-
-    [HttpPost("ForeseerrPlugin/sso")]
+    [HttpPost("Foreseerr/sso")]
     [Authorize]
     public async Task<IActionResult> Sso(CancellationToken cancellationToken)
     {
-        var cookie = await AttachSessionCookie(cancellationToken);
-        if (string.IsNullOrEmpty(cookie))
-        {
-            return Ok(new
-            {
-                url = "/Foreseerr/login",
-                mint = false,
-                lastError = _supervisor.LastError,
-            });
-        }
+        var authorization = await auth.Authenticate(Request).ConfigureAwait(false);
+        if (!authorization.IsAuthenticated || authorization.IsApiKey
+            || authorization.UserId == Guid.Empty || authorization.User == null || string.IsNullOrEmpty(authorization.Token)) return Unauthorized();
+        var session = new SidecarSessionService.BrowserSession(authorization.UserId, authorization.Token);
+        var cookie = await sessions.EnsureCookieAsync(session, authorization.User!.Username,
+            authorization.User.HasPermission(PermissionKind.IsAdministrator), cancellationToken);
+        if (cookie == null) return Problem("Foreseerr sign-in is unavailable. Retry after checking the plugin status.", statusCode: 503);
 
-        AppendBrowserCookie(cookie);
-        return Ok(new { url = "/Foreseerr/", mint = true });
+        sessions.Forget(Request.Cookies[SidecarSessionService.CookieName]);
+        Response.Cookies.Append(SidecarSessionService.CookieName, sessions.Create(session), CookieOptions());
+        Response.Headers.CacheControl = "no-store";
+        return Ok(new { url = Request.PathBase + "/Foreseerr/", mint = true });
     }
 
     [AcceptVerbs("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")]
     [Route("Foreseerr")]
     [Route("Foreseerr/{**path}")]
-    [Authorize]
-    public async Task Proxy(string? path, CancellationToken cancellationToken)
+    [AllowAnonymous] // Opaque browser ticket is validated against Jellyfin below.
+    public async Task<IActionResult> Proxy(string? path, CancellationToken cancellationToken)
     {
-        var cookie = await AttachSessionCookie(cancellationToken);
-        var targetPath = Request.Path.Value ?? "/Foreseerr/";
-        var target = _supervisor.Origin + targetPath + Request.QueryString.Value;
-        using var upstream = new HttpRequestMessage(new HttpMethod(Request.Method), target);
-        if (Request.ContentLength is > 0 || Request.ContentType != null)
+        if (!IsSafeMethod(Request.Method) && !IsSameOrigin(Request))
+            return StatusCode(StatusCodes.Status403Forbidden);
+        if (HttpContext.WebSockets.IsWebSocketRequest)
+            return StatusCode(StatusCodes.Status501NotImplemented);
+        var authenticated = await sessions.AuthenticateAsync(Request).ConfigureAwait(false);
+        if (authenticated == null)
         {
-            upstream.Content = new StreamContent(Request.Body);
-            if (!string.IsNullOrEmpty(Request.ContentType))
+            Response.Cookies.Delete(SidecarSessionService.CookieName, CookieOptions());
+            if (HttpMethods.IsGet(Request.Method) && Request.Headers.Accept.ToString().Contains("text/html", StringComparison.Ordinal))
             {
-                upstream.Content.Headers.TryAddWithoutValidation("Content-Type", Request.ContentType);
+                Response.StatusCode = StatusCodes.Status401Unauthorized;
+                Response.Headers.CacheControl = "no-store";
+                var jellyfinUrl = HtmlEncoder.Default.Encode(Request.PathBase + "/web/index.html");
+                return Content($"<!doctype html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width\"><title>Sign in to Foreseerr</title></head><body><main><h1>Sign in through Jellyfin</h1><p>Open Foreseerr from Jellyfin to start a new session.</p><a href=\"{jellyfinUrl}\">Return to Jellyfin</a></main></body></html>", "text/html");
             }
+            return Unauthorized(new { message = "Open Foreseerr from Jellyfin to sign in." });
         }
 
+        var (session, authorization) = authenticated.Value;
+        var cookie = await sessions.EnsureCookieAsync(session, authorization.User!.Username,
+            authorization.User.HasPermission(PermissionKind.IsAdministrator), cancellationToken);
+        if (cookie == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+        // These routes can replace a Foreseerr identity independently of Jellyfin.
+        // Keep the mint endpoint private even to authenticated browser sessions.
+        var route = (path ?? "").TrimEnd('/');
+        if (route.StartsWith("api/v1/auth/", StringComparison.OrdinalIgnoreCase)
+            && !route.Equals("api/v1/auth/me", StringComparison.OrdinalIgnoreCase)
+            && !route.Equals("api/v1/auth/logout", StringComparison.OrdinalIgnoreCase))
+            return NotFound();
+
+        // The upstream always uses a fixed origin and mount. Request.PathBase
+        // belongs to Jellyfin and is deliberately not part of the sidecar path.
+        using var upstream = new HttpRequestMessage(new HttpMethod(Request.Method),
+            supervisor.Origin + Request.Path + Request.QueryString);
+        if (Request.ContentLength is > 0 || Request.Headers.ContainsKey("Transfer-Encoding"))
+            upstream.Content = new StreamContent(Request.Body);
+        var excluded = ConnectionHeaders(Request.Headers.Connection.ToString());
         foreach (var header in Request.Headers)
         {
-            if (HopByHop.Contains(header.Key) || header.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!upstream.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray())
-                && upstream.Content != null)
-            {
+            if (excluded.Contains(header.Key) || IsCredentialHeader(header.Key)) continue;
+            if (!upstream.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray()) && upstream.Content != null)
                 upstream.Content.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
-            }
         }
+        upstream.Headers.Add("Cookie", cookie);
+        upstream.Headers.Add("X-Foreseerr-Plugin-Secret", ForeseerrPlugin.Instance!.Configuration.PluginSecret);
+        upstream.Headers.Add("X-Forwarded-Proto", Request.Scheme);
 
-        if (!string.IsNullOrEmpty(cookie))
-        {
-            upstream.Headers.TryAddWithoutValidation("Cookie", cookie);
-        }
-
-        var client = _httpClientFactory.CreateClient(PluginServiceRegistrator.SidecarHttpClient);
-        client.Timeout = TimeSpan.FromMinutes(5);
-        using var response = await client.SendAsync(
-            upstream,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-
-        Response.StatusCode = (int)response.StatusCode;
-        foreach (var header in response.Headers)
-        {
-            if (HopByHop.Contains(header.Key))
-            {
-                continue;
-            }
-
-            Response.Headers[header.Key] = header.Value.ToArray();
-        }
-
-        foreach (var header in response.Content.Headers)
-        {
-            if (header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            Response.Headers[header.Key] = header.Value.ToArray();
-        }
-
-        if (response.Headers.TryGetValues("Set-Cookie", out var setCookies))
-        {
-            foreach (var setCookie in setCookies)
-            {
-                AppendBrowserCookie(setCookie.Split(';', 2)[0]);
-            }
-        }
-
-        await response.Content.CopyToAsync(Response.Body, cancellationToken);
-    }
-
-    private async Task<string?> AttachSessionCookie(CancellationToken cancellationToken)
-    {
-        var userId = ForeseerrClaims.ReadUserId(User);
-        if (userId == Guid.Empty)
-        {
-            return null;
-        }
-
-        var user = _userManager.GetUserById(userId);
-        if (user == null)
-        {
-            return null;
-        }
-
-        var token = ReadJellyfinToken();
-        var isAdmin = false;
+        using var client = clients.CreateClient(PluginServiceRegistrator.SidecarHttpClient);
+        HttpResponseMessage response;
         try
         {
-            isAdmin = user.HasPermission(PermissionKind.IsAdministrator);
+            response = await client.SendAsync(upstream, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch
+        catch (HttpRequestException)
         {
-            isAdmin = false;
+            return StatusCode(StatusCodes.Status502BadGateway);
         }
-
-        return await _sessions.EnsureCookieAsync(
-            user.Id,
-            user.Username,
-            isAdmin,
-            token,
-            cancellationToken);
-    }
-
-    private string? ReadJellyfinToken()
-    {
-        if (Request.Headers.TryGetValue("X-Emby-Token", out var emby) && !string.IsNullOrEmpty(emby))
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return emby.ToString();
+            return StatusCode(StatusCodes.Status504GatewayTimeout);
         }
-
-        if (Request.Headers.TryGetValue("X-MediaBrowser-Token", out var mb) && !string.IsNullOrEmpty(mb))
+        using (response)
         {
-            return mb.ToString();
-        }
-
-        var authorization = Request.Headers.Authorization.ToString();
-        const string marker = "Token=\"";
-        var start = authorization.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
-        if (start >= 0)
-        {
-            start += marker.Length;
-            var end = authorization.IndexOf('"', start);
-            if (end > start)
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                || (response.StatusCode == System.Net.HttpStatusCode.Forbidden
+                    && route.Equals("api/v1/auth/me", StringComparison.OrdinalIgnoreCase))) session.Cookie = null;
+            if (route.Equals("api/v1/auth/logout", StringComparison.OrdinalIgnoreCase) && response.IsSuccessStatusCode)
             {
-                return authorization[start..end];
+                sessions.Forget(Request.Cookies[SidecarSessionService.CookieName]);
+                Response.Cookies.Delete(SidecarSessionService.CookieName, CookieOptions());
             }
-        }
-
-        return null;
-    }
-
-    private void AppendBrowserCookie(string cookiePair)
-    {
-        var pair = cookiePair.Contains(';') ? cookiePair.Split(';', 2)[0] : cookiePair;
-        Response.Cookies.Append(
-            pair.Split('=', 2)[0],
-            pair.Contains('=') ? pair.Split('=', 2)[1] : string.Empty,
-            new CookieOptions
+            Response.StatusCode = (int)response.StatusCode;
+            var responseExcluded = ConnectionHeaders(string.Join(",", response.Headers.Connection));
+            foreach (var header in response.Headers.Concat(response.Content.Headers))
             {
-                Path = "/Foreseerr",
-                HttpOnly = true,
-                SameSite = SameSiteMode.Lax,
-            });
+                if (responseExcluded.Contains(header.Key) || header.Key.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase)) continue;
+                Response.Headers[header.Key] = header.Value.ToArray();
+            }
+            // Authenticated content must never be shared by an intermediary cache.
+            Response.Headers.CacheControl = "no-store";
+            await response.Content.CopyToAsync(Response.Body, cancellationToken);
+        }
+        return new EmptyResult();
     }
-}
 
-public static class ForeseerrClaims
-{
-    public static Guid ReadUserId(System.Security.Claims.ClaimsPrincipal user)
+    private CookieOptions CookieOptions() => new()
     {
-        var value = user.FindFirst("UserId")?.Value
-            ?? user.FindFirst("http://jellyfin.org/claims/userid")?.Value
-            ?? user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(value, out var id) ? id : Guid.Empty;
+        Path = Request.PathBase + "/Foreseerr",
+        HttpOnly = true,
+        Secure = Request.IsHttps,
+        SameSite = SameSiteMode.Strict,
+        MaxAge = SidecarSessionService.Lifetime,
+        IsEssential = true,
+    };
+
+    internal static bool IsSafeMethod(string method) => method is "GET" or "HEAD" or "OPTIONS";
+
+    internal static bool IsSameOrigin(HttpRequest request)
+    {
+        // Fetch Metadata comes from the browser itself, so it stays correct behind
+        // a TLS-terminating proxy that Jellyfin sees as http:// or a rewritten Host.
+        var site = request.Headers["Sec-Fetch-Site"].ToString();
+        if (site.Length > 0) return site == "same-origin";
+        return Uri.TryCreate(request.Headers.Origin.ToString(), UriKind.Absolute, out var origin)
+            && Uri.TryCreate($"{request.Scheme}://{request.Host}", UriKind.Absolute, out var expected)
+            && origin.GetLeftPart(UriPartial.Authority) == expected.GetLeftPart(UriPartial.Authority);
     }
+
+    private static HashSet<string> ConnectionHeaders(string connection)
+    {
+        var result = new HashSet<string>(HopByHop, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in connection.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)) result.Add(name);
+        return result;
+    }
+
+    private static bool IsCredentialHeader(string name) =>
+        name.Equals("Cookie", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+        || name.StartsWith("X-Api-", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("X-Emby-Token", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("X-MediaBrowser-Token", StringComparison.OrdinalIgnoreCase)
+        || name.StartsWith("X-Foreseerr-", StringComparison.OrdinalIgnoreCase)
+        || name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("Forwarded", StringComparison.OrdinalIgnoreCase);
 }

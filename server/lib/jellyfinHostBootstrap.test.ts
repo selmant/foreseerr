@@ -1,13 +1,18 @@
 import { MediaServerType } from '@server/constants/server';
 import {
   applyJellyfinHostFile,
+  canonicalJellyfinUserId,
   jellyfinUserIdCandidates,
 } from '@server/lib/jellyfinHostBootstrap';
 import { getSettings, resetSettings } from '@server/lib/settings';
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 
 describe('applyJellyfinHostFile', () => {
+  // Other suites share the settings singleton; start from defaults.
+  beforeEach(() => {
+    resetSettings();
+  });
   afterEach(() => {
     resetSettings();
   });
@@ -93,25 +98,36 @@ describe('applyJellyfinHostFile', () => {
     assert.equal(settings.jellyfin.libraries[0]?.lastScan, 9);
   });
 
-  it('enables a managed ForeseerrPlugin webhook without wiping radarr', () => {
+  it('disables the prototype no-op webhook while preserving custom webhooks', () => {
     const settings = getSettings();
+    const webhook = settings.notifications.agents.webhook;
+    webhook.enabled = true;
+    webhook.options.webhookUrl =
+      'http://127.0.0.1:8096/ForeseerrPlugin/Webhook';
+    applyJellyfinHostFile({ jellyfin: { apiKey: 'k' } });
+    assert.equal(settings.notifications.agents.webhook.enabled, false);
+    settings.notifications.agents.webhook.enabled = true;
+    settings.notifications.agents.webhook.options.webhookUrl =
+      'https://example.test/notify';
+    applyJellyfinHostFile({ jellyfin: { apiKey: 'k' } });
+    assert.equal(settings.notifications.agents.webhook.enabled, true);
+  });
+
+  it('preserves disabled libraries and imports a Jellyfin subpath', () => {
+    const settings = getSettings();
+    settings.jellyfin.libraries = [
+      { id: 'lib-1', name: 'Movies', type: 'movie', enabled: false },
+    ];
     applyJellyfinHostFile({
-      jellyfin: { apiKey: 'k' },
-      webhook: {
-        url: 'http://127.0.0.1:8096/ForeseerrPlugin/Webhook',
-        secret: 'whsec',
+      jellyfin: {
+        urlBase: '/jellyfin',
+        libraries: [
+          { id: 'lib-1', name: 'Movies', type: 'movie', enabled: true },
+        ],
       },
     });
-    assert.equal(settings.notifications.agents.webhook.enabled, true);
-    assert.equal(settings.notifications.agents.webhook.types, 3918);
-    assert.equal(
-      settings.notifications.agents.webhook.options.webhookUrl,
-      'http://127.0.0.1:8096/ForeseerrPlugin/Webhook'
-    );
-    assert.equal(
-      settings.notifications.agents.webhook.options.authHeader,
-      'Bearer whsec'
-    );
+    assert.equal(settings.jellyfin.urlBase, '/jellyfin');
+    assert.equal(settings.jellyfin.libraries[0].enabled, false);
   });
 
   it('normalizes dashed and compact Jellyfin user ids', () => {
@@ -120,5 +136,8 @@ describe('applyJellyfinHostFile', () => {
     const ids = jellyfinUserIdCandidates(compact);
     assert.ok(ids.includes(dashed));
     assert.ok(ids.includes(compact));
+    assert.equal(canonicalJellyfinUserId(dashed.toUpperCase()), compact);
+    assert.equal(canonicalJellyfinUserId(compact), compact);
+    assert.equal(canonicalJellyfinUserId('jf-user'), 'jf-user');
   });
 });

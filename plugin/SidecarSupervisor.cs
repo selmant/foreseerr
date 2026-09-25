@@ -1,304 +1,190 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Foreseerr.Jellyfin;
 
-public class SidecarSupervisor : IHostedService, IDisposable
+/// <summary>One owned child process, started after Jellyfin and awaited on shutdown.</summary>
+public sealed class SidecarSupervisor(
+    JellyfinHostBootstrap bootstrap,
+    IHostApplicationLifetime lifetime,
+    IHttpClientFactory clients,
+    ILogger<SidecarSupervisor> logger) : BackgroundService
 {
-    private readonly JellyfinHostBootstrap _bootstrap;
-    private readonly ILogger<SidecarSupervisor> _logger;
-    private Process? _process;
-    private readonly HttpClient _health = new() { Timeout = TimeSpan.FromSeconds(2) };
-    private CancellationTokenSource? _watchCts;
-
-    public SidecarSupervisor(JellyfinHostBootstrap bootstrap, ILogger<SidecarSupervisor> logger)
-    {
-        _bootstrap = bootstrap;
-        _logger = logger;
-    }
-
-    public int Port => ForeseerrPlugin.Instance?.Configuration.SidecarPort is > 0 and var port
-        ? port
-        : 5055;
-
+    private readonly object _restartLock = new();
+    private CancellationTokenSource? _restart;
+    public int Port { get; private set; }
     public string Origin => $"http://127.0.0.1:{Port}";
-
-    public int? Pid => _process is { HasExited: false } ? _process.Id : null;
-
+    public int? Pid { get; private set; }
+    public bool IsRunning => Pid != null;
+    public bool IsReady { get; private set; }
     public string? LastError { get; private set; }
+    public Guid Generation { get; private set; }
 
-    public bool IsRunning => _process is { HasExited: false };
-
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public void RequestRestart()
     {
-        _watchCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        await StartProcessAsync(_watchCts.Token);
-        _ = WatchAsync(_watchCts.Token);
+        lock (_restartLock) _restart?.Cancel();
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        try
+        // A plugin must not hold up Jellyfin's HTTP listener while booting its child.
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = lifetime.ApplicationStarted.Register(() => started.TrySetResult());
+        await started.Task.WaitAsync(stoppingToken).ConfigureAwait(false);
+        var retry = TimeSpan.FromSeconds(2);
+        while (!stoppingToken.IsCancellationRequested)
         {
-            _watchCts?.Cancel();
-        }
-        catch
-        {
-            // ignore
-        }
-
-        TryStop();
-        return Task.CompletedTask;
-    }
-
-    public async Task RestartAsync()
-    {
-        TryStop();
-        await StartProcessAsync(CancellationToken.None);
-    }
-
-    public void Dispose()
-    {
-        try
-        {
-            _watchCts?.Cancel();
-            _watchCts?.Dispose();
-        }
-        catch
-        {
-            // ignore
-        }
-
-        TryStop();
-        _health.Dispose();
-        GC.SuppressFinalize(this);
-    }
-
-    private async Task WatchAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
+            using var cycle = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            lock (_restartLock) _restart = cycle;
             try
             {
-                await Task.Delay(2000, cancellationToken);
+                await RunProcessAsync(cycle.Token).ConfigureAwait(false);
+                retry = TimeSpan.FromSeconds(2);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cycle.IsCancellationRequested)
             {
-                return;
-            }
-
-            if (_process is { HasExited: false })
-            {
-                continue;
-            }
-
-            _logger.LogWarning("Foreseerr sidecar exited; restarting");
-            try
-            {
-                await StartProcessAsync(cancellationToken);
+                // Requested restart or host shutdown. The owned process is stopped below.
             }
             catch (Exception ex)
             {
                 LastError = ex.Message;
-                SaveLastError();
-                _logger.LogError(ex, "Foreseerr sidecar restart failed");
+                logger.LogError(ex, "Foreseerr sidecar failed; retrying in {Seconds}s", retry.TotalSeconds);
             }
+            finally
+            {
+                lock (_restartLock) _restart = null;
+            }
+            if (stoppingToken.IsCancellationRequested) break;
+            if (cycle.IsCancellationRequested) continue;
+            await Task.Delay(retry, stoppingToken).ConfigureAwait(false);
+            retry = TimeSpan.FromSeconds(Math.Min(retry.TotalSeconds * 2, 60));
         }
     }
 
-    private async Task StartProcessAsync(CancellationToken cancellationToken)
+    private async Task RunProcessAsync(CancellationToken cancellationToken)
     {
-        try
+        bootstrap.WriteHostFile();
+        var binary = ResolveBinaryPath() ?? throw new InvalidOperationException(
+            "No Foreseerr sidecar binary for this OS/architecture in the plugin sidecar directory.");
+        var config = ForeseerrPlugin.Instance?.Configuration
+            ?? throw new InvalidOperationException("Plugin configuration is unavailable.");
+        if (config.SidecarPort is < 0 or > 65535) throw new InvalidOperationException("Sidecar port must be 0–65535.");
+        if (string.IsNullOrEmpty(config.PluginSecret)) throw new InvalidOperationException("Plugin secret is unavailable.");
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(binary, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute);
+
+        var generation = Guid.NewGuid();
+        var start = new ProcessStartInfo(binary)
         {
-            Directory.CreateDirectory(_bootstrap.ConfigDirectory);
-            _bootstrap.WriteHostFile();
-            var binary = ResolveBinaryPath();
-            if (binary == null)
+            WorkingDirectory = Path.GetDirectoryName(binary)!,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        start.Environment["FORESEERR_PLUGIN"] = "1";
+        start.Environment["FORESEERR_PLUGIN_SECRET"] = config.PluginSecret;
+        start.Environment["FORESEERR_PLUGIN_INSTANCE"] = generation.ToString("N");
+        start.Environment["FORESEERR_BASE_PATH"] = "/Foreseerr";
+        start.Environment["FORESEERR_PUBLIC_BASE_PATH"] = bootstrap.GetBasePath() + "/Foreseerr";
+        start.Environment["CONFIG_DIRECTORY"] = bootstrap.ConfigDirectory;
+        start.Environment["HOST"] = "127.0.0.1";
+        start.Environment["PORT"] = config.SidecarPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        start.Environment["NODE_ENV"] = "production";
+        start.Environment.Remove("FORESEERR_RUNTIME");
+
+        using var process = new Process { StartInfo = start };
+        var listening = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        process.OutputDataReceived += (_, args) =>
+        {
+            if (args.Data?.StartsWith("FORESEERR_PLUGIN_READY ", StringComparison.Ordinal) == true)
             {
-                LastError = "No Foreseerr sidecar binary for this architecture. Place foreseerr-linux-x64 or foreseerr-linux-arm64 in the plugin sidecar/ folder.";
-                _logger.LogError("{Error}", LastError);
-                SaveLastError();
+                try
+                {
+                    using var message = JsonDocument.Parse(args.Data["FORESEERR_PLUGIN_READY ".Length..]);
+                    if (message.RootElement.GetProperty("instance").GetString() == generation.ToString("N"))
+                    {
+                        var port = message.RootElement.GetProperty("port").GetInt32();
+                        if (port is > 0 and <= 65535) listening.TrySetResult(port);
+                    }
+                }
+                catch (JsonException) { }
                 return;
             }
-
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(
-                    binary,
-                    UnixFileMode.UserRead
-                        | UnixFileMode.UserWrite
-                        | UnixFileMode.UserExecute
-                        | UnixFileMode.GroupRead
-                        | UnixFileMode.GroupExecute
-                        | UnixFileMode.OtherRead
-                        | UnixFileMode.OtherExecute);
-            }
-
-            var secret = ForeseerrPlugin.Instance?.Configuration.PluginSecret ?? Guid.NewGuid().ToString("N");
-            var start = new ProcessStartInfo
-            {
-                FileName = binary,
-                WorkingDirectory = _bootstrap.ConfigDirectory,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
-            start.Environment["FORESEERR_PLUGIN"] = "1";
-            start.Environment["FORESEERR_PLUGIN_SECRET"] = secret;
-            start.Environment["FORESEERR_BASE_PATH"] = "/Foreseerr";
-            start.Environment["CONFIG_DIRECTORY"] = _bootstrap.ConfigDirectory;
-            start.Environment["HOST"] = "127.0.0.1";
-            start.Environment["PORT"] = Port.ToString();
-            start.Environment["NODE_ENV"] = "production";
-
-            _process = Process.Start(start);
-            if (_process == null)
-            {
-                LastError = "Failed to start Foreseerr process";
-                SaveLastError();
-                return;
-            }
-
-            _process.OutputDataReceived += (_, args) =>
-            {
-                if (!string.IsNullOrEmpty(args.Data))
-                {
-                    _logger.LogInformation("[foreseerr] {Line}", args.Data);
-                }
-            };
-            _process.ErrorDataReceived += (_, args) =>
-            {
-                if (!string.IsNullOrEmpty(args.Data))
-                {
-                    _logger.LogWarning("[foreseerr] {Line}", args.Data);
-                }
-            };
-            _process.BeginOutputReadLine();
-            _process.BeginErrorReadLine();
-
-            var ready = await WaitHealthy(cancellationToken);
-            if (!ready)
-            {
-                LastError = "Foreseerr started but did not become healthy";
-                _logger.LogError("{Error}", LastError);
-                SaveLastError();
-            }
-            else
-            {
-                LastError = null;
-                SaveLastError();
-                _logger.LogInformation("Foreseerr sidecar healthy on {Origin}", Origin);
-            }
-        }
-        catch (Exception ex)
+            if (!string.IsNullOrEmpty(args.Data)) logger.LogInformation("[foreseerr] {Line}", args.Data);
+        };
+        process.ErrorDataReceived += (_, args) =>
         {
-            LastError = ex.Message;
-            SaveLastError();
-            _logger.LogError(ex, "Foreseerr sidecar failed to start");
-        }
-    }
-
-    private void TryStop()
-    {
+            if (!string.IsNullOrEmpty(args.Data)) logger.LogWarning("[foreseerr] {Line}", args.Data);
+        };
         try
         {
-            if (_process is { HasExited: false })
-            {
-                _process.Kill(entireProcessTree: true);
-                _process.WaitForExit(3000);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Error stopping Foreseerr sidecar");
+            if (!process.Start()) throw new InvalidOperationException("Could not start Foreseerr.");
+            Pid = process.Id;
+            Generation = generation;
+            Port = 0;
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            var exit = process.WaitForExitAsync(cancellationToken);
+            using var startup = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            startup.CancelAfter(TimeSpan.FromSeconds(60));
+            var bound = listening.Task.WaitAsync(startup.Token);
+            if (await Task.WhenAny(bound, exit).ConfigureAwait(false) == exit)
+                throw new InvalidOperationException("Foreseerr exited before opening its listener.");
+            Port = await bound.ConfigureAwait(false);
+            var health = clients.CreateClient(PluginServiceRegistrator.SidecarHttpClient);
+            using var request = new HttpRequestMessage(HttpMethod.Get, Origin + "/Foreseerr/api/v1/status");
+            request.Headers.Add("X-Foreseerr-Plugin-Secret", config.PluginSecret);
+            using var response = await health.SendAsync(request, startup.Token).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            if (process.HasExited) throw new InvalidOperationException("Foreseerr exited during startup.");
+            IsReady = true;
+            LastError = null;
+            logger.LogInformation("Foreseerr sidecar ready on {Origin}", Origin);
+            await exit.ConfigureAwait(false);
+            throw new InvalidOperationException($"Foreseerr exited with code {process.ExitCode}.");
         }
         finally
         {
-            _process?.Dispose();
-            _process = null;
-        }
-    }
-
-    private async Task<bool> WaitHealthy(CancellationToken cancellationToken)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(45);
-        var url = $"{Origin}/Foreseerr/api/v1/status";
-        while (DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
-        {
-            if (_process is { HasExited: true })
+            IsReady = false;
+            if (Pid != null)
             {
-                return false;
-            }
-
-            try
-            {
-                using var response = await _health.GetAsync(url, cancellationToken);
-                if (response.IsSuccessStatusCode)
+                try
                 {
-                    return true;
+                    if (!process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                        // Bounded reap even when the cycle was cancelled.
+                        await process.WaitForExitAsync(CancellationToken.None)
+                            .WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false);
+                    }
                 }
+                catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+                {
+                    logger.LogWarning("Foreseerr sidecar {Pid} did not stop cleanly: {Message}", Pid, ex.Message);
+                }
+                Pid = null;
             }
-            catch
-            {
-                // still starting
-            }
-
-            await Task.Delay(400, cancellationToken);
+            Port = 0;
         }
-
-        return false;
     }
 
     private static string? ResolveBinaryPath()
     {
-        var pluginDir = Path.GetDirectoryName(typeof(SidecarSupervisor).Assembly.Location);
-        if (pluginDir == null)
+        var directory = Path.GetDirectoryName(typeof(SidecarSupervisor).Assembly.Location);
+        var name = (OperatingSystem.IsWindows(), OperatingSystem.IsLinux(), RuntimeInformation.ProcessArchitecture) switch
         {
-            return null;
-        }
-
-        var sidecarDir = Path.Combine(pluginDir, "sidecar");
-        string name;
-        if (OperatingSystem.IsWindows())
-        {
-            name = "foreseerr-windows-x64.exe";
-        }
-        else if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
-        {
-            name = "foreseerr-linux-arm64";
-        }
-        else if (RuntimeInformation.ProcessArchitecture == Architecture.X64)
-        {
-            name = "foreseerr-linux-x64";
-        }
-        else
-        {
-            return null;
-        }
-
-        var path = Path.Combine(sidecarDir, name);
+            (true, _, Architecture.X64) => "foreseerr-windows-x64.exe",
+            (_, true, Architecture.X64) => "foreseerr-linux-x64",
+            (_, true, Architecture.Arm64) => "foreseerr-linux-arm64",
+            _ => null,
+        };
+        if (directory == null || name == null) return null;
+        var path = Path.Combine(directory, "sidecar", name);
         return File.Exists(path) ? path : null;
-    }
-
-    private void SaveLastError()
-    {
-        var plugin = ForeseerrPlugin.Instance;
-        if (plugin == null)
-        {
-            return;
-        }
-
-        try
-        {
-            plugin.Configuration.LastError = LastError;
-            plugin.SaveConfiguration();
-        }
-        catch
-        {
-            // ignore
-        }
     }
 }

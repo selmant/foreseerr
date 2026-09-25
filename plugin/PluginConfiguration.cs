@@ -1,4 +1,5 @@
 using MediaBrowser.Model.Plugins;
+using System.Security.Cryptography;
 
 namespace Foreseerr.Jellyfin;
 
@@ -10,29 +11,16 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public string? PluginSecret { get; set; }
 
-    public string? WebhookSecret { get; set; }
-
-    public string? TmdbApiKey { get; set; }
-
     public string? MdblistApiKey { get; set; }
 
-    public int SidecarPort { get; set; } = 5055;
-
-    public string? LastError { get; set; }
+    public int SidecarPort { get; set; }
 
     public bool EnsureSecrets()
     {
         var changed = false;
         if (string.IsNullOrEmpty(PluginSecret))
         {
-            PluginSecret = Convert.ToHexString(Guid.NewGuid().ToByteArray())
-                + Convert.ToHexString(Guid.NewGuid().ToByteArray());
-            changed = true;
-        }
-
-        if (string.IsNullOrEmpty(WebhookSecret))
-        {
-            WebhookSecret = Convert.ToHexString(Guid.NewGuid().ToByteArray()).ToLowerInvariant();
+            PluginSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             changed = true;
         }
 

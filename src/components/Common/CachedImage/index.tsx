@@ -1,4 +1,5 @@
 import useSettings from '@app/hooks/useSettings';
+import { withPublicBasePath } from '@app/utils/publicBasePath';
 import { rewriteCachedImageSrc } from '@server/lib/imageproxySources';
 import type { CSSProperties, ImgHTMLAttributes } from 'react';
 
@@ -47,7 +48,7 @@ const CachedImage = ({
 
   return (
     <img
-      src={imageUrl}
+      src={withPublicBasePath(imageUrl)}
       alt={alt}
       className={className}
       style={imageStyle}

@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <JellyfinTarget Condition="'$(JellyfinTarget)' == ''">10.11</JellyfinTarget>
+    <TargetFramework Condition="'$(JellyfinTarget)' == '10.11'">net9.0</TargetFramework>
+    <TargetFramework Condition="'$(JellyfinTarget)' == '12'">net10.0</TargetFramework>
+    <JellyfinVersion Condition="'$(JellyfinTarget)' == '10.11'">10.11.0</JellyfinVersion>
+    <JellyfinVersion Condition="'$(JellyfinTarget)' == '12'">12.0.0</JellyfinVersion>
+    <!-- Jellyfin treats targetAbi as a minimum, so a 12 server also accepts
+         the 10.11 build. A higher revision per newer ABI makes the matching
+         build win installs and auto-updates instead of tying on version. -->
+    <PluginRevision Condition="'$(JellyfinTarget)' == '10.11'">0</PluginRevision>
+    <PluginRevision Condition="'$(JellyfinTarget)' == '12'">1</PluginRevision>
+    <TargetAbi>$(JellyfinVersion).0</TargetAbi>
+    <!-- Numeric core only: Jellyfin versions are four-part, and a prerelease
+         package.json version must not break the tagged release build. -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../package.json')), '&quot;version&quot;:\s*&quot;(\d+\.\d+\.\d+)').Groups[1].Value)</Version>
+    <AssemblyVersion>$(Version).$(PluginRevision)</AssemblyVersion>
+    <FileVersion>$(AssemblyVersion)</FileVersion>
+  </PropertyGroup>
+</Project>

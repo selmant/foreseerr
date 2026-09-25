@@ -2,6 +2,7 @@
 
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
+import { publicBasePath } from '@app/utils/publicBasePath';
 import { verifyAndResubscribePushSubscription } from '@app/utils/pushSubscriptionHelpers';
 import { useEffect } from 'react';
 
@@ -10,7 +11,7 @@ const ServiceWorkerSetup = () => {
   const { currentSettings } = useSettings();
 
   useEffect(() => {
-    if ('serviceWorker' in navigator && user?.id) {
+    if (!publicBasePath() && 'serviceWorker' in navigator && user?.id) {
       navigator.serviceWorker
         .register('/sw.js')
         .then(async (registration) => {

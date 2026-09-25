@@ -12,6 +12,7 @@ import { UserSettings } from '@server/entity/UserSettings';
 import { stopJobs } from '@server/job/schedule';
 import PreparedEmail from '@server/lib/email';
 import ImageProxy from '@server/lib/imageproxy';
+import { Permission } from '@server/lib/permissions';
 import { signPluginMint } from '@server/lib/pluginMode';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
@@ -1078,10 +1079,12 @@ describe('POST /auth/jellyfin/plugin', () => {
     const login = await agent
       .post('/auth/jellyfin/plugin')
       .set('x-foreseerr-plugin-secret', secret)
+      .set('x-foreseerr-mint', '1')
       .send({
         jellyfinUserId: 'jf-plugin-user',
         jellyfinUsername: 'pluginuser',
         jellyfinAccessToken: 'jf-token',
+        isAdministrator: true,
         timestamp,
         signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
       });
@@ -1092,14 +1095,112 @@ describe('POST /auth/jellyfin/plugin', () => {
     assert.equal(meRes.body.jellyfinUsername, 'pluginuser');
   });
 
-  it('rejects a bad signature', async () => {
+  it('stores the compact Jellyfin id the avatar proxy accepts', async () => {
+    const dashed = 'bd06861d-d704-4034-8c17-a4544a785e27';
+    const compact = dashed.replace(/-/g, '');
+    const repository = getRepository(User);
+    // Earlier plugin builds stored the dashed form.
+    const existing = await repository.save(
+      new User({
+        email: 'dashed@example.test',
+        jellyfinUsername: 'dashed',
+        jellyfinUserId: dashed,
+        avatar: `/avatarproxy/${dashed}`,
+        permissions: Permission.REQUEST,
+        userType: UserType.JELLYFIN,
+      })
+    );
     const timestamp = Math.floor(Date.now() / 1000);
-    const res = await request(app)
+    const response = await request(app)
+      .post('/auth/jellyfin/plugin')
+      .set('x-foreseerr-plugin-secret', secret)
+      .set('x-foreseerr-mint', '1')
+      .send({
+        jellyfinUserId: dashed,
+        jellyfinUsername: 'dashed',
+        jellyfinAccessToken: 'jf-token',
+        timestamp,
+        signature: signPluginMint(secret, dashed, timestamp),
+      });
+    assert.equal(response.status, 200, response.text);
+    const stored = await repository.findOneOrFail({
+      where: { id: existing.id },
+    });
+    assert.equal(stored.jellyfinUserId, compact);
+    assert.match(stored.avatar, new RegExp(`^/avatarproxy/${compact}\\?`));
+  });
+
+  it('rejects a valid signature without the shared proxy secret', async () => {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const response = await request(app)
+      .post('/auth/jellyfin/plugin')
+      .send({
+        jellyfinUserId: 'jf-plugin-user',
+        jellyfinUsername: 'pluginuser',
+        jellyfinAccessToken: 'jf-token',
+        timestamp,
+        signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
+      });
+    assert.equal(response.status, 403);
+  });
+
+  it('rejects browser proxy traffic without the private mint marker', async () => {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const response = await request(app)
       .post('/auth/jellyfin/plugin')
       .set('x-foreseerr-plugin-secret', secret)
       .send({
         jellyfinUserId: 'jf-plugin-user',
         jellyfinUsername: 'pluginuser',
+        jellyfinAccessToken: 'jf-token',
+        timestamp,
+        signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
+      });
+    assert.equal(response.status, 403);
+  });
+
+  it('does not make a non-admin the first administrator', async () => {
+    await getRepository(User).clear();
+    const timestamp = Math.floor(Date.now() / 1000);
+    const response = await request(app)
+      .post('/auth/jellyfin/plugin')
+      .set('x-foreseerr-plugin-secret', secret)
+      .set('x-foreseerr-mint', '1')
+      .send({
+        jellyfinUserId: 'jf-plugin-user',
+        jellyfinUsername: 'pluginuser',
+        jellyfinAccessToken: 'jf-token',
+        timestamp,
+        signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
+      });
+    assert.equal(response.status, 403);
+    assert.equal(await getRepository(User).count(), 0);
+  });
+
+  it('returns 400 for malformed identity fields instead of throwing', async () => {
+    const response = await request(app)
+      .post('/auth/jellyfin/plugin')
+      .set('x-foreseerr-plugin-secret', secret)
+      .set('x-foreseerr-mint', '1')
+      .send({
+        jellyfinUserId: [],
+        jellyfinUsername: {},
+        timestamp: 1,
+        signature: 'a'.repeat(64),
+      });
+    assert.equal(response.status, 400);
+  });
+
+  it('rejects a bad signature', async () => {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const res = await request(app)
+      .post('/auth/jellyfin/plugin')
+      .set('x-foreseerr-plugin-secret', secret)
+      .set('x-foreseerr-mint', '1')
+      .send({
+        jellyfinUserId: 'jf-plugin-user',
+        jellyfinUsername: 'pluginuser',
+        jellyfinAccessToken: 'jf-token',
         timestamp,
         signature: 'aa'.repeat(32),
       });
