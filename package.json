@@ -14,6 +14,7 @@
     "compile": "bun scripts/compile.mjs",
     "compile:plugin": "FORESEERR_BASE_PATH=/Foreseerr bun scripts/compile.mjs",
     "plugin:pack": "plugin/build.sh",
+    "plugin:dev": "bun scripts/jellyfin-plugin-dev.mjs",
     "compile:prove": "bun scripts/prove-compile.mjs",
     "compile:pack": "bun scripts/pack-binaries.mjs",
     "pack:server": "bun scripts/pack-server.mjs",

@@ -168,7 +168,9 @@ try {
   origin = 'http://' + (await command(['docker', 'port', name, '8096/tcp']));
   await waitFor(() => call(base + '/System/Info/Public'));
   console.log('Plugin installed; waiting for readiness');
-  const token = await login();
+  // Jellyfin 12 answers from a temporary setup server while it migrates, then
+  // resets those connections; retry sign-in until the real server is up.
+  const token = await waitFor(() => login());
   const statusPath = base + '/ForeseerrPlugin/Status';
   const status = await waitFor(async () => {
     const status = await (await call(statusPath, { token })).json();

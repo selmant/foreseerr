@@ -38,6 +38,21 @@ bun scripts/prove-jellyfin-plugin.mjs 12
 
 The 10.11 tests need the .NET 9 runtime (or `DOTNET_ROLL_FORWARD=Major`). The proof script uses Docker: it installs the built plugin into a disposable Jellyfin served under `/jellyfin`, then checks sidecar readiness, the subpath SPA and assets, SSO, CSRF, mint isolation, logout, and Jellyfin token revocation. Set `FORESEERR_TEST_FT_ARCHIVE` to a [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) release zip to also check the header-button injection. Pull requests run both ABIs in `.github/workflows/jellyfin-plugin.yml`; the release workflow runs them before publishing.
 
+## Local test environment
+
+`bun run plugin:dev` runs a persistent Jellyfin in Docker with the current plugin build and [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) installed:
+
+```bash
+bun run plugin:dev up 12                    # Jellyfin 12.1 on http://127.0.0.1:8096/web/
+bun run plugin:dev up 10.11 --base /jellyfin  # Jellyfin 10.11.11 on http://127.0.0.1:8097/jellyfin/web/
+bun run plugin:dev up 12 --build            # rebuild sidecar + plugin, then reinstall
+bun run plugin:dev logs 12                  # Jellyfin and sidecar logs
+bun run plugin:dev down 12                  # stop, keep data
+bun run plugin:dev reset 12                 # stop and delete data
+```
+
+The first `up` completes the Jellyfin setup wizard and creates `admin` / `foreseerr` (administrator), `viewer` / `viewer` (regular user), and empty Movies and Shows libraries. Drop media into `plugin/.dev/jellyfin-<abi>/media/{movies,shows}`. Every `up` reinstalls the plugin from `plugin/dist` and keeps the Jellyfin and Foreseerr data in `plugin/.dev/`. Jellyfin listens on `127.0.0.1` unless you pass `--bind 0.0.0.0`. Other options: `--port`, `--image jellyfin/jellyfin:<tag>`, `--no-file-transformation`.
+
 ## Security model
 
 - The sidecar binds loopback only and rejects every request without the per-install shared secret, including health checks.
