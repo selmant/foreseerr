@@ -108,3 +108,6 @@ plugin/obj
 # Jellyfin plugin tests
 plugin.tests/bin
 plugin.tests/obj
+
+# Local Jellyfin plugin test environment (bun run plugin:dev)
+plugin/.dev/
