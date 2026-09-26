@@ -118,6 +118,15 @@ export interface ServarrInterventionSettings {
   cleanupGraceHours: number;
 }
 
+/** Lets the Jellyfin plugin tell its own changes from ones made in Foreseerr. */
+export interface PluginSettings {
+  /** Jellyfin user ids whose ADMIN permission the plugin granted. */
+  jellyfinAdmins: string[];
+  /** Values last copied from the plugin page. */
+  applicationUrl: string;
+  externalHostname: string;
+}
+
 export interface MdbListSettings extends RatingBadgeSettings {
   apiKey: string;
 }
@@ -473,8 +482,15 @@ export interface AllSettings {
   jobs: Record<JobId, JobSettings>;
   network: NetworkSettings;
   metadataSettings: MetadataSettings;
+  plugin: PluginSettings;
   migrations: string[];
 }
+
+const defaultPluginSettings = (): PluginSettings => ({
+  jellyfinAdmins: [],
+  applicationUrl: '',
+  externalHostname: '',
+});
 
 class Settings {
   private data: AllSettings;
@@ -757,6 +773,7 @@ class Settings {
         },
         apiRequestTimeout: 60000,
       },
+      plugin: defaultPluginSettings(),
       migrations: [],
     };
     if (initialSettings) {
@@ -827,6 +844,15 @@ class Settings {
 
   set jellyfin(data: JellyfinSettings) {
     this.data.jellyfin = mergeSettings(this.data.jellyfin, data);
+  }
+
+  get plugin(): PluginSettings {
+    this.data.plugin ??= defaultPluginSettings();
+    return this.data.plugin;
+  }
+
+  set plugin(data: PluginSettings) {
+    this.data.plugin = mergeSettings(this.plugin, data);
   }
 
   get tautulli(): TautulliSettings {

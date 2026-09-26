@@ -1,10 +1,11 @@
 import { MediaServerType } from '@server/constants/server';
 import {
   applyJellyfinHostFile,
-  canonicalJellyfinUserId,
-  jellyfinUserIdCandidates,
+  pluginAdminPermissions,
 } from '@server/lib/jellyfinHostBootstrap';
+import { Permission } from '@server/lib/permissions';
 import { getSettings, resetSettings } from '@server/lib/settings';
+import { getHostname, getJellyfinLinkHost } from '@server/utils/getHostname';
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
@@ -60,7 +61,6 @@ describe('applyJellyfinHostFile', () => {
         ],
       },
       trakt: { provider: 'jellyfin' },
-      mdblist: { apiKey: 'mdb-key' },
     });
 
     assert.equal(settings.main.mediaServerType, MediaServerType.JELLYFIN);
@@ -72,7 +72,6 @@ describe('applyJellyfinHostFile', () => {
     assert.equal(settings.jellyfin.apiKey, 'jf-key');
     assert.equal(settings.jellyfin.libraries[0]?.id, 'lib-1');
     assert.equal(settings.trakt.provider, 'jellyfin');
-    assert.equal(settings.mdblist.apiKey, 'mdb-key');
     assert.equal(settings.public.initialized, true);
     assert.equal(settings.radarr[0]?.apiKey, 'keep-me');
     assert.deepEqual(settings.sonarr, []);
@@ -98,21 +97,6 @@ describe('applyJellyfinHostFile', () => {
     assert.equal(settings.jellyfin.libraries[0]?.lastScan, 9);
   });
 
-  it('disables the prototype no-op webhook while preserving custom webhooks', () => {
-    const settings = getSettings();
-    const webhook = settings.notifications.agents.webhook;
-    webhook.enabled = true;
-    webhook.options.webhookUrl =
-      'http://127.0.0.1:8096/ForeseerrPlugin/Webhook';
-    applyJellyfinHostFile({ jellyfin: { apiKey: 'k' } });
-    assert.equal(settings.notifications.agents.webhook.enabled, false);
-    settings.notifications.agents.webhook.enabled = true;
-    settings.notifications.agents.webhook.options.webhookUrl =
-      'https://example.test/notify';
-    applyJellyfinHostFile({ jellyfin: { apiKey: 'k' } });
-    assert.equal(settings.notifications.agents.webhook.enabled, true);
-  });
-
   it('preserves disabled libraries and imports a Jellyfin subpath', () => {
     const settings = getSettings();
     settings.jellyfin.libraries = [
@@ -130,14 +114,128 @@ describe('applyJellyfinHostFile', () => {
     assert.equal(settings.jellyfin.libraries[0].enabled, false);
   });
 
-  it('normalizes dashed and compact Jellyfin user ids', () => {
-    const dashed = 'a7c3e2f1-9b4d-4e8a-8c1f-2b6d9e0f4a11';
-    const compact = dashed.replace(/-/g, '');
-    const ids = jellyfinUserIdCandidates(compact);
-    assert.ok(ids.includes(dashed));
-    assert.ok(ids.includes(compact));
-    assert.equal(canonicalJellyfinUserId(dashed.toUpperCase()), compact);
-    assert.equal(canonicalJellyfinUserId(compact), compact);
-    assert.equal(canonicalJellyfinUserId('jf-user'), 'jf-user');
+  it('keeps saved libraries when the plugin could not list them', () => {
+    const settings = getSettings();
+    settings.jellyfin.libraries = [
+      {
+        id: 'lib-1',
+        name: 'Movies',
+        type: 'movie',
+        enabled: false,
+        lastScan: 9,
+      },
+    ];
+    applyJellyfinHostFile({ jellyfin: { apiKey: 'k', libraries: null } });
+    assert.deepEqual(settings.jellyfin.libraries, [
+      {
+        id: 'lib-1',
+        name: 'Movies',
+        type: 'movie',
+        enabled: false,
+        lastScan: 9,
+      },
+    ]);
+  });
+
+  it('only defaults Trakt to Better Trakt when no Trakt app is configured', () => {
+    const settings = getSettings();
+    settings.trakt = { provider: 'direct', clientId: 'id', clientSecret: 's' };
+    applyJellyfinHostFile({ trakt: { provider: 'jellyfin' } });
+    assert.equal(settings.trakt.provider, 'direct');
+  });
+
+  it('keeps URLs entered in Foreseerr when the plugin page has none', () => {
+    const settings = getSettings();
+    settings.main.applicationUrl = 'https://own.example.com';
+    settings.jellyfin.externalHostname = 'https://media.example.com';
+    applyJellyfinHostFile({
+      main: { applicationUrl: '' },
+      jellyfin: { externalHostname: '' },
+    });
+    assert.equal(settings.main.applicationUrl, 'https://own.example.com');
+    assert.equal(
+      settings.jellyfin.externalHostname,
+      'https://media.example.com'
+    );
+  });
+
+  it('clears URLs the plugin set once its page is cleared', () => {
+    const settings = getSettings();
+    settings.main.applicationUrl = 'https://own.example.com';
+    // The plugin page wins while it has a value.
+    applyJellyfinHostFile({
+      main: { applicationUrl: 'https://jf.example.com/Foreseerr' },
+      jellyfin: { externalHostname: 'https://jf.example.com' },
+    });
+    assert.equal(
+      settings.main.applicationUrl,
+      'https://jf.example.com/Foreseerr'
+    );
+    assert.equal(settings.jellyfin.externalHostname, 'https://jf.example.com');
+    applyJellyfinHostFile({
+      main: { applicationUrl: '' },
+      jellyfin: { externalHostname: '' },
+    });
+    assert.equal(settings.main.applicationUrl, '');
+    assert.equal(settings.jellyfin.externalHostname, '');
+  });
+
+  it('removes only an ADMIN permission the plugin granted', () => {
+    const defaults = Permission.REQUEST;
+    const { ADMIN, AUTO_APPROVE, MANAGE_REQUESTS } = Permission;
+    assert.deepEqual(
+      pluginAdminPermissions(AUTO_APPROVE, true, false, defaults),
+      {
+        permissions: AUTO_APPROVE | ADMIN,
+        grantedByPlugin: true,
+      }
+    );
+    // Already an admin in Foreseerr: nothing to grant or record.
+    assert.deepEqual(pluginAdminPermissions(ADMIN, true, false, defaults), {
+      permissions: ADMIN,
+      grantedByPlugin: false,
+    });
+    assert.deepEqual(
+      pluginAdminPermissions(AUTO_APPROVE | ADMIN, false, true, defaults),
+      { permissions: AUTO_APPROVE, grantedByPlugin: false }
+    );
+    assert.deepEqual(pluginAdminPermissions(ADMIN, false, true, defaults), {
+      permissions: defaults,
+      grantedByPlugin: false,
+    });
+    assert.deepEqual(pluginAdminPermissions(ADMIN, false, false, defaults), {
+      permissions: ADMIN,
+      grantedByPlugin: false,
+    });
+    // ADMIN already removed in Foreseerr: keep what the admin chose.
+    assert.deepEqual(pluginAdminPermissions(0, false, true, defaults), {
+      permissions: 0,
+      grantedByPlugin: false,
+    });
+    assert.deepEqual(
+      pluginAdminPermissions(MANAGE_REQUESTS, false, false, defaults),
+      { permissions: MANAGE_REQUESTS, grantedByPlugin: false }
+    );
+  });
+
+  it('links to Jellyfin on the same origin in plugin mode without a public URL', () => {
+    const previous = process.env.FORESEERR_PLUGIN;
+    const settings = getSettings();
+    settings.jellyfin.ip = '127.0.0.1';
+    settings.jellyfin.port = 8096;
+    settings.jellyfin.urlBase = '/jellyfin';
+    settings.jellyfin.externalHostname = '';
+    try {
+      process.env.FORESEERR_PLUGIN = '1';
+      assert.equal(getJellyfinLinkHost(), '/jellyfin');
+      settings.jellyfin.externalHostname = 'https://media.example.com/jellyfin';
+      assert.equal(getJellyfinLinkHost(), 'https://media.example.com/jellyfin');
+      delete process.env.FORESEERR_PLUGIN;
+      settings.jellyfin.externalHostname = '';
+      assert.equal(getJellyfinLinkHost(), getHostname());
+    } finally {
+      if (previous === undefined) delete process.env.FORESEERR_PLUGIN;
+      else process.env.FORESEERR_PLUGIN = previous;
+    }
   });
 });

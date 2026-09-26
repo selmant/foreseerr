@@ -14,6 +14,7 @@ import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import { useEffect, useState, type MouseEvent } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
 import {
   ChangeBadge,
@@ -170,13 +171,15 @@ const CalendarDetails = ({
           ) : null}
           <div className="flex flex-wrap gap-2">
             {item.detailUrl ? (
-              <Button as="a" href={item.detailUrl} buttonType="primary">
-                {intl.formatMessage(
-                  item.isNewSeason && !item.requestedByCurrentUser
-                    ? messages.requestSeason
-                    : messages.details
-                )}
-              </Button>
+              <Link to={item.detailUrl}>
+                <Button as="a" buttonType="primary">
+                  {intl.formatMessage(
+                    item.isNewSeason && !item.requestedByCurrentUser
+                      ? messages.requestSeason
+                      : messages.details
+                  )}
+                </Button>
+              </Link>
             ) : null}
             {item.watchUrl && item.available ? (
               <Button

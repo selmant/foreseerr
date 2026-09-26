@@ -1,7 +1,9 @@
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Enums;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -15,7 +17,9 @@ public class ForeseerrProxyController(
     SidecarSupervisor supervisor,
     SidecarSessionService sessions,
     IHttpClientFactory clients,
-    IAuthService auth) : ControllerBase
+    IAuthService auth,
+    JellyfinHostBootstrap bootstrap,
+    IServerApplicationHost appHost) : ControllerBase
 {
     private static readonly HashSet<string> HopByHop = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -42,9 +46,10 @@ public class ForeseerrProxyController(
         ready = supervisor.IsReady,
         pid = supervisor.Pid,
         lastError = supervisor.LastError,
-        betterTrakt = JellyfinHostBootstrap.BetterTraktPresent(),
         sidecarPort = supervisor.Port,
         version = typeof(ForeseerrPlugin).Assembly.GetName().Version?.ToString(),
+        publicUrl = bootstrap.PublicUrl(),
+        headerButton = FileTransformationHostedService.Registered,
     });
 
     [HttpPost("Foreseerr/sso")]
@@ -54,13 +59,13 @@ public class ForeseerrProxyController(
         var authorization = await auth.Authenticate(Request).ConfigureAwait(false);
         if (!authorization.IsAuthenticated || authorization.IsApiKey
             || authorization.UserId == Guid.Empty || authorization.User == null || string.IsNullOrEmpty(authorization.Token)) return Unauthorized();
-        var session = new SidecarSessionService.BrowserSession(authorization.UserId, authorization.Token);
+        var session = sessions.SessionFor(authorization.UserId, authorization.Token);
         var cookie = await sessions.EnsureCookieAsync(session, authorization.User!.Username,
             authorization.User.HasPermission(PermissionKind.IsAdministrator), cancellationToken);
         if (cookie == null) return Problem("Foreseerr sign-in is unavailable. Retry after checking the plugin status.", statusCode: 503);
 
         sessions.Forget(Request.Cookies[SidecarSessionService.CookieName]);
-        Response.Cookies.Append(SidecarSessionService.CookieName, sessions.Create(session), CookieOptions());
+        Response.Cookies.Append(SidecarSessionService.CookieName, sessions.Issue(session), CookieOptions());
         Response.Headers.CacheControl = "no-store";
         return Ok(new { url = Request.PathBase + "/Foreseerr/", mint = true });
     }
@@ -75,17 +80,16 @@ public class ForeseerrProxyController(
             return StatusCode(StatusCodes.Status403Forbidden);
         if (HttpContext.WebSockets.IsWebSocketRequest)
             return StatusCode(StatusCodes.Status501NotImplemented);
-        var authenticated = await sessions.AuthenticateAsync(Request).ConfigureAwait(false);
+        var route = (path ?? "").TrimEnd('/');
+        var authenticated = await sessions.AuthenticateAsync(Request, IsStaticContent(route)).ConfigureAwait(false);
         if (authenticated == null)
         {
-            Response.Cookies.Delete(SidecarSessionService.CookieName, CookieOptions());
+            // Only clear a ticket the browser sent. A cross-site navigation
+            // omits the SameSite=Strict cookie that the browser still holds.
+            if (Request.Cookies.ContainsKey(SidecarSessionService.CookieName))
+                Response.Cookies.Delete(SidecarSessionService.CookieName, CookieOptions());
             if (HttpMethods.IsGet(Request.Method) && Request.Headers.Accept.ToString().Contains("text/html", StringComparison.Ordinal))
-            {
-                Response.StatusCode = StatusCodes.Status401Unauthorized;
-                Response.Headers.CacheControl = "no-store";
-                var jellyfinUrl = HtmlEncoder.Default.Encode(Request.PathBase + "/web/index.html");
-                return Content($"<!doctype html><html lang=\"en\"><head><meta name=\"viewport\" content=\"width=device-width\"><title>Sign in to Foreseerr</title></head><body><main><h1>Sign in through Jellyfin</h1><p>Open Foreseerr from Jellyfin to start a new session.</p><a href=\"{jellyfinUrl}\">Return to Jellyfin</a></main></body></html>", "text/html");
-            }
+                return SignInPage();
             return Unauthorized(new { message = "Open Foreseerr from Jellyfin to sign in." });
         }
 
@@ -96,7 +100,6 @@ public class ForeseerrProxyController(
 
         // These routes can replace a Foreseerr identity independently of Jellyfin.
         // Keep the mint endpoint private even to authenticated browser sessions.
-        var route = (path ?? "").TrimEnd('/');
         if (route.StartsWith("api/v1/auth/", StringComparison.OrdinalIgnoreCase)
             && !route.Equals("api/v1/auth/me", StringComparison.OrdinalIgnoreCase)
             && !route.Equals("api/v1/auth/logout", StringComparison.OrdinalIgnoreCase))
@@ -137,7 +140,8 @@ public class ForeseerrProxyController(
         {
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
                 || (response.StatusCode == System.Net.HttpStatusCode.Forbidden
-                    && route.Equals("api/v1/auth/me", StringComparison.OrdinalIgnoreCase))) session.Cookie = null;
+                    && route.Equals("api/v1/auth/me", StringComparison.OrdinalIgnoreCase)))
+                SidecarSessionService.ResetCookie(session);
             if (route.Equals("api/v1/auth/logout", StringComparison.OrdinalIgnoreCase) && response.IsSuccessStatusCode)
             {
                 sessions.Forget(Request.Cookies[SidecarSessionService.CookieName]);
@@ -166,6 +170,86 @@ public class ForeseerrProxyController(
         MaxAge = SidecarSessionService.Lifetime,
         IsEssential = true,
     };
+
+    /// <summary>
+    /// Signs in with the browser's Jellyfin Web login, then reloads the
+    /// requested page. Links from notifications and bookmarks land here.
+    /// </summary>
+    private ContentResult SignInPage()
+    {
+        var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers.ContentSecurityPolicy =
+            $"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+        var html = HtmlEncoder.Default;
+        return Content(SignInHtml
+            .Replace("{nonce}", nonce, StringComparison.Ordinal)
+            .Replace("{serverId}", html.Encode(appHost.SystemId), StringComparison.Ordinal)
+            .Replace("{sso}", html.Encode(Request.PathBase + "/Foreseerr/sso"), StringComparison.Ordinal)
+            .Replace("{jellyfin}", html.Encode(Request.PathBase + "/web/index.html"), StringComparison.Ordinal),
+            "text/html");
+    }
+
+    private const string SignInHtml = """
+        <!doctype html>
+        <html lang="en">
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width">
+        <title>Foreseerr</title>
+        <style>body{font-family:system-ui,sans-serif;background:#101010;color:#ddd;display:grid;place-items:center;min-height:90vh}a{color:#00a4dc}</style>
+        </head>
+        <body>
+        <main id="signin" data-server-id="{serverId}" data-sso="{sso}">
+        <h1 id="title">Opening Foreseerr…</h1>
+        <p id="message"></p>
+        <a id="jellyfin" href="{jellyfin}" hidden>Open Jellyfin</a>
+        </main>
+        <script nonce="{nonce}">
+        (function () {
+          var root = document.getElementById('signin');
+          function fail(message) {
+            document.getElementById('title').textContent = 'Sign in through Jellyfin';
+            document.getElementById('message').textContent = message;
+            document.getElementById('jellyfin').hidden = false;
+          }
+          var token = null;
+          try {
+            var servers = JSON.parse(localStorage.getItem('jellyfin_credentials') || '{}').Servers || [];
+            for (var i = 0; i < servers.length; i++) {
+              if (servers[i].Id === root.dataset.serverId && servers[i].AccessToken) token = servers[i].AccessToken;
+            }
+          } catch (e) { /* no stored login */ }
+          if (!token) return fail('Sign in to Jellyfin in this browser, then open this link again.');
+          // A refused cookie must not turn into a reload loop.
+          var attempt = location.href + ' ' + Math.floor(Date.now() / 10000);
+          if (sessionStorage.getItem('foreseerr-signin') === attempt) return fail('Foreseerr could not keep its session. Allow cookies for this site and retry.');
+          sessionStorage.setItem('foreseerr-signin', attempt);
+          fetch(root.dataset.sso, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { Authorization: 'MediaBrowser Token="' + token + '"' }
+          }).then(function (response) {
+            if (response.status === 401) throw new Error('Your Jellyfin session has ended. Sign in to Jellyfin, then open this link again.');
+            if (!response.ok) throw new Error('Foreseerr sign-in is unavailable. Check the plugin status in Jellyfin and retry.');
+            location.replace(location.href);
+          }).catch(function (error) {
+            fail(error.message || 'Foreseerr sign-in is unavailable.');
+          });
+        })();
+        </script>
+        </body>
+        </html>
+        """;
+
+    /// <summary>Static files and images carry no per-user data.</summary>
+    internal static bool IsStaticContent(string route) =>
+        route.StartsWith("imageproxy/", StringComparison.OrdinalIgnoreCase)
+        || route.StartsWith("avatarproxy/", StringComparison.OrdinalIgnoreCase)
+        || (!route.StartsWith("api/", StringComparison.OrdinalIgnoreCase)
+            && Path.HasExtension(route)
+            && !route.EndsWith(".html", StringComparison.OrdinalIgnoreCase));
 
     internal static bool IsSafeMethod(string method) => method is "GET" or "HEAD" or "OPTIONS";
 

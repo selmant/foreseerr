@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'crypto';
+import { timingSafeEqual } from 'crypto';
 import type { RequestHandler } from 'express';
 
 export const PLUGIN_PUBLIC_BASE_PATH = '/Foreseerr';
@@ -35,59 +35,6 @@ export function isLoopbackAddress(ip: string | undefined): boolean {
   }
   const value = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
   return value === '127.0.0.1' || value === '::1' || value === 'localhost';
-}
-
-export function pluginMintMessage(
-  jellyfinUserId: string,
-  timestamp: number
-): string {
-  return `${jellyfinUserId}\n${timestamp}`;
-}
-
-export function signPluginMint(
-  secret: string,
-  jellyfinUserId: string,
-  timestamp: number
-): string {
-  return createHmac('sha256', secret)
-    .update(pluginMintMessage(jellyfinUserId, timestamp))
-    .digest('hex');
-}
-
-export function verifyPluginMintSignature(options: {
-  secret: string;
-  jellyfinUserId: string;
-  timestamp: number;
-  signature: string;
-  nowSeconds?: number;
-  maxSkewSeconds?: number;
-}): boolean {
-  const {
-    secret,
-    jellyfinUserId,
-    timestamp,
-    signature,
-    nowSeconds = Math.floor(Date.now() / 1000),
-    maxSkewSeconds = 120,
-  } = options;
-  if (
-    !secret ||
-    !jellyfinUserId ||
-    !/^[a-f0-9]{64}$/i.test(signature) ||
-    !Number.isSafeInteger(timestamp)
-  ) {
-    return false;
-  }
-  if (Math.abs(nowSeconds - timestamp) > maxSkewSeconds) {
-    return false;
-  }
-  const expected = signPluginMint(secret, jellyfinUserId, timestamp);
-  const a = Buffer.from(expected, 'hex');
-  const b = Buffer.from(signature, 'hex');
-  if (a.length !== b.length || a.length === 0) {
-    return false;
-  }
-  return timingSafeEqual(a, b);
 }
 
 /** All sidecar traffic comes from the plugin, including health checks. */

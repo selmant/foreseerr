@@ -21,6 +21,7 @@ import type { TvDetails } from '@server/models/Tv';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Library.LibraryInspector', {
@@ -350,9 +351,11 @@ const LibraryInspector = ({
                       />
                     ) : null}
                     {detailsHref ? (
-                      <Button as="a" href={detailsHref} buttonType="default">
-                        {intl.formatMessage(messages.viewDetails)}
-                      </Button>
+                      <Link to={detailsHref}>
+                        <Button as="a" buttonType="default">
+                          {intl.formatMessage(messages.viewDetails)}
+                        </Button>
+                      </Link>
                     ) : null}
                     {canManage && managedTitle ? (
                       <Button

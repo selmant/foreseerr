@@ -313,7 +313,7 @@ Jellyfin (${image}) with Foreseerr plugin ${meta.version} is running.
   Jellyfin web   ${origin}${base}/web/
   Admin          ${ADMIN.name} / ${ADMIN.password}
   Non-admin      ${VIEWER.name} / ${VIEWER.password}
-  Open Foreseerr header "F" button${options['no-file-transformation'] ? ' (disabled: --no-file-transformation)' : ''}, or Dashboard > Plugins > Foreseerr > Open Foreseerr
+  Foreseerr      ${origin}${base}/Foreseerr/ once signed in to Jellyfin Web${options['no-file-transformation'] ? '' : ', or the header "F" button'}
   Sidecar        pid ${status.pid}, loopback port ${status.sidecarPort}
   Media folders  ${join(home, 'media')}/{movies,shows}
 

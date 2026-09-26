@@ -11,8 +11,6 @@ import {
   pluginIndexHtml,
   pluginPublicBasePath,
   requirePluginProxy,
-  signPluginMint,
-  verifyPluginMintSignature,
 } from './pluginMode';
 
 describe('pluginMode', () => {
@@ -31,41 +29,6 @@ describe('pluginMode', () => {
       if (previousBase === undefined) delete process.env.FORESEERR_BASE_PATH;
       else process.env.FORESEERR_BASE_PATH = previousBase;
     }
-  });
-
-  it('verifies HMAC mint signatures within skew', () => {
-    const timestamp = 1_700_000_000;
-    const signature = signPluginMint('secret', 'user-1', timestamp);
-    assert.equal(
-      verifyPluginMintSignature({
-        secret: 'secret',
-        jellyfinUserId: 'user-1',
-        timestamp,
-        signature,
-        nowSeconds: timestamp,
-      }),
-      true
-    );
-    assert.equal(
-      verifyPluginMintSignature({
-        secret: 'secret',
-        jellyfinUserId: 'user-1',
-        timestamp,
-        signature: 'deadbeef',
-        nowSeconds: timestamp,
-      }),
-      false
-    );
-    assert.equal(
-      verifyPluginMintSignature({
-        secret: 'secret',
-        jellyfinUserId: 'user-1',
-        timestamp,
-        signature,
-        nowSeconds: timestamp + 121,
-      }),
-      false
-    );
   });
 
   it('recognizes loopback addresses', () => {
@@ -143,26 +106,6 @@ describe('plugin proxy boundary', () => {
   it('preserves standalone requests', async () => {
     delete process.env.FORESEERR_PLUGIN;
     assert.equal((await request(app).get('/api/v1/status')).status, 200);
-  });
-
-  it('rejects malformed or extended signatures', () => {
-    const signature = signPluginMint('secret', 'user', 100);
-    for (const invalid of [
-      signature + '00',
-      signature + 'xyz',
-      'z'.repeat(64),
-    ]) {
-      assert.equal(
-        verifyPluginMintSignature({
-          secret: 'secret',
-          jellyfinUserId: 'user',
-          timestamp: 100,
-          nowSeconds: 100,
-          signature: invalid,
-        }),
-        false
-      );
-    }
   });
 
   it('keeps API validation and query rewriting working under the mount', async () => {

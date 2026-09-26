@@ -11,21 +11,22 @@ Standalone Docker and compiled binaries remain the supported ways to run Foresee
 
 ## What you get
 
-- Foreseerr UI at `https://your-jellyfin/Foreseerr/`, including Jellyfin servers on a subpath such as `/jellyfin/Foreseerr/`
+- Foreseerr UI at `https://your-jellyfin/Foreseerr/`, including Jellyfin servers on a subpath such as `/jellyfin/Foreseerr/`. Anyone signed in to Jellyfin Web in that browser can open it, including from links and bookmarks.
 - Jellyfin hostname, libraries, API key, and first admin imported from this server (setup wizard skipped)
+- Foreseerr admin rights for Jellyfin administrators. Removing administrator in Jellyfin takes back only rights the plugin granted, not ones you grant in Foreseerr.
 - Crash restart of the sidecar and a plugin page with its status and last error
 - Optional header button if you install [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
-- Optional MDBList key on the plugin page, imported from Moonbase when present
-- Better Trakt: if that plugin is loaded, Foreseerr defaults Trakt actions to the Jellyfin plugin
+- Better Trakt: if that plugin is loaded and no direct Trakt app is set up, Foreseerr uses it for Trakt actions
 
-Radarr and Sonarr are still configured inside Foreseerr Settings. The plugin will not overwrite those.
+Radarr, Sonarr, notifications, and other integrations are configured inside Foreseerr Settings. The plugin will not overwrite those.
 
 ## Install
 
 1. Dashboard → Plugins → Repositories → add `https://github.com/selmant/foreseerr/releases/latest/download/foreseerr-jellyfin-manifest.json`.
 2. Install **Foreseerr** from the catalog and restart Jellyfin. Jellyfin picks the build that matches its version.
-3. Dashboard → Plugins → Foreseerr: set **Public server URL** to the HTTPS origin browsers use for Jellyfin.
-4. Open Foreseerr as a Jellyfin administrator first; that account becomes the Foreseerr admin. Configure Radarr/Sonarr there.
+3. Dashboard → Plugins → Foreseerr: set **Public Jellyfin URL** to the address people use for Jellyfin, for example `https://jellyfin.example.com`. Links in notifications point there. You can skip this if Jellyfin's **Published Server URIs** (Networking) has an `all=` or `external=` entry, or if you set **Application URL** in Foreseerr instead.
+4. Open Foreseerr as a Jellyfin administrator first; that account becomes the Foreseerr owner. Configure Radarr/Sonarr there.
+5. Share `https://your-jellyfin/Foreseerr/` with your users, or install File Transformation for a header button.
 
 To install manually, extract `foreseerr-jellyfin-10.11.zip` or `foreseerr-jellyfin-12.zip` from a GitHub Release into Jellyfin's `plugins/Foreseerr/` folder and restart Jellyfin.
 

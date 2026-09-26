@@ -281,7 +281,13 @@ const startForeseerrInternal = async (
   // Load Settings
   const settings = await getSettings().load();
   await loadJellyfinHostBootstrap();
-  await ensurePluginAdminUser();
+  // The first administrator sign-in creates the owner too, so this is not fatal.
+  await ensurePluginAdminUser().catch((error: Error) =>
+    logger.error('Could not create the plugin admin user', {
+      label: 'Plugin',
+      errorMessage: error.message,
+    })
+  );
   restartFlag.initializeSettings(settings);
 
   initI18n();
@@ -533,17 +539,17 @@ const startForeseerrInternal = async (
 
   if (!dev) {
     if (pluginMode) {
+      // index.html does not change while the server runs.
+      const html = pluginIndexHtml(
+        await fs.readFile(path.join(PUBLIC_PATH, 'index.html'), 'utf8')
+      );
       server.get(
         /^(?!\/api(?:\/|$)|\/api-docs|\/imageproxy|\/avatarproxy|\/assets\/).*$/,
-        async (req, res, next) => {
+        (req, res, next) => {
           if (path.extname(req.path) && !req.path.endsWith('.html'))
             return next();
-          const html = await fs.readFile(
-            path.join(PUBLIC_PATH, 'index.html'),
-            'utf8'
-          );
           res.setHeader('Cache-Control', 'no-store');
-          res.type('html').send(pluginIndexHtml(html));
+          res.type('html').send(html);
         }
       );
     }

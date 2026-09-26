@@ -1,8 +1,4 @@
-using System.Reflection;
 using System.Runtime.Loader;
-using System.Security.Cryptography;
-using System.Text;
-using System.Xml.Linq;
 using Jellyfin.Data;
 using Jellyfin.Database.Implementations.Enums;
 using MediaBrowser.Common.Configuration;
@@ -52,11 +48,7 @@ public class JellyfinHostBootstrap
         var plugin = ForeseerrPlugin.Instance;
         var config = plugin?.Configuration;
         config?.EnsureSecrets();
-        var publicUrl = ResolvePublicUrl(config?.PublicServerUrl).TrimEnd('/');
-        var basePath = "/Foreseerr";
-        var applicationUrl = string.IsNullOrEmpty(publicUrl)
-            ? ""
-            : publicUrl + basePath;
+        var publicUrl = PublicUrl();
 
         var apiKey = EnsureApiKey();
         if (plugin != null && !string.IsNullOrEmpty(apiKey) && plugin.Configuration.ApiKeyToken != apiKey)
@@ -65,13 +57,11 @@ public class JellyfinHostBootstrap
             plugin.SaveConfiguration();
         }
 
-        var mdblistKey = FirstNonEmpty(config?.MdblistApiKey, TryReadMoonbaseMdbListKey());
-
         var host = new Dictionary<string, object?>
         {
             ["main"] = new Dictionary<string, object?>
             {
-                ["applicationUrl"] = applicationUrl,
+                ["applicationUrl"] = publicUrl.Length > 0 ? publicUrl + "/Foreseerr" : "",
                 ["mediaServerLogin"] = true,
                 ["localLogin"] = false,
                 ["locale"] = ResolveLocale(),
@@ -86,18 +76,15 @@ public class JellyfinHostBootstrap
                 ["externalHostname"] = publicUrl,
                 ["serverId"] = _appHost.SystemId,
                 ["apiKey"] = apiKey ?? config?.ApiKeyToken ?? "",
+                // null keeps Foreseerr's saved library selection.
                 ["libraries"] = CollectLibraries(),
             },
         };
 
         if (BetterTraktPresent())
         {
+            // Foreseerr only uses this when Trakt is not configured directly.
             host["trakt"] = new Dictionary<string, string> { ["provider"] = "jellyfin" };
-        }
-
-        if (!string.IsNullOrEmpty(mdblistKey))
-        {
-            host["mdblist"] = new Dictionary<string, string> { ["apiKey"] = mdblistKey };
         }
 
         // Jellyfin changed Users to GetUsers in a 10.11 patch release.
@@ -167,29 +154,37 @@ public class JellyfinHostBootstrap
         return 8096;
     }
 
-    private string ResolvePublicUrl(string? configured)
+    /// <summary>
+    /// The Jellyfin address browsers use, including its base path, or "" when
+    /// neither the plugin setting nor Jellyfin's published server URI is set.
+    /// </summary>
+    public string PublicUrl() =>
+        PublicUrl(ForeseerrPlugin.Instance?.Configuration.PublicServerUrl,
+            ReadNetworkConfiguration()?.PublishedServerUriBySubnet, GetBasePath());
+
+    internal static string PublicUrl(string? configured, IEnumerable<string>? published, string basePath)
     {
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return configured.Trim().TrimEnd('/');
-        }
-
-        try
-        {
-            var network = ReadNetworkConfiguration();
-            var published = network?.GetType().GetProperty("PublishedServerUri")?.GetValue(network)?.ToString();
-            if (!string.IsNullOrWhiteSpace(published))
-            {
-                return published.Trim().TrimEnd('/');
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Could not read PublishedServerUri");
-        }
-
-        return "";
+        var url = string.IsNullOrWhiteSpace(configured) ? PublishedUrl(published) : configured;
+        if (string.IsNullOrWhiteSpace(url)) return "";
+        url = url.Trim().TrimEnd('/');
+        // Accept both the origin and the full Jellyfin address.
+        var path = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.AbsolutePath.TrimEnd('/') : "";
+        return basePath.Length > 0 && !path.EndsWith(basePath, StringComparison.OrdinalIgnoreCase)
+            ? url + basePath
+            : url;
     }
+
+    /// <summary>Jellyfin's "Published server URIs": all=URL or external=URL entries.</summary>
+    private static string? PublishedUrl(IEnumerable<string>? entries) =>
+        entries?
+            .Select(entry => entry.Split('=', 2, StringSplitOptions.TrimEntries))
+            .Where(pair => pair.Length == 2
+                && (pair[0].Equals("all", StringComparison.OrdinalIgnoreCase)
+                    || pair[0].Equals("external", StringComparison.OrdinalIgnoreCase))
+                && Uri.TryCreate(pair[1], UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+            .Select(pair => pair[1])
+            .FirstOrDefault();
 
     private string ResolveLocale()
     {
@@ -213,10 +208,7 @@ public class JellyfinHostBootstrap
         return "en";
     }
 
-    private static string? FirstNonEmpty(params string?[] values) =>
-        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-
-    private List<object> CollectLibraries()
+    private List<object>? CollectLibraries()
     {
         var libraries = new List<object>();
         try
@@ -244,7 +236,9 @@ public class JellyfinHostBootstrap
         }
         catch (Exception ex)
         {
+            // A partial list would read as removed libraries and lose their settings.
             _logger.LogWarning(ex, "Failed to list Jellyfin libraries for Foreseerr");
+            return null;
         }
 
         return libraries;
@@ -279,36 +273,6 @@ public class JellyfinHostBootstrap
                     || (name.Contains("Trakt", StringComparison.OrdinalIgnoreCase)
                         && name.Contains("Better", StringComparison.OrdinalIgnoreCase));
             });
-    }
-
-    private string? TryReadMoonbaseMdbListKey()
-    {
-        try
-        {
-            var dir = _applicationPaths.PluginConfigurationsPath;
-            foreach (var file in Directory.GetFiles(dir, "*.xml"))
-            {
-                var name = Path.GetFileName(file);
-                if (!name.Contains("Moonfin", StringComparison.OrdinalIgnoreCase)
-                    && !name.Contains("Moonbase", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var mdb = XDocument.Load(file).Root?.Element("MdblistApiKey")?.Value;
-                if (!string.IsNullOrWhiteSpace(mdb))
-                {
-                    _logger.LogInformation("Imported MDBList key from {File}", name);
-                    return mdb;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Moonbase config import skipped");
-        }
-
-        return null;
     }
 
     private string? EnsureApiKey()
@@ -370,15 +334,4 @@ public class JellyfinHostBootstrap
 
     public string GetBasePath() =>
         (ReadNetworkConfiguration()?.BaseUrl ?? "").TrimEnd('/');
-
-}
-
-public static class PluginHmac
-{
-    public static string Sign(string secret, string jellyfinUserId, long timestamp)
-    {
-        var message = $"{jellyfinUserId}\n{timestamp}";
-        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-        return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(message))).ToLowerInvariant();
-    }
 }

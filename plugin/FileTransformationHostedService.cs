@@ -30,6 +30,9 @@ public class FileTransformationHostedService : IHostedService
         return Task.CompletedTask;
     }
 
+    /// <summary>Whether Jellyfin Web gets the header button.</summary>
+    public static bool Registered { get; private set; }
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     private void RegisterTransformation()
@@ -59,6 +62,7 @@ public class FileTransformationHostedService : IHostedService
         var register = pluginInterfaceType?.GetMethod("RegisterTransformation")
             ?? throw new InvalidOperationException("File Transformation registration API is unavailable.");
         register.Invoke(null, [payload]);
+        Registered = true;
         _logger.LogInformation("Foreseerr: registered index.html transformation");
     }
 }

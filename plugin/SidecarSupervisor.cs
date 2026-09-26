@@ -13,8 +13,13 @@ public sealed class SidecarSupervisor(
     IHttpClientFactory clients,
     ILogger<SidecarSupervisor> logger) : BackgroundService
 {
+    private static readonly TimeSpan FirstRetry = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan MaxRetry = TimeSpan.FromSeconds(60);
+    /// <summary>A run that stayed ready this long restarts with the first retry delay.</summary>
+    private static readonly TimeSpan HealthyRun = TimeSpan.FromMinutes(2);
     private readonly object _restartLock = new();
     private CancellationTokenSource? _restart;
+    private DateTimeOffset? _readySince;
     public int Port { get; private set; }
     public string Origin => $"http://127.0.0.1:{Port}";
     public int? Pid { get; private set; }
@@ -34,7 +39,7 @@ public sealed class SidecarSupervisor(
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = lifetime.ApplicationStarted.Register(() => started.TrySetResult());
         await started.Task.WaitAsync(stoppingToken).ConfigureAwait(false);
-        var retry = TimeSpan.FromSeconds(2);
+        var retry = FirstRetry;
         while (!stoppingToken.IsCancellationRequested)
         {
             using var cycle = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -42,7 +47,6 @@ public sealed class SidecarSupervisor(
             try
             {
                 await RunProcessAsync(cycle.Token).ConfigureAwait(false);
-                retry = TimeSpan.FromSeconds(2);
             }
             catch (OperationCanceledException) when (cycle.IsCancellationRequested)
             {
@@ -58,20 +62,26 @@ public sealed class SidecarSupervisor(
                 lock (_restartLock) _restart = null;
             }
             if (stoppingToken.IsCancellationRequested) break;
-            if (cycle.IsCancellationRequested) continue;
+            if (cycle.IsCancellationRequested)
+            {
+                retry = FirstRetry;
+                continue;
+            }
+            // Back off only while the sidecar keeps failing soon after start.
+            if (DateTimeOffset.UtcNow - _readySince >= HealthyRun) retry = FirstRetry;
             await Task.Delay(retry, stoppingToken).ConfigureAwait(false);
-            retry = TimeSpan.FromSeconds(Math.Min(retry.TotalSeconds * 2, 60));
+            retry = TimeSpan.FromTicks(Math.Min(retry.Ticks * 2, MaxRetry.Ticks));
         }
     }
 
     private async Task RunProcessAsync(CancellationToken cancellationToken)
     {
+        _readySince = null;
         bootstrap.WriteHostFile();
         var binary = ResolveBinaryPath() ?? throw new InvalidOperationException(
             "No Foreseerr sidecar binary for this OS/architecture in the plugin sidecar directory.");
         var config = ForeseerrPlugin.Instance?.Configuration
             ?? throw new InvalidOperationException("Plugin configuration is unavailable.");
-        if (config.SidecarPort is < 0 or > 65535) throw new InvalidOperationException("Sidecar port must be 0–65535.");
         if (string.IsNullOrEmpty(config.PluginSecret)) throw new InvalidOperationException("Plugin secret is unavailable.");
         if (!OperatingSystem.IsWindows())
             File.SetUnixFileMode(binary, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
@@ -93,7 +103,8 @@ public sealed class SidecarSupervisor(
         start.Environment["FORESEERR_PUBLIC_BASE_PATH"] = bootstrap.GetBasePath() + "/Foreseerr";
         start.Environment["CONFIG_DIRECTORY"] = bootstrap.ConfigDirectory;
         start.Environment["HOST"] = "127.0.0.1";
-        start.Environment["PORT"] = config.SidecarPort.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        // The OS picks a free loopback port; the child reports it when ready.
+        start.Environment["PORT"] = "0";
         start.Environment["NODE_ENV"] = "production";
         start.Environment.Remove("FORESEERR_RUNTIME");
 
@@ -143,6 +154,7 @@ public sealed class SidecarSupervisor(
             response.EnsureSuccessStatusCode();
             if (process.HasExited) throw new InvalidOperationException("Foreseerr exited during startup.");
             IsReady = true;
+            _readySince = DateTimeOffset.UtcNow;
             LastError = null;
             logger.LogInformation("Foreseerr sidecar ready on {Origin}", Origin);
             await exit.ConfigureAwait(false);

@@ -51,19 +51,29 @@ bun run plugin:dev down 12                  # stop, keep data
 bun run plugin:dev reset 12                 # stop and delete data
 ```
 
-The first `up` completes the Jellyfin setup wizard and creates `admin` / `foreseerr` (administrator), `viewer` / `viewer` (regular user), and empty Movies and Shows libraries. Drop media into `plugin/.dev/jellyfin-<abi>/media/{movies,shows}`. Every `up` reinstalls the plugin from `plugin/dist` and keeps the Jellyfin and Foreseerr data in `plugin/.dev/`. Jellyfin listens on `127.0.0.1` unless you pass `--bind 0.0.0.0`. Other options: `--port`, `--image jellyfin/jellyfin:<tag>`, `--no-file-transformation`.
+The first `up` completes the Jellyfin setup wizard and creates `admin` / `foreseerr` (administrator), `viewer` / `viewer` (regular user), and empty Movies and Shows libraries. Sign in to Jellyfin Web, then use the header button or open `<base>/Foreseerr/` directly. Drop media into `plugin/.dev/jellyfin-<abi>/media/{movies,shows}`. Every `up` reinstalls the plugin from `plugin/dist` and keeps the Jellyfin and Foreseerr data in `plugin/.dev/`. Jellyfin listens on `127.0.0.1` unless you pass `--bind 0.0.0.0`. Other options: `--port`, `--image jellyfin/jellyfin:<tag>`, `--no-file-transformation`.
+
+## Settings
+
+The dashboard page shows the sidecar status, the direct link, and one setting: **Public Jellyfin URL**, the address used for links in Foreseerr notifications. The origin (`https://jellyfin.example.com`) is enough; the plugin appends Jellyfin's base URL. When it is empty, the plugin uses an `all=` or `external=` entry from Jellyfin's Published Server URIs. With neither, Foreseerr keeps the Application URL and Jellyfin external URL set in its own settings, and "Play on Jellyfin" links fall back to same-origin paths. Clearing the plugin field removes only values the plugin set.
+
+Everything else comes from Jellyfin on each sidecar start: server name, loopback address, base URL, API key, libraries, locale, and the first administrator. If Better Trakt is loaded and Foreseerr has no direct Trakt app, Trakt actions default to Better Trakt. Radarr, Sonarr, notifications, and other integrations are configured in Foreseerr.
 
 ## Security model
 
-- The sidecar binds loopback only and rejects every request without the per-install shared secret, including health checks.
-- `POST /Foreseerr/sso` (Jellyfin-authenticated) mints a Foreseerr session over an HMAC-signed loopback call. The browser only gets an opaque `HttpOnly`, `SameSite=Strict` ticket cookie scoped to `<base>/Foreseerr`; Jellyfin tokens and the sidecar session cookie never reach JavaScript.
-- Every proxied request revalidates the Jellyfin token bound to the ticket, so Jellyfin logout, token revocation, or disabling the user ends the Foreseerr session. Tickets expire after 8 hours.
+- The sidecar binds loopback only and rejects every request without the per-install shared secret, including health checks. The secret and the Jellyfin API key are stored in the plugin XML but are not sent to the dashboard page.
+- `POST /Foreseerr/sso` (Jellyfin-authenticated) mints a Foreseerr session over a loopback call carrying that secret. The browser only gets an opaque `HttpOnly`, `SameSite=Strict` ticket cookie scoped to `<base>/Foreseerr`; Jellyfin tokens and the sidecar session cookie never reach JavaScript.
+- Each Jellyfin login holds one ticket, and signing in again rotates it. A user can hold tickets for 10 logins at once; older ones are dropped, and other users are never affected. Tickets expire after 8 hours.
+- Pages and API requests revalidate the bound Jellyfin token every time, so Jellyfin logout, token revocation, or disabling the user ends the Foreseerr session. Static files and images reuse a validation for up to 30 seconds.
+- A page request without a ticket gets a sign-in page. It reads this server's entry from Jellyfin Web's `jellyfin_credentials`, calls `/Foreseerr/sso`, and reloads the requested path, so notification links and bookmarks work. It runs under a nonce-based CSP.
 - Foreseerr's own CSRF middleware is off in plugin mode. The proxy instead requires unsafe methods to be same-origin (`Sec-Fetch-Site`, falling back to `Origin`), strips browser credential and forwarding headers, and never exposes the mint endpoint.
-- The first plugin login must be a Jellyfin administrator.
+- The first plugin login must be a Jellyfin administrator. On every sign-in, Jellyfin administrators get Foreseerr's ADMIN permission. If Jellyfin later removes administrator, the plugin takes back only an ADMIN it granted (the user gets back their other permissions, or the defaults); ADMIN granted in Foreseerr stays. Settings record which grants and URLs came from the plugin.
 
 ## Limits
 
 - Jellyfin Web (desktop) is the supported UI. Android TV and the official mobile apps do not load this SPA.
+- Without [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation), there is no header button; users open `<base>/Foreseerr/` directly (the dashboard page shows the link).
+- Web push notifications are off under the plugin's base path.
 - Sidecar binaries exist for linux-x64, linux-arm64, and windows-x64 only.
 - Reverse proxies must forward `/Foreseerr` and `/ForeseerrPlugin`. Configure Jellyfin's Known Proxies so it sees HTTPS; otherwise the ticket cookie is not marked `Secure`.
 - WebSocket upgrades are not proxied. Foreseerr does not use them.

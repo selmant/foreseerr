@@ -178,13 +178,37 @@ try {
     return status;
   });
   assert.ok(status.sidecarPort > 0);
+  // No public URL yet: notifications have no links.
+  assert.equal(status.publicUrl, '');
+  assert.equal(status.headerButton, !!process.env.FORESEERR_TEST_FT_ARCHIVE);
   if (process.env.FORESEERR_TEST_FT_ARCHIVE) {
     const jellyfinWeb = await (await call(base + '/web/index.html')).text();
     assert.ok(jellyfinWeb.includes('../ForeseerrPlugin/loader.js'));
     await call(base + '/ForeseerrPlugin/loader.js');
   }
   await call(base + '/Foreseerr/', { expected: 401 });
+  // Links from notifications and bookmarks get a page that signs in with the
+  // browser's Jellyfin login and reloads the requested path.
+  const signIn = await call(base + '/Foreseerr/movie/603', {
+    headers: { Accept: 'text/html' },
+    expected: 401,
+  });
+  const signInPage = await signIn.text();
+  const serverId = (await (await call(base + '/System/Info/Public')).json()).Id;
+  assert.ok(signInPage.includes(`data-server-id="${serverId}"`));
+  assert.ok(signInPage.includes(`data-sso="${base}/Foreseerr/sso"`));
+  assert.match(
+    signIn.headers.get('content-security-policy'),
+    /script-src 'nonce-/
+  );
+  assert.equal(signIn.headers.getSetCookie().length, 0);
+  // Signing in again from the same Jellyfin login rotates its one ticket.
+  const replaced = await sso(token);
   let cookie = await sso(token);
+  await call(base + '/Foreseerr/api/v1/auth/me', {
+    cookie: replaced,
+    expected: 401,
+  });
   const me = await (
     await call(base + '/Foreseerr/api/v1/auth/me', { cookie })
   ).json();
@@ -252,8 +276,57 @@ try {
   });
   await call(base + '/Foreseerr/api/v1/auth/me', { cookie, expected: 401 });
   await call(base + '/Foreseerr/api/v1/auth/me', { cookie: secondCookie });
+
+  // The dashboard never sees the managed secrets, and the public URL gains
+  // Jellyfin's base path.
+  const configPath = `${base}/Plugins/a7c3e2f1-9b4d-4e8a-8c1f-2b6d9e0f4a11/Configuration`;
+  const config = await (await call(configPath, { token: secondToken })).json();
+  assert.ok(!('PluginSecret' in config) && !('ApiKeyToken' in config));
+  await call(configPath, {
+    token: secondToken,
+    body: { PublicServerUrl: 'jellyfin.example.test' },
+    expected: 400,
+  });
+  const mainPath = base + '/Foreseerr/api/v1/settings/main';
+  const readMain = async () =>
+    (await call(mainPath, { cookie: secondCookie })).json();
+  // Saving restarts the sidecar, which re-reads the plugin settings.
+  const save = async (PublicServerUrl) => {
+    const before = (
+      await (await call(statusPath, { token: secondToken })).json()
+    ).pid;
+    await call(configPath, {
+      token: secondToken,
+      body: { PublicServerUrl },
+      expected: 204,
+    });
+    return waitFor(async () => {
+      const next = await (
+        await call(statusPath, { token: secondToken })
+      ).json();
+      assert.ok(next.ready && next.pid !== before, 'Sidecar is restarting');
+      return next;
+    });
+  };
+  const restarted = await save('https://jellyfin.example.test/');
+  assert.equal(restarted.publicUrl, `https://jellyfin.example.test${base}`);
+  assert.equal(
+    (await readMain()).applicationUrl,
+    `https://jellyfin.example.test${base}/Foreseerr`
+  );
+  // Clearing the field removes only what the plugin set; an Application URL
+  // entered in Foreseerr survives restarts.
+  await save('');
+  assert.equal((await readMain()).applicationUrl, '');
+  await call(mainPath, {
+    cookie: secondCookie,
+    body: { applicationUrl: 'https://own.example.test' },
+    headers: { Origin: origin },
+  });
+  await save('');
+  assert.equal((await readMain()).applicationUrl, 'https://own.example.test');
   console.log(
-    `PASS Jellyfin ${abi}: install, readiness, ephemeral port, subpath SPA/assets, SSO, API validation, avatar ids, CSRF, mint isolation, header isolation, device isolation, logout and token revocation`
+    `PASS Jellyfin ${abi}: install, readiness, ephemeral port, subpath SPA/assets, SSO, API validation, avatar ids, sign-in page, ticket rotation, CSRF, mint isolation, header isolation, device isolation, logout and token revocation, managed settings, public URL and its provenance`
   );
 } catch (error) {
   const logs = await command(['docker', 'logs', '--tail', '180', name]).catch(
