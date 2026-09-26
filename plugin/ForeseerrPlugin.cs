@@ -44,9 +44,13 @@ public class ForeseerrPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public override void UpdateConfiguration(BasePluginConfiguration configuration)
     {
-        if (configuration is not PluginConfiguration incoming || incoming.SidecarPort is < 0 or > 65535)
-            throw new ArgumentException("Sidecar port must be 0–65535.", nameof(configuration));
-        base.UpdateConfiguration(configuration);
+        if (configuration is not PluginConfiguration incoming)
+            throw new ArgumentException("Unexpected configuration type.", nameof(configuration));
+        incoming.PublicServerUrl = PluginConfiguration.NormalizePublicServerUrl(incoming.PublicServerUrl);
+        // The dashboard never sees the managed secrets, so keep the stored ones.
+        incoming.ApiKeyToken = Configuration.ApiKeyToken;
+        incoming.PluginSecret = Configuration.PluginSecret;
+        base.UpdateConfiguration(incoming);
         Configuration.EnsureSecrets();
         SaveConfiguration();
         // Restart once for any managed setting change so the child reloads its

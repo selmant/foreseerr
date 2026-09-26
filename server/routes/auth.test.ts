@@ -13,7 +13,6 @@ import { stopJobs } from '@server/job/schedule';
 import PreparedEmail from '@server/lib/email';
 import ImageProxy from '@server/lib/imageproxy';
 import { Permission } from '@server/lib/permissions';
-import { signPluginMint } from '@server/lib/pluginMode';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
@@ -1062,19 +1061,23 @@ describe('POST /auth/jellyfin/plugin', () => {
     else process.env.FORESEERR_PLUGIN_SECRET = previousSecret;
   });
 
+  const mint = (body: Record<string, unknown>) =>
+    request(app)
+      .post('/auth/jellyfin/plugin')
+      .set('x-foreseerr-plugin-secret', secret)
+      .set('x-foreseerr-mint', '1')
+      .send({ jellyfinAccessToken: 'jf-token', ...body });
+
   it('returns 404 when plugin mode is off', async () => {
     delete process.env.FORESEERR_PLUGIN;
-    const res = await request(app).post('/auth/jellyfin/plugin').send({
+    const res = await mint({
       jellyfinUserId: 'jf-1',
       jellyfinUsername: 'alice',
-      timestamp: 1,
-      signature: '00',
     });
     assert.equal(res.status, 404);
   });
 
-  it('mints a session for a signed payload', async () => {
-    const timestamp = Math.floor(Date.now() / 1000);
+  it('mints a session from the plugin', async () => {
     const agent = request.agent(app);
     const login = await agent
       .post('/auth/jellyfin/plugin')
@@ -1085,8 +1088,6 @@ describe('POST /auth/jellyfin/plugin', () => {
         jellyfinUsername: 'pluginuser',
         jellyfinAccessToken: 'jf-token',
         isAdministrator: true,
-        timestamp,
-        signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
       });
     assert.equal(login.status, 200);
     assert.equal(login.body.jellyfinUsername, 'pluginuser');
@@ -1095,57 +1096,90 @@ describe('POST /auth/jellyfin/plugin', () => {
     assert.equal(meRes.body.jellyfinUsername, 'pluginuser');
   });
 
-  it('stores the compact Jellyfin id the avatar proxy accepts', async () => {
-    const dashed = 'bd06861d-d704-4034-8c17-a4544a785e27';
-    const compact = dashed.replace(/-/g, '');
+  it('gives a new Jellyfin user a free email when the name is taken', async () => {
     const repository = getRepository(User);
-    // Earlier plugin builds stored the dashed form.
-    const existing = await repository.save(
+    // A renamed or deleted Jellyfin account left this name behind.
+    await repository.save(
       new User({
-        email: 'dashed@example.test',
-        jellyfinUsername: 'dashed',
-        jellyfinUserId: dashed,
-        avatar: `/avatarproxy/${dashed}`,
+        email: 'reused',
+        jellyfinUsername: 'old-account',
+        jellyfinUserId: 'jf-old-account',
+        avatar: '/avatarproxy/jf-old-account',
         permissions: Permission.REQUEST,
         userType: UserType.JELLYFIN,
       })
     );
-    const timestamp = Math.floor(Date.now() / 1000);
-    const response = await request(app)
-      .post('/auth/jellyfin/plugin')
-      .set('x-foreseerr-plugin-secret', secret)
-      .set('x-foreseerr-mint', '1')
-      .send({
-        jellyfinUserId: dashed,
-        jellyfinUsername: 'dashed',
-        jellyfinAccessToken: 'jf-token',
-        timestamp,
-        signature: signPluginMint(secret, dashed, timestamp),
-      });
-    assert.equal(response.status, 200, response.text);
-    const stored = await repository.findOneOrFail({
-      where: { id: existing.id },
+    const response = await mint({
+      jellyfinUserId: 'abcdef0123456789abcdef0123456789',
+      jellyfinUsername: 'Reused',
     });
-    assert.equal(stored.jellyfinUserId, compact);
-    assert.match(stored.avatar, new RegExp(`^/avatarproxy/${compact}\\?`));
+    assert.equal(response.status, 200, response.text);
+    const created = await repository.findOneOrFail({
+      where: { jellyfinUserId: 'abcdef0123456789abcdef0123456789' },
+    });
+    assert.equal(created.email, 'reused+abcdef01');
   });
 
-  it('rejects a valid signature without the shared proxy secret', async () => {
-    const timestamp = Math.floor(Date.now() / 1000);
+  it('grants ADMIN to Jellyfin administrators and removes only that grant', async () => {
+    const repository = getRepository(User);
+    const saveUser = (name: string, permissions: number) =>
+      repository.save(
+        new User({
+          email: name,
+          jellyfinUsername: name,
+          jellyfinUserId: `jf-${name}`,
+          avatar: `/avatarproxy/jf-${name}`,
+          permissions,
+          userType: UserType.JELLYFIN,
+        })
+      );
+    const signIn = async (name: string, isAdministrator: boolean) => {
+      const response = await mint({
+        jellyfinUserId: `jf-${name}`,
+        jellyfinUsername: name,
+        isAdministrator,
+      });
+      assert.equal(response.status, 200, response.text);
+      return (
+        await repository.findOneOrFail({
+          where: { jellyfinUserId: `jf-${name}` },
+        })
+      ).permissions;
+    };
+
+    await saveUser('promoted', Permission.REQUEST);
+    assert.equal(
+      await signIn('promoted', true),
+      Permission.REQUEST | Permission.ADMIN
+    );
+    // Demotion in Jellyfin restores the permissions the user had before.
+    assert.equal(await signIn('promoted', false), Permission.REQUEST);
+
+    // ADMIN granted in Foreseerr is not Jellyfin's to take away.
+    await saveUser('trusted', Permission.ADMIN);
+    assert.equal(await signIn('trusted', false), Permission.ADMIN);
+
+    await saveUser('owner', 0);
+    assert.equal(await signIn('owner', true), Permission.ADMIN);
+    assert.equal(
+      await signIn('owner', false),
+      getSettings().main.defaultPermissions
+    );
+  });
+
+  it('rejects a mint without the shared proxy secret', async () => {
     const response = await request(app)
       .post('/auth/jellyfin/plugin')
+      .set('x-foreseerr-mint', '1')
       .send({
         jellyfinUserId: 'jf-plugin-user',
         jellyfinUsername: 'pluginuser',
         jellyfinAccessToken: 'jf-token',
-        timestamp,
-        signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
       });
     assert.equal(response.status, 403);
   });
 
   it('rejects browser proxy traffic without the private mint marker', async () => {
-    const timestamp = Math.floor(Date.now() / 1000);
     const response = await request(app)
       .post('/auth/jellyfin/plugin')
       .set('x-foreseerr-plugin-secret', secret)
@@ -1153,57 +1187,22 @@ describe('POST /auth/jellyfin/plugin', () => {
         jellyfinUserId: 'jf-plugin-user',
         jellyfinUsername: 'pluginuser',
         jellyfinAccessToken: 'jf-token',
-        timestamp,
-        signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
       });
     assert.equal(response.status, 403);
   });
 
   it('does not make a non-admin the first administrator', async () => {
     await getRepository(User).clear();
-    const timestamp = Math.floor(Date.now() / 1000);
-    const response = await request(app)
-      .post('/auth/jellyfin/plugin')
-      .set('x-foreseerr-plugin-secret', secret)
-      .set('x-foreseerr-mint', '1')
-      .send({
-        jellyfinUserId: 'jf-plugin-user',
-        jellyfinUsername: 'pluginuser',
-        jellyfinAccessToken: 'jf-token',
-        timestamp,
-        signature: signPluginMint(secret, 'jf-plugin-user', timestamp),
-      });
+    const response = await mint({
+      jellyfinUserId: 'jf-plugin-user',
+      jellyfinUsername: 'pluginuser',
+    });
     assert.equal(response.status, 403);
     assert.equal(await getRepository(User).count(), 0);
   });
 
   it('returns 400 for malformed identity fields instead of throwing', async () => {
-    const response = await request(app)
-      .post('/auth/jellyfin/plugin')
-      .set('x-foreseerr-plugin-secret', secret)
-      .set('x-foreseerr-mint', '1')
-      .send({
-        jellyfinUserId: [],
-        jellyfinUsername: {},
-        timestamp: 1,
-        signature: 'a'.repeat(64),
-      });
+    const response = await mint({ jellyfinUserId: [], jellyfinUsername: {} });
     assert.equal(response.status, 400);
-  });
-
-  it('rejects a bad signature', async () => {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const res = await request(app)
-      .post('/auth/jellyfin/plugin')
-      .set('x-foreseerr-plugin-secret', secret)
-      .set('x-foreseerr-mint', '1')
-      .send({
-        jellyfinUserId: 'jf-plugin-user',
-        jellyfinUsername: 'pluginuser',
-        jellyfinAccessToken: 'jf-token',
-        timestamp,
-        signature: 'aa'.repeat(32),
-      });
-    assert.equal(res.status, 401);
   });
 });

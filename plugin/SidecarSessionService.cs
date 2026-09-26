@@ -2,7 +2,6 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Foreseerr.Jellyfin;
@@ -10,13 +9,22 @@ namespace Foreseerr.Jellyfin;
 /// <summary>
 /// Browser tickets are opaque and scoped to a single Jellyfin login. Neither
 /// Jellyfin tokens nor the sidecar's session cookie are exposed to JavaScript.
-/// Jellyfin revalidates its token on every request, including after logout.
+/// Jellyfin revalidates the bound token for every page and API request,
+/// including after logout.
 /// </summary>
-public sealed class SidecarSessionService : IDisposable
+public sealed class SidecarSessionService
 {
     public const string CookieName = "Foreseerr.Session";
     public static readonly TimeSpan Lifetime = TimeSpan.FromHours(8);
-    private readonly MemoryCache _tickets = new(new MemoryCacheOptions { SizeLimit = 1024 });
+
+    /// <summary>Jellyfin logins per user that can hold a ticket at once.</summary>
+    public const int MaxLoginsPerUser = 10;
+
+    /// <summary>How long one validation also covers static files and images.</summary>
+    public static readonly TimeSpan StaticValidationWindow = TimeSpan.FromSeconds(30);
+
+    private readonly Lock _lock = new();
+    private readonly Dictionary<string, BrowserSession> _tickets = new(StringComparer.Ordinal);
     private readonly SidecarSupervisor _supervisor;
     private readonly IHttpClientFactory _clients;
     private readonly IAuthService _auth;
@@ -31,36 +39,93 @@ public sealed class SidecarSessionService : IDisposable
         _logger = logger;
     }
 
+    internal TimeProvider Time { get; init; } = TimeProvider.System;
+
     public sealed class BrowserSession(Guid userId, string token)
     {
         public Guid UserId { get; } = userId;
         public string Token { get; } = token;
-        public string? Cookie { get; set; }
-        public Guid Generation { get; set; }
-        public SemaphoreSlim Gate { get; } = new(1, 1);
+        internal string? Ticket { get; set; }
+        internal DateTimeOffset Expires { get; set; }
+        internal Minted? Cookie { get; set; }
+        internal Validation? Validated { get; set; }
+        internal SemaphoreSlim Gate { get; } = new(1, 1);
     }
 
-    public string Create(BrowserSession session)
+    internal sealed record Minted(string Value, Guid Generation);
+
+    internal sealed record Validation(AuthorizationInfo Authorization, DateTimeOffset At);
+
+    /// <summary>The session of an existing Jellyfin login, or a new one.</summary>
+    public BrowserSession SessionFor(Guid userId, string token)
     {
-        var ticket = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        _tickets.Set(ticket, session, new MemoryCacheEntryOptions
+        lock (_lock)
         {
-            AbsoluteExpirationRelativeToNow = Lifetime,
-            Size = 1,
-        });
+            return _tickets.Values.FirstOrDefault(session => session.UserId == userId && session.Token == token)
+                ?? new BrowserSession(userId, token);
+        }
+    }
+
+    /// <summary>
+    /// Issues a new ticket for the session and revokes its previous one, so a
+    /// Jellyfin login holds one ticket no matter how often it signs in.
+    /// </summary>
+    public string Issue(BrowserSession session)
+    {
+        var now = Time.GetUtcNow();
+        var ticket = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        lock (_lock)
+        {
+            foreach (var (key, existing) in _tickets.ToList())
+            {
+                if (existing.Expires <= now || existing == session
+                    || (existing.UserId == session.UserId && existing.Token == session.Token))
+                    _tickets.Remove(key);
+            }
+
+            // A user's oldest logins give way; other users are unaffected.
+            var logins = _tickets.Values.Where(existing => existing.UserId == session.UserId)
+                .OrderBy(existing => existing.Expires).ToList();
+            foreach (var old in logins.Take(logins.Count - (MaxLoginsPerUser - 1)))
+                _tickets.Remove(old.Ticket!);
+
+            session.Ticket = ticket;
+            session.Expires = now + Lifetime;
+            _tickets[ticket] = session;
+        }
+
         return ticket;
     }
 
     public void Forget(string? ticket)
     {
-        if (!string.IsNullOrEmpty(ticket)) _tickets.Remove(ticket);
+        if (string.IsNullOrEmpty(ticket)) return;
+        lock (_lock) _tickets.Remove(ticket);
     }
 
-    public async Task<(BrowserSession Session, AuthorizationInfo Authorization)?> AuthenticateAsync(HttpRequest request)
+    /// <param name="staticContent">
+    /// Static files and images may reuse a validation from the last
+    /// <see cref="StaticValidationWindow"/>. Pages and API calls never do.
+    /// </param>
+    public async Task<(BrowserSession Session, AuthorizationInfo Authorization)?> AuthenticateAsync(
+        HttpRequest request, bool staticContent = false)
     {
         var ticket = request.Cookies[CookieName];
-        if (string.IsNullOrEmpty(ticket) || !_tickets.TryGetValue<BrowserSession>(ticket, out var session)
-            || session == null) return null;
+        if (string.IsNullOrEmpty(ticket)) return null;
+        var now = Time.GetUtcNow();
+        BrowserSession? session;
+        lock (_lock)
+        {
+            if (!_tickets.TryGetValue(ticket, out session)) return null;
+            if (session.Expires <= now)
+            {
+                _tickets.Remove(ticket);
+                return null;
+            }
+        }
+
+        if (staticContent && session.Validated is { } recent && now - recent.At < StaticValidationWindow)
+            return (session, recent.Authorization);
 
         // Use a separate context so browser headers and Jellyfin's cached
         // authorization info cannot override the token bound to this ticket.
@@ -73,7 +138,10 @@ public sealed class SidecarSessionService : IDisposable
             var authorization = await _auth.Authenticate(context.Request).ConfigureAwait(false);
             if (authorization.IsAuthenticated && !authorization.IsApiKey && authorization.User != null
                 && authorization.UserId == session.UserId)
+            {
+                session.Validated = new Validation(authorization, now);
                 return (session, authorization);
+            }
         }
         catch (MediaBrowser.Controller.Authentication.AuthenticationException)
         {
@@ -88,31 +156,30 @@ public sealed class SidecarSessionService : IDisposable
         return null;
     }
 
+    /// <summary>Drops the sidecar session so the next request signs in again.</summary>
+    public static void ResetCookie(BrowserSession session) => session.Cookie = null;
+
     public async Task<string?> EnsureCookieAsync(BrowserSession session, string username,
         bool isAdmin, CancellationToken cancellationToken)
     {
+        if (session.Cookie is { } minted && minted.Generation == _supervisor.Generation) return minted.Value;
         await session.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (session.Cookie != null && session.Generation == _supervisor.Generation)
-                return session.Cookie;
             var generation = _supervisor.Generation;
+            if (session.Cookie is { } current && current.Generation == generation) return current.Value;
             var secret = ForeseerrPlugin.Instance?.Configuration.PluginSecret;
             if (string.IsNullOrEmpty(secret) || !_supervisor.IsReady) return null;
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            // Compact form, as returned by the Jellyfin API.
-            var userId = session.UserId.ToString("N");
             using var request = new HttpRequestMessage(HttpMethod.Post,
                 $"{_supervisor.Origin}/Foreseerr/api/v1/auth/jellyfin/plugin")
             {
                 Content = JsonContent.Create(new
                 {
-                    jellyfinUserId = userId,
+                    // Compact form, as returned by the Jellyfin API.
+                    jellyfinUserId = session.UserId.ToString("N"),
                     jellyfinUsername = username,
                     jellyfinAccessToken = session.Token,
                     isAdministrator = isAdmin,
-                    timestamp,
-                    signature = PluginHmac.Sign(secret, userId, timestamp),
                 }),
             };
             request.Headers.Add("X-Foreseerr-Plugin-Secret", secret);
@@ -126,10 +193,10 @@ public sealed class SidecarSessionService : IDisposable
             }
 
             if (!response.Headers.TryGetValues("Set-Cookie", out var headers)) return null;
-            session.Cookie = headers.Select(header => header.Split(';', 2)[0])
+            var cookie = headers.Select(header => header.Split(';', 2)[0])
                 .FirstOrDefault(pair => pair.StartsWith("connect.sid=", StringComparison.Ordinal));
-            session.Generation = generation;
-            return session.Cookie;
+            session.Cookie = cookie == null ? null : new Minted(cookie, generation);
+            return cookie;
         }
         catch (HttpRequestException)
         {
@@ -144,6 +211,4 @@ public sealed class SidecarSessionService : IDisposable
             session.Gate.Release();
         }
     }
-
-    public void Dispose() => _tickets.Dispose();
 }

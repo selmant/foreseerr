@@ -9,7 +9,6 @@ import logger from '@server/logger';
 import { configDirectory } from '@server/utils/runtimePaths';
 import { readFile } from 'fs/promises';
 import path from 'path';
-import { In } from 'typeorm';
 import { isPluginMode } from './pluginMode';
 
 export interface JellyfinHostLibrary {
@@ -41,31 +40,90 @@ export interface JellyfinHostFile {
     externalHostname?: string;
     serverId?: string;
     apiKey?: string;
-    libraries?: JellyfinHostLibrary[];
+    /** null when the plugin could not list them. */
+    libraries?: JellyfinHostLibrary[] | null;
   };
+  /** Present when the Better Trakt plugin is loaded. */
   trakt?: {
     provider?: 'direct' | 'jellyfin';
-  };
-  mdblist?: {
-    apiKey?: string;
   };
   adminUser?: JellyfinHostAdminUser;
 }
 
-/** Jellyfin's API and the avatar proxy use the compact 32-hex form. */
-export function canonicalJellyfinUserId(id: string): string {
-  const compact = id.replace(/-/g, '').toLowerCase();
-  return /^[0-9a-f]{32}$/.test(compact) ? compact : id;
+/**
+ * Plugin users are found by Jellyfin id; the unique email column only needs
+ * a free label. A renamed or recreated Jellyfin account can reuse a name.
+ */
+export async function availablePluginEmail(
+  username: string,
+  jellyfinUserId: string
+): Promise<string> {
+  const name = username.toLowerCase();
+  const candidates = [name, `${name}+${jellyfinUserId.slice(0, 8)}`];
+  for (const email of candidates) {
+    if ((await getRepository(User).count({ where: { email } })) === 0) {
+      return email;
+    }
+  }
+  return `${name}+${jellyfinUserId}`;
 }
 
-export function jellyfinUserIdCandidates(id: string): string[] {
-  const compact = id.replace(/-/g, '').toLowerCase();
-  if (!/^[0-9a-f]{32}$/.test(compact)) {
-    return [id];
+/**
+ * Jellyfin administrators get ADMIN. Losing that in Jellyfin removes only an
+ * ADMIN the plugin granted; one granted in Foreseerr stays.
+ */
+export function pluginAdminPermissions(
+  current: number,
+  isAdministrator: boolean,
+  grantedByPlugin: boolean,
+  defaults: number
+): { permissions: number; grantedByPlugin: boolean } {
+  if (isAdministrator) {
+    return current & Permission.ADMIN
+      ? { permissions: current, grantedByPlugin }
+      : { permissions: current | Permission.ADMIN, grantedByPlugin: true };
   }
-  const dashed = `${compact.slice(0, 8)}-${compact.slice(8, 12)}-${compact.slice(12, 16)}-${compact.slice(16, 20)}-${compact.slice(20)}`;
-  return [...new Set([id, compact, dashed])];
+  if (!grantedByPlugin || !(current & Permission.ADMIN)) {
+    return { permissions: current, grantedByPlugin: false };
+  }
+  return {
+    permissions: current & ~Permission.ADMIN || defaults,
+    grantedByPlugin: false,
+  };
 }
+
+/** Returns the user's permissions after a sign-in and records who granted ADMIN. */
+export async function syncPluginAdmin(
+  user: Pick<User, 'permissions'>,
+  jellyfinUserId: string,
+  isAdministrator: boolean
+): Promise<number> {
+  const settings = getSettings();
+  const admins = new Set(settings.plugin.jellyfinAdmins);
+  const next = pluginAdminPermissions(
+    user.permissions,
+    isAdministrator,
+    admins.has(jellyfinUserId),
+    settings.main.defaultPermissions
+  );
+  if (next.grantedByPlugin !== admins.has(jellyfinUserId)) {
+    if (next.grantedByPlugin) admins.add(jellyfinUserId);
+    else admins.delete(jellyfinUserId);
+    settings.plugin = { ...settings.plugin, jellyfinAdmins: [...admins] };
+    await settings.save();
+  }
+  return next.permissions;
+}
+
+/**
+ * A value from the plugin page wins. When the page has none, only a value the
+ * plugin set earlier is cleared; one entered in Foreseerr stays.
+ */
+const pluginValue = (
+  current: string | undefined,
+  incoming: string,
+  applied: string
+): string => incoming || (current === applied ? '' : (current ?? ''));
 
 export const jellyfinHostFilePath = (): string =>
   path.join(configDirectory(), 'jellyfin-host.json');
@@ -81,7 +139,7 @@ export async function readJellyfinHostFile(): Promise<JellyfinHostFile | null> {
 
 const mergeLibraries = (
   current: Library[],
-  incoming: JellyfinHostLibrary[] | undefined
+  incoming: JellyfinHostLibrary[] | null | undefined
 ): Library[] | undefined => {
   if (!incoming) {
     return undefined;
@@ -103,8 +161,14 @@ export function applyJellyfinHostFile(host: JellyfinHostFile): boolean {
   settings.main.mediaServerType = MediaServerType.JELLYFIN;
   settings.main.mediaServerLogin = host.main?.mediaServerLogin ?? true;
   settings.main.localLogin = host.main?.localLogin ?? false;
-  if (host.main?.applicationUrl) {
-    settings.main.applicationUrl = host.main.applicationUrl;
+  const plugin = settings.plugin;
+  if (typeof host.main?.applicationUrl === 'string') {
+    settings.main.applicationUrl = pluginValue(
+      settings.main.applicationUrl,
+      host.main.applicationUrl,
+      plugin.applicationUrl
+    );
+    plugin.applicationUrl = host.main.applicationUrl;
   }
   if (host.main?.locale) {
     settings.main.locale = host.main.locale;
@@ -119,7 +183,12 @@ export function applyJellyfinHostFile(host: JellyfinHostFile): boolean {
     if (typeof jf.useSsl === 'boolean') jellyfinPatch.useSsl = jf.useSsl;
     if (typeof jf.urlBase === 'string') jellyfinPatch.urlBase = jf.urlBase;
     if (typeof jf.externalHostname === 'string') {
-      jellyfinPatch.externalHostname = jf.externalHostname;
+      jellyfinPatch.externalHostname = pluginValue(
+        settings.jellyfin.externalHostname,
+        jf.externalHostname,
+        plugin.externalHostname
+      );
+      plugin.externalHostname = jf.externalHostname;
     }
     if (jf.serverId) jellyfinPatch.serverId = jf.serverId;
     if (jf.apiKey) jellyfinPatch.apiKey = jf.apiKey;
@@ -131,24 +200,13 @@ export function applyJellyfinHostFile(host: JellyfinHostFile): boolean {
     changed = true;
   }
 
+  // Better Trakt is only a default: a directly configured Trakt app wins.
   if (
-    host.trakt?.provider === 'jellyfin' ||
-    host.trakt?.provider === 'direct'
+    (host.trakt?.provider === 'jellyfin' ||
+      host.trakt?.provider === 'direct') &&
+    !settings.trakt.clientId
   ) {
     settings.trakt = { ...settings.trakt, provider: host.trakt.provider };
-    changed = true;
-  }
-
-  if (host.mdblist?.apiKey) {
-    settings.mdblist = { ...settings.mdblist, apiKey: host.mdblist.apiKey };
-    changed = true;
-  }
-
-  // Remove only the prototype's managed no-op notification destination.
-  // User-configured webhook destinations remain untouched.
-  const webhook = settings.notifications.agents.webhook;
-  if (webhook.options.webhookUrl?.endsWith('/ForeseerrPlugin/Webhook')) {
-    settings.notifications.agents.webhook = { ...webhook, enabled: false };
     changed = true;
   }
 
@@ -187,38 +245,31 @@ export async function ensurePluginAdminUser(): Promise<void> {
   if (!admin?.jellyfinUserId || !admin.jellyfinUsername) {
     return;
   }
-  const jellyfinUserId = canonicalJellyfinUserId(admin.jellyfinUserId);
+  const { jellyfinUserId } = admin;
   const userRepository = getRepository(User);
-  const existing = await userRepository.findOne({
-    where: {
-      jellyfinUserId: In(jellyfinUserIdCandidates(jellyfinUserId)),
-    },
-  });
+  const existing = await userRepository.findOne({ where: { jellyfinUserId } });
   if (existing) {
-    let changed = false;
-    if (existing.id === 1 && existing.permissions !== Permission.ADMIN) {
-      existing.permissions = Permission.ADMIN;
-      changed = true;
+    const permissions = await syncPluginAdmin(existing, jellyfinUserId, true);
+    if (existing.permissions !== permissions) {
+      existing.permissions = permissions;
+      await userRepository.save(existing);
     }
-    // Earlier plugin builds stored dashed ids, which the avatar proxy rejects.
-    if (existing.jellyfinUserId !== jellyfinUserId) {
-      existing.jellyfinUserId = jellyfinUserId;
-      existing.avatar = `/avatarproxy/${jellyfinUserId}`;
-      changed = true;
-    }
-    if (changed) await userRepository.save(existing);
     return;
   }
   const userCount = await userRepository.count();
   const user = new User({
     ...(userCount === 0 ? { id: 1 } : {}),
-    email: (admin.email || admin.jellyfinUsername).toLowerCase(),
+    email: await availablePluginEmail(
+      admin.email || admin.jellyfinUsername,
+      jellyfinUserId
+    ),
     jellyfinUsername: admin.jellyfinUsername,
     jellyfinUserId,
     jellyfinDeviceId: 'BOT_seerr',
-    permissions: Permission.ADMIN,
+    permissions: getSettings().main.defaultPermissions,
     userType: UserType.JELLYFIN,
   });
+  user.permissions = await syncPluginAdmin(user, jellyfinUserId, true);
   user.avatar = `/avatarproxy/${jellyfinUserId}`;
   await userRepository.save(user);
   logger.info('Created plugin admin user from Jellyfin host bootstrap', {

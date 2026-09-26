@@ -1,32 +1,25 @@
-<div id="ForeseerrConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+<div id="ForeseerrConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
     <div data-role="content">
         <div class="content-primary">
             <form id="ForeseerrConfigForm">
                 <div class="sectionTitleContainer flex align-items-center">
                     <h2 class="sectionTitle">Foreseerr</h2>
                 </div>
-                <p>Foreseerr runs as a localhost sidecar inside this plugin. Jellyfin connection, libraries, and the admin user are loaded from this server. Radarr and Sonarr are still configured in the Foreseerr UI.</p>
-                <div class="inputContainer">
-                    <label class="inputLabel" for="PublicServerUrl">Public server URL</label>
-                    <input is="emby-input" type="url" id="PublicServerUrl" placeholder="https://jellyfin.example.com" />
-                    <div class="fieldDescription">Used for Foreseerr applicationUrl and media links. Leave empty to fill later.</div>
+                <p id="ForeseerrStatus">Checking Foreseerr…</p>
+                <button is="emby-button" type="button" class="raised block" id="OpenForeseerr"><span>Open Foreseerr</span></button>
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Access</h3>
+                    <p>Anyone signed in to Jellyfin Web can open <a id="ForeseerrLink" is="emby-linkbutton" class="button-link"></a>. <span id="ForeseerrHeaderButton"></span></p>
+                    <p>Foreseerr uses this server, its libraries, and its users. The first Jellyfin administrator to open it becomes the Foreseerr owner. Jellyfin administrators are Foreseerr admins; removing that in Jellyfin only takes back admin rights that came from Jellyfin. Radarr, Sonarr, and notifications are set up in Foreseerr.</p>
                 </div>
-                <div class="inputContainer">
-                    <label class="inputLabel" for="SidecarPort">Sidecar port</label>
-                    <input is="emby-input" type="number" min="0" max="65535" id="SidecarPort" />
-                    <div class="fieldDescription">Use 0 to automatically choose an available loopback port. Saving restarts Foreseerr.</div>
-                </div>
-                <div class="inputContainer">
-                    <label class="inputLabel" for="MdblistApiKey">MDBList API key (optional)</label>
-                    <input is="emby-input" type="text" id="MdblistApiKey" />
-                    <div class="fieldDescription">Imported from Moonbase if that plugin is installed and this field is empty.</div>
-                </div>
-                <p id="ForeseerrStatus">Checking sidecar…</p>
-                <div>
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Links</h3>
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="PublicServerUrl">Public Jellyfin URL</label>
+                        <input is="emby-input" type="url" id="PublicServerUrl" placeholder="https://jellyfin.example.com" />
+                        <div class="fieldDescription" id="PublicServerUrlDescription"></div>
+                    </div>
                     <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
-                </div>
-                <div style="margin-top:1em">
-                    <button is="emby-button" type="button" class="raised block" id="OpenForeseerr"><span>Open Foreseerr</span></button>
                 </div>
             </form>
         </div>
@@ -35,47 +28,56 @@
         (function () {
             var pluginId = 'a7c3e2f1-9b4d-4e8a-8c1f-2b6d9e0f4a11';
             var page = document.querySelector('#ForeseerrConfigPage');
-            page.addEventListener('viewshow', function () {
-                Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    page.querySelector('#PublicServerUrl').value = config.PublicServerUrl || '';
-                    page.querySelector('#SidecarPort').value = config.SidecarPort || 0;
-                    page.querySelector('#MdblistApiKey').value = config.MdblistApiKey || '';
-                    Dashboard.hideLoadingMsg();
-                });
+            var description = 'Links in Foreseerr notifications point here. Leave it empty to use Jellyfin\'s published server URI (Networking settings) or the Application URL set in Foreseerr.';
+
+            function showStatus() {
                 ApiClient.ajax({
                     type: 'GET',
                     url: ApiClient.getUrl('ForeseerrPlugin/Status'),
                     dataType: 'json'
                 }).then(function (status) {
-                    var el = page.querySelector('#ForeseerrStatus');
-                    var text = status.running
-                        ? ('Sidecar running' + (status.pid ? (' (pid ' + status.pid + ')') : ''))
-                        : 'Sidecar is not running';
-                    if (status.lastError) {
-                        text += '. ' + status.lastError;
-                    }
-                    if (status.betterTrakt) {
-                        text += '. Better Trakt detected; Trakt provider will default to the Jellyfin plugin.';
-                    }
-                    if (status.version) {
-                        text += '. Plugin ' + status.version;
-                    }
-                    el.textContent = text;
+                    var text = status.ready
+                        ? 'Foreseerr is running.'
+                        : status.running ? 'Foreseerr is starting…' : 'Foreseerr is not running.';
+                    if (status.lastError) text += ' Last error: ' + status.lastError;
+                    if (status.version) text += ' Plugin ' + status.version + '.';
+                    page.querySelector('#ForeseerrStatus').textContent = text;
+                    page.querySelector('#ForeseerrHeaderButton').textContent = status.headerButton
+                        ? 'Jellyfin Web also shows a Foreseerr button in the header.'
+                        : 'Install the File Transformation plugin to add a Foreseerr button to the Jellyfin Web header.';
+                    page.querySelector('#PublicServerUrlDescription').textContent = description + (status.publicUrl
+                        ? ' Current: ' + status.publicUrl
+                        : ' None is set here, so Foreseerr uses its own Application URL, if any.');
                 }).catch(function () {
-                    page.querySelector('#ForeseerrStatus').textContent = 'Could not read sidecar status.';
+                    page.querySelector('#ForeseerrStatus').textContent = 'Could not read the Foreseerr status.';
                 });
+            }
+
+            page.addEventListener('viewshow', function () {
+                var link = page.querySelector('#ForeseerrLink');
+                link.href = ApiClient.getUrl('Foreseerr/');
+                link.textContent = link.href;
+                page.querySelector('#PublicServerUrlDescription').textContent = description;
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    page.querySelector('#PublicServerUrl').value = config.PublicServerUrl || '';
+                    Dashboard.hideLoadingMsg();
+                });
+                showStatus();
             });
             page.querySelector('#ForeseerrConfigForm').addEventListener('submit', function (e) {
                 e.preventDefault();
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    config.PublicServerUrl = page.querySelector('#PublicServerUrl').value;
-                    config.SidecarPort = parseInt(page.querySelector('#SidecarPort').value, 10) || 0;
-                    config.MdblistApiKey = page.querySelector('#MdblistApiKey').value;
-                    ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
-                        Dashboard.processPluginConfigurationUpdateResult(result);
-                    });
+                    config.PublicServerUrl = page.querySelector('#PublicServerUrl').value.trim();
+                    return ApiClient.updatePluginConfiguration(pluginId, config);
+                }).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    // Saving restarts Foreseerr with the new links.
+                    setTimeout(showStatus, 1000);
+                }).catch(function () {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Enter an http or https address, for example https://jellyfin.example.com.');
                 });
                 return false;
             });
@@ -87,7 +89,7 @@
                         Authorization: 'MediaBrowser Token="' + ApiClient.accessToken() + '"'
                     }
                 }).then(function (res) {
-                    if (!res.ok) throw new Error('Foreseerr sign-in is unavailable. Check the plugin status and retry.');
+                    if (!res.ok) throw new Error('Foreseerr sign-in is unavailable. Check the status above and retry.');
                     return res.json();
                 }).then(function (body) {
                     window.location.href = body.url;

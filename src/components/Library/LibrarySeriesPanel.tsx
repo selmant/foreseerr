@@ -15,6 +15,7 @@ import { hasServarrMapping } from '@server/lib/servarrMapping';
 import type { TvDetails } from '@server/models/Tv';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Library.LibrarySeriesPanel', {
@@ -193,14 +194,11 @@ const LibrarySeriesPanel = ({
               </Button>
             ) : null}
             {tmdbId ? (
-              <Button
-                as="a"
-                buttonType="default"
-                href={`/tv/${tmdbId}`}
-                onClick={() => onClose()}
-              >
-                {intl.formatMessage(messages.viewDetails)}
-              </Button>
+              <Link to={`/tv/${tmdbId}`}>
+                <Button as="a" buttonType="default" onClick={() => onClose()}>
+                  {intl.formatMessage(messages.viewDetails)}
+                </Button>
+              </Link>
             ) : null}
           </div>
 

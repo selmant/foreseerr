@@ -10,15 +10,14 @@ import { User } from '@server/entity/User';
 import { startDesktopCatchUp, startJobs } from '@server/job/schedule';
 import { forgetDesktopUser } from '@server/lib/desktopLogin';
 import {
-  canonicalJellyfinUserId,
-  jellyfinUserIdCandidates,
+  availablePluginEmail,
+  syncPluginAdmin,
 } from '@server/lib/jellyfinHostBootstrap';
 import { Permission } from '@server/lib/permissions';
 import {
   isLoopbackAddress,
   isPluginMode,
   pluginSharedSecret,
-  verifyPluginMintSignature,
   verifyPluginSecret,
 } from '@server/lib/pluginMode';
 import { getSettings } from '@server/lib/settings';
@@ -30,7 +29,6 @@ import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
 import { Router, type Response } from 'express';
 import net from 'net';
-import { In } from 'typeorm';
 import validator from 'validator';
 import { z } from 'zod';
 
@@ -723,34 +721,18 @@ authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
       jellyfinUsername: z.string().min(1).max(256),
       jellyfinAccessToken: z.string().min(1).max(4096),
       isAdministrator: z.boolean().default(false),
-      timestamp: z.number().int(),
-      signature: z.string().regex(/^[a-f0-9]{64}$/i),
     })
     .safeParse(req.body);
   if (!parsed.success) {
     return next({ status: 400, message: 'Invalid plugin mint payload.' });
   }
   const body = parsed.data;
-  if (
-    !verifyPluginMintSignature({
-      secret,
-      jellyfinUserId: body.jellyfinUserId,
-      timestamp: body.timestamp,
-      signature: body.signature,
-    })
-  ) {
-    return next({ status: 401, message: 'Invalid plugin mint signature.' });
-  }
 
   try {
     const settings = getSettings();
-    const jellyfinUserId = canonicalJellyfinUserId(body.jellyfinUserId);
+    const { jellyfinUserId } = body;
     const userRepository = getRepository(User);
-    let user = await userRepository.findOne({
-      where: {
-        jellyfinUserId: In(jellyfinUserIdCandidates(jellyfinUserId)),
-      },
-    });
+    let user = await userRepository.findOne({ where: { jellyfinUserId } });
     const deviceId = Buffer.from(`BOT_seerr_${body.jellyfinUsername}`).toString(
       'base64'
     );
@@ -769,31 +751,39 @@ authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
       }
       user = new User({
         ...(isFirst ? { id: 1 } : {}),
-        email: body.jellyfinUsername.toLowerCase(),
+        email: await availablePluginEmail(
+          body.jellyfinUsername,
+          jellyfinUserId
+        ),
         jellyfinUsername: body.jellyfinUsername,
         jellyfinUserId,
         jellyfinDeviceId: deviceId,
         jellyfinAuthToken: body.jellyfinAccessToken ?? '',
-        permissions:
-          isFirst || body.isAdministrator
-            ? Permission.ADMIN
-            : settings.main.defaultPermissions,
+        permissions: settings.main.defaultPermissions,
         userType: UserType.JELLYFIN,
       });
+      // The first user is always an administrator (checked above).
+      user.permissions = await syncPluginAdmin(
+        user,
+        jellyfinUserId,
+        body.isAdministrator
+      );
       user.avatar = getUserAvatarUrl(user);
       await userRepository.save(user);
       if (isFirst) startJobs();
     } else {
-      // Earlier plugin builds stored dashed ids, which the avatar proxy rejects.
-      user.jellyfinUserId = jellyfinUserId;
       await userRepository.update(
         { id: user.id },
         {
-          jellyfinUserId,
           jellyfinUsername: body.jellyfinUsername,
           jellyfinAuthToken: body.jellyfinAccessToken ?? user.jellyfinAuthToken,
           jellyfinDeviceId: user.jellyfinDeviceId || deviceId,
           avatar: getUserAvatarUrl(user),
+          permissions: await syncPluginAdmin(
+            user,
+            jellyfinUserId,
+            body.isAdministrator
+          ),
         }
       );
       user = await userRepository.findOneOrFail({ where: { id: user.id } });

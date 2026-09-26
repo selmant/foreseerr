@@ -42,7 +42,7 @@ import { cleanupSkippedEpisodeEndings } from '@server/lib/skippedEpisodeCleanup'
 import { skippedEpisodeProgressThreshold } from '@server/lib/skippedEpisodeEndings';
 import logger from '@server/logger';
 import AsyncLock from '@server/utils/asyncLock';
-import { getHostname } from '@server/utils/getHostname';
+import { getHostname, getJellyfinLinkHost } from '@server/utils/getHostname';
 
 const JELLYFIN_LIBRARY_TIMEOUT_MS = 15_000;
 const PLAY_TARGET_CONCURRENCY = 4;
@@ -147,10 +147,9 @@ const mediaUrlForItem = (jellyfinItemId: string): string | undefined => {
   const jellyfin = settings.jellyfin;
   if (!jellyfin.ip && !jellyfin.externalHostname) return undefined;
   const jellyfinHost =
-    process.env.FORESEERR_RUNTIME === 'desktop' ||
-    !(jellyfin.externalHostname && jellyfin.externalHostname.length > 0)
+    process.env.FORESEERR_RUNTIME === 'desktop'
       ? getHostname()
-      : jellyfin.externalHostname;
+      : getJellyfinLinkHost();
   const serverId = jellyfin.serverId ?? '';
   return jellyfinPlaybackUrl(jellyfinHost, serverId, jellyfinItemId);
 };
