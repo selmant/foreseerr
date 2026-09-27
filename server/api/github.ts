@@ -21,6 +21,13 @@ interface GitHubRelease {
   body: string;
 }
 
+/**
+ * App releases are tagged `vX.Y.Z`. Jellyfin plugin releases share the
+ * repository under `jellyfin-plugin-v*` tags and must not count as updates.
+ */
+export const isAppRelease = (release: Pick<GitHubRelease, 'tag_name'>) =>
+  /^v\d/.test(release.tag_name);
+
 interface GithubCommit {
   sha: string;
   node_id: string;
@@ -91,7 +98,7 @@ class GithubAPI extends ExternalAPI {
         }
       );
 
-      return data;
+      return data.filter(isAppRelease);
     } catch (e) {
       logger.warn(
         "Failed to retrieve GitHub releases. This may be an issue on GitHub's end. Foreseerr can't check if it's on the latest version.",

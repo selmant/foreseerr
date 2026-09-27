@@ -1,0 +1,154 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# The Jellyfin plugin has its own release line, separate from Foreseerr's
+# v* tags. Each release bundles the Foreseerr build from the tagged commit
+# and is published as a GitHub prerelease so it never becomes Foreseerr's
+# "latest" release. The repository manifest Jellyfin reads lives on the
+# jellyfin-plugin-repository branch.
+name: Jellyfin Plugin Release
+
+on:
+  push:
+    tags:
+      - 'jellyfin-plugin-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  MANIFEST_BRANCH: jellyfin-plugin-repository
+
+jobs:
+  release:
+    name: Build, prove, and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Set up .NET 9 and 10
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      - name: Install dependencies
+        env:
+          CI: true
+        run: bun install --frozen-lockfile
+
+      - name: Check tag, version, and release notes
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(dotnet msbuild plugin/Foreseerr.Jellyfin.csproj -getProperty:ReleaseVersion)"
+          if [[ "$TAG" != "jellyfin-plugin-v$version" ]]; then
+            echo "::error::Tag $TAG does not match plugin/Build.props ReleaseVersion $version"
+            exit 1
+          fi
+          notes="plugin/release-notes/$version.md"
+          test -s "$notes" || { echo "::error::Missing $notes"; exit 1; }
+          foreseerr="$(jq -r .version package.json)"
+          {
+            echo "version=$version"
+            echo "notes=$notes"
+            echo "foreseerr=$foreseerr"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test plugin host integrations
+        run: |
+          dotnet test plugin.tests/Foreseerr.Jellyfin.Tests.csproj -c Release -p:JellyfinTarget=10.11
+          dotnet test plugin.tests/Foreseerr.Jellyfin.Tests.csproj -c Release -p:JellyfinTarget=12
+
+      - name: Test plugin mode in Foreseerr
+        run: bun run test server/lib/pluginMode.test.ts server/lib/jellyfinHostBootstrap.test.ts server/routes/auth.test.ts
+
+      - name: Compile Foreseerr sidecars with /Foreseerr base
+        run: bun run compile:plugin
+
+      - name: Pack plugin archives and repository manifest
+        run: |
+          plugin/build.sh 10.11
+          plugin/build.sh 12
+          bun scripts/merge-plugin-manifests.mjs
+
+      - name: Prove Jellyfin installation and SSO
+        run: |
+          bun scripts/prove-jellyfin-plugin.mjs 10.11
+          bun scripts/prove-jellyfin-plugin.mjs 12
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          FORESEERR: ${{ steps.version.outputs.foreseerr }}
+          NOTES: ${{ steps.version.outputs.notes }}
+        run: |
+          set -euo pipefail
+          cd plugin/dist/release
+          sha256sum foreseerr-jellyfin-manifest.json >> SHA256SUMS
+          # The title names the bundled Foreseerr version: older Foreseerr
+          # builds treat the newest release title as their update check.
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --prerelease \
+            --title "Foreseerr for Jellyfin $VERSION (Foreseerr $FORESEERR)" \
+            --notes-file "$GITHUB_WORKSPACE/$NOTES" \
+            foreseerr-jellyfin-10.11.zip \
+            foreseerr-jellyfin-12.zip \
+            foreseerr-jellyfin-manifest.json \
+            SHA256SUMS
+
+      - name: Publish repository manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          repo="$RUNNER_TEMP/manifest-repo"
+          mkdir -p "$repo"
+          cd "$repo"
+          git init -q
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          if git fetch -q --depth 1 origin "$MANIFEST_BRANCH"; then
+            git checkout -q -b "$MANIFEST_BRANCH" FETCH_HEAD
+          else
+            git checkout -q --orphan "$MANIFEST_BRANCH"
+          fi
+          cp "$GITHUB_WORKSPACE/plugin/dist/release/foreseerr-jellyfin-manifest.json" manifest.json
+          cat > README.md <<'EOF'
+          # Foreseerr for Jellyfin plugin repository
+
+          Add this URL in Jellyfin under Dashboard → Plugins → Repositories:
+
+          https://raw.githubusercontent.com/selmant/foreseerr/jellyfin-plugin-repository/manifest.json
+
+          Alpha: anything can change and there is no backward compatibility between versions.
+          This branch is written by `.github/workflows/jellyfin-plugin-release.yml`; do not edit it by hand.
+          EOF
+          git add manifest.json README.md
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "Publish Foreseerr for Jellyfin $VERSION"
+          git push -q origin "HEAD:$MANIFEST_BRANCH"

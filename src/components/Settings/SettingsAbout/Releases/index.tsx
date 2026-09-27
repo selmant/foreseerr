@@ -140,17 +140,20 @@ const Releases = ({ currentVersion }: ReleasesProps) => {
     <div>
       <h3 className="heading">{intl.formatMessage(messages.releases)}</h3>
       <div className="section space-y-3">
-        {data.map((release, index) => {
-          return (
-            <div key={`release-${release.id}`}>
-              <Release
-                release={release}
-                currentVersion={currentVersion}
-                isLatest={index === 0}
-              />
-            </div>
-          );
-        })}
+        {/* Jellyfin plugin releases use jellyfin-plugin-v* tags. */}
+        {data
+          .filter((release) => /^v\d/.test(release.tag_name))
+          .map((release, index) => {
+            return (
+              <div key={`release-${release.id}`}>
+                <Release
+                  release={release}
+                  currentVersion={currentVersion}
+                  isLatest={index === 0}
+                />
+              </div>
+            );
+          })}
       </div>
     </div>
   );
