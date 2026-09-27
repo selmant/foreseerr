@@ -45,9 +45,14 @@ if (import.meta.main) {
   const sumsPath = join(OUT_DIR, 'SHA256SUMS');
   const line = `${digest}  ${ARCHIVE}\n`;
   if (existsSync(sumsPath)) {
-    writeFileSync(sumsPath, `${readFileSync(sumsPath, 'utf8').trimEnd()}\n${line}`);
+    writeFileSync(
+      sumsPath,
+      `${readFileSync(sumsPath, 'utf8').trimEnd()}\n${line}`
+    );
   } else {
     writeFileSync(sumsPath, line);
   }
-  console.log(`${ARCHIVE} ${Bun.file(archivePath).size} bytes sha256=${digest}`);
+  console.log(
+    `${ARCHIVE} ${Bun.file(archivePath).size} bytes sha256=${digest}`
+  );
 }

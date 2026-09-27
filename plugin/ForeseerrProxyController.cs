@@ -60,9 +60,10 @@ public class ForeseerrProxyController(
         if (!authorization.IsAuthenticated || authorization.IsApiKey
             || authorization.UserId == Guid.Empty || authorization.User == null || string.IsNullOrEmpty(authorization.Token)) return Unauthorized();
         var session = sessions.SessionFor(authorization.UserId, authorization.Token);
-        var cookie = await sessions.EnsureCookieAsync(session, authorization.User!.Username,
+        var signIn = await sessions.EnsureCookieAsync(session, authorization.User!.Username,
             authorization.User.HasPermission(PermissionKind.IsAdministrator), cancellationToken);
-        if (cookie == null) return Problem("Foreseerr sign-in is unavailable. Retry after checking the plugin status.", statusCode: 503);
+        if (signIn.Denied != null) return Problem(signIn.Denied, statusCode: StatusCodes.Status403Forbidden);
+        if (signIn.Cookie == null) return Problem("Foreseerr sign-in is unavailable. Retry after checking the plugin status.", statusCode: 503);
 
         sessions.Forget(Request.Cookies[SidecarSessionService.CookieName]);
         Response.Cookies.Append(SidecarSessionService.CookieName, sessions.Issue(session), CookieOptions());
@@ -94,9 +95,10 @@ public class ForeseerrProxyController(
         }
 
         var (session, authorization) = authenticated.Value;
-        var cookie = await sessions.EnsureCookieAsync(session, authorization.User!.Username,
+        var signIn = await sessions.EnsureCookieAsync(session, authorization.User!.Username,
             authorization.User.HasPermission(PermissionKind.IsAdministrator), cancellationToken);
-        if (cookie == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
+        if (signIn.Denied != null) return StatusCode(StatusCodes.Status403Forbidden);
+        if (signIn.Cookie is not { } cookie) return StatusCode(StatusCodes.Status503ServiceUnavailable);
 
         // These routes can replace a Foreseerr identity independently of Jellyfin.
         // Keep the mint endpoint private even to authenticated browser sessions.
@@ -198,10 +200,20 @@ public class ForeseerrProxyController(
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width">
         <title>Foreseerr</title>
-        <style>body{font-family:system-ui,sans-serif;background:#101010;color:#ddd;display:grid;place-items:center;min-height:90vh}a{color:#00a4dc}</style>
+        <style>
+        :root{color-scheme:dark}
+        body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#111827;color:#d1d5db;display:grid;place-items:center;min-height:100vh}
+        main{max-width:26rem;padding:2rem;text-align:center}
+        svg{width:4rem;height:4rem}
+        h1{margin:1rem 0 .5rem;font-size:1.25rem;color:#f3f4f6}
+        p{margin:0 0 1.5rem;line-height:1.5}
+        a{display:inline-block;padding:.5rem 1rem;border-radius:.375rem;background:#4f46e5;color:#fff;font-weight:500;text-decoration:none}
+        a:hover{background:#6366f1}
+        </style>
         </head>
         <body>
         <main id="signin" data-server-id="{serverId}" data-sso="{sso}">
+        <svg viewBox="0 0 96 96" aria-hidden="true"><defs><linearGradient id="g" x1="48" x2="117.5" y1="0" y2="69.5" gradientUnits="userSpaceOnUse"><stop stop-color="#C395FC"/><stop offset="1" stop-color="#4F65F5"/></linearGradient></defs><path fill="url(#g)" fill-rule="evenodd" d="M48 96C74.5 96 96 74.5 96 48S74.5 0 48 0 0 21.5 0 48s21.5 48 48 48Zm32-44c0 15.5-12.5 28-28 28S24 67.5 24 52c0-2.9.4-5.6 1.2-8.2C27.4 48.6 32.3 52 38 52c7.7 0 14-6.3 14-14 0-5.7-3.4-10.6-8.2-12.8 2.6-.8 5.3-1.2 8.2-1.2 15.5 0 28 12.5 28 28Z"/></svg>
         <h1 id="title">Opening Foreseerr…</h1>
         <p id="message"></p>
         <a id="jellyfin" href="{jellyfin}" hidden>Open Jellyfin</a>
@@ -232,6 +244,12 @@ public class ForeseerrProxyController(
             headers: { Authorization: 'MediaBrowser Token="' + token + '"' }
           }).then(function (response) {
             if (response.status === 401) throw new Error('Your Jellyfin session has ended. Sign in to Jellyfin, then open this link again.');
+            if (response.status === 403) {
+              return response.json().catch(function () { return {}; }).then(function (body) {
+                sessionStorage.removeItem('foreseerr-signin');
+                throw new Error(body.detail || 'Foreseerr refused this Jellyfin account.');
+              });
+            }
             if (!response.ok) throw new Error('Foreseerr sign-in is unavailable. Check the plugin status in Jellyfin and retry.');
             location.replace(location.href);
           }).catch(function (error) {

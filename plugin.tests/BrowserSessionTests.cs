@@ -283,4 +283,18 @@ public class BrowserSessionTests
     [InlineData("https://host/?next=x")]
     public void InvalidPublicServerUrlIsRejected(string value) =>
         Assert.Throws<ArgumentException>(() => PluginConfiguration.NormalizePublicServerUrl(value));
+
+    [Theory]
+    [InlineData("{\"message\":\"Foreseerr is not open to new Jellyfin users.\"}", "Foreseerr is not open to new Jellyfin users.")]
+    [InlineData("{\"message\":\"\"}", SidecarSessionService.DefaultDeniedMessage)]
+    [InlineData("<html>Forbidden</html>", SidecarSessionService.DefaultDeniedMessage)]
+    [InlineData("[\"message\"]", SidecarSessionService.DefaultDeniedMessage)]
+    public async Task RefusedSignInCarriesTheSidecarReason(string body, string expected)
+    {
+        using var response = new HttpResponseMessage(System.Net.HttpStatusCode.Forbidden)
+        {
+            Content = new StringContent(body),
+        };
+        Assert.Equal(expected, await SidecarSessionService.DeniedMessageAsync(response, CancellationToken.None));
+    }
 }

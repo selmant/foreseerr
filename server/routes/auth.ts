@@ -743,11 +743,16 @@ authRoutes.post('/jellyfin/plugin', async (req, res, next) => {
       if (isFirst && !body.isAdministrator) {
         return next({
           status: 403,
-          message: 'The first plugin login must be a Jellyfin administrator.',
+          message: 'A Jellyfin administrator must open Foreseerr first.',
         });
       }
+      // The plugin shows this message to the Jellyfin user.
       if (!isFirst && !settings.main.newPlexLogin) {
-        return next({ status: 403, message: 'Access denied.' });
+        return next({
+          status: 403,
+          message:
+            'Foreseerr is not open to new Jellyfin users. Ask an administrator to import your account.',
+        });
       }
       user = new User({
         ...(isFirst ? { id: 1 } : {}),

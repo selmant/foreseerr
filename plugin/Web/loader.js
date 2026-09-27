@@ -26,6 +26,28 @@
     return headers;
   }
 
+  // Foreseerr's eye logo, drawn in the header's own color like Jellyfin's icons.
+  var ICON =
+    '<svg viewBox="-10 -10 116 116" width="24" height="24" aria-hidden="true" focusable="false" style="display:block">' +
+    '<path fill="currentColor" fill-rule="evenodd" d="M48 96C74.5 96 96 74.5 96 48S74.5 0 48 0 0 21.5 0 48s21.5 48 48 48Zm32-44c0 15.5-12.5 28-28 28S24 67.5 24 52c0-2.9.4-5.6 1.2-8.2C27.4 48.6 32.3 52 38 52c7.7 0 14-6.3 14-14 0-5.7-3.4-10.6-8.2-12.8 2.6-.8 5.3-1.2 8.2-1.2 15.5 0 28 12.5 28 28Z"/>' +
+    '</svg>';
+
+  // A refused account gets Foreseerr's reason; anything else is an outage.
+  function signInError(res) {
+    return res
+      .json()
+      .catch(function () {
+        return {};
+      })
+      .then(function (body) {
+        throw new Error(
+          res.status === 403 && body.detail
+            ? body.detail
+            : 'Foreseerr sign-in is unavailable. Check the plugin status and retry.'
+        );
+      });
+  }
+
   function openForeseerr() {
     var api = currentApiClient();
     if (!api) return;
@@ -35,11 +57,7 @@
       headers: authHeaders(api),
     })
       .then(function (res) {
-        if (!res.ok)
-          throw new Error(
-            'Foreseerr sign-in is unavailable. Check the plugin status and retry.'
-          );
-        return res.json();
+        return res.ok ? res.json() : signInError(res);
       })
       .then(function (body) {
         window.location.href = body.url;
@@ -72,8 +90,7 @@
     button.type = 'button';
     button.title = 'Foreseerr';
     button.setAttribute('aria-label', 'Foreseerr');
-    button.innerHTML =
-      '<span style="font-weight:700;font-size:13px;letter-spacing:.04em">F</span>';
+    button.innerHTML = ICON;
     // Borrow only styling classes; legacy header code binds to others.
     var styling = anchor.className
       .toString()
