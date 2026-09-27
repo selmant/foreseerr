@@ -2,7 +2,7 @@
  * Pack bun run build output for GitHub Releases (launcher.js server, not --compile).
  */
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,14 +44,8 @@ if (import.meta.main) {
     .digest('hex');
   const sumsPath = join(OUT_DIR, 'SHA256SUMS');
   const line = `${digest}  ${ARCHIVE}\n`;
-  if (existsSync(sumsPath)) {
-    writeFileSync(
-      sumsPath,
-      `${readFileSync(sumsPath, 'utf8').trimEnd()}\n${line}`
-    );
-  } else {
-    writeFileSync(sumsPath, line);
-  }
+  // Adds to the SHA256SUMS from pack:binaries, or starts one.
+  appendFileSync(sumsPath, line);
   console.log(
     `${ARCHIVE} ${Bun.file(archivePath).size} bytes sha256=${digest}`
   );

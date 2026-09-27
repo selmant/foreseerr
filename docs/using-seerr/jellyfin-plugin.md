@@ -60,4 +60,4 @@ Foreseerr's own CSRF protection is off in plugin mode. The plugin replaces it: t
 
 On the first start, Foreseerr downloads its anime mapping data and can be unresponsive for a minute or two while it stores it.
 
-Open implementation gaps are listed in [plugin/README.md](../../plugin/README.md#remaining-work).
+Open implementation gaps are listed in [plugin/README.md](https://github.com/selmant/foreseerr/blob/develop/plugin/README.md#remaining-work).

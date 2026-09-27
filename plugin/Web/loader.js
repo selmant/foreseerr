@@ -15,8 +15,8 @@
     var headers = { Accept: 'application/json' };
     try {
       var token =
-        (api && typeof api.accessToken === 'function' && api.accessToken()) ||
-        (api && api._serverInfo && api._serverInfo.AccessToken);
+        (typeof api.accessToken === 'function' && api.accessToken()) ||
+        (api._serverInfo && api._serverInfo.AccessToken);
       if (token) {
         headers.Authorization = 'MediaBrowser Token="' + token + '"';
       }
