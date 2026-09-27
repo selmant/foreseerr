@@ -126,6 +126,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # git-cliff keeps one tag per commit, so a plugin tag on the same
+      # commit would hide this Foreseerr tag.
+      - name: Drop Jellyfin plugin tags
+        run: git tag -l 'jellyfin-plugin-v*' | xargs -r git tag -d
+
       - name: Generate changelog
         id: git-cliff
         uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
