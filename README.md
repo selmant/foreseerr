@@ -27,7 +27,7 @@ behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
 `0.3.0` for installation and release compatibility.
 
 > [!NOTE]
-> Foreseerr `v0.10.0` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, `v0.5.x`, `v0.6.x`, `v0.7.x`, `v0.8.x`, and `v0.9.x` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
+> Foreseerr `v0.11.0` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, `v0.5.x`, `v0.6.x`, `v0.7.x`, `v0.8.x`, `v0.9.x`, and `v0.10.x` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
 
 ## Current Features (from Seerr)
 
@@ -58,9 +58,9 @@ You still click Request on a title. There is no scheduled Discover auto-request 
 
 See [Discover](docs/using-seerr/discover.md), [Library](docs/using-seerr/library.md), [Calendar](docs/using-seerr/calendar.md), [Integrations](docs/using-seerr/settings/integrations.md), and [Mapping](docs/using-seerr/settings/mapping.md).
 
-## Optional Jellyfin sidecar plugin
+## Optional Jellyfin sidecar plugin (alpha)
 
-Foreseerr can also run **inside Jellyfin** as a third-party plugin that supervises the compiled server on localhost and serves it at `/Foreseerr` with SSO. See [plugin/README.md](plugin/README.md). This is not an official Jellyfin catalog plugin.
+Foreseerr can also run **inside Jellyfin** as a third-party plugin that supervises the compiled server on localhost and serves it at `/Foreseerr` with SSO. See the [user guide](docs/using-seerr/jellyfin-plugin.md) and [plugin/README.md](plugin/README.md). This is not an official Jellyfin catalog plugin, and it is in alpha.
 
 ## Installation
 
@@ -104,7 +104,7 @@ docker run -d \
   --restart unless-stopped \
   -p 5055:5055 \
   -v "$(pwd)/foreseerr-config:/app/config" \
-  ghcr.io/selmant/foreseerr:v0.10.0
+  ghcr.io/selmant/foreseerr:v0.11.0
 ```
 
 Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
@@ -118,7 +118,7 @@ The equivalent production-style Compose service is:
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/foreseerr:v0.10.0
+    image: ghcr.io/selmant/foreseerr:v0.11.0
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -136,7 +136,7 @@ sudo chown -R 1000:1000 foreseerr-config
 docker compose up -d
 ```
 
-The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.10.0`) or a stable alias (`latest`, `v0`, `v0.10`) rather than `develop`.
+The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.11.0`) or a stable alias (`latest`, `v0`, `v0.11`) rather than `develop`.
 
 > Older pulls used `ghcr.io/selmant/seerr`. Point compose/CLI at `ghcr.io/selmant/foreseerr` going forward.
 
