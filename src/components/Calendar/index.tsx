@@ -16,6 +16,7 @@ import type { CalendarItem } from '@server/interfaces/api/calendarInterfaces';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
+import useSWR from 'swr';
 import AgendaView from './AgendaView';
 import CalendarDetails from './CalendarDetails';
 import CalendarFilters from './CalendarFilters';
@@ -52,20 +53,35 @@ const CalendarSkeleton = ({
 
 const EmptyCalendar = () => {
   const intl = useIntl();
+  const { hasPermission } = useUser();
+  const { data: radarr } = useSWR<unknown[]>('/api/v1/service/radarr');
+  const { data: sonarr } = useSWR<unknown[]>('/api/v1/service/sonarr');
+  // Releases come only from Sonarr and Radarr, so without either the calendar
+  // stays empty however much is requested.
+  const noServices = !!radarr && !!sonarr && !radarr.length && !sonarr.length;
+  const canConnect = noServices && hasPermission(Permission.ADMIN);
   return (
     <div className="rounded-lg border border-dashed border-gray-600 bg-gray-800/40 px-6 py-16 text-center">
       <CalendarDaysIcon className="mx-auto h-10 w-10 text-gray-500" />
       <h2 className="mt-4 text-lg font-semibold text-white">
-        {intl.formatMessage(messages.emptyTitle)}
+        {intl.formatMessage(
+          noServices ? messages.noServicesTitle : messages.emptyTitle
+        )}
       </h2>
       <p className="mx-auto mt-2 max-w-md text-sm text-gray-400">
-        {intl.formatMessage(messages.emptyDescription)}
+        {intl.formatMessage(
+          noServices
+            ? messages.noServicesDescription
+            : messages.emptyDescription
+        )}
       </p>
       <Link
-        to="/discover"
+        to={canConnect ? '/settings/integrations' : '/'}
         className="mt-5 inline-flex rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
       >
-        {intl.formatMessage(messages.discover)}
+        {intl.formatMessage(
+          canConnect ? messages.noServicesSettings : messages.discover
+        )}
       </Link>
     </div>
   );

@@ -37,6 +37,10 @@ const messages = defineMessages('components.Calendar', {
   manage: 'Manage in {service}',
   discover: 'Discover titles',
   emptyTitle: 'Nothing upcoming for you yet',
+  noServicesTitle: 'No Sonarr or Radarr server connected',
+  noServicesDescription:
+    'The calendar lists upcoming releases from Sonarr and Radarr. Connect one to see them here.',
+  noServicesSettings: 'Connect a server',
   emptyDescription:
     'Titles you request will appear here when they have an upcoming release date.',
   loading: 'Loading calendar…',
