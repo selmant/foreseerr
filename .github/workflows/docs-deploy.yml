@@ -11,7 +11,6 @@ on:
       - 'docs/**'
       - 'gen-docs/**'
       - 'seerr-api.yml'
-      - '.github/workflows/docs-deploy.yml'
 
 permissions:
   contents: read
@@ -41,27 +40,6 @@ jobs:
       - name: Build website
         working-directory: gen-docs
         run: bun run gen-api-docs && bun run build
-
-      # Jellyfin's plugin repository URL. The newest plugin release carries
-      # the manifest; jellyfin-plugin-release.yml runs this workflow after
-      # publishing one.
-      - name: Add Jellyfin plugin repository manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
-            --json tagName,isDraft \
-            --jq '[.[] | select(.isDraft | not) | .tagName | select(startswith("jellyfin-plugin-v"))][0] // ""')"
-          if [[ -z "$tag" ]]; then
-            echo "::warning::No Jellyfin plugin release to serve"
-            exit 0
-          fi
-          mkdir -p gen-docs/build/jellyfin
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
-            --pattern foreseerr-jellyfin-manifest.json \
-            --output gen-docs/build/jellyfin/manifest.json
-          jq -e '.[0].versions | length > 0' gen-docs/build/jellyfin/manifest.json >/dev/null
 
       - name: Upload Build Artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b6 # v4.0.0

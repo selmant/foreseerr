@@ -93,10 +93,6 @@ compose.override.yaml
 devenv.local.nix
 devenv.local.yaml
 
-# plugin build output
-plugin/dist
-plugin/bin
-plugin/obj
 .direnv
 
 # pre-commit
@@ -105,9 +101,5 @@ plugin/obj
 # Personal exports (never publish)
 /criticker-import-from-trakt.csv
 
-# Jellyfin plugin tests
-plugin.tests/bin
-plugin.tests/obj
-
-# Local Jellyfin plugin test environment (bun run plugin:dev)
-plugin/.dev/
+# selmant/jellyfin-plugin-foreseerr checkout (.github/workflows/jellyfin-plugin.yml)
+/jellyfin-plugin/

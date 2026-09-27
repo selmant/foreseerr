@@ -6,10 +6,10 @@ description: Run Foreseerr inside Jellyfin as a third-party plugin with SSO
 # Jellyfin sidecar plugin
 
 :::caution Alpha, in active development
-Anything can change between plugin releases: settings, data, URLs, and behavior. There is **no backward compatibility** between plugin versions and no promised upgrade path. If an update misbehaves, uninstall the plugin, delete `plugins/configurations/Foreseerr` in Jellyfin's data folder, and install again. Report problems on [GitHub](https://github.com/selmant/foreseerr/issues).
+Anything can change between plugin releases: settings, data, URLs, and behavior. There is **no backward compatibility** between plugin versions and no promised upgrade path. If an update misbehaves, uninstall the plugin, delete `plugins/configurations/Foreseerr` in Jellyfin's data folder, and install again. Report plugin problems in the [plugin repository](https://github.com/selmant/jellyfin-plugin-foreseerr/issues).
 :::
 
-This is an **optional third-party** Jellyfin plugin for **Jellyfin 10.11 and newer**. It is not in the official Jellyfin catalog. It starts a bun-compiled Foreseerr process on `127.0.0.1`, reverse-proxies it at `/Foreseerr`, and signs the current Jellyfin Web user in without a password.
+This is an **optional third-party** Jellyfin plugin for **Jellyfin 10.11 and newer**, developed in [selmant/jellyfin-plugin-foreseerr](https://github.com/selmant/jellyfin-plugin-foreseerr). It is not in the official Jellyfin catalog. It starts a bun-compiled Foreseerr process on `127.0.0.1`, reverse-proxies it at `/Foreseerr`, and signs the current Jellyfin Web user in without a password.
 
 Standalone Docker and compiled binaries remain the supported ways to run Foreseerr on its own.
 
@@ -26,15 +26,15 @@ Radarr, Sonarr, notifications, and other integrations are configured inside Fore
 
 ## Install
 
-1. Dashboard → Plugins → Repositories → add `https://selmant.github.io/foreseerr/jellyfin/manifest.json`.
+1. Dashboard → Plugins → Repositories → add `https://selmant.github.io/jellyfin-plugin-foreseerr/manifest.json`.
 2. Install **Foreseerr** from the catalog and restart Jellyfin. Jellyfin picks the build that matches its version.
 3. Dashboard → Plugins → Foreseerr: set **Public Jellyfin URL** to the address people use for Jellyfin, for example `https://jellyfin.example.com`. Links in notifications point there. You can skip this if Jellyfin's **Published Server URIs** (Networking) has an `all=` or `external=` entry, or if you set **Application URL** in Foreseerr instead.
 4. Open Foreseerr as a Jellyfin administrator first; that account becomes the Foreseerr owner. Configure Radarr/Sonarr there.
 5. Share `https://your-jellyfin/Foreseerr/` with your users, or install File Transformation for a header button.
 
-The plugin has its own version, separate from Foreseerr's, and its releases are tagged `jellyfin-plugin-v…` on GitHub. Each one bundles a specific Foreseerr version, named in the release title.
+The plugin has its own version, separate from Foreseerr's, and its [releases](https://github.com/selmant/jellyfin-plugin-foreseerr/releases) each bundle a specific Foreseerr version, named in the release title.
 
-To install manually, extract `foreseerr-jellyfin-10.11.zip` or `foreseerr-jellyfin-12.zip` from a `jellyfin-plugin-v…` GitHub Release into Jellyfin's `plugins/Foreseerr/` folder and restart Jellyfin.
+To install manually, extract `foreseerr-jellyfin-10.11.zip` or `foreseerr-jellyfin-12.zip` from a [plugin release](https://github.com/selmant/jellyfin-plugin-foreseerr/releases) into Jellyfin's `plugins/Foreseerr/` folder and restart Jellyfin.
 
 Sidecar config and SQLite live under Jellyfin plugin configuration (`…/plugins/configurations/Foreseerr/foreseerr`). They are kept when the plugin updates, but during the alpha a new version may not read them correctly.
 
@@ -60,4 +60,4 @@ Foreseerr's own CSRF protection is off in plugin mode. The plugin replaces it: t
 
 On the first start, Foreseerr downloads its anime mapping data and can be unresponsive for a minute or two while it stores it.
 
-Open implementation gaps are listed in [plugin/README.md](https://github.com/selmant/foreseerr/blob/develop/plugin/README.md#remaining-work).
+Open implementation gaps are listed in the [plugin README](https://github.com/selmant/jellyfin-plugin-foreseerr#remaining-work).

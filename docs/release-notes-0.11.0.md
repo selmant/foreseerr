@@ -5,8 +5,8 @@ title: Foreseerr v0.11.0 release notes
 ## Highlights
 
 Foreseerr can now run inside Jellyfin. The new **Foreseerr for Jellyfin**
-plugin (first release `0.1.0-alpha.1`, published separately under
-`jellyfin-plugin-v*` tags) bundles this version. Standalone Docker, Helm, and
+plugin (first release `0.1.0-alpha.1`, published from
+[selmant/jellyfin-plugin-foreseerr](https://github.com/selmant/jellyfin-plugin-foreseerr)) bundles this version. Standalone Docker, Helm, and
 binary installs are unchanged.
 
 ## Features

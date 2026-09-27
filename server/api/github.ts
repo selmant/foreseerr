@@ -22,8 +22,8 @@ interface GitHubRelease {
 }
 
 /**
- * App releases are tagged `vX.Y.Z`. Jellyfin plugin releases share the
- * repository under `jellyfin-plugin-v*` tags and must not count as updates.
+ * App releases are tagged `vX.Y.Z`; any other release on the repository
+ * (such as the old `jellyfin-plugin-v*` tags) must not count as an update.
  */
 export const isAppRelease = (release: Pick<GitHubRelease, 'tag_name'>) =>
   /^v\d/.test(release.tag_name);

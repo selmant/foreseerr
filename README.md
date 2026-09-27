@@ -60,7 +60,7 @@ See [Discover](docs/using-seerr/discover.md), [Library](docs/using-seerr/library
 
 ## Optional Jellyfin sidecar plugin (alpha)
 
-Foreseerr can also run **inside Jellyfin** as a third-party plugin that supervises the compiled server on localhost and serves it at `/Foreseerr` with SSO. See the [user guide](docs/using-seerr/jellyfin-plugin.md) and [plugin/README.md](plugin/README.md). This is not an official Jellyfin catalog plugin, and it is in alpha.
+Foreseerr can also run **inside Jellyfin** as a third-party plugin that supervises the compiled server on localhost and serves it at `/Foreseerr` with SSO. The plugin is developed in [selmant/jellyfin-plugin-foreseerr](https://github.com/selmant/jellyfin-plugin-foreseerr); see the [user guide](docs/using-seerr/jellyfin-plugin.md). This is not an official Jellyfin catalog plugin, and it is in alpha.
 
 ## Installation
 

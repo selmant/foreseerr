@@ -140,7 +140,7 @@ const Releases = ({ currentVersion }: ReleasesProps) => {
     <div>
       <h3 className="heading">{intl.formatMessage(messages.releases)}</h3>
       <div className="section space-y-3">
-        {/* Jellyfin plugin releases use jellyfin-plugin-v* tags. */}
+        {/* Only vX.Y.Z tags are Foreseerr releases. */}
         {data
           .filter((release) => /^v\d/.test(release.tag_name))
           .map((release, index) => {

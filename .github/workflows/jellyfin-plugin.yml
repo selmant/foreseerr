@@ -1,12 +1,14 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# The Jellyfin plugin lives in selmant/jellyfin-plugin-foreseerr. This builds
+# its main branch around this change's sidecar and installs it into real
+# Jellyfin servers, so plugin-mode changes are proven before they merge.
 name: Jellyfin plugin
 on:
   pull_request:
     paths:
-      - 'plugin/**'
-      - 'plugin.tests/**'
       - 'server/**'
       - 'src/**'
-      - 'scripts/*plugin*'
       - 'scripts/compile.mjs'
       - 'package.json'
       - 'bun.lock'
@@ -18,14 +20,21 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         abi: ['10.11', '12']
+    env:
+      FORESEERR_DIR: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: selmant/jellyfin-plugin-foreseerr
+          path: jellyfin-plugin
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -36,8 +45,7 @@ jobs:
             9.0.x
             10.0.x
       - run: bun install --frozen-lockfile
-      - run: dotnet test plugin.tests/Foreseerr.Jellyfin.Tests.csproj -c Release -p:JellyfinTarget=${{ matrix.abi }}
       - run: bun run test server/lib/pluginMode.test.ts server/lib/jellyfinHostBootstrap.test.ts server/routes/auth.test.ts
-      - run: bun run compile:plugin -- bun-linux-x64
-      - run: plugin/build.sh '${{ matrix.abi }}' linux-x64
-      - run: bun scripts/prove-jellyfin-plugin.mjs '${{ matrix.abi }}'
+      - run: jellyfin-plugin/scripts/sidecar.sh linux-x64
+      - run: jellyfin-plugin/scripts/build.sh '${{ matrix.abi }}' linux-x64
+      - run: bun jellyfin-plugin/scripts/prove.mjs '${{ matrix.abi }}'
