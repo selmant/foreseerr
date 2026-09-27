@@ -91,6 +91,8 @@ const loaded = new Map<string, LoadedPack>();
 const packRefreshLocks = new Map<string, Promise<PackRefreshResult>>();
 
 const MIN_DROP_COMPARE_COUNT = 50;
+// How long one ingest slice may hold the database before requests get a turn.
+const INGEST_SLICE_MSEC = 50;
 const MAX_PACK_DROP_RATIO = 0.5;
 
 const trustFor = (entry: PackManifestEntry, ns: Namespace): number =>
@@ -278,30 +280,10 @@ async function refreshPackUnlocked(
     }
     const pack: LoadedPack = { entry, index: new PackIndex(records), records };
 
-    const shouldReplacePackGraph =
-      fetched.status === 'downloaded' ||
-      (Boolean(options.replacePackGraph) && fetched.status !== 'lastGood');
-    let clusters = 0;
-    if (
-      options.ingest &&
-      (shouldReplacePackGraph || fetched.status !== 'notModified')
-    ) {
-      if (shouldReplacePackGraph) {
-        beginPackGraphRewrite();
-        try {
-          if (!mappingSourceContributes(entry.key)) {
-            return { key: entry.key, status: 'skipped' };
-          }
-          clusters = await replacePackGraph(pack);
-        } finally {
-          endPackGraphRewrite();
-        }
-      } else {
-        clusters = await ingestPack(pack);
-      }
-    }
-    // This check and registration are synchronous, so a disable operation
-    // either wins before publication or unregisters the resolver afterwards.
+    // Publish the in-memory index before touching the graph: the graph is
+    // written a slice at a time, and this answers what it has not caught up on.
+    // The check and registration are synchronous, so a disable operation either
+    // wins before publication or unregisters the resolver afterwards.
     if (!mappingSourceContributes(entry.key)) {
       loaded.delete(entry.key);
       mappingService.unregister(entry.key);
@@ -310,6 +292,33 @@ async function refreshPackUnlocked(
     loaded.set(entry.key, pack);
     mappingService.register(packResolver(pack));
     mappingService.invalidate();
+
+    const shouldReplacePackGraph =
+      fetched.status === 'downloaded' ||
+      (Boolean(options.replacePackGraph) && fetched.status !== 'lastGood');
+    let clusters = 0;
+    const ingest =
+      options.ingest &&
+      (shouldReplacePackGraph || fetched.status !== 'notModified');
+    if (ingest) {
+      if (shouldReplacePackGraph) {
+        beginPackGraphRewrite();
+        try {
+          clusters = await replacePackGraph(pack);
+        } finally {
+          endPackGraphRewrite();
+        }
+      } else {
+        clusters = await ingestPack(pack);
+      }
+    }
+    if (!mappingSourceContributes(entry.key)) {
+      // Disabled while the graph was being written: drop what this run added.
+      loaded.delete(entry.key);
+      mappingService.unregister(entry.key);
+      if (ingest) await retractPackFromGraph(entry.key);
+      return { key: entry.key, status: 'skipped' };
+    }
     await recordSourceState(entry, {
       etag: fetched.etag ?? null,
       lastModified: fetched.lastModified ?? null,
@@ -355,81 +364,115 @@ async function refreshPackUnlocked(
   }
 }
 
-/** Write a parsed pack into the persistent graph, in bounded batches. */
-export async function ingestPack(
+// bun:sqlite answers synchronously, so an ingest that never yields keeps the
+// event loop from serving a single request until the whole pack is written.
+const yieldToEventLoop = (): Promise<void> =>
+  new Promise((resolve) => setImmediate(resolve));
+
+async function ingestRecord(
   pack: LoadedPack,
-  manager?: EntityManager
+  record: PackRecord,
+  manager: EntityManager
 ): Promise<number> {
   let clusters = 0;
-  const recordsTotal = pack.records.length;
-  let recordsDone = 0;
+  for (const part of partitionPackRecord(record)) {
+    const links = part.refs.map((ref) => ({
+      ref,
+      confidence: trustFor(pack.entry, ref.ns),
+      sourceKey: pack.entry.key,
+    }));
+    const clusterId = await upsertCluster(
+      links,
+      {
+        title: part.title,
+        year: part.year,
+      },
+      manager
+    );
+    if (clusterId === undefined) continue;
+    clusters += 1;
+    for (const rule of part.episodeRules ?? []) {
+      await upsertEpisodeRule(
+        {
+          clusterId,
+          source: rule.source,
+          target: rule.target,
+          sourceRange: rule.sourceRange,
+          targetRange: rule.targetRange,
+          ratio: rule.ratio,
+          confidence: trustFor(pack.entry, rule.target.ns),
+          sourceKey: pack.entry.key,
+        },
+        manager
+      );
+    }
+  }
+  return clusters;
+}
+
+/**
+ * Write a parsed pack into the persistent graph.
+ *
+ * Each slice is its own short transaction, followed by a turn of the event
+ * loop, so requests keep being served while tens of thousands of records are
+ * written. Stops early once the pack is disabled.
+ */
+export async function ingestPack(
+  pack: LoadedPack,
+  options: { sliceMsec?: number } = {}
+): Promise<number> {
+  const sliceMsec = options.sliceMsec ?? INGEST_SLICE_MSEC;
+  const { records } = pack;
+  let clusters = 0;
+  let next = 0;
   updatePackProgress(pack.entry.key, {
     phase: 'ingesting',
     recordsDone: 0,
-    recordsTotal,
+    recordsTotal: records.length,
   });
-  for (const record of pack.records) {
-    recordsDone += 1;
-    if (recordsDone === recordsTotal || recordsDone % 250 === 0) {
-      updatePackProgress(pack.entry.key, {
-        phase: 'ingesting',
-        recordsDone,
-        recordsTotal,
-      });
-    }
-    for (const part of partitionPackRecord(record)) {
-      const links = part.refs.map((ref) => ({
-        ref,
-        confidence: trustFor(pack.entry, ref.ns),
-        sourceKey: pack.entry.key,
-      }));
-      try {
-        const clusterId = await upsertCluster(
-          links,
-          {
-            title: part.title,
-            year: part.year,
-          },
-          manager
-        );
-        if (clusterId !== undefined) clusters += 1;
-        if (clusterId !== undefined && part.episodeRules?.length) {
-          for (const rule of part.episodeRules) {
-            await upsertEpisodeRule(
-              {
-                clusterId,
-                source: rule.source,
-                target: rule.target,
-                sourceRange: rule.sourceRange,
-                targetRange: rule.targetRange,
-                ratio: rule.ratio,
-                confidence: trustFor(pack.entry, rule.target.ns),
-                sourceKey: pack.entry.key,
-              },
-              manager
-            );
-          }
-        }
-      } catch (error) {
-        if (manager) throw error;
-        logger.debug('Unable to ingest mapping pack record', {
-          label: 'Mapping',
-          pack: pack.entry.key,
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+  while (next < records.length && mappingSourceContributes(pack.entry.key)) {
+    await yieldToEventLoop();
+    clusters += await dataSource.transaction(async (manager) => {
+      const started = Date.now();
+      let written = 0;
+      do {
+        written += await ingestRecord(pack, records[next], manager);
+        next += 1;
+      } while (next < records.length && Date.now() - started < sliceMsec);
+      return written;
+    });
+    updatePackProgress(pack.entry.key, {
+      phase: 'ingesting',
+      recordsDone: next,
+      recordsTotal: records.length,
+    });
   }
   mappingService.invalidate();
   return clusters;
 }
 
-/** Replace one pack's graph contribution as an all-or-nothing operation. */
-export const replacePackGraph = (pack: LoadedPack): Promise<number> =>
-  dataSource.transaction(async (manager) => {
-    await retractPackFromGraph(pack.entry.key, manager);
-    return ingestPack(pack, manager);
-  });
+/**
+ * Replace one pack's graph contribution.
+ *
+ * Not atomic: the rewrite is sliced so requests are served meanwhile, and the
+ * pack's in-memory index covers what the graph has not caught up on. The
+ * pack's cache validators are forgotten first, so a rewrite cut short by an
+ * error or a restart makes the next refresh download the pack and redo it,
+ * instead of getting a 304 and keeping a half-written graph.
+ */
+export async function replacePackGraph(
+  pack: LoadedPack,
+  options: { sliceMsec?: number } = {}
+): Promise<number> {
+  await getRepository(MappingSource).update(
+    { key: pack.entry.key },
+    { etag: null, lastModified: null }
+  );
+  await dataSource.transaction((manager) =>
+    retractPackFromGraph(pack.entry.key, manager)
+  );
+  return ingestPack(pack, options);
+}
 
 export async function refreshAllPacks(
   options: { ingest?: boolean; manifestUrl?: string } = {}

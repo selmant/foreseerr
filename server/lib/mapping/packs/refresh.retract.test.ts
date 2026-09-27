@@ -17,7 +17,7 @@ const CONFIG_DIRECTORY = path.join(
 process.env.CONFIG_DIRECTORY = CONFIG_DIRECTORY;
 
 /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/consistent-type-imports */
-const { PackIndex, refreshPack, replacePackGraph } =
+const { PackIndex, ingestPack, refreshPack, replacePackGraph } =
   require('@server/lib/mapping/packs') as typeof import('@server/lib/mapping/packs');
 const { upsertCluster } =
   require('@server/lib/mapping/graph') as typeof import('@server/lib/mapping/graph');
@@ -192,14 +192,10 @@ describe('pack refresh retract', () => {
     );
   });
 
-  it('rolls back retraction when replacement ingest fails', async () => {
+  it('makes the next refresh redo a replacement that failed part-way', async () => {
     entry.mirrors = [`${base}/pack.json`];
     const first = await refreshPack(entry, { ingest: true });
     assert.equal(first.status, 'downloaded');
-    const before = await getRepository(MappingLink).find({
-      where: { sourceKey: entry.key },
-    });
-    assert.ok(before.length > 0);
 
     const records = [
       {
@@ -225,14 +221,49 @@ describe('pack refresh retract', () => {
         index: new PackIndex(records),
       })
     );
-
-    const after = await getRepository(MappingLink).find({
-      where: { sourceKey: entry.key },
+    const source = await getRepository(MappingSource).findOneByOrFail({
+      key: entry.key,
     });
-    assert.deepEqual(
-      after.map(({ namespace, externalId }) => ({ namespace, externalId })),
-      before.map(({ namespace, externalId }) => ({ namespace, externalId }))
+    assert.equal(source.etag, null);
+
+    // Without the validators the server cannot answer 304, so the pack is
+    // downloaded and its graph rewritten again.
+    notModified = true;
+    const second = await refreshPack(entry, { ingest: true });
+    assert.equal(second.status, 'downloaded');
+    assert.equal(
+      await getRepository(MappingLink).count({
+        where: { sourceKey: entry.key, namespace: 'anilist', externalId: '1' },
+      }),
+      1
     );
+  });
+});
+
+describe('pack ingest', () => {
+  it('lets the event loop run between slices', async () => {
+    const records = Array.from({ length: 20 }, (_, index) => ({
+      refs: [
+        { ns: 'anilist' as const, id: String(index + 1) },
+        { ns: 'tmdb_show' as const, id: String(1000 + index) },
+      ],
+    }));
+    let done = false;
+    let turns = 0;
+    const tick = () => {
+      turns += 1;
+      if (!done) setImmediate(tick);
+    };
+    setImmediate(tick);
+
+    const clusters = await ingestPack(
+      { entry, records, index: new PackIndex(records) },
+      { sliceMsec: 0 }
+    );
+    done = true;
+
+    assert.equal(clusters, records.length);
+    assert.ok(turns >= records.length, `only ${turns} event loop turns`);
   });
 });
 
