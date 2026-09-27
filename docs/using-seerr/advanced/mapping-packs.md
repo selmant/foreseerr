@@ -50,7 +50,11 @@ shows as a failing provider rather than as a mapping fault.
 
 ## Packs
 
-Packs are bulk mapping files fetched daily by the **Mapping Pack Refresh** job.
+Packs are bulk mapping files. None is installed until you enable it on
+**Settings → Mapping**, because the first install ingests tens of thousands of
+records and Foreseerr responds slowly for a few minutes while it runs. Without
+packs, anime falls back to slower live lookups and some titles may not resolve.
+Once installed, a pack is refreshed daily by the **Mapping Pack Refresh** job.
 Each has a mirror list; a download is written to a temporary file, validated,
 and only then renamed into place, so a truncated response can never replace a
 working pack.
@@ -60,10 +64,10 @@ working pack.
 | `anibridge` | Primary anime graph | MIT |
 | `animeapi` | Trakt and Simkl anime ids | MIT |
 | `fribb` | Fallback only; its AniList/MAL fields are frozen | MIT |
-| `anime-lists` | Off by default: published with no licence at all | none |
+| `anime-lists` | Published with no licence at all | none |
 
-`anime-lists` stays disabled until you enable it, because enabling an
-unlicensed dataset is your decision, not a default.
+`anime-lists` is not recommended: enabling an unlicensed dataset is your
+decision.
 
 ## Overriding the manifest
 
@@ -124,7 +128,7 @@ are all on the Mapping settings page, and each can be tuned per source.
 
 | Job | Default schedule | What it does |
 | --- | --- | --- |
-| Mapping Pack Refresh | 04:15 daily | Conditional GET of every pack, then ingest |
+| Mapping Pack Refresh | 04:15 daily | Conditional GET of every installed pack, then ingest |
 | Mapping Gap Backfill | 04:45 daily | Batch-resolves the most-seen gaps, then attaches title suggestions |
 
 Backfill is ordered by how often an item was actually rendered, so a limited

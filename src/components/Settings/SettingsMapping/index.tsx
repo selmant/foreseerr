@@ -1,3 +1,4 @@
+import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
@@ -350,6 +351,10 @@ const SettingsMapping = () => {
     (pack) => !packSources.some((source) => source.key === pack.key)
   );
   const packKeys = new Set(packSources.map((source) => source.key));
+  // Packs are opt-in, because installing one stalls the server for minutes.
+  const packsMissing = !packSources.some(
+    (source) => source.enabled && source.entryCount
+  );
   const liveApiRows = (() => {
     const byKey = new Map<
       string,
@@ -413,6 +418,17 @@ const SettingsMapping = () => {
             revalidateHealth();
           }}
         />
+      )}
+
+      {packsMissing && (
+        <Alert title="Anime mapping packs are not installed">
+          Foreseerr uses these packs to match anime from AniList and Simkl to
+          TMDB. Without them it falls back to slower live lookups, and some
+          anime may not show up or be requestable. Enable the packs you want
+          under Packs below. Each one takes a few minutes to install, and
+          Foreseerr responds slowly until it finishes. After that they update
+          nightly.
+        </Alert>
       )}
 
       <div className="mb-6">

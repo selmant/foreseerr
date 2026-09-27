@@ -14,6 +14,7 @@ import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { Fragment, useState, type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
+import { Link } from 'react-router';
 import useSWR, { mutate as globalMutate } from 'swr';
 import * as Yup from 'yup';
 
@@ -49,6 +50,9 @@ const messages = defineMessages('components.Settings.SettingsAnilist', {
   disconnectConfirmDescription:
     'Replacing these credentials will disconnect {count, plural, one {# linked AniList account} other {# linked AniList accounts}}. Those users must authorize the application again.',
   confirmReplace: 'Replace credentials',
+  mappingPacksMissing: 'Anime mapping packs are not installed',
+  mappingPacksMissingTip:
+    'Foreseerr does not download the packs that match anime to TMDB on its own, because installing one slows it down for a few minutes. Until you enable them in <MappingLink>Mapping settings</MappingLink>, some anime may not show up or be requestable.',
 });
 
 interface AnilistSettingsResponse {
@@ -75,6 +79,15 @@ const SettingsAnilist = ({ onSave }: SettingsAnilistProps) => {
   const { data, error, mutate } = useSWR<AnilistSettingsResponse>(
     '/api/v1/settings/anilist'
   );
+  const { data: mappingSources } = useSWR<{
+    results: { kind: string; enabled: boolean; entryCount: number | null }[];
+  }>('/api/v1/settings/mapping/sources');
+  const mappingPacksMissing =
+    !!mappingSources &&
+    !mappingSources.results.some(
+      (source) =>
+        source.kind === 'pack' && source.enabled && !!source.entryCount
+    );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<AnilistFormValues | null>(
     null
@@ -164,6 +177,20 @@ const SettingsAnilist = ({ onSave }: SettingsAnilistProps) => {
                 )}
               </Badge>
             </div>
+            {mappingPacksMissing && (
+              <Alert title={intl.formatMessage(messages.mappingPacksMissing)}>
+                {intl.formatMessage(messages.mappingPacksMissingTip, {
+                  MappingLink: (msg: ReactNode) => (
+                    <Link
+                      to="/settings/mapping"
+                      className="text-white underline"
+                    >
+                      {msg}
+                    </Link>
+                  ),
+                })}
+              </Alert>
+            )}
             <p className="text-sm text-gray-400">
               {intl.formatMessage(messages.description)}
             </p>

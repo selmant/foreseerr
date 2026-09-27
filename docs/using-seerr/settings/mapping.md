@@ -22,8 +22,10 @@ that constraint, not a mapping-pack fault.
 
 ## Packs and live APIs
 
-Packs refresh on the **Mapping Pack Refresh** job. You can also refresh a
-single pack from this page. Live resolvers (Simkl, ani.zip, Kitsu, TMDB
+Packs are not installed by default. Enable the ones you want here; each
+install takes a few minutes, and Foreseerr responds slowly until it finishes.
+Installed packs refresh on the **Mapping Pack Refresh** job, and you can also
+refresh a single pack from this page. Live resolvers (Simkl, ani.zip, Kitsu, TMDB
 `/find`, TVDB, MDBList) fill remaining gaps within their budgets.
 
 Disable a source only when you intend it to stop contributing. After changing

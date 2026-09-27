@@ -87,6 +87,18 @@ beforeEach(async () => {
   await getRepository(MappingLink).clear();
   await getRepository(MappingCluster).clear();
   await getRepository(MappingSource).clear();
+  // Packs are opt-in, so the suite starts from an installed anibridge.
+  await getRepository(MappingSource).insert({
+    key: 'anibridge',
+    kind: 'pack',
+    enabled: true,
+    format: 'json-graph',
+    mirrors: OFFLINE_MANIFEST.packs[0].mirrors,
+    priority: 10,
+    trust: 90,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
 });
 
 describe('offline boot', () => {
@@ -98,7 +110,7 @@ describe('offline boot', () => {
       results.find((result) => result.key === 'anibridge')?.status,
       'failed'
     );
-    // A disabled pack is skipped, not counted as an outage.
+    // A pack that was never installed is skipped, not counted as an outage.
     assert.equal(
       results.find((result) => result.key === 'anime-lists')?.status,
       'skipped'

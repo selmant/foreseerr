@@ -77,10 +77,10 @@ export async function ensureMappingPacks(
 /**
  * Make the mapping layer usable for one lookup, without blocking on I/O.
  *
- * The graph in Postgres is the system of record, so a resolution needs nothing
- * more than the registered resolvers. A stale pack set is refreshed in the
- * background: making a user's first slider of the day wait for a 100 MB
- * download and a full ingest would trade a mapping bug for a worse one.
+ * The graph is the system of record, so a resolution needs nothing more than
+ * the registered resolvers. Packs are never refreshed from here: an ingest
+ * stalls every other request for minutes, so it belongs to the nightly job and
+ * the admin's Refresh, not to whichever page load finds the packs stale.
  */
 export async function ensureMappingLayer(): Promise<void> {
   registerLiveResolvers();
@@ -99,8 +99,6 @@ export async function ensureMappingLayer(): Promise<void> {
       });
     });
   }
-  if (Date.now() - lastRefreshAt <= REFRESH_INTERVAL_MSEC || inFlight) return;
-  void ensureMappingPacks();
 }
 
 export async function listManifestPacks() {

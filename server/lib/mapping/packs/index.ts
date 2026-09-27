@@ -215,7 +215,9 @@ async function refreshPackUnlocked(
   const row = await getRepository(MappingSource).findOne({
     where: { key: entry.key },
   });
-  const enabled = row ? row.enabled : entry.enabled;
+  // Ingesting a pack stalls other requests for minutes, so packs are opt-in: a
+  // pack that was never installed waits for an admin to enable it.
+  const enabled = row?.enabled ?? false;
   if (!enabled) {
     mappingService.unregister(entry.key);
     loaded.delete(entry.key);

@@ -76,7 +76,22 @@ beforeEach(async () => {
   await getRepository(MappingLink).clear();
   await getRepository(MappingCluster).clear();
   await getRepository(MappingSource).clear();
+  await installPack();
 });
+
+// Packs are opt-in, so each test starts from an installed anibridge.
+const installPack = () =>
+  getRepository(MappingSource).insert({
+    key: entry.key,
+    kind: 'pack',
+    enabled: true,
+    format: entry.format,
+    mirrors: [],
+    priority: entry.priority,
+    trust: entry.trust,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
 
 describe('pack refresh retract', () => {
   it('does not retract on a 304 when replacePackGraph is off', async () => {
@@ -218,5 +233,27 @@ describe('pack refresh retract', () => {
       after.map(({ namespace, externalId }) => ({ namespace, externalId })),
       before.map(({ namespace, externalId }) => ({ namespace, externalId }))
     );
+  });
+});
+
+describe('pack opt-in', () => {
+  it('leaves a never-installed pack for an admin to enable', async () => {
+    await getRepository(MappingSource).clear();
+    entry.mirrors = [`${base}/pack.json`];
+    const result = await refreshPack(entry, { ingest: true });
+    assert.equal(result.status, 'skipped');
+    assert.equal(await getRepository(MappingSource).count(), 0);
+    assert.equal(await getRepository(MappingLink).count(), 0);
+  });
+
+  it('leaves a pack an admin disabled alone', async () => {
+    await getRepository(MappingSource).update(
+      { key: entry.key },
+      { enabled: false }
+    );
+    entry.mirrors = [`${base}/pack.json`];
+    const result = await refreshPack(entry, { ingest: true });
+    assert.equal(result.status, 'skipped');
+    assert.equal(await getRepository(MappingLink).count(), 0);
   });
 });

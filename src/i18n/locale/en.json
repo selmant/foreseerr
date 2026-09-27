@@ -1321,6 +1321,8 @@
   "components.Settings.SettingsAnilist.description": "Create an AniList API application, then enter its credentials. Each user authorizes it separately with a PIN.",
   "components.Settings.SettingsAnilist.disconnectConfirmDescription": "Replacing these credentials will disconnect {count, plural, one {# linked AniList account} other {# linked AniList accounts}}. Those users must authorize the application again.",
   "components.Settings.SettingsAnilist.disconnectConfirmTitle": "Replace AniList credentials?",
+  "components.Settings.SettingsAnilist.mappingPacksMissing": "Anime mapping packs are not installed",
+  "components.Settings.SettingsAnilist.mappingPacksMissingTip": "Foreseerr does not download the packs that match anime to TMDB on its own, because installing one slows it down for a few minutes. Until you enable them in <MappingLink>Mapping settings</MappingLink>, some anime may not show up or be requestable.",
   "components.Settings.SettingsAnilist.notConfigured": "Not configured",
   "components.Settings.SettingsAnilist.save": "Save AniList credentials",
   "components.Settings.SettingsAnilist.toastActionsFailure": "Unable to update AniList action settings.",
