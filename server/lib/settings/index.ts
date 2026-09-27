@@ -7,6 +7,7 @@ import {
 } from '@server/lib/desktopState';
 import { clampImageCacheIdleDays } from '@server/lib/imageproxySources';
 import { Permission } from '@server/lib/permissions';
+import { isPluginMode } from '@server/lib/pluginMode';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
 import { configDirectory } from '@server/utils/runtimePaths';
@@ -300,6 +301,8 @@ interface FullPublicSettings extends PublicSettings {
   mediaActionsAnilistEnabled: boolean;
   mediaActionsSimklEnabled: boolean;
   mdblistConfigured: boolean;
+  /** Served by the Jellyfin sidecar plugin under Jellyfin's own origin. */
+  pluginMode: boolean;
   ratingBadges: RatingBadgeSettings;
 }
 
@@ -1108,6 +1111,7 @@ class Settings {
       mediaActionsSimklEnabled:
         this.data.mediaActions?.providers?.simkl !== false,
       mdblistConfigured: Boolean(this.data.mdblist?.apiKey?.trim()),
+      pluginMode: isPluginMode(),
       ratingBadges: {
         showTmdb:
           this.data.mdblist?.showTmdb ?? DEFAULT_RATING_BADGE_SETTINGS.showTmdb,

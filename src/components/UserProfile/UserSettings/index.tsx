@@ -65,7 +65,9 @@ const UserSettings = ({ children }: UserSettingsProps) => {
       text: intl.formatMessage(messages.menuChangePass),
       route: '/settings/password',
       regex: /\/settings\/password/,
+      // Plugin users sign in through Jellyfin only.
       hidden:
+        settings.currentSettings.pluginMode ||
         (!settings.currentSettings.localLogin &&
           !hasPermission(Permission.ADMIN, currentUser?.permissions ?? 0)) ||
         (currentUser?.id !== 1 &&
@@ -81,7 +83,7 @@ const UserSettings = ({ children }: UserSettingsProps) => {
       text: intl.formatMessage(messages.menuNotifications),
       route: data?.emailEnabled
         ? '/settings/notifications/email'
-        : data?.webPushEnabled
+        : data?.webPushEnabled && !settings.currentSettings.pluginMode
           ? '/settings/notifications/webpush'
           : data?.discordEnabled
             ? '/settings/notifications/discord'

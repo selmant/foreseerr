@@ -1572,6 +1572,10 @@ components:
           type: boolean
           description: Whether an MDBList API key is configured
           example: false
+        pluginMode:
+          type: boolean
+          description: Whether Foreseerr runs inside Jellyfin as the sidecar plugin
+          example: false
         movieInstantRequestEnabled:
           type: boolean
           example: true

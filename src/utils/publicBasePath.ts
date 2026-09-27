@@ -18,3 +18,12 @@ export function withPublicBasePath(path: string): string {
   if (path === base || path.startsWith(`${base}/`)) return path;
   return `${base}${path}`;
 }
+
+/**
+ * Jellyfin Web on this origin. The plugin serves Foreseerr at
+ * `<Jellyfin base URL>/Foreseerr`, so Jellyfin's base is what precedes it.
+ */
+export function jellyfinWebPath(hash = ''): string {
+  const jellyfinBase = publicBasePath().replace(/\/Foreseerr$/, '');
+  return `${jellyfinBase}/web/${hash}`;
+}

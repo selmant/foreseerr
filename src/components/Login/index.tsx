@@ -9,6 +9,7 @@ import LanguagePicker from '@app/components/Layout/LanguagePicker';
 import JellyfinLogin from '@app/components/Login/JellyfinLogin';
 import LocalLogin from '@app/components/Login/LocalLogin';
 import PlexLoginButton from '@app/components/Login/PlexLoginButton';
+import PluginLogin from '@app/components/Login/PluginLogin';
 import { isUsableForeseerNative } from '@app/context/nativeRuntimeProtocol';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
@@ -214,77 +215,86 @@ const Login = () => {
                 </div>
               </div>
             </Transition>
-            <div className="px-10 py-8">
-              <SwitchTransition mode="out-in">
-                <CSSTransition
-                  key={mediaServerLogin ? 'ms' : 'local'}
-                  nodeRef={loginRef}
-                  timeout={{ enter: 300, exit: 150 }}
-                  onEntered={() => {
-                    document
-                      .querySelector<HTMLInputElement>('#email, #username')
-                      ?.focus();
-                  }}
-                  classNames={{
-                    enter: 'opacity-0',
-                    enterActive: 'transition-opacity duration-300 opacity-100',
-                    exit: 'opacity-100',
-                    exitActive: 'transition-opacity duration-150 opacity-0',
-                  }}
-                >
-                  <div ref={loginRef} className="button-container">
-                    {isJellyfin &&
-                    (mediaServerLogin ||
-                      !settings.currentSettings.localLogin) ? (
-                      <JellyfinLogin
-                        serverType={settings.currentSettings.mediaServerType}
-                        revalidate={revalidate}
-                      />
-                    ) : (
-                      settings.currentSettings.localLogin && (
-                        <LocalLogin revalidate={revalidate} />
-                      )
-                    )}
-                  </div>
-                </CSSTransition>
-              </SwitchTransition>
-
-              {additionalLoginOptions.length > 0 &&
-                (loginFormVisible ? (
-                  <div className="flex items-center py-5">
-                    <div className="flex-grow border-t border-gray-600" />
-                    <span className="mx-2 flex-shrink text-sm text-gray-400">
-                      {intl.formatMessage(messages.orsigninwith)}
-                    </span>
-                    <div className="flex-grow border-t border-gray-600" />
-                  </div>
-                ) : (
-                  <h2 className="mb-6 text-center text-lg font-bold text-neutral-200">
-                    {intl.formatMessage(messages.signinheader)}
-                  </h2>
-                ))}
-
-              <div
-                className={`flex w-full flex-wrap gap-2 ${
-                  !loginFormVisible ? 'flex-col' : ''
-                }`}
-              >
-                {additionalLoginOptions}
+            {settings.currentSettings.pluginMode ? (
+              <div className="px-10 py-8">
+                <PluginLogin
+                  applicationTitle={settings.currentSettings.applicationTitle}
+                />
               </div>
-              {canOpenRemoteSetup && (
-                <div className="mt-6">
-                  <Button
-                    buttonType="ghost"
-                    className="w-full"
-                    type="button"
-                    data-foreseer-remote-setup=""
-                    onClick={openRemoteSetup}
+            ) : (
+              <div className="px-10 py-8">
+                <SwitchTransition mode="out-in">
+                  <CSSTransition
+                    key={mediaServerLogin ? 'ms' : 'local'}
+                    nodeRef={loginRef}
+                    timeout={{ enter: 300, exit: 150 }}
+                    onEntered={() => {
+                      document
+                        .querySelector<HTMLInputElement>('#email, #username')
+                        ?.focus();
+                    }}
+                    classNames={{
+                      enter: 'opacity-0',
+                      enterActive:
+                        'transition-opacity duration-300 opacity-100',
+                      exit: 'opacity-100',
+                      exitActive: 'transition-opacity duration-150 opacity-0',
+                    }}
                   >
-                    {intl.formatMessage(messages.useRemoteForeseerr)}
-                  </Button>
+                    <div ref={loginRef} className="button-container">
+                      {isJellyfin &&
+                      (mediaServerLogin ||
+                        !settings.currentSettings.localLogin) ? (
+                        <JellyfinLogin
+                          serverType={settings.currentSettings.mediaServerType}
+                          revalidate={revalidate}
+                        />
+                      ) : (
+                        settings.currentSettings.localLogin && (
+                          <LocalLogin revalidate={revalidate} />
+                        )
+                      )}
+                    </div>
+                  </CSSTransition>
+                </SwitchTransition>
+
+                {additionalLoginOptions.length > 0 &&
+                  (loginFormVisible ? (
+                    <div className="flex items-center py-5">
+                      <div className="flex-grow border-t border-gray-600" />
+                      <span className="mx-2 flex-shrink text-sm text-gray-400">
+                        {intl.formatMessage(messages.orsigninwith)}
+                      </span>
+                      <div className="flex-grow border-t border-gray-600" />
+                    </div>
+                  ) : (
+                    <h2 className="mb-6 text-center text-lg font-bold text-neutral-200">
+                      {intl.formatMessage(messages.signinheader)}
+                    </h2>
+                  ))}
+
+                <div
+                  className={`flex w-full flex-wrap gap-2 ${
+                    !loginFormVisible ? 'flex-col' : ''
+                  }`}
+                >
+                  {additionalLoginOptions}
                 </div>
-              )}
-            </div>
+                {canOpenRemoteSetup && (
+                  <div className="mt-6">
+                    <Button
+                      buttonType="ghost"
+                      className="w-full"
+                      type="button"
+                      data-foreseer-remote-setup=""
+                      onClick={openRemoteSetup}
+                    >
+                      {intl.formatMessage(messages.useRemoteForeseerr)}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         </div>
       </div>

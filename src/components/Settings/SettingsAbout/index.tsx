@@ -33,6 +33,8 @@ const messages = defineMessages('components.Settings.SettingsAbout', {
   versionCheckDisabled: 'Version Check Disabled',
   runningDevelop:
     'You are running the <code>develop</code> branch of Foreseerr, which is only recommended for those contributing to development or assisting with bleeding-edge testing.',
+  runningPlugin:
+    'Foreseerr runs inside Jellyfin as a plugin. Updates are installed from the Jellyfin dashboard, under Plugins.',
 });
 
 const SettingsAbout = () => {
@@ -71,6 +73,12 @@ const SettingsAbout = () => {
                   <code className="bg-gray-800/50">{msg}</code>
                 ),
               })}
+            />
+          )}
+          {settings.currentSettings.pluginMode && (
+            <Alert
+              title={intl.formatMessage(messages.runningPlugin)}
+              type="info"
             />
           )}
           <List.Item

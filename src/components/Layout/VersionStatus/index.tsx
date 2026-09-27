@@ -14,6 +14,7 @@ import useSWR from 'swr';
 const messages = defineMessages('components.Layout.VersionStatus', {
   streamdevelop: 'Foreseerr Develop',
   streamstable: 'Foreseerr Stable',
+  streamplugin: 'Foreseerr for Jellyfin',
   outofdate: 'Out of Date',
   commitsbehind:
     '{commitsBehind} {commitsBehind, plural, one {commit} other {commits}} behind',
@@ -37,8 +38,12 @@ const VersionStatus = ({ onClick }: VersionStatusProps) => {
     return null;
   }
 
-  const versionStream =
-    data.commitTag === 'local'
+  // Plugin builds are compiled binaries, which report a local commit.
+  const pluginMode = !!settings.currentSettings.pluginMode;
+  const isLocal = data.commitTag === 'local' && !pluginMode;
+  const versionStream = pluginMode
+    ? intl.formatMessage(messages.streamplugin)
+    : isLocal
       ? 'Keep it up! 👍'
       : data.version.startsWith('develop-')
         ? intl.formatMessage(messages.streamdevelop)
@@ -61,7 +66,7 @@ const VersionStatus = ({ onClick }: VersionStatusProps) => {
           : 'bg-gray-900 text-gray-300 hover:bg-gray-800'
       }`}
     >
-      {data.commitTag === 'local' ? (
+      {isLocal ? (
         <CodeBracketIcon className="h-6 w-6" />
       ) : data.version.startsWith('develop-') ? (
         <BeakerIcon className="h-6 w-6" />
@@ -70,9 +75,12 @@ const VersionStatus = ({ onClick }: VersionStatusProps) => {
       )}
       <div className="flex min-w-0 flex-1 flex-col truncate px-2 last:pr-0">
         <span className="font-bold">{versionStream}</span>
+        {pluginMode && data.commitsBehind === undefined && (
+          <code className="truncate bg-transparent p-0">{data.version}</code>
+        )}
         {data.commitsBehind !== undefined && (
           <span className="truncate">
-            {data.commitTag === 'local' ? (
+            {isLocal ? (
               '(⌐■_■)'
             ) : data.commitsBehind > 0 ? (
               intl.formatMessage(messages.commitsbehind, {
