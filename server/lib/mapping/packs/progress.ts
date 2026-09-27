@@ -62,9 +62,15 @@ export const updatePackProgress = (
 export const reportDownloadBytes = (
   key: string,
   received: number,
-  total: number | undefined,
+  reportedTotal: number | undefined,
   mirror: string
 ): void => {
+  // Axios drops Content-Encoding after decompressing but keeps the compressed
+  // Content-Length, so a total the download outgrows is not the pack size.
+  const total =
+    reportedTotal != null && received > reportedTotal
+      ? undefined
+      : reportedTotal;
   const previous = lastByteEmit.get(key);
   const now = Date.now();
   const finished = total != null && received >= total;
