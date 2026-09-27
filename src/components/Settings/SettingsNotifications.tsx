@@ -8,6 +8,7 @@ import TelegramLogo from '@app/assets/extlogos/telegram.svg';
 import PageTitle from '@app/components/Common/PageTitle';
 import type { SettingsRoute } from '@app/components/Common/SettingsTabs';
 import SettingsTabs from '@app/components/Common/SettingsTabs';
+import useSettings from '@app/hooks/useSettings';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { BoltIcon, CloudIcon, EnvelopeIcon } from '@heroicons/react/24/solid';
@@ -29,6 +30,7 @@ type SettingsNotificationsProps = {
 
 const SettingsNotifications = ({ children }: SettingsNotificationsProps) => {
   const intl = useIntl();
+  const settings = useSettings();
 
   const settingsRoutes: SettingsRoute[] = [
     {
@@ -52,6 +54,8 @@ const SettingsNotifications = ({ children }: SettingsNotificationsProps) => {
       ),
       route: '/settings/notifications/webpush',
       regex: /^\/settings\/notifications\/webpush/,
+      // Service workers are off under the plugin's base path.
+      hidden: settings.currentSettings.pluginMode,
     },
     {
       text: 'Discord',

@@ -36,6 +36,8 @@ const messages = defineMessages('components.Settings.SettingsUsers', {
   newPlexLogin: 'Enable New {mediaServerName} Sign-In',
   newPlexLoginTip:
     'Allow {mediaServerName} users to sign in without first being imported',
+  pluginNewLoginTip:
+    'Allow Jellyfin users to open Foreseerr from Jellyfin without first being imported',
   movieRequestLimitLabel: 'Global Movie Request Limit',
   tvRequestLimitLabel: 'Global Series Request Limit',
   defaultPermissions: 'Default Permissions',
@@ -155,72 +157,75 @@ const SettingsUsers = () => {
           {({ isSubmitting, isValid, values, errors, setFieldValue }) => {
             return (
               <Form className="section">
-                <div
-                  role="group"
-                  aria-labelledby="group-label"
-                  className="form-group"
-                >
-                  <div className="form-row">
-                    <span id="group-label" className="group-label">
-                      {intl.formatMessage(messages.loginMethods)}
-                      <span className="label-tip">
-                        {intl.formatMessage(messages.loginMethodsTip)}
-                      </span>
-                      {'localLogin | mediaServerLogin' in errors && (
-                        <span className="error">
-                          {errors['localLogin | mediaServerLogin'] as string}
+                {/* The plugin signs everyone in through Jellyfin. */}
+                {!settings.currentSettings.pluginMode && (
+                  <div
+                    role="group"
+                    aria-labelledby="group-label"
+                    className="form-group"
+                  >
+                    <div className="form-row">
+                      <span id="group-label" className="group-label">
+                        {intl.formatMessage(messages.loginMethods)}
+                        <span className="label-tip">
+                          {intl.formatMessage(messages.loginMethodsTip)}
                         </span>
-                      )}
-                    </span>
+                        {'localLogin | mediaServerLogin' in errors && (
+                          <span className="error">
+                            {errors['localLogin | mediaServerLogin'] as string}
+                          </span>
+                        )}
+                      </span>
 
-                    <div className="form-input-area max-w-lg">
-                      <LabeledCheckbox
-                        id="localLogin"
-                        label={intl.formatMessage(messages.localLogin)}
-                        description={intl.formatMessage(
-                          messages.localLoginTip,
-                          mediaServerFormatValues
+                      <div className="form-input-area max-w-lg">
+                        <LabeledCheckbox
+                          id="localLogin"
+                          label={intl.formatMessage(messages.localLogin)}
+                          description={intl.formatMessage(
+                            messages.localLoginTip,
+                            mediaServerFormatValues
+                          )}
+                          onChange={() =>
+                            setFieldValue('localLogin', !values.localLogin)
+                          }
+                        />
+                        <LabeledCheckbox
+                          id="mediaServerLogin"
+                          className="mt-4"
+                          label={intl.formatMessage(
+                            messages.mediaServerLogin,
+                            mediaServerFormatValues
+                          )}
+                          description={intl.formatMessage(
+                            messages.mediaServerLoginTip,
+                            mediaServerFormatValues
+                          )}
+                          onChange={() =>
+                            setFieldValue(
+                              'mediaServerLogin',
+                              !values.mediaServerLogin
+                            )
+                          }
+                        />
+                        {!values.mediaServerLogin && values.localLogin && (
+                          <div className="mt-4">
+                            <Alert
+                              title={intl.formatMessage(
+                                messages.disabledMediaServerLoginWarning,
+                                {
+                                  applicationTitle:
+                                    settings.currentSettings.applicationTitle,
+                                  ...mediaServerFormatValues,
+                                }
+                              )}
+                              type="warning"
+                            />
+                          </div>
                         )}
-                        onChange={() =>
-                          setFieldValue('localLogin', !values.localLogin)
-                        }
-                      />
-                      <LabeledCheckbox
-                        id="mediaServerLogin"
-                        className="mt-4"
-                        label={intl.formatMessage(
-                          messages.mediaServerLogin,
-                          mediaServerFormatValues
-                        )}
-                        description={intl.formatMessage(
-                          messages.mediaServerLoginTip,
-                          mediaServerFormatValues
-                        )}
-                        onChange={() =>
-                          setFieldValue(
-                            'mediaServerLogin',
-                            !values.mediaServerLogin
-                          )
-                        }
-                      />
-                      {!values.mediaServerLogin && values.localLogin && (
-                        <div className="mt-4">
-                          <Alert
-                            title={intl.formatMessage(
-                              messages.disabledMediaServerLoginWarning,
-                              {
-                                applicationTitle:
-                                  settings.currentSettings.applicationTitle,
-                                ...mediaServerFormatValues,
-                              }
-                            )}
-                            type="warning"
-                          />
-                        </div>
-                      )}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 <div className="form-row">
                   <label htmlFor="newPlexLogin" className="checkbox-label">
@@ -229,10 +234,12 @@ const SettingsUsers = () => {
                       mediaServerFormatValues
                     )}
                     <span className="label-tip">
-                      {intl.formatMessage(
-                        messages.newPlexLoginTip,
-                        mediaServerFormatValues
-                      )}
+                      {settings.currentSettings.pluginMode
+                        ? intl.formatMessage(messages.pluginNewLoginTip)
+                        : intl.formatMessage(
+                            messages.newPlexLoginTip,
+                            mediaServerFormatValues
+                          )}
                     </span>
                   </label>
                   <div className="form-input-area">

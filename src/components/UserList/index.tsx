@@ -649,14 +649,17 @@ const UserList = () => {
         <Header>{intl.formatMessage(messages.userlist)}</Header>
         <div className="mt-2 flex flex-grow flex-col lg:flex-grow-0 lg:flex-row">
           <div className="mb-2 flex flex-grow flex-col justify-between sm:flex-row lg:mb-0 lg:flex-grow-0">
-            <Button
-              className="mb-2 flex-grow sm:mb-0 sm:mr-2"
-              buttonType="primary"
-              onClick={() => setCreateModal({ isOpen: true })}
-            >
-              <UserPlusIcon />
-              <span>{intl.formatMessage(messages.createlocaluser)}</span>
-            </Button>
+            {/* Local users cannot sign in through the Jellyfin plugin. */}
+            {!settings.currentSettings.pluginMode && (
+              <Button
+                className="mb-2 flex-grow sm:mb-0 sm:mr-2"
+                buttonType="primary"
+                onClick={() => setCreateModal({ isOpen: true })}
+              >
+                <UserPlusIcon />
+                <span>{intl.formatMessage(messages.createlocaluser)}</span>
+              </Button>
+            )}
             <Button
               className="flex-grow lg:mr-2"
               buttonType="primary"

@@ -65,6 +65,8 @@ export interface PublicSettingsResponse {
   mediaActionsAnilistEnabled: boolean;
   mediaActionsSimklEnabled: boolean;
   mdblistConfigured: boolean;
+  /** Served by the Jellyfin sidecar plugin under Jellyfin's own origin. */
+  pluginMode?: boolean;
   ratingBadges: RatingBadgeSettings;
 }
 

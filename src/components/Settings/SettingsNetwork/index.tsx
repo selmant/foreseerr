@@ -3,6 +3,7 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
+import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
@@ -65,6 +66,7 @@ const messages = defineMessages('components.Settings.SettingsNetwork', {
 const SettingsNetwork = () => {
   const { addToast } = useToasts();
   const intl = useIntl();
+  const settings = useSettings();
   const {
     data,
     error,
@@ -204,58 +206,67 @@ const SettingsNetwork = () => {
           }) => {
             return (
               <Form className="section" data-testid="settings-network-form">
-                <div className="form-row">
-                  <label htmlFor="trustProxy" className="checkbox-label">
-                    <span className="mr-2">
-                      {intl.formatMessage(messages.trustProxy)}
-                    </span>
-                    <SettingsBadge badgeType="restartRequired" />
-                    <span className="label-tip">
-                      {intl.formatMessage(messages.trustProxyTip)}
-                    </span>
-                  </label>
-                  <div className="form-input-area">
-                    <Field
-                      type="checkbox"
-                      id="trustProxy"
-                      name="trustProxy"
-                      onChange={() => {
-                        setFieldValue('trustProxy', !values.trustProxy);
-                      }}
-                    />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <label htmlFor="csrfProtection" className="checkbox-label">
-                    <span className="mr-2">
-                      {intl.formatMessage(messages.csrfProtection)}
-                    </span>
-                    <SettingsBadge badgeType="advanced" className="mr-2" />
-                    <SettingsBadge badgeType="restartRequired" />
-                    <span className="label-tip">
-                      {intl.formatMessage(messages.csrfProtectionTip)}
-                    </span>
-                  </label>
-                  <div className="form-input-area">
-                    <Tooltip
-                      content={intl.formatMessage(
-                        messages.csrfProtectionHoverTip
-                      )}
-                    >
-                      <Field
-                        type="checkbox"
-                        id="csrfProtection"
-                        name="csrfProtection"
-                        onChange={() => {
-                          setFieldValue(
-                            'csrfProtection',
-                            !values.csrfProtection
-                          );
-                        }}
-                      />
-                    </Tooltip>
-                  </div>
-                </div>
+                {/* The plugin trusts its own proxy and replaces CSRF tokens
+                    with same-origin checks, so these settings do nothing. */}
+                {!settings.currentSettings.pluginMode && (
+                  <>
+                    <div className="form-row">
+                      <label htmlFor="trustProxy" className="checkbox-label">
+                        <span className="mr-2">
+                          {intl.formatMessage(messages.trustProxy)}
+                        </span>
+                        <SettingsBadge badgeType="restartRequired" />
+                        <span className="label-tip">
+                          {intl.formatMessage(messages.trustProxyTip)}
+                        </span>
+                      </label>
+                      <div className="form-input-area">
+                        <Field
+                          type="checkbox"
+                          id="trustProxy"
+                          name="trustProxy"
+                          onChange={() => {
+                            setFieldValue('trustProxy', !values.trustProxy);
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <label
+                        htmlFor="csrfProtection"
+                        className="checkbox-label"
+                      >
+                        <span className="mr-2">
+                          {intl.formatMessage(messages.csrfProtection)}
+                        </span>
+                        <SettingsBadge badgeType="advanced" className="mr-2" />
+                        <SettingsBadge badgeType="restartRequired" />
+                        <span className="label-tip">
+                          {intl.formatMessage(messages.csrfProtectionTip)}
+                        </span>
+                      </label>
+                      <div className="form-input-area">
+                        <Tooltip
+                          content={intl.formatMessage(
+                            messages.csrfProtectionHoverTip
+                          )}
+                        >
+                          <Field
+                            type="checkbox"
+                            id="csrfProtection"
+                            name="csrfProtection"
+                            onChange={() => {
+                              setFieldValue(
+                                'csrfProtection',
+                                !values.csrfProtection
+                              );
+                            }}
+                          />
+                        </Tooltip>
+                      </div>
+                    </div>
+                  </>
+                )}
                 <div className="form-row">
                   <label htmlFor="forceIpv4First" className="checkbox-label">
                     <span className="mr-2">

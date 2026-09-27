@@ -7,6 +7,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import type { SettingsRoute } from '@app/components/Common/SettingsTabs';
 import SettingsTabs from '@app/components/Common/SettingsTabs';
 import useRouteQuery from '@app/hooks/useRouteQuery';
+import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
@@ -37,6 +38,7 @@ const UserNotificationSettings = ({
   const intl = useIntl();
   const location = useLocation();
   const routeQuery = useRouteQuery();
+  const settings = useSettings();
   const { user } = useUser({ id: Number(routeQuery.userId) });
   const { data, error } = useSWR<UserSettingsNotificationsResponse>(
     user ? `/api/v1/user/${user?.id}/settings/notifications` : null
@@ -65,7 +67,8 @@ const UserNotificationSettings = ({
       ),
       route: '/settings/notifications/webpush',
       regex: /\/settings\/notifications\/webpush/,
-      hidden: !data?.webPushEnabled,
+      // Service workers are off under the plugin's base path.
+      hidden: !data?.webPushEnabled || settings.currentSettings.pluginMode,
     },
     {
       text: 'Discord',

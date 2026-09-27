@@ -7,8 +7,12 @@ import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { jellyfinWebPath } from '@app/utils/publicBasePath';
 import { isValidURL } from '@app/utils/urlValidationHelper';
-import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowDownOnSquareIcon,
+  ArrowTopRightOnSquareIcon,
+} from '@heroicons/react/24/outline';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import type { JellyfinSettings } from '@server/lib/settings';
@@ -70,6 +74,10 @@ const messages = defineMessages('components.Settings', {
   tip: 'Tip',
   scanbackground:
     'Scanning will run in the background. You can continue the setup process in the meantime.',
+  pluginManaged: 'Managed by the Jellyfin plugin',
+  pluginManagedDescription:
+    'Foreseerr runs inside this Jellyfin server and reads its address, API key, and libraries each time it starts. Set the public Jellyfin URL for notification links on the Foreseerr plugin page in the Jellyfin dashboard.',
+  openPluginSettings: 'Open Plugin Settings',
 });
 
 interface Library {
@@ -432,268 +440,293 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
           {intl.formatMessage(messages.scanbackground)}
         </div>
       )}
-      <div className="mb-6 mt-10">
-        <h3 className="heading">
-          {intl.formatMessage(
-            messages.jellyfinSettings,
-            mediaServerFormatValues
-          )}
-        </h3>
-        <p className="description">
-          {intl.formatMessage(
-            messages.jellyfinSettingsDescription,
-            mediaServerFormatValues
-          )}
-        </p>
-      </div>
-      <Formik
-        initialValues={{
-          hostname: data?.ip,
-          port: data?.port ?? 8096,
-          useSsl: data?.useSsl,
-          urlBase: data?.urlBase || '',
-          jellyfinExternalUrl: data?.externalHostname || '',
-          jellyfinForgotPasswordUrl: data?.jellyfinForgotPasswordUrl || '',
-          apiKey: data?.apiKey,
-        }}
-        validationSchema={JellyfinSettingsSchema}
-        onSubmit={async (values) => {
-          try {
-            await axios.post('/api/v1/settings/jellyfin', {
-              ip: values.hostname,
-              port: Number(values.port),
-              useSsl: values.useSsl,
-              urlBase: values.urlBase,
-              externalHostname: values.jellyfinExternalUrl,
-              jellyfinForgotPasswordUrl: values.jellyfinForgotPasswordUrl,
-              apiKey: values.apiKey,
-            } as JellyfinSettings);
-
-            addToast(
-              intl.formatMessage(
-                messages.jellyfinSettingsSuccess,
+      {settings.currentSettings.pluginMode ? (
+        <div className="mb-6 mt-10" data-testid="jellyfin-plugin-managed">
+          <h3 className="heading">
+            {intl.formatMessage(messages.pluginManaged)}
+          </h3>
+          <p className="description">
+            {intl.formatMessage(messages.pluginManagedDescription)}
+          </p>
+          <div className="mt-4">
+            <Button
+              as="a"
+              buttonType="ghost"
+              href={jellyfinWebPath('#/configurationpage?name=Foreseerr')}
+            >
+              <ArrowTopRightOnSquareIcon />
+              <span>{intl.formatMessage(messages.openPluginSettings)}</span>
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="mb-6 mt-10">
+            <h3 className="heading">
+              {intl.formatMessage(
+                messages.jellyfinSettings,
                 mediaServerFormatValues
-              ),
-              {
-                autoDismiss: true,
-                appearance: 'success',
+              )}
+            </h3>
+            <p className="description">
+              {intl.formatMessage(
+                messages.jellyfinSettingsDescription,
+                mediaServerFormatValues
+              )}
+            </p>
+          </div>
+          <Formik
+            initialValues={{
+              hostname: data?.ip,
+              port: data?.port ?? 8096,
+              useSsl: data?.useSsl,
+              urlBase: data?.urlBase || '',
+              jellyfinExternalUrl: data?.externalHostname || '',
+              jellyfinForgotPasswordUrl: data?.jellyfinForgotPasswordUrl || '',
+              apiKey: data?.apiKey,
+            }}
+            validationSchema={JellyfinSettingsSchema}
+            onSubmit={async (values) => {
+              try {
+                await axios.post('/api/v1/settings/jellyfin', {
+                  ip: values.hostname,
+                  port: Number(values.port),
+                  useSsl: values.useSsl,
+                  urlBase: values.urlBase,
+                  externalHostname: values.jellyfinExternalUrl,
+                  jellyfinForgotPasswordUrl: values.jellyfinForgotPasswordUrl,
+                  apiKey: values.apiKey,
+                } as JellyfinSettings);
+
+                addToast(
+                  intl.formatMessage(
+                    messages.jellyfinSettingsSuccess,
+                    mediaServerFormatValues
+                  ),
+                  {
+                    autoDismiss: true,
+                    appearance: 'success',
+                  }
+                );
+              } catch (e) {
+                if (e?.response?.data?.message === ApiErrorCode.InvalidUrl) {
+                  addToast(
+                    intl.formatMessage(
+                      messages.invalidurlerror,
+                      mediaServerFormatValues
+                    ),
+                    {
+                      autoDismiss: true,
+                      appearance: 'error',
+                    }
+                  );
+                } else {
+                  addToast(
+                    intl.formatMessage(
+                      messages.jellyfinSettingsFailure,
+                      mediaServerFormatValues
+                    ),
+                    {
+                      autoDismiss: true,
+                      appearance: 'error',
+                    }
+                  );
+                }
+              } finally {
+                revalidate();
               }
-            );
-          } catch (e) {
-            if (e?.response?.data?.message === ApiErrorCode.InvalidUrl) {
-              addToast(
-                intl.formatMessage(
-                  messages.invalidurlerror,
-                  mediaServerFormatValues
-                ),
-                {
-                  autoDismiss: true,
-                  appearance: 'error',
-                }
-              );
-            } else {
-              addToast(
-                intl.formatMessage(
-                  messages.jellyfinSettingsFailure,
-                  mediaServerFormatValues
-                ),
-                {
-                  autoDismiss: true,
-                  appearance: 'error',
-                }
-              );
-            }
-          } finally {
-            revalidate();
-          }
-        }}
-      >
-        {({
-          errors,
-          touched,
-          values,
-          setFieldValue,
-          handleSubmit,
-          isSubmitting,
-          isValid,
-        }) => {
-          return (
-            <form className="section" onSubmit={handleSubmit}>
-              {!isSetupSettings && (
-                <>
-                  <div className="form-row">
-                    <label htmlFor="hostname" className="text-label">
-                      {intl.formatMessage(messages.hostname)}
-                      <span className="text-red-500">*</span>
-                    </label>
-                    <div className="form-input-area">
-                      <div className="form-input-field">
-                        <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-gray-100 sm:text-sm">
-                          {values.useSsl ? 'https://' : 'http://'}
-                        </span>
-                        <Field
-                          type="text"
-                          inputMode="url"
-                          id="hostname"
-                          name="hostname"
-                          className="rounded-r-only"
-                        />
+            }}
+          >
+            {({
+              errors,
+              touched,
+              values,
+              setFieldValue,
+              handleSubmit,
+              isSubmitting,
+              isValid,
+            }) => {
+              return (
+                <form className="section" onSubmit={handleSubmit}>
+                  {!isSetupSettings && (
+                    <>
+                      <div className="form-row">
+                        <label htmlFor="hostname" className="text-label">
+                          {intl.formatMessage(messages.hostname)}
+                          <span className="text-red-500">*</span>
+                        </label>
+                        <div className="form-input-area">
+                          <div className="form-input-field">
+                            <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-gray-100 sm:text-sm">
+                              {values.useSsl ? 'https://' : 'http://'}
+                            </span>
+                            <Field
+                              type="text"
+                              inputMode="url"
+                              id="hostname"
+                              name="hostname"
+                              className="rounded-r-only"
+                            />
+                          </div>
+                          {errors.hostname &&
+                            touched.hostname &&
+                            typeof errors.hostname === 'string' && (
+                              <div className="error">{errors.hostname}</div>
+                            )}
+                        </div>
                       </div>
-                      {errors.hostname &&
-                        touched.hostname &&
-                        typeof errors.hostname === 'string' && (
-                          <div className="error">{errors.hostname}</div>
-                        )}
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <label htmlFor="port" className="text-label">
-                      {intl.formatMessage(messages.port)}
-                      <span className="label-required">*</span>
-                    </label>
-                    <div className="form-input-area">
-                      <Field
-                        type="text"
-                        inputMode="numeric"
-                        id="port"
-                        name="port"
-                        className="short"
-                      />
-                      {errors.port &&
-                        touched.port &&
-                        typeof errors.port === 'string' && (
-                          <div className="error">{errors.port}</div>
-                        )}
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <label htmlFor="useSsl" className="checkbox-label">
-                      {intl.formatMessage(messages.enablessl)}
-                    </label>
-                    <div className="form-input-area">
-                      <Field
-                        type="checkbox"
-                        id="useSsl"
-                        name="useSsl"
-                        onChange={() => {
-                          setFieldValue('useSsl', !values.useSsl);
-                          setFieldValue('port', values.useSsl ? 8096 : 443);
-                        }}
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-              <div className="form-row">
-                <label htmlFor="apiKey" className="text-label">
-                  {intl.formatMessage(messages.apiKey)}
-                </label>
-                <div className="form-input-area">
-                  <div className="form-input-field">
-                    <SensitiveInput
-                      as="field"
-                      type="text"
-                      inputMode="url"
-                      id="apiKey"
-                      name="apiKey"
-                    />
-                  </div>
-                  {errors.apiKey && touched.apiKey && (
-                    <div className="error">{errors.apiKey}</div>
+                      <div className="form-row">
+                        <label htmlFor="port" className="text-label">
+                          {intl.formatMessage(messages.port)}
+                          <span className="label-required">*</span>
+                        </label>
+                        <div className="form-input-area">
+                          <Field
+                            type="text"
+                            inputMode="numeric"
+                            id="port"
+                            name="port"
+                            className="short"
+                          />
+                          {errors.port &&
+                            touched.port &&
+                            typeof errors.port === 'string' && (
+                              <div className="error">{errors.port}</div>
+                            )}
+                        </div>
+                      </div>
+                      <div className="form-row">
+                        <label htmlFor="useSsl" className="checkbox-label">
+                          {intl.formatMessage(messages.enablessl)}
+                        </label>
+                        <div className="form-input-area">
+                          <Field
+                            type="checkbox"
+                            id="useSsl"
+                            name="useSsl"
+                            onChange={() => {
+                              setFieldValue('useSsl', !values.useSsl);
+                              setFieldValue('port', values.useSsl ? 8096 : 443);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </>
                   )}
-                </div>
-              </div>
-              {!isSetupSettings && (
-                <>
                   <div className="form-row">
-                    <label htmlFor="urlBase" className="text-label">
-                      {intl.formatMessage(messages.urlBase)}
+                    <label htmlFor="apiKey" className="text-label">
+                      {intl.formatMessage(messages.apiKey)}
+                    </label>
+                    <div className="form-input-area">
+                      <div className="form-input-field">
+                        <SensitiveInput
+                          as="field"
+                          type="text"
+                          inputMode="url"
+                          id="apiKey"
+                          name="apiKey"
+                        />
+                      </div>
+                      {errors.apiKey && touched.apiKey && (
+                        <div className="error">{errors.apiKey}</div>
+                      )}
+                    </div>
+                  </div>
+                  {!isSetupSettings && (
+                    <>
+                      <div className="form-row">
+                        <label htmlFor="urlBase" className="text-label">
+                          {intl.formatMessage(messages.urlBase)}
+                        </label>
+                        <div className="form-input-area">
+                          <div className="form-input-field">
+                            <Field
+                              type="text"
+                              inputMode="url"
+                              id="urlBase"
+                              name="urlBase"
+                            />
+                          </div>
+                          {errors.urlBase &&
+                            touched.urlBase &&
+                            typeof errors.urlBase === 'string' && (
+                              <div className="error">{errors.urlBase}</div>
+                            )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  <div className="form-row">
+                    <label htmlFor="jellyfinExternalUrl" className="text-label">
+                      {intl.formatMessage(messages.externalUrl)}
                     </label>
                     <div className="form-input-area">
                       <div className="form-input-field">
                         <Field
                           type="text"
                           inputMode="url"
-                          id="urlBase"
-                          name="urlBase"
+                          id="jellyfinExternalUrl"
+                          name="jellyfinExternalUrl"
                         />
                       </div>
-                      {errors.urlBase &&
-                        touched.urlBase &&
-                        typeof errors.urlBase === 'string' && (
-                          <div className="error">{errors.urlBase}</div>
+                      {errors.jellyfinExternalUrl &&
+                        touched.jellyfinExternalUrl && (
+                          <div className="error">
+                            {errors.jellyfinExternalUrl}
+                          </div>
                         )}
                     </div>
                   </div>
-                </>
-              )}
-              <div className="form-row">
-                <label htmlFor="jellyfinExternalUrl" className="text-label">
-                  {intl.formatMessage(messages.externalUrl)}
-                </label>
-                <div className="form-input-area">
-                  <div className="form-input-field">
-                    <Field
-                      type="text"
-                      inputMode="url"
-                      id="jellyfinExternalUrl"
-                      name="jellyfinExternalUrl"
-                    />
-                  </div>
-                  {errors.jellyfinExternalUrl &&
-                    touched.jellyfinExternalUrl && (
-                      <div className="error">{errors.jellyfinExternalUrl}</div>
-                    )}
-                </div>
-              </div>
-              <div className="form-row">
-                <label
-                  htmlFor="jellyfinForgotPasswordUrl"
-                  className="text-label"
-                >
-                  {intl.formatMessage(messages.jellyfinForgotPasswordUrl)}
-                </label>
-                <div className="form-input-area">
-                  <div className="form-input-field">
-                    <Field
-                      type="text"
-                      inputMode="url"
-                      id="jellyfinForgotPasswordUrl"
-                      name="jellyfinForgotPasswordUrl"
-                    />
-                  </div>
-                  {errors.jellyfinForgotPasswordUrl &&
-                    touched.jellyfinForgotPasswordUrl && (
-                      <div className="error">
-                        {errors.jellyfinForgotPasswordUrl}
-                      </div>
-                    )}
-                </div>
-              </div>
-              <div
-                className={`actions ${isSetupSettings ? 'mt-0 border-0' : ''}`}
-              >
-                <div className="flex justify-end">
-                  <span className="ml-3 inline-flex rounded-md shadow-sm">
-                    <Button
-                      buttonType="primary"
-                      type="submit"
-                      disabled={isSubmitting || !isValid}
+                  <div className="form-row">
+                    <label
+                      htmlFor="jellyfinForgotPasswordUrl"
+                      className="text-label"
                     >
-                      <ArrowDownOnSquareIcon />
-                      <span>
-                        {isSubmitting
-                          ? intl.formatMessage(globalMessages.saving)
-                          : intl.formatMessage(globalMessages.save)}
+                      {intl.formatMessage(messages.jellyfinForgotPasswordUrl)}
+                    </label>
+                    <div className="form-input-area">
+                      <div className="form-input-field">
+                        <Field
+                          type="text"
+                          inputMode="url"
+                          id="jellyfinForgotPasswordUrl"
+                          name="jellyfinForgotPasswordUrl"
+                        />
+                      </div>
+                      {errors.jellyfinForgotPasswordUrl &&
+                        touched.jellyfinForgotPasswordUrl && (
+                          <div className="error">
+                            {errors.jellyfinForgotPasswordUrl}
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                  <div
+                    className={`actions ${isSetupSettings ? 'mt-0 border-0' : ''}`}
+                  >
+                    <div className="flex justify-end">
+                      <span className="ml-3 inline-flex rounded-md shadow-sm">
+                        <Button
+                          buttonType="primary"
+                          type="submit"
+                          disabled={isSubmitting || !isValid}
+                        >
+                          <ArrowDownOnSquareIcon />
+                          <span>
+                            {isSubmitting
+                              ? intl.formatMessage(globalMessages.saving)
+                              : intl.formatMessage(globalMessages.save)}
+                          </span>
+                        </Button>
                       </span>
-                    </Button>
-                  </span>
-                </div>
-              </div>
-            </form>
-          );
-        }}
-      </Formik>
+                    </div>
+                  </div>
+                </form>
+              );
+            }}
+          </Formik>
+        </>
+      )}
     </>
   );
 };

@@ -1,7 +1,9 @@
 import CachedImage from '@app/components/Common/CachedImage';
 import MiniQuotaDisplay from '@app/components/Layout/UserDropdown/MiniQuotaDisplay';
+import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { jellyfinWebPath } from '@app/utils/publicBasePath';
 import { unsubscribeToPushNotifications } from '@app/utils/pushSubscriptionHelpers';
 import {
   Menu,
@@ -11,6 +13,7 @@ import {
   Transition,
 } from '@headlessui/react';
 import {
+  ArrowLeftOnRectangleIcon,
   ArrowRightOnRectangleIcon,
   ClockIcon,
 } from '@heroicons/react/24/outline';
@@ -31,6 +34,7 @@ const messages = defineMessages('components.Layout.UserDropdown', {
   settings: 'Settings',
   requests: 'Requests',
   signout: 'Sign Out',
+  backToJellyfin: 'Back to Jellyfin',
 });
 
 const ForwardedLink = forwardRef<
@@ -49,6 +53,7 @@ ForwardedLink.displayName = 'ForwardedLink';
 const UserDropdown = () => {
   const intl = useIntl();
   const { user, revalidate, hasPermission } = useUser();
+  const { currentSettings } = useSettings();
 
   const logout = async () => {
     const cleanUpPushSubscription = async () => {
@@ -198,22 +203,43 @@ const UserDropdown = () => {
                   </ForwardedLink>
                 )}
               </MenuItem>
-              <MenuItem>
-                {({ active }) => (
-                  <a
-                    href="#"
-                    className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
-                      active
-                        ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
-                        : ''
-                    }`}
-                    onClick={() => logout()}
-                  >
-                    <ArrowRightOnRectangleIcon className="mr-2 inline h-5 w-5" />
-                    <span>{intl.formatMessage(messages.signout)}</span>
-                  </a>
-                )}
-              </MenuItem>
+              {currentSettings.pluginMode ? (
+                // The Jellyfin login is the session; signing out here would
+                // only sign straight back in.
+                <MenuItem>
+                  {({ active }) => (
+                    <a
+                      href={jellyfinWebPath()}
+                      className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
+                        active
+                          ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
+                          : ''
+                      }`}
+                      data-testid="user-menu-jellyfin"
+                    >
+                      <ArrowLeftOnRectangleIcon className="mr-2 inline h-5 w-5" />
+                      <span>{intl.formatMessage(messages.backToJellyfin)}</span>
+                    </a>
+                  )}
+                </MenuItem>
+              ) : (
+                <MenuItem>
+                  {({ active }) => (
+                    <a
+                      href="#"
+                      className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
+                        active
+                          ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
+                          : ''
+                      }`}
+                      onClick={() => logout()}
+                    >
+                      <ArrowRightOnRectangleIcon className="mr-2 inline h-5 w-5" />
+                      <span>{intl.formatMessage(messages.signout)}</span>
+                    </a>
+                  )}
+                </MenuItem>
+              )}
             </div>
           </div>
         </MenuItems>
