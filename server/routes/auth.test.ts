@@ -1198,7 +1198,33 @@ describe('POST /auth/jellyfin/plugin', () => {
       jellyfinUsername: 'pluginuser',
     });
     assert.equal(response.status, 403);
+    assert.match(response.body.message, /administrator must open/);
     assert.equal(await getRepository(User).count(), 0);
+  });
+
+  it('explains why a new user is refused when new sign-ins are off', async () => {
+    await getRepository(User).save(
+      new User({
+        email: 'owner',
+        jellyfinUsername: 'owner',
+        jellyfinUserId: 'jf-owner',
+        avatar: '/avatarproxy/jf-owner',
+        permissions: Permission.ADMIN,
+        userType: UserType.JELLYFIN,
+      })
+    );
+    const settings = getSettings();
+    settings.main.newPlexLogin = false;
+    try {
+      const response = await mint({
+        jellyfinUserId: 'jf-new-user',
+        jellyfinUsername: 'newcomer',
+      });
+      assert.equal(response.status, 403);
+      assert.match(response.body.message, /not open to new Jellyfin users/);
+    } finally {
+      settings.main.newPlexLogin = true;
+    }
   });
 
   it('returns 400 for malformed identity fields instead of throwing', async () => {

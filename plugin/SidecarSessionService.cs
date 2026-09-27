@@ -1,5 +1,7 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using MediaBrowser.Controller.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -53,6 +55,9 @@ public sealed class SidecarSessionService
     }
 
     internal sealed record Minted(string Value, Guid Generation);
+
+    /// <summary>A sidecar session cookie, or Foreseerr's reason for refusing the user.</summary>
+    public sealed record SignIn(string? Cookie, string? Denied = null);
 
     internal sealed record Validation(AuthorizationInfo Authorization, DateTimeOffset At);
 
@@ -159,17 +164,17 @@ public sealed class SidecarSessionService
     /// <summary>Drops the sidecar session so the next request signs in again.</summary>
     public static void ResetCookie(BrowserSession session) => session.Cookie = null;
 
-    public async Task<string?> EnsureCookieAsync(BrowserSession session, string username,
+    public async Task<SignIn> EnsureCookieAsync(BrowserSession session, string username,
         bool isAdmin, CancellationToken cancellationToken)
     {
-        if (session.Cookie is { } minted && minted.Generation == _supervisor.Generation) return minted.Value;
+        if (session.Cookie is { } minted && minted.Generation == _supervisor.Generation) return new SignIn(minted.Value);
         await session.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var generation = _supervisor.Generation;
-            if (session.Cookie is { } current && current.Generation == generation) return current.Value;
+            if (session.Cookie is { } current && current.Generation == generation) return new SignIn(current.Value);
             var secret = ForeseerrPlugin.Instance?.Configuration.PluginSecret;
-            if (string.IsNullOrEmpty(secret) || !_supervisor.IsReady) return null;
+            if (string.IsNullOrEmpty(secret) || !_supervisor.IsReady) return new SignIn(null);
             using var request = new HttpRequestMessage(HttpMethod.Post,
                 $"{_supervisor.Origin}/Foreseerr/api/v1/auth/jellyfin/plugin")
             {
@@ -186,29 +191,53 @@ public sealed class SidecarSessionService
             request.Headers.Add("X-Foreseerr-Mint", "1");
             var client = _clients.CreateClient(PluginServiceRegistrator.SidecarHttpClient);
             using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+                return new SignIn(null, await DeniedMessageAsync(response, cancellationToken).ConfigureAwait(false));
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Foreseerr sign-in failed with status {Status}", (int)response.StatusCode);
-                return null;
+                return new SignIn(null);
             }
 
-            if (!response.Headers.TryGetValues("Set-Cookie", out var headers)) return null;
+            if (!response.Headers.TryGetValues("Set-Cookie", out var headers)) return new SignIn(null);
             var cookie = headers.Select(header => header.Split(';', 2)[0])
                 .FirstOrDefault(pair => pair.StartsWith("connect.sid=", StringComparison.Ordinal));
             session.Cookie = cookie == null ? null : new Minted(cookie, generation);
-            return cookie;
+            return new SignIn(cookie);
         }
         catch (HttpRequestException)
         {
-            return null;
+            return new SignIn(null);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return null;
+            return new SignIn(null);
         }
         finally
         {
             session.Gate.Release();
         }
+    }
+
+    internal const string DefaultDeniedMessage = "Foreseerr refused this Jellyfin account. Ask a Jellyfin administrator for access.";
+
+    /// <summary>The sidecar explains a refusal in its JSON error body.</summary>
+    internal static async Task<string> DeniedMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            if (body.RootElement.ValueKind == JsonValueKind.Object
+                && body.RootElement.TryGetProperty("message", out var message)
+                && message.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(message.GetString()))
+                return message.GetString()!;
+        }
+        catch (JsonException)
+        {
+            // Fall back to a generic explanation.
+        }
+
+        return DefaultDeniedMessage;
     }
 }
