@@ -82,7 +82,7 @@ commit_parsers = [
   { message = "^revert", group = "<!-- 9 -->◀️ Revert" },
 ]
 protect_breaking_commits = false
-tag_pattern = "v?[0-9]+\\.[0-9]+\\.[0-9]+.*"
+tag_pattern = "^v?[0-9]+\\.[0-9]+\\.[0-9]+.*"
 skip_tags = "beta|alpha|rc"
 topo_order = false
 sort_commits = "newest"

@@ -38,5 +38,5 @@ for target in "$@"; do
 done
 # Build.props owns the per-ABI plugin version and targetAbi.
 PLUGIN_PROPERTIES="$(dotnet_cmd msbuild "$PROJECT" -p:JellyfinTarget="$PLUGIN_ABI" \
-  -getProperty:AssemblyVersion -getProperty:TargetAbi)"
+  -getProperty:AssemblyVersion -getProperty:TargetAbi -getProperty:ReleaseVersion)"
 bun "$REPO_ROOT/scripts/pack-plugin.mjs" "$PLUGIN_ABI" "$PLUGIN_OUT" "$PLUGIN_PROPERTIES"

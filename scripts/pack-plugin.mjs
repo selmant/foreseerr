@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 // Usage: pack-plugin.mjs <abi> <publish dir> <msbuild -getProperty JSON>
@@ -7,19 +7,24 @@ const [abi, output, properties] = process.argv.slice(2);
 if (!['10.11', '12'].includes(abi) || !output || !properties) {
   throw new Error('Expected ABI, publish directory, and MSBuild properties');
 }
-const { AssemblyVersion: version, TargetAbi: targetAbi } =
-  JSON.parse(properties).Properties;
+const {
+  AssemblyVersion: version,
+  TargetAbi: targetAbi,
+  ReleaseVersion: release,
+} = JSON.parse(properties).Properties;
 if (
   !/^\d+\.\d+\.\d+\.\d+$/.test(version) ||
-  !/^\d+\.\d+\.\d+\.\d+$/.test(targetAbi)
+  !/^\d+\.\d+\.\d+\.\d+$/.test(targetAbi) ||
+  !/^\d+\.\d+\.\d+(-[a-z]+\.\d+)?$/.test(release ?? '')
 ) {
   throw new Error(
-    `Invalid plugin version ${version} or targetAbi ${targetAbi}`
+    `Invalid plugin version ${version}, release ${release}, or targetAbi ${targetAbi}`
   );
 }
 const root = resolve(import.meta.dir, '..');
-// Release assets live under the tag, which keeps any prerelease suffix.
-const release = JSON.parse(
+// Release assets live under the plugin tag, which keeps any prerelease suffix.
+const tag = `jellyfin-plugin-v${release}`;
+const foreseerr = JSON.parse(
   readFileSync(join(root, 'package.json'), 'utf8')
 ).version;
 const template = JSON.parse(
@@ -32,6 +37,9 @@ if (dlls.length !== 1 || dlls[0] !== 'Foreseerr.Jellyfin.dll') {
 const timestamp = new Date(
   Number(process.env.SOURCE_DATE_EPOCH || Date.now() / 1000) * 1000
 ).toISOString();
+if (!existsSync(join(output, 'thumb.png'))) {
+  throw new Error('Missing plugin image thumb.png');
+}
 const meta = {
   ...template,
   version,
@@ -39,6 +47,7 @@ const meta = {
   timestamp,
   status: 'Active',
   autoUpdate: true,
+  imagePath: 'thumb.png',
   assemblies: ['Foreseerr.Jellyfin.dll'],
 };
 delete meta.versions;
@@ -59,13 +68,15 @@ const bytes = readFileSync(archive);
 const manifest = [
   {
     ...template,
+    // Catalog installs download this and ignore the zip's meta.json.
+    imageUrl: `https://raw.githubusercontent.com/selmant/foreseerr/${tag}/plugin/thumb.png`,
     versions: [
       {
         version,
         targetAbi,
         timestamp,
-        changelog: `Foreseerr ${release} for Jellyfin ${abi}`,
-        sourceUrl: `https://github.com/selmant/foreseerr/releases/download/v${release}/foreseerr-jellyfin-${abi}.zip`,
+        changelog: `Foreseerr for Jellyfin ${release} (Foreseerr ${foreseerr}) for Jellyfin ${abi}. Alpha: anything can change and there is no backward compatibility between versions. Release notes: https://github.com/selmant/foreseerr/releases/tag/${tag}`,
+        sourceUrl: `https://github.com/selmant/foreseerr/releases/download/${tag}/foreseerr-jellyfin-${abi}.zip`,
         // Jellyfin's repository format requires MD5. SHA-256 is supplied alongside it.
         checksum: createHash('md5').update(bytes).digest('hex'),
       },

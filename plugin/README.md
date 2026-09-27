@@ -1,15 +1,19 @@
 # Foreseerr Jellyfin sidecar plugin
 
-Third-party plugin for **Jellyfin 10.11 and newer**. It starts the bun-compiled Foreseerr binary on `127.0.0.1` (OS-assigned port), reverse-proxies `/Foreseerr`, and signs users in with their Jellyfin session. The official Jellyfin catalog will not accept it (native binary supervisor).
+**Alpha, in active development: anything can change, and there is no backward compatibility between plugin versions.** Third-party plugin for **Jellyfin 10.11 and newer**. It starts the bun-compiled Foreseerr binary on `127.0.0.1` (OS-assigned port), reverse-proxies `/Foreseerr`, and signs users in with their Jellyfin session. The official Jellyfin catalog will not accept it (native binary supervisor).
 
 ## Builds
 
+The plugin has its own version, `ReleaseVersion` in `plugin/Build.props` (currently `0.1.0-alpha.1`), separate from Foreseerr's `package.json`. Each plugin release bundles the Foreseerr build from its tagged commit.
+
 Each release ships one build per Jellyfin ABI:
 
-| Jellyfin | Archive                        | Framework | Plugin version |
-| -------- | ------------------------------ | --------- | -------------- |
-| 10.11.x  | `foreseerr-jellyfin-10.11.zip` | net9.0    | `X.Y.Z.0`      |
-| 12.x     | `foreseerr-jellyfin-12.zip`    | net10.0   | `X.Y.Z.1`      |
+| Jellyfin | Archive                        | Framework | `X.Y.Z` release | `X.Y.Z-alpha.N` release |
+| -------- | ------------------------------ | --------- | --------------- | ----------------------- |
+| 10.11.x  | `foreseerr-jellyfin-10.11.zip` | net9.0    | `X.Y.Z.9000`    | `X.Y.Z.1N0`             |
+| 12.x     | `foreseerr-jellyfin-12.zip`    | net10.0   | `X.Y.Z.9001`    | `X.Y.Z.1N1`             |
+
+Jellyfin versions are four numbers, so the revision carries the prerelease and the ABI: `alpha.N` is `1000 + 10N`, `beta.N` is `2000 + 10N`, `rc.N` is `3000 + 10N`, and a final release is `9000`, plus `0` for 10.11 or `1` for 12. For example, `0.1.0-alpha.2` for Jellyfin 12 is `0.1.0.1021`. Testers on an alpha therefore auto-update to later alphas, betas, and the final release. Other prerelease names, or `N` of 100 or more, fail the build.
 
 Jellyfin treats `targetAbi` as a minimum, so a 12 server also accepts the 10.11 build. The higher revision makes installs and auto-updates pick the matching build. `plugin/Build.props` owns this mapping; `scripts/merge-plugin-manifests.mjs` refuses to publish two builds with the same version.
 
@@ -53,6 +57,20 @@ bun run plugin:dev reset 12                 # stop and delete data
 
 The first `up` completes the Jellyfin setup wizard and creates `admin` / `foreseerr` (administrator), `viewer` / `viewer` (regular user), and empty Movies and Shows libraries. Sign in to Jellyfin Web, then use the header button or open `<base>/Foreseerr/` directly. Drop media into `plugin/.dev/jellyfin-<abi>/media/{movies,shows}`. Every `up` reinstalls the plugin from `plugin/dist` and keeps the Jellyfin and Foreseerr data in `plugin/.dev/`. Jellyfin listens on `127.0.0.1` unless you pass `--bind 0.0.0.0`. Other options: `--port`, `--image jellyfin/jellyfin:<tag>`, `--no-file-transformation`.
 
+## Foreseerr in plugin mode
+
+The sidecar reports `pluginMode` in `/api/v1/settings/public`, and the web app adapts:
+
+- **Sign-in.** Foreseerr has no sign-in form. The user menu's **Sign Out** becomes **Back to Jellyfin**, because the Jellyfin login is the session. If the Jellyfin session ends, `/login` offers **Open Jellyfin** and **Try Again**.
+- **Settings → Jellyfin.** The address, port, API key, and URL base fields are replaced by a note that the plugin manages them, with a link to the plugin page. Libraries and scans stay.
+- **Settings → Users.** The login method toggles are hidden. **Enable New Jellyfin Sign-In** still decides whether Jellyfin users who were not imported can open Foreseerr.
+- **Settings → Network.** **Enable Proxy Support** and **Enable CSRF Protection** are hidden; the plugin sets both.
+- **Users.** **Create Local User** is hidden, since local users cannot sign in.
+- **Profile settings.** The **Password** tab and **Web Push** are hidden. The admin **Web Push** agent tab is hidden too.
+- **About** says Foreseerr runs inside Jellyfin and is updated from the Jellyfin dashboard, and the sidebar version badge reads **Foreseerr for Jellyfin**.
+
+A Jellyfin user that Foreseerr refuses (the first user is not an administrator, or new sign-ins are off) sees Foreseerr's reason in the header button alert, the sign-in page, and the plugin page instead of a generic outage message.
+
 ## Settings
 
 The dashboard page shows the sidecar status, the direct link, and one setting: **Public Jellyfin URL**, the address used for links in Foreseerr notifications. The origin (`https://jellyfin.example.com`) is enough; the plugin appends Jellyfin's base URL. When it is empty, the plugin uses an `all=` or `external=` entry from Jellyfin's Published Server URIs. With neither, Foreseerr keeps the Application URL and Jellyfin external URL set in its own settings, and "Play on Jellyfin" links fall back to same-origin paths. Clearing the plugin field removes only values the plugin set.
@@ -78,10 +96,24 @@ Everything else comes from Jellyfin on each sidecar start: server name, loopback
 - Reverse proxies must forward `/Foreseerr` and `/ForeseerrPlugin`. Configure Jellyfin's Known Proxies so it sees HTTPS; otherwise the ticket cookie is not marked `Secure`.
 - WebSocket upgrades are not proxied. Foreseerr does not use them.
 
+## Known issues (alpha)
+
+- The first start downloads the anime mapping packs and writes them in one database transaction. Foreseerr can stop answering for a minute or two while that runs, and again when a pack changes upstream. This affects every Foreseerr install, not only the plugin.
+
+## Releasing
+
+Plugin releases are separate from Foreseerr's `v*` releases.
+
+1. Set `ReleaseVersion` in `plugin/Build.props` and add `plugin/release-notes/<version>.md`. Keep the alpha warning while the plugin is in alpha.
+2. Tag the commit `jellyfin-plugin-v<version>` and push the tag. Tag the same commit as a Foreseerr release when possible, so the bundled Foreseerr is a released version.
+3. `.github/workflows/jellyfin-plugin-release.yml` checks that the tag matches `ReleaseVersion`, runs the plugin tests, builds and proves both ABIs, and publishes a GitHub **prerelease** titled `Foreseerr for Jellyfin <version> (Foreseerr <app version>)`. As a prerelease it never becomes Foreseerr's latest release, and Foreseerr's update check ignores `jellyfin-plugin-v*` tags.
+4. The workflow writes the repository manifest to the `jellyfin-plugin-repository` branch. Jellyfin reads it from `https://raw.githubusercontent.com/selmant/foreseerr/jellyfin-plugin-repository/manifest.json`. The manifest lists only the newest release.
+5. On a test Jellyfin, install from that repository and check the header button, sign-in as an administrator and as a regular user, and the plugin page. Catalog installs show `plugin/thumb.png` from the tag through `imageUrl`.
+
 ## Remaining work
 
 - [ ] Run the tagged release workflow once and install from the published repository manifest. The plugin release path has not run on CI yet.
 - [ ] Exercise a real TLS-terminating reverse proxy.
-- [ ] Automate the browser flow (header button, click-through, dashboard page). It was checked by hand in headless Chromium on 10.11.11 and 12.1; the proofs are HTTP-only.
+- [ ] Automate the browser flow (header button, click-through, dashboard page, plugin-mode settings). It was checked in headless Chromium on 10.11.11 (under `/jellyfin`) and 12.1; the proofs are HTTP-only.
 
 Out of scope: Android TV / official apps, the official Jellyfin catalog, password replay.
