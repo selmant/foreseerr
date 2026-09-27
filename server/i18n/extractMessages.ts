@@ -43,7 +43,8 @@ async function extractMessages(
 
 async function processMessages(dir: string): Promise<string> {
   const files = await getFiles(dir);
-  const tsFiles = files.filter((f) => /\.tsx?$/.test(f));
+  // Sorted so duplicate ids resolve the same way on every filesystem.
+  const tsFiles = files.filter((f) => /\.tsx?$/.test(f)).sort();
   const extractedMessagesGroups = await Promise.all(
     tsFiles.map(extractMessages)
   );
