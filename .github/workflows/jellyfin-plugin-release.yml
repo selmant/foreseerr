@@ -3,8 +3,8 @@
 # The Jellyfin plugin has its own release line, separate from Foreseerr's
 # v* tags. Each release bundles the Foreseerr build from the tagged commit
 # and is published as a GitHub prerelease so it never becomes Foreseerr's
-# "latest" release. The repository manifest Jellyfin reads lives on the
-# jellyfin-plugin-repository branch.
+# "latest" release. Jellyfin reads the repository manifest from the docs
+# site, which serves the manifest of the newest plugin release.
 name: Jellyfin Plugin Release
 
 on:
@@ -19,15 +19,13 @@ concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
-env:
-  MANIFEST_BRANCH: jellyfin-plugin-repository
-
 jobs:
   release:
     name: Build, prove, and publish
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
+      actions: write
       contents: write
     env:
       TAG: ${{ github.ref_name }}
@@ -120,35 +118,9 @@ jobs:
             foreseerr-jellyfin-manifest.json \
             SHA256SUMS
 
+      # docs-deploy copies this release's manifest to
+      # https://selmant.github.io/foreseerr/jellyfin/manifest.json.
       - name: Publish repository manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          repo="$RUNNER_TEMP/manifest-repo"
-          mkdir -p "$repo"
-          cd "$repo"
-          git init -q
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-          if git fetch -q --depth 1 origin "$MANIFEST_BRANCH"; then
-            git checkout -q -b "$MANIFEST_BRANCH" FETCH_HEAD
-          else
-            git checkout -q --orphan "$MANIFEST_BRANCH"
-          fi
-          cp "$GITHUB_WORKSPACE/plugin/dist/release/foreseerr-jellyfin-manifest.json" manifest.json
-          cat > README.md <<'EOF'
-          # Foreseerr for Jellyfin plugin repository
-
-          Add this URL in Jellyfin under Dashboard → Plugins → Repositories:
-
-          https://raw.githubusercontent.com/selmant/foreseerr/jellyfin-plugin-repository/manifest.json
-
-          Alpha: anything can change and there is no backward compatibility between versions.
-          This branch is written by `.github/workflows/jellyfin-plugin-release.yml`; do not edit it by hand.
-          EOF
-          git add manifest.json README.md
-          git -c user.name='github-actions[bot]' \
-            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit -q -m "Publish Foreseerr for Jellyfin $VERSION"
-          git push -q origin "HEAD:$MANIFEST_BRANCH"
+        run: gh workflow run docs-deploy.yml --repo "${{ github.repository }}" --ref develop

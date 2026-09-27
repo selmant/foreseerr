@@ -26,7 +26,7 @@ Radarr, Sonarr, notifications, and other integrations are configured inside Fore
 
 ## Install
 
-1. Dashboard → Plugins → Repositories → add `https://raw.githubusercontent.com/selmant/foreseerr/jellyfin-plugin-repository/manifest.json`.
+1. Dashboard → Plugins → Repositories → add `https://selmant.github.io/foreseerr/jellyfin/manifest.json`.
 2. Install **Foreseerr** from the catalog and restart Jellyfin. Jellyfin picks the build that matches its version.
 3. Dashboard → Plugins → Foreseerr: set **Public Jellyfin URL** to the address people use for Jellyfin, for example `https://jellyfin.example.com`. Links in notifications point there. You can skip this if Jellyfin's **Published Server URIs** (Networking) has an `all=` or `external=` entry, or if you set **Application URL** in Foreseerr instead.
 4. Open Foreseerr as a Jellyfin administrator first; that account becomes the Foreseerr owner. Configure Radarr/Sonarr there.

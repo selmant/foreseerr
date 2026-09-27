@@ -107,7 +107,7 @@ Plugin releases are separate from Foreseerr's `v*` releases.
 1. Set `ReleaseVersion` in `plugin/Build.props` and add `plugin/release-notes/<version>.md`. Keep the alpha warning while the plugin is in alpha.
 2. Tag the commit `jellyfin-plugin-v<version>` and push the tag. Tag the same commit as a Foreseerr release when possible, so the bundled Foreseerr is a released version.
 3. `.github/workflows/jellyfin-plugin-release.yml` checks that the tag matches `ReleaseVersion`, runs the plugin tests, builds and proves both ABIs, and publishes a GitHub **prerelease** titled `Foreseerr for Jellyfin <version> (Foreseerr <app version>)`. As a prerelease it never becomes Foreseerr's latest release, and Foreseerr's update check ignores `jellyfin-plugin-v*` tags.
-4. The workflow writes the repository manifest to the `jellyfin-plugin-repository` branch. Jellyfin reads it from `https://raw.githubusercontent.com/selmant/foreseerr/jellyfin-plugin-repository/manifest.json`. The manifest lists only the newest release.
+4. The workflow then redeploys the docs site, which serves the newest release's manifest at `https://selmant.github.io/foreseerr/jellyfin/manifest.json`. The manifest lists only the newest release.
 5. On a test Jellyfin, install from that repository and check the header button, sign-in as an administrator and as a regular user, and the plugin page. Catalog installs show `plugin/thumb.png` from the tag through `imageUrl`.
 
 ## Remaining work
