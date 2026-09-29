@@ -2,7 +2,7 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
-import useDiscover from '@app/hooks/useDiscover';
+import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import ErrorPage from '@app/pages/_error';
@@ -56,7 +56,8 @@ const DiscoverSimkl = () => {
         ? view.endpoint
         : '/api/v1/discover/simkl/library'
       : '',
-    view ? view.options : { status }
+    view ? view.options : { status },
+    providerListFilters
   );
   if (viewKey && !view) return <ErrorPage statusCode={404} />;
   if (!settings.currentSettings.simklConfigured)

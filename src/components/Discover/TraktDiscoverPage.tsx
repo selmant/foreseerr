@@ -4,7 +4,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters';
 import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
-import useDiscover from '@app/hooks/useDiscover';
+import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
@@ -73,7 +73,8 @@ const TraktDiscoverPage = ({
     mutate,
   } = useDiscover<WatchlistItem, { title?: string }>(
     canLoad ? endpoint : '',
-    prepareTraktDiscoverOptions(routeQuery, queryExcludes, user?.id)
+    prepareTraktDiscoverOptions(routeQuery, queryExcludes, user?.id),
+    providerListFilters
   );
   useRegisterHideWatchedRevalidation(mutate, registerHideWatched);
 

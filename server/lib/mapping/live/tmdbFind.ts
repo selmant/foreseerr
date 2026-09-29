@@ -109,7 +109,16 @@ export interface TmdbProbe {
   year?: number;
   /** Bare TMDB path (`/abc.jpg`). List tiles need this; `/movie/{id}` already paid for it. */
   posterPath?: string;
+  /** Bare TMDB backdrop path, from the same response. */
+  backdropPath?: string;
+  /** `YYYY-MM-DD`; set for movies. */
+  releaseDate?: string;
+  /** `YYYY-MM-DD`; set for series. */
+  firstAirDate?: string;
 }
+
+const nonEmpty = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim() ? value.trim() : undefined;
 
 /**
  * TMDB wraps axios failures as `Error` with `cause` set to the original
@@ -154,14 +163,21 @@ export async function tmdbRecord(
     const released =
       'release_date' in record ? record.release_date : record.first_air_date;
     const year = Number(String(released ?? '').slice(0, 4));
-    const posterPath =
-      typeof record.poster_path === 'string' ? record.poster_path.trim() : '';
+    const posterPath = nonEmpty(record.poster_path);
+    const backdropPath = nonEmpty(record.backdrop_path);
+    const date = nonEmpty(released);
     return {
       alive: true,
       title,
       originalTitle,
       year: Number.isFinite(year) && year > 0 ? year : undefined,
       ...(posterPath ? { posterPath } : {}),
+      ...(backdropPath ? { backdropPath } : {}),
+      ...(date
+        ? mediaType === 'movie'
+          ? { releaseDate: date }
+          : { firstAirDate: date }
+        : {}),
     };
   } catch (error) {
     // Only a confirmed 404 is a dead id. Timeouts, 429, 5xx, a tripped

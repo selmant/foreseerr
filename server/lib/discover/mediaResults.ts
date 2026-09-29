@@ -1,7 +1,10 @@
 import type { MediaType } from '@server/constants/media';
 import Media from '@server/entity/Media';
 import type { User } from '@server/entity/User';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import type {
+  WatchlistItem,
+  WatchlistItemMediaInfo,
+} from '@server/interfaces/api/discoverInterfaces';
 import { getSettings } from '@server/lib/settings';
 
 type RelatedMediaItem = {
@@ -40,11 +43,16 @@ export function findRelatedMedia(
   return media.get(relatedMediaKey(tmdbId, mediaType));
 }
 
-/** Mark mapped provider tiles for the shared Discover and slider filters. */
+/**
+ * Attach library/request status to mapped provider tiles, and mark tiles with
+ * an active request for the shared Discover and slider filters.
+ *
+ * One media query per page. `hasActiveRequest` is only set while
+ * `hideRequested` is on, exactly as before `mediaInfo` was added.
+ */
 export async function annotateProviderActiveRequests<T extends WatchlistItem>(
   items: T[]
 ): Promise<T[]> {
-  if (!getSettings().main.hideRequested) return items;
   const related = await getRelatedMediaIndex(
     undefined,
     items.flatMap((item) =>
@@ -55,15 +63,32 @@ export async function annotateProviderActiveRequests<T extends WatchlistItem>(
         : []
     )
   );
+  const hideRequested = getSettings().main.hideRequested;
   return items.map((item) => {
     if (!item.tmdbId || !item.mediaType) return item;
-    const active = findRelatedMedia(
+    const media = findRelatedMedia(
       related,
       item.tmdbId,
       item.mediaType as MediaType
-    )?.hasActiveRequest;
-    return active ? { ...item, hasActiveRequest: true } : item;
+    );
+    if (!media) return item;
+    return {
+      ...item,
+      mediaInfo: toWatchlistItemMediaInfo(media),
+      ...(hideRequested && media.hasActiveRequest
+        ? { hasActiveRequest: true }
+        : {}),
+    };
   });
+}
+
+export function toWatchlistItemMediaInfo(media: Media): WatchlistItemMediaInfo {
+  return {
+    id: media.id,
+    tmdbId: media.tmdbId,
+    status: media.status,
+    status4k: media.status4k,
+  };
 }
 
 function relatedMediaKey(tmdbId: number, mediaType: MediaType): string {

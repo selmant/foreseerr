@@ -2,7 +2,7 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
-import useDiscover from '@app/hooks/useDiscover';
+import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import ErrorPage from '@app/pages/_error';
@@ -32,7 +32,8 @@ const DiscoverMdblistList = () => {
     error,
   } = useDiscover<WatchlistItem, { title?: string }>(
     url ? '/api/v1/discover/mdblist/list' : '',
-    url ? { url } : undefined
+    url ? { url } : undefined,
+    providerListFilters
   );
 
   if (!settings.currentSettings.mdblistConfigured) {

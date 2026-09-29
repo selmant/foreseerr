@@ -1,4 +1,5 @@
 import type { RatingResponse } from '@server/api/ratings';
+import type { MediaStatus } from '@server/constants/media';
 import type DiscoverSlider from '@server/entity/DiscoverSlider';
 
 export interface GenreSliderItem {
@@ -50,8 +51,24 @@ export interface WatchlistItem {
   image?: string;
   /** Bare TMDB poster path when the id has been confirmed. */
   posterPath?: string;
+  /** Bare TMDB backdrop path, from the same confirm probe as `posterPath`. */
+  backdropPath?: string;
+  /** Movie release date (`YYYY-MM-DD`) from TMDB. */
+  releaseDate?: string;
+  /** Series first air date (`YYYY-MM-DD`) from TMDB. */
+  firstAirDate?: string;
+  /** Library/request status when Foreseerr already tracks the title. */
+  mediaInfo?: WatchlistItemMediaInfo;
   hasActiveRequest?: boolean;
   mappingState?: DiscoverMappingInfo;
+}
+
+/** The subset of the Media entity a list tile carries, as on Seerr results. */
+export interface WatchlistItemMediaInfo {
+  id: number;
+  tmdbId: number;
+  status: MediaStatus;
+  status4k: MediaStatus;
 }
 
 export interface WatchlistResponse {

@@ -2,7 +2,7 @@ import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
-import useDiscover from '@app/hooks/useDiscover';
+import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
@@ -70,7 +70,11 @@ const DiscoverAnilistPage = ({
     titles,
     fetchMore,
     error,
-  } = useDiscover<WatchlistItem>(enabled ? endpoint : '');
+  } = useDiscover<WatchlistItem>(
+    enabled ? endpoint : '',
+    undefined,
+    providerListFilters
+  );
 
   if (!settings.currentSettings.anilistConfigured) {
     return <ErrorPage statusCode={404} />;

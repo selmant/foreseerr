@@ -54,6 +54,17 @@ export const encodeURIExtraParams = (string: string): string => {
   return finalString;
 };
 
+/**
+ * Provider list pages (Trakt, AniList, Simkl, MDBList, Plex watchlist) show
+ * every title the source lists. Their tiles carry `mediaInfo` for API
+ * clients, so keep the library-status filters off to show what they always
+ * have; `hideRequested` still applies through `hasActiveRequest`.
+ */
+export const providerListFilters = {
+  hideAvailable: false,
+  hideBlocklisted: false,
+};
+
 const useDiscover = <
   T extends BaseMedia,
   S = Record<string, never>,

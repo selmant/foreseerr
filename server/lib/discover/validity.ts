@@ -55,14 +55,28 @@ export async function confirmTmdbId(
   return (await probe(mediaType, tmdbId, tmdb)).alive;
 }
 
-/** Cached TMDB poster from the confirm probe. No extra request when the id was already checked. */
-export async function tmdbPosterPath(
+export type TmdbTileArt = Pick<
+  TmdbProbe,
+  'posterPath' | 'backdropPath' | 'releaseDate' | 'firstAirDate'
+>;
+
+/**
+ * Poster, backdrop, and date from the cached confirm probe. No extra request
+ * when the id was already checked; empty when the id is dead.
+ */
+export async function tmdbTileArt(
   mediaType: 'movie' | 'tv',
   tmdbId: number,
   tmdb?: TheMovieDb
-): Promise<string | undefined> {
+): Promise<TmdbTileArt> {
   const record = await probe(mediaType, tmdbId, tmdb);
-  return record.alive ? record.posterPath : undefined;
+  if (!record.alive) return {};
+  return {
+    ...(record.posterPath ? { posterPath: record.posterPath } : {}),
+    ...(record.backdropPath ? { backdropPath: record.backdropPath } : {}),
+    ...(record.releaseDate ? { releaseDate: record.releaseDate } : {}),
+    ...(record.firstAirDate ? { firstAirDate: record.firstAirDate } : {}),
+  };
 }
 
 /**
