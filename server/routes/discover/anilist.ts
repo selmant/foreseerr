@@ -10,8 +10,8 @@ import {
   toWatchlistItems,
 } from '@server/lib/anilist/discover';
 import { getAnilistUserContext } from '@server/lib/anilist/userContext';
-import { withTmdbPoster } from '@server/lib/discover/posters';
 import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
+import { withTmdbPoster } from '@server/lib/discover/posters';
 import { handleAnilistDiscoverRouteError } from '@server/lib/discover/providerErrors';
 import {
   omitUnmappedDiscoverItems,
@@ -49,7 +49,15 @@ async function anilistResults(
           : undefined;
       return withTmdbPoster({
         ...item,
-        ...(confirmed ? { tmdbId: confirmed.tmdbId } : {}),
+        // Clients open tiles by `id`, so a repaired id replaces it too. A dead
+        // id that could not be repaired falls back to the AniList id, as an
+        // unmapped tile's `id` does.
+        ...(confirmed
+          ? {
+              tmdbId: confirmed.tmdbId,
+              id: confirmed.tmdbId ?? Number(item.sourceId),
+            }
+          : {}),
         mappingState: confirmed?.mappingState ?? {
           state: item.tmdbId ? ('mapped' as const) : ('unmapped' as const),
           namespace: 'anilist',

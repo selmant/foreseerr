@@ -82,14 +82,22 @@ export function recordUnmappedItems(
   }
 }
 
-export function omitUnmappedDiscoverItems<T extends { tmdbId?: number | null }>(
-  items: T[],
-  hideUnmapped: boolean
-): T[] {
+/**
+ * Under `hideUnmapped`, keep only tiles a TMDB-based client can open: a valid
+ * TMDB id and a movie/tv media type (a unified MDBList item can carry an id
+ * with no type).
+ */
+export function omitUnmappedDiscoverItems<
+  T extends { tmdbId?: number | null; mediaType?: string },
+>(items: T[], hideUnmapped: boolean): T[] {
   if (!hideUnmapped) {
     return items;
   }
-  return items.filter((item) => hasDiscoverTmdbId(item.tmdbId));
+  return items.filter(
+    (item) =>
+      hasDiscoverTmdbId(item.tmdbId) &&
+      (item.mediaType === 'movie' || item.mediaType === 'tv')
+  );
 }
 
 export function anilistSourceUrl(anilistId: number): string {

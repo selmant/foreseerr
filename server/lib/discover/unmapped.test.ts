@@ -27,9 +27,19 @@ describe('discover unmapped helpers', () => {
   });
 
   it('omits unmapped items only when hideUnmapped is on', () => {
-    const items = [{ tmdbId: 1 }, { tmdbId: undefined }, { tmdbId: 0 }];
-    assert.equal(omitUnmappedDiscoverItems(items, false).length, 3);
-    assert.deepEqual(omitUnmappedDiscoverItems(items, true), [{ tmdbId: 1 }]);
+    const items = [
+      { tmdbId: 1, mediaType: 'movie' },
+      { tmdbId: 2, mediaType: 'tv' },
+      { tmdbId: undefined, mediaType: 'movie' },
+      { tmdbId: 0, mediaType: 'tv' },
+      // A unified MDBList item can carry an id with no type.
+      { tmdbId: 3 },
+    ];
+    assert.equal(omitUnmappedDiscoverItems(items, false).length, 5);
+    assert.deepEqual(omitUnmappedDiscoverItems(items, true), [
+      { tmdbId: 1, mediaType: 'movie' },
+      { tmdbId: 2, mediaType: 'tv' },
+    ]);
   });
 
   it('reads hideUnmapped from query truthy values', () => {
