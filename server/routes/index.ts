@@ -11,6 +11,7 @@ import DiscoverSlider from '@server/entity/DiscoverSlider';
 import type { StatusResponse } from '@server/interfaces/api/settingsInterfaces';
 import { scheduledJobs } from '@server/job/schedule';
 import { isDesktopRuntime, isDesktopStopping } from '@server/lib/desktopState';
+import { toDiscoverSliderResponse } from '@server/lib/discover/sliderEndpoint';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
@@ -143,7 +144,7 @@ router.get('/settings/discover', isAuthenticated(), async (_req, res) => {
     await sliderRepository.find({ order: { order: 'ASC' } })
   ).filter((slider) => !retiredDiscoverSliderTypes.has(slider.type));
 
-  return res.json(sliders);
+  return res.json(sliders.map(toDiscoverSliderResponse));
 });
 router.get(
   '/settings/notifications/pushover/sounds',

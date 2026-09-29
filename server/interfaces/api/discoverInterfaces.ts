@@ -1,3 +1,6 @@
+import type { RatingResponse } from '@server/api/ratings';
+import type DiscoverSlider from '@server/entity/DiscoverSlider';
+
 export interface GenreSliderItem {
   id: number;
   name: string;
@@ -65,4 +68,17 @@ export interface WatchlistResponse {
     lastSuccessfulSyncAt?: string;
   };
 }
-import type { RatingResponse } from '@server/api/ratings';
+
+/**
+ * A slider as `GET /settings/discover` returns it. The extra fields are
+ * computed per response and never stored.
+ */
+export type DiscoverSliderResponse = DiscoverSlider & {
+  /**
+   * API path and query for one page of this slider's results, without `page`.
+   * Absent for rows clients draw themselves and rows missing their data.
+   */
+  endpoint?: string;
+  /** English name for built-in rows Foreseerr names itself. */
+  defaultTitle?: string;
+};
