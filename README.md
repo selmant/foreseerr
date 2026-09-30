@@ -27,7 +27,7 @@ behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
 `0.3.0` for installation and release compatibility.
 
 > [!NOTE]
-> Foreseerr `v0.11.1` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, `v0.5.x`, `v0.6.x`, `v0.7.x`, `v0.8.x`, `v0.9.x`, `v0.10.x`, and `v0.11.0` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
+> Foreseerr `v0.12.0` is the current stable release. Upgrades from `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.3.0`, `v0.4.x`, `v0.5.x`, `v0.6.x`, `v0.7.x`, `v0.8.x`, `v0.9.x`, `v0.10.x`, and `v0.11.x` are supported. Alpha builds (`0.1.0-alpha.x`) are not a supported upgrade source — start from a fresh install or migrate from Seerr (see the migration guide). Back up your configuration before upgrading.
 
 ## Current Features (from Seerr)
 
@@ -104,7 +104,7 @@ docker run -d \
   --restart unless-stopped \
   -p 5055:5055 \
   -v "$(pwd)/foreseerr-config:/app/config" \
-  ghcr.io/selmant/foreseerr:v0.11.1
+  ghcr.io/selmant/foreseerr:v0.12.0
 ```
 
 Open `http://localhost:5055` and complete the setup wizard. Keep the `/app/config` volume when updating or recreating the container; it contains your database and settings.
@@ -118,7 +118,7 @@ The equivalent production-style Compose service is:
 ```yaml
 services:
   foreseerr:
-    image: ghcr.io/selmant/foreseerr:v0.11.1
+    image: ghcr.io/selmant/foreseerr:v0.12.0
     container_name: foreseerr
     init: true
     restart: unless-stopped
@@ -136,7 +136,7 @@ sudo chown -R 1000:1000 foreseerr-config
 docker compose up -d
 ```
 
-The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.11.1`) or a stable alias (`latest`, `v0`, `v0.11`) rather than `develop`.
+The image is published at `ghcr.io/selmant/foreseerr`. Prefer an explicit version tag (`v0.12.0`) or a stable alias (`latest`, `v0`, `v0.12`) rather than `develop`.
 
 > Older pulls used `ghcr.io/selmant/seerr`. Point compose/CLI at `ghcr.io/selmant/foreseerr` going forward.
 
