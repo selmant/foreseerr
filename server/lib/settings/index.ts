@@ -460,8 +460,7 @@ export type JobId =
   | 'process-blocklisted-tags'
   | 'episode-request-sync'
   | 'release-calendar-sync'
-  | 'mapping-pack-refresh'
-  | 'mapping-backfill';
+  | 'mapping-pack-refresh';
 
 export interface AllSettings {
   clientId: string;
@@ -750,9 +749,6 @@ class Settings {
         },
         'mapping-pack-refresh': {
           schedule: '0 15 4 * * *',
-        },
-        'mapping-backfill': {
-          schedule: '0 45 4 * * *',
         },
       },
       network: {

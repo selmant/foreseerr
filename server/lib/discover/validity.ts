@@ -1,11 +1,9 @@
 import type TheMovieDb from '@server/api/themoviedb';
 import type { DiscoverMappingInfo } from '@server/interfaces/api/discoverInterfaces';
-import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
-import { recordMappingGap } from '@server/lib/mapping/gaps';
-import { normalizeTitle, titleScore } from '@server/lib/mapping/heuristic';
-import { tmdbRecord, type TmdbProbe } from '@server/lib/mapping/live/tmdbFind';
 import { BoundedLru } from '@server/lib/mapping/lru';
-import mappingService from '@server/lib/mapping/service';
+import { correctionFor, recordMiss } from '@server/lib/mapping/resolutions';
+import { resolveTmdb } from '@server/lib/mapping/resolve';
+import { tmdbRecord, type TmdbProbe } from '@server/lib/mapping/tmdb';
 import { tmdbNamespace, type IdRef } from '@server/lib/mapping/types';
 import logger from '@server/logger';
 
@@ -79,39 +77,11 @@ export async function tmdbTileArt(
   };
 }
 
-/**
- * Whether what the source calls an item and what TMDB calls it are far enough
- * apart to be worth a human look.
- *
- * Deliberately blunt, and deliberately advisory. A title check cannot decide a
- * mapping: roughly 40% of the mismatches an earlier similarity gate flagged
- * were correct, defeated by romaji against English (`Kimi no Na wa.` is *Your
- * Name.*). So this only fires when the years are far apart *as well*, which is
- * the shape of the real failure — a 1949 German film rendered as a 2023 anime —
- * and even then it only files a review item.
- */
-const divergent = (
-  source: { title?: string; year?: number },
-  record: TmdbProbe
-): boolean => {
-  if (!source.title || !source.year || !record.year) return false;
-  if (Math.abs(source.year - record.year) < 5) return false;
-  const best = Math.max(
-    titleScore(
-      normalizeTitle(source.title),
-      normalizeTitle(record.title ?? '')
-    ),
-    titleScore(
-      normalizeTitle(source.title),
-      normalizeTitle(record.originalTitle ?? '')
-    )
-  );
-  return best < 40;
-};
-
 export interface RepairRequest {
   /** Ids the source supplied, in the order they resolve most reliably. */
   refs: IdRef[];
+  /** What the item is filed under, e.g. its Trakt slug. */
+  identity?: IdRef;
   mediaType: 'movie' | 'tv';
   /** The id that failed confirmation, kept for the audit trail. */
   deadTmdbId: number;
@@ -124,9 +94,8 @@ export interface RepairRequest {
 
 export interface RepairResult {
   tmdbId?: number;
-  ambiguous: boolean;
-  sourceKey?: string;
-  confidence?: number;
+  /** Which resolution step found the replacement. */
+  origin?: string;
 }
 
 /**
@@ -134,53 +103,35 @@ export interface RepairResult {
  *
  * Trakt keeps separate records for Extended and Black & Chrome cuts that TMDB
  * has since merged away, so the cut-specific id 404s while the base film is
- * perfectly reachable through the same record's IMDB id. Where TMDB has instead
- * *split* one show into per-cour series the answer is genuinely two ids, and
- * that must surface as an ambiguity rather than a coin toss.
+ * perfectly reachable through the same record's IMDB id. Each id is asked on
+ * its own, so one that still answers with the dead record does not stop the
+ * next from being tried.
  */
 export async function repairDeadTmdbId(
   request: RepairRequest
 ): Promise<RepairResult> {
-  if (!request.refs.length) return { ambiguous: false };
-  await ensureMappingLayer();
-
-  const target = tmdbNamespace(request.mediaType);
-  let ambiguous = false;
-
   for (const ref of request.refs) {
-    try {
-      const resolution = await mappingService.resolve(ref, target, {
-        discoverSource: request.discoverSource,
-        offline: request.offline,
-        title: request.title,
-        year: request.year,
-        mediaType: request.mediaType,
-      });
-      if (resolution.ambiguous) ambiguous = true;
-
-      const candidate = Number(resolution.target?.id);
-      if (!(candidate > 0) || candidate === request.deadTmdbId) continue;
-      // The replacement is only an improvement if it is actually alive.
-      if (!(await confirmTmdbId(request.mediaType, candidate, request.tmdb)))
-        continue;
-
-      return {
-        tmdbId: candidate,
-        ambiguous: false,
-        sourceKey: resolution.sourceKey,
-        confidence: resolution.confidence,
-      };
-    } catch (error) {
-      logger.debug('Unable to repair a dead TMDB id', {
-        label: 'Mapping',
-        from: `${ref.ns}:${ref.id}`,
-        deadTmdbId: request.deadTmdbId,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+    const resolution = await resolveTmdb({
+      refs: [ref],
+      identity: request.identity,
+      mediaType: request.mediaType,
+      title: request.title,
+      year: request.year,
+      discoverSource: request.discoverSource,
+      offline: request.offline,
+      tmdb: request.tmdb,
+    });
+    if (!resolution || resolution.mediaType !== request.mediaType) continue;
+    if (resolution.tmdbId === request.deadTmdbId) continue;
+    // The replacement is only an improvement if it is actually alive.
+    if (
+      !(await confirmTmdbId(request.mediaType, resolution.tmdbId, request.tmdb))
+    ) {
+      continue;
     }
+    return { tmdbId: resolution.tmdbId, origin: resolution.origin };
   }
-
-  return { ambiguous };
+  return {};
 }
 
 export interface ConfirmableItem {
@@ -194,13 +145,18 @@ export interface ConfirmableItem {
 export interface ConfirmedItem {
   /** Undefined when the id was dead and could not be repaired. */
   tmdbId?: number;
+  /** Set when a correction says the item is the other type. */
+  mediaType?: 'movie' | 'tv';
   mappingState: DiscoverMappingInfo;
 }
 
 /**
- * Confirm one item's id, repairing or demoting it when the id is dead. Records
- * a `phantom` gap so the failure is measurable instead of being a broken card
- * nobody counts.
+ * Confirm one item's id, repairing or demoting it when the id is dead. Returns
+ * undefined when the id is fine. An id that stays dead is counted in the
+ * unmapped list, so the failure is measurable instead of being a broken card.
+ *
+ * An admin's correction for the item wins over the id the source supplied,
+ * whether that id is dead or not.
  */
 export async function confirmOrRepair(
   item: ConfirmableItem,
@@ -214,31 +170,36 @@ export async function confirmOrRepair(
   const tmdbId = item.tmdbId;
   if (!tmdbId || tmdbId <= 0) return undefined;
 
-  const record = await probe(item.mediaType, tmdbId, options.tmdb);
-  if (record.alive) {
-    // The id works, so the item renders either way. Nothing compares the title
-    // the source supplied with the one the card draws, so a silent disagreement
-    // is invisible today; recording it is what makes it reviewable.
-    const identity = options.namespace ?? item.refs?.[0];
-    if (identity && divergent(item, record)) {
-      recordMappingGap({
-        namespace: identity.ns,
-        externalId: String(identity.id),
-        title: item.title,
-        year: item.year,
-        mediaType: item.mediaType,
-        discoverSource: options.discoverSource,
-        reason: 'ambiguous',
-        rejectedTarget: `${tmdbNamespace(item.mediaType)}:${tmdbId}`,
-        sourceKey: 'title-divergence',
-      });
+  const identity = options.namespace ?? item.refs?.[0];
+  const source = identity
+    ? { namespace: identity.ns, externalId: String(identity.id) }
+    : {};
+
+  const correction = await correctionFor([identity, ...(item.refs ?? [])]);
+  if (correction) {
+    if (
+      correction.tmdbId === tmdbId &&
+      (correction.tmdbType ?? item.mediaType) === item.mediaType
+    ) {
+      return undefined;
     }
-    return undefined;
+    return {
+      tmdbId: correction.tmdbId ?? undefined,
+      ...(correction.tmdbType ? { mediaType: correction.tmdbType } : {}),
+      mappingState: {
+        state: correction.tmdbId ? 'mapped' : 'unmapped',
+        sourceKey: 'manual',
+        ...source,
+      },
+    };
   }
 
-  const deadRef = `${tmdbNamespace(item.mediaType)}:${tmdbId}`;
+  const record = await probe(item.mediaType, tmdbId, options.tmdb);
+  if (record.alive) return undefined;
+
   const repair = await repairDeadTmdbId({
     refs: item.refs ?? [],
+    identity,
     mediaType: item.mediaType,
     deadTmdbId: tmdbId,
     title: item.title,
@@ -248,49 +209,31 @@ export async function confirmOrRepair(
     tmdb: options.tmdb,
   });
 
-  const identity = options.namespace ?? item.refs?.[0];
-  if (identity) {
-    recordMappingGap({
-      namespace: identity.ns,
-      externalId: String(identity.id),
-      title: item.title,
-      year: item.year,
-      mediaType: item.mediaType,
-      discoverSource: options.discoverSource,
-      reason: repair.ambiguous ? 'ambiguous' : 'phantom',
-      rejectedTarget: deadRef,
-      sourceKey: repair.sourceKey ?? 'tmdb-confirm',
-    });
-  }
-
   if (repair.tmdbId) {
     logger.debug('Recovered a dead TMDB id from the source ids', {
       label: 'Mapping',
-      was: deadRef,
+      was: `${tmdbNamespace(item.mediaType)}:${tmdbId}`,
       now: repair.tmdbId,
       discoverSource: options.discoverSource,
     });
     return {
       tmdbId: repair.tmdbId,
-      mappingState: {
-        state: 'mapped',
-        sourceKey: repair.sourceKey,
-        confidence: repair.confidence,
-        ...(identity
-          ? { namespace: identity.ns, externalId: String(identity.id) }
-          : {}),
-      },
+      mappingState: { state: 'mapped', sourceKey: repair.origin, ...source },
     };
   }
 
+  if (identity) {
+    recordMiss({
+      ref: identity,
+      mediaType: item.mediaType,
+      title: item.title,
+      year: item.year,
+      discoverSource: options.discoverSource,
+      detail: `TMDB ${item.mediaType} ${tmdbId} no longer exists`,
+    });
+  }
   return {
     tmdbId: undefined,
-    mappingState: {
-      state: repair.ambiguous ? 'ambiguous' : 'unmapped',
-      sourceKey: 'tmdb-confirm',
-      ...(identity
-        ? { namespace: identity.ns, externalId: String(identity.id) }
-        : {}),
-    },
+    mappingState: { state: 'unmapped', sourceKey: 'tmdb-confirm', ...source },
   };
 }

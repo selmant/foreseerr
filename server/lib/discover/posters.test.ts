@@ -1,13 +1,12 @@
 import type TheMovieDb from '@server/api/themoviedb';
-import { clearNegativeCache, resetBudgets } from '@server/lib/mapping/budget';
+import { clearTmdbNegativeCache } from '@server/lib/mapping/tmdb';
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import { withTmdbPoster } from './posters';
 import { resetTmdbValidityCache } from './validity';
 
 beforeEach(() => {
-  resetBudgets();
-  clearNegativeCache();
+  clearTmdbNegativeCache();
   resetTmdbValidityCache();
 });
 

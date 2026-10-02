@@ -9,8 +9,8 @@ import type {
   WatchlistItem,
   WatchlistResponse,
 } from '@server/interfaces/api/discoverInterfaces';
-import { withTmdbPosters } from '@server/lib/discover/posters';
 import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
+import { withTmdbPosters } from '@server/lib/discover/posters';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import {
   hasDiscoverTmdbId,
@@ -18,7 +18,7 @@ import {
   shouldHideUnmappedFromQuery,
 } from '@server/lib/discover/unmapped';
 import { confirmTmdbId } from '@server/lib/discover/validity';
-import { recordMappingGap } from '@server/lib/mapping/gaps';
+import { recordMiss } from '@server/lib/mapping/resolutions';
 import {
   catalogCandidates,
   hydrateSimklCandidates,
@@ -139,18 +139,15 @@ function recordSimklGaps(
 ): void {
   for (const { item, resolution, candidate } of resolved) {
     if (hasDiscoverTmdbId(item.tmdbId) || !item.sourceId) continue;
-    recordMappingGap({
-      namespace: 'simkl',
-      externalId: item.sourceId,
+    recordMiss({
+      ref: { ns: 'simkl', id: item.sourceId },
       title: item.title,
       mediaType: item.mediaType,
       discoverSource,
-      reason: resolution.ambiguous ? 'ambiguous' : 'unresolved',
-      sourceKey: resolution.sourceKey,
-      ...(candidate.ids.tmdb
-        ? {
-            rejectedTarget: `${item.mediaType === 'movie' ? 'tmdb_movie' : 'tmdb_show'}:${candidate.ids.tmdb}`,
-          }
+      // Simkl's own TMDB id is the usual reason an anime stays unmapped: it is
+      // too unreliable to accept without a second source agreeing.
+      ...(resolution.ambiguous && candidate.ids.tmdb
+        ? { detail: `Simkl suggests TMDB ${candidate.ids.tmdb}, unconfirmed` }
         : {}),
     });
   }

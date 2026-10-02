@@ -6,7 +6,6 @@ import {
 import {
   anilistFormatToMediaType,
   pickFribbSeasonEntry,
-  resolveFribbTmdb,
   type AnilistSeasonMapping,
 } from '@server/lib/anilist/mapping';
 import {
@@ -22,21 +21,6 @@ describe('AniList mapping', () => {
     assert.equal(anilistFormatToMediaType('MOVIE'), 'movie');
     assert.equal(anilistFormatToMediaType('TV'), 'tv');
     assert.equal(anilistFormatToMediaType('OVA'), 'tv');
-  });
-
-  it('prefers movie TMDB ids for movie entries and tv ids for series', () => {
-    assert.deepEqual(resolveFribbTmdb({ movie: [128], tv: 99 }, 'MOVIE'), {
-      tmdbId: 128,
-      mediaType: 'movie',
-    });
-    assert.deepEqual(resolveFribbTmdb({ movie: [128], tv: 26209 }, 'TV'), {
-      tmdbId: 26209,
-      mediaType: 'tv',
-    });
-    assert.deepEqual(resolveFribbTmdb({ tv: 44298 }, 'MOVIE'), {
-      tmdbId: 44298,
-      mediaType: 'tv',
-    });
   });
 
   it('uses TVDB seasons when TMDB seasons are collapsed to 1', () => {

@@ -47,6 +47,19 @@ export interface AnilistMedia {
     large?: string | null;
     medium?: string | null;
   } | null;
+  /** Only present on queries that ask for it; see `MEDIA_RELATION_FIELDS`. */
+  relations?: {
+    edges?: AnilistRelationEdge[] | null;
+  } | null;
+}
+
+export interface AnilistRelationEdge {
+  relationType?: string | null;
+  node?: {
+    id: number;
+    type?: string | null;
+    format?: AnilistMediaFormat | null;
+  } | null;
 }
 
 export interface AnilistPageInfo {

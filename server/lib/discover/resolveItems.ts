@@ -1,16 +1,7 @@
 import type TheMovieDb from '@server/api/themoviedb';
-import type {
-  DiscoverMappingInfo,
-  WatchlistItem,
-} from '@server/interfaces/api/discoverInterfaces';
-import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
-import mappingService from '@server/lib/mapping/service';
-import {
-  tmdbNamespace,
-  type IdRef,
-  type Namespace,
-} from '@server/lib/mapping/types';
-import logger from '@server/logger';
+import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import { resolveTmdb } from '@server/lib/mapping/resolve';
+import type { IdRef } from '@server/lib/mapping/types';
 import { withTmdbPoster } from './posters';
 import { hasDiscoverTmdbId } from './unmapped';
 import { confirmOrRepair, confirmTmdbId } from './validity';
@@ -22,31 +13,24 @@ export interface ResolvableDiscoverItem extends WatchlistItem {
 
 export interface ResolveDiscoverOptions {
   discoverSource: string;
-  /** Skip live resolvers; used by bulk paths that must not spend quota. */
+  /** Stay off the network: datasets and stored answers only. */
   offline?: boolean;
   /** Test seam: the same override `confirmOrRepair` already accepts. */
   tmdb?: TheMovieDb;
 }
-
-const stateFor = (
-  resolved: boolean,
-  ambiguous: boolean
-): DiscoverMappingInfo['state'] =>
-  resolved ? 'mapped' : ambiguous ? 'ambiguous' : 'unmapped';
 
 /**
  * Fill in missing TMDB ids through the mapping layer and annotate every tile
  * with how it got there.
  *
  * Items that stay unresolved are annotated, not dropped: the caller decides
- * whether to hide them, and the gap is already recorded by the resolver.
+ * whether to hide them and counts them in the unmapped list.
  */
 export async function resolveDiscoverItems(
   items: ResolvableDiscoverItem[],
   options: ResolveDiscoverOptions
 ): Promise<WatchlistItem[]> {
   if (!items.length) return [];
-  await ensureMappingLayer();
 
   const resolved: WatchlistItem[] = [];
   for (const { from, ...item } of items) {
@@ -76,6 +60,9 @@ export async function resolveDiscoverItems(
           ? {
               tmdbId: confirmed.tmdbId,
               ...(confirmed.tmdbId ? { id: confirmed.tmdbId } : {}),
+              ...(confirmed.mediaType
+                ? { mediaType: confirmed.mediaType }
+                : {}),
             }
           : {}),
         mappingState: confirmed?.mappingState ?? { state: 'mapped' },
@@ -87,73 +74,39 @@ export async function resolveDiscoverItems(
       continue;
     }
 
-    // Without a declared media type both TMDB namespaces are legitimate
-    // questions; asking both is what recovers a unified list's shows.
-    const targets: Namespace[] = item.mediaType
-      ? [tmdbNamespace(item.mediaType)]
-      : ['tmdb_movie', 'tmdb_show'];
-
-    let tmdbId: number | undefined;
-    let mediaType = item.mediaType;
-    let info: DiscoverMappingInfo = {
-      state: 'unmapped',
-      namespace: from.ns,
-      externalId: String(from.id),
-    };
-
-    for (const target of targets) {
-      try {
-        const resolution = await mappingService.resolve(from, target, {
-          discoverSource: options.discoverSource,
-          offline: options.offline,
-          title: item.title,
-          mediaType: target === 'tmdb_movie' ? 'movie' : 'tv',
-        });
-        const candidate = Number(resolution.target?.id);
-        if (
-          candidate > 0 &&
-          (await confirmTmdbId(
-            target === 'tmdb_movie' ? 'movie' : 'tv',
-            candidate,
-            options.tmdb
-          ))
-        ) {
-          tmdbId = candidate;
-          mediaType = target === 'tmdb_movie' ? 'movie' : 'tv';
-          info = {
-            state: 'mapped',
-            sourceKey: resolution.sourceKey,
-            confidence: resolution.confidence,
-            namespace: from.ns,
-            externalId: String(from.id),
-          };
-          break;
-        }
-        if (resolution.ambiguous) {
-          info = {
-            ...info,
-            state: 'ambiguous',
-            sourceKey: resolution.sourceKey,
-          };
-        }
-      } catch (error) {
-        logger.debug('Discover mapping lookup failed', {
-          label: 'Mapping',
-          discoverSource: options.discoverSource,
-          errorMessage: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    resolved.push({
-      ...item,
-      ...(tmdbId ? { tmdbId, id: tmdbId } : {}),
-      ...(mediaType ? { mediaType } : {}),
-      mappingState: {
-        ...info,
-        state: stateFor(Boolean(tmdbId), info.state === 'ambiguous'),
-      },
+    // Without a declared media type the answer settles it: a unified list's
+    // shows are recovered by letting the resolver try both.
+    const resolution = await resolveTmdb({
+      refs: [from],
+      mediaType: item.mediaType,
+      title: item.title,
+      discoverSource: options.discoverSource,
+      offline: options.offline,
+      tmdb: options.tmdb,
     });
+    const source = { namespace: from.ns, externalId: String(from.id) };
+    if (
+      resolution &&
+      (await confirmTmdbId(
+        resolution.mediaType,
+        resolution.tmdbId,
+        options.tmdb
+      ))
+    ) {
+      resolved.push({
+        ...item,
+        tmdbId: resolution.tmdbId,
+        id: resolution.tmdbId,
+        mediaType: resolution.mediaType,
+        mappingState: {
+          state: 'mapped',
+          sourceKey: resolution.origin,
+          ...source,
+        },
+      });
+      continue;
+    }
+    resolved.push({ ...item, mappingState: { state: 'unmapped', ...source } });
   }
 
   return Promise.all(

@@ -105,13 +105,12 @@ export function watchedEpisodesFromProgress(
   seasonEpisodeCount: number,
   episodeOffset = 0
 ): number[] {
-  const start = Math.max(0, episodeOffset);
-  const count = Math.min(
-    Math.max(0, progress),
-    Math.max(0, seasonEpisodeCount - start)
-  );
-  if (count < 1) {
+  // Season episode N is the entry's episode N - offset. A negative offset is
+  // an entry carrying on from the previous season.
+  const first = Math.max(1, episodeOffset + 1);
+  const last = Math.min(seasonEpisodeCount, progress + episodeOffset);
+  if (last < first) {
     return [];
   }
-  return Array.from({ length: count }, (_, index) => start + index + 1);
+  return Array.from({ length: last - first + 1 }, (_, index) => first + index);
 }

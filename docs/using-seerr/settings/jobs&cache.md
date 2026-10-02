@@ -8,7 +8,7 @@ sidebar_position: 6
 
 Foreseerr performs certain maintenance tasks as regularly-scheduled jobs, but they can also be manually triggered on this page. Manually running a job does not change its schedule.
 
-Jobs include media-server library scans, Radarr/Sonarr scans, availability and download sync, image-cache cleanup, blocklisted-tag processing, **Mapping Pack Refresh**, and **Mapping Gap Backfill**. Mapping job details are in [Mapping packs](../advanced/mapping-packs.md#jobs).
+Jobs include media-server library scans, Radarr/Sonarr scans, availability and download sync, image-cache cleanup, blocklisted-tag processing, and **Mapping Dataset Refresh**. Mapping job details are in [Mapping datasets](../advanced/mapping-packs.md#jobs).
 
 Foreseerr also caches requests to external API endpoints to optimize performance and avoid making unnecessary API calls. If necessary, the cache for any particular endpoint can be cleared by clicking the "Flush Cache" button.
 

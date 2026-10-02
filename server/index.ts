@@ -28,6 +28,7 @@ import {
   loadJellyfinHostBootstrap,
 } from '@server/lib/jellyfinHostBootstrap';
 import { jsonSafeClone } from '@server/lib/jsonSafe';
+import { ensureMappingLayer } from '@server/lib/mapping/datasets';
 import notificationManager from '@server/lib/notifications';
 import DiscordAgent from '@server/lib/notifications/agents/discord';
 import EmailAgent from '@server/lib/notifications/agents/email';
@@ -358,6 +359,15 @@ const startForeseerrInternal = async (
   // server while the login page is still loading.
   if (totalUsers > 0 && !desktopRuntime) {
     startJobs();
+    // Download any mapping dataset that was never loaded (first start, or one
+    // just enabled) in the background, rather than waiting for the first
+    // Discover page to ask for it.
+    void ensureMappingLayer().catch((error) =>
+      logger.error('Unable to start loading the mapping datasets', {
+        label: 'Mapping',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+    );
     // The desktop host sends its first runtime-state message only after CEF
     // is ready. That event starts the 30-second managed catch-up delay.
   } else {

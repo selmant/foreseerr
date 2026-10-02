@@ -1,8 +1,10 @@
-import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
-import { findRulesByTarget } from '@server/lib/mapping/episodes';
-import { findClusterIds, findLinks } from '@server/lib/mapping/graph';
-import mappingService from '@server/lib/mapping/service';
-import type { IdRef } from '@server/lib/mapping/types';
+import { ensureMappingLayer } from '@server/lib/mapping/datasets';
+import { edgesFor, targetsIn } from '@server/lib/mapping/edges';
+import {
+  applyEpisodeRule,
+  findEpisodeRules,
+} from '@server/lib/mapping/episodes';
+import { resolveTmdb } from '@server/lib/mapping/resolve';
 
 export interface AnidbItem {
   tvdbId?: number;
@@ -12,12 +14,7 @@ export interface AnidbItem {
 }
 
 /**
- * Anime-Lists lookups, served from the mapping graph.
- *
- * The bespoke downloader, XML parser, and two in-process indexes this file used
- * to own are gone: Anime-Lists is now one declarative pack (opt-in, since it
- * carries no licence), and its season-0 film mappings are episode rules like any
- * other source's.
+ * AniDB lookups for the library scanners, served from the mapping datasets.
  */
 class AnimeListMapping {
   public isLoaded = (): boolean => true;
@@ -29,24 +26,21 @@ class AnimeListMapping {
   public getFromAnidbId = async (
     anidbId: number
   ): Promise<AnidbItem | undefined> => {
-    const from: IdRef = { ns: 'anidb', id: String(anidbId) };
-    const clusterIds = await findClusterIds(from);
-    if (!clusterIds.length) return undefined;
+    await ensureMappingLayer();
+    const edges = await edgesFor({ ns: 'anidb', id: String(anidbId) });
+    if (!edges.length) return undefined;
 
-    const [tvdbLinks, showLinks, movieLinks, imdbLinks] = await Promise.all([
-      findLinks(clusterIds, 'tvdb_show'),
-      findLinks(clusterIds, 'tmdb_show'),
-      findLinks(clusterIds, 'tmdb_movie'),
-      findLinks(clusterIds, 'imdb'),
-    ]);
-
-    const tvdb = tvdbLinks[0];
-    const tmdb = showLinks[0] ?? movieLinks[0];
+    const [tvdb] = targetsIn(edges, 'tvdb_show');
+    const [tmdb] = [
+      ...targetsIn(edges, 'tmdb_show'),
+      ...targetsIn(edges, 'tmdb_movie'),
+    ];
+    const [imdb] = targetsIn(edges, 'imdb');
     const item: AnidbItem = {
-      ...(tvdb ? { tvdbId: Number(tvdb.externalId) } : {}),
+      ...(tvdb ? { tvdbId: Number(tvdb.id) } : {}),
       ...(tvdb?.season === undefined ? {} : { tvdbSeason: tvdb.season }),
-      ...(tmdb ? { tmdbId: Number(tmdb.externalId) } : {}),
-      ...(imdbLinks[0] ? { imdbId: imdbLinks[0].externalId } : {}),
+      ...(tmdb ? { tmdbId: Number(tmdb.id) } : {}),
+      ...(imdb ? { imdbId: imdb.id } : {}),
     };
     return Object.keys(item).length ? item : undefined;
   };
@@ -54,36 +48,35 @@ class AnimeListMapping {
   /**
    * What a TVDB "specials" episode actually is.
    *
-   * Anime-Lists parks films at season 0 of the parent series, so a Plex specials
-   * episode frequently denotes a movie with its own TMDB entry.
+   * Anime films are routinely parked at season 0 of the parent series, so a
+   * Plex specials episode frequently denotes a movie with its own TMDB entry.
    */
   public getSpecialEpisode = async (
     tvdbId: number,
     episode: number
   ): Promise<AnidbItem | undefined> => {
-    const rules = await findRulesByTarget(
-      { ns: 'tvdb_show', id: String(tvdbId), season: 0 },
-      episode
-    );
-    for (const rule of rules) {
-      if (rule.source.ns === 'tmdb_movie') {
-        return { tmdbId: Number(rule.source.id) };
-      }
-      if (rule.source.ns === 'imdb') {
-        const resolution = await mappingService.resolve(
-          { ns: 'imdb', id: rule.source.id },
-          'tmdb_movie',
-          { silent: true, offline: true }
-        );
-        return {
-          imdbId: rule.source.id,
-          ...(resolution.target?.id
-            ? { tmdbId: Number(resolution.target.id) }
-            : {}),
-        };
-      }
-    }
-    return undefined;
+    await ensureMappingLayer();
+    const from = { ns: 'tvdb_show' as const, id: String(tvdbId), season: 0 };
+    const covers = (
+      rules: Awaited<ReturnType<typeof findEpisodeRules>>
+    ): string | undefined =>
+      rules.find((rule) => applyEpisodeRule(rule, episode) !== undefined)
+        ?.target.id;
+
+    const movie = covers(await findEpisodeRules(from, 'tmdb_movie'));
+    if (movie) return { tmdbId: Number(movie) };
+
+    const imdbId = covers(await findEpisodeRules(from, 'imdb'));
+    if (!imdbId) return undefined;
+    const resolution = await resolveTmdb({
+      refs: [{ ns: 'imdb', id: imdbId }],
+      mediaType: 'movie',
+      offline: true,
+    });
+    return {
+      imdbId,
+      ...(resolution ? { tmdbId: resolution.tmdbId } : {}),
+    };
   };
 }
 

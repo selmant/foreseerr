@@ -1,11 +1,11 @@
 ---
-# Daily homelab mirror of the mapping packs.
+# Daily homelab mirror of the mapping datasets.
 #
 # Upstream packs are served from GitHub raw and jsDelivr. Both have failed
 # mid-day, and a pack that cannot be fetched leaves anime mapping stale until
 # the next refresh window. This job copies each pack into Garage so every
 # manifest entry has a third mirror we control.
-name: Mirror mapping packs
+name: Mirror mapping datasets
 
 on:
   schedule:

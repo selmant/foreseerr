@@ -29,10 +29,9 @@ export type DiscoverMappingState =
 
 export interface DiscoverMappingInfo {
   state: DiscoverMappingState;
-  /** Resolver that produced the id, e.g. `graph`, `anibridge`, `tmdb-find`. */
+  /** Step that produced the id: `manual`, `dataset`, `tmdb-find`, `title`, `prequel`. */
   sourceKey?: string;
-  confidence?: number;
-  /** Namespace and id the tile was resolved *from*, for the repair queue. */
+  /** Namespace and id the tile was resolved *from*, for corrections. */
   namespace?: string;
   externalId?: string;
 }

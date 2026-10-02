@@ -11,12 +11,10 @@ import type {
 import anilistIdMapping from '@server/lib/anilist/mapping';
 import { discoverSliderEndpoint } from '@server/lib/discover/sliderEndpoint';
 import { resetTmdbValidityCache } from '@server/lib/discover/validity';
-import { clearNegativeCache, resetBudgets } from '@server/lib/mapping/budget';
-import mappingService from '@server/lib/mapping/service';
-import type { IdRef, Namespace } from '@server/lib/mapping/types';
 import { getSettings } from '@server/lib/settings';
 import discoverRoutes from '@server/routes/discover';
 import { setupTestDb } from '@server/test/db';
+import { edge, seedEdges } from '@server/test/mapping';
 import express from 'express';
 import * as OpenApiValidator from 'express-openapi-validator';
 import assert from 'node:assert/strict';
@@ -70,12 +68,9 @@ const ALIVE: Record<string, Record<string, unknown>> = {
   },
 };
 
-/** What the mapping layer answers when asked to repair or resolve a ref. */
-const RESOLVES: Record<string, string> = {
-  // AniList 2's pack id (tv:999001) is dead; its AniList id resolves elsewhere.
-  'anilist:2>tmdb_show': '888002',
-  // Trakt's dead alternate-cut id, recovered through IMDB.
-  'imdb:tt0000003>tmdb_movie': '777003',
+/** TMDB `/find` answers: Trakt's dead alternate-cut id, recovered through IMDB. */
+const FIND: Record<string, { movie_results: { id: number }[] }> = {
+  tt0000003: { movie_results: [{ id: 777003 }] },
 };
 
 const http404 = () =>
@@ -103,22 +98,8 @@ app.use(
 );
 
 const mocks: { mock: { restore: () => void } }[] = [];
-let originalResolve: typeof mappingService.resolve;
 
 before(() => {
-  originalResolve = mappingService.resolve.bind(mappingService);
-  mappingService.resolve = (async (from: IdRef, to: Namespace) => {
-    const id = RESOLVES[`${from.ns}:${from.id}>${to}`];
-    return {
-      ...(id ? { target: { ns: to, id } } : {}),
-      confidence: id ? 90 : 0,
-      sourceKey: id ? 'graph' : 'none',
-      candidates: [],
-      ambiguous: false,
-      layer: id ? 'graph' : 'none',
-    };
-  }) as typeof mappingService.resolve;
-
   mocks.push(
     mock.method(anilistIdMapping, 'sync', async () => undefined),
     mock.method(
@@ -191,11 +172,13 @@ before(() => {
 });
 
 after(() => {
-  mappingService.resolve = originalResolve;
   for (const entry of mocks) entry.mock.restore();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // AniList 2's first answer (tv:999001) is dead; the dataset knows better.
+  await seedEdges(edge('anilist:2', 'tmdb_show:888002:s1'));
+
   // Set per test: the test setup resets settings between tests.
   const settings = getSettings();
   settings.anilist = {
@@ -206,8 +189,6 @@ beforeEach(() => {
   settings.trakt = { clientId: 'trakt-client', clientSecret: 'trakt-secret' };
   settings.simkl = { ...settings.simkl, clientId: 'simkl-client' };
 
-  resetBudgets();
-  clearNegativeCache();
   resetTmdbValidityCache();
   Object.defineProperty(TheMovieDb.prototype, 'get', {
     configurable: true,
@@ -219,7 +200,11 @@ beforeEach(() => {
         return record;
       }
       if (endpoint.startsWith('/find/')) {
-        return { movie_results: [], tv_results: [] };
+        return {
+          movie_results: [],
+          tv_results: [],
+          ...FIND[endpoint.slice('/find/'.length)],
+        };
       }
       throw new Error(`Unexpected TMDB endpoint ${endpoint}`);
     },

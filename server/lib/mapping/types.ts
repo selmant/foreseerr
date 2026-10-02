@@ -1,10 +1,13 @@
 /**
- * Identity namespaces for the mapping graph.
+ * Id namespaces the mapping layer speaks.
  *
  * `tmdb_movie` and `tmdb_show` are separate namespaces on purpose: the same
  * integer is a valid id in both catalogues for two unrelated titles 63% of the
  * time (sampled 2026-08-28), so media type is part of an id's identity and can
  * never be inferred from an endpoint returning 200.
+ *
+ * `simkl` and `trakt` only ever identify an item in the unmapped list and in
+ * manual corrections; no dataset is keyed by them.
  */
 export const NAMESPACES = [
   'tmdb_movie',
@@ -15,12 +18,8 @@ export const NAMESPACES = [
   'anidb',
   'anilist',
   'mal',
-  'kitsu',
   'simkl',
   'trakt',
-  'livechart',
-  'animeplanet',
-  'anisearch',
 ] as const;
 
 export type Namespace = (typeof NAMESPACES)[number];
@@ -29,92 +28,39 @@ export const isNamespace = (value: unknown): value is Namespace =>
   typeof value === 'string' &&
   (NAMESPACES as readonly string[]).includes(value);
 
-export type ClusterKind = 'series' | 'movie';
+export type MediaType = 'movie' | 'tv';
 
 export interface IdRef {
   ns: Namespace;
   id: string;
   season?: number;
-  episode?: number;
 }
 
-export interface MappingCandidate {
-  target: IdRef;
-  confidence: number;
-  sourceKey: string;
-  /** Intermediate hops taken to reach the target, for provenance display. */
-  via?: IdRef[];
-}
+/** Where an answer came from, in resolution order. */
+export type MappingOrigin =
+  | 'manual'
+  | 'dataset'
+  | 'tmdb-find'
+  | 'title'
+  | 'prequel';
 
-export type ResolverKind = 'override' | 'graph' | 'pack' | 'live' | 'heuristic';
+export const tmdbNamespace = (mediaType: MediaType): Namespace =>
+  mediaType === 'movie' ? 'tmdb_movie' : 'tmdb_show';
 
-/**
- * Descriptive hints carried alongside an id. Only the heuristic layer may act
- * on them; id-based resolvers must ignore them so a wrong title can never
- * change a corroborated answer.
- */
-export interface ResolverContext {
-  title?: string;
-  year?: number;
-  mediaType?: 'movie' | 'tv';
-  episodeCount?: number;
-  discoverSource?: string;
-}
-
-export interface MappingResolver {
-  key: string;
-  kind: ResolverKind;
-  trust: number;
-  supports(from: IdRef, to: Namespace): boolean;
-  resolve(
-    from: IdRef,
-    to: Namespace,
-    context?: ResolverContext
-  ): Promise<MappingCandidate[]>;
-}
-
-export const TMDB_NAMESPACES = {
-  movie: 'tmdb_movie',
-  tv: 'tmdb_show',
-} as const satisfies Record<'movie' | 'tv', Namespace>;
-
-export const tmdbNamespace = (mediaType: 'movie' | 'tv'): Namespace =>
-  TMDB_NAMESPACES[mediaType];
-
-export const tmdbMediaType = (ns: Namespace): 'movie' | 'tv' | undefined => {
+export const tmdbMediaType = (ns: string): MediaType | undefined => {
   if (ns === 'tmdb_movie') return 'movie';
   if (ns === 'tmdb_show') return 'tv';
   return undefined;
 };
 
-/**
- * Sentinel for "not season-scoped". Stored instead of NULL so unique indexes
- * collapse duplicates: Postgres treats NULLs in a unique index as distinct.
- */
-export const NO_SEASON = -1;
-
-export const seasonColumn = (season?: number | null): number =>
-  typeof season === 'number' && Number.isInteger(season) && season >= 0
-    ? season
-    : NO_SEASON;
-
-export const seasonValue = (column: number): number | undefined =>
-  column === NO_SEASON ? undefined : column;
-
 export const refKey = (ref: IdRef): string =>
   `${ref.ns}:${ref.id}${ref.season === undefined ? '' : `:s${ref.season}`}`;
 
-/**
- * Identity of the work, ignoring season. Season-scoped anibridge edges for the
- * same show (`tmdb_show:82684:s1` … `:s4`) must not count as four disagreeing
- * answers when a discover tile asks "which show is this".
- */
-export const workKey = (ref: IdRef): string => `${ref.ns}:${ref.id}`;
+/** Edge scope for a season: datasets write `s1`, `s0`. */
+export const seasonScope = (season: number): string => `s${season}`;
 
-export const clusterKindForNamespace = (
-  ns: Namespace
-): ClusterKind | undefined => {
-  if (ns === 'tmdb_movie' || ns === 'tvdb_movie') return 'movie';
-  if (ns === 'tmdb_show' || ns === 'tvdb_show') return 'series';
-  return undefined;
+/** The season a scope names, or undefined for an unscoped or AniDB scope. */
+export const scopeSeason = (scope: string): number | undefined => {
+  const match = scope.match(/^s(\d+)$/);
+  return match ? Number(match[1]) : undefined;
 };

@@ -50,9 +50,9 @@ const messages = defineMessages('components.Settings.SettingsAnilist', {
   disconnectConfirmDescription:
     'Replacing these credentials will disconnect {count, plural, one {# linked AniList account} other {# linked AniList accounts}}. Those users must authorize the application again.',
   confirmReplace: 'Replace credentials',
-  mappingPacksMissing: 'Anime mapping packs are not installed',
+  mappingPacksMissing: 'Anime mapping data is not loaded',
   mappingPacksMissingTip:
-    'Foreseerr does not download the packs that match anime to TMDB on its own, because installing one slows it down for a few minutes. Until you enable them in <MappingLink>Mapping settings</MappingLink>, some anime may not show up or be requestable.',
+    'Foreseerr matches anime to TMDB with datasets it downloads on its own, and none is loaded yet. Until one is, some anime may not show up or be requestable. Check <MappingLink>Mapping settings</MappingLink>.',
 });
 
 interface AnilistSettingsResponse {
@@ -79,14 +79,13 @@ const SettingsAnilist = ({ onSave }: SettingsAnilistProps) => {
   const { data, error, mutate } = useSWR<AnilistSettingsResponse>(
     '/api/v1/settings/anilist'
   );
-  const { data: mappingSources } = useSWR<{
-    results: { kind: string; enabled: boolean; entryCount: number | null }[];
-  }>('/api/v1/settings/mapping/sources');
+  const { data: mappingStatus } = useSWR<{
+    datasets: { enabled: boolean; edgeCount: number | null }[];
+  }>('/api/v1/settings/mapping/status');
   const mappingPacksMissing =
-    !!mappingSources &&
-    !mappingSources.results.some(
-      (source) =>
-        source.kind === 'pack' && source.enabled && !!source.entryCount
+    !!mappingStatus &&
+    !mappingStatus.datasets.some(
+      (dataset) => dataset.enabled && !!dataset.edgeCount
     );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<AnilistFormValues | null>(

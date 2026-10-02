@@ -1,17 +1,13 @@
-import TheMovieDb from '@server/api/themoviedb';
-import { getRepository } from '@server/datasource';
-import { MappingCluster } from '@server/entity/MappingCluster';
-import { MappingGap } from '@server/entity/MappingGap';
-import { MappingLink } from '@server/entity/MappingLink';
-import { MappingOverride } from '@server/entity/MappingOverride';
-import { clearNegativeCache } from '@server/lib/mapping/budget';
-import { flushMappingGaps } from '@server/lib/mapping/gaps';
-import { upsertCluster } from '@server/lib/mapping/graph';
-import mappingService from '@server/lib/mapping/service';
+import type TheMovieDb from '@server/api/themoviedb';
+import {
+  flushMisses,
+  listResolutions,
+  saveManual,
+} from '@server/lib/mapping/resolutions';
 import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, describe, it } from 'node:test';
-import { confirmOrRepair, resetTmdbValidityCache } from './validity';
+import { describe, it } from 'node:test';
+import { confirmOrRepair } from './validity';
 
 setupTestDb();
 
@@ -28,48 +24,30 @@ const http404 = () =>
     response: { status: 404 },
   });
 
-const fakeTmdb = (alive: (key: string) => boolean = (key) => !DEAD.has(key)) =>
+/** `find` answers TMDB's `/find` by external id. */
+const fakeTmdb = (
+  find: Record<string, { movie?: number[]; tv?: number[] }> = {}
+) =>
   ({
     getMovie: async ({ movieId }: { movieId: number }) => {
-      if (!alive(`movie:${movieId}`)) throw http404();
+      if (DEAD.has(`movie:${movieId}`)) throw http404();
       return { id: movieId };
     },
     getTvShow: async ({ tvId }: { tvId: number }) => {
-      if (!alive(`tv:${tvId}`)) throw http404();
+      if (DEAD.has(`tv:${tvId}`)) throw http404();
       return { id: tvId };
     },
+    getByExternalId: async ({
+      externalId,
+    }: {
+      externalId: string | number;
+    }) => ({
+      movie_results: (find[String(externalId)]?.movie ?? []).map((id) => ({
+        id,
+      })),
+      tv_results: (find[String(externalId)]?.tv ?? []).map((id) => ({ id })),
+    }),
   }) as unknown as TheMovieDb;
-
-afterEach(() => {
-  delete (TheMovieDb.prototype as { get?: unknown }).get;
-});
-
-beforeEach(async () => {
-  Object.defineProperty(TheMovieDb.prototype, 'get', {
-    configurable: true,
-    value: async (endpoint: string) => {
-      if (endpoint.startsWith('/find/') || endpoint.startsWith('/movie/')) {
-        return { movie_results: [], tv_results: [], id: 0 };
-      }
-      if (endpoint.startsWith('/tv/')) {
-        return { id: 0, seasons: [], external_ids: {} };
-      }
-      throw new Error(`Unexpected TMDB endpoint ${endpoint}`);
-    },
-  });
-  resetTmdbValidityCache();
-  clearNegativeCache();
-  mappingService.invalidate();
-  await flushMappingGaps();
-  for (const entity of [
-    MappingLink,
-    MappingCluster,
-    MappingOverride,
-    MappingGap,
-  ]) {
-    await getRepository(entity).clear();
-  }
-});
 
 describe('phantom TMDB ids', () => {
   it('leaves a live id untouched', async () => {
@@ -83,15 +61,6 @@ describe('phantom TMDB ids', () => {
   it('falls back from a dead alternate-cut id to the base film', async () => {
     // Trakt keeps a Black & Chrome record whose own TMDB id TMDB deleted; the
     // same record's IMDB id still points at the film.
-    await upsertCluster([
-      { ref: { ns: 'imdb', id: 'tt1392190' }, confidence: 90, sourceKey: 'x' },
-      {
-        ref: { ns: 'tmdb_movie', id: '76341' },
-        confidence: 90,
-        sourceKey: 'x',
-      },
-    ]);
-
     const confirmed = await confirmOrRepair(
       {
         tmdbId: 434021,
@@ -99,19 +68,29 @@ describe('phantom TMDB ids', () => {
         title: 'Mad Max: Fury Road - Black & Chrome Edition',
         refs: [{ ns: 'imdb', id: 'tt1392190' }],
       },
-      { discoverSource: 'trakt', tmdb: fakeTmdb() }
+      {
+        discoverSource: 'trakt',
+        tmdb: fakeTmdb({ tt1392190: { movie: [76341] } }),
+      }
     );
+    await flushMisses();
 
     assert.equal(confirmed?.tmdbId, 76341);
-    assert.equal(confirmed?.mappingState.state, 'mapped');
+    assert.deepEqual(confirmed?.mappingState, {
+      state: 'mapped',
+      sourceKey: 'tmdb-find',
+      namespace: 'imdb',
+      externalId: 'tt1392190',
+    });
+    assert.equal(
+      (await listResolutions('unmapped')).total,
+      0,
+      'a repaired item is not unmapped'
+    );
   });
 
-  it('records the dead id it rejected, so the failure is countable', async () => {
-    await upsertCluster([
-      { ref: { ns: 'imdb', id: 'tt0167261' }, confidence: 90, sourceKey: 'x' },
-      { ref: { ns: 'tmdb_movie', id: '121' }, confidence: 90, sourceKey: 'x' },
-    ]);
-
+  it("does not accept the dead id again from another of the item's ids", async () => {
+    // The IMDb id still resolves to the record TMDB deleted.
     const confirmed = await confirmOrRepair(
       {
         tmdbId: 328440,
@@ -119,19 +98,12 @@ describe('phantom TMDB ids', () => {
         title: 'The Lord of the Rings: The Two Towers - Extended',
         refs: [{ ns: 'imdb', id: 'tt0167261' }],
       },
-      { discoverSource: 'trakt-list', tmdb: fakeTmdb() }
+      { tmdb: fakeTmdb({ tt0167261: { movie: [328440] } }) }
     );
-    await flushMappingGaps();
-
-    assert.equal(confirmed?.tmdbId, 121);
-    const gap = await getRepository(MappingGap).findOne({
-      where: { externalId: 'tt0167261' },
-    });
-    assert.equal(gap?.reason, 'phantom');
-    assert.equal(gap?.rejectedTarget, 'tmdb_movie:328440');
+    assert.equal(confirmed?.tmdbId, undefined);
   });
 
-  it('drops a dead id that cannot be repaired instead of rendering it', async () => {
+  it('drops a dead id that cannot be repaired and counts it as unmapped', async () => {
     // Song of the Samurai: Trakt models one show, TMDB split it into 302162 and
     // 320340, so there is no single right answer to substitute.
     const confirmed = await confirmOrRepair(
@@ -139,124 +111,94 @@ describe('phantom TMDB ids', () => {
         tmdbId: 327100,
         mediaType: 'tv',
         title: 'Song of the Samurai',
-        refs: [{ ns: 'trakt', id: 'song-of-the-samurai' }],
+        refs: [{ ns: 'tvdb_show', id: '444' }],
       },
-      { discoverSource: 'trakt-list', tmdb: fakeTmdb() }
+      {
+        discoverSource: 'trakt-list',
+        namespace: { ns: 'trakt', id: 'song-of-the-samurai' },
+        tmdb: fakeTmdb({ '444': { tv: [302162, 320340] } }),
+      }
     );
-    await flushMappingGaps();
+    await flushMisses();
 
     assert.equal(confirmed?.tmdbId, undefined);
     assert.equal(confirmed?.mappingState.state, 'unmapped');
-    const gap = await getRepository(MappingGap).findOne({
-      where: { externalId: 'song-of-the-samurai' },
-    });
-    assert.equal(gap?.rejectedTarget, 'tmdb_show:327100');
+    const { results } = await listResolutions('unmapped');
+    const sighting = results.find((row) => row.srcNs === 'trakt');
+    assert.equal(sighting?.srcId, 'song-of-the-samurai');
+    assert.equal(sighting?.detail, 'TMDB tv 327100 no longer exists');
+    assert.equal(sighting?.discoverSource, 'trakt-list');
   });
 
-  it('reports a cour split as an ambiguity rather than picking one', async () => {
-    // Both per-cour series are legitimate answers for the one Trakt record.
-    await upsertCluster([
-      {
-        ref: { ns: 'trakt', id: 'song-of-the-samurai' },
-        confidence: 80,
-        sourceKey: 'a',
-      },
-      {
-        ref: { ns: 'tmdb_show', id: '302162' },
-        confidence: 80,
-        sourceKey: 'a',
-      },
-    ]);
-    await upsertCluster([
-      {
-        ref: { ns: 'trakt', id: 'song-of-the-samurai' },
-        confidence: 80,
-        sourceKey: 'b',
-      },
-      {
-        ref: { ns: 'tmdb_show', id: '320340' },
-        confidence: 80,
-        sourceKey: 'b',
-      },
-    ]);
-
-    const confirmed = await confirmOrRepair(
+  it('files a failed repair once, under the item and not under each of its ids', async () => {
+    await confirmOrRepair(
       {
         tmdbId: 327100,
         mediaType: 'tv',
         title: 'Song of the Samurai',
-        refs: [{ ns: 'trakt', id: 'song-of-the-samurai' }],
+        refs: [
+          { ns: 'imdb', id: 'tt9' },
+          { ns: 'tvdb_show', id: '444' },
+        ],
       },
-      { discoverSource: 'trakt-list', tmdb: fakeTmdb() }
+      {
+        namespace: { ns: 'trakt', id: 'song-of-the-samurai' },
+        tmdb: fakeTmdb(),
+      }
     );
-
-    assert.equal(confirmed?.tmdbId, undefined);
-    assert.equal(
-      confirmed?.mappingState.state,
-      'ambiguous',
-      'two per-cour series are a question, not a coin toss'
+    await flushMisses();
+    const { results } = await listResolutions('unmapped');
+    assert.deepEqual(
+      results.map((row) => `${row.srcNs}:${row.srcId}`),
+      ['trakt:song-of-the-samurai']
     );
   });
 
-  it('flags a live id whose title and year both disagree, without hiding it', async () => {
-    // The 63% collision class: the id resolves, so the card renders, and today
-    // nothing compares the Simkl title with the film TMDB actually returns.
-    const wrongFilm = {
-      getMovie: async () => ({
-        id: 313599,
-        title: 'Artistenblut',
-        original_title: 'Artistenblut',
-        release_date: '1949-01-01',
-      }),
-    } as unknown as TheMovieDb;
-
-    const confirmed = await confirmOrRepair(
-      {
-        tmdbId: 313599,
-        mediaType: 'movie',
-        title: 'Attack on Titan Final Season',
-        year: 2023,
-        refs: [{ ns: 'simkl', id: '1234' }],
-      },
-      { discoverSource: 'simkl-best-anime', tmdb: wrongFilm }
-    );
-    await flushMappingGaps();
-
-    assert.equal(confirmed, undefined, 'a live id is still rendered');
-    const gap = await getRepository(MappingGap).findOne({
-      where: { externalId: '1234' },
+  it('lets a correction replace a dead id the source supplied', async () => {
+    await saveManual({
+      ref: { ns: 'trakt', id: 'song-of-the-samurai' },
+      tmdbId: 302162,
+      tmdbType: 'tv',
     });
-    assert.equal(gap?.sourceKey, 'title-divergence');
-    assert.equal(gap?.rejectedTarget, 'tmdb_movie:313599');
+    const confirmed = await confirmOrRepair(
+      { tmdbId: 327100, mediaType: 'tv', refs: [{ ns: 'imdb', id: 'tt9' }] },
+      {
+        namespace: { ns: 'trakt', id: 'song-of-the-samurai' },
+        tmdb: fakeTmdb(),
+      }
+    );
+    assert.equal(confirmed?.tmdbId, 302162);
+    assert.equal(confirmed?.mappingState.sourceKey, 'manual');
   });
 
-  it('does not flag romaji against English when the years agree', async () => {
-    // `Kimi no Na wa.` is *Your Name.* — the trap that forced two reverts.
-    const yourName = {
-      getMovie: async () => ({
-        id: 372058,
-        title: 'Your Name.',
-        original_title: '君の名は。',
-        release_date: '2016-08-26',
-      }),
-    } as unknown as TheMovieDb;
-
-    await confirmOrRepair(
-      {
-        tmdbId: 372058,
-        mediaType: 'movie',
-        title: 'Kimi no Na wa.',
-        year: 2016,
-        refs: [{ ns: 'anilist', id: '21519' }],
-      },
-      { discoverSource: 'anilist-trending', tmdb: yourName }
+  it('lets a correction override a live id, including its type', async () => {
+    await saveManual({
+      ref: { ns: 'anilist', id: '5' },
+      tmdbId: 11299,
+      tmdbType: 'movie',
+    });
+    const confirmed = await confirmOrRepair(
+      { tmdbId: 30991, mediaType: 'tv', refs: [{ ns: 'anilist', id: '5' }] },
+      { tmdb: fakeTmdb() }
     );
-    await flushMappingGaps();
+    assert.deepEqual(
+      [confirmed?.tmdbId, confirmed?.mediaType, confirmed?.mappingState.state],
+      [11299, 'movie', 'mapped']
+    );
+  });
 
+  it('leaves the id alone when the correction agrees with it', async () => {
+    await saveManual({
+      ref: { ns: 'anilist', id: '5' },
+      tmdbId: 30991,
+      tmdbType: 'tv',
+    });
     assert.equal(
-      await getRepository(MappingGap).count(),
-      0,
-      'a localised title is not evidence of a wrong mapping'
+      await confirmOrRepair(
+        { tmdbId: 30991, mediaType: 'tv', refs: [{ ns: 'anilist', id: '5' }] },
+        { tmdb: fakeTmdb() }
+      ),
+      undefined
     );
   });
 

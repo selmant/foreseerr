@@ -1,14 +1,13 @@
-import { getRepository } from '@server/datasource';
-import { MappingGap } from '@server/entity/MappingGap';
-import { MappingOverride } from '@server/entity/MappingOverride';
-import { MappingSource } from '@server/entity/MappingSource';
-import { resetMappingGapBuffer } from '@server/lib/mapping/gaps';
+import { datasetTmdb } from '@server/lib/mapping/edges';
+import { recordMiss } from '@server/lib/mapping/resolutions';
+import { resolveTmdb } from '@server/lib/mapping/resolve';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import { checkUser, isAuthenticated } from '@server/middleware/auth';
 import authRoutes from '@server/routes/auth';
 import settingsRoutes from '@server/routes/settings';
 import { setupTestDb } from '@server/test/db';
+import { edge, seedEdges } from '@server/test/mapping';
 import cookieParser from 'cookie-parser';
 import type { Express } from 'express';
 import express from 'express';
@@ -16,7 +15,7 @@ import * as OpenApiValidator from 'express-openapi-validator';
 import session from 'express-session';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { before, beforeEach, describe, it } from 'node:test';
+import { before, describe, it } from 'node:test';
 import request from 'supertest';
 
 const API_SPEC_PATH = join(__dirname, '../../../seerr-api.yml');
@@ -83,257 +82,308 @@ async function loginAsAdmin() {
   return agent;
 }
 
-const seedGap = async (overrides: Partial<MappingGap> = {}) => {
-  const now = new Date();
-  const { identifiers } = await getRepository(MappingGap).insert({
-    namespace: 'simkl',
-    externalId: '2419656',
-    season: -1,
-    title: 'Ore dake Level Up na Ken',
-    mediaType: 'tv',
-    discoverSource: 'simkl/trending/anime',
-    reason: 'ambiguous',
-    status: 'open',
-    hitCount: 7,
-    firstSeenAt: now,
-    lastSeenAt: now,
-    ...overrides,
-  });
-  return identifiers[0].id as number;
+const sighting = (id: string, title: string, times: number) => {
+  for (let i = 0; i < times; i++) {
+    recordMiss({
+      ref: { ns: 'simkl', id },
+      mediaType: 'tv',
+      title,
+      discoverSource: 'simkl/trending/anime',
+    });
+  }
 };
 
-beforeEach(async () => {
-  resetMappingGapBuffer();
-  await getRepository(MappingGap).clear();
-  await getRepository(MappingOverride).clear();
-});
-
 describe('mapping settings API', () => {
-  it('reports health in the documented shape', async () => {
+  it('reports datasets and counts in the documented shape', async () => {
     const agent = await loginAsAdmin();
-    await seedGap();
+    sighting('2419656', 'Ore dake Level Up na Ken', 7);
+    await seedEdges(edge('anilist:1', 'tmdb_show:10:s1'));
 
-    const res = await agent.get('/api/v1/settings/mapping/health');
-
+    const res = await agent.get('/api/v1/settings/mapping/status');
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.equal(res.body.gaps.openGaps, 1);
-    assert.equal(res.body.gaps.totalHits, 7);
-    assert.ok(Array.isArray(res.body.budgets));
-    assert.ok(
-      res.body.budgets.some((row: { key: string }) => row.key === 'tmdb-find')
+    assert.deepEqual(res.body.counts, { unmapped: 1, manual: 0, guessed: 0 });
+    assert.deepEqual(
+      res.body.datasets.map(
+        (dataset: {
+          key: string;
+          enabled: boolean;
+          edgeCount: number | null;
+        }) => [dataset.key, dataset.enabled, dataset.edgeCount]
+      ),
+      [
+        ['anibridge', true, 1],
+        ['fribb', true, null],
+      ]
     );
-    assert.ok(Array.isArray(res.body.usage));
-    assert.ok(Array.isArray(res.body.resolvers));
-    assert.ok(Array.isArray(res.body.refreshes));
+    assert.equal(res.body.datasets[1].licence, 'none');
   });
 
-  it('lists gaps most-seen first', async () => {
+  it('lists unmapped items most-seen first', async () => {
     const agent = await loginAsAdmin();
-    await seedGap({ externalId: '1', hitCount: 2 });
-    await seedGap({ externalId: '2', hitCount: 40 });
+    sighting('1', 'Seen once', 1);
+    sighting('2', 'Seen often', 5);
 
-    const res = await agent.get('/api/v1/settings/mapping/gaps?take=10');
-
+    const res = await agent.get(
+      '/api/v1/settings/mapping/resolutions?list=unmapped'
+    );
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.total, 2);
-    assert.equal(res.body.results[0].externalId, '2');
-  });
-
-  it('stores a correction as an override and closes the gap', async () => {
-    const agent = await loginAsAdmin();
-    const id = await seedGap();
-
-    const res = await agent
-      .post(`/api/v1/settings/mapping/gaps/${id}/resolve`)
-      .send({ toNamespace: 'tmdb_show', toExternalId: '127532' });
-
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    const [override] = await getRepository(MappingOverride).find();
-    assert.equal(override.fromNamespace, 'simkl');
-    assert.equal(override.toExternalId, '127532');
-    const gap = await getRepository(MappingGap).findOneBy({ id });
-    assert.equal(gap?.status, 'resolved');
-  });
-
-  it('records an absence when the target id is left empty', async () => {
-    const agent = await loginAsAdmin();
-    const id = await seedGap();
-
-    const res = await agent
-      .post(`/api/v1/settings/mapping/gaps/${id}/resolve`)
-      .send({ toNamespace: 'tmdb_show', toExternalId: '' });
-
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    const [override] = await getRepository(MappingOverride).find();
-    assert.equal(override.toExternalId, '');
-  });
-
-  it('rejects an unknown namespace instead of storing a broken override', async () => {
-    const agent = await loginAsAdmin();
-    const id = await seedGap();
-
-    const res = await agent
-      .post(`/api/v1/settings/mapping/gaps/${id}/resolve`)
-      .send({ toNamespace: 'nonsense', toExternalId: '1' });
-
-    assert.equal(res.status, 400, JSON.stringify(res.body));
-    assert.equal(await getRepository(MappingOverride).count(), 0);
-  });
-
-  it('creates an override directly from a discover tile', async () => {
-    const agent = await loginAsAdmin();
-
-    const res = await agent.post('/api/v1/settings/mapping/overrides').send({
-      fromNamespace: 'anilist',
-      fromExternalId: '110277',
-      toNamespace: 'tmdb_show',
-      toExternalId: '1429',
-      note: 'checked against the AniList page',
-    });
-
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    const [override] = await getRepository(MappingOverride).find();
-    assert.equal(override.fromExternalId, '110277');
-    assert.equal(override.toExternalId, '1429');
-  });
-
-  it('round-trips an override export through import', async () => {
-    const agent = await loginAsAdmin();
-    await agent.post('/api/v1/settings/mapping/overrides').send({
-      fromNamespace: 'anilist',
-      fromExternalId: '110277',
-      toNamespace: 'tmdb_show',
-      toExternalId: '1429',
-    });
-
-    const exported = await agent.get('/api/v1/settings/mapping/overrides');
-    assert.equal(exported.status, 200, JSON.stringify(exported.body));
-    await getRepository(MappingOverride).clear();
-
-    const imported = await agent
-      .post('/api/v1/settings/mapping/overrides/import')
-      .send({ overrides: exported.body.results });
-
-    assert.equal(imported.status, 200, JSON.stringify(imported.body));
-    assert.equal(imported.body.imported, 1);
-    assert.equal(await getRepository(MappingOverride).count(), 1);
-  });
-
-  it('closes matching open gaps when overrides are imported', async () => {
-    const agent = await loginAsAdmin();
-    const id = await seedGap({
-      namespace: 'anilist',
-      externalId: '110277',
-    });
-
-    const imported = await agent
-      .post('/api/v1/settings/mapping/overrides/import')
-      .send({
-        overrides: [
-          {
-            fromNamespace: 'anilist',
-            fromExternalId: '110277',
-            toNamespace: 'tmdb_show',
-            toExternalId: '1429',
-          },
-        ],
-      });
-
-    assert.equal(imported.status, 200, JSON.stringify(imported.body));
-    assert.equal(imported.body.imported, 1);
-    const gap = await getRepository(MappingGap).findOneBy({ id });
-    assert.equal(gap?.status, 'resolved');
-  });
-
-  it('lists sources together with the manifest entries available to add', async () => {
-    const agent = await loginAsAdmin();
-
-    const res = await agent.get('/api/v1/settings/mapping/sources');
-
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.ok(Array.isArray(res.body.results));
-    assert.ok(
-      res.body.available.some(
-        (pack: { key: string }) => pack.key === 'anibridge'
-      )
+    assert.deepEqual(
+      res.body.results.map((row: { title: string; hitCount: number }) => [
+        row.title,
+        row.hitCount,
+      ]),
+      [
+        ['Seen often', 5],
+        ['Seen once', 1],
+      ]
     );
   });
 
-  it('includes advertised packs without a source row in health', async () => {
+  it('rejects a list it does not know', async () => {
     const agent = await loginAsAdmin();
+    const res = await agent.get(
+      '/api/v1/settings/mapping/resolutions?list=gaps'
+    );
+    assert.equal(res.status, 400);
+  });
 
-    const res = await agent.get('/api/v1/settings/mapping/health');
+  it('stores a correction that the resolver then answers with', async () => {
+    const agent = await loginAsAdmin();
+    sighting('2419656', 'Ore dake Level Up na Ken', 3);
 
+    const res = await agent.post('/api/v1/settings/mapping/corrections').send({
+      srcNs: 'simkl',
+      srcId: '2419656',
+      tmdbId: 127532,
+      tmdbType: 'tv',
+      note: 'Solo Leveling',
+    });
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.ok(Array.isArray(res.body.available));
-    assert.ok(
-      res.body.available.some(
-        (pack: { key: string }) => pack.key === 'anime-lists'
-      )
+
+    assert.deepEqual(
+      await resolveTmdb({
+        refs: [{ ns: 'simkl', id: '2419656' }],
+        mediaType: 'tv',
+      }),
+      { tmdbId: 127532, mediaType: 'tv', origin: 'manual' }
+    );
+    const unmapped = await agent.get(
+      '/api/v1/settings/mapping/resolutions?list=unmapped'
+    );
+    assert.equal(
+      unmapped.body.total,
+      0,
+      'a corrected item is no longer unmapped'
+    );
+    const manual = await agent.get(
+      '/api/v1/settings/mapping/resolutions?list=manual'
+    );
+    assert.equal(manual.body.results[0].detail, 'Solo Leveling');
+  });
+
+  it('records an absence when the TMDB id is left out', async () => {
+    const agent = await loginAsAdmin();
+    await seedEdges(edge('anilist:5', 'tmdb_show:50:s1'));
+
+    const res = await agent
+      .post('/api/v1/settings/mapping/corrections')
+      .send({ srcNs: 'anilist', srcId: '5' });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(
+      await resolveTmdb({
+        refs: [{ ns: 'anilist', id: '5' }],
+        mediaType: 'tv',
+      }),
+      undefined,
+      'the correction wins over the dataset'
     );
   });
 
-  it('creates a MappingSource row so an advertised pack can be enabled', async () => {
+  it('rejects a correction that cannot be stored as written', async () => {
     const agent = await loginAsAdmin();
-
-    const res = await agent
-      .post('/api/v1/settings/mapping/sources/anime-lists')
-      .send({ enabled: true });
-
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.equal(res.body.key, 'anime-lists');
-    assert.equal(res.body.enabled, true);
-    const row = await getRepository(MappingSource).findOneBy({
-      key: 'anime-lists',
-    });
-    assert.equal(row?.enabled, true);
-  });
-
-  it('unregisters a pack when it is disabled', async () => {
-    const agent = await loginAsAdmin();
-    const mappingService = (await import('@server/lib/mapping/service'))
-      .default;
-    mappingService.register({
-      key: 'anime-lists',
-      kind: 'pack',
-      trust: 75,
-      supports: () => true,
-      resolve: async () => [],
-    });
-
-    try {
-      await agent
-        .post('/api/v1/settings/mapping/sources/anime-lists')
-        .send({ enabled: true });
-      const disabled = await agent
-        .post('/api/v1/settings/mapping/sources/anime-lists')
-        .send({ enabled: false });
-
-      assert.equal(disabled.status, 200, JSON.stringify(disabled.body));
-      assert.equal(disabled.body.enabled, false);
-      assert.equal(
-        mappingService
-          .registered()
-          .some((resolver) => resolver.key === 'anime-lists'),
-        false
-      );
-    } finally {
-      mappingService.unregister('anime-lists');
+    for (const body of [
+      { srcNs: 'kitsu', srcId: '1', tmdbId: 1, tmdbType: 'tv' },
+      { srcNs: 'anilist', tmdbId: 1, tmdbType: 'tv' },
+      // An id with no type could land in either TMDB catalogue.
+      { srcNs: 'anilist', srcId: '1', tmdbId: 1 },
+    ]) {
+      const res = await agent
+        .post('/api/v1/settings/mapping/corrections')
+        .send(body);
+      assert.equal(res.status, 400, JSON.stringify(body));
     }
   });
 
-  it('refuses a refresh for a pack that is not in the manifest', async () => {
+  it('rejects an id that is not a positive whole number rather than hiding the title', async () => {
     const agent = await loginAsAdmin();
+    for (const tmdbId of [0, -5, 1.5, '12abc']) {
+      const res = await agent
+        .post('/api/v1/settings/mapping/corrections')
+        .send({ srcNs: 'anilist', srcId: '7', tmdbId, tmdbType: 'tv' });
+      assert.equal(res.status, 400, `tmdbId ${tmdbId}`);
+    }
+    const manual = await agent.get(
+      '/api/v1/settings/mapping/resolutions?list=manual'
+    );
+    assert.equal(manual.body.total, 0);
+  });
 
-    const res = await agent.post(
-      '/api/v1/settings/mapping/sources/not-a-pack/refresh'
+  it('round-trips a "no TMDB entry" correction and its note through export', async () => {
+    const agent = await loginAsAdmin();
+    await agent
+      .post('/api/v1/settings/mapping/corrections')
+      .send({ srcNs: 'anilist', srcId: '9', note: 'music video' });
+    const exported = await agent.get(
+      '/api/v1/settings/mapping/resolutions?list=manual'
+    );
+    await agent.delete(
+      `/api/v1/settings/mapping/resolutions/${exported.body.results[0].id}`
     );
 
-    assert.equal(res.status, 404, JSON.stringify(res.body));
+    const res = await agent
+      .post('/api/v1/settings/mapping/corrections/import')
+      .send({ corrections: exported.body.results });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body, { imported: 1, skipped: 0 });
+    const [row] = (
+      await agent.get('/api/v1/settings/mapping/resolutions?list=manual')
+    ).body.results;
+    assert.deepEqual(
+      [row.srcId, row.tmdbId, row.detail],
+      ['9', null, 'music video']
+    );
+  });
+
+  it('undoes a correction when its row is deleted', async () => {
+    const agent = await loginAsAdmin();
+    await seedEdges(edge('anilist:5', 'tmdb_show:50:s1'));
+    await agent
+      .post('/api/v1/settings/mapping/corrections')
+      .send({ srcNs: 'anilist', srcId: '5', tmdbId: 999, tmdbType: 'tv' });
+    const manual = await agent.get(
+      '/api/v1/settings/mapping/resolutions?list=manual'
+    );
+
+    const res = await agent.delete(
+      `/api/v1/settings/mapping/resolutions/${manual.body.results[0].id}`
+    );
+    assert.equal(res.status, 204);
+    assert.equal(
+      (
+        await resolveTmdb({
+          refs: [{ ns: 'anilist', id: '5' }],
+          mediaType: 'tv',
+        })
+      )?.tmdbId,
+      50
+    );
+  });
+
+  it('round-trips an export through import', async () => {
+    const agent = await loginAsAdmin();
+    await agent
+      .post('/api/v1/settings/mapping/corrections')
+      .send({ srcNs: 'anilist', srcId: '5', tmdbId: 999, tmdbType: 'tv' });
+    const exported = await agent.get(
+      '/api/v1/settings/mapping/resolutions?list=manual'
+    );
+    await agent.delete(
+      `/api/v1/settings/mapping/resolutions/${exported.body.results[0].id}`
+    );
+
+    const res = await agent
+      .post('/api/v1/settings/mapping/corrections/import')
+      .send({ corrections: exported.body.results });
+    assert.deepEqual(res.body, { imported: 1, skipped: 0 });
+    assert.equal(
+      (
+        await resolveTmdb({
+          refs: [{ ns: 'anilist', id: '5' }],
+          mediaType: 'tv',
+        })
+      )?.tmdbId,
+      999
+    );
+  });
+
+  it('imports overrides exported before the mapping rebuild', async () => {
+    const agent = await loginAsAdmin();
+    const res = await agent
+      .post('/api/v1/settings/mapping/corrections/import')
+      .send({
+        corrections: [
+          {
+            fromNamespace: 'anilist',
+            fromExternalId: '21',
+            fromSeason: -1,
+            toNamespace: 'tmdb_show',
+            toExternalId: '37854',
+            note: 'One Piece',
+          },
+          {
+            fromNamespace: 'trakt',
+            fromExternalId: 'gone',
+            toNamespace: 'tmdb_movie',
+            toExternalId: '',
+          },
+          // Aimed at TVDB: there is nothing to turn this into.
+          {
+            fromNamespace: 'anilist',
+            fromExternalId: '1',
+            toNamespace: 'tvdb_show',
+            toExternalId: '5',
+          },
+        ],
+      });
+    assert.deepEqual(res.body, { imported: 2, skipped: 1 });
+    assert.deepEqual(
+      await resolveTmdb({
+        refs: [{ ns: 'anilist', id: '21' }],
+        mediaType: 'tv',
+      }),
+      { tmdbId: 37854, mediaType: 'tv', origin: 'manual' }
+    );
+  });
+
+  it('disables a dataset, removing its answers', async () => {
+    const agent = await loginAsAdmin();
+    await seedEdges(edge('anilist:2', 'tmdb_show:20:s1'), 'fribb');
+    assert.equal(
+      (await datasetTmdb({ ns: 'anilist', id: '2' }, 'tv'))?.tmdbId,
+      20
+    );
+
+    const res = await agent
+      .post('/api/v1/settings/mapping/datasets/fribb')
+      .send({ enabled: false });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.enabled, false);
+    assert.equal(
+      await datasetTmdb({ ns: 'anilist', id: '2' }, 'tv'),
+      undefined
+    );
+  });
+
+  it('refuses a dataset it does not know', async () => {
+    const agent = await loginAsAdmin();
+    assert.equal(
+      (
+        await agent
+          .post('/api/v1/settings/mapping/datasets/animeapi')
+          .send({ enabled: true })
+      ).status,
+      404
+    );
+    assert.equal(
+      (await agent.post('/api/v1/settings/mapping/datasets/animeapi/refresh'))
+        .status,
+      404
+    );
   });
 
   it('requires an authenticated admin', async () => {
-    const res = await request(app).get('/api/v1/settings/mapping/health');
-    assert.ok(res.status === 401 || res.status === 403, `got ${res.status}`);
+    const res = await request(app).get('/api/v1/settings/mapping/status');
+    assert.equal(res.status, 401);
   });
 });

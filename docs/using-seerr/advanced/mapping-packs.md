@@ -1,94 +1,105 @@
 ---
-title: Mapping Packs and Mirrors
-description: How Foreseerr resolves external media ids, and how to mirror the mapping packs it depends on.
+title: Mapping Datasets and Mirrors
+description: How Foreseerr matches external media ids to TMDB, and how to mirror the datasets it uses.
 sidebar_position: 6
 ---
 
-# Mapping packs and mirrors
+# Mapping datasets and mirrors
 
-Discover sources speak in their own ids: Simkl ids, AniList ids, AniDB ids,
-IMDB ids, TVDB ids. Foreseerr renders TMDB. The mapping layer is what turns one
-into the other, and **Settings → Mapping** is where you can see how well it is
-doing. For the administration UI, see [Mapping](../settings/mapping.md).
+Discover sources speak in their own ids: AniList ids, Simkl ids, IMDb ids,
+TVDB ids, Trakt slugs. Foreseerr renders TMDB. The mapping layer turns one into
+the other, and **Settings → Mapping** shows how well it is doing. For the
+administration page, see [Mapping](../settings/mapping.md).
 
-## The resolver chain
+## How an item is matched
 
-A lookup walks five layers in order and stops at the first one that answers:
+A lookup tries six steps in a fixed order and stops at the first that answers:
 
-| Layer | Source | Persisted? |
+| Step | Source | Stored? |
 | --- | --- | --- |
-| Override | Your manual corrections | Yes, and it wins over everything |
-| Graph | Previously resolved links in the database | Already stored |
-| Pack | Bulk mapping files refreshed daily | Yes |
-| Live | Simkl, ani.zip, Kitsu, TMDB `/find`, TVDB, MDBList | Yes, with provenance |
-| Heuristic | Title + year + episode count matching | **No** — suggestions only |
+| Correction | Your manual matches | Yes, and it wins over everything |
+| Dataset | Bulk anime mapping files, refreshed nightly | Yes, replaced on each refresh |
+| Stored answer | A result an earlier lookup worked out | Already stored |
+| TMDB `/find` | TMDB's own index of IMDb and TVDB ids | Yes |
+| Anime fallback | Exact title match, then the prequel's show | Yes, as a guess |
+| Miss | Nothing answered | Yes, and retried after 12 hours |
 
-The heuristic layer is quarantined on purpose. A guess never becomes a mapping
-on its own: it appears in the repair queue as a suggestion for you to accept or
-reject. Two sources disagreeing is likewise not resolved by a coin toss; the
-item is recorded as ambiguous and shown as unmapped until someone decides.
+There is no scoring and no voting. The anime datasets all descend from the same
+curated data, so weighing them against each other only ever measured how often
+a fact had been copied.
+
+The source's declared media type decides whether a movie or a show is looked
+up. It is never inferred from a TMDB response: the same integer is a valid id
+in both TMDB catalogues for two unrelated titles most of the time.
+
+## Datasets
+
+| Dataset | Role | Licence |
+| --- | --- | --- |
+| `anibridge` | Primary. AniList, MAL, AniDB, TVDB and IMDb to TMDB, with season and episode ranges | MIT |
+| `fribb` | Fills ids `anibridge` has no TMDB match for yet, mostly the current season | none |
+
+Both are enabled by default and download on first start, in the background.
+`fribb` publishes no licence; you can turn it off on **Settings → Mapping**, at
+the cost of some current-season coverage.
+
+A dataset is stored as published: one row per directed statement such as
+`anilist:1225 → tmdb_show:62913, season 2, episodes 1–3`. Rows are never merged
+or chained together, so a film filed under a show's specials cannot pull the
+rest of the franchise onto one id.
+
+A refresh writes the new copy alongside the old one and switches over when it
+is complete. Lookups never see a half-written dataset, and a download that
+fails or shrinks by more than half leaves the current copy in place.
+
+## The anime fallback
+
+Datasets cover the back catalogue but trail new releases by weeks. For an anime
+none of them knows, two rules apply:
+
+1. **Exact title.** TMDB is searched with the AniList native title, then
+   romaji, then English. A match must be exact after ignoring case, spacing and
+   punctuation, be within one year, and carry the Animation genre. Two exact
+   matches count as no match.
+2. **Prequel.** A later season is filed on TMDB under the show it continues,
+   so it takes the show of its nearest prequel that has a known match.
+
+The result is stored as a guess, listed on the Mapping page, and replaced as
+soon as a dataset has the id. Measured on 963 titles with a known answer, the
+fallback answered 95% and was right for 98.5% of those.
 
 ## A present id is not a valid id
 
-An id arriving from a source proves only that an integer arrived. Ids do die:
-TMDB deletes duplicate records for alternate cuts, and occasionally splits one
-show into several. Before a tile is trusted, its id is confirmed to exist, and
-the answer is cached so a dead id is not re-probed on every slider render.
+An id arriving from a source proves only that an integer arrived. TMDB deletes
+duplicate records for alternate cuts, and occasionally splits one show into
+several. Before a tile is trusted its id is confirmed to exist, and the answer
+is cached so a dead id is not re-probed on every slider render.
 
-When the id is dead, the item's other ids are tried — an Extended-cut record
-usually reaches the base film through its IMDB id. Where no single answer
-exists, such as a show TMDB has split into per-cour series, the item becomes a
-recorded gap instead of a card that fails when clicked.
+When the id is dead, the item's other ids are tried: an Extended-cut record
+usually reaches the base film through its IMDb id. Where no single answer
+exists the item is counted as unmapped instead of becoming a card that fails
+when clicked.
 
-## Provider access
+## Episode numbering
 
-**Settings → Mapping** also reports providers the mapping layer depends on but
-does not control. Trakt is the notable one: since it removed API access for
-non-VIP accounts, requests carrying only the application `client_id` are
-refused, so Trakt list search and every Trakt slider need a linked account. That
-shows as a failing provider rather than as a mapping fault.
+`anibridge` states which episodes of an AniList, MAL or AniDB entry are which
+episodes of a TMDB or TVDB season. That is what lets a watched TMDB episode be
+written to the right AniList entry, a Simkl sync use TVDB numbering, and a
+Sonarr request monitor the TVDB seasons a TMDB season actually spans.
 
-## Packs
+## Mirroring datasets yourself
 
-Packs are bulk mapping files. None is installed until you enable it on
-**Settings → Mapping**, because the first install ingests tens of thousands of
-records and Foreseerr responds slowly for a few minutes while it runs. Without
-packs, anime falls back to slower live lookups and some titles may not resolve.
-Once installed, a pack is refreshed daily by the **Mapping Pack Refresh** job.
-Each has a mirror list; a download is written to a temporary file, validated,
-and only then renamed into place, so a truncated response can never replace a
-working pack.
-
-| Pack | Role | Licence |
-| --- | --- | --- |
-| `anibridge` | Primary anime graph | MIT |
-| `animeapi` | Trakt and Simkl anime ids | MIT |
-| `fribb` | Fallback only; its AniList/MAL fields are frozen | MIT |
-| `anime-lists` | Published with no licence at all | none |
-
-`anime-lists` is not recommended: enabling an unlicensed dataset is your
-decision.
-
-## Overriding the manifest
-
-The pack list is data, not code. Point `MAPPING_MANIFEST_URL` at your own JSON
-manifest to add a source, repoint a dead URL, or change precedence without
-waiting for a release. If the URL is unreachable or malformed, the bundled
-manifest is used instead.
-
-## Mirroring packs yourself
-
-Upstream packs are served from GitHub raw and jsDelivr, and both have gone away
-mid-day. `MAPPING_MIRROR_TEMPLATES` appends extra mirrors to every pack, where
-`{key}` is the pack key:
+Upstream files are served from GitHub and jsDelivr, and both have gone away
+mid-day. `MAPPING_MIRROR_TEMPLATES` adds mirrors that are tried after the
+upstream URLs, where `{key}` is the dataset key:
 
 ```bash
 MAPPING_MIRROR_TEMPLATES=https://packs.example.net/{key}.json,https://forgejo.example.net/mirror/packs/raw/branch/main/{key}.json
 ```
 
 To populate such a mirror, run the bundled script on a schedule. It downloads
-each pack from its upstream mirrors, validates the body, and publishes it to a
-directory, an S3 bucket, or both:
+each dataset, checks that it parses, and publishes it to a directory, an S3
+bucket, or both:
 
 ```bash
 MAPPING_MIRROR_DIR=/srv/packs bun run mirror:packs
@@ -102,34 +113,20 @@ daily Forgejo workflow lives at
 
 ## Measuring coverage
 
-`bun run measure:mapping` downloads every pack in the manifest and reports how
-much of it reaches TMDB, without needing a database or any API key:
+`bun run measure:mapping` downloads each dataset and reports how much of it
+reaches TMDB, without needing a database or any API key:
 
 ```text
-anibridge    74146 records   anilist 68453  →tmdb 60.7%  season-scoped 43324  episode rules 231421
-animeapi     29449 records   anilist 21971  →tmdb 33.4%  season-scoped 0      episode rules 0
-fribb        29402 records   anilist 20010  →tmdb 40.6%  season-scoped 0      episode rules 0
-anime-lists   7654 records   anilist 0      →tmdb n/a    season-scoped 5576   episode rules 3272
+anibridge  258055 edges    ranged 258055   anilist 19135   →tmdb 47.8%   adds 9154    2026-09-26T06:57:14Z
+fribb      142014 edges    ranged 6706     anilist 8424    →tmdb 97.5%   adds 519
 ```
 
-Per-slider rates — how many tiles on `simkl/trending anime` actually resolved —
-come from the gap telemetry on the Mapping settings page, since they depend on
-what your instance has served.
-
-## Budgets
-
-Simkl, ani.zip and Kitsu publish no rate-limit headers and never return 429, so
-Foreseerr does not wait to be told to slow down. Every live source has a token
-bucket, a concurrency cap, a daily quota, and a circuit breaker that opens after
-repeated failures. Current token counts, daily request volume and breaker state
-are all on the Mapping settings page, and each can be tuned per source.
+The percentage is of every AniList id the dataset lists, including music
+videos and shorts TMDB does not carry. For what an instance actually served,
+see the Unmapped list on the Mapping settings page.
 
 ## Jobs
 
 | Job | Default schedule | What it does |
 | --- | --- | --- |
-| Mapping Pack Refresh | 04:15 daily | Conditional GET of every installed pack, then ingest |
-| Mapping Gap Backfill | 04:45 daily | Batch-resolves the most-seen gaps, then attaches title suggestions |
-
-Backfill is ordered by how often an item was actually rendered, so a limited
-daily quota is spent on titles people see rather than on the tail of the queue.
+| Mapping Dataset Refresh | 04:15 daily | Conditional download of each enabled dataset, then a switch to the new copy |

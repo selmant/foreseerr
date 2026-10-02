@@ -51,7 +51,7 @@ export async function mapAnilistMedia(
   const title = anilistMediaTitle(media) || `AniList ${media.id}`;
   const mapped = await anilistIdMapping.getFromAnilistId(media.id, preferred, {
     title,
-    year: media.startDate?.year ?? undefined,
+    media,
   });
   const image = anilistCoverImage(media);
   if (!mapped) {

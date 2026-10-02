@@ -53,6 +53,14 @@ const MEDIA_FIELDS = `
   coverImage { large medium }
 `;
 
+/**
+ * Prequel links, for mapping a new season onto its show before any dataset
+ * knows it. Kept off list-collection queries, which return hundreds of entries.
+ */
+const MEDIA_RELATION_FIELDS = `
+  relations { edges { relationType node { id type format } } }
+`;
+
 const PAGE_MEDIA_QUERY = `
   query PageMedia(
     $page: Int
@@ -71,6 +79,7 @@ const PAGE_MEDIA_QUERY = `
         seasonYear: $seasonYear
       ) {
         ${MEDIA_FIELDS}
+        ${MEDIA_RELATION_FIELDS}
       }
     }
   }
@@ -105,6 +114,12 @@ const MEDIA_LIST_COLLECTION_QUERY = `
 const MEDIA_QUERY = `
   query Media($id: Int) {
     Media(id: $id) { ${MEDIA_FIELDS} }
+  }
+`;
+
+const MEDIA_WITH_RELATIONS_QUERY = `
+  query MediaWithRelations($id: Int) {
+    Media(id: $id) { ${MEDIA_FIELDS} ${MEDIA_RELATION_FIELDS} }
   }
 `;
 
@@ -348,6 +363,16 @@ class AnilistAPI extends ExternalAPI {
       MEDIA_QUERY,
       { id },
       0
+    );
+    return data.Media ?? null;
+  }
+
+  /** One entry with its relation links; cached, since relations rarely change. */
+  async getMediaWithRelations(id: number): Promise<AnilistMedia | null> {
+    const data = await this.graphql<{ Media: AnilistMedia | null }>(
+      MEDIA_WITH_RELATIONS_QUERY,
+      { id },
+      PUBLIC_PAGE_CACHE_TTL_SECONDS
     );
     return data.Media ?? null;
   }

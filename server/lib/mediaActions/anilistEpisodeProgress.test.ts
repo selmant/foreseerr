@@ -60,4 +60,10 @@ describe('AniList episode progress mapping', () => {
     );
     assert.deepEqual(watchedEpisodesFromProgress(0, 25), []);
   });
+
+  it('reads an entry that carries on from the previous season', () => {
+    // The entry's 27th episode is this season's first: 30 watched is 4 here.
+    assert.deepEqual(watchedEpisodesFromProgress(30, 26, -26), [1, 2, 3, 4]);
+    assert.deepEqual(watchedEpisodesFromProgress(20, 26, -26), []);
+  });
 });

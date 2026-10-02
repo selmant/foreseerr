@@ -1,11 +1,9 @@
-import AnilistAPI from '@server/api/anilist';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import { mapWithConcurrency } from '@server/lib/concurrency';
 import { hasDiscoverTmdbId } from '@server/lib/discover/unmapped';
-import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
-import { suggestByTitle } from '@server/lib/mapping/heuristic';
-import mappingService from '@server/lib/mapping/service';
-import { tmdbNamespace, type IdRef } from '@server/lib/mapping/types';
+import { correctionFor } from '@server/lib/mapping/resolutions';
+import { resolveTmdb } from '@server/lib/mapping/resolve';
+import type { IdRef } from '@server/lib/mapping/types';
 import logger from '@server/logger';
 
 const POSTER_BASE = 'https://wsrv.nl/?url=https://simkl.in/posters';
@@ -255,6 +253,8 @@ export interface SimklCandidate {
   item: WatchlistItem & { mediaType: 'movie' | 'tv' };
   ids: SimklExternalIds;
   isAnime: boolean;
+  /** Release year when Simkl supplied one; the title fallback needs it. */
+  year?: number;
   /**
    * Simkl itself named the type (`type`, `anime_type`, or a movie catalog
    * hint). List rows that omit it still default to `tv` and must be hydrated
@@ -312,9 +312,11 @@ export const toSimklCandidate = (
   const poster = simklPosterUrl(
     typeof item.poster === 'string' ? item.poster : undefined
   );
+  const year = Number(item.year);
   return {
     ids: external,
     isAnime,
+    ...(Number.isInteger(year) && year > 1870 ? { year } : {}),
     typedFromSource,
     item: {
       id: (tmdbId ?? Number(id)) || 0,
@@ -506,6 +508,23 @@ export async function resolveSimklTmdbId(
   const declaredType = candidate.item.mediaType;
   const { imdb, tvdb, tmdb } = candidate.ids;
 
+  // An admin's correction wins over every id Simkl supplied.
+  const { sourceId } = candidate.item;
+  const correction = await correctionFor([
+    ...(sourceId ? [{ ns: 'simkl' as const, id: String(sourceId) }] : []),
+    ...mappingRefs(candidate),
+  ]);
+  if (correction) {
+    return correction.tmdbId && correction.tmdbType
+      ? {
+          tmdbId: correction.tmdbId,
+          confidence: 100,
+          sourceKey: 'manual',
+          mediaType: correction.tmdbType,
+        }
+      : { confidence: 0, sourceKey: 'manual' };
+  }
+
   const corroborating: {
     sourceKey: string;
     ids: number[];
@@ -558,15 +577,10 @@ export async function resolveSimklTmdbId(
 
   // TMDB `/find` only speaks IMDB/TVDB. Everything else — including brand-new
   // seasonal anime that Simkl has anilist/anidb/mal for but no IMDB yet — goes
-  // through the mapping layer, which is what the packs and live resolvers are for.
+  // through the mapping layer: datasets first, then for anime the exact-title
+  // and prequel fallback.
   const mapped = await resolveViaMappingLayer(candidate, resolvers);
   if (mapped) return mapped;
-
-  // Brand-new seasonal anime often have AniList/MAL but no pack row yet. A
-  // high-confidence TMDB title hit (optionally using AniList's English title)
-  // is returned for this request only — never written into the mapping graph.
-  const titled = await resolveViaTitleSearch(candidate, resolvers);
-  if (titled) return titled;
 
   if (!tmdb) return UNRESOLVED;
 
@@ -588,74 +602,13 @@ export async function resolveSimklTmdbId(
     : { ...UNRESOLVED, ambiguous: true, sourceKey: 'simkl:tmdb' };
 }
 
-/** Minimum suggestByTitle score before a discover tile may use a title hit. */
-const TITLE_SEARCH_MIN_SCORE = 85;
-
-/**
- * Last-resort discover path for anime that packs/live ids have not covered.
- * Does not persist — the quarantined heuristic layer remains the only writer
- * of title suggestions into the review queue.
- */
-async function resolveViaTitleSearch(
-  candidate: SimklCandidate,
-  resolvers: SimklTmdbResolvers
-): Promise<SimklTmdbResolution | undefined> {
-  if (!candidate.isAnime || !candidate.item.title?.trim()) return undefined;
-
-  let title = candidate.item.title;
-  if (candidate.ids.anilist) {
-    try {
-      const media = await new AnilistAPI().getMedia(candidate.ids.anilist);
-      title =
-        media?.title?.english?.trim() || media?.title?.romaji?.trim() || title;
-    } catch {
-      // Keep the Simkl title.
-    }
-  }
-
-  const mediaType = candidate.item.mediaType;
-  try {
-    const suggestion = await suggestByTitle(
-      {
-        ns: 'simkl',
-        id: String(candidate.item.sourceId ?? ''),
-      },
-      tmdbNamespace(mediaType),
-      { title, mediaType }
-    );
-    if (!suggestion || suggestion.score < TITLE_SEARCH_MIN_SCORE) {
-      return undefined;
-    }
-    const tmdbId = Number(suggestion.target.id);
-    if (!(tmdbId > 0)) return undefined;
-    if (!(await resolvers.confirm(mediaType, tmdbId))) return undefined;
-    return {
-      tmdbId,
-      confidence: 45,
-      sourceKey: 'tmdb-title-search',
-      mediaType,
-    };
-  } catch (error) {
-    logger.debug('Simkl title-search fallback failed', {
-      label: 'Mapping',
-      title,
-      mediaType,
-      errorMessage: error instanceof Error ? error.message : String(error),
-    });
-    return undefined;
-  }
-}
-
-/** Ids Simkl got right that the mapping graph and live resolvers already speak. */
+/** Ids Simkl got right that the mapping datasets are keyed by. */
 const mappingRefs = (candidate: SimklCandidate): IdRef[] => {
   const refs: IdRef[] = [];
   const { anilist, anidb, mal } = candidate.ids;
   if (anilist) refs.push({ ns: 'anilist', id: String(anilist) });
   if (anidb) refs.push({ ns: 'anidb', id: String(anidb) });
   if (mal) refs.push({ ns: 'mal', id: String(mal) });
-  if (candidate.item.sourceId) {
-    refs.push({ ns: 'simkl', id: String(candidate.item.sourceId) });
-  }
   return refs;
 };
 
@@ -664,37 +617,46 @@ async function resolveViaMappingLayer(
   resolvers: SimklTmdbResolvers
 ): Promise<SimklTmdbResolution | undefined> {
   const refs = mappingRefs(candidate);
-  if (!refs.length) return undefined;
+  const { sourceId, title, mediaType: declaredType } = candidate.item;
+  if (!refs.length && !candidate.isAnime) return undefined;
 
-  await ensureMappingLayer();
-  const declaredType = candidate.item.mediaType;
-  const target = tmdbNamespace(declaredType);
-  for (const ref of refs) {
-    try {
-      const resolution = await mappingService.resolve(ref, target, {
-        silent: true,
-        title: candidate.item.title,
-        mediaType: declaredType,
-        discoverSource: 'simkl',
-      });
-      const tmdbId = Number(resolution.target?.id);
-      if (!(tmdbId > 0)) continue;
-      if (!(await resolvers.confirm(declaredType, tmdbId))) continue;
-      return {
-        tmdbId,
-        confidence: resolution.confidence,
-        sourceKey: resolution.sourceKey || `mapping:${ref.ns}`,
-        mediaType: declaredType,
-      };
-    } catch (error) {
-      logger.debug('Simkl mapping-layer fallthrough failed', {
-        label: 'Mapping',
-        from: `${ref.ns}:${ref.id}`,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+  try {
+    const resolution = await resolveTmdb({
+      refs,
+      ...(sourceId ? { identity: { ns: 'simkl', id: String(sourceId) } } : {}),
+      mediaType: declaredType,
+      title,
+      year: candidate.year,
+      discoverSource: 'simkl',
+      ...(candidate.isAnime
+        ? {
+            anime: {
+              ...(candidate.ids.anilist
+                ? { anilistId: Number(candidate.ids.anilist) }
+                : {}),
+              titles: title?.trim() ? [title] : [],
+            },
+          }
+        : {}),
+    });
+    if (!resolution) return undefined;
+    if (!(await resolvers.confirm(resolution.mediaType, resolution.tmdbId))) {
+      return undefined;
     }
+    return {
+      tmdbId: resolution.tmdbId,
+      confidence: resolution.origin === 'dataset' ? 90 : 60,
+      sourceKey: `mapping:${resolution.origin}`,
+      mediaType: resolution.mediaType,
+    };
+  } catch (error) {
+    logger.debug('Simkl mapping-layer fallthrough failed', {
+      label: 'Mapping',
+      simkl: sourceId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
   }
-  return undefined;
 }
 
 export interface ResolvedSimklItem {

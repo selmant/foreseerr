@@ -1,9 +1,7 @@
 import SimklAPI from '@server/api/simkl';
-import { getRepository } from '@server/datasource';
-import { MappingCluster } from '@server/entity/MappingCluster';
-import { MappingLink } from '@server/entity/MappingLink';
-import { upsertCluster } from '@server/lib/mapping/graph';
+import { saveManual } from '@server/lib/mapping/resolutions';
 import { setupTestDb } from '@server/test/db';
+import { edge, seedEdges } from '@server/test/mapping';
 import axios, { type AxiosAdapter } from 'axios';
 import assert from 'node:assert/strict';
 import {
@@ -34,16 +32,13 @@ const previousAxiosAdapter = axios.defaults.adapter;
 
 beforeEach(async () => {
   if (process.env.ALLOW_NETWORK != 'true') {
-    // Title-search and live mapping fallthroughs swallow HTTP errors. Stub
-    // axios so those paths cannot reach the shared outbound-request guard.
+    // The mapping fallthrough swallows HTTP errors. Stub axios so that path
+    // cannot reach the shared outbound-request guard.
     axios.defaults.adapter = (async (config) => {
       throw new Error(
         `Blocked outbound request to ${String(config.baseURL ?? config.url)}. Stub the API client this test uses.`
       );
     }) as AxiosAdapter;
-  }
-  for (const entity of [MappingLink, MappingCluster]) {
-    await getRepository(entity).clear();
   }
 });
 
@@ -882,18 +877,7 @@ describe('simkl TMDB resolution never infers media type', () => {
   it('falls through to the mapping layer via anilist when IMDB/TVDB are absent', async () => {
     // Link Click S3: Simkl detail has anilist/anidb/mal but no imdb/tvdb/tmdb.
     // Without the mapping fallthrough it stayed an unmapped premiere forever.
-    await upsertCluster([
-      {
-        ref: { ns: 'anilist', id: '191832' },
-        confidence: 80,
-        sourceKey: 'animeapi',
-      },
-      {
-        ref: { ns: 'tmdb_show', id: '123542' },
-        confidence: 80,
-        sourceKey: 'animeapi',
-      },
-    ]);
+    await seedEdges(edge('anilist:191832', 'tmdb_show:123542:s3'));
 
     const resolution = await resolveSimklTmdbId(
       animeCandidate(
@@ -907,17 +891,39 @@ describe('simkl TMDB resolution never infers media type', () => {
       }
     );
     assert.equal(resolution.tmdbId, 123542);
-    assert.ok(
-      (resolution.sourceKey ?? '').includes('animeapi') ||
-        (resolution.sourceKey ?? '').includes('mapping')
+    assert.equal(resolution.sourceKey, 'mapping:dataset');
+  });
+
+  it('applies a correction filed under the Simkl id before any of its ids', async () => {
+    await saveManual({
+      ref: { ns: 'simkl', id: '1' },
+      tmdbId: 603,
+      tmdbType: 'movie',
+    });
+    const resolution = await resolveSimklTmdbId(
+      {
+        ...animeCandidate({ tmdb: 999 }, 'Some Film'),
+        isAnime: false,
+      },
+      {
+        findByExternalId: async () => {
+          throw new Error('a correction must answer first');
+        },
+        confirm: async () => true,
+      }
+    );
+    assert.deepEqual(
+      [resolution.tmdbId, resolution.mediaType, resolution.sourceKey],
+      [603, 'movie', 'manual']
     );
   });
 
-  it('uses a high-confidence TMDB title hit in the declared type only', async (t) => {
+  it('uses an exact TMDB title hit in the declared type only', async (t) => {
     if (!skipUnlessNetwork(t)) return;
     const resolution = await resolveSimklTmdbId(
       {
         ...animeCandidate({}, 'THE RIBBON HERO'),
+        year: 2026,
         item: {
           ...animeCandidate({}, 'THE RIBBON HERO').item,
           mediaType: 'movie',
@@ -935,6 +941,6 @@ describe('simkl TMDB resolution never infers media type', () => {
     }
     assert.equal(resolution.tmdbId, 1679730);
     assert.equal(resolution.mediaType, 'movie');
-    assert.equal(resolution.sourceKey, 'tmdb-title-search');
+    assert.equal(resolution.sourceKey, 'mapping:title');
   });
 });

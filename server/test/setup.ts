@@ -1,14 +1,9 @@
 import AnilistAPI from '@server/api/anilist';
 import TraktAPI from '@server/api/trakt';
-import dataSource, { getRepository } from '@server/datasource';
-import { MappingSourceUsage } from '@server/entity/MappingSourceUsage';
 import { scheduledJobs, stopJobs } from '@server/job/schedule';
-import { resetTmdbValidityCache } from '@server/lib/discover/validity';
-import { clearNegativeCache, resetBudgets } from '@server/lib/mapping/budget';
-import { resetMappingGapBuffer } from '@server/lib/mapping/gaps';
-import { resetProviderHealthCache } from '@server/lib/mapping/providerHealth';
 import { resetSettings } from '@server/lib/settings';
 import logger from '@server/logger';
+import { resetMappingState } from '@server/test/mapping';
 import http from 'node:http';
 import https from 'node:https';
 import { after, afterEach, before } from 'node:test';
@@ -133,19 +128,8 @@ afterEach(async () => {
   if (scheduledJobs.length > 0) {
     stopJobs();
   }
-  resetMappingGapBuffer();
-  resetProviderHealthCache();
+  resetMappingState();
   resetSettings();
-  resetBudgets();
-  clearNegativeCache();
-  resetTmdbValidityCache();
-  if (dataSource.isInitialized) {
-    try {
-      await getRepository(MappingSourceUsage).clear();
-    } catch {
-      // Schema may not exist in files that never open the test DB.
-    }
-  }
 
   await settleDeferredNetwork();
   assertNoBlockedHosts();

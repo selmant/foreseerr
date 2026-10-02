@@ -1,13 +1,9 @@
-import type { MappingGapReason } from '@server/entity/MappingGap';
 import type {
   DiscoverItemSource,
   WatchlistItem,
 } from '@server/interfaces/api/discoverInterfaces';
 import { parseDiscoverTruthyQuery } from '@server/lib/discover/filterOptions';
-import {
-  recordMappingGap,
-  type MappingGapObservation,
-} from '@server/lib/mapping/gaps';
+import { recordMiss } from '@server/lib/mapping/resolutions';
 import { isNamespace, type Namespace } from '@server/lib/mapping/types';
 
 /**
@@ -38,15 +34,12 @@ const SOURCE_NAMESPACE: Record<DiscoverItemSource, Namespace> = {
 
 export interface UnmappedRecordOptions {
   discoverSource?: string;
-  reason?: MappingGapReason;
   namespace?: Namespace;
-  sourceKey?: string;
 }
 
 /**
- * Record every item that arrived without a usable TMDB id. Filtering an item is
- * also an event, and until it is recorded the gap is invisible to the health
- * page and the repair queue.
+ * Count every item that arrived without a usable TMDB id. Filtering an item is
+ * also an event, and until it is counted it is invisible on the mapping page.
  */
 export function recordUnmappedItems(
   items: (Pick<
@@ -69,16 +62,12 @@ export function recordUnmappedItems(
       (item.source ? SOURCE_NAMESPACE[item.source] : undefined);
     const externalId = item.mappingState?.externalId ?? item.sourceId;
     if (!namespace || !externalId) continue;
-    const observation: MappingGapObservation = {
-      namespace,
-      externalId,
+    recordMiss({
+      ref: { ns: namespace, id: externalId },
       title: item.title,
       mediaType: item.mediaType,
       discoverSource: options.discoverSource ?? item.source,
-      reason: options.reason ?? 'unresolved',
-      sourceKey: options.sourceKey,
-    };
-    recordMappingGap(observation);
+    });
   }
 }
 

@@ -1,10 +1,10 @@
 /**
- * Mirror every mapping pack in the manifest to a homelab bucket.
+ * Mirror every mapping dataset to a homelab bucket.
  *
- * Upstream packs live on GitHub raw and jsDelivr; both have gone away mid-day
- * before, and a pack that cannot be fetched degrades anime mapping until the
- * next refresh. Running this daily gives every pack a third mirror that is
- * under our control.
+ * Upstream datasets live on GitHub and jsDelivr; both have gone away mid-day
+ * before, and a dataset that cannot be fetched leaves anime mapping stale
+ * until the next refresh. Running this daily gives each one a mirror that is
+ * under our control, reachable through `MAPPING_MIRROR_TEMPLATES`.
  *
  * Usage:
  *   MAPPING_MIRROR_DIR=/srv/packs bun run mirror:packs
@@ -13,11 +13,10 @@
  * The S3 form shells out to the `aws` CLI, which the homelab runner already
  * has configured against Garage; no SDK dependency is added for a cron script.
  */
-import { validatePackBody } from '@server/lib/mapping/packs/formats';
 import {
-  fetchManifest,
-  type PackManifestEntry,
-} from '@server/lib/mapping/packs/manifest';
+  DATASETS,
+  type DatasetDefinition,
+} from '@server/lib/mapping/definitions';
 import axios from 'axios';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -32,16 +31,9 @@ const MIRROR_DIR = process.env.MAPPING_MIRROR_DIR;
 const MIRROR_S3 = process.env.MAPPING_MIRROR_S3;
 const TIMEOUT_MSEC = 120_000;
 
-const extensionFor = (pack: PackManifestEntry): string => {
-  if (pack.format === 'xml-animelist') return 'xml';
-  if (pack.format === 'yaml-map') return 'yaml';
-  if (pack.format === 'ndjson') return 'ndjson';
-  return 'json';
-};
-
-async function download(pack: PackManifestEntry): Promise<string> {
+async function download(dataset: DatasetDefinition): Promise<string> {
   const failures: string[] = [];
-  for (const url of pack.mirrors) {
+  for (const url of dataset.urls) {
     try {
       const { data } = await axios.get<string>(url, {
         timeout: TIMEOUT_MSEC,
@@ -50,7 +42,9 @@ async function download(pack: PackManifestEntry): Promise<string> {
       });
       // Mirroring a truncated body would turn our fallback into the problem it
       // exists to solve.
-      validatePackBody(pack.format, data);
+      if (!dataset.parse(data).edges.length) {
+        throw new Error('dataset parsed to zero edges');
+      }
       return data;
     } catch (error) {
       failures.push(
@@ -95,13 +89,12 @@ async function main(): Promise<void> {
     );
   }
 
-  const manifest = await fetchManifest();
   let failed = 0;
 
-  for (const pack of manifest.packs) {
-    const name = `${pack.key}.${extensionFor(pack)}`;
+  for (const dataset of DATASETS) {
+    const name = `${dataset.key}.json`;
     try {
-      const body = await download(pack);
+      const body = await download(dataset);
       await publish(name, body);
       const digest = createHash('sha256').update(body).digest('hex');
       // eslint-disable-next-line no-console
@@ -118,7 +111,7 @@ async function main(): Promise<void> {
   }
 
   // A partial mirror is still useful, so only a total failure is fatal.
-  if (failed === manifest.packs.length) process.exitCode = 1;
+  if (failed === DATASETS.length) process.exitCode = 1;
 }
 
 void main().catch((error) => {

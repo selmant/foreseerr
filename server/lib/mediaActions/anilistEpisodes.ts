@@ -5,7 +5,7 @@ import anilistIdMapping, {
   pickFribbSeasonEntry,
 } from '@server/lib/anilist/mapping';
 import { getAnilistUserContext } from '@server/lib/anilist/userContext';
-import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
+import { ensureMappingLayer } from '@server/lib/mapping/datasets';
 import {
   findEpisodeRules,
   translateEpisodeBridged,
@@ -60,8 +60,9 @@ function catalogOffset(
  * The exact AniList entry and progress for one TMDB episode, from stored episode
  * rules.
  *
- * Packs express their ranges against AniDB, so an AniList answer is bridged
- * through it. Returns undefined when no rule covers the episode, which is the
+ * The primary dataset usually states TMDB to AniList directly; where it does
+ * not, the answer is bridged through the same entry's AniDB or MAL id. Returns
+ * undefined when no range covers the episode, which is the
  * signal to fall back to season-level inference rather than to guess a number.
  */
 async function progressFromRules(
@@ -117,9 +118,13 @@ export const anilistEpisodeActions = {
       return { available: false, watchedEpisodeNumbers: [] };
     }
     try {
-      const entries = await seasonEntries(tmdbShowId);
-      const candidates = fribbSeasonCandidates(entries, seasonNumber);
-      if (candidates.entries.length === 0) {
+      // Ranges answer per episode, so they are checked before the season
+      // heuristics can decide there is nothing to show.
+      const ruled = await hasEpisodeRules(tmdbShowId, seasonNumber);
+      const candidates = ruled
+        ? undefined
+        : fribbSeasonCandidates(await seasonEntries(tmdbShowId), seasonNumber);
+      if (candidates && candidates.entries.length === 0) {
         return { available: false, watchedEpisodeNumbers: [] };
       }
       const { client, anilistUserId } = await getClientContext(userId);
@@ -131,7 +136,7 @@ export const anilistEpisodeActions = {
 
       // Rules give an exact per-episode answer, so where they exist the season
       // heuristics below are not consulted at all.
-      if (await hasEpisodeRules(tmdbShowId, seasonNumber)) {
+      if (!candidates) {
         const show = await new TheMovieDb().getTvShow({ tvId: tmdbShowId });
         const season = seasonsFromTmdb(show).find(
           (item) => item.seasonNumber === seasonNumber

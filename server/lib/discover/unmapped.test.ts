@@ -1,9 +1,7 @@
-import { getRepository } from '@server/datasource';
-import { MappingGap } from '@server/entity/MappingGap';
-import { flushMappingGaps } from '@server/lib/mapping/gaps';
+import { flushMisses, listResolutions } from '@server/lib/mapping/resolutions';
 import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it } from 'node:test';
+import { describe, it } from 'node:test';
 import {
   hasDiscoverTmdbId,
   omitUnmappedDiscoverItems,
@@ -12,11 +10,6 @@ import {
 } from './unmapped';
 
 setupTestDb();
-
-beforeEach(async () => {
-  await flushMappingGaps();
-  await getRepository(MappingGap).clear();
-});
 
 describe('discover unmapped helpers', () => {
   it('treats missing and non-positive ids as unmapped', () => {
@@ -65,9 +58,10 @@ describe('discover unmapped helpers', () => {
       ],
       { discoverSource: 'mdblist/list', namespace: 'imdb' }
     );
-    await flushMappingGaps();
-    const [gap] = await getRepository(MappingGap).find();
-    assert.equal(gap.namespace, 'tvdb_show');
-    assert.equal(gap.externalId, '73740');
+    await flushMisses();
+    const [miss] = (await listResolutions('unmapped')).results;
+    assert.equal(miss.srcNs, 'tvdb_show');
+    assert.equal(miss.srcId, '73740');
+    assert.equal(miss.discoverSource, 'mdblist/list');
   });
 });

@@ -29,8 +29,8 @@ async function anilistResults(
   req: Request
 ) {
   const discoverSource = `anilist${req.path}`;
-  // Pack data goes stale, and a mapping that once pointed somewhere real can
-  // outlive the TMDB record it names.
+  // Dataset entries go stale, and a mapping that once pointed somewhere real
+  // can outlive the TMDB record it names.
   const mapped = await Promise.all(
     toWatchlistItems(items).map(async (item) => {
       const confirmed =
@@ -56,6 +56,9 @@ async function anilistResults(
           ? {
               tmdbId: confirmed.tmdbId,
               id: confirmed.tmdbId ?? Number(item.sourceId),
+              ...(confirmed.mediaType
+                ? { mediaType: confirmed.mediaType }
+                : {}),
             }
           : {}),
         mappingState: confirmed?.mappingState ?? {
@@ -66,11 +69,7 @@ async function anilistResults(
       });
     })
   );
-  recordUnmappedItems(mapped, {
-    namespace: 'anilist',
-    discoverSource,
-    sourceKey: 'anilist-pack',
-  });
+  recordUnmappedItems(mapped, { namespace: 'anilist', discoverSource });
   return annotateProviderActiveRequests(
     omitUnmappedDiscoverItems(mapped, shouldHideUnmappedFromQuery(req.query))
   );

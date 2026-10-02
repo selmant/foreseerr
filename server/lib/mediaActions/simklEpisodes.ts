@@ -1,10 +1,9 @@
-import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
+import { ensureMappingLayer } from '@server/lib/mapping/datasets';
 import {
   applyEpisodeRule,
   findEpisodeRules,
   translateEpisodeBridged,
 } from '@server/lib/mapping/episodes';
-import mappingService from '@server/lib/mapping/service';
 import { createSimklUserClient } from '@server/lib/simkl';
 import { syncSimklUser } from '@server/lib/simklSync';
 import { SimklMediaActionProvider } from './simkl';
@@ -38,18 +37,13 @@ async function simklCoordinates(
     episode: episodeNumber,
   };
 
-  const [simkl, tvdb, anidb] = await Promise.all([
-    mappingService.resolve(
-      { ns: 'tmdb_show', id: String(tmdbId), season: seasonNumber },
-      'simkl',
-      { silent: true }
-    ),
+  const [tvdb, anidb] = await Promise.all([
     translateEpisodeBridged(from, 'tvdb_show', ['anidb']),
     translateEpisodeBridged(from, 'anidb'),
   ]);
 
+  // Simkl matches on any of these, so its own id is not needed.
   const ids: SimklCoordinates['ids'] = { tmdb: tmdbId };
-  if (simkl.target?.id) ids.simkl = simkl.target.id;
   if (tvdb?.target.id) ids.tvdb = Number(tvdb.target.id) || undefined;
   if (anidb?.target.id) ids.anidb = Number(anidb.target.id) || undefined;
 

@@ -1,18 +1,24 @@
-import type { AnilistMediaFormat } from '@server/api/anilist/interfaces';
+import type {
+  AnilistMedia,
+  AnilistMediaFormat,
+} from '@server/api/anilist/interfaces';
 import { confirmTmdbId } from '@server/lib/discover/validity';
-import { ensureMappingLayer } from '@server/lib/mapping/bootstrap';
-import { findClusterIds, findLinks } from '@server/lib/mapping/graph';
-import mappingService from '@server/lib/mapping/service';
-import { tmdbNamespace, type Namespace } from '@server/lib/mapping/types';
+import { ensureMappingLayer } from '@server/lib/mapping/datasets';
+import { edgesFrom, edgesTo } from '@server/lib/mapping/edges';
+import {
+  parseEpisodeRange,
+  parseRangePair,
+} from '@server/lib/mapping/episodes';
+import { resolveTmdb } from '@server/lib/mapping/resolve';
+import {
+  scopeSeason,
+  tmdbNamespace,
+  type MediaType,
+} from '@server/lib/mapping/types';
 
 export interface AnilistTmdbMapping {
   tmdbId: number;
   mediaType: 'movie' | 'tv';
-}
-
-interface FribbTmdbIds {
-  tv?: number;
-  movie?: number | number[];
 }
 
 const SERIES_FRIBB_TYPES = new Set(['TV', 'ONA', 'TV_SHORT']);
@@ -26,71 +32,14 @@ export interface AnilistSeasonMapping {
   offsetTvdb: number;
 }
 
-function parseNonNegativeInt(value: unknown): number | null {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return null;
-  }
-  return Math.trunc(parsed);
-}
-
 export function isSeriesFribbType(type?: string | null): boolean {
   return !type || SERIES_FRIBB_TYPES.has(type);
-}
-
-function firstMovieId(ids?: FribbTmdbIds): number | undefined {
-  const movie = ids?.movie;
-  if (Array.isArray(movie)) {
-    const id = Number(movie[0]);
-    return Number.isFinite(id) && id > 0 ? id : undefined;
-  }
-  if (movie != null) {
-    const id = Number(movie);
-    return Number.isFinite(id) && id > 0 ? id : undefined;
-  }
-  return undefined;
-}
-
-function tvId(ids?: FribbTmdbIds): number | undefined {
-  if (ids?.tv == null) {
-    return undefined;
-  }
-  const id = Number(ids.tv);
-  return Number.isFinite(id) && id > 0 ? id : undefined;
 }
 
 export function anilistFormatToMediaType(
   format?: AnilistMediaFormat | null
 ): 'movie' | 'tv' {
   return format === 'MOVIE' ? 'movie' : 'tv';
-}
-
-/**
- * Retained from the old bespoke Fribb loader because the format still needs the
- * movie-versus-tv preference rule; the download, indexing, and lookup all moved
- * to the pack framework and the mapping graph.
- */
-export function resolveFribbTmdb(
-  ids: FribbTmdbIds | undefined,
-  format?: AnilistMediaFormat | null
-): AnilistTmdbMapping | null {
-  const movie = firstMovieId(ids);
-  const tv = tvId(ids);
-  const preferMovie = anilistFormatToMediaType(format) === 'movie';
-
-  if (preferMovie && movie) {
-    return { tmdbId: movie, mediaType: 'movie' };
-  }
-  if (!preferMovie && tv) {
-    return { tmdbId: tv, mediaType: 'tv' };
-  }
-  if (tv) {
-    return { tmdbId: tv, mediaType: 'tv' };
-  }
-  if (movie) {
-    return { tmdbId: movie, mediaType: 'movie' };
-  }
-  return null;
 }
 
 function offsetForCatalog(
@@ -189,14 +138,37 @@ export function pickFribbSeasonEntry(
   return { mapping: picked, progress, mode };
 }
 
+export interface AnilistLookupHints {
+  title?: string;
+  year?: number;
+  /** The AniList record, when the caller has it: titles, format, relations. */
+  media?: AnilistMedia | null;
+  /**
+   * Datasets and stored answers only. For bulk paths such as a user's whole
+   * list, where a TMDB search per unknown entry would stall the request.
+   */
+  offline?: boolean;
+}
+
 /**
- * Thin delegates onto `MappingService`.
- *
- * The bespoke downloader and in-process index this file used to own are gone:
- * Fribb is now one declarative pack among several (and demoted, since its
- * AniList/MAL fields froze on 2026-07-07 when upstream manami was archived), and
- * lookups go through the persistent mapping graph.
+ * How far into a catalogue season an entry starts, from a stated range read
+ * from the entry's side. An entry whose episode 1 is the season's episode 13
+ * has offset 12; one whose episode 27 is the season's episode 1, because it
+ * carries on from the previous season, has offset -26.
  */
+const offsetOf = (
+  entryRange?: string | null,
+  seasonRange?: string | null
+): number => {
+  if (!entryRange || !seasonRange) return 0;
+  const [rule] = parseRangePair(entryRange, seasonRange);
+  return rule ? rule.targetRange.start - rule.sourceRange.start : 0;
+};
+
+const rangeStart = (range?: string | null): number =>
+  parseEpisodeRange(range ?? '')?.start ?? Number.MAX_SAFE_INTEGER;
+
+/** AniList-facing view of the mapping layer. */
 class AnilistIdMapping {
   public isLoaded = (): boolean => true;
 
@@ -207,38 +179,51 @@ class AnilistIdMapping {
   public getFromAnilistId = async (
     anilistId: number,
     preferred?: 'movie' | 'tv',
-    options: { title?: string; year?: number } = {}
+    hints: AnilistLookupHints = {}
   ): Promise<AnilistTmdbMapping | undefined> => {
+    const { media } = hints;
     // AniList's format is the only authoritative media-type signal here.
     // Falling through from show to movie for a TV series is how Slime Season 4
     // rendered as Chasing Mavericks: the same integer is a real movie 63% of
     // the time, so existence of /movie/{id} is not evidence of identity.
-    const order: [Namespace, 'movie' | 'tv'][] =
-      preferred === 'movie'
-        ? [['tmdb_movie', 'movie']]
-        : preferred === 'tv'
-          ? [['tmdb_show', 'tv']]
-          : [
-              ['tmdb_show', 'tv'],
-              ['tmdb_movie', 'movie'],
-            ];
+    const declared =
+      preferred ??
+      (media?.format ? anilistFormatToMediaType(media.format) : undefined);
+    const order: MediaType[] = declared ? [declared] : ['tv', 'movie'];
+    const titles = [
+      media?.title?.native,
+      media?.title?.romaji,
+      media?.title?.english,
+      hints.title,
+    ].filter((title): title is string => Boolean(title?.trim()));
+    const year =
+      media?.startDate?.year ?? media?.seasonYear ?? hints.year ?? undefined;
 
-    for (const [namespace, mediaType] of order) {
-      const resolution = await mappingService.resolve(
-        { ns: 'anilist', id: String(anilistId) },
-        namespace,
-        {
-          silent: true,
-          mediaType,
-          title: options.title,
-          year: options.year,
-        }
-      );
-      const tmdbId = Number(resolution.target?.id);
-      if (!(tmdbId > 0)) continue;
+    for (const mediaType of order) {
+      const resolution = await resolveTmdb({
+        refs: [{ ns: 'anilist', id: String(anilistId) }],
+        mediaType,
+        title: hints.title ?? titles[0],
+        year,
+        discoverSource: 'anilist',
+        offline: hints.offline,
+        anime: {
+          anilistId,
+          titles,
+          year,
+          format: media?.format,
+          // Undefined lets the fallback ask AniList; a page query already has them.
+          ...(media?.relations
+            ? { relations: media.relations.edges ?? [] }
+            : {}),
+        },
+      });
+      if (!resolution) continue;
       // Existence may only reject. A live id in the wrong namespace is still wrong.
-      if (!(await confirmTmdbId(mediaType, tmdbId))) continue;
-      return { tmdbId, mediaType };
+      if (!(await confirmTmdbId(resolution.mediaType, resolution.tmdbId))) {
+        continue;
+      }
+      return { tmdbId: resolution.tmdbId, mediaType: resolution.mediaType };
     }
     return undefined;
   };
@@ -255,57 +240,78 @@ class AnilistIdMapping {
     mediaType: 'movie' | 'tv',
     tmdbId: number
   ): Promise<number[]> => {
-    const clusterIds = await findClusterIds({
-      ns: tmdbNamespace(mediaType),
-      id: String(tmdbId),
-    });
-    const links = await findLinks(clusterIds, 'anilist');
+    const edges = edgesTo(
+      await edgesFrom(tmdbNamespace(mediaType), String(tmdbId)),
+      'anilist'
+    );
     return [
       ...new Set(
-        links
-          .map((link) => Number(link.externalId))
+        edges
+          .map((edge) => Number(edge.dstId))
           .filter((id) => Number.isFinite(id) && id > 0)
       ),
     ];
   };
 
   /**
-   * Season-scoped AniList links for one TMDB show, in the shape the existing
-   * episode call sites expect. Phase 5 replaces this with the episode rule
-   * engine; until then it is derived from the graph rather than from Fribb's
-   * `episode_offset` field, which was populated for only 1.57% of entries.
+   * The AniList entries that make up one TMDB show, with the season each sits
+   * in on TMDB and on TVDB. Used when no episode range covers an episode and
+   * the entry has to be inferred from the season instead.
    */
   public getAnilistSeasonEntries = async (
     mediaType: 'movie' | 'tv',
     tmdbId: number
   ): Promise<AnilistSeasonMapping[]> => {
-    const namespace = tmdbNamespace(mediaType);
-    const clusterIds = await findClusterIds({
-      ns: namespace,
-      id: String(tmdbId),
-    });
-    if (!clusterIds.length) return [];
-    const [anilistLinks, tmdbLinks, tvdbLinks] = await Promise.all([
-      findLinks(clusterIds, 'anilist'),
-      findLinks(clusterIds, namespace),
-      findLinks(clusterIds, 'tvdb_show'),
-    ]);
-    const seasonFor = (
-      links: { clusterId: number; season?: number }[],
-      clusterId: number
-    ): number | null =>
-      links.find((link) => link.clusterId === clusterId)?.season ?? null;
-    return anilistLinks.map((link) => ({
-      anilistId: Number(link.externalId),
-      seasonTmdb: seasonFor(tmdbLinks, link.clusterId),
-      seasonTvdb: seasonFor(tvdbLinks, link.clusterId),
-      offsetTmdb: 0,
-      offsetTvdb: 0,
-    }));
+    const edges = edgesTo(
+      await edgesFrom(tmdbNamespace(mediaType), String(tmdbId)),
+      'anilist'
+    );
+
+    // One entry per AniList id and season: a single AniList entry often runs
+    // across several TMDB seasons, and each needs its own offset. The earliest
+    // stated range in a season gives where the entry starts in it.
+    const first = new Map<string, (typeof edges)[number]>();
+    for (const edge of [...edges].sort(
+      (a, b) => rangeStart(a.srcRange) - rangeStart(b.srcRange)
+    )) {
+      const key = `${edge.dstId}:${edge.srcScope}`;
+      if (!first.has(key)) first.set(key, edge);
+    }
+
+    const entries: AnilistSeasonMapping[] = [];
+    for (const edge of first.values()) {
+      const anilistId = Number(edge.dstId);
+      if (!(anilistId > 0)) continue;
+      const seasonTmdb = scopeSeason(edge.srcScope) ?? null;
+      // The entry's own edges say which TVDB season holds the same episodes.
+      const tvdbEdges = edgesTo(
+        await edgesFrom('anilist', edge.dstId),
+        'tvdb_show'
+      );
+      const entryStart = rangeStart(edge.dstRange);
+      const tvdb =
+        tvdbEdges.find((candidate) => {
+          const range = parseEpisodeRange(candidate.srcRange ?? '');
+          return (
+            range !== undefined &&
+            range.start <= entryStart &&
+            (range.end === undefined || entryStart <= range.end)
+          );
+        }) ?? tvdbEdges[0];
+      entries.push({
+        anilistId,
+        // Season 0 holds specials and films, never the series itself.
+        ...(seasonTmdb === 0 ? { type: 'SPECIAL' } : {}),
+        seasonTmdb,
+        seasonTvdb: tvdb ? (scopeSeason(tvdb.dstScope) ?? null) : null,
+        offsetTmdb: offsetOf(edge.dstRange, edge.srcRange),
+        offsetTvdb: offsetOf(tvdb?.srcRange, tvdb?.dstRange),
+      });
+    }
+    return entries;
   };
 }
 
 const anilistIdMapping = new AnilistIdMapping();
 
 export default anilistIdMapping;
-export { parseNonNegativeInt };
