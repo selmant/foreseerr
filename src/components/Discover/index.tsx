@@ -7,6 +7,7 @@ import AnilistListSlider from '@app/components/Discover/AnilistListSlider';
 import AnilistSlider from '@app/components/Discover/AnilistSlider';
 import AnilistUserSlider from '@app/components/Discover/AnilistUserSlider';
 import CreateSlider from '@app/components/Discover/CreateSlider';
+import DiscoverLinkHint from '@app/components/Discover/DiscoverLinkHint';
 import DiscoverSliderEdit from '@app/components/Discover/DiscoverSliderEdit';
 import DiscoverSliderRow from '@app/components/Discover/DiscoverSliderRow';
 import MdblistListSlider from '@app/components/Discover/MdblistListSlider';
@@ -222,6 +223,13 @@ const Discover = () => {
             </Button>
           </Transition>
         </>
+      )}
+      {!isEditing && (
+        <DiscoverLinkHint
+          enabledTypes={(discoverData ?? []).flatMap((slider) =>
+            slider.enabled ? [slider.type] : []
+          )}
+        />
       )}
       {(isEditing ? sliders : discoverData)?.map((slider, index) => {
         let sliderComponent: React.ReactNode;

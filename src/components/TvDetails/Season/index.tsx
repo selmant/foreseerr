@@ -3,7 +3,9 @@ import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
+import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
 import RequestModal from '@app/components/RequestModal';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -22,8 +24,16 @@ import {
   ArrowDownTrayIcon,
   CheckBadgeIcon as CheckBadgeOutline,
 } from '@heroicons/react/24/outline';
-import { CheckBadgeIcon as CheckBadgeSolid } from '@heroicons/react/24/solid';
+import {
+  CheckBadgeIcon as CheckBadgeSolid,
+  PlayIcon,
+} from '@heroicons/react/24/solid';
 import { MediaRequestStatus } from '@server/constants/media';
+import type {
+  LibraryEpisode,
+  LibraryItemInspectorResponse,
+  LibrarySeasonEpisodesResponse,
+} from '@server/interfaces/api/libraryInterfaces';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
 import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
 import type { SeasonWithEpisodes } from '@server/models/Tv';
@@ -44,6 +54,8 @@ const messages = defineMessages('components.TvDetails.Season', {
   pendingApproval: 'Awaiting Approval',
   available: 'Available',
   failed: 'Failed',
+  play: 'Play',
+  resume: 'Resume',
   declined: 'Declined',
   markWatched: 'Mark watched',
   markUnwatched: 'Mark unwatched',
@@ -117,7 +129,40 @@ type SeasonProps = {
   episodeRequestsEnabled?: boolean;
   episodeRequestStates?: EpisodeRequestState[];
   seasonRequestState?: SeasonRequestState;
+  /** Jellyfin series id; lets episodes already in the library offer Play. */
+  jellyfinSeriesId?: string;
   onRequestComplete?: () => void;
+};
+
+/** Episodes Jellyfin already has for this season, keyed by episode number. */
+const useLibrarySeasonEpisodes = (
+  jellyfinSeriesId: string | undefined,
+  seasonNumber: number
+) => {
+  const { data: series } = useSWR<LibraryItemInspectorResponse>(
+    jellyfinSeriesId ? `/api/v1/library/items/${jellyfinSeriesId}` : null,
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  const librarySeason = series?.seasons?.find(
+    (season) => season.indexNumber === seasonNumber
+  );
+  const { data } = useSWR<LibrarySeasonEpisodesResponse>(
+    jellyfinSeriesId && librarySeason
+      ? `/api/v1/library/series/${jellyfinSeriesId}/seasons/${librarySeason.jellyfinSeasonId}/episodes`
+      : null,
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
+  return useMemo(
+    () =>
+      new Map<number, LibraryEpisode>(
+        (data?.episodes ?? []).flatMap((episode) =>
+          episode.indexNumber != null && !data?.code
+            ? [[episode.indexNumber, episode]]
+            : []
+        )
+      ),
+    [data]
+  );
 };
 
 const Season = ({
@@ -126,9 +171,15 @@ const Season = ({
   episodeRequestsEnabled = false,
   episodeRequestStates = [],
   seasonRequestState,
+  jellyfinSeriesId,
   onRequestComplete,
 }: SeasonProps) => {
   const intl = useIntl();
+  const { play } = useNativeRuntime();
+  const libraryEpisodes = useLibrarySeasonEpisodes(
+    jellyfinSeriesId,
+    seasonNumber
+  );
   const { data: capabilities } = useMediaActionCapabilities();
   const { addToast } = useToasts();
   const { user, hasPermission } = useUser();
@@ -371,8 +422,22 @@ const Season = ({
                 episode.episodeNumber
               );
               const isWatching = watchingEpisodeId === episode.id;
-              const requestStatusPresentation =
-                requestStatus === MediaRequestStatus.PENDING
+              const libraryEpisode = libraryEpisodes.get(episode.episodeNumber);
+              // Without a writable watch provider, Jellyfin still knows.
+              const showLibraryWatched =
+                !watchStatus?.available && Boolean(libraryEpisode?.watched);
+              const resumePercent =
+                !isWatched &&
+                !libraryEpisode?.watched &&
+                (libraryEpisode?.progressPercent ?? 0) > 0
+                  ? Math.min(libraryEpisode?.progressPercent ?? 0, 100)
+                  : 0;
+              const requestStatusPresentation = libraryEpisode
+                ? {
+                    label: messages.available,
+                    badgeType: 'success' as const,
+                  }
+                : requestStatus === MediaRequestStatus.PENDING
                   ? {
                       label: messages.pendingApproval,
                       badgeType: 'warning' as const,
@@ -400,11 +465,11 @@ const Season = ({
                           : undefined;
               return (
                 <div
-                  className="group flex flex-col gap-4 py-4 xl:flex-row xl:items-center"
+                  className="group flex flex-col gap-4 py-4 xl:flex-row"
                   key={`season-${seasonNumber}-episode-${episode.episodeNumber}`}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-col space-y-2 xl:flex-row xl:items-center xl:space-x-2 xl:space-y-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <h3 className="text-lg">
                         {episode.episodeNumber} - {episode.name}
                       </h3>
@@ -425,68 +490,114 @@ const Season = ({
                           </Badge>
                         </span>
                       )}
+                      {showLibraryWatched && (
+                        <span className="inline-flex items-center gap-1 text-sm text-emerald-400">
+                          <CheckBadgeSolid className="h-4 w-4" />
+                          {intl.formatMessage(messages.watched)}
+                        </span>
+                      )}
                     </div>
-                    {episode.overview && <p>{episode.overview}</p>}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {watchStatus?.available && (
-                      <Button
-                        type="button"
-                        buttonType="ghost"
-                        buttonSize="sm"
-                        disabled={isWatching}
-                        onClick={() =>
-                          void toggleWatched(episode.id, episode.episodeNumber)
-                        }
-                        aria-pressed={isWatched}
-                        aria-label={intl.formatMessage(
-                          isWatched
-                            ? messages.markUnwatched
-                            : messages.markWatched
-                        )}
-                      >
-                        {isWatched ? (
-                          <CheckBadgeSolid className="text-emerald-400" />
-                        ) : (
-                          <CheckBadgeOutline />
-                        )}
-                        <span>
-                          {intl.formatMessage(
-                            isWatched ? messages.watched : messages.markWatched
-                          )}
-                        </span>
-                      </Button>
+                    {episode.overview && (
+                      <p className="mt-1">{episode.overview}</p>
                     )}
-                    {canRequest && !isRequested && (
-                      <Button
-                        type="button"
-                        buttonType="primary"
-                        buttonSize="sm"
-                        data-testid={`episode-quick-request-${episode.id}`}
-                        disabled={isRequesting}
-                        onClick={() =>
-                          void requestEpisode(
-                            episode.id,
-                            `${episodeCode} — ${episode.name}`
-                          )
-                        }
-                        aria-label={`${intl.formatMessage(
-                          messages.request
-                        )} ${episodeCode}`}
-                      >
-                        <ArrowDownTrayIcon />
-                        <span>
-                          {intl.formatMessage(
-                            isRequesting
-                              ? messages.requesting
-                              : messages.request
-                          )}
-                        </span>
-                      </Button>
+                    {(libraryEpisode?.mediaUrl ||
+                      watchStatus?.available ||
+                      (canRequest && !isRequested && !libraryEpisode)) && (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {libraryEpisode?.mediaUrl && (
+                          <Button
+                            as="a"
+                            href={libraryEpisode.mediaUrl}
+                            buttonType="primary"
+                            buttonSize="sm"
+                            aria-label={`${intl.formatMessage(
+                              messages.play
+                            )} ${episodeCode}`}
+                            onClick={(event) =>
+                              handleLibraryPlayClick(event, play, {
+                                provider: 'jellyfin',
+                                itemId: libraryEpisode.jellyfinItemId,
+                                fallbackUrl: libraryEpisode.mediaUrl as string,
+                                label: `${episodeCode} ${episode.name}`,
+                                quality: 'standard',
+                              })
+                            }
+                          >
+                            <PlayIcon />
+                            <span>
+                              {intl.formatMessage(
+                                resumePercent > 0
+                                  ? messages.resume
+                                  : messages.play
+                              )}
+                            </span>
+                          </Button>
+                        )}
+                        {watchStatus?.available && (
+                          <Button
+                            type="button"
+                            buttonType="ghost"
+                            buttonSize="sm"
+                            disabled={isWatching}
+                            onClick={() =>
+                              void toggleWatched(
+                                episode.id,
+                                episode.episodeNumber
+                              )
+                            }
+                            aria-pressed={isWatched}
+                            aria-label={intl.formatMessage(
+                              isWatched
+                                ? messages.markUnwatched
+                                : messages.markWatched
+                            )}
+                          >
+                            {isWatched ? (
+                              <CheckBadgeSolid className="text-emerald-400" />
+                            ) : (
+                              <CheckBadgeOutline />
+                            )}
+                            <span>
+                              {intl.formatMessage(
+                                isWatched
+                                  ? messages.watched
+                                  : messages.markWatched
+                              )}
+                            </span>
+                          </Button>
+                        )}
+                        {canRequest && !isRequested && !libraryEpisode && (
+                          <Button
+                            type="button"
+                            buttonType="primary"
+                            buttonSize="sm"
+                            data-testid={`episode-quick-request-${episode.id}`}
+                            disabled={isRequesting}
+                            onClick={() =>
+                              void requestEpisode(
+                                episode.id,
+                                `${episodeCode} — ${episode.name}`
+                              )
+                            }
+                            aria-label={`${intl.formatMessage(
+                              messages.request
+                            )} ${episodeCode}`}
+                          >
+                            <ArrowDownTrayIcon />
+                            <span>
+                              {intl.formatMessage(
+                                isRequesting
+                                  ? messages.requesting
+                                  : messages.request
+                              )}
+                            </span>
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </div>
                   {episode.stillPath && (
-                    <div className="relative aspect-video xl:h-32">
+                    <div className="relative aspect-video overflow-hidden rounded-lg xl:h-32">
                       <CachedImage
                         type="tmdb"
                         className="rounded-lg object-contain"
@@ -494,6 +605,14 @@ const Season = ({
                         alt=""
                         fill
                       />
+                      {resumePercent > 0 && (
+                        <div className="absolute inset-x-0 bottom-0 h-1 bg-gray-900/70">
+                          <div
+                            className="h-full bg-indigo-500"
+                            style={{ width: `${resumePercent}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

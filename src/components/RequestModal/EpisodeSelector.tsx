@@ -556,21 +556,15 @@ const EpisodeSelector = ({
                   <span className="block truncate text-sm font-medium">
                     {title}
                   </span>
-                  <span className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-500">
-                    <span className="font-mono">{episodeCode(episode)}</span>
-                    {episode.airDate && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span>
-                          {intl.formatDate(episode.airDate, {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </span>
-                      </>
-                    )}
-                  </span>
+                  {episode.airDate && (
+                    <span className="mt-0.5 block text-xs text-gray-500">
+                      {intl.formatDate(episode.airDate, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </span>
+                  )}
                 </span>
                 {requestStatusLabel ? (
                   <span

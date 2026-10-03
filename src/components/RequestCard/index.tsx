@@ -452,7 +452,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
             ((request.episodes?.length ?? 0) > 0 ||
               request.episodeSelectionType === 'watchAhead') && (
               <div className="card-field">
-                <span className="card-field-name">
+                <span className="card-field-name hidden sm:inline">
                   {intl.formatMessage(messages.episodes, {
                     episodeCount: request.episodes?.length ?? 0,
                   })}

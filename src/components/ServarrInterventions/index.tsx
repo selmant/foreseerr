@@ -1,6 +1,7 @@
 import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
+import CachedImage from '@app/components/Common/CachedImage';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import EmptyState from '@app/components/Common/EmptyState';
 import Header from '@app/components/Common/Header';
@@ -27,6 +28,7 @@ import {
   ChevronRightIcon,
   FilmIcon,
   FunnelIcon,
+  TvIcon,
 } from '@heroicons/react/24/solid';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
@@ -88,9 +90,38 @@ const InterventionTitle = ({ item }: { item: ServarrIntervention }) => {
   return (
     <Link
       to={`/${item.mediaType}/${item.tmdbId}`}
-      className="font-medium text-white transition hover:underline"
+      className="text-base font-semibold text-white transition hover:underline"
     >
       {title}
+    </Link>
+  );
+};
+
+const InterventionPoster = ({ item }: { item: ServarrIntervention }) => {
+  // Shares the SWR key with InterventionTitle, so this adds no request.
+  const { data } = useSWR<MovieDetails | TvDetails>(
+    `/api/v1/${item.mediaType}/${item.tmdbId}`
+  );
+  const Icon = item.mediaType === 'movie' ? FilmIcon : TvIcon;
+  return (
+    <Link
+      to={`/${item.mediaType}/${item.tmdbId}`}
+      className="relative hidden h-24 w-16 flex-none overflow-hidden rounded-md bg-gray-700 ring-1 ring-gray-700 transition hover:opacity-80 sm:block"
+      aria-hidden
+      tabIndex={-1}
+    >
+      {data?.posterPath ? (
+        <CachedImage
+          type="tmdb"
+          src={`https://image.tmdb.org/t/p/w300_and_h450_face${data.posterPath}`}
+          alt=""
+          fill
+          sizes="64px"
+          className="object-cover"
+        />
+      ) : (
+        <Icon className="absolute inset-0 m-auto h-6 w-6 text-gray-500" />
+      )}
     </Link>
   );
 };
@@ -284,71 +315,75 @@ const ServarrInterventions = () => {
               className="rounded-xl bg-gray-800 p-4 shadow ring-1 ring-gray-700"
             >
               <div className="flex flex-wrap justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2
-                      className="min-w-0 break-all text-base font-semibold text-white"
+                <div className="flex min-w-0 flex-1 gap-4">
+                  <InterventionPoster item={item} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="min-w-0">
+                        <InterventionTitle item={item} />
+                      </h2>
+                      <Badge badgeType="dark">
+                        {item.serviceName}
+                        {item.is4k ? ' · 4K' : ''}
+                      </Badge>
+                      {inProgress(item) && (
+                        <Badge badgeType="primary">
+                          {intl.formatMessage(messages.inProgress)}
+                        </Badge>
+                      )}
+                    </div>
+                    <p
+                      className="mt-1 break-all font-mono text-xs text-gray-400"
                       title={item.releaseTitle}
                     >
                       {item.releaseTitle}
-                    </h2>
-                    {inProgress(item) && (
-                      <Badge badgeType="primary">
-                        {intl.formatMessage(messages.inProgress)}
-                      </Badge>
+                    </p>
+                    {item.warningMessages.length > 0 && (
+                      <ul className="mt-2 list-inside list-disc text-sm text-yellow-200">
+                        {item.warningMessages.map((message, index) => (
+                          <li key={`${item.id}-${index}`}>{message}</li>
+                        ))}
+                      </ul>
                     )}
-                  </div>
-                  <div className="mt-1 text-sm text-gray-300">
-                    <InterventionTitle item={item} />
-                    {' · '}
-                    {item.serviceName}
-                    {item.is4k ? ' · 4K' : ''}
-                  </div>
-                  {item.warningMessages.length > 0 && (
-                    <ul className="mt-2 list-inside list-disc text-sm text-yellow-200">
-                      {item.warningMessages.map((message, index) => (
-                        <li key={`${item.id}-${index}`}>{message}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {item.cleanupError && (
-                    <div className="mt-2 text-sm text-red-300">
-                      {intl.formatMessage(messages.cleanupError, {
-                        error: item.cleanupError,
-                      })}
-                    </div>
-                  )}
-                  <div className="mt-2 text-xs text-gray-400">
-                    {mode === 'active' ? (
-                      <>
-                        {intl.formatMessage(messages.firstSeen, {
-                          date: intl.formatDate(item.firstSeenAt, {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          }),
-                        })}{' '}
-                        · <Countdown deadline={item.cleanupDeadlineAt} />
-                      </>
-                    ) : (
-                      <>
-                        {item.resolvedAt
-                          ? intl.formatDate(item.resolvedAt, {
+                    {item.cleanupError && (
+                      <div className="mt-2 text-sm text-red-300">
+                        {intl.formatMessage(messages.cleanupError, {
+                          error: item.cleanupError,
+                        })}
+                      </div>
+                    )}
+                    <div className="mt-2 text-xs text-gray-400">
+                      {mode === 'active' ? (
+                        <>
+                          {intl.formatMessage(messages.firstSeen, {
+                            date: intl.formatDate(item.firstSeenAt, {
                               dateStyle: 'medium',
                               timeStyle: 'short',
-                            })
-                          : ''}{' '}
-                        ·{' '}
-                        {item.resolution === 'automatic_blocklist'
-                          ? intl.formatMessage(messages.automaticCleanup)
-                          : intl.formatMessage(messages.manualRejection, {
-                              actor: item.actor
-                                ? intl.formatMessage(messages.byActor, {
-                                    name: item.actor.displayName,
-                                  })
-                                : '',
-                            })}
-                      </>
-                    )}
+                            }),
+                          })}{' '}
+                          · <Countdown deadline={item.cleanupDeadlineAt} />
+                        </>
+                      ) : (
+                        <>
+                          {item.resolvedAt
+                            ? intl.formatDate(item.resolvedAt, {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              })
+                            : ''}{' '}
+                          ·{' '}
+                          {item.resolution === 'automatic_blocklist'
+                            ? intl.formatMessage(messages.automaticCleanup)
+                            : intl.formatMessage(messages.manualRejection, {
+                                actor: item.actor
+                                  ? intl.formatMessage(messages.byActor, {
+                                      name: item.actor.displayName,
+                                    })
+                                  : '',
+                              })}
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {mode === 'active' && (

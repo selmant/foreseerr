@@ -135,8 +135,8 @@ const UnmappedSourceCard = ({
             </span>
           </div>
 
-          <div className="flex h-full w-full items-end">
-            <div className="px-2 pb-14 text-white">
+          <div className="relative flex h-full w-full items-end">
+            <div className={`px-2 text-white ${sourceUrl ? 'pb-20' : 'pb-12'}`}>
               <h1
                 className="whitespace-normal text-sm font-bold leading-tight sm:text-base"
                 style={{
@@ -162,7 +162,7 @@ const UnmappedSourceCard = ({
             </div>
           </div>
 
-          <div className="absolute bottom-0 left-0 right-0 flex gap-1 px-2 py-2">
+          <div className="absolute bottom-0 left-0 right-0 flex flex-col gap-1 p-2">
             {sourceUrl ? (
               <Button
                 as="a"
@@ -171,8 +171,7 @@ const UnmappedSourceCard = ({
                 rel="noreferrer"
                 buttonType="ghost"
                 buttonSize="sm"
-                className="h-7 min-w-0 flex-1 px-2"
-                title={intl.formatMessage(messages.openOriginal)}
+                className="h-7 w-full px-2"
               >
                 <ArrowTopRightOnSquareIcon className="h-4 w-4" />
                 <span className="truncate">
@@ -180,32 +179,35 @@ const UnmappedSourceCard = ({
                 </span>
               </Button>
             ) : null}
-            {canRepair && (
+            <div className="flex gap-1">
+              {canRepair && (
+                <Button
+                  buttonType="warning"
+                  buttonSize="sm"
+                  className="h-7 px-2"
+                  title={intl.formatMessage(messages.fixMapping)}
+                  aria-label={intl.formatMessage(messages.fixMapping)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setRepairing(true);
+                  }}
+                >
+                  <WrenchScrewdriverIcon className="h-4 w-4" />
+                </Button>
+              )}
               <Button
-                buttonType="warning"
+                buttonType="default"
                 buttonSize="sm"
-                className="h-7 px-2"
-                title={intl.formatMessage(messages.fixMapping)}
+                className="h-7 flex-1 px-2"
                 onClick={(e) => {
                   e.preventDefault();
-                  setRepairing(true);
+                  onHide();
                 }}
               >
-                <WrenchScrewdriverIcon className="h-4 w-4" />
+                <EyeSlashIcon className="h-4 w-4" />
+                <span>{intl.formatMessage(messages.hide)}</span>
               </Button>
-            )}
-            <Button
-              buttonType="default"
-              buttonSize="sm"
-              className={sourceUrl || canRepair ? 'h-7 px-2' : 'h-7 w-full'}
-              onClick={(e) => {
-                e.preventDefault();
-                onHide();
-              }}
-            >
-              <EyeSlashIcon className="h-4 w-4" />
-              <span>{intl.formatMessage(messages.hide)}</span>
-            </Button>
+            </div>
           </div>
         </div>
       </div>

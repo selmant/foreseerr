@@ -1060,6 +1060,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                               }
                               episodeRequestStates={episodeRequestStates}
                               seasonRequestState={seasonRequestState}
+                              jellyfinSeriesId={
+                                data.mediaInfo?.jellyfinMediaId ?? undefined
+                              }
                               onRequestComplete={() => void revalidate()}
                             />
                           </DisclosurePanel>

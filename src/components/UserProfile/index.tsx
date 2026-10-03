@@ -2,6 +2,11 @@ import ImageFader from '@app/components/Common/ImageFader';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import ProgressCircle from '@app/components/Common/ProgressCircle';
+import AnilistUserSlider from '@app/components/Discover/AnilistUserSlider';
+import { sliderTitles } from '@app/components/Discover/constants';
+import SimklSlider from '@app/components/Discover/SimklSlider';
+import TraktHistorySlider from '@app/components/Discover/TraktHistorySlider';
+import TraktWatchlistSlider from '@app/components/Discover/TraktWatchlistSlider';
 import RequestCard from '@app/components/RequestCard';
 import Slider from '@app/components/Slider';
 import TmdbTitleCard, {
@@ -401,6 +406,21 @@ const UserProfile = () => {
             />
           </>
         )}
+      {/* Linked-service lists are only readable for the signed-in user. */}
+      {user.id === currentUser?.id && (
+        <>
+          <TraktWatchlistSlider />
+          <TraktHistorySlider />
+          <SimklSlider
+            title={intl.formatMessage(sliderTitles.simklwatching)}
+            endpoint="/api/v1/discover/simkl/library?status=watching"
+            linkUrl="/discover/simkl?status=watching"
+            sliderKey="profile-simkl-watching"
+            requiresLink
+          />
+          <AnilistUserSlider list="watching" sliderKey="profile-anilist" />
+        </>
+      )}
     </>
   );
 };
