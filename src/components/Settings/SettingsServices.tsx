@@ -10,9 +10,11 @@ import OverrideRuleModal from '@app/components/Settings/OverrideRule/OverrideRul
 import OverrideRuleTiles from '@app/components/Settings/OverrideRule/OverrideRuleTiles';
 import RadarrModal from '@app/components/Settings/RadarrModal';
 import SonarrModal from '@app/components/Settings/SonarrModal';
+import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
+import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { PencilIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/solid';
 import type OverrideRule from '@server/entity/OverrideRule';
 import type { OverrideRuleResultsResponse } from '@server/interfaces/api/overrideRuleInterfaces';
@@ -50,12 +52,15 @@ const messages = defineMessages('components.Settings', {
   overrideRulesDescription:
     'Override rules allow you to specify properties that will be replaced if a request matches the rule.',
   addrule: 'New Override Rule',
-  interventionCleanup: 'Intervention cleanup',
+  interventionCleanup: 'Intervention Cleanup',
   interventionCleanupDescription:
     'Detect mapped Arr queue warnings. Automatic cleanup deletes overdue downloads, blocklists their releases in Arr, and allows Arr to retry.',
-  automaticCleanup: 'Automatically reject overdue warnings',
-  cleanupGrace: 'Grace period (hours)',
-  saveCleanup: 'Save cleanup settings',
+  automaticCleanup: 'Automatically Reject Overdue Warnings',
+  cleanupGrace: 'Grace Period',
+  cleanupGraceTip: 'Hours a warning may stay unresolved before cleanup (1–720)',
+  cleanupGraceInvalid: 'Enter a whole number of hours between 1 and 720',
+  cleanupSaved: 'Intervention cleanup settings saved successfully!',
+  cleanupSaveFailed: 'Something went wrong while saving settings.',
 });
 
 type InterventionSettings = {
@@ -65,34 +70,50 @@ type InterventionSettings = {
 
 const InterventionCleanupSettings = () => {
   const intl = useIntl();
+  const { addToast } = useToasts();
   const { data, mutate: refresh } = useSWR<InterventionSettings>(
     '/api/v1/settings/servarr-interventions'
   );
-  const [values, setValues] = useState<InterventionSettings>({
-    automaticCleanupEnabled: false,
-    cleanupGraceHours: 24,
-  });
+  const [values, setValues] = useState<{
+    automaticCleanupEnabled: boolean;
+    cleanupGraceHours: string;
+  }>({ automaticCleanupEnabled: false, cleanupGraceHours: '24' });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
   useEffect(() => {
-    if (data) setValues(data);
+    if (data)
+      setValues({
+        automaticCleanupEnabled: data.automaticCleanupEnabled,
+        cleanupGraceHours: String(data.cleanupGraceHours),
+      });
   }, [data]);
+
+  const graceHours = Number(values.cleanupGraceHours);
+  const graceValid =
+    /^\d+$/.test(values.cleanupGraceHours.trim()) &&
+    graceHours >= 1 &&
+    graceHours <= 720;
 
   const save = async () => {
     setSaving(true);
-    setError(undefined);
     try {
       const response = await axios.post<InterventionSettings>(
         '/api/v1/settings/servarr-interventions',
-        values
+        {
+          automaticCleanupEnabled: values.automaticCleanupEnabled,
+          cleanupGraceHours: graceHours,
+        }
       );
-      setValues(response.data);
       await refresh(response.data, false);
+      addToast(intl.formatMessage(messages.cleanupSaved), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
     } catch (requestError) {
-      setError(
-        axios.isAxiosError(requestError)
+      addToast(
+        (axios.isAxiosError(requestError)
           ? requestError.response?.data?.message
-          : 'Unable to save cleanup settings.'
+          : undefined) ?? intl.formatMessage(messages.cleanupSaveFailed),
+        { appearance: 'error', autoDismiss: true }
       );
     } finally {
       setSaving(false);
@@ -100,8 +121,8 @@ const InterventionCleanupSettings = () => {
   };
 
   return (
-    <div className="mb-10">
-      <div className="mb-6">
+    <>
+      <div className="mb-6 mt-10">
         <h3 className="heading">
           {intl.formatMessage(messages.interventionCleanup)}
         </h3>
@@ -109,7 +130,13 @@ const InterventionCleanupSettings = () => {
           {intl.formatMessage(messages.interventionCleanupDescription)}
         </p>
       </div>
-      <div className="section">
+      <form
+        className="section"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
         <div className="form-row">
           <label htmlFor="automaticCleanupEnabled" className="checkbox-label">
             <span className="mr-2">
@@ -135,45 +162,51 @@ const InterventionCleanupSettings = () => {
             <span className="mr-2">
               {intl.formatMessage(messages.cleanupGrace)}
             </span>
+            <span className="label-tip">
+              {intl.formatMessage(messages.cleanupGraceTip)}
+            </span>
           </label>
           <div className="form-input-area">
-            <div className="form-input-field">
-              <input
-                id="cleanupGraceHours"
-                type="number"
-                min={1}
-                max={720}
-                step={1}
-                value={values.cleanupGraceHours}
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    cleanupGraceHours: Number(event.target.value),
-                  }))
-                }
-              />
-            </div>
+            <input
+              id="cleanupGraceHours"
+              type="text"
+              inputMode="numeric"
+              className="short"
+              value={values.cleanupGraceHours}
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  cleanupGraceHours: event.target.value,
+                }))
+              }
+            />
           </div>
+          {!graceValid && (
+            <div className="error">
+              {intl.formatMessage(messages.cleanupGraceInvalid)}
+            </div>
+          )}
         </div>
-        {error && <div className="error">{error}</div>}
         <div className="actions">
           <div className="flex justify-end">
-            <Button
-              buttonType="primary"
-              disabled={
-                saving ||
-                !Number.isInteger(values.cleanupGraceHours) ||
-                values.cleanupGraceHours < 1 ||
-                values.cleanupGraceHours > 720
-              }
-              onClick={() => void save()}
-            >
-              {intl.formatMessage(messages.saveCleanup)}
-            </Button>
+            <span className="ml-3 inline-flex rounded-md shadow-sm">
+              <Button
+                buttonType="primary"
+                type="submit"
+                disabled={saving || !graceValid}
+              >
+                <ArrowDownOnSquareIcon />
+                <span>
+                  {saving
+                    ? intl.formatMessage(globalMessages.saving)
+                    : intl.formatMessage(globalMessages.save)}
+                </span>
+              </Button>
+            </span>
           </div>
         </div>
-      </div>
-    </div>
+      </form>
+    </>
   );
 };
 
@@ -328,7 +361,14 @@ const ServerInstance = ({
   );
 };
 
-const SettingsServices = () => {
+type SettingsServicesProps = {
+  /** Intervention cleanup is tuning for later; initial setup skips it. */
+  showInterventionCleanup?: boolean;
+};
+
+const SettingsServices = ({
+  showInterventionCleanup = true,
+}: SettingsServicesProps) => {
   const intl = useIntl();
   const {
     data: radarrData,
@@ -391,7 +431,6 @@ const SettingsServices = () => {
           intl.formatMessage(globalMessages.settings),
         ]}
       />
-      <InterventionCleanupSettings />
       <div className="mb-6">
         <h3 className="heading">
           {intl.formatMessage(messages.radarrsettings)}
@@ -679,6 +718,7 @@ const SettingsServices = () => {
           sonarrServices={sonarrData}
         />
       )}
+      {showInterventionCleanup && <InterventionCleanupSettings />}
     </>
   );
 };

@@ -1,7 +1,15 @@
+import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
+import SegmentedControl from '@app/components/Common/SegmentedControl';
 import useToasts from '@app/hooks/useToasts';
+import defineMessages from '@app/utils/defineMessages';
+import {
+  ArrowDownTrayIcon,
+  DocumentMagnifyingGlassIcon,
+} from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useIntl } from 'react-intl';
 
 import {
   formatSize,
@@ -10,6 +18,54 @@ import {
   type ImportSource,
   type ServarrContext,
 } from './servarrTypes';
+
+const messages = defineMessages('components.ManageSlideOver.ManualImport', {
+  manualImport: 'Manual Import ({count})',
+  noSources: 'No download is waiting for a manual import.',
+  availabilityFailed: 'Unable to check whether a download needs manual import.',
+  retry: 'Retry',
+  status: 'Manual import: {status}',
+  chooseSource: 'Choose an import source',
+  chooseSourceDescription:
+    'Foreseerr asks {service} to scan the selected download; it does not inspect your filesystem itself.',
+  importSource: 'Import source',
+  download: 'Download: {label}',
+  reviewFiles: 'Review Files',
+  scanning: 'Scanning…',
+  scanFailed: 'Unable to scan this import source.',
+  noCandidates: '{service} found no manual-import candidates in {source}.',
+  reviewFrom: 'Review from {source}',
+  changeSource: 'Change Source',
+  importMode: 'Import mode',
+  moveFiles: 'Move Files',
+  copyFiles: 'Copy Files',
+  importSelected: 'Import Selected ({count})',
+  confirmTitle:
+    '{mode, select, copy {Copy} other {Move}} {count, plural, one {# file} other {# files}}?',
+  confirmDescription:
+    '{service} will {mode, select, copy {copy} other {move}} the selected files.',
+  confirmDescriptionWarnings:
+    '{service} will {mode, select, copy {copy} other {move}} the selected files even though it reported warnings.',
+  cancel: 'Cancel',
+  importNow: 'Import',
+  importing: 'Importing…',
+  unknownQuality: 'Unknown quality',
+  unknownLanguage: 'Unknown language',
+  customFormatScore: 'CF {score}',
+  incomplete:
+    '{service} needs additional metadata for this file. Open it in {service} to complete the import.',
+  episodeAssignment: 'Episode Assignment',
+  applyEpisodes: 'Apply with {service}',
+  applying: 'Applying…',
+  chooseEpisodeFirst: 'Choose at least one episode before rematching.',
+  rematchFailed: '{service} could not rematch this file.',
+  pollTimeout: 'Manual import status check timed out.',
+  importCompleted: 'Manual import completed.',
+  importFailed: 'Manual import failed.',
+  statusFailed: 'Unable to read manual import status.',
+  importQueued: 'Manual import queued.',
+  submitFailed: 'Unable to submit manual import.',
+});
 
 const MANUAL_IMPORT_POLL_MS = 2000;
 const MANUAL_IMPORT_POLL_DEADLINE_MS = 2 * 60 * 60 * 1000;
@@ -34,7 +90,12 @@ const ManualImport = ({
   refreshToken: number;
   interventionId?: number;
 }) => {
+  const intl = useIntl();
   const { addToast } = useToasts();
+  // Interventions open straight into the import workflow; the panel inside
+  // Manage keeps it behind a button so it only appears when needed.
+  const startOpen = interventionId !== undefined;
+  const service = context.service.name;
   const sourcesAbortRef = useRef<AbortController | undefined>(undefined);
   const scanAbortRef = useRef<AbortController | undefined>(undefined);
   const reprocessAbortRef = useRef<AbortController | undefined>(undefined);
@@ -45,9 +106,10 @@ const ManualImport = ({
     cancelled: boolean;
   }>({ cancelled: false });
   const [sources, setSources] = useState<ImportSource[]>([]);
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [availabilityError, setAvailabilityError] = useState<string>();
   const [refreshingSources, setRefreshingSources] = useState(false);
-  const [workflowOpen, setWorkflowOpen] = useState(false);
+  const [workflowOpen, setWorkflowOpen] = useState(startOpen);
   const [selectedSource, setSelectedSource] = useState<string>();
   const [sourceLabel, setSourceLabel] = useState<string>();
   const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
@@ -86,15 +148,15 @@ const ManualImport = ({
       if (controller.signal.aborted) return;
       setSources([]);
       setAvailabilityError(
-        errorMessage(
-          error,
-          'Unable to check whether a download needs manual import.'
-        )
+        errorMessage(error, intl.formatMessage(messages.availabilityFailed))
       );
     } finally {
-      if (!controller.signal.aborted) setRefreshingSources(false);
+      if (!controller.signal.aborted) {
+        setRefreshingSources(false);
+        setSourcesLoaded(true);
+      }
     }
-  }, [is4k, mediaId]);
+  }, [intl, is4k, mediaId]);
 
   const cancelPolling = useCallback(() => {
     const state = pollRef.current;
@@ -149,9 +211,9 @@ const ManualImport = ({
       setEpisodeMappings({});
     } catch (error) {
       if (controller.signal.aborted) return;
-      setError(errorMessage(error, 'Unable to scan this import source.'));
+      setError(errorMessage(error, intl.formatMessage(messages.scanFailed)));
       if (axios.isAxiosError(error) && error.response?.status === 409) {
-        setWorkflowOpen(false);
+        setWorkflowOpen(startOpen);
         void refreshSources();
       }
     } finally {
@@ -165,7 +227,7 @@ const ManualImport = ({
       candidate.episodes?.map((episode) => episode.id) ??
       [];
     if (!episodeIds.length) {
-      setError('Choose at least one episode before rematching.');
+      setError(intl.formatMessage(messages.chooseEpisodeFirst));
       return;
     }
     reprocessAbortRef.current?.abort();
@@ -197,7 +259,12 @@ const ManualImport = ({
       });
     } catch (error) {
       if (!controller.signal.aborted)
-        setError(errorMessage(error, 'Sonarr could not rematch this file.'));
+        setError(
+          errorMessage(
+            error,
+            intl.formatMessage(messages.rematchFailed, { service })
+          )
+        );
     } finally {
       if (!controller.signal.aborted) setRematchingToken(undefined);
     }
@@ -212,7 +279,7 @@ const ManualImport = ({
     const poll = async () => {
       if (state.cancelled) return;
       if (Date.now() - startedAt > MANUAL_IMPORT_POLL_DEADLINE_MS) {
-        setError('Manual import status check timed out.');
+        setError(intl.formatMessage(messages.pollTimeout));
         setPolling(false);
         return;
       }
@@ -227,13 +294,16 @@ const ManualImport = ({
         setImportStatus(response.data.status);
         if (['completed', 'failed', 'aborted'].includes(response.data.status)) {
           if (response.data.status === 'completed') {
-            addToast('Manual import completed.', {
+            addToast(intl.formatMessage(messages.importCompleted), {
               appearance: 'success',
               autoDismiss: true,
             });
             void refreshSources();
             onChanged();
-          } else setError(response.data.message ?? 'Manual import failed.');
+          } else
+            setError(
+              response.data.message ?? intl.formatMessage(messages.importFailed)
+            );
           setPolling(false);
           return;
         }
@@ -243,7 +313,9 @@ const ManualImport = ({
         );
       } catch (error) {
         if (!state.cancelled && !controller.signal.aborted) {
-          setError(errorMessage(error, 'Unable to read manual import status.'));
+          setError(
+            errorMessage(error, intl.formatMessage(messages.statusFailed))
+          );
           setPolling(false);
         }
       }
@@ -290,20 +362,22 @@ const ManualImport = ({
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
-      addToast(`Manual import queued (${response.data.status ?? 'queued'}).`, {
+      addToast(intl.formatMessage(messages.importQueued), {
         appearance: 'success',
         autoDismiss: true,
       });
       setSelected([]);
       setImportStatus(response.data.status ?? 'queued');
       setCandidates([]);
-      setWorkflowOpen(false);
+      setWorkflowOpen(startOpen);
       void refreshSources();
       onChanged();
       beginPolling(response.data.commandToken);
     } catch (error) {
       if (!controller.signal.aborted)
-        setError(errorMessage(error, 'Unable to submit manual import.'));
+        setError(
+          errorMessage(error, intl.formatMessage(messages.submitFailed))
+        );
     } finally {
       if (!controller.signal.aborted) setSubmitting(false);
     }
@@ -314,79 +388,106 @@ const ManualImport = ({
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        {sources.length > 0 && (
-          <Button
-            buttonType="default"
-            className="border-yellow-700 text-yellow-200 hover:bg-yellow-950/40"
-            onClick={openWorkflow}
-          >
-            Manual Import ({sources.length})
-          </Button>
+      {!startOpen && sources.length > 0 && !workflowOpen && (
+        <Button buttonType="warning" className="w-full" onClick={openWorkflow}>
+          <ArrowDownTrayIcon />
+          <span>
+            {intl.formatMessage(messages.manualImport, {
+              count: sources.length,
+            })}
+          </span>
+        </Button>
+      )}
+      {startOpen &&
+        sourcesLoaded &&
+        !availabilityError &&
+        !sources.length &&
+        !importStatus && (
+          <p className="text-sm text-gray-400">
+            {intl.formatMessage(messages.noSources)}
+          </p>
         )}
-      </div>
       {availabilityError && (
-        <div className="flex items-center gap-2 text-xs text-yellow-300">
-          <span>{availabilityError}</span>
+        <Alert type="warning" title={availabilityError}>
           <button
-            className="underline hover:text-yellow-100"
+            className="font-medium underline hover:text-yellow-100"
             type="button"
             disabled={refreshingSources}
             onClick={() => void refreshSources()}
           >
-            Retry
+            {intl.formatMessage(messages.retry)}
           </button>
-        </div>
+        </Alert>
       )}
-      {error && <div className="text-sm text-red-300">{error}</div>}
+      {error && <Alert type="error" title={error} />}
       {importStatus && (
-        <div className="text-sm text-gray-300">
-          Manual import: {importStatus}
-        </div>
+        <p className="text-sm text-gray-300">
+          {intl.formatMessage(messages.status, { status: importStatus })}
+        </p>
       )}
       {workflowOpen && sources.length > 0 && !candidates.length && (
-        <div className="space-y-2 rounded border border-gray-700 bg-gray-800/30 p-3 text-sm">
-          <div className="font-medium text-white">
-            Choose an Arr import source
+        <div className="space-y-3 rounded-md border border-gray-700 bg-gray-800 p-4 shadow">
+          <div>
+            <div className="font-semibold text-white">
+              {intl.formatMessage(messages.chooseSource)}
+            </div>
+            <p className="mt-1 text-sm text-gray-400">
+              {intl.formatMessage(messages.chooseSourceDescription, {
+                service,
+              })}
+            </p>
           </div>
-          <p className="text-gray-300">
-            Foreseerr asks {context.service.name} to scan the selected download;
-            it does not inspect your filesystem itself.
-          </p>
           <select
-            className="w-full"
+            aria-label={intl.formatMessage(messages.importSource)}
             value={selectedSource}
             onChange={(event) => setSelectedSource(event.target.value)}
             disabled={scanning}
           >
             {sources.map((source) => (
               <option key={source.token} value={source.token}>
-                Download: {source.label}
+                {intl.formatMessage(messages.download, { label: source.label })}
               </option>
             ))}
           </select>
-          <Button
-            buttonType="primary"
-            buttonSize="sm"
-            disabled={!selectedSource || scanning}
-            onClick={() => void scanSource()}
-          >
-            Review files
-          </Button>
+          <div className="flex justify-end gap-2">
+            {!startOpen && (
+              <Button
+                disabled={scanning}
+                onClick={() => setWorkflowOpen(false)}
+              >
+                {intl.formatMessage(messages.cancel)}
+              </Button>
+            )}
+            <Button
+              buttonType="primary"
+              disabled={!selectedSource || scanning}
+              onClick={() => void scanSource()}
+            >
+              <DocumentMagnifyingGlassIcon />
+              <span>
+                {intl.formatMessage(
+                  scanning ? messages.scanning : messages.reviewFiles
+                )}
+              </span>
+            </Button>
+          </div>
         </div>
       )}
       {sourceLabel && !scanning && candidates.length === 0 && (
-        <div className="rounded border border-gray-700 p-3 text-sm text-gray-300">
-          {context.service.name} found no manual-import candidates in{' '}
-          {sourceLabel}.
-        </div>
+        <p className="text-sm text-gray-400">
+          {intl.formatMessage(messages.noCandidates, {
+            service,
+            source: sourceLabel,
+          })}
+        </p>
       )}
       {candidates.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm text-gray-300">
-            <span>Review from {sourceLabel}</span>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate text-sm text-gray-300">
+              {intl.formatMessage(messages.reviewFrom, { source: sourceLabel })}
+            </span>
             <Button
-              buttonType="default"
               buttonSize="sm"
               disabled={isBusy}
               onClick={() => {
@@ -396,45 +497,36 @@ const ManualImport = ({
                 setWorkflowOpen(true);
               }}
             >
-              Change source
+              {intl.formatMessage(messages.changeSource)}
             </Button>
           </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={mode}
-              disabled={submitting}
-              onChange={(event) =>
-                setMode(event.target.value as 'move' | 'copy')
-              }
-            >
-              <option value="move">Move files</option>
-              <option value="copy">Copy files</option>
-            </select>
-            <Button
-              buttonType="success"
-              buttonSize="sm"
-              type="button"
-              disabled={
-                !selected.length ||
-                submitting ||
-                rematchingToken !== undefined ||
-                confirmOpen
-              }
-              onClick={() => setConfirmOpen(true)}
-            >
-              Import selected ({selected.length})
-            </Button>
-          </div>
-          {confirmOpen && (
-            <div className="space-y-2 rounded border border-gray-600 bg-gray-900/80 p-3 text-sm">
-              <div className="font-medium text-white">
-                Import {selectedFiles.length} file(s) using {mode}?
+          <SegmentedControl<'move' | 'copy'>
+            ariaLabel={intl.formatMessage(messages.importMode)}
+            size="sm"
+            value={mode}
+            onChange={(value) => {
+              if (!submitting) setMode(value);
+            }}
+            options={[
+              { value: 'move', label: intl.formatMessage(messages.moveFiles) },
+              { value: 'copy', label: intl.formatMessage(messages.copyFiles) },
+            ]}
+          />
+          {confirmOpen ? (
+            <div className="space-y-3 rounded-md border border-gray-600 bg-gray-900/80 p-4 text-sm shadow">
+              <div className="font-semibold text-white">
+                {intl.formatMessage(messages.confirmTitle, {
+                  mode,
+                  count: selectedFiles.length,
+                })}
               </div>
               <p className="text-gray-300">
-                {context.service.name} will {mode} the selected files
-                {selectedWarnings.length
-                  ? ' even though Arr reported warnings.'
-                  : '.'}
+                {intl.formatMessage(
+                  selectedWarnings.length
+                    ? messages.confirmDescriptionWarnings
+                    : messages.confirmDescription,
+                  { service, mode }
+                )}
               </p>
               {selectedWarnings.length > 0 && (
                 <ul className="list-disc space-y-1 pl-5 text-yellow-300">
@@ -443,15 +535,14 @@ const ManualImport = ({
                   ))}
                 </ul>
               )}
-              <div className="flex gap-2">
+              <div className="flex justify-end gap-2">
                 <Button
                   type="button"
-                  buttonType="default"
                   buttonSize="sm"
                   disabled={submitting}
                   onClick={() => setConfirmOpen(false)}
                 >
-                  Cancel
+                  {intl.formatMessage(messages.cancel)}
                 </Button>
                 <Button
                   type="button"
@@ -460,120 +551,181 @@ const ManualImport = ({
                   disabled={!selectedFiles.length || submitting}
                   onClick={() => void submitImport()}
                 >
-                  {submitting ? 'Importing…' : `Import (${mode})`}
+                  <ArrowDownTrayIcon />
+                  <span>
+                    {intl.formatMessage(
+                      submitting ? messages.importing : messages.importNow
+                    )}
+                  </span>
                 </Button>
               </div>
             </div>
+          ) : (
+            <Button
+              buttonType="success"
+              className="w-full"
+              type="button"
+              disabled={
+                !selected.length || submitting || rematchingToken !== undefined
+              }
+              onClick={() => setConfirmOpen(true)}
+            >
+              <ArrowDownTrayIcon />
+              <span>
+                {intl.formatMessage(messages.importSelected, {
+                  count: selected.length,
+                })}
+              </span>
+            </Button>
           )}
-          {candidates.map((candidate) => {
-            const assigned =
-              episodeMappings[candidate.token] ??
-              candidate.episodes?.map((episode) => episode.id) ??
-              [];
-            return (
-              <div
-                key={candidate.token}
-                className="block rounded border border-gray-700 p-2 text-sm"
-              >
-                <label>
-                  <input
-                    className="mr-2"
-                    type="checkbox"
-                    disabled={
-                      !candidate.complete ||
-                      submitting ||
-                      rematchingToken !== undefined
-                    }
-                    checked={selected.includes(candidate.token)}
-                    onChange={() =>
-                      setSelected((current) =>
-                        current.includes(candidate.token)
-                          ? current.filter((token) => token !== candidate.token)
-                          : [...current, candidate.token]
-                      )
-                    }
-                  />
-                  <span className="font-medium text-white">
-                    {candidate.name}
-                  </span>
-                  <span className="ml-2">
-                    {formatSize(candidate.size)} ·{' '}
-                    {candidate.quality ?? 'Unknown quality'}
-                    {candidate.source ? ` · ${candidate.source}` : ''}
-                  </span>
-                </label>
-                <div className="ml-6 mt-1 text-gray-300">
-                  {candidate.languages.join(', ') || 'Unknown language'}
-                  {candidate.customFormats.length
-                    ? ` · ${candidate.customFormats.join(', ')}`
-                    : ''}
-                  {candidate.customFormatScore !== undefined
-                    ? ` · CF ${candidate.customFormatScore}`
-                    : ''}
-                </div>
-                {!candidate.complete && (
-                  <div className="ml-6 mt-1 text-yellow-300">
-                    Arr needs additional metadata for this file. Open it in Arr
-                    to complete the import.
+          <ul className="divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
+            {candidates.map((candidate) => {
+              const assigned =
+                episodeMappings[candidate.token] ??
+                candidate.episodes?.map((episode) => episode.id) ??
+                [];
+              const checkboxId = `manual-import-${candidate.token}`;
+              return (
+                <li key={candidate.token} className="px-4 py-3 text-sm">
+                  <div className="flex items-start gap-3">
+                    <input
+                      id={checkboxId}
+                      type="checkbox"
+                      className="mt-0.5 flex-none"
+                      disabled={
+                        !candidate.complete ||
+                        submitting ||
+                        rematchingToken !== undefined
+                      }
+                      checked={selected.includes(candidate.token)}
+                      onChange={() =>
+                        setSelected((current) =>
+                          current.includes(candidate.token)
+                            ? current.filter(
+                                (token) => token !== candidate.token
+                              )
+                            : [...current, candidate.token]
+                        )
+                      }
+                    />
+                    <label
+                      htmlFor={checkboxId}
+                      className="mb-0 min-w-0 flex-1 font-normal"
+                    >
+                      <span className="block break-all font-medium text-white">
+                        {candidate.name}
+                      </span>
+                      <span className="block text-xs text-gray-400">
+                        {[
+                          formatSize(candidate.size),
+                          candidate.quality ??
+                            intl.formatMessage(messages.unknownQuality),
+                          candidate.source,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                      <span className="block text-xs text-gray-400">
+                        {[
+                          candidate.languages.join(', ') ||
+                            intl.formatMessage(messages.unknownLanguage),
+                          candidate.customFormats.join(', '),
+                          candidate.customFormatScore !== undefined
+                            ? intl.formatMessage(messages.customFormatScore, {
+                                score: candidate.customFormatScore,
+                              })
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    </label>
                   </div>
-                )}
-                {context.mediaType === 'tv' &&
-                  (selected.includes(candidate.token) ||
-                    !candidate.complete) && (
-                    <div className="ml-6 mt-2 rounded border border-gray-600 p-2">
-                      <div className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-400">
-                        Sonarr episode assignment
-                      </div>
-                      <div className="max-h-40 space-y-1 overflow-y-auto">
-                        {episodes.map((episode: Episode) => (
-                          <label key={episode.id} className="block">
-                            <input
-                              className="mr-2"
-                              type="checkbox"
-                              disabled={rematchingToken === candidate.token}
-                              checked={assigned.includes(episode.id)}
-                              onChange={() =>
-                                setEpisodeMappings((current) => {
-                                  const ids =
-                                    current[candidate.token] ?? assigned;
-                                  return {
-                                    ...current,
-                                    [candidate.token]: ids.includes(episode.id)
-                                      ? ids.filter((id) => id !== episode.id)
-                                      : [...ids, episode.id],
-                                  };
-                                })
-                              }
-                            />
-                            S{String(episode.seasonNumber).padStart(2, '0')}E
-                            {String(episode.episodeNumber).padStart(2, '0')} —{' '}
-                            {episode.title}
-                          </label>
-                        ))}
-                      </div>
-                      <Button
-                        className="mt-2"
-                        buttonType="default"
-                        buttonSize="sm"
-                        disabled={rematchingToken !== undefined || submitting}
-                        onClick={() => void rematchCandidate(candidate)}
-                      >
-                        {rematchingToken === candidate.token
-                          ? 'Applying…'
-                          : 'Apply with Sonarr'}
-                      </Button>
-                    </div>
-                  )}
-                {candidate.rejections.length > 0 && (
-                  <div className="ml-6 mt-1 text-yellow-300">
-                    {candidate.rejections
-                      .map((rejection) => rejection.reason)
-                      .join(' • ')}
+                  <div className="ml-9 space-y-2">
+                    {!candidate.complete && (
+                      <p className="mt-1 text-xs text-yellow-300">
+                        {intl.formatMessage(messages.incomplete, { service })}
+                      </p>
+                    )}
+                    {candidate.rejections.length > 0 && (
+                      <p className="mt-1 text-xs text-yellow-300">
+                        {candidate.rejections
+                          .map((rejection) => rejection.reason)
+                          .join(' • ')}
+                      </p>
+                    )}
+                    {context.mediaType === 'tv' &&
+                      (selected.includes(candidate.token) ||
+                        !candidate.complete) && (
+                        <div className="mt-2 rounded-md border border-gray-700 bg-gray-800 p-3">
+                          <div className="mb-2 text-sm font-semibold text-gray-200">
+                            {intl.formatMessage(messages.episodeAssignment)}
+                          </div>
+                          <div className="max-h-40 space-y-1 overflow-y-auto">
+                            {episodes.map((episode: Episode) => (
+                              <label
+                                key={episode.id}
+                                className="mb-0 flex items-center gap-2 font-normal text-gray-300"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="flex-none"
+                                  disabled={rematchingToken === candidate.token}
+                                  checked={assigned.includes(episode.id)}
+                                  onChange={() =>
+                                    setEpisodeMappings((current) => {
+                                      const ids =
+                                        current[candidate.token] ?? assigned;
+                                      return {
+                                        ...current,
+                                        [candidate.token]: ids.includes(
+                                          episode.id
+                                        )
+                                          ? ids.filter(
+                                              (id) => id !== episode.id
+                                            )
+                                          : [...ids, episode.id],
+                                      };
+                                    })
+                                  }
+                                />
+                                <span className="truncate">
+                                  S
+                                  {String(episode.seasonNumber).padStart(
+                                    2,
+                                    '0'
+                                  )}
+                                  E
+                                  {String(episode.episodeNumber).padStart(
+                                    2,
+                                    '0'
+                                  )}{' '}
+                                  — {episode.title}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                          <Button
+                            className="mt-3"
+                            buttonSize="sm"
+                            disabled={
+                              rematchingToken !== undefined || submitting
+                            }
+                            onClick={() => void rematchCandidate(candidate)}
+                          >
+                            {rematchingToken === candidate.token
+                              ? intl.formatMessage(messages.applying)
+                              : intl.formatMessage(messages.applyEpisodes, {
+                                  service,
+                                })}
+                          </Button>
+                        </div>
+                      )}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
     </div>

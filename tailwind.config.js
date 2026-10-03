@@ -17,11 +17,6 @@ module.exports = {
       },
       fontFamily: {
         sans: ['Inter Variable', ...defaultTheme.fontFamily.sans],
-        display: ['Barlow Condensed', ...defaultTheme.fontFamily.sans],
-      },
-      colors: {
-        'library-charcoal': '#12151c',
-        'library-navy': '#131928',
       },
       typography: (theme) => ({
         DEFAULT: {

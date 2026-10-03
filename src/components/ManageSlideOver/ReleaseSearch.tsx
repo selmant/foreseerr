@@ -1,7 +1,16 @@
+import Alert from '@app/components/Common/Alert';
+import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
+import SegmentedControl from '@app/components/Common/SegmentedControl';
 import useToasts from '@app/hooks/useToasts';
+import defineMessages from '@app/utils/defineMessages';
+import {
+  ArrowDownTrayIcon,
+  MagnifyingGlassIcon,
+} from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useIntl } from 'react-intl';
 import Select, { type StylesConfig } from 'react-select';
 
 import {
@@ -11,6 +20,36 @@ import {
   type ServarrContext,
 } from './servarrTypes';
 
+const messages = defineMessages('components.ManageSlideOver.ReleaseSearch', {
+  searchTarget: 'Search for',
+  episode: 'Episode',
+  seasonPack: 'Season Pack',
+  episodeToSearch: 'Episode to search',
+  chooseEpisode: 'Choose an episode',
+  seasonToSearch: 'Season pack to search',
+  chooseSeason: 'Choose a season',
+  season: 'Season {seasonNumber}',
+  searchReleases: 'Search Releases',
+  searching: 'Searching…',
+  searchFailed: 'Release search failed.',
+  noReleases: 'No releases found.',
+  grab: 'Grab',
+  grabAnyway: 'Grab Anyway',
+  sending: 'Sending to {service}…',
+  sent: 'Sent to {service}. It may take a moment to appear in the download queue.',
+  sentToast: 'Release sent to download client.',
+  grabFailed: 'Unable to grab release.',
+  unknownQuality: 'Unknown quality',
+  seeders: '{count, plural, one {# seeder} other {# seeders}}',
+  downloading: 'Downloading',
+  queued: 'Queued',
+  importing: 'Importing',
+  importRequired: 'Import required',
+  downloaded: 'Downloaded',
+  wanted: 'Wanted',
+  notMonitored: 'Not monitored',
+});
+
 type SelectOption = {
   value: number;
   label: string;
@@ -18,38 +57,23 @@ type SelectOption = {
 };
 type EpisodeStatus = NonNullable<SelectOption['status']>;
 
-const episodeStatus = {
-  downloading: {
-    label: 'Downloading',
-    className: 'border-sky-500/60 bg-sky-500/10 text-sky-200',
-  },
-  queued: {
-    label: 'Queued',
-    className: 'border-violet-500/60 bg-violet-500/10 text-violet-200',
-  },
-  importing: {
-    label: 'Importing',
-    className: 'border-emerald-500/60 bg-emerald-500/10 text-emerald-200',
-  },
-  'manual-import': {
-    label: 'Import required',
-    className: 'border-amber-500/60 bg-amber-500/10 text-amber-200',
-  },
-  downloaded: {
-    label: 'Downloaded',
-    className: 'border-gray-600 bg-gray-800 text-gray-300',
-  },
-  wanted: {
-    label: 'Wanted',
-    className: 'border-primary-500/60 bg-primary-500/10 text-primary-200',
-  },
-  unmonitored: {
-    label: 'Not monitored',
-    className: 'border-gray-700 bg-gray-900 text-gray-500',
-  },
+const episodeStatus: Record<
+  EpisodeStatus,
+  {
+    message: keyof typeof messages;
+    badgeType: 'default' | 'primary' | 'warning' | 'success' | 'dark';
+  }
+> = {
+  downloading: { message: 'downloading', badgeType: 'primary' },
+  queued: { message: 'queued', badgeType: 'primary' },
+  importing: { message: 'importing', badgeType: 'success' },
+  'manual-import': { message: 'importRequired', badgeType: 'warning' },
+  downloaded: { message: 'downloaded', badgeType: 'success' },
+  wanted: { message: 'wanted', badgeType: 'default' },
+  unmonitored: { message: 'notMonitored', badgeType: 'dark' },
 };
 
-const episodeStatusOrder = {
+const episodeStatusOrder: Record<EpisodeStatus, number> = {
   downloading: 0,
   importing: 1,
   'manual-import': 2,
@@ -59,6 +83,8 @@ const episodeStatusOrder = {
   downloaded: 6,
 };
 
+// The menu is portalled out of `.react-select-container`, so it needs the
+// app's dropdown colors inline.
 const selectStyles: StylesConfig<SelectOption, false> = {
   menuPortal: (base) => ({ ...base, zIndex: 60 }),
   menu: (base) => ({ ...base, backgroundColor: '#374151', color: '#d1d5db' }),
@@ -87,13 +113,14 @@ const ReleaseSearch = ({
   onChanged: () => void;
   onGrabbed: () => void;
 }) => {
+  const intl = useIntl();
   const { addToast } = useToasts();
   const searchAbortRef = useRef<AbortController | undefined>(undefined);
   const grabAbortRef = useRef<AbortController | undefined>(undefined);
   const [target, setTarget] = useState<'episode' | 'season'>('episode');
   const [episodeId, setEpisodeId] = useState<number>();
   const [seasonNumber, setSeasonNumber] = useState<number>();
-  const [releases, setReleases] = useState<Release[]>([]);
+  const [releases, setReleases] = useState<Release[]>();
   const [searchError, setSearchError] = useState<string>();
   const [searching, setSearching] = useState(false);
   const [grabbingToken, setGrabbingToken] = useState<string>();
@@ -134,9 +161,11 @@ const ReleaseSearch = ({
     () =>
       context.seasons?.map((season) => ({
         value: season.seasonNumber,
-        label: `Season ${season.seasonNumber}`,
+        label: intl.formatMessage(messages.season, {
+          seasonNumber: season.seasonNumber,
+        }),
       })) ?? [],
-    [context.seasons]
+    [context.seasons, intl]
   );
 
   useEffect(() => {
@@ -151,7 +180,7 @@ const ReleaseSearch = ({
   }, [context.seasons, episodes]);
 
   useEffect(() => {
-    setReleases([]);
+    setReleases(undefined);
     setGrabFeedback(undefined);
   }, [target, episodeId, seasonNumber]);
 
@@ -188,7 +217,9 @@ const ReleaseSearch = ({
       }
     } catch (error) {
       if (!controller.signal.aborted)
-        setSearchError(errorMessage(error, 'Release search failed.'));
+        setSearchError(
+          errorMessage(error, intl.formatMessage(messages.searchFailed))
+        );
     } finally {
       if (!controller.signal.aborted) setSearching(false);
     }
@@ -208,9 +239,13 @@ const ReleaseSearch = ({
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
-      const message = `Sent to ${context.service.name ?? 'Arr'}. It may take a moment to appear in the download queue.`;
-      setGrabFeedback({ kind: 'success', message });
-      addToast('Release sent to download client.', {
+      setGrabFeedback({
+        kind: 'success',
+        message: intl.formatMessage(messages.sent, {
+          service: context.service.name,
+        }),
+      });
+      addToast(intl.formatMessage(messages.sentToast), {
         appearance: 'success',
         autoDismiss: true,
       });
@@ -218,8 +253,10 @@ const ReleaseSearch = ({
       onChanged();
     } catch (error) {
       if (controller.signal.aborted) return;
-      const message = errorMessage(error, 'Unable to grab release.');
-      setSearchError(message);
+      const message = errorMessage(
+        error,
+        intl.formatMessage(messages.grabFailed)
+      );
       setGrabFeedback({ kind: 'error', message });
       addToast(message, { appearance: 'error', autoDismiss: true });
     } finally {
@@ -230,28 +267,23 @@ const ReleaseSearch = ({
   return (
     <div className="space-y-3">
       {context.mediaType === 'tv' && (
-        <div className="space-y-2 rounded border border-gray-700 bg-gray-800/30 p-2">
-          <div className="flex rounded-md border border-gray-600 bg-gray-900/40 p-0.5 text-sm">
-            <button
-              className={`flex-1 rounded px-3 py-1.5 transition ${target === 'episode' ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-300 hover:bg-gray-700/70'}`}
-              type="button"
-              aria-pressed={target === 'episode'}
-              onClick={() => setTarget('episode')}
-            >
-              Episode
-            </button>
-            <button
-              className={`flex-1 rounded px-3 py-1.5 transition ${target === 'season' ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-300 hover:bg-gray-700/70'}`}
-              type="button"
-              aria-pressed={target === 'season'}
-              onClick={() => setTarget('season')}
-            >
-              Season pack
-            </button>
-          </div>
+        <div className="space-y-2">
+          <SegmentedControl<'episode' | 'season'>
+            ariaLabel={intl.formatMessage(messages.searchTarget)}
+            size="sm"
+            value={target}
+            onChange={setTarget}
+            options={[
+              { value: 'episode', label: intl.formatMessage(messages.episode) },
+              {
+                value: 'season',
+                label: intl.formatMessage(messages.seasonPack),
+              },
+            ]}
+          />
           {target === 'episode' ? (
             <Select<SelectOption, false>
-              aria-label="Episode to search"
+              aria-label={intl.formatMessage(messages.episodeToSearch)}
               className="react-select-container"
               classNamePrefix="react-select"
               isSearchable
@@ -262,18 +294,16 @@ const ReleaseSearch = ({
               menuPosition="fixed"
               menuShouldScrollIntoView={false}
               options={episodeOptions}
-              placeholder="Choose an episode"
+              placeholder={intl.formatMessage(messages.chooseEpisode)}
               styles={selectStyles}
               formatOptionLabel={(option) => {
                 const status = episodeStatus[option.status ?? 'wanted'];
                 return (
                   <div className="flex min-w-0 items-center justify-between gap-3">
                     <span className="truncate">{option.label}</span>
-                    <span
-                      className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${status.className}`}
-                    >
-                      {status.label}
-                    </span>
+                    <Badge badgeType={status.badgeType} className="shrink-0">
+                      {intl.formatMessage(messages[status.message])}
+                    </Badge>
                   </div>
                 );
               }}
@@ -284,7 +314,7 @@ const ReleaseSearch = ({
             />
           ) : (
             <Select<SelectOption, false>
-              aria-label="Season pack to search"
+              aria-label={intl.formatMessage(messages.seasonToSearch)}
               className="react-select-container"
               classNamePrefix="react-select"
               isSearchable={false}
@@ -294,7 +324,7 @@ const ReleaseSearch = ({
               menuPosition="fixed"
               menuShouldScrollIntoView={false}
               options={seasonOptions}
-              placeholder="Choose a season"
+              placeholder={intl.formatMessage(messages.chooseSeason)}
               styles={selectStyles}
               value={seasonOptions.find(
                 (option) => option.value === seasonNumber
@@ -304,58 +334,89 @@ const ReleaseSearch = ({
           )}
         </div>
       )}
-      <Button buttonType="primary" onClick={search} disabled={searching}>
-        Search Releases
-      </Button>
-      {searchError && <div className="text-sm text-red-300">{searchError}</div>}
-      {releases.length > 0 && (
-        <div className="space-y-2">
-          {grabFeedback && (
-            <div
-              aria-live="polite"
-              className={`rounded border px-3 py-2 text-sm ${grabFeedback.kind === 'success' ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-100' : 'border-red-500/60 bg-red-500/10 text-red-100'}`}
-              role="status"
-            >
-              {grabFeedback.message}
-            </div>
+      <Button
+        buttonType="primary"
+        className="w-full"
+        onClick={search}
+        disabled={searching}
+      >
+        <MagnifyingGlassIcon />
+        <span>
+          {intl.formatMessage(
+            searching ? messages.searching : messages.searchReleases
           )}
+        </span>
+      </Button>
+      {searchError && <Alert type="error" title={searchError} />}
+      {grabFeedback && (
+        <div aria-live="polite" role="status">
+          <Alert
+            type={grabFeedback.kind === 'success' ? 'info' : 'error'}
+            title={grabFeedback.message}
+          />
+        </div>
+      )}
+      {releases && releases.length === 0 && (
+        <p className="text-sm text-gray-400">
+          {intl.formatMessage(messages.noReleases)}
+        </p>
+      )}
+      {releases && releases.length > 0 && (
+        <ul className="divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
           {releases.map((release) => (
-            <div
+            <li
               key={release.token}
-              className={`rounded border p-2 text-sm ${release.rejected ? 'border-yellow-600 bg-yellow-950/20' : 'border-gray-700'}`}
+              className={`space-y-1 px-4 py-3 text-sm ${release.rejected ? 'bg-yellow-500/5' : ''}`}
             >
               <div className="break-all font-medium text-white">
                 {release.title}
               </div>
-              <div>
-                {release.quality ?? 'Unknown quality'} ·{' '}
-                {formatSize(release.size)} · {release.indexer} ·{' '}
-                {release.protocol}
-                {release.seeders !== undefined
-                  ? ` · ${release.seeders} seeders`
-                  : ''}
+              <div className="text-xs text-gray-400">
+                {[
+                  release.quality ??
+                    intl.formatMessage(messages.unknownQuality),
+                  formatSize(release.size),
+                  release.indexer,
+                  release.protocol,
+                  release.seeders !== undefined
+                    ? intl.formatMessage(messages.seeders, {
+                        count: release.seeders,
+                      })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </div>
               {release.rejections.length > 0 && (
-                <div className="mt-1 text-yellow-300">
+                <div className="text-xs text-yellow-300">
                   {release.rejections.join(' • ')}
                 </div>
               )}
-              <Button
-                className="mt-2"
-                buttonSize="sm"
-                onClick={() => void grab(release)}
-                disabled={
-                  grabbingToken !== undefined ||
-                  (!release.downloadAllowed && !release.rejected)
-                }
-              >
-                {grabbingToken === release.token
-                  ? `Sending to ${context.service.name}…`
-                  : `Grab${release.rejected ? ' anyway' : ''}`}
-              </Button>
-            </div>
+              <div className="pt-1">
+                <Button
+                  buttonSize="sm"
+                  buttonType={release.rejected ? 'warning' : 'default'}
+                  onClick={() => void grab(release)}
+                  disabled={
+                    grabbingToken !== undefined ||
+                    (!release.downloadAllowed && !release.rejected)
+                  }
+                >
+                  <ArrowDownTrayIcon />
+                  <span>
+                    {grabbingToken === release.token
+                      ? intl.formatMessage(messages.sending, {
+                          service: context.service.name,
+                        })
+                      : intl.formatMessage(
+                          release.rejected ? messages.grabAnyway : messages.grab
+                        )}
+                  </span>
+                </Button>
+              </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

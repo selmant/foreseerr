@@ -87,6 +87,8 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
     'availability-sync': 'Media Availability Sync',
     'radarr-scan': 'Radarr Scan',
     'sonarr-scan': 'Sonarr Scan',
+    'episode-request-sync': 'Episode Request Sync',
+    'release-calendar-sync': 'Release Calendar Sync',
     'download-sync': 'Download Sync',
     'download-sync-reset': 'Download Sync Reset',
     'image-cache-cleanup': 'Image Cache Cleanup',
@@ -107,10 +109,11 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
       'Every {jobScheduleSeconds, plural, one {second} other {{jobScheduleSeconds} seconds}}',
     imagecache: 'Image Cache',
     imagecacheDescription:
-      'When enabled in settings, Foreseerr will proxy and cache images from TMDB, TVDB, AniList, and Simkl. Unused images are removed after the idle window. Cached images are saved into your config folder. You can find the files in <code>{appDataPath}/cache/images</code>.',
+      'When enabled in settings, Foreseerr will proxy and cache images from TMDB, TVDB, AniList, and Simkl. Cached images are saved into your config folder. You can find the files in <code>{appDataPath}/cache/images</code>.',
     imagecachecount: 'Images Cached',
     imagecachesize: 'Total Cache Size',
-    imagecacheusage: '{used} used · trims above {highWater}',
+    imagecacheusage:
+      'Using {used} of {highWater} before the oldest images are trimmed.',
     imagecacheidle:
       'Unused images are removed after {days, plural, one {# day} other {# days}}.',
     usersavatars: "Users' Avatars",
@@ -126,6 +129,7 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
     allcachesflushed: 'All Foreseerr transient caches cleared.',
     browsercacheunavailable:
       'Browser cache clearing is available only in Foreseer Desktop.',
+    cacheclearfailed: 'Something went wrong while clearing the cache.',
   }
 );
 
@@ -292,14 +296,32 @@ const SettingsJobs = () => {
     cacheRevalidate();
   };
 
-  const flushImageCache = async () => {
-    await axios.post('/api/v1/settings/cache/images/flush');
-    addToast(intl.formatMessage(messages.imagecacheflushed), {
-      appearance: 'success',
-      autoDismiss: true,
-    });
-    cacheRevalidate();
+  const canClearBrowserCache =
+    typeof window !== 'undefined' &&
+    !!window.foreseerNative?.capabilities.includes('browser-cache-clear');
+
+  const runCacheClear = async (
+    clear: () => Promise<unknown>,
+    successMessage: string
+  ) => {
+    try {
+      await clear();
+      addToast(successMessage, { appearance: 'success', autoDismiss: true });
+    } catch {
+      addToast(intl.formatMessage(messages.cacheclearfailed), {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    } finally {
+      cacheRevalidate();
+    }
   };
+
+  const flushImageCache = () =>
+    runCacheClear(
+      () => axios.post('/api/v1/settings/cache/images/flush'),
+      intl.formatMessage(messages.imagecacheflushed)
+    );
 
   const requestBrowserCacheClear = async () => {
     const host = window.foreseerNative;
@@ -353,31 +375,20 @@ const SettingsJobs = () => {
     return true;
   };
 
-  const flushAllCaches = async () => {
-    await axios.post('/api/v1/settings/cache/all/flush');
-    // Browser cache is native-owned. Include it when this is the desktop app,
-    // while preserving the hosted deployment's server-only clear behavior.
-    await requestBrowserCacheClear();
-    addToast(intl.formatMessage(messages.allcachesflushed), {
-      appearance: 'success',
-      autoDismiss: true,
-    });
-    cacheRevalidate();
-  };
+  const flushAllCaches = () =>
+    runCacheClear(async () => {
+      await axios.post('/api/v1/settings/cache/all/flush');
+      // Browser cache is native-owned. Include it when this is the desktop
+      // app, while preserving the hosted deployment's server-only clear.
+      await requestBrowserCacheClear();
+    }, intl.formatMessage(messages.allcachesflushed));
 
-  const flushBrowserCache = async () => {
-    if (!(await requestBrowserCacheClear())) {
-      addToast(intl.formatMessage(messages.browsercacheunavailable), {
-        appearance: 'error',
-        autoDismiss: true,
-      });
-      return;
-    }
-    addToast(intl.formatMessage(messages.browsercacheflushed), {
-      appearance: 'success',
-      autoDismiss: true,
-    });
-  };
+  const flushBrowserCache = () =>
+    runCacheClear(async () => {
+      if (!(await requestBrowserCacheClear())) {
+        throw new Error(intl.formatMessage(messages.browsercacheunavailable));
+      }
+    }, intl.formatMessage(messages.browsercacheflushed));
 
   const scheduleJob = async () => {
     const jobScheduleCron = ['0', '0', '*', '*', '*', '*'];
@@ -700,20 +711,21 @@ const SettingsJobs = () => {
             ))}
           </Table.TBody>
         </Table>
-      </div>
-      <div className="section flex flex-wrap gap-2">
-        <Button buttonType="danger" onClick={() => void flushImageCache()}>
-          <TrashIcon />
-          <span>{intl.formatMessage(messages.clearimagecache)}</span>
-        </Button>
-        <Button buttonType="danger" onClick={() => void flushBrowserCache()}>
-          <TrashIcon />
-          <span>{intl.formatMessage(messages.clearbrowsercache)}</span>
-        </Button>
-        <Button buttonType="danger" onClick={() => void flushAllCaches()}>
-          <TrashIcon />
-          <span>{intl.formatMessage(messages.clearallcaches)}</span>
-        </Button>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          {canClearBrowserCache && (
+            <Button
+              buttonType="danger"
+              onClick={() => void flushBrowserCache()}
+            >
+              <TrashIcon />
+              <span>{intl.formatMessage(messages.clearbrowsercache)}</span>
+            </Button>
+          )}
+          <Button buttonType="danger" onClick={() => void flushAllCaches()}>
+            <TrashIcon />
+            <span>{intl.formatMessage(messages.clearallcaches)}</span>
+          </Button>
+        </div>
       </div>
       {cacheData?.dnsCache != null && (
         <>
@@ -909,6 +921,12 @@ const SettingsJobs = () => {
             ))}
           </Table.TBody>
         </Table>
+        <div className="mt-4 flex justify-end">
+          <Button buttonType="danger" onClick={() => void flushImageCache()}>
+            <TrashIcon />
+            <span>{intl.formatMessage(messages.clearimagecache)}</span>
+          </Button>
+        </div>
       </div>
     </>
   );

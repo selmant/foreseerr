@@ -337,7 +337,15 @@ const Sidebar = ({
                       {sidebarLink.messagesKey === 'interventions' &&
                         activeInterventionsCount > 0 && (
                           <div className="ml-auto flex">
-                            <Badge className="rounded-md border-yellow-500 bg-yellow-600">
+                            <Badge
+                              className={`rounded-md bg-gradient-to-br ${
+                                location.pathname.match(
+                                  sidebarLink.activeRegExp
+                                )
+                                  ? 'border-indigo-600 from-indigo-700 to-purple-700'
+                                  : 'border-indigo-500 from-indigo-600 to-purple-600'
+                              }`}
+                            >
                               {activeInterventionsCount}
                             </Badge>
                           </div>

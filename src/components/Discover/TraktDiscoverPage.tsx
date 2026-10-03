@@ -1,6 +1,7 @@
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters';
 import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
@@ -12,7 +13,6 @@ import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router';
 import useSWR from 'swr';
 
 interface TraktDiscoverPageProps {
@@ -21,7 +21,6 @@ interface TraktDiscoverPageProps {
   queryExcludes?: string[];
   requiresLinkedAccount?: boolean;
   linkedAccountMessage?: string;
-  linkedAccountsLabel?: string;
   missingMessage?: string;
   urlReady?: boolean;
   subtext?: ReactNode;
@@ -37,7 +36,6 @@ const TraktDiscoverPage = ({
   queryExcludes = [],
   requiresLinkedAccount = false,
   linkedAccountMessage,
-  linkedAccountsLabel = 'Linked Accounts',
   missingMessage,
   urlReady = true,
   subtext,
@@ -83,7 +81,13 @@ const TraktDiscoverPage = ({
   }
 
   if (missingMessage && !urlReady) {
-    return <TraktDiscoverMessage title={title} message={missingMessage} />;
+    return (
+      <DiscoverProviderMessage
+        title={title}
+        source="trakt"
+        message={missingMessage}
+      />
+    );
   }
 
   if (
@@ -93,11 +97,11 @@ const TraktDiscoverPage = ({
     linkedAccountMessage
   ) {
     return (
-      <TraktDiscoverMessage
+      <DiscoverProviderMessage
         title={title}
+        source="trakt"
         message={linkedAccountMessage}
         linkAccount
-        linkedAccountsLabel={linkedAccountsLabel}
       />
     );
   }
@@ -133,37 +137,5 @@ const TraktDiscoverPage = ({
     </>
   );
 };
-
-const TraktDiscoverMessage = ({
-  title,
-  message,
-  linkAccount = false,
-  linkedAccountsLabel,
-}: {
-  title: string;
-  message: string;
-  linkAccount?: boolean;
-  linkedAccountsLabel?: string;
-}) => (
-  <>
-    <PageTitle title={title} />
-    <div className="mb-5 mt-1">
-      <Header>
-        <SliderSourceTitle source="trakt">{title}</SliderSourceTitle>
-      </Header>
-    </div>
-    <div className="text-center text-gray-400">
-      <p>{message}</p>
-      {linkAccount && (
-        <Link
-          to="/profile/settings/linked-accounts"
-          className="mt-4 inline-block text-white underline"
-        >
-          {linkedAccountsLabel}
-        </Link>
-      )}
-    </div>
-  </>
-);
 
 export default TraktDiscoverPage;

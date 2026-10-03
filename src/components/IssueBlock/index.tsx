@@ -1,4 +1,4 @@
-import Button from '@app/components/Common/Button';
+import LinkButton from '@app/components/Common/LinkButton';
 import { issueOptions } from '@app/components/IssueModal/constants';
 import { useUser } from '@app/hooks/useUser';
 import {
@@ -63,11 +63,9 @@ const IssueBlock = ({ issue }: IssueBlockProps) => {
           </div>
         </div>
         <div className="ml-2 flex flex-shrink-0 flex-wrap">
-          <Link to={`/issues/${issue.id}`}>
-            <Button buttonType="primary" as="a">
-              <EyeIcon />
-            </Button>
-          </Link>
+          <LinkButton to={`/issues/${issue.id}`} buttonType="primary">
+            <EyeIcon />
+          </LinkButton>
         </div>
       </div>
     </div>

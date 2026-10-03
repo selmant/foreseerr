@@ -1,4 +1,3 @@
-import Button from '@app/components/Common/Button';
 import DiscoverNavigation from '@app/components/Discover/DiscoverNavigation';
 import MobileMenu from '@app/components/Layout/MobileMenu';
 import PullToRefresh from '@app/components/Layout/PullToRefresh';
@@ -6,10 +5,15 @@ import SearchInput from '@app/components/Layout/SearchInput';
 import Sidebar from '@app/components/Layout/Sidebar';
 import UserDropdown from '@app/components/Layout/UserDropdown';
 import UserWarnings from '@app/components/Layout/UserWarnings';
+import LibraryModeNav from '@app/components/Library/LibraryModeNav';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import {
+  ExclamationTriangleIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
 import { ArrowLeftIcon, Bars3BottomLeftIcon } from '@heroicons/react/24/solid';
 import type { AvailableLocale } from '@server/types/languages';
 import axios from 'axios';
@@ -21,7 +25,7 @@ import useSWR from 'swr';
 const messages = defineMessages('components.Layout', {
   interventionAlert:
     '{count, plural, one {# new Arr queue warning needs attention.} other {# new Arr queue warnings need attention.}}',
-  openInterventions: 'Open interventions',
+  openInterventions: 'Open Interventions',
   dismissAlert: 'Dismiss',
 });
 
@@ -161,29 +165,36 @@ const Layout = ({ children }: LayoutProps) => {
               {canManageRequests &&
                 (interventionCount?.unseen ?? 0) > 0 &&
                 !location.pathname.startsWith('/interventions') && (
-                  <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-yellow-500 bg-yellow-400/20 p-4 text-yellow-100">
-                    <div>
-                      <div className="font-medium">
+                  <div className="service-error-banner mb-4">
+                    <ExclamationTriangleIcon className="h-5 w-5 flex-shrink-0" />
+                    <span className="flex-1">
+                      <span className="font-bold">
                         {intl.formatMessage(messages.interventionAlert, {
                           count: interventionCount!.unseen,
                         })}
-                      </div>
-                      <Link className="text-sm underline" to="/interventions">
+                      </span>{' '}
+                      <Link
+                        className="underline transition hover:text-yellow-100"
+                        to="/interventions"
+                      >
                         {intl.formatMessage(messages.openInterventions)}
                       </Link>
-                    </div>
-                    <Button
-                      buttonSize="sm"
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={intl.formatMessage(messages.dismissAlert)}
+                      className="flex-shrink-0 rounded-md p-1 transition hover:bg-yellow-500/30 hover:text-yellow-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400"
                       onClick={() => void markInterventionsSeen()}
                     >
-                      {intl.formatMessage(messages.dismissAlert)}
-                    </Button>
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
                   </div>
                 )}
               {(location.pathname === '/' ||
                 location.pathname.startsWith('/discover')) && (
                 <DiscoverNavigation />
               )}
+              {location.pathname.startsWith('/library') && <LibraryModeNav />}
               {children}
             </div>
           </div>

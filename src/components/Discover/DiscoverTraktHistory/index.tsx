@@ -6,7 +6,6 @@ const messages = defineMessages('components.Discover.DiscoverTraktHistory', {
   title: 'Trakt History',
   linkAccount:
     'Link your Trakt account in Linked Accounts to browse your watch history.',
-  linkedAccounts: 'Linked Accounts',
 });
 
 const DiscoverTraktHistory = () => {
@@ -18,7 +17,6 @@ const DiscoverTraktHistory = () => {
       endpoint="/api/v1/discover/trakt/history"
       requiresLinkedAccount
       linkedAccountMessage={intl.formatMessage(messages.linkAccount)}
-      linkedAccountsLabel={intl.formatMessage(messages.linkedAccounts)}
       showHideWatchedFilter={false}
     />
   );

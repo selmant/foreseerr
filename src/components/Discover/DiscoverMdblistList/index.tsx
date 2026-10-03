@@ -1,6 +1,7 @@
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useRouteQuery from '@app/hooks/useRouteQuery';
@@ -42,19 +43,11 @@ const DiscoverMdblistList = () => {
 
   if (!url) {
     return (
-      <>
-        <PageTitle title={intl.formatMessage(messages.title)} />
-        <div className="mb-5 mt-1">
-          <Header>
-            <SliderSourceTitle source="mdblist">
-              {intl.formatMessage(messages.title)}
-            </SliderSourceTitle>
-          </Header>
-        </div>
-        <p className="text-center text-gray-400">
-          {intl.formatMessage(messages.missingUrl)}
-        </p>
-      </>
+      <DiscoverProviderMessage
+        title={intl.formatMessage(messages.title)}
+        source="mdblist"
+        message={intl.formatMessage(messages.missingUrl)}
+      />
     );
   }
 

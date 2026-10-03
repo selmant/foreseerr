@@ -31,8 +31,8 @@ interface MediaActionControlsProps {
 }
 
 const messages = defineMessages('components.TitleCard.MediaActionControls', {
-  markWatched: 'Not watched · mark watched',
-  markUnwatched: 'Watched · mark unwatched',
+  markWatched: 'Mark watched',
+  markUnwatched: 'Mark unwatched',
   statusLoading: 'Loading watch status…',
   rate: 'Rate',
   ratingLabel: 'Your rating',
@@ -40,7 +40,7 @@ const messages = defineMessages('components.TitleCard.MediaActionControls', {
   ratingHint: 'Click a star to save',
   actionFailed: 'Could not update watch status. Try again.',
   actionPartial:
-    'Updated on one provider, but another provider could not be synchronized.',
+    'Updated, but some connected services could not be synchronized.',
 });
 
 const MediaActionControls = ({

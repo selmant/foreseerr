@@ -2,8 +2,8 @@ import Slider from '@app/components/Slider';
 import TmdbTitleCard, {
   watchlistTitleCardProps,
 } from '@app/components/TitleCard/TmdbTitleCard';
-import { useUser } from '@app/hooks/useUser';
 import useSettings from '@app/hooks/useSettings';
+import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';

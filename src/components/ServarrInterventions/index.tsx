@@ -1,9 +1,12 @@
+import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
+import EmptyState from '@app/components/Common/EmptyState';
 import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
+import SegmentedControl from '@app/components/Common/SegmentedControl';
 import SlideOver from '@app/components/Common/SlideOver';
 import InterventionImport from '@app/components/ServarrInterventions/InterventionImport';
 import type {
@@ -14,13 +17,21 @@ import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import {
+  ArrowDownTrayIcon,
+  CheckCircleIcon,
+  NoSymbolIcon,
+} from '@heroicons/react/24/outline';
+import {
   ArrowPathIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  FilmIcon,
   FunnelIcon,
 } from '@heroicons/react/24/solid';
+import type { MovieDetails } from '@server/models/Movie';
+import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
-import { useEffect, useMemo, useState } from 'react';
+import { Children, useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
@@ -32,8 +43,8 @@ const messages = defineMessages('components.ServarrInterventions', {
   description: 'Review mapped Sonarr and Radarr queue warnings.',
   active: 'Active',
   history: 'Blocklisted by Foreseerr',
-  allServices: 'All services',
-  allTypes: 'All types',
+  allServices: 'All Services',
+  allTypes: 'All Types',
   emptyActive: 'No active warnings.',
   emptyHistory: 'No Foreseerr blocklist history.',
   loadError: 'Unable to load interventions.',
@@ -41,18 +52,48 @@ const messages = defineMessages('components.ServarrInterventions', {
   overdue: 'Overdue',
   remaining: '{hours}h {minutes}m remaining',
   cleanupError: 'Last cleanup error: {error}',
-  automaticCleanup: 'Automatic cleanup',
+  automaticCleanup: 'Automatic Cleanup',
   manualRejection: 'Manual rejection{actor}',
   byActor: ' by {name}',
-  manualImport: 'Manual import',
-  reject: 'Reject and blocklist',
+  manualImport: 'Manual Import',
+  reject: 'Reject and Blocklist',
   rejecting: 'Rejecting…',
   importing: 'Importing…',
-  inProgress: 'In progress',
+  inProgress: 'In Progress',
   rejectConfirm: 'Delete this download and blocklist the release in {service}?',
   rejected: 'Release rejected and blocklisted.',
   rejectFailed: 'Rejection failed.',
+  mode: 'Interventions view',
+  activeCount: 'Active ({count})',
+  emptyActiveDescription:
+    'Queue warnings from mapped Sonarr and Radarr downloads will appear here.',
+  emptyHistoryDescription:
+    'Releases Foreseerr rejects and blocklists will be listed here.',
 });
+
+const InterventionTitle = ({ item }: { item: ServarrIntervention }) => {
+  const intl = useIntl();
+  const { data } = useSWR<MovieDetails | TvDetails>(
+    `/api/v1/${item.mediaType}/${item.tmdbId}`
+  );
+  const title = data
+    ? 'title' in data
+      ? data.title
+      : data.name
+    : intl.formatMessage(
+        item.mediaType === 'movie'
+          ? globalMessages.movie
+          : globalMessages.tvshow
+      );
+  return (
+    <Link
+      to={`/${item.mediaType}/${item.tmdbId}`}
+      className="font-medium text-white transition hover:underline"
+    >
+      {title}
+    </Link>
+  );
+};
 
 const Countdown = ({ deadline }: { deadline: string }) => {
   const intl = useIntl();
@@ -109,7 +150,8 @@ const ServarrInterventions = () => {
   useEffect(() => {
     void axios
       .post('/api/v1/servarr/interventions/seen')
-      .then(() => mutate('/api/v1/servarr/interventions/count'));
+      .then(() => mutate('/api/v1/servarr/interventions/count'))
+      .catch(() => undefined);
   }, []);
 
   const reject = async (item: ServarrIntervention) => {
@@ -154,31 +196,28 @@ const ServarrInterventions = () => {
         <Header subtext={intl.formatMessage(messages.description)}>
           {intl.formatMessage(messages.title)}
         </Header>
-        <div className="mt-2 flex flex-grow flex-col sm:flex-row lg:flex-grow-0">
-          <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
-            <Button
-              buttonType={mode === 'active' ? 'primary' : 'default'}
-              onClick={() => {
-                setMode('active');
-                setPage(0);
-              }}
-            >
-              {intl.formatMessage(messages.active)}
-              {data && mode === 'active' ? ` (${data.pageInfo.results})` : ''}
-            </Button>
-          </div>
-          <div className="mb-2 flex flex-grow sm:mb-0 lg:flex-grow-0">
-            <Button
-              buttonType={mode === 'history' ? 'primary' : 'default'}
-              onClick={() => {
-                setMode('history');
-                setPage(0);
-              }}
-            >
-              {intl.formatMessage(messages.history)}
-            </Button>
-          </div>
-        </div>
+        <SegmentedControl<'active' | 'history'>
+          ariaLabel={intl.formatMessage(messages.mode)}
+          size="sm"
+          className="mt-2 w-full lg:inline-grid lg:w-auto lg:min-w-[26rem]"
+          value={mode}
+          onChange={(value) => {
+            setMode(value);
+            setPage(0);
+          }}
+          options={[
+            {
+              value: 'active',
+              label:
+                data && mode === 'active'
+                  ? intl.formatMessage(messages.activeCount, {
+                      count: data.pageInfo.results,
+                    })
+                  : intl.formatMessage(messages.active),
+            },
+            { value: 'history', label: intl.formatMessage(messages.history) },
+          ]}
+        />
       </div>
       <div className="mb-4 flex flex-col sm:flex-row sm:space-x-2">
         <div className="mb-2 flex flex-grow sm:mb-0 lg:flex-grow-0">
@@ -199,13 +238,16 @@ const ServarrInterventions = () => {
           </select>
         </div>
         <div className="mb-2 flex flex-grow sm:mb-0 lg:flex-grow-0">
+          <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
+            <FilmIcon className="h-6 w-6" />
+          </span>
           <select
             value={mediaType}
             onChange={(event) => {
               setMediaType(event.target.value);
               setPage(0);
             }}
-            className="rounded-md"
+            className="rounded-r-only"
           >
             <option value="">{intl.formatMessage(messages.allTypes)}</option>
             <option value="movie">
@@ -219,28 +261,35 @@ const ServarrInterventions = () => {
       </div>
       {!data && !error && <LoadingSpinner />}
       {error && (
-        <div className="rounded bg-red-900/40 p-4 text-red-200">
-          {intl.formatMessage(messages.loadError)}
-        </div>
+        <Alert type="error" title={intl.formatMessage(messages.loadError)} />
       )}
       {data && (
         <div className="space-y-3">
           {data.results.length === 0 && (
-            <div className="rounded-md bg-gray-800 p-8 text-center text-gray-300">
-              {intl.formatMessage(
+            <EmptyState
+              icon={mode === 'active' ? CheckCircleIcon : NoSymbolIcon}
+              title={intl.formatMessage(
                 mode === 'active' ? messages.emptyActive : messages.emptyHistory
               )}
-            </div>
+              description={intl.formatMessage(
+                mode === 'active'
+                  ? messages.emptyActiveDescription
+                  : messages.emptyHistoryDescription
+              )}
+            />
           )}
           {data.results.map((item) => (
             <article
               key={item.id}
-              className="rounded-md border border-gray-700 bg-gray-800/80 p-4"
+              className="rounded-xl bg-gray-800 p-4 shadow ring-1 ring-gray-700"
             >
               <div className="flex flex-wrap justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="truncate text-lg font-semibold text-white">
+                    <h2
+                      className="min-w-0 break-all text-base font-semibold text-white"
+                      title={item.releaseTitle}
+                    >
                       {item.releaseTitle}
                     </h2>
                     {inProgress(item) && (
@@ -249,19 +298,8 @@ const ServarrInterventions = () => {
                       </Badge>
                     )}
                   </div>
-                  <div className="text-sm text-gray-300">
-                    <Link
-                      to={
-                        item.mediaType === 'movie'
-                          ? `/movie/${item.tmdbId}`
-                          : `/tv/${item.tmdbId}`
-                      }
-                      className="hover:underline"
-                    >
-                      {item.mediaType === 'movie'
-                        ? intl.formatMessage(globalMessages.movie)
-                        : intl.formatMessage(globalMessages.tvshow)}
-                    </Link>
+                  <div className="mt-1 text-sm text-gray-300">
+                    <InterventionTitle item={item} />
                     {' · '}
                     {item.serviceName}
                     {item.is4k ? ' · 4K' : ''}
@@ -284,14 +322,20 @@ const ServarrInterventions = () => {
                     {mode === 'active' ? (
                       <>
                         {intl.formatMessage(messages.firstSeen, {
-                          date: new Date(item.firstSeenAt).toLocaleString(),
+                          date: intl.formatDate(item.firstSeenAt, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          }),
                         })}{' '}
                         · <Countdown deadline={item.cleanupDeadlineAt} />
                       </>
                     ) : (
                       <>
                         {item.resolvedAt
-                          ? new Date(item.resolvedAt).toLocaleString()
+                          ? intl.formatDate(item.resolvedAt, {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })
                           : ''}{' '}
                         ·{' '}
                         {item.resolution === 'automatic_blocklist'
@@ -308,30 +352,36 @@ const ServarrInterventions = () => {
                   </div>
                 </div>
                 {mode === 'active' && (
-                  <div className="flex items-start gap-2">
+                  <div className="flex flex-wrap items-start gap-2">
                     {item.manualImportCapable && (
                       <Button
                         disabled={inProgress(item)}
                         onClick={() => setSelected(item)}
                       >
                         {item.state === 'importing' ? (
-                          <>
-                            <ArrowPathIcon className="mr-2 h-4 w-4 animate-spin" />
-                            {intl.formatMessage(messages.importing)}
-                          </>
+                          <ArrowPathIcon className="animate-spin" />
                         ) : (
-                          intl.formatMessage(messages.manualImport)
+                          <ArrowDownTrayIcon />
                         )}
+                        <span>
+                          {intl.formatMessage(
+                            item.state === 'importing'
+                              ? messages.importing
+                              : messages.manualImport
+                          )}
+                        </span>
                       </Button>
                     )}
                     {inProgress(item) ? (
                       <Button buttonType="danger" disabled>
                         {item.state === 'importing' ? (
-                          intl.formatMessage(messages.reject)
+                          <span>{intl.formatMessage(messages.reject)}</span>
                         ) : (
                           <>
-                            <ArrowPathIcon className="mr-2 h-4 w-4 animate-spin" />
-                            {intl.formatMessage(messages.rejecting)}
+                            <ArrowPathIcon className="animate-spin" />
+                            <span>
+                              {intl.formatMessage(messages.rejecting)}
+                            </span>
                           </>
                         )}
                       </Button>
@@ -352,24 +402,42 @@ const ServarrInterventions = () => {
             </article>
           ))}
           {data.pageInfo.pages > 1 && (
-            <div className="flex items-center justify-center gap-3 pt-3">
-              <Button
-                disabled={page === 0}
-                onClick={() => setPage((value) => value - 1)}
+            <div className="actions">
+              <nav
+                className="mb-3 flex flex-col items-center space-y-3 sm:flex-row sm:space-y-0"
+                aria-label="Pagination"
               >
-                <ChevronLeftIcon />
-                <span>{intl.formatMessage(globalMessages.previous)}</span>
-              </Button>
-              <span className="text-sm text-gray-300">
-                {page + 1} / {data.pageInfo.pages}
-              </span>
-              <Button
-                disabled={page + 1 >= data.pageInfo.pages}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                <span>{intl.formatMessage(globalMessages.next)}</span>
-                <ChevronRightIcon />
-              </Button>
+                <div className="hidden lg:flex lg:flex-1">
+                  <p className="text-sm">
+                    {Children.toArray(
+                      intl.formatMessage(globalMessages.showingresults, {
+                        from: page * TAKE + 1,
+                        to: page * TAKE + data.results.length,
+                        total: data.pageInfo.results,
+                        strong: (msg: React.ReactNode) => (
+                          <span className="font-medium">{msg}</span>
+                        ),
+                      })
+                    )}
+                  </p>
+                </div>
+                <div className="flex flex-auto justify-center space-x-2 sm:flex-1 sm:justify-end">
+                  <Button
+                    disabled={page === 0}
+                    onClick={() => setPage((value) => value - 1)}
+                  >
+                    <ChevronLeftIcon />
+                    <span>{intl.formatMessage(globalMessages.previous)}</span>
+                  </Button>
+                  <Button
+                    disabled={page + 1 >= data.pageInfo.pages}
+                    onClick={() => setPage((value) => value + 1)}
+                  >
+                    <span>{intl.formatMessage(globalMessages.next)}</span>
+                    <ChevronRightIcon />
+                  </Button>
+                </div>
+              </nav>
             </div>
           )}
         </div>

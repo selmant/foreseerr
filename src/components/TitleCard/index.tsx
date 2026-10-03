@@ -25,11 +25,11 @@ import { withProperties } from '@app/utils/typeHelpers';
 import { Transition } from '@headlessui/react';
 import {
   ArrowDownTrayIcon,
+  BookmarkIcon,
   EyeIcon,
   EyeSlashIcon,
   MinusCircleIcon,
   QueueListIcon,
-  StarIcon,
 } from '@heroicons/react/24/outline';
 import { ChevronDownIcon, CogIcon, PlayIcon } from '@heroicons/react/24/solid';
 import type { RatingResponse } from '@server/api/ratings';
@@ -70,7 +70,8 @@ interface TitleCardProps {
 }
 
 const messages = defineMessages('components.TitleCard', {
-  addToWatchList: 'Add to watchlist',
+  addToWatchList: 'Add To Watchlist',
+  removeFromWatchList: 'Remove From Watchlist',
   watchlistSuccess:
     '<strong>{title}</strong> added to watchlist  successfully!',
   watchlistDeleted:
@@ -702,36 +703,61 @@ const TitleCard = ({
                   {user?.userType !== UserType.PLEX &&
                     !libraryMode &&
                     (toggleWatchlist ? (
-                      <Button
-                        buttonType={'ghost'}
-                        className="z-40"
-                        buttonSize={'sm'}
-                        onClick={onClickWatchlistBtn}
+                      <Tooltip
+                        content={intl.formatMessage(messages.addToWatchList)}
                       >
-                        <StarIcon className={'h-3 text-amber-300'} />
-                      </Button>
+                        <Button
+                          buttonType={'ghost'}
+                          className="z-40"
+                          buttonSize={'sm'}
+                          aria-label={intl.formatMessage(
+                            messages.addToWatchList
+                          )}
+                          onClick={onClickWatchlistBtn}
+                        >
+                          <BookmarkIcon className={'h-3 text-amber-300'} />
+                        </Button>
+                      </Tooltip>
                     ) : (
-                      <Button
-                        className="z-40"
-                        buttonSize={'sm'}
-                        onClick={onClickDeleteWatchlistBtn}
+                      <Tooltip
+                        content={intl.formatMessage(
+                          messages.removeFromWatchList
+                        )}
                       >
-                        <MinusCircleIcon className={'h-3'} />
-                      </Button>
+                        <Button
+                          className="z-40"
+                          buttonSize={'sm'}
+                          aria-label={intl.formatMessage(
+                            messages.removeFromWatchList
+                          )}
+                          onClick={onClickDeleteWatchlistBtn}
+                        >
+                          <MinusCircleIcon className={'h-3'} />
+                        </Button>
+                      </Tooltip>
                     ))}
                   {showHideButton &&
                     currentStatus !== MediaStatus.PROCESSING &&
                     currentStatus !== MediaStatus.AVAILABLE &&
                     currentStatus !== MediaStatus.PARTIALLY_AVAILABLE &&
                     currentStatus !== MediaStatus.PENDING && (
-                      <Button
-                        buttonType={'ghost'}
-                        className="z-40"
-                        buttonSize={'sm'}
-                        onClick={() => setShowBlocklistModal(true)}
+                      <Tooltip
+                        content={intl.formatMessage(
+                          globalMessages.addToBlocklist
+                        )}
                       >
-                        <EyeSlashIcon className={'h-3'} />
-                      </Button>
+                        <Button
+                          buttonType={'ghost'}
+                          className="z-40"
+                          buttonSize={'sm'}
+                          aria-label={intl.formatMessage(
+                            globalMessages.addToBlocklist
+                          )}
+                          onClick={() => setShowBlocklistModal(true)}
+                        >
+                          <EyeSlashIcon className={'h-3'} />
+                        </Button>
+                      </Tooltip>
                     )}
                 </div>
               )}

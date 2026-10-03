@@ -1,8 +1,16 @@
+import Alert from '@app/components/Common/Alert';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import ManualImport from '@app/components/ManageSlideOver/ManualImport';
 import type { ServarrContext } from '@app/components/ManageSlideOver/servarrTypes';
+import defineMessages from '@app/utils/defineMessages';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
+import { useIntl } from 'react-intl';
+
+const messages = defineMessages(
+  'components.ServarrInterventions.InterventionImport',
+  { loadFailed: 'Unable to load the import workflow.' }
+);
 
 const InterventionImport = ({
   interventionId,
@@ -15,6 +23,7 @@ const InterventionImport = ({
   is4k: boolean;
   onChanged: () => void;
 }) => {
+  const intl = useIntl();
   const [context, setContext] = useState<ServarrContext>();
   const [error, setError] = useState<string>();
 
@@ -29,15 +38,15 @@ const InterventionImport = ({
       .catch((requestError) => {
         if (!controller.signal.aborted)
           setError(
-            axios.isAxiosError(requestError)
+            (axios.isAxiosError(requestError)
               ? requestError.response?.data?.message
-              : 'Unable to load the import workflow.'
+              : undefined) ?? intl.formatMessage(messages.loadFailed)
           );
       });
     return () => controller.abort();
-  }, [is4k, mediaId]);
+  }, [intl, is4k, mediaId]);
 
-  if (error) return <div className="text-sm text-red-300">{error}</div>;
+  if (error) return <Alert type="error" title={error} />;
   if (!context) return <LoadingSpinner />;
   return (
     <ManualImport

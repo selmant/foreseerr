@@ -3,18 +3,23 @@ import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
+import LinkButton from '@app/components/Common/LinkButton';
 import SlideOver from '@app/components/Common/SlideOver';
 import ManageSlideOver from '@app/components/ManageSlideOver';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { Permission, useUser } from '@app/hooks/useUser';
-import { ClockIcon, CogIcon, PlayIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowTopRightOnSquareIcon,
+  CogIcon,
+  InformationCircleIcon,
+  PlayIcon,
+} from '@heroicons/react/24/outline';
 import type { CalendarItem } from '@server/interfaces/api/calendarInterfaces';
 import { hasServarrMapping } from '@server/lib/servarrMapping';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import { useEffect, useState, type MouseEvent } from 'react';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
 import {
   ChangeBadge,
@@ -24,7 +29,7 @@ import {
 import messages from './calendarMessages';
 
 const CalendarDetails = ({
-  item,
+  item: selectedItem,
   onClose,
 }: {
   item: CalendarItem | null;
@@ -34,6 +39,12 @@ const CalendarDetails = ({
   const { play } = useNativeRuntime();
   const { hasPermission } = useUser();
   const [showManage, setShowManage] = useState(false);
+  // Keep rendering the last release while the panel slides out.
+  const [shownItem, setShownItem] = useState(selectedItem);
+  useEffect(() => {
+    if (selectedItem) setShownItem(selectedItem);
+  }, [selectedItem]);
+  const item = selectedItem ?? shownItem;
   const parsedTmdbId = item?.detailUrl
     ? Number(item.detailUrl.split('/').filter(Boolean)[1])
     : undefined;
@@ -51,7 +62,7 @@ const CalendarDetails = ({
 
   useEffect(() => {
     setShowManage(false);
-  }, [item?.id]);
+  }, [selectedItem?.id]);
 
   if (!item) return null;
   const episode = formatEpisode(item, intl);
@@ -60,7 +71,7 @@ const CalendarDetails = ({
   return (
     <>
       <SlideOver
-        show={!showManage}
+        show={!!selectedItem && !showManage}
         title={item.title}
         subText={[episode, item.subtitle].filter(Boolean).join(' · ')}
         onClose={onClose}
@@ -70,7 +81,7 @@ const CalendarDetails = ({
             {item.posterPath ? (
               <div className="relative h-28 w-20 flex-none overflow-hidden rounded bg-gray-700">
                 <CachedImage
-                  src={item.posterPath}
+                  src={`https://image.tmdb.org/t/p/w300_and_h450_face${item.posterPath}`}
                   type="tmdb"
                   alt=""
                   fill
@@ -111,9 +122,11 @@ const CalendarDetails = ({
               </p>
               {item.requestedQuality ? (
                 <p className="text-xs text-gray-400">
-                  {intl.formatMessage(messages.requestedQuality, {
-                    quality: item.requestedQuality.toUpperCase(),
-                  })}
+                  {intl.formatMessage(
+                    item.requestedQuality === '4k'
+                      ? messages.requested4k
+                      : messages.requestedStandard
+                  )}
                 </p>
               ) : null}
             </div>
@@ -137,14 +150,14 @@ const CalendarDetails = ({
           ) : null}
           {item.dates?.length ? (
             <div>
-              <h3 className="mb-2 text-sm font-semibold text-gray-200">
+              <h3 className="mb-2 text-xl font-bold">
                 {intl.formatMessage(messages.allKnownDates)}
               </h3>
-              <ul className="space-y-2">
+              <ul className="divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
                 {item.dates.map((date) => (
                   <li
                     key={`${date.dateType}-${date.startsAt}`}
-                    className="flex items-center justify-between rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm"
+                    className="flex items-center justify-between px-4 py-3 text-sm"
                   >
                     <span className="text-gray-300">
                       {getDateBadge(date.dateType, intl)}
@@ -171,15 +184,16 @@ const CalendarDetails = ({
           ) : null}
           <div className="flex flex-wrap gap-2">
             {item.detailUrl ? (
-              <Link to={item.detailUrl}>
-                <Button as="a" buttonType="primary">
+              <LinkButton to={item.detailUrl} buttonType="primary">
+                <InformationCircleIcon />
+                <span>
                   {intl.formatMessage(
                     item.isNewSeason && !item.requestedByCurrentUser
                       ? messages.requestSeason
                       : messages.details
                   )}
-                </Button>
-              </Link>
+                </span>
+              </LinkButton>
             ) : null}
             {item.watchUrl && item.available ? (
               <Button
@@ -201,16 +215,18 @@ const CalendarDetails = ({
                   }
                 }}
               >
-                <PlayIcon className="mr-1 h-4 w-4" />
-                {intl.formatMessage(messages.watch)}
+                <PlayIcon />
+                <span>{intl.formatMessage(messages.watch)}</span>
               </Button>
             ) : null}
             {canManage && managedTitle ? (
               <Button buttonType="default" onClick={() => setShowManage(true)}>
-                <CogIcon className="mr-1 h-4 w-4" />
-                {intl.formatMessage(messages.manage, {
-                  service: manageService,
-                })}
+                <CogIcon />
+                <span>
+                  {intl.formatMessage(messages.manage, {
+                    service: manageService,
+                  })}
+                </span>
               </Button>
             ) : null}
             {item.sourceUrl ? (
@@ -220,8 +236,12 @@ const CalendarDetails = ({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <ClockIcon className="mr-1 h-4 w-4" />
-                {item.source === 'radarr' ? 'Radarr' : 'Sonarr'}
+                <ArrowTopRightOnSquareIcon />
+                <span>
+                  {intl.formatMessage(messages.openIn, {
+                    service: item.source === 'radarr' ? 'Radarr' : 'Sonarr',
+                  })}
+                </span>
               </Button>
             ) : null}
           </div>
@@ -236,9 +256,9 @@ const CalendarDetails = ({
           ) : null}
         </div>
       </SlideOver>
-      {showManage && managedTitle && item.mediaType === 'movie' ? (
+      {canManage && managedTitle && item.mediaType === 'movie' ? (
         <ManageSlideOver
-          show
+          show={!!selectedItem && showManage}
           data={managedTitle as MovieDetails}
           mediaType="movie"
           revalidate={() => {
@@ -247,9 +267,9 @@ const CalendarDetails = ({
           onClose={() => setShowManage(false)}
         />
       ) : null}
-      {showManage && managedTitle && item.mediaType === 'tv' ? (
+      {canManage && managedTitle && item.mediaType === 'tv' ? (
         <ManageSlideOver
-          show
+          show={!!selectedItem && showManage}
           data={managedTitle as TvDetails}
           mediaType="tv"
           revalidate={() => {

@@ -1,4 +1,4 @@
-import Button from '@app/components/Common/Button';
+import LinkButton from '@app/components/Common/LinkButton';
 import Modal from '@app/components/Common/Modal';
 import { issueOptions } from '@app/components/IssueModal/constants';
 import useSettings from '@app/hooks/useSettings';
@@ -15,7 +15,6 @@ import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
 import * as Yup from 'yup';
 
@@ -119,12 +118,10 @@ const CreateIssueModal = ({
                     strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
                   })}
                 </div>
-                <Link to={`/issues/${newIssue.data.id}`}>
-                  <Button as="a" className="mt-4">
-                    <span>{intl.formatMessage(messages.toastviewissue)}</span>
-                    <ArrowRightCircleIcon />
-                  </Button>
-                </Link>
+                <LinkButton to={`/issues/${newIssue.data.id}`} className="mt-4">
+                  <span>{intl.formatMessage(messages.toastviewissue)}</span>
+                  <ArrowRightCircleIcon />
+                </LinkButton>
               </>,
               {
                 appearance: 'success',

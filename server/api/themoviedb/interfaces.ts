@@ -148,6 +148,7 @@ export interface TmdbBrowseMetadata {
   genre_ids: number[];
   runtime: number | null;
   status?: string;
+  poster_path: string | null;
 }
 
 export interface TmdbMovieDetails {

@@ -1,13 +1,19 @@
-const MAX_DEPTH = 8;
-const MAX_NODES = 2_000;
+// Generous enough for the largest real responses (TMDB details with full
+// credits, keywords and media info) while still bounding runaway graphs.
+const MAX_DEPTH = 32;
+const MAX_NODES = 200_000;
 
 /**
  * Produce a JSON-compatible clone. TypeORM entities and other graphs can
  * carry cycles or expanding getters; JSON.stringify then never returns and
  * the Node event loop stays at 100% CPU (desktop login freeze).
+ *
+ * Only true cycles (an object nested inside itself) are dropped. The same
+ * object appearing in two sibling branches is ordinary shared data and is
+ * cloned in both places, exactly as JSON.stringify would.
  */
 export const jsonSafeClone = (value: unknown): unknown => {
-  const seen = new WeakSet<object>();
+  const ancestors = new Set<object>();
   let nodes = 0;
 
   const walk = (input: unknown, depth: number): unknown => {
@@ -29,7 +35,7 @@ export const jsonSafeClone = (value: unknown): unknown => {
     if (depth > MAX_DEPTH || nodes > MAX_NODES) {
       return undefined;
     }
-    if (seen.has(input)) {
+    if (ancestors.has(input)) {
       return undefined;
     }
     if (input instanceof Date) {
@@ -41,14 +47,17 @@ export const jsonSafeClone = (value: unknown): unknown => {
     if (ArrayBuffer.isView(input)) {
       return undefined;
     }
-    seen.add(input);
     nodes += 1;
     if (Array.isArray(input)) {
       if (input.length > MAX_NODES) {
         return undefined;
       }
-      return input.map((item) => walk(item, depth + 1));
+      ancestors.add(input);
+      const items = input.map((item) => walk(item, depth + 1));
+      ancestors.delete(input);
+      return items;
     }
+    ancestors.add(input);
     const output: Record<string, unknown> = {};
     for (const key of Object.keys(input)) {
       if (key.startsWith('__')) {
@@ -62,6 +71,7 @@ export const jsonSafeClone = (value: unknown): unknown => {
         break;
       }
     }
+    ancestors.delete(input);
     return output;
   };
 

@@ -7,6 +7,7 @@ import {
 import type { CalendarItem } from '@server/interfaces/api/calendarInterfaces';
 import { useIntl } from 'react-intl';
 import { CalendarChip } from './CalendarItemPresentation';
+import messages from './calendarMessages';
 
 type Props = {
   anchorDate: Date;
@@ -64,9 +65,11 @@ const MonthView = ({ anchorDate, items, onSelect, onSelectDay }: Props) => {
                 {dayItems.length > 3 ? (
                   <button
                     onClick={() => onSelectDay(dayItems, day)}
-                    className="w-full text-left text-xs text-indigo-300 hover:text-indigo-100"
+                    className="w-full px-1.5 text-left text-xs font-medium text-indigo-400 transition hover:text-indigo-300"
                   >
-                    +{dayItems.length - 3} more
+                    {intl.formatMessage(messages.moreReleases, {
+                      count: dayItems.length - 3,
+                    })}
                   </button>
                 ) : null}
               </div>

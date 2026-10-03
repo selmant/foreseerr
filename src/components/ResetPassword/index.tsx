@@ -1,6 +1,7 @@
 import AppImage from '@app/components/Common/AppImage';
 import Button from '@app/components/Common/Button';
 import ImageFader from '@app/components/Common/ImageFader';
+import LinkButton from '@app/components/Common/LinkButton';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import LanguagePicker from '@app/components/Layout/LanguagePicker';
 import useRouteQuery from '@app/hooks/useRouteQuery';
@@ -11,7 +12,6 @@ import axios from 'axios';
 import { Form, Formik } from 'formik';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.ResetPassword', {
@@ -85,11 +85,9 @@ const ResetPassword = () => {
                   {intl.formatMessage(messages.resetpasswordsuccessmessage)}
                 </p>
                 <span className="mt-4 flex justify-center rounded-md shadow-sm">
-                  <Link to="/login">
-                    <Button as="a" buttonType="ghost">
-                      {intl.formatMessage(messages.gobacklogin)}
-                    </Button>
-                  </Link>
+                  <LinkButton to="/login" buttonType="ghost">
+                    {intl.formatMessage(messages.gobacklogin)}
+                  </LinkButton>
                 </span>
               </>
             ) : (

@@ -6,9 +6,9 @@ import { useIntl } from 'react-intl';
 const messages = defineMessages('components.Setup.SetupIntegrations', {
   title: 'Connect your integrations',
   description:
-    'Add request services now, and optionally connect Trakt, AniList, and MDBList. You can change any of these later in Settings.',
+    'Add request services now, and optionally connect Trakt, Simkl, MDBList, and AniList. You can change any of these later in Settings.',
   optionalIntegrations: 'Optional discovery and rating services',
-  requestServices: 'Request services',
+  requestServices: 'Request Services',
 });
 
 const SetupIntegrations = () => {
@@ -35,7 +35,7 @@ const SetupIntegrations = () => {
           {intl.formatMessage(messages.requestServices)}
         </h3>
         <div className="mt-8">
-          <SettingsServices />
+          <SettingsServices showInterventionCleanup={false} />
         </div>
       </div>
     </div>

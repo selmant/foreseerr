@@ -16,8 +16,6 @@ import '@app/styles/globals.css';
 import { polyfillIntl } from '@app/utils/polyfillIntl';
 import { publicBasePath } from '@app/utils/publicBasePath';
 import '@fontsource-variable/inter';
-import '@fontsource/barlow-condensed/600.css';
-import '@fontsource/barlow-condensed/700.css';
 import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';

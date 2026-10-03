@@ -21,6 +21,7 @@ const messages = defineMessages(
   {
     markWatched: 'Mark watched',
     markUnwatched: 'Mark unwatched',
+    watched: 'Watched',
     statusLoading: 'Loading watch status…',
     rate: 'Rate',
     ratingLabel: 'Your rating',
@@ -28,7 +29,7 @@ const messages = defineMessages(
     ratingHint: 'Click a star to save',
     actionFailed: 'Could not update watch status. Try again.',
     actionPartial:
-      'Updated on some connected services. Check the service status for the remaining sync.',
+      'Updated, but some connected services could not be synchronized.',
   }
 );
 
@@ -119,11 +120,17 @@ const MediaActionDetailBar = ({
             onClick={handleToggleWatched}
           >
             {watched ? (
-              <CheckBadgeSolid className="h-5 w-5 text-emerald-400" />
+              <CheckBadgeSolid className="mr-0 h-5 w-5 text-emerald-400 sm:mr-2" />
             ) : (
-              <CheckBadgeOutline className="h-5 w-5" />
+              <CheckBadgeOutline className="mr-0 h-5 w-5 sm:mr-2" />
             )}
-            <span className="ml-2 hidden sm:inline">{watchedLabel}</span>
+            <span className="hidden sm:inline">
+              {statusPending
+                ? watchedLabel
+                : intl.formatMessage(
+                    watched ? messages.watched : messages.markWatched
+                  )}
+            </span>
           </Button>
         </Tooltip>
       )}
@@ -150,8 +157,8 @@ const MediaActionDetailBar = ({
             >
               {savedStars != null ? (
                 <>
-                  <StarSolid className="h-5 w-5 text-amber-300" />
-                  <span className="ml-2 hidden sm:inline">
+                  <StarSolid className="mr-0 h-5 w-5 text-amber-300 sm:mr-2" />
+                  <span className="hidden sm:inline">
                     {intl.formatMessage(messages.ratingOutOf, {
                       score: starsToTrakt(savedStars),
                     })}
@@ -159,8 +166,8 @@ const MediaActionDetailBar = ({
                 </>
               ) : (
                 <>
-                  <StarOutline className="h-5 w-5" />
-                  <span className="ml-2 hidden sm:inline">
+                  <StarOutline className="mr-0 h-5 w-5 sm:mr-2" />
+                  <span className="hidden sm:inline">
                     {intl.formatMessage(messages.rate)}
                   </span>
                 </>

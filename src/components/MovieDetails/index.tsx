@@ -31,6 +31,7 @@ import defineMessages from '@app/utils/defineMessages';
 import { refreshIntervalHelper } from '@app/utils/refreshIntervalHelper';
 import {
   ArrowRightCircleIcon,
+  BookmarkIcon,
   CloudIcon,
   CogIcon,
   ExclamationTriangleIcon,
@@ -38,7 +39,6 @@ import {
   FilmIcon,
   MinusCircleIcon,
   PlayIcon,
-  StarIcon,
   TicketIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -516,7 +516,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                       {isWatchlistUpdating ? (
                         <Spinner />
                       ) : (
-                        <StarIcon className={'text-amber-300'} />
+                        <BookmarkIcon className={'text-amber-300'} />
                       )}
                     </Button>
                   </Tooltip>

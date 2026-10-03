@@ -46,13 +46,13 @@ import {
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import {
   ArrowRightCircleIcon,
+  BookmarkIcon,
   CogIcon,
   ExclamationTriangleIcon,
   EyeSlashIcon,
   FilmIcon,
   MinusCircleIcon,
   PlayIcon,
-  StarIcon,
 } from '@heroicons/react/24/solid';
 import { IssueStatus } from '@server/constants/issue';
 import {
@@ -579,7 +579,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                       {isWatchlistUpdating ? (
                         <Spinner />
                       ) : (
-                        <StarIcon className={'text-amber-300'} />
+                        <BookmarkIcon className={'text-amber-300'} />
                       )}
                     </Button>
                   </Tooltip>

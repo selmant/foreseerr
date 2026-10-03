@@ -4,8 +4,8 @@ import Slider from '@app/components/Slider';
 import TmdbTitleCard, {
   watchlistTitleCardProps,
 } from '@app/components/TitleCard/TmdbTitleCard';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import useSettings from '@app/hooks/useSettings';
+import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import { useEffect } from 'react';
 import useSWR from 'swr';
 

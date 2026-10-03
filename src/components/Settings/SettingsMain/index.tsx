@@ -72,6 +72,7 @@ const messages = defineMessages('components.Settings.SettingsMain', {
   imageCacheIdleDaysTip:
     'Cached images that have not been requested for this many days are deleted. Recently viewed posters stay.',
   imageCacheIdleDaysUnit: '{days, plural, one {day} other {days}}',
+  validationImageCacheIdleDays: 'You must provide a number between 1 and 90',
   validationApplicationTitle: 'You must provide an application title',
   validationApplicationUrl: 'You must provide a valid URL',
   validationApplicationUrlTrailingSlash: 'URL must not end in a trailing slash',
@@ -85,7 +86,7 @@ const messages = defineMessages('components.Settings.SettingsMain', {
   versionCheckTip: 'Automatically check for new versions on GitHub.',
   desktopMode: 'Desktop Mode',
   desktopModeTip:
-    'Switch between the bundled standalone server and a remote Foreseerr connection. Foreseer will restart to apply the change.',
+    'Switch between the bundled standalone server and a remote Foreseerr connection. Foreseer Desktop will restart to apply the change.',
   changeDesktopMode: 'Change Desktop Mode',
   validationUrl: 'You must provide a valid URL',
   validationUrlTrailingSlash: 'URL must not end in a trailing slash',
@@ -139,8 +140,10 @@ const SettingsMain = () => {
         (value) => !value || !value.endsWith('/')
       ),
     imageCacheIdleDays: Yup.number()
-      .min(1, 'Number must be at least 1.')
-      .max(90, 'Number must be less than or equal to 90.'),
+      .typeError(intl.formatMessage(messages.validationImageCacheIdleDays))
+      .integer(intl.formatMessage(messages.validationImageCacheIdleDays))
+      .min(1, intl.formatMessage(messages.validationImageCacheIdleDays))
+      .max(90, intl.formatMessage(messages.validationImageCacheIdleDays)),
   });
 
   const regenerate = async () => {

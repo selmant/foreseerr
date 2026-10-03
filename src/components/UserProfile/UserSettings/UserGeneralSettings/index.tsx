@@ -69,19 +69,19 @@ const messages = defineMessages(
     plexwatchlistsyncseries: 'Auto-Request Series',
     plexwatchlistsyncseriestip:
       'Automatically request series on your <PlexWatchlistSupportLink>Plex Watchlist</PlexWatchlistSupportLink>',
-    autoCompleteSkippedEpisodeEndings: 'Auto-complete skipped episode endings',
+    autoCompleteSkippedEpisodeEndings: 'Auto-Complete Skipped Episode Endings',
     libraryPlayback: 'Library Playback',
     autoCompleteSkippedEpisodeEndingsTip:
       'When you have started a later episode, leftover paused episodes at or above the minimum progress are marked watched in both Jellyfin and Trakt the next time Library loads.',
     autoCompleteSkippedEpisodeEndingsWarning:
       'This changes your watch history in both services and requires linked Jellyfin and Trakt accounts.',
-    autoCompleteSkippedEpisodeThreshold: 'Minimum leftover progress',
+    autoCompleteSkippedEpisodeThreshold: 'Minimum Leftover Progress',
     autoCompleteSkippedEpisodeThresholdTip:
       'Only leftovers at this percentage or higher are auto-completed.',
     validationSkippedEpisodeThreshold: 'Enter a whole number from 1 to 100.',
-    watchAheadEpisodeCount: 'Watch-ahead episode buffer',
+    watchAheadEpisodeCount: 'Watch Ahead Episode Buffer',
     watchAheadEpisodeCountTip:
-      'Default number of unwatched episodes to keep requested when you choose Watch ahead on a series. You can override this per request.',
+      'Default number of unwatched episodes to keep requested when you choose Watch Ahead on a series. You can override this per request.',
     validationWatchAheadEpisodeCount: 'Enter a whole number from 1 to 50.',
   }
 );
@@ -654,10 +654,37 @@ const UserGeneralSettings = () => {
                   </div>
                 )}
               <div className="form-row">
-                <label className="text-label">
-                  {intl.formatMessage(messages.libraryPlayback)}
+                <label htmlFor="watchAheadEpisodeCount" className="text-label">
+                  <span>
+                    {intl.formatMessage(messages.watchAheadEpisodeCount)}
+                  </span>
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.watchAheadEpisodeCountTip)}
+                  </span>
                 </label>
-                <div />
+                <div className="form-input-area">
+                  <div className="form-input-field max-w-fit">
+                    <Field
+                      id="watchAheadEpisodeCount"
+                      name="watchAheadEpisodeCount"
+                      type="text"
+                      inputMode="numeric"
+                      className="short"
+                    />
+                  </div>
+                  {errors.watchAheadEpisodeCount &&
+                    touched.watchAheadEpisodeCount &&
+                    typeof errors.watchAheadEpisodeCount === 'string' && (
+                      <div className="error">
+                        {errors.watchAheadEpisodeCount}
+                      </div>
+                    )}
+                </div>
+              </div>
+              <div className="mb-6 mt-10">
+                <h3 className="heading">
+                  {intl.formatMessage(messages.libraryPlayback)}
+                </h3>
               </div>
               <div className="form-row">
                 <label
@@ -745,34 +772,6 @@ const UserGeneralSettings = () => {
                         </div>
                       )}
                   </div>
-                </div>
-              </div>
-              <div className="form-row">
-                <label htmlFor="watchAheadEpisodeCount" className="text-label">
-                  <span>
-                    {intl.formatMessage(messages.watchAheadEpisodeCount)}
-                  </span>
-                  <span className="label-tip">
-                    {intl.formatMessage(messages.watchAheadEpisodeCountTip)}
-                  </span>
-                </label>
-                <div className="form-input-area">
-                  <div className="form-input-field max-w-fit">
-                    <Field
-                      id="watchAheadEpisodeCount"
-                      name="watchAheadEpisodeCount"
-                      type="text"
-                      inputMode="numeric"
-                      className="short"
-                    />
-                  </div>
-                  {errors.watchAheadEpisodeCount &&
-                    touched.watchAheadEpisodeCount &&
-                    typeof errors.watchAheadEpisodeCount === 'string' && (
-                      <div className="error">
-                        {errors.watchAheadEpisodeCount}
-                      </div>
-                    )}
                 </div>
               </div>
               <div className="actions">

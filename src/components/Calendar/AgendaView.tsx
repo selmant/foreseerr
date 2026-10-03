@@ -26,7 +26,7 @@ const AgendaView = ({
         const date = toLocalDate(dayItems[0].startsAt, dayItems[0].allDay);
         return (
           <section key={date.toISOString()}>
-            <h2 className="sticky top-0 z-10 mb-2 border-b border-gray-700 bg-gray-900/95 py-2 text-sm font-semibold text-gray-200 backdrop-blur">
+            <h2 className="sticky-below-searchbar sticky z-10 mb-2 border-b border-gray-700 bg-gray-900/95 py-2 text-sm font-semibold text-gray-200 backdrop-blur">
               {intl.formatDate(date, {
                 weekday: 'long',
                 month: 'long',

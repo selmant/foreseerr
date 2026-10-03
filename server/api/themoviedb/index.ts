@@ -26,9 +26,9 @@ import type {
   TmdbSearchTvResponse,
   TmdbSeasonWithEpisodes,
   TmdbTvDetails,
-  TmdbTvScanDetails,
   TmdbTvEpisodeGroupDetails,
   TmdbTvEpisodeGroupsResponse,
+  TmdbTvScanDetails,
   TmdbUpcomingMoviesResponse,
   TmdbWatchProviderDetails,
   TmdbWatchProviderRegion,
@@ -326,6 +326,7 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         release_date?: string;
         genres?: { id: number }[];
         runtime?: number;
+        poster_path?: string | null;
       }>(
         `/movie/${movieId}`,
         {
@@ -343,6 +344,7 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         release_date: data.release_date || null,
         genre_ids: (data.genres ?? []).map((genre) => genre.id),
         runtime: data.runtime ?? null,
+        poster_path: data.poster_path ?? null,
       };
     } catch (e) {
       throw new Error(
@@ -373,6 +375,7 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         genres?: { id: number }[];
         episode_run_time?: number[];
         status?: string;
+        poster_path?: string | null;
       }>(
         `/tv/${tvId}`,
         {
@@ -391,6 +394,7 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         genre_ids: (data.genres ?? []).map((genre) => genre.id),
         runtime: data.episode_run_time?.[0] ?? null,
         status: data.status,
+        poster_path: data.poster_path ?? null,
       };
     } catch (e) {
       throw new Error(

@@ -169,14 +169,18 @@ const checkJellyfinTrakt = async (): Promise<
     if (readiness.readyUsers !== readiness.eligibleUsers) {
       return {
         ...degraded(
-          `${readiness.readyUsers} of ${readiness.eligibleUsers} users are ready for Better Trakt.`
+          `${readiness.readyUsers} of ${readiness.eligibleUsers} ${
+            readiness.eligibleUsers === 1 ? 'user is' : 'users are'
+          } ready for Better Trakt.`
         ),
         readiness,
       };
     }
     return {
       ...healthy(
-        `Jellyfin and Better Trakt are ready for all ${readiness.readyUsers} linked users.`
+        readiness.readyUsers === 1
+          ? 'Jellyfin and Better Trakt are ready for the linked user.'
+          : `Jellyfin and Better Trakt are ready for all ${readiness.readyUsers} linked users.`
       ),
       readiness,
     };

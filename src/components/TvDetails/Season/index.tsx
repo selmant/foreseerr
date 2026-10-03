@@ -1,5 +1,6 @@
 import AirDateBadge from '@app/components/AirDateBadge';
 import Badge from '@app/components/Common/Badge';
+import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import RequestModal from '@app/components/RequestModal';
@@ -19,13 +20,9 @@ import {
 } from '@app/utils/quickRequest';
 import {
   ArrowDownTrayIcon,
-  CheckCircleIcon as CheckCircleOutline,
-  CheckIcon,
-  ClockIcon,
-  ExclamationCircleIcon,
-  XCircleIcon,
+  CheckBadgeIcon as CheckBadgeOutline,
 } from '@heroicons/react/24/outline';
-import { CheckCircleIcon as CheckCircleSolid } from '@heroicons/react/24/solid';
+import { CheckBadgeIcon as CheckBadgeSolid } from '@heroicons/react/24/solid';
 import { MediaRequestStatus } from '@server/constants/media';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
 import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
@@ -44,7 +41,7 @@ const messages = defineMessages('components.TvDetails.Season', {
   requestSuccess: '<strong>{episode}</strong> requested successfully!',
   requestError: 'Quick request failed. Opening request options.',
   quotaReached: 'Request quota reached. Opening request options.',
-  pendingApproval: 'Awaiting approval',
+  pendingApproval: 'Awaiting Approval',
   available: 'Available',
   failed: 'Failed',
   declined: 'Declined',
@@ -378,37 +375,27 @@ const Season = ({
                 requestStatus === MediaRequestStatus.PENDING
                   ? {
                       label: messages.pendingApproval,
-                      className:
-                        'border-amber-400/30 bg-amber-400/10 text-amber-200',
-                      Icon: ClockIcon,
+                      badgeType: 'warning' as const,
                     }
                   : requestStatus === MediaRequestStatus.APPROVED
                     ? {
                         label: messages.requested,
-                        className:
-                          'border-indigo-400/30 bg-indigo-400/10 text-indigo-200',
-                        Icon: ArrowDownTrayIcon,
+                        badgeType: 'primary' as const,
                       }
                     : requestStatus === MediaRequestStatus.COMPLETED
                       ? {
                           label: messages.available,
-                          className:
-                            'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
-                          Icon: CheckIcon,
+                          badgeType: 'success' as const,
                         }
                       : requestStatus === MediaRequestStatus.FAILED
                         ? {
                             label: messages.failed,
-                            className:
-                              'border-red-400/30 bg-red-400/10 text-red-200',
-                            Icon: ExclamationCircleIcon,
+                            badgeType: 'danger' as const,
                           }
                         : requestStatus === MediaRequestStatus.DECLINED
                           ? {
                               label: messages.declined,
-                              className:
-                                'border-gray-500/40 bg-gray-700/50 text-gray-300',
-                              Icon: XCircleIcon,
+                              badgeType: 'danger' as const,
                             }
                           : undefined;
               return (
@@ -427,10 +414,15 @@ const Season = ({
                       {requestStatusPresentation && (
                         <span
                           data-testid={`episode-request-status-${episode.id}`}
-                          className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-xs font-medium ${requestStatusPresentation.className}`}
+                          className="inline-flex w-fit"
                         >
-                          <requestStatusPresentation.Icon className="mr-1 h-3.5 w-3.5" />
-                          {intl.formatMessage(requestStatusPresentation.label)}
+                          <Badge
+                            badgeType={requestStatusPresentation.badgeType}
+                          >
+                            {intl.formatMessage(
+                              requestStatusPresentation.label
+                            )}
+                          </Badge>
                         </span>
                       )}
                     </div>
@@ -438,17 +430,14 @@ const Season = ({
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {watchStatus?.available && (
-                      <button
+                      <Button
                         type="button"
+                        buttonType="ghost"
+                        buttonSize="sm"
                         disabled={isWatching}
                         onClick={() =>
                           void toggleWatched(episode.id, episode.episodeNumber)
                         }
-                        className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-wait disabled:opacity-60 ${
-                          isWatched
-                            ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20'
-                            : 'border-gray-600 bg-gray-800/70 text-gray-300 hover:border-gray-500 hover:text-white'
-                        }`}
                         aria-pressed={isWatched}
                         aria-label={intl.formatMessage(
                           isWatched
@@ -457,18 +446,22 @@ const Season = ({
                         )}
                       >
                         {isWatched ? (
-                          <CheckCircleSolid className="mr-1.5 h-4 w-4" />
+                          <CheckBadgeSolid className="text-emerald-400" />
                         ) : (
-                          <CheckCircleOutline className="mr-1.5 h-4 w-4" />
+                          <CheckBadgeOutline />
                         )}
-                        {intl.formatMessage(
-                          isWatched ? messages.watched : messages.markWatched
-                        )}
-                      </button>
+                        <span>
+                          {intl.formatMessage(
+                            isWatched ? messages.watched : messages.markWatched
+                          )}
+                        </span>
+                      </Button>
                     )}
                     {canRequest && !isRequested && (
-                      <button
+                      <Button
                         type="button"
+                        buttonType="primary"
+                        buttonSize="sm"
                         data-testid={`episode-quick-request-${episode.id}`}
                         disabled={isRequesting}
                         onClick={() =>
@@ -477,16 +470,19 @@ const Season = ({
                             `${episodeCode} — ${episode.name}`
                           )
                         }
-                        className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-indigo-400/40 bg-indigo-500/10 px-3 text-sm font-semibold text-indigo-200 transition hover:border-indigo-400 hover:bg-indigo-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-wait disabled:opacity-60"
                         aria-label={`${intl.formatMessage(
                           messages.request
                         )} ${episodeCode}`}
                       >
-                        <ArrowDownTrayIcon className="mr-1.5 h-4 w-4" />
-                        {intl.formatMessage(
-                          isRequesting ? messages.requesting : messages.request
-                        )}
-                      </button>
+                        <ArrowDownTrayIcon />
+                        <span>
+                          {intl.formatMessage(
+                            isRequesting
+                              ? messages.requesting
+                              : messages.request
+                          )}
+                        </span>
+                      </Button>
                     )}
                   </div>
                   {episode.stillPath && (

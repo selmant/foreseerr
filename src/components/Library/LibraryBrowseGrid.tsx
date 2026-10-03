@@ -1,7 +1,11 @@
+import Alert from '@app/components/Common/Alert';
+import Button from '@app/components/Common/Button';
+import EmptyState from '@app/components/Common/EmptyState';
 import LibraryPlayCard from '@app/components/Library/LibraryPlayCard';
 import { libraryMediaActionRefs } from '@app/components/Library/libraryPosterWatchMark';
 import { TitleCardBatchProvider } from '@app/components/TitleCard/TitleCardBatchContext';
 import defineMessages from '@app/utils/defineMessages';
+import { FunnelIcon } from '@heroicons/react/24/outline';
 import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
 import type { LibraryDensity } from '@server/lib/libraryBrowseQuery';
 import type { RefObject } from 'react';
@@ -41,26 +45,21 @@ const LibraryBrowseGrid = ({
 
   if (error) {
     return (
-      <div role="alert" aria-live="polite" className="space-y-3">
-        <p className="text-sm text-red-400">
-          {intl.formatMessage(messages.loadFailed)}
-        </p>
-        <button
-          type="button"
-          className="min-h-11 rounded-md bg-indigo-600 px-4 text-sm text-white"
-          onClick={onRetry}
-        >
-          {intl.formatMessage(messages.retry)}
-        </button>
+      <div aria-live="polite">
+        <Alert type="error" title={intl.formatMessage(messages.loadFailed)} />
+        <Button onClick={onRetry}>{intl.formatMessage(messages.retry)}</Button>
       </div>
     );
   }
 
   if (!loading && !items.length) {
     return (
-      <p className="text-sm text-gray-400">
-        {intl.formatMessage(messages.empty)}
-      </p>
+      <div className="mt-6">
+        <EmptyState
+          icon={FunnelIcon}
+          title={intl.formatMessage(messages.empty)}
+        />
+      </div>
     );
   }
 
@@ -85,7 +84,7 @@ const LibraryBrowseGrid = ({
           ? Array.from({ length: 8 }).map((_, index) => (
               <div
                 key={`skeleton-${index}`}
-                className="aspect-[2/3] animate-pulse rounded-lg bg-library-charcoal"
+                className="aspect-[2/3] animate-pulse rounded-xl bg-gray-700"
               />
             ))
           : null}

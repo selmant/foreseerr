@@ -6,7 +6,6 @@ const messages = defineMessages('components.Discover.DiscoverTraktWatchlist', {
   title: 'Trakt Watchlist',
   linkAccount:
     'Link your Trakt account in Linked Accounts to browse your watchlist.',
-  linkedAccounts: 'Linked Accounts',
 });
 
 const DiscoverTraktWatchlist = () => {
@@ -18,7 +17,6 @@ const DiscoverTraktWatchlist = () => {
       endpoint="/api/v1/discover/trakt/watchlist"
       requiresLinkedAccount
       linkedAccountMessage={intl.formatMessage(messages.linkAccount)}
-      linkedAccountsLabel={intl.formatMessage(messages.linkedAccounts)}
       registerHideWatched
     />
   );

@@ -174,48 +174,49 @@ mediaActionsRoutes.get(
       if ('error' in parsed) {
         return next({ status: 400, message: parsed.error });
       }
-      const [traktStatus, jellyfinStatus, anilistStatus, simklStatus] =
-        await Promise.all([
-          traktEpisodeActions.getSeasonStatus(
-            req.user.id,
-            parsed.tmdbId,
-            parsed.seasonNumber
-          ),
-          jellyfinEpisodeActions.getSeasonStatus(
-            req.user.id,
-            parsed.tmdbId,
-            parsed.seasonNumber
-          ),
-          anilistEpisodeActions.getSeasonStatus(
-            req.user.id,
-            parsed.tmdbId,
-            parsed.seasonNumber
-          ),
-          simklEpisodeActions.getSeasonStatus(
-            req.user.id,
-            parsed.tmdbId,
-            parsed.seasonNumber
-          ),
-        ]);
+      const userId = req.user.id;
+      const providers = [
+        ['trakt', traktEpisodeActions],
+        ['jellyfin', jellyfinEpisodeActions],
+        ['anilist', anilistEpisodeActions],
+        ['simkl', simklEpisodeActions],
+      ] as const;
+      // One provider failing must not hide the episode state the others know.
+      const results = await Promise.allSettled(
+        providers.map(([, actions]) =>
+          actions.getSeasonStatus(userId, parsed.tmdbId, parsed.seasonNumber)
+        )
+      );
 
+      const failed = results.find((result) => result.status === 'rejected');
+      if (failed && results.every((result) => result.status === 'rejected')) {
+        throw failed.reason;
+      }
+
+      let available = false;
       const allWatched = new Set<number>();
-      for (const ep of traktStatus.watchedEpisodeNumbers) {
-        allWatched.add(ep);
-      }
-      for (const ep of jellyfinStatus.watchedEpisodeNumbers) {
-        allWatched.add(ep);
-      }
-      for (const ep of anilistStatus.watchedEpisodeNumbers) {
-        allWatched.add(ep);
-      }
-      for (const ep of simklStatus.watchedEpisodeNumbers) allWatched.add(ep);
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          logger.warn('Episode watch status provider failed', {
+            label: 'Media Actions',
+            provider: providers[index][0],
+            tmdbId: parsed.tmdbId,
+            seasonNumber: parsed.seasonNumber,
+            errorMessage:
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason),
+          });
+          return;
+        }
+        available ||= result.value.available;
+        for (const ep of result.value.watchedEpisodeNumbers) {
+          allWatched.add(ep);
+        }
+      });
 
       return res.status(200).json({
-        available:
-          traktStatus.available ||
-          jellyfinStatus.available ||
-          anilistStatus.available ||
-          simklStatus.available,
+        available,
         watchedEpisodeNumbers: Array.from(allWatched).sort((a, b) => a - b),
       });
     } catch (error) {

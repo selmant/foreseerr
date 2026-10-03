@@ -1,6 +1,7 @@
 import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Modal from '@app/components/Common/Modal';
+import SegmentedControl from '@app/components/Common/SegmentedControl';
 import type { RequestOverrides } from '@app/components/RequestModal/AdvancedRequester';
 import AdvancedRequester from '@app/components/RequestModal/AdvancedRequester';
 import EpisodeSelector, {
@@ -57,7 +58,7 @@ const messages = defineMessages('components.RequestModal', {
   pendingapproval: 'Your request is pending approval.',
   seasonsTab: 'Seasons',
   episodesTab: 'Episodes',
-  watchAheadTab: 'Watch ahead',
+  watchAheadTab: 'Watch Ahead',
   requestepisodes:
     'Request {episodeCount} {episodeCount, plural, one {Episode} other {Episodes}}',
   requestepisodes4k:
@@ -69,6 +70,8 @@ const messages = defineMessages('components.RequestModal', {
   watchAheadHint:
     'As you watch in Jellyfin, Foreseerr requests the next unwatched episodes so you do not have to pick ranges.',
   watchAheadCountLabel: 'Keep this many unwatched episodes requested',
+  watchAheadCountInvalid: 'Enter a number between 1 and 50',
+  requestScope: 'Request scope',
   watchAheadNotLinked:
     'Jellyfin is not linked, so this starts from the first episodes until watch progress is available.',
 });
@@ -716,44 +719,31 @@ const TvRequestModal = ({
             })
         : null}
       {data?.episodeRequestsEnabled && !editRequest && (
-        <div className="mt-5 grid grid-cols-3 rounded-lg border border-gray-700 bg-gray-950/40 p-1">
-          <button
-            type="button"
-            onClick={() => {
-              setRequestScope('seasons');
+        <SegmentedControl<'seasons' | 'episodes' | 'watchAhead'>
+          ariaLabel={intl.formatMessage(messages.requestScope)}
+          className="mt-5"
+          value={requestScope}
+          onChange={(scope) => {
+            setRequestScope(scope);
+            if (scope === 'seasons') {
               setEpisodeSelection(undefined);
-            }}
-            className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-              requestScope === 'seasons'
-                ? 'bg-gray-700 text-white shadow'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            {intl.formatMessage(messages.seasonsTab)}
-          </button>
-          <button
-            type="button"
-            onClick={() => setRequestScope('episodes')}
-            className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-              requestScope === 'episodes'
-                ? 'bg-indigo-500 text-white shadow'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            {intl.formatMessage(messages.episodesTab)}
-          </button>
-          <button
-            type="button"
-            onClick={() => setRequestScope('watchAhead')}
-            className={`rounded-md px-2 py-2 text-sm font-semibold transition ${
-              requestScope === 'watchAhead'
-                ? 'bg-indigo-500 text-white shadow'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            {intl.formatMessage(messages.watchAheadTab)}
-          </button>
-        </div>
+            }
+          }}
+          options={[
+            {
+              value: 'seasons',
+              label: intl.formatMessage(messages.seasonsTab),
+            },
+            {
+              value: 'episodes',
+              label: intl.formatMessage(messages.episodesTab),
+            },
+            {
+              value: 'watchAhead',
+              label: intl.formatMessage(messages.watchAheadTab),
+            },
+          ]}
+        />
       )}
       {hasPermission(
         [
@@ -1022,33 +1012,40 @@ const TvRequestModal = ({
           </div>
         </div>
       ) : requestScope === 'watchAhead' ? (
-        <div className="mt-4 rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+        <div className="mt-4 space-y-4 rounded-lg border border-gray-700 bg-gray-900/40 p-4">
           <p className="text-sm text-gray-300">
             {intl.formatMessage(messages.watchAheadHint)}
           </p>
           {!user?.jellyfinUsername && (
-            <p className="mt-2 text-sm text-yellow-500">
-              {intl.formatMessage(messages.watchAheadNotLinked)}
-            </p>
+            <Alert
+              type="warning"
+              title={intl.formatMessage(messages.watchAheadNotLinked)}
+            />
           )}
-          <label
-            htmlFor="watchAheadCount"
-            className="mt-4 block text-sm font-medium text-gray-200"
-          >
-            {intl.formatMessage(messages.watchAheadCountLabel)}
-          </label>
-          <input
-            id="watchAheadCount"
-            type="number"
-            min={1}
-            max={50}
-            value={watchAheadCount}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              setWatchAheadCount(Number.isFinite(next) ? next : 10);
-            }}
-            className="mt-2 w-24 rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
+          <div>
+            <label
+              htmlFor="watchAheadCount"
+              className="mb-2 block text-sm font-medium text-gray-200"
+            >
+              {intl.formatMessage(messages.watchAheadCountLabel)}
+            </label>
+            <input
+              id="watchAheadCount"
+              type="text"
+              inputMode="numeric"
+              className="short"
+              value={watchAheadCount > 0 ? String(watchAheadCount) : ''}
+              onChange={(event) => {
+                const digits = event.target.value.replace(/\D/g, '');
+                setWatchAheadCount(digits ? Number(digits) : 0);
+              }}
+            />
+            {(watchAheadCount < 1 || watchAheadCount > 50) && (
+              <p className="mt-2 text-sm text-red-500">
+                {intl.formatMessage(messages.watchAheadCountInvalid)}
+              </p>
+            )}
+          </div>
         </div>
       ) : (
         <EpisodeSelector

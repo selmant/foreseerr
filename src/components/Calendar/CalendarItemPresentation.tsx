@@ -64,15 +64,27 @@ export const CalendarChip = ({
 }: {
   item: CalendarItem;
   onClick: () => void;
-}) => (
-  <button
-    onClick={onClick}
-    className={`block w-full truncate rounded px-1.5 py-1 text-left text-xs font-medium ${item.available ? 'bg-green-500/20 text-green-200' : item.changeKind === 'delayed' ? 'bg-yellow-500/20 text-yellow-100' : 'bg-indigo-500/20 text-indigo-100'} `}
-  >
-    {item.mediaType === 'movie' ? '🎬 ' : '📺 '}
-    {item.title}
-  </button>
-);
+}) => {
+  const intl = useIntl();
+  const episode = item.mediaType === 'tv' ? formatEpisode(item, intl) : '';
+  return (
+    <button
+      onClick={onClick}
+      title={episode ? `${item.title} · ${episode}` : item.title}
+      className={`flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-xs font-medium transition hover:brightness-125 ${item.available ? 'bg-green-500/20 text-green-200' : item.changeKind === 'delayed' ? 'bg-yellow-500/20 text-yellow-100' : 'bg-indigo-500/20 text-indigo-100'}`}
+    >
+      {item.mediaType === 'movie' ? (
+        <FilmIcon aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
+      ) : (
+        <TvIcon aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
+      )}
+      <span className="truncate">{item.title}</span>
+      {episode ? (
+        <span className="ml-auto flex-none pl-1 opacity-70">{episode}</span>
+      ) : null}
+    </button>
+  );
+};
 
 export const CalendarCard = ({
   item,
@@ -96,7 +108,7 @@ export const CalendarCard = ({
       <div className="relative h-20 w-14 flex-none overflow-hidden rounded bg-gray-700">
         {item.posterPath ? (
           <CachedImage
-            src={item.posterPath}
+            src={`https://image.tmdb.org/t/p/w300_and_h450_face${item.posterPath}`}
             type="tmdb"
             alt=""
             fill

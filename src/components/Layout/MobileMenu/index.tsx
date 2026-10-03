@@ -1,6 +1,7 @@
 import Badge from '@app/components/Common/Badge';
 import QuitAppControl from '@app/components/Layout/QuitAppControl';
 import { menuMessages } from '@app/components/Layout/Sidebar';
+import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import useClickOutside from '@app/hooks/useClickOutside';
 import { Permission, useUser } from '@app/hooks/useUser';
 import { Transition } from '@headlessui/react';
@@ -61,6 +62,7 @@ const MobileMenu = ({
 }: MobileMenuProps) => {
   const ref = useRef<HTMLDivElement>(null);
   const intl = useIntl();
+  const { canQuit } = useNativeRuntime();
   const [isOpen, setIsOpen] = useState(false);
   const { hasPermission } = useUser();
   const location = useLocation();
@@ -179,6 +181,14 @@ const MobileMenu = ({
     openIssuesCount,
   ]);
 
+  const bottomBarLinks = filteredLinks.slice(
+    0,
+    filteredLinks.length === 5 ? 5 : 4
+  );
+  const interventionsInMore = !bottomBarLinks.some(
+    (link) => link.href === '/interventions'
+  );
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50">
       <Transition
@@ -236,7 +246,7 @@ const MobileMenu = ({
               {link.href === '/interventions' &&
                 activeInterventionsCount > 0 && (
                   <div className="ml-auto flex">
-                    <Badge className="rounded-md border-yellow-500 bg-yellow-600">
+                    <Badge className="rounded-md border-indigo-500 bg-gradient-to-br from-indigo-600 to-purple-600">
                       {activeInterventionsCount}
                     </Badge>
                   </div>
@@ -244,63 +254,68 @@ const MobileMenu = ({
             </Link>
           );
         })}
-        <div className="border-t border-gray-700 pt-4">
-          <QuitAppControl />
-        </div>
+        {canQuit && (
+          <div className="border-t border-gray-700 pt-4">
+            <QuitAppControl variant="menu" />
+          </div>
+        )}
       </Transition>
       <div className="padding-bottom-safe border-t border-gray-600 bg-gray-800/90 backdrop-blur">
         <div className="flex h-full items-center justify-between px-6 py-4 text-gray-100">
-          {filteredLinks
-            .slice(0, filteredLinks.length === 5 ? 5 : 4)
-            .map((link) => {
-              const isActive =
-                location.pathname.match(link.activeRegExp) && !isOpen;
-              return (
-                <Link
-                  key={`mobile-menu-link-${link.href}`}
-                  to={link.href}
-                  className={`relative flex flex-col items-center space-y-1 ${
-                    isActive ? 'text-indigo-500' : ''
-                  }`}
-                >
-                  {cloneElement(
-                    isActive ? link.svgIconSelected : link.svgIcon,
-                    {
-                      className: 'h-6 w-6',
-                    }
+          {bottomBarLinks.map((link) => {
+            const isActive =
+              location.pathname.match(link.activeRegExp) && !isOpen;
+            return (
+              <Link
+                key={`mobile-menu-link-${link.href}`}
+                to={link.href}
+                className={`relative flex flex-col items-center space-y-1 ${
+                  isActive ? 'text-indigo-500' : ''
+                }`}
+              >
+                {cloneElement(isActive ? link.svgIconSelected : link.svgIcon, {
+                  className: 'h-6 w-6',
+                })}
+                {link.href === '/requests' &&
+                  pendingRequestsCount > 0 &&
+                  hasPermission(Permission.MANAGE_REQUESTS) && (
+                    <div className="absolute bottom-3 left-3">
+                      <Badge
+                        className={`bg-gradient-to-br ${
+                          location.pathname.match(link.activeRegExp)
+                            ? 'border-indigo-600 from-indigo-700 to-purple-700'
+                            : 'border-indigo-500 from-indigo-600 to-purple-600'
+                        } flex ${
+                          pendingRequestsCount > 99 ? 'w-6' : 'w-4'
+                        } h-4 items-center justify-center !px-[5px] !py-[7px] text-[8px]`}
+                      >
+                        {pendingRequestsCount > 99
+                          ? '99+'
+                          : pendingRequestsCount}
+                      </Badge>
+                    </div>
                   )}
-                  {link.href === '/requests' &&
-                    pendingRequestsCount > 0 &&
-                    hasPermission(Permission.MANAGE_REQUESTS) && (
-                      <div className="absolute bottom-3 left-3">
-                        <Badge
-                          className={`bg-gradient-to-br ${
-                            location.pathname.match(link.activeRegExp)
-                              ? 'border-indigo-600 from-indigo-700 to-purple-700'
-                              : 'border-indigo-500 from-indigo-600 to-purple-600'
-                          } flex ${
-                            pendingRequestsCount > 99 ? 'w-6' : 'w-4'
-                          } h-4 items-center justify-center !px-[5px] !py-[7px] text-[8px]`}
-                        >
-                          {pendingRequestsCount > 99
-                            ? '99+'
-                            : pendingRequestsCount}
-                        </Badge>
-                      </div>
-                    )}
-                  {link.href === '/interventions' &&
-                    activeInterventionsCount > 0 && (
-                      <div className="absolute bottom-3 left-3">
-                        <Badge className="flex h-4 w-4 items-center justify-center rounded-md border-yellow-500 bg-yellow-600 !px-[5px] !py-[7px] text-[8px]">
-                          {activeInterventionsCount > 99
-                            ? '99+'
-                            : activeInterventionsCount}
-                        </Badge>
-                      </div>
-                    )}
-                </Link>
-              );
-            })}
+                {link.href === '/interventions' &&
+                  activeInterventionsCount > 0 && (
+                    <div className="absolute bottom-3 left-3">
+                      <Badge
+                        className={`bg-gradient-to-br ${
+                          location.pathname.match(link.activeRegExp)
+                            ? 'border-indigo-600 from-indigo-700 to-purple-700'
+                            : 'border-indigo-500 from-indigo-600 to-purple-600'
+                        } flex ${
+                          activeInterventionsCount > 99 ? 'w-6' : 'w-4'
+                        } h-4 items-center justify-center !px-[5px] !py-[7px] text-[8px]`}
+                      >
+                        {activeInterventionsCount > 99
+                          ? '99+'
+                          : activeInterventionsCount}
+                      </Badge>
+                    </div>
+                  )}
+              </Link>
+            );
+          })}
           {filteredLinks.length > 4 && filteredLinks.length !== 5 && (
             <button
               className={`relative flex flex-col items-center space-y-1 ${
@@ -313,15 +328,21 @@ const MobileMenu = ({
               ) : (
                 <EllipsisHorizontalIcon className="h-6 w-6" />
               )}
-              {activeInterventionsCount > 0 && !isOpen && (
-                <div className="absolute bottom-3 left-3">
-                  <Badge className="flex h-4 w-4 items-center justify-center rounded-md border-yellow-500 bg-yellow-600 !px-[5px] !py-[7px] text-[8px]">
-                    {activeInterventionsCount > 99
-                      ? '99+'
-                      : activeInterventionsCount}
-                  </Badge>
-                </div>
-              )}
+              {activeInterventionsCount > 0 &&
+                !isOpen &&
+                interventionsInMore && (
+                  <div className="absolute bottom-3 left-3">
+                    <Badge
+                      className={`flex border-indigo-500 bg-gradient-to-br from-indigo-600 to-purple-600 ${
+                        activeInterventionsCount > 99 ? 'w-6' : 'w-4'
+                      } h-4 items-center justify-center !px-[5px] !py-[7px] text-[8px]`}
+                    >
+                      {activeInterventionsCount > 99
+                        ? '99+'
+                        : activeInterventionsCount}
+                    </Badge>
+                  </div>
+                )}
             </button>
           )}
         </div>

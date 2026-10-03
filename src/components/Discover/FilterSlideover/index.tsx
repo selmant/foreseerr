@@ -5,6 +5,7 @@ import type { FilterOptions } from '@app/components/Discover/constants';
 import {
   countActiveFilters,
   discoverRangeFilters,
+  formatDiscoverRangeValue,
 } from '@app/components/Discover/constants';
 import {
   areDiscoverDefaultsCleared,
@@ -29,6 +30,7 @@ import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { XCircleIcon } from '@heroicons/react/24/outline';
 import Datepicker from '@seerr-team/react-tailwindcss-datepicker';
+import { Fragment } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
@@ -55,33 +57,68 @@ const messages = defineMessages('components.Discover.FilterSlideover', {
   voteCount: 'Number of votes between {minValue} and {maxValue}',
   status: 'Status',
   certification: 'Content Rating',
-  hideWatched: 'Hide watched',
+  visibility: 'Visibility',
+  hideWatched: 'Hide Watched',
   hideWatchedTip:
     'Uses Jellyfin and Trakt watch history when either is available.',
-  hideCollected: 'Hide collected',
-  hideWatchlisted: 'Hide watchlisted',
-  hideUnmapped: 'Hide unmapped titles',
+  hideCollected: 'Hide Collected',
+  hideWatchlisted: 'Hide Watchlisted',
+  hideUnmapped: 'Hide Unmapped Titles',
   hideUnmappedTip:
     'Hide titles from Trakt, AniList, MDBList, or Plex that could not be mapped to TMDB.',
-  traktOptions: 'Trakt',
-  watchedOptions: 'Watched',
-  externalRatings: 'External ratings (MDBList)',
+  externalRatings: 'External Ratings',
   externalRatingsTip:
-    'Requires an MDBList API key in Settings. Full-range sliders are off.',
-  imdbScore: 'IMDb rating',
+    'Powered by MDBList. Leave a slider at its full range to skip that rating.',
+  imdbScore: 'IMDb Rating',
   imdbScoreText: 'IMDb between {minValue} and {maxValue}',
-  imdbVotes: 'IMDb vote count',
+  imdbVotes: 'IMDb Vote Count',
   imdbVotesText: 'IMDb votes between {minValue} and {maxValue}',
-  rtCritics: 'RT critics',
+  rtCritics: 'RT Critics',
   rtCriticsText: 'RT critics between {minValue} and {maxValue}',
-  rtAudience: 'RT audience',
+  rtAudience: 'RT Audience',
   rtAudienceText: 'RT audience between {minValue} and {maxValue}',
   metacritic: 'Metacritic',
   metacriticText: 'Metacritic between {minValue} and {maxValue}',
-  traktScore: 'Trakt community',
+  traktScore: 'Trakt Community',
   traktScoreText: 'Trakt between {minValue} and {maxValue}',
-  includeNoRating: 'Keep titles with missing external ratings',
+  includeNoRating: 'Keep Titles Without External Ratings',
 });
+
+const rangeMessageKeys = {
+  imdbRating: { label: 'imdbScore', text: 'imdbScoreText' },
+  imdbVotes: { label: 'imdbVotes', text: 'imdbVotesText' },
+  rtCritics: { label: 'rtCritics', text: 'rtCriticsText' },
+  rtAudience: { label: 'rtAudience', text: 'rtAudienceText' },
+  metacritic: { label: 'metacritic', text: 'metacriticText' },
+  traktRating: { label: 'traktScore', text: 'traktScoreText' },
+} as const;
+
+const VisibilityToggle = ({
+  id,
+  label,
+  tip,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  tip?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) => (
+  <div>
+    <label htmlFor={id} className="flex cursor-pointer items-center gap-3">
+      <input
+        type="checkbox"
+        id={id}
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span>{label}</span>
+    </label>
+    {tip && <p className="ml-9 mt-1 text-sm text-gray-400">{tip}</p>}
+  </div>
+);
 
 type FilterCapability =
   | 'studio'
@@ -142,7 +179,6 @@ const FilterSlideover = ({
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const supports = (capability: FilterCapability) =>
     capabilities.has(capability);
-  const hasExternalRatingFilters = discoverRangeFilters.length > 0;
 
   const dateGte =
     type === 'movie' ? 'primaryReleaseDateGte' : 'firstAirDateGte';
@@ -196,85 +232,68 @@ const FilterSlideover = ({
       onClose={() => onClose()}
     >
       <div className="flex flex-col space-y-4">
-        {showHideWatched && (
+        {(showHideWatched ||
+          showHideUnmapped ||
+          (showTraktRecommendationFilters && traktStatus?.connected)) && (
           <div>
             <div className="mb-2 text-lg font-semibold">
-              {intl.formatMessage(messages.watchedOptions)}
+              {intl.formatMessage(messages.visibility)}
             </div>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-              <input
-                type="checkbox"
-                className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-                checked={ignoreWatched}
-                onChange={(e) =>
-                  updateQueryParams(
-                    'ignoreWatched',
-                    e.target.checked ? 'true' : 'false'
-                  )
-                }
-              />
-              {intl.formatMessage(messages.hideWatched)}
-            </label>
-            <p className="mt-1 text-xs text-gray-400">
-              {intl.formatMessage(messages.hideWatchedTip)}
-            </p>
-          </div>
-        )}
-        {showHideUnmapped && (
-          <div>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-              <input
-                type="checkbox"
-                className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-                checked={hideUnmapped}
-                onChange={(e) =>
-                  updateQueryParams(
-                    'hideUnmapped',
-                    e.target.checked ? 'true' : 'false'
-                  )
-                }
-              />
-              {intl.formatMessage(messages.hideUnmapped)}
-            </label>
-            <p className="mt-1 text-xs text-gray-400">
-              {intl.formatMessage(messages.hideUnmappedTip)}
-            </p>
-          </div>
-        )}
-        {showTraktRecommendationFilters && traktStatus?.connected && (
-          <div>
-            <div className="mb-2 text-lg font-semibold">
-              {intl.formatMessage(messages.traktOptions)}
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-                <input
-                  type="checkbox"
-                  className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-                  checked={ignoreCollected}
-                  onChange={(e) =>
+            <div className="flex flex-col space-y-3">
+              {showHideWatched && (
+                <VisibilityToggle
+                  id="ignoreWatched"
+                  label={intl.formatMessage(messages.hideWatched)}
+                  tip={intl.formatMessage(messages.hideWatchedTip)}
+                  checked={ignoreWatched}
+                  onChange={(checked) =>
                     updateQueryParams(
-                      'ignoreCollected',
-                      e.target.checked ? 'true' : 'false'
+                      'ignoreWatched',
+                      checked ? 'true' : 'false'
                     )
                   }
                 />
-                {intl.formatMessage(messages.hideCollected)}
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-                <input
-                  type="checkbox"
-                  className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-                  checked={ignoreWatchlisted}
-                  onChange={(e) =>
+              )}
+              {showTraktRecommendationFilters && traktStatus?.connected && (
+                <>
+                  <VisibilityToggle
+                    id="ignoreCollected"
+                    label={intl.formatMessage(messages.hideCollected)}
+                    checked={ignoreCollected}
+                    onChange={(checked) =>
+                      updateQueryParams(
+                        'ignoreCollected',
+                        checked ? 'true' : 'false'
+                      )
+                    }
+                  />
+                  <VisibilityToggle
+                    id="ignoreWatchlisted"
+                    label={intl.formatMessage(messages.hideWatchlisted)}
+                    checked={ignoreWatchlisted}
+                    onChange={(checked) =>
+                      updateQueryParams(
+                        'ignoreWatchlisted',
+                        checked ? 'true' : 'false'
+                      )
+                    }
+                  />
+                </>
+              )}
+              {showHideUnmapped && (
+                <VisibilityToggle
+                  id="hideUnmapped"
+                  label={intl.formatMessage(messages.hideUnmapped)}
+                  tip={intl.formatMessage(messages.hideUnmappedTip)}
+                  checked={hideUnmapped}
+                  onChange={(checked) =>
                     updateQueryParams(
-                      'ignoreWatchlisted',
-                      e.target.checked ? 'true' : 'false'
+                      'hideUnmapped',
+                      checked ? 'true' : 'false'
                     )
                   }
                 />
-                {intl.formatMessage(messages.hideWatchlisted)}
-              </label>
+              )}
             </div>
           </div>
         )}
@@ -545,268 +564,84 @@ const FilterSlideover = ({
             })}
           />
         </div>
-        {hasExternalRatingFilters && (
-          <div>
-            <div className="mb-1 text-lg font-semibold">
-              {intl.formatMessage(messages.externalRatings)}
-            </div>
-            {currentSettings.mdblistConfigured && (
-              <p className="mb-3 text-sm text-gray-400">
+        {currentSettings.mdblistConfigured && (
+          <>
+            <div>
+              <div className="mb-1 text-lg font-semibold">
+                {intl.formatMessage(messages.externalRatings)}
+              </div>
+              <p className="text-sm text-gray-400">
                 {intl.formatMessage(messages.externalRatingsTip)}
               </p>
-            )}
-          </div>
+            </div>
+            {discoverRangeFilters.map((slider) => (
+              <Fragment key={slider.id}>
+                <span className="text-lg font-semibold">
+                  {intl.formatMessage(
+                    messages[rangeMessageKeys[slider.id].label]
+                  )}
+                </span>
+                <div className="relative z-0">
+                  <MultiRangeSlider
+                    min={slider.min}
+                    max={slider.max}
+                    step={'step' in slider ? slider.step : undefined}
+                    defaultMinValue={
+                      currentFilters[slider.keyGte]
+                        ? Number(currentFilters[slider.keyGte])
+                        : undefined
+                    }
+                    defaultMaxValue={
+                      currentFilters[slider.keyLte]
+                        ? Number(currentFilters[slider.keyLte])
+                        : undefined
+                    }
+                    onUpdateMin={(min) => {
+                      updateQueryParams(
+                        slider.keyGte,
+                        min !== slider.min &&
+                          Number(currentFilters[slider.keyLte]) !== slider.max
+                          ? formatDiscoverRangeValue(min, slider)
+                          : undefined
+                      );
+                    }}
+                    onUpdateMax={(max) => {
+                      updateQueryParams(
+                        slider.keyLte,
+                        max !== slider.max &&
+                          Number(currentFilters[slider.keyGte]) !== slider.min
+                          ? formatDiscoverRangeValue(max, slider)
+                          : undefined
+                      );
+                    }}
+                    subText={intl.formatMessage(
+                      messages[rangeMessageKeys[slider.id].text],
+                      {
+                        minValue:
+                          currentFilters[slider.keyGte] ??
+                          formatDiscoverRangeValue(slider.min, slider),
+                        maxValue:
+                          currentFilters[slider.keyLte] ??
+                          formatDiscoverRangeValue(slider.max, slider),
+                      }
+                    )}
+                  />
+                </div>
+              </Fragment>
+            ))}
+            <VisibilityToggle
+              id="includeNoRating"
+              label={intl.formatMessage(messages.includeNoRating)}
+              checked={currentFilters.includeNoRating !== 'false'}
+              onChange={(checked) =>
+                updateQueryParams(
+                  'includeNoRating',
+                  checked ? undefined : 'false'
+                )
+              }
+            />
+          </>
         )}
-        <span className="text-lg font-semibold">
-          {intl.formatMessage(messages.imdbScore)}
-        </span>
-        <div className="relative z-0">
-          <MultiRangeSlider
-            min={1}
-            max={10}
-            step={0.1}
-            defaultMinValue={
-              currentFilters.imdbRatingGte
-                ? Number(currentFilters.imdbRatingGte)
-                : undefined
-            }
-            defaultMaxValue={
-              currentFilters.imdbRatingLte
-                ? Number(currentFilters.imdbRatingLte)
-                : undefined
-            }
-            onUpdateMin={(min) => {
-              updateQueryParams(
-                'imdbRatingGte',
-                min !== 1 && Number(currentFilters.imdbRatingLte) !== 10
-                  ? min.toFixed(1)
-                  : undefined
-              );
-            }}
-            onUpdateMax={(max) => {
-              updateQueryParams(
-                'imdbRatingLte',
-                max !== 10 && Number(currentFilters.imdbRatingGte) !== 1
-                  ? max.toFixed(1)
-                  : undefined
-              );
-            }}
-            subText={intl.formatMessage(messages.imdbScoreText, {
-              minValue: currentFilters.imdbRatingGte ?? '1.0',
-              maxValue: currentFilters.imdbRatingLte ?? '10.0',
-            })}
-          />
-        </div>
-        <span className="text-lg font-semibold">
-          {intl.formatMessage(messages.imdbVotes)}
-        </span>
-        <div className="relative z-0">
-          <MultiRangeSlider
-            min={0}
-            max={100000}
-            defaultMinValue={
-              currentFilters.imdbVotesGte
-                ? Number(currentFilters.imdbVotesGte)
-                : undefined
-            }
-            defaultMaxValue={
-              currentFilters.imdbVotesLte
-                ? Number(currentFilters.imdbVotesLte)
-                : undefined
-            }
-            onUpdateMin={(min) => {
-              updateQueryParams(
-                'imdbVotesGte',
-                min !== 0 && Number(currentFilters.imdbVotesLte) !== 100000
-                  ? min.toString()
-                  : undefined
-              );
-            }}
-            onUpdateMax={(max) => {
-              updateQueryParams(
-                'imdbVotesLte',
-                max !== 100000 && Number(currentFilters.imdbVotesGte) !== 0
-                  ? max.toString()
-                  : undefined
-              );
-            }}
-            subText={intl.formatMessage(messages.imdbVotesText, {
-              minValue: currentFilters.imdbVotesGte ?? 0,
-              maxValue: currentFilters.imdbVotesLte ?? 100000,
-            })}
-          />
-        </div>
-        <span className="text-lg font-semibold">
-          {intl.formatMessage(messages.rtCritics)}
-        </span>
-        <div className="relative z-0">
-          <MultiRangeSlider
-            min={0}
-            max={100}
-            defaultMinValue={
-              currentFilters.rtCriticsGte
-                ? Number(currentFilters.rtCriticsGte)
-                : undefined
-            }
-            defaultMaxValue={
-              currentFilters.rtCriticsLte
-                ? Number(currentFilters.rtCriticsLte)
-                : undefined
-            }
-            onUpdateMin={(min) => {
-              updateQueryParams(
-                'rtCriticsGte',
-                min !== 0 && Number(currentFilters.rtCriticsLte) !== 100
-                  ? min.toString()
-                  : undefined
-              );
-            }}
-            onUpdateMax={(max) => {
-              updateQueryParams(
-                'rtCriticsLte',
-                max !== 100 && Number(currentFilters.rtCriticsGte) !== 0
-                  ? max.toString()
-                  : undefined
-              );
-            }}
-            subText={intl.formatMessage(messages.rtCriticsText, {
-              minValue: currentFilters.rtCriticsGte ?? 0,
-              maxValue: currentFilters.rtCriticsLte ?? 100,
-            })}
-          />
-        </div>
-        <span className="text-lg font-semibold">
-          {intl.formatMessage(messages.rtAudience)}
-        </span>
-        <div className="relative z-0">
-          <MultiRangeSlider
-            min={0}
-            max={100}
-            defaultMinValue={
-              currentFilters.rtAudienceGte
-                ? Number(currentFilters.rtAudienceGte)
-                : undefined
-            }
-            defaultMaxValue={
-              currentFilters.rtAudienceLte
-                ? Number(currentFilters.rtAudienceLte)
-                : undefined
-            }
-            onUpdateMin={(min) => {
-              updateQueryParams(
-                'rtAudienceGte',
-                min !== 0 && Number(currentFilters.rtAudienceLte) !== 100
-                  ? min.toString()
-                  : undefined
-              );
-            }}
-            onUpdateMax={(max) => {
-              updateQueryParams(
-                'rtAudienceLte',
-                max !== 100 && Number(currentFilters.rtAudienceGte) !== 0
-                  ? max.toString()
-                  : undefined
-              );
-            }}
-            subText={intl.formatMessage(messages.rtAudienceText, {
-              minValue: currentFilters.rtAudienceGte ?? 0,
-              maxValue: currentFilters.rtAudienceLte ?? 100,
-            })}
-          />
-        </div>
-        <span className="text-lg font-semibold">
-          {intl.formatMessage(messages.metacritic)}
-        </span>
-        <div className="relative z-0">
-          <MultiRangeSlider
-            min={0}
-            max={100}
-            defaultMinValue={
-              currentFilters.metacriticGte
-                ? Number(currentFilters.metacriticGte)
-                : undefined
-            }
-            defaultMaxValue={
-              currentFilters.metacriticLte
-                ? Number(currentFilters.metacriticLte)
-                : undefined
-            }
-            onUpdateMin={(min) => {
-              updateQueryParams(
-                'metacriticGte',
-                min !== 0 && Number(currentFilters.metacriticLte) !== 100
-                  ? min.toString()
-                  : undefined
-              );
-            }}
-            onUpdateMax={(max) => {
-              updateQueryParams(
-                'metacriticLte',
-                max !== 100 && Number(currentFilters.metacriticGte) !== 0
-                  ? max.toString()
-                  : undefined
-              );
-            }}
-            subText={intl.formatMessage(messages.metacriticText, {
-              minValue: currentFilters.metacriticGte ?? 0,
-              maxValue: currentFilters.metacriticLte ?? 100,
-            })}
-          />
-        </div>
-        <span className="text-lg font-semibold">
-          {intl.formatMessage(messages.traktScore)}
-        </span>
-        <div className="relative z-0">
-          <MultiRangeSlider
-            min={0}
-            max={10}
-            step={0.1}
-            defaultMinValue={
-              currentFilters.traktRatingGte
-                ? Number(currentFilters.traktRatingGte)
-                : undefined
-            }
-            defaultMaxValue={
-              currentFilters.traktRatingLte
-                ? Number(currentFilters.traktRatingLte)
-                : undefined
-            }
-            onUpdateMin={(min) => {
-              updateQueryParams(
-                'traktRatingGte',
-                min !== 0 && Number(currentFilters.traktRatingLte) !== 10
-                  ? min.toFixed(1)
-                  : undefined
-              );
-            }}
-            onUpdateMax={(max) => {
-              updateQueryParams(
-                'traktRatingLte',
-                max !== 10 && Number(currentFilters.traktRatingGte) !== 0
-                  ? max.toFixed(1)
-                  : undefined
-              );
-            }}
-            subText={intl.formatMessage(messages.traktScoreText, {
-              minValue: currentFilters.traktRatingGte ?? '0.0',
-              maxValue: currentFilters.traktRatingLte ?? '10.0',
-            })}
-          />
-        </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-200">
-          <input
-            type="checkbox"
-            className="rounded border-gray-500 bg-gray-800 text-indigo-500"
-            checked={currentFilters.includeNoRating !== 'false'}
-            onChange={(e) =>
-              updateQueryParams(
-                'includeNoRating',
-                e.target.checked ? undefined : 'false'
-              )
-            }
-          />
-          {intl.formatMessage(messages.includeNoRating)}
-        </label>
         {supports('watchProviders') && (
           <>
             <span className="text-lg font-semibold">

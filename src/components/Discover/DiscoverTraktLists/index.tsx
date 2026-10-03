@@ -1,11 +1,14 @@
+import EmptyState from '@app/components/Common/EmptyState';
 import Header from '@app/components/Common/Header';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
+import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
+import { QueueListIcon } from '@heroicons/react/24/outline';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR from 'swr';
@@ -14,8 +17,8 @@ const messages = defineMessages('components.Discover.DiscoverTraktLists', {
   title: 'Your Trakt Lists',
   yourLists: 'Your Lists',
   linkAccount: 'Link your Trakt account to browse your personal lists.',
-  linkedAccounts: 'Linked Accounts',
-  items: '{count} items',
+  items: '{count, plural, one {# item} other {# items}}',
+  noLists: 'No Trakt lists found.',
   watchlist: 'Watchlist',
   likedLists: 'Liked Lists',
   liked: 'Liked',
@@ -54,25 +57,12 @@ const DiscoverTraktLists = () => {
 
   if (traktStatus && !traktStatus.connected) {
     return (
-      <>
-        <PageTitle title={intl.formatMessage(messages.title)} />
-        <div className="mb-5 mt-1">
-          <Header>
-            <SliderSourceTitle source="trakt">
-              {intl.formatMessage(messages.title)}
-            </SliderSourceTitle>
-          </Header>
-        </div>
-        <div className="text-center text-gray-400">
-          <p>{intl.formatMessage(messages.linkAccount)}</p>
-          <Link
-            to="/profile/settings/linked-accounts"
-            className="mt-4 inline-block text-white underline"
-          >
-            {intl.formatMessage(messages.linkedAccounts)}
-          </Link>
-        </div>
-      </>
+      <DiscoverProviderMessage
+        title={intl.formatMessage(messages.title)}
+        source="trakt"
+        message={intl.formatMessage(messages.linkAccount)}
+        linkAccount
+      />
     );
   }
 
@@ -94,6 +84,12 @@ const DiscoverTraktLists = () => {
           </SliderSourceTitle>
         </Header>
       </div>
+      {!data?.results.length && (
+        <EmptyState
+          icon={QueueListIcon}
+          title={intl.formatMessage(messages.noLists)}
+        />
+      )}
       {[
         {
           title: intl.formatMessage(messages.yourLists),
@@ -122,7 +118,7 @@ const DiscoverTraktLists = () => {
                     <li key={`${list.id}-${list.slug}`}>
                       <Link
                         to={href}
-                        className="block rounded-lg bg-gray-800/50 p-5 shadow ring-1 ring-gray-700 transition hover:bg-gray-800"
+                        className="block rounded-xl bg-gray-800 p-5 shadow ring-1 ring-gray-700 transition duration-300 hover:shadow-lg hover:ring-gray-500"
                       >
                         <div className="text-lg font-semibold text-white">
                           {list.isWatchlist

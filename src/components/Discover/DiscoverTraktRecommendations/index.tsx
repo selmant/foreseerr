@@ -9,7 +9,7 @@ const messages = defineMessages(
     title: 'Trakt Recommendations',
     linkAccount:
       'Link your Trakt account in Linked Accounts to browse personalized recommendations.',
-    linkedAccounts: 'Linked Accounts',
+    yourLists: 'Browse your Trakt lists',
   }
 );
 
@@ -22,12 +22,14 @@ const DiscoverTraktRecommendations = () => {
       endpoint="/api/v1/discover/trakt/recommendations"
       requiresLinkedAccount
       linkedAccountMessage={intl.formatMessage(messages.linkAccount)}
-      linkedAccountsLabel={intl.formatMessage(messages.linkedAccounts)}
       showRecommendationFilters
       registerHideWatched
       subtext={
-        <Link to="/discover/trakt/lists" className="hover:underline">
-          Your Trakt Lists
+        <Link
+          to="/discover/trakt/lists"
+          className="text-indigo-400 transition hover:text-indigo-300 hover:underline"
+        >
+          {intl.formatMessage(messages.yourLists)}
         </Link>
       }
     />

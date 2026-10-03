@@ -24,6 +24,7 @@ import { Field, Form, Formik } from 'formik';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import AsyncSelect from 'react-select/async';
+import useSWR from 'swr';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.Discover.CreateSlider', {
@@ -36,7 +37,7 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   providetmdbstudio: 'Provide TMDB Studio ID',
   providetmdbnetwork: 'Provide TMDB Network ID',
   providetraktlisturl: 'Paste a Trakt list URL or username/list-slug',
-  searchTraktLists: 'Search public or your Trakt lists…',
+  searchTraktLists: 'Search Trakt lists or paste a list URL…',
   customTraktList: 'Use: {value}',
   traktListNotLinked:
     'Search finds public lists. Link Trakt to also include your personal lists.',
@@ -44,24 +45,21 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   anilistListNotLinked:
     'Link AniList in Linked Accounts to pick from your anime lists.',
   providemdblistlisturl: 'Paste an MDBList URL, username/list-slug, or list id',
-  searchMdblistLists: 'Search public MDBList lists…',
+  searchMdblistLists: 'Search MDBList lists or paste a list URL…',
   customMdblistList: 'Use: {value}',
-  mdblistListRequiresKey:
-    'MDBList must be configured in Settings to pin public lists.',
   liked: 'liked',
   yours: 'yours',
   addsuccess: 'Created new slider and saved discover customization settings.',
   addfail: 'Failed to create new slider.',
   editsuccess: 'Edited slider and saved discover customization settings.',
   editfail: 'Failed to edit slider.',
-  needresults: 'You need to have at least 1 result.',
   validationDatarequired: 'You must provide a data value.',
   validationTitlerequired: 'You must provide a title.',
   addcustomslider: 'Create Custom Slider',
   searchKeywords: 'Search keywords…',
   searchGenres: 'Search genres…',
   searchStudios: 'Search studios…',
-  starttyping: 'Starting typing to search.',
+  starttyping: 'Start typing to search.',
   nooptions: 'No results.',
 });
 
@@ -137,6 +135,16 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
   const { addToast } = useToasts();
   const settings = useSettings();
   const { user } = useUser();
+  const { data: traktStatus } = useSWR<{ connected: boolean }>(
+    settings.currentSettings.traktConfigured && user
+      ? `/api/v1/user/${user.id}/settings/linked-accounts/trakt`
+      : null
+  );
+  const { data: anilistStatus } = useSWR<{ connected: boolean }>(
+    settings.currentSettings.anilistConfigured && user
+      ? `/api/v1/user/${user.id}/settings/linked-accounts/anilist`
+      : null
+  );
   const [defaultDataValue, setDefaultDataValue] = useState<
     { label: string; value: string | number }[] | null
   >(null);
@@ -661,7 +669,12 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         const activeOption = visibleOptions.find(
           (option) => option.type === Number(values.sliderType)
         );
-        const canSubmit = isValid && Boolean(values.data?.trim());
+        const submitBlocker = !values.title?.trim()
+          ? messages.validationTitlerequired
+          : !values.data?.trim()
+            ? messages.validationDatarequired
+            : null;
+        const canSubmit = isValid && !submitBlocker;
 
         let dataInput: React.ReactNode;
 
@@ -834,9 +847,11 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                     );
                   }}
                 />
-                <p className="text-sm text-gray-400">
-                  {intl.formatMessage(messages.traktListNotLinked)}
-                </p>
+                {traktStatus && !traktStatus.connected && (
+                  <p className="text-sm text-gray-400">
+                    {intl.formatMessage(messages.traktListNotLinked)}
+                  </p>
+                )}
               </div>
             );
             break;
@@ -873,9 +888,11 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                     );
                   }}
                 />
-                <p className="text-sm text-gray-400">
-                  {intl.formatMessage(messages.anilistListNotLinked)}
-                </p>
+                {anilistStatus && !anilistStatus.connected && (
+                  <p className="text-sm text-gray-400">
+                    {intl.formatMessage(messages.anilistListNotLinked)}
+                  </p>
+                )}
               </div>
             );
             break;
@@ -921,9 +938,6 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                     );
                   }}
                 />
-                <p className="text-sm text-gray-400">
-                  {intl.formatMessage(messages.mdblistListRequiresKey)}
-                </p>
               </div>
             );
             break;
@@ -974,7 +988,11 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                 )}
               <div className="flex-1" />
               {!canSubmit ? (
-                <Tooltip content={intl.formatMessage(messages.needresults)}>
+                <Tooltip
+                  content={intl.formatMessage(
+                    submitBlocker ?? messages.validationDatarequired
+                  )}
+                >
                   <div>
                     <Button buttonType="primary" buttonSize="sm" disabled>
                       {intl.formatMessage(

@@ -365,7 +365,7 @@ describe('Trakt settings credential safety', () => {
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.trakt.provider, 'jellyfin');
     assert.equal(res.body.trakt.state, 'healthy');
-    assert.match(res.body.trakt.detail, /ready for all 1 linked users/i);
+    assert.match(res.body.trakt.detail, /ready for the linked user\./i);
     assert.equal(res.body.trakt.jellyfin.readiness.readyUsers, 1);
     assert.equal(res.body.trakt.jellyfin.readiness.users[0].state, 'ready');
     assert.equal(betterTraktMock.mock.calls.length, 1);

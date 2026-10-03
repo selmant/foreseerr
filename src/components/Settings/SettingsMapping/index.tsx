@@ -5,10 +5,83 @@ import PageTitle from '@app/components/Common/PageTitle';
 import Table from '@app/components/Common/Table';
 import FixMappingModal from '@app/components/TitleCard/FixMappingModal';
 import useToasts from '@app/hooks/useToasts';
+import globalMessages from '@app/i18n/globalMessages';
+import defineMessages from '@app/utils/defineMessages';
 import { formatBytes } from '@app/utils/numberHelpers';
+import {
+  ArrowDownTrayIcon,
+  ArrowPathIcon,
+  ArrowUpTrayIcon,
+} from '@heroicons/react/24/outline';
 import axios from 'axios';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useIntl, type IntlShape } from 'react-intl';
 import useSWR from 'swr';
+
+const messages = defineMessages('components.Settings.SettingsMapping', {
+  mapping: 'Mapping',
+  mappingDescription:
+    'How items from AniList, Simkl, Trakt and MDBList are matched to TMDB. A match comes from, in order: your corrections, the datasets, TMDB’s own index of IMDb and TVDB ids, and for anime nothing else knows yet, an exact title match or the show of its prequel.',
+  noDatasetTitle: 'No mapping dataset is loaded yet',
+  noDatasetDescription:
+    'Foreseerr matches anime from AniList and Simkl to TMDB with these datasets. They download on their own; until one has finished, anime is matched by title only and more of it stays unmapped.',
+  unmapped: 'Unmapped',
+  guessed: 'Guessed',
+  corrections: 'Corrections',
+  datasets: 'Datasets',
+  datasetsDescription:
+    'Downloaded nightly and stored locally. A later dataset only fills ids an earlier one does not have.',
+  dataset: 'Dataset',
+  edges: 'Edges',
+  updated: 'Updated',
+  licence: 'Licence',
+  actions: 'Actions',
+  refresh: 'Refresh',
+  refreshing: 'Refreshing…',
+  enable: 'Enable',
+  disable: 'Disable',
+  phaseDownloading: 'Downloading',
+  phaseValidating: 'Validating',
+  phaseParsing: 'Parsing',
+  phaseWriting: 'Writing',
+  inProgress: 'in progress',
+  refreshFailed: '{dataset}: {error}',
+  refreshFailedGeneric: 'refresh failed',
+  refreshDone:
+    '{dataset}: {status}{edges, select, none {} other { ({edges} edges)}}',
+  refreshError: 'Unable to refresh {dataset}.',
+  toggleError: 'Unable to update {dataset}.',
+  unmappedDescription:
+    'Items no step could match, most-seen first. Each is retried on its own; fix one here if you know its TMDB entry.',
+  item: 'Item',
+  seenIn: 'Seen In',
+  seen: 'Seen',
+  fix: 'Fix',
+  dismiss: 'Dismiss',
+  nothingUnmapped: 'Nothing is unmapped.',
+  guessedDescription:
+    'Anime matched by the fallback because no dataset knows it yet. These show as normal tiles and are replaced once a dataset catches up. Correct one that is wrong, or discard it to have it worked out again.',
+  matchedTo: 'Matched To',
+  how: 'How',
+  correct: 'Correct',
+  discard: 'Discard',
+  noGuessed: 'No guessed matches.',
+  originTitle: 'Exact title match',
+  originPrequel: 'Prequel’s show',
+  correctionsDescription:
+    'Your own matches. They win over everything else and nothing changes them but you.',
+  export: 'Export',
+  import: 'Import',
+  note: 'Note',
+  noTmdbEntry: 'No TMDB entry',
+  remove: 'Remove',
+  noCorrections: 'No corrections.',
+  tmdbEntry: 'TMDB {mediaType} {tmdbId}',
+  removeError: 'Unable to remove the mapping.',
+  imported:
+    'Imported {imported, plural, one {# correction} other {# corrections}}, skipped {skipped}.',
+  importError: 'Unable to import corrections.',
+});
 
 interface ResolutionRow {
   id: number;
@@ -53,23 +126,26 @@ interface StatusResponse {
 
 type ResolutionList = { results: ResolutionRow[]; total: number };
 
-const Stat = ({ label, value }: { label: string; value: string | number }) => (
-  <div className="rounded-md bg-gray-800 p-4 ring-1 ring-gray-700">
-    <div className="text-xs uppercase tracking-wider text-gray-400">
-      {label}
-    </div>
+const Stat = ({ label, value }: { label: string; value: string }) => (
+  <div className="rounded-lg bg-gray-800 p-4 shadow ring-1 ring-gray-700">
+    <div className="text-sm font-medium text-gray-400">{label}</div>
     <div className="mt-1 text-2xl font-semibold text-white">{value}</div>
   </div>
 );
 
-const phaseLabel = (phase: RefreshProgress['phase']): string => {
-  if (phase === 'downloading') return 'Downloading';
-  if (phase === 'validating') return 'Validating';
-  if (phase === 'parsing') return 'Parsing';
-  return 'Writing';
-};
+const phaseLabel = (phase: RefreshProgress['phase'], intl: IntlShape): string =>
+  intl.formatMessage(
+    phase === 'downloading'
+      ? messages.phaseDownloading
+      : phase === 'validating'
+        ? messages.phaseValidating
+        : phase === 'parsing'
+          ? messages.phaseParsing
+          : messages.phaseWriting
+  );
 
 const RefreshBar = ({ progress }: { progress?: RefreshProgress }) => {
+  const intl = useIntl();
   const phase = progress?.phase ?? 'downloading';
   const percent =
     phase === 'ingesting' && progress?.recordsTotal
@@ -90,12 +166,12 @@ const RefreshBar = ({ progress }: { progress?: RefreshProgress }) => {
   const detail =
     phase === 'downloading' && progress?.bytesReceived != null
       ? formatBytes(progress.bytesReceived, 1)
-      : 'in progress';
+      : intl.formatMessage(messages.inProgress);
 
   return (
     <div className="mt-2 w-56">
       <div className="flex justify-between text-xs text-gray-400">
-        <span>{phaseLabel(phase)}</span>
+        <span>{phaseLabel(phase, intl)}</span>
         <span>{percent != null ? `${percent}%` : detail}</span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded bg-gray-700">
@@ -110,10 +186,12 @@ const RefreshBar = ({ progress }: { progress?: RefreshProgress }) => {
   );
 };
 
-const ORIGIN_LABEL: Record<string, string> = {
-  title: 'exact title match',
-  prequel: "prequel's show",
-};
+const originLabel = (origin: ResolutionRow['origin'], intl: IntlShape) =>
+  origin === 'title'
+    ? intl.formatMessage(messages.originTitle)
+    : origin === 'prequel'
+      ? intl.formatMessage(messages.originPrequel)
+      : origin;
 
 const tmdbUrl = (row: ResolutionRow): string =>
   `https://www.themoviedb.org/${row.tmdbType}/${row.tmdbId}`;
@@ -129,7 +207,9 @@ const EmptyRow = ({ columns, text }: { columns: number; text: string }) => (
 );
 
 const SettingsMapping = () => {
+  const intl = useIntl();
   const { addToast } = useToasts();
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [fixing, setFixing] = useState<ResolutionRow | null>(null);
   const [refreshingKeys, setRefreshingKeys] = useState<string[]>([]);
 
@@ -172,15 +252,23 @@ const SettingsMapping = () => {
       );
       addToast(
         data.status === 'failed'
-          ? `${key}: ${data.error ?? 'refresh failed'}`
-          : `${key}: ${data.status}${data.edges ? ` (${data.edges.toLocaleString()} edges)` : ''}`,
+          ? intl.formatMessage(messages.refreshFailed, {
+              dataset: key,
+              error:
+                data.error ?? intl.formatMessage(messages.refreshFailedGeneric),
+            })
+          : intl.formatMessage(messages.refreshDone, {
+              dataset: key,
+              status: data.status,
+              edges: data.edges ? intl.formatNumber(data.edges) : 'none',
+            }),
         {
           appearance: data.status === 'failed' ? 'error' : 'success',
           autoDismiss: true,
         }
       );
     } catch {
-      addToast(`Unable to refresh ${key}.`, {
+      addToast(intl.formatMessage(messages.refreshError, { dataset: key }), {
         appearance: 'error',
         autoDismiss: true,
       });
@@ -197,10 +285,13 @@ const SettingsMapping = () => {
       });
       void revalidateStatus();
     } catch {
-      addToast(`Unable to update ${dataset.key}.`, {
-        appearance: 'error',
-        autoDismiss: true,
-      });
+      addToast(
+        intl.formatMessage(messages.toggleError, { dataset: dataset.key }),
+        {
+          appearance: 'error',
+          autoDismiss: true,
+        }
+      );
     }
   };
 
@@ -209,7 +300,7 @@ const SettingsMapping = () => {
       await axios.delete(`/api/v1/settings/mapping/resolutions/${row.id}`);
       revalidateAll();
     } catch {
-      addToast('Unable to remove the mapping.', {
+      addToast(intl.formatMessage(messages.removeError), {
         appearance: 'error',
         autoDismiss: true,
       });
@@ -240,12 +331,15 @@ const SettingsMapping = () => {
         { corrections }
       );
       addToast(
-        `Imported ${data.imported} correction(s), skipped ${data.skipped}.`,
+        intl.formatMessage(messages.imported, {
+          imported: data.imported,
+          skipped: data.skipped,
+        }),
         { appearance: 'success', autoDismiss: true }
       );
       revalidateAll();
     } catch {
-      addToast('Unable to import corrections.', {
+      addToast(intl.formatMessage(messages.importError), {
         appearance: 'error',
         autoDismiss: true,
       });
@@ -257,9 +351,28 @@ const SettingsMapping = () => {
     (dataset) => dataset.enabled && dataset.edgeCount
   );
 
+  const dateTime = (value: string) =>
+    intl.formatDate(value, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  const tmdbEntry = (row: ResolutionRow) =>
+    intl.formatMessage(messages.tmdbEntry, {
+      mediaType: row.tmdbType,
+      tmdbId: row.tmdbId,
+    });
+
   return (
     <>
-      <PageTitle title="Mapping" />
+      <PageTitle
+        title={[
+          intl.formatMessage(messages.mapping),
+          intl.formatMessage(globalMessages.settings),
+        ]}
+      />
       {fixing && (
         <FixMappingModal
           title={fixing.title ?? sourceId(fixing)}
@@ -272,44 +385,51 @@ const SettingsMapping = () => {
         />
       )}
 
-      {nothingLoaded && (
-        <Alert title="No mapping dataset is loaded yet">
-          Foreseerr matches anime from AniList and Simkl to TMDB with these
-          datasets. They download on their own; until one has finished, anime is
-          matched by title only and more of it stays unmapped.
-        </Alert>
-      )}
+      <div className="mb-6">
+        <h3 className="heading">{intl.formatMessage(messages.mapping)}</h3>
+        <p className="description">
+          {intl.formatMessage(messages.mappingDescription)}
+        </p>
+      </div>
+      <div className="section">
+        {nothingLoaded && (
+          <Alert title={intl.formatMessage(messages.noDatasetTitle)}>
+            {intl.formatMessage(messages.noDatasetDescription)}
+          </Alert>
+        )}
+        <div className="grid max-w-6xl grid-cols-1 gap-4 sm:grid-cols-3">
+          <Stat
+            label={intl.formatMessage(messages.unmapped)}
+            value={intl.formatNumber(status?.counts.unmapped ?? 0)}
+          />
+          <Stat
+            label={intl.formatMessage(messages.guessed)}
+            value={intl.formatNumber(status?.counts.guessed ?? 0)}
+          />
+          <Stat
+            label={intl.formatMessage(messages.corrections)}
+            value={intl.formatNumber(status?.counts.manual ?? 0)}
+          />
+        </div>
+      </div>
 
       <div className="mb-6">
-        <h3 className="heading">Mapping</h3>
+        <h3 className="heading">{intl.formatMessage(messages.datasets)}</h3>
         <p className="description">
-          How items from AniList, Simkl, Trakt and MDBList are matched to TMDB.
-          A match comes from, in order: your corrections, the datasets, TMDB's
-          own index of IMDb and TVDB ids, and for anime nothing else knows yet,
-          an exact title match or the show of its prequel.
+          {intl.formatMessage(messages.datasetsDescription)}
         </p>
       </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <Stat label="Unmapped" value={status?.counts.unmapped ?? 0} />
-        <Stat label="Guessed" value={status?.counts.guessed ?? 0} />
-        <Stat label="Corrections" value={status?.counts.manual ?? 0} />
-      </div>
-
-      <div className="mt-8">
-        <h3 className="heading">Datasets</h3>
-        <p className="description">
-          Downloaded nightly and stored locally. A later dataset only fills ids
-          an earlier one does not have.
-        </p>
+      <div className="section">
         <Table>
           <thead>
             <tr>
-              <Table.TH>Dataset</Table.TH>
-              <Table.TH>Edges</Table.TH>
-              <Table.TH>Updated</Table.TH>
-              <Table.TH>Licence</Table.TH>
-              <Table.TH className="text-right">Actions</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.dataset)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.edges)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.updated)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.licence)}</Table.TH>
+              <Table.TH className="text-right">
+                {intl.formatMessage(messages.actions)}
+              </Table.TH>
             </tr>
           </thead>
           <Table.TBody>
@@ -334,11 +454,13 @@ const SettingsMapping = () => {
                     {refreshing && <RefreshBar progress={dataset.refresh} />}
                   </Table.TD>
                   <Table.TD>
-                    {dataset.edgeCount?.toLocaleString() ?? '—'}
+                    {dataset.edgeCount != null
+                      ? intl.formatNumber(dataset.edgeCount)
+                      : '—'}
                   </Table.TD>
                   <Table.TD>
                     {dataset.lastSuccessAt
-                      ? new Date(dataset.lastSuccessAt).toLocaleString()
+                      ? dateTime(dataset.lastSuccessAt)
                       : '—'}
                   </Table.TD>
                   <Table.TD>
@@ -360,7 +482,16 @@ const SettingsMapping = () => {
                           disabled={refreshing}
                           onClick={() => refreshDataset(dataset.key)}
                         >
-                          {refreshing ? 'Refreshing…' : 'Refresh'}
+                          <ArrowPathIcon
+                            className={refreshing ? 'animate-spin' : ''}
+                          />
+                          <span>
+                            {intl.formatMessage(
+                              refreshing
+                                ? messages.refreshing
+                                : messages.refresh
+                            )}
+                          </span>
                         </Button>
                       )}
                       <Button
@@ -369,7 +500,9 @@ const SettingsMapping = () => {
                         disabled={refreshing}
                         onClick={() => toggleDataset(dataset)}
                       >
-                        {dataset.enabled ? 'Disable' : 'Enable'}
+                        {intl.formatMessage(
+                          dataset.enabled ? messages.disable : messages.enable
+                        )}
                       </Button>
                     </div>
                   </Table.TD>
@@ -380,19 +513,22 @@ const SettingsMapping = () => {
         </Table>
       </div>
 
-      <div className="mt-8">
-        <h3 className="heading">Unmapped</h3>
+      <div className="mb-6">
+        <h3 className="heading">{intl.formatMessage(messages.unmapped)}</h3>
         <p className="description">
-          Items no step could match, most-seen first. Each is retried on its
-          own; fix one here if you know its TMDB entry.
+          {intl.formatMessage(messages.unmappedDescription)}
         </p>
+      </div>
+      <div className="section">
         <Table>
           <thead>
             <tr>
-              <Table.TH>Item</Table.TH>
-              <Table.TH>Seen in</Table.TH>
-              <Table.TH>Seen</Table.TH>
-              <Table.TH className="text-right">Actions</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.item)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.seenIn)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.seen)}</Table.TH>
+              <Table.TH className="text-right">
+                {intl.formatMessage(messages.actions)}
+              </Table.TH>
             </tr>
           </thead>
           <Table.TBody>
@@ -409,7 +545,7 @@ const SettingsMapping = () => {
                   </div>
                 </Table.TD>
                 <Table.TD>{row.discoverSource ?? '—'}</Table.TD>
-                <Table.TD>{row.hitCount}</Table.TD>
+                <Table.TD>{intl.formatNumber(row.hitCount)}</Table.TD>
                 <Table.TD alignText="right">
                   <div className="flex justify-end gap-2">
                     <Button
@@ -417,40 +553,45 @@ const SettingsMapping = () => {
                       buttonSize="sm"
                       onClick={() => setFixing(row)}
                     >
-                      Fix
+                      {intl.formatMessage(messages.fix)}
                     </Button>
                     <Button
                       buttonType="default"
                       buttonSize="sm"
                       onClick={() => forget(row)}
                     >
-                      Dismiss
+                      {intl.formatMessage(messages.dismiss)}
                     </Button>
                   </div>
                 </Table.TD>
               </tr>
             ))}
             {!unmapped?.results.length && (
-              <EmptyRow columns={4} text="Nothing is unmapped." />
+              <EmptyRow
+                columns={4}
+                text={intl.formatMessage(messages.nothingUnmapped)}
+              />
             )}
           </Table.TBody>
         </Table>
       </div>
 
-      <div className="mt-8">
-        <h3 className="heading">Guessed</h3>
+      <div className="mb-6">
+        <h3 className="heading">{intl.formatMessage(messages.guessed)}</h3>
         <p className="description">
-          Anime matched by the fallback because no dataset knows it yet. These
-          show as normal tiles and are replaced once a dataset catches up.
-          Correct one that is wrong, or discard it to have it worked out again.
+          {intl.formatMessage(messages.guessedDescription)}
         </p>
+      </div>
+      <div className="section">
         <Table>
           <thead>
             <tr>
-              <Table.TH>Item</Table.TH>
-              <Table.TH>Matched to</Table.TH>
-              <Table.TH>How</Table.TH>
-              <Table.TH className="text-right">Actions</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.item)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.matchedTo)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.how)}</Table.TH>
+              <Table.TH className="text-right">
+                {intl.formatMessage(messages.actions)}
+              </Table.TH>
             </tr>
           </thead>
           <Table.TBody>
@@ -469,11 +610,11 @@ const SettingsMapping = () => {
                     rel="noreferrer"
                     className="text-indigo-400 hover:underline"
                   >
-                    TMDB {row.tmdbType} {row.tmdbId}
+                    {tmdbEntry(row)}
                   </a>
                 </Table.TD>
                 <Table.TD>
-                  <div>{ORIGIN_LABEL[row.origin] ?? row.origin}</div>
+                  <div>{originLabel(row.origin, intl)}</div>
                   {row.detail && (
                     <div className="text-xs text-gray-400">{row.detail}</div>
                   )}
@@ -485,61 +626,74 @@ const SettingsMapping = () => {
                       buttonSize="sm"
                       onClick={() => setFixing(row)}
                     >
-                      Correct
+                      {intl.formatMessage(messages.correct)}
                     </Button>
                     <Button
                       buttonType="default"
                       buttonSize="sm"
                       onClick={() => forget(row)}
                     >
-                      Discard
+                      {intl.formatMessage(messages.discard)}
                     </Button>
                   </div>
                 </Table.TD>
               </tr>
             ))}
             {!guessed?.results.length && (
-              <EmptyRow columns={4} text="No guessed matches." />
+              <EmptyRow
+                columns={4}
+                text={intl.formatMessage(messages.noGuessed)}
+              />
             )}
           </Table.TBody>
         </Table>
       </div>
 
-      <div className="mt-8">
-        <div className="flex items-end justify-between">
-          <div>
-            <h3 className="heading">Corrections</h3>
-            <p className="description">
-              Your own matches. They win over everything else and nothing
-              changes them but you.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button buttonType="default" onClick={exportCorrections}>
-              Export
-            </Button>
-            <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-500 px-4 py-2 text-sm text-white">
-              Import
-              <input
-                type="file"
-                accept="application/json"
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) importCorrections(file);
-                  event.target.value = '';
-                }}
-              />
-            </label>
-          </div>
+      <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <h3 className="heading">
+            {intl.formatMessage(messages.corrections)}
+          </h3>
+          <p className="description">
+            {intl.formatMessage(messages.correctionsDescription)}
+          </p>
         </div>
+        <div className="flex gap-2">
+          <Button buttonType="default" onClick={exportCorrections}>
+            <ArrowDownTrayIcon />
+            <span>{intl.formatMessage(messages.export)}</span>
+          </Button>
+          <Button
+            buttonType="default"
+            onClick={() => importInputRef.current?.click()}
+          >
+            <ArrowUpTrayIcon />
+            <span>{intl.formatMessage(messages.import)}</span>
+          </Button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json"
+            className="hidden"
+            aria-label={intl.formatMessage(messages.import)}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) importCorrections(file);
+              event.target.value = '';
+            }}
+          />
+        </div>
+      </div>
+      <div className="section">
         <Table>
           <thead>
             <tr>
-              <Table.TH>Item</Table.TH>
-              <Table.TH>Matched to</Table.TH>
-              <Table.TH>Note</Table.TH>
-              <Table.TH className="text-right">Actions</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.item)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.matchedTo)}</Table.TH>
+              <Table.TH>{intl.formatMessage(messages.note)}</Table.TH>
+              <Table.TH className="text-right">
+                {intl.formatMessage(messages.actions)}
+              </Table.TH>
             </tr>
           </thead>
           <Table.TBody>
@@ -561,10 +715,12 @@ const SettingsMapping = () => {
                       rel="noreferrer"
                       className="text-indigo-400 hover:underline"
                     >
-                      TMDB {row.tmdbType} {row.tmdbId}
+                      {tmdbEntry(row)}
                     </a>
                   ) : (
-                    <span className="text-gray-400">No TMDB entry</span>
+                    <span className="text-gray-400">
+                      {intl.formatMessage(messages.noTmdbEntry)}
+                    </span>
                   )}
                 </Table.TD>
                 <Table.TD>{row.detail ?? '—'}</Table.TD>
@@ -574,13 +730,16 @@ const SettingsMapping = () => {
                     buttonSize="sm"
                     onClick={() => forget(row)}
                   >
-                    Remove
+                    {intl.formatMessage(messages.remove)}
                   </Button>
                 </Table.TD>
               </tr>
             ))}
             {!manual?.results.length && (
-              <EmptyRow columns={4} text="No corrections." />
+              <EmptyRow
+                columns={4}
+                text={intl.formatMessage(messages.noCorrections)}
+              />
             )}
           </Table.TBody>
         </Table>

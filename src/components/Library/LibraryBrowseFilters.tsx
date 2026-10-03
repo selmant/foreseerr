@@ -1,6 +1,8 @@
 import Button from '@app/components/Common/Button';
+import SegmentedControl from '@app/components/Common/SegmentedControl';
 import SlideOver from '@app/components/Common/SlideOver';
 import defineMessages from '@app/utils/defineMessages';
+import { XCircleIcon } from '@heroicons/react/24/outline';
 import {
   countActiveLibraryBrowseFilters,
   toggleLibraryBrowseGenre,
@@ -12,17 +14,20 @@ const messages = defineMessages('components.Library.LibraryBrowseFilters', {
   title: 'Filters',
   activefilters:
     '{count, plural, one {# Active Filter} other {# Active Filters}}',
-  watchStatus: 'Watch status',
+  watchStatus: 'Watch Status',
   any: 'Any',
   unwatched: 'Unwatched',
-  inProgress: 'In progress',
+  inProgress: 'In Progress',
   played: 'Played',
   genres: 'Genres',
   noGenres: 'No genres available.',
-  yearFrom: 'From year',
-  yearTo: 'To year',
+  releaseYear: 'Release Year',
+  yearFrom: 'From',
+  yearTo: 'To',
   reset: 'Clear Active Filters',
 });
+
+type WatchFilter = NonNullable<ParsedLibraryBrowseQuery['watched']> | 'any';
 
 interface LibraryBrowseFiltersProps {
   show: boolean;
@@ -35,12 +40,10 @@ interface LibraryBrowseFiltersProps {
   onClose: () => void;
 }
 
-const chipClass = (active: boolean) =>
-  `min-h-11 rounded-md px-3 text-sm ${
-    active
-      ? 'bg-indigo-600 text-white'
-      : 'bg-gray-800 text-gray-300 ring-1 ring-gray-700'
-  }`;
+const parseYear = (value: string) => {
+  const year = Number(value);
+  return value.trim() && Number.isInteger(year) ? year : undefined;
+};
 
 const LibraryBrowseFilters = ({
   show,
@@ -64,39 +67,43 @@ const LibraryBrowseFilters = ({
       })}
       onClose={onClose}
     >
-      <div className="space-y-6">
-        <fieldset>
-          <legend className="mb-2 text-sm font-semibold text-gray-300">
+      <div className="flex flex-col space-y-4">
+        <div>
+          <div className="mb-2 text-lg font-semibold">
             {intl.formatMessage(messages.watchStatus)}
-          </legend>
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                [undefined, messages.any],
-                ['unwatched', messages.unwatched],
-                ['inProgress', messages.inProgress],
-                ['played', messages.played],
-              ] as const
-            ).map(([value, msg]) => (
-              <button
-                key={`watched-${String(value)}`}
-                type="button"
-                aria-pressed={state.watched === value}
-                className={chipClass(state.watched === value)}
-                onClick={() => onChange({ watched: value, skip: 0 })}
-              >
-                {intl.formatMessage(msg)}
-              </button>
-            ))}
           </div>
-        </fieldset>
+          <SegmentedControl<WatchFilter>
+            ariaLabel={intl.formatMessage(messages.watchStatus)}
+            size="sm"
+            columns={2}
+            value={state.watched ?? 'any'}
+            onChange={(value) =>
+              onChange({
+                watched: value === 'any' ? undefined : value,
+                skip: 0,
+              })
+            }
+            options={[
+              { value: 'any', label: intl.formatMessage(messages.any) },
+              {
+                value: 'unwatched',
+                label: intl.formatMessage(messages.unwatched),
+              },
+              {
+                value: 'inProgress',
+                label: intl.formatMessage(messages.inProgress),
+              },
+              { value: 'played', label: intl.formatMessage(messages.played) },
+            ]}
+          />
+        </div>
 
-        <fieldset>
-          <legend className="mb-2 text-sm font-semibold text-gray-300">
+        <div>
+          <div className="mb-2 text-lg font-semibold">
             {intl.formatMessage(messages.genres)}
-          </legend>
+          </div>
           {genres.length ? (
-            <div className="flex max-h-64 flex-wrap gap-2 overflow-y-auto">
+            <div className="flex flex-wrap gap-2">
               {genres.map((genre) => {
                 const active = Boolean(state.genre?.includes(genre));
                 return (
@@ -104,7 +111,11 @@ const LibraryBrowseFilters = ({
                     key={genre}
                     type="button"
                     aria-pressed={active}
-                    className={chipClass(active)}
+                    className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+                      active
+                        ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                    }`}
                     onClick={() =>
                       onChange({
                         genre: toggleLibraryBrowseGenre(state.genre, genre),
@@ -122,50 +133,71 @@ const LibraryBrowseFilters = ({
               {intl.formatMessage(messages.noGenres)}
             </p>
           )}
-        </fieldset>
-
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-sm text-gray-300">
-            {intl.formatMessage(messages.yearFrom)}
-            <input
-              type="number"
-              className="mt-1 min-h-11 w-full rounded-md border border-gray-700 bg-gray-900 px-3 text-gray-100"
-              placeholder={yearMin ? String(yearMin) : undefined}
-              value={state.yearFrom ?? ''}
-              onChange={(event) =>
-                onChange({
-                  yearFrom: event.target.value
-                    ? Number(event.target.value)
-                    : undefined,
-                  skip: 0,
-                })
-              }
-            />
-          </label>
-          <label className="text-sm text-gray-300">
-            {intl.formatMessage(messages.yearTo)}
-            <input
-              type="number"
-              className="mt-1 min-h-11 w-full rounded-md border border-gray-700 bg-gray-900 px-3 text-gray-100"
-              placeholder={yearMax ? String(yearMax) : undefined}
-              value={state.yearTo ?? ''}
-              onChange={(event) =>
-                onChange({
-                  yearTo: event.target.value
-                    ? Number(event.target.value)
-                    : undefined,
-                  skip: 0,
-                })
-              }
-            />
-          </label>
         </div>
 
-        {activeFilterCount > 0 ? (
-          <Button buttonType="ghost" className="w-full" onClick={onReset}>
-            {intl.formatMessage(messages.reset)}
+        <div>
+          <div className="mb-2 text-lg font-semibold">
+            {intl.formatMessage(messages.releaseYear)}
+          </div>
+          <div className="flex space-x-2">
+            <div className="flex flex-1 flex-col">
+              <label
+                htmlFor="libraryYearFrom"
+                className="mb-2 text-base font-normal text-white"
+              >
+                {intl.formatMessage(messages.yearFrom)}
+              </label>
+              <input
+                id="libraryYearFrom"
+                type="text"
+                inputMode="numeric"
+                placeholder={yearMin ? String(yearMin) : undefined}
+                value={state.yearFrom ?? ''}
+                onChange={(event) =>
+                  onChange({
+                    yearFrom: parseYear(event.target.value),
+                    skip: 0,
+                  })
+                }
+              />
+            </div>
+            <div className="flex flex-1 flex-col">
+              <label
+                htmlFor="libraryYearTo"
+                className="mb-2 text-base font-normal text-white"
+              >
+                {intl.formatMessage(messages.yearTo)}
+              </label>
+              <input
+                id="libraryYearTo"
+                type="text"
+                inputMode="numeric"
+                placeholder={yearMax ? String(yearMax) : undefined}
+                value={state.yearTo ?? ''}
+                onChange={(event) =>
+                  onChange({
+                    yearTo: parseYear(event.target.value),
+                    skip: 0,
+                  })
+                }
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-4">
+          <Button
+            className="w-full"
+            disabled={activeFilterCount === 0}
+            onClick={() => {
+              onReset();
+              onClose();
+            }}
+          >
+            <XCircleIcon />
+            <span>{intl.formatMessage(messages.reset)}</span>
           </Button>
-        ) : null}
+        </div>
       </div>
     </SlideOver>
   );

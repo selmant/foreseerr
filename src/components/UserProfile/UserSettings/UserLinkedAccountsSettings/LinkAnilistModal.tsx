@@ -1,7 +1,9 @@
+import Alert from '@app/components/Common/Alert';
 import Modal from '@app/components/Common/Modal';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
+import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import axios from 'axios';
@@ -16,7 +18,7 @@ const messages = defineMessages(
     title: 'Link AniList Account',
     instructions:
       'Open <AuthorizeLink>AniList</AuthorizeLink>, authorize {applicationName}, then paste the PIN code here.',
-    codeLabel: 'Authorization code',
+    codeLabel: 'Authorization Code',
     codePlaceholder: 'Paste the AniList PIN',
     submit: 'Link AniList',
     success: 'AniList account linked as {username}.',
@@ -120,27 +122,32 @@ const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
         title={intl.formatMessage(messages.title)}
         onCancel={onClose}
         onOk={status === 'success' ? onClose : submit}
-        okDisabled={status !== 'success' && !code.trim()}
-        okText={
-          status === 'success' ? 'Done' : intl.formatMessage(messages.submit)
+        okDisabled={
+          status === 'submitting' || (status !== 'success' && !code.trim())
         }
-        okButtonType={status === 'success' ? 'primary' : 'primary'}
+        okText={intl.formatMessage(
+          status === 'success' ? globalMessages.close : messages.submit
+        )}
         dialogClass="sm:max-w-lg"
       >
-        {error && <p className="text-red-400">{error}</p>}
-        {status === 'success' && (
-          <p className="text-green-400">
+        {status === 'success' ? (
+          <Alert type="info">
             {intl.formatMessage(messages.success, {
               username: username || 'AniList',
             })}
-          </p>
-        )}
-        {status !== 'success' && (
-          <div className="space-y-4">
-            {anilistStatus?.expired && (
-              <p className="text-yellow-400">
+          </Alert>
+        ) : (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (code.trim()) void submit();
+            }}
+          >
+            {error && <Alert type="error">{error}</Alert>}
+            {anilistStatus?.expired && !error && (
+              <Alert type="warning">
                 {intl.formatMessage(messages.expired)}
-              </p>
+              </Alert>
             )}
             <p>
               {intl.formatMessage(messages.instructions, {
@@ -150,26 +157,27 @@ const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
                     href={anilistStatus?.authorizeUrl ?? '#'}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-white underline"
+                    className="text-white underline transition hover:text-gray-200"
                   >
                     {msg}
                   </a>
                 ),
               })}
             </p>
-            <label htmlFor="anilist-pin" className="text-sm text-gray-300">
+            <label htmlFor="anilist-pin" className="text-label mt-4">
               {intl.formatMessage(messages.codeLabel)}
             </label>
-            <input
-              id="anilist-pin"
-              type="text"
-              autoComplete="off"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              placeholder={intl.formatMessage(messages.codePlaceholder)}
-              className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-white"
-            />
-          </div>
+            <div className="flex rounded-md shadow-sm">
+              <input
+                id="anilist-pin"
+                type="text"
+                autoComplete="off"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                placeholder={intl.formatMessage(messages.codePlaceholder)}
+              />
+            </div>
+          </form>
         )}
       </Modal>
     </Transition>

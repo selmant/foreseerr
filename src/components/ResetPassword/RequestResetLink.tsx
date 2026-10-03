@@ -1,6 +1,7 @@
 import AppImage from '@app/components/Common/AppImage';
 import Button from '@app/components/Common/Button';
 import ImageFader from '@app/components/Common/ImageFader';
+import LinkButton from '@app/components/Common/LinkButton';
 import PageTitle from '@app/components/Common/PageTitle';
 import LanguagePicker from '@app/components/Layout/LanguagePicker';
 import defineMessages from '@app/utils/defineMessages';
@@ -9,7 +10,6 @@ import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
 import validator from 'validator';
 import * as Yup from 'yup';
 
@@ -75,12 +75,10 @@ const ResetPassword = () => {
                   {intl.formatMessage(messages.requestresetlinksuccessmessage)}
                 </p>
                 <span className="mt-4 flex justify-center rounded-md shadow-sm">
-                  <Link to="/login">
-                    <Button as="a" buttonType="ghost">
-                      <ArrowLeftIcon />
-                      <span>{intl.formatMessage(messages.gobacklogin)}</span>
-                    </Button>
-                  </Link>
+                  <LinkButton to="/login" buttonType="ghost">
+                    <ArrowLeftIcon />
+                    <span>{intl.formatMessage(messages.gobacklogin)}</span>
+                  </LinkButton>
                 </span>
               </>
             ) : (

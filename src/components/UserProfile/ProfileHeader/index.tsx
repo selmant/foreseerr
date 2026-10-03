@@ -1,5 +1,5 @@
-import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
+import LinkButton from '@app/components/Common/LinkButton';
 import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
@@ -85,30 +85,26 @@ const ProfileHeader = ({ user, isSettingsPage }: ProfileHeaderProps) => {
         {(loggedInUser?.id === user.id ||
           (user.id !== 1 && hasPermission(Permission.MANAGE_USERS))) &&
         !isSettingsPage ? (
-          <Link
+          <LinkButton
             to={
               loggedInUser?.id === user.id
                 ? `/profile/settings`
                 : `/users/${user.id}/settings`
             }
           >
-            <Button as="a">
-              <CogIcon />
-              <span>{intl.formatMessage(messages.settings)}</span>
-            </Button>
-          </Link>
+            <CogIcon />
+            <span>{intl.formatMessage(messages.settings)}</span>
+          </LinkButton>
         ) : (
           isSettingsPage && (
-            <Link
+            <LinkButton
               to={
                 loggedInUser?.id === user.id ? `/profile` : `/users/${user.id}`
               }
             >
-              <Button as="a">
-                <UserIcon />
-                <span>{intl.formatMessage(messages.profile)}</span>
-              </Button>
-            </Link>
+              <UserIcon />
+              <span>{intl.formatMessage(messages.profile)}</span>
+            </LinkButton>
           )
         )}
       </div>

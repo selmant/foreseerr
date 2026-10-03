@@ -458,7 +458,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
                   })}
                 </span>
                 <Badge>
-                  {episodeRequestSummary({
+                  {episodeRequestSummary(intl, {
                     episodes: request.episodes,
                     type: request.episodeSelectionType,
                     watchAheadCount: request.watchAheadCount,

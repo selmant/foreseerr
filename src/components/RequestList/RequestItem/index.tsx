@@ -540,7 +540,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                       })}
                     </span>
                     <Badge>
-                      {episodeRequestSummary({
+                      {episodeRequestSummary(intl, {
                         episodes: request.episodes,
                         type: request.episodeSelectionType,
                         watchAheadCount: request.watchAheadCount,

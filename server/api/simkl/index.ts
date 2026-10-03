@@ -262,7 +262,8 @@ export default class SimklAPI extends ExternalAPI {
     }
   }
 
-  public async getWatchedEpisodes(): Promise<Record<string, unknown>> {
+  /** Simkl answers `null` instead of an empty object for an empty history. */
+  public async getWatchedEpisodes(): Promise<Record<string, unknown> | null> {
     return this.request('get', '/sync/watched?extended=episodes');
   }
 

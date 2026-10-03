@@ -1,13 +1,17 @@
+import Alert from '@app/components/Common/Alert';
+import { SmallLoadingSpinner } from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
+import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import axios from 'axios';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
+import DeviceCodePanel from './DeviceCodePanel';
 
 const messages = defineMessages(
   'components.UserProfile.UserSettings.LinkTraktModal',
@@ -17,14 +21,14 @@ const messages = defineMessages(
       'Enter this code at <VerificationLink>trakt.tv/activate</VerificationLink> to authorize {applicationName}.',
     waiting: 'Waiting for authorization…',
     success: 'Trakt account linked as {username}.',
-    expired: 'The code expired. Close this dialog and try again.',
+    expired: 'The code expired. Try again to get a new one.',
     denied: 'Authorization was denied.',
-    invalid: 'The device code is invalid. Close this dialog and try again.',
+    invalid: 'The device code is invalid. Try again to get a new one.',
     alreadyUsed:
-      'This device code was already used. Close this dialog and try again.',
+      'This device code was already used. Try again to get a new one.',
     error: 'Unable to link Trakt account.',
     notConfigured: 'Trakt is not configured by an administrator.',
-    yourCode: 'Your code',
+    tryAgain: 'Try Again',
   }
 );
 
@@ -65,6 +69,7 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
   const deadline = useRef<number>(0);
   const pollGeneration = useRef(0);
   const onSaveRef = useRef(onSave);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -200,7 +205,14 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
       pollGeneration.current += 1;
       clearPoll();
     };
-  }, [show, user?.id, intl, poll, settings.currentSettings.traktConfigured]);
+  }, [
+    show,
+    attempt,
+    user?.id,
+    intl,
+    poll,
+    settings.currentSettings.traktConfigured,
+  ]);
 
   return (
     <Transition
@@ -217,52 +229,47 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
       <Modal
         title={intl.formatMessage(messages.title)}
         onCancel={onClose}
-        onOk={status === 'success' ? onClose : undefined}
-        okText={status === 'success' ? 'Done' : undefined}
+        {...(status === 'success'
+          ? { okText: intl.formatMessage(globalMessages.close), onOk: onClose }
+          : status === 'error'
+            ? {
+                okText: intl.formatMessage(messages.tryAgain),
+                onOk: () => setAttempt((value) => value + 1),
+              }
+            : {})}
         dialogClass="sm:max-w-lg"
       >
-        {error && <p className="text-red-400">{error}</p>}
-        {status === 'loading' && !error && (
-          <p className="text-gray-400">
-            {intl.formatMessage(messages.waiting)}
-          </p>
+        {error && <Alert type="error">{error}</Alert>}
+        {status === 'loading' && (
+          <div className="py-8">
+            <SmallLoadingSpinner />
+          </div>
         )}
         {status === 'success' && (
-          <p className="text-green-400">
+          <Alert type="info">
             {intl.formatMessage(messages.success, {
               username: username || 'Trakt',
             })}
-          </p>
+          </Alert>
         )}
         {device && status === 'polling' && (
-          <div className="space-y-4">
-            <p>
-              {intl.formatMessage(messages.instructions, {
-                applicationName: settings.currentSettings.applicationTitle,
-                VerificationLink: (msg: ReactNode) => (
-                  <a
-                    href={device.verification_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-white underline"
-                  >
-                    {msg}
-                  </a>
-                ),
-              })}
-            </p>
-            <div>
-              <div className="text-sm text-gray-400">
-                {intl.formatMessage(messages.yourCode)}
-              </div>
-              <div className="mt-1 font-mono text-3xl tracking-widest text-white">
-                {device.user_code}
-              </div>
-            </div>
-            <p className="text-sm text-gray-400">
-              {intl.formatMessage(messages.waiting)}
-            </p>
-          </div>
+          <DeviceCodePanel
+            code={device.user_code}
+            waitingText={intl.formatMessage(messages.waiting)}
+            instructions={intl.formatMessage(messages.instructions, {
+              applicationName: settings.currentSettings.applicationTitle,
+              VerificationLink: (msg: ReactNode) => (
+                <a
+                  href={device.verification_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-white underline transition hover:text-gray-200"
+                >
+                  {msg}
+                </a>
+              ),
+            })}
+          />
         )}
       </Modal>
     </Transition>

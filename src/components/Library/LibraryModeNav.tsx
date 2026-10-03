@@ -1,6 +1,8 @@
+import SegmentedControl from '@app/components/Common/SegmentedControl';
 import defineMessages from '@app/utils/defineMessages';
+import { HomeIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
 import { useIntl } from 'react-intl';
-import { Link, useLocation } from 'react-router';
+import { useLocation } from 'react-router';
 
 const messages = defineMessages('components.Library.LibraryModeNav', {
   views: 'Library views',
@@ -8,39 +10,34 @@ const messages = defineMessages('components.Library.LibraryModeNav', {
   browse: 'Browse',
 });
 
+type LibraryMode = 'overview' | 'browse';
+
 const LibraryModeNav = () => {
   const intl = useIntl();
   const location = useLocation();
-  const browseActive = location.pathname.startsWith('/library/browse');
 
   return (
-    <nav
-      aria-label={intl.formatMessage(messages.views)}
-      className="flex shrink-0 gap-2"
-    >
-      <Link
-        to="/library"
-        className={`inline-flex min-h-11 items-center rounded-md px-4 py-2 text-sm font-medium ${
-          !browseActive
-            ? 'bg-indigo-600 text-white'
-            : 'bg-library-charcoal text-gray-300 ring-1 ring-gray-700 hover:bg-gray-800'
-        }`}
-        aria-current={!browseActive ? 'page' : undefined}
-      >
-        {intl.formatMessage(messages.overview)}
-      </Link>
-      <Link
-        to="/library/browse"
-        className={`inline-flex min-h-11 items-center rounded-md px-4 py-2 text-sm font-medium ${
-          browseActive
-            ? 'bg-indigo-600 text-white'
-            : 'bg-library-charcoal text-gray-300 ring-1 ring-gray-700 hover:bg-gray-800'
-        }`}
-        aria-current={browseActive ? 'page' : undefined}
-      >
-        {intl.formatMessage(messages.browse)}
-      </Link>
-    </nav>
+    <SegmentedControl<LibraryMode>
+      ariaLabel={intl.formatMessage(messages.views)}
+      className="mb-2 w-full sm:inline-grid sm:w-auto sm:min-w-[16rem]"
+      value={
+        location.pathname.startsWith('/library/browse') ? 'browse' : 'overview'
+      }
+      options={[
+        {
+          value: 'overview',
+          href: '/library',
+          label: intl.formatMessage(messages.overview),
+          icon: HomeIcon,
+        },
+        {
+          value: 'browse',
+          href: '/library/browse',
+          label: intl.formatMessage(messages.browse),
+          icon: Squares2X2Icon,
+        },
+      ]}
+    />
   );
 };
 

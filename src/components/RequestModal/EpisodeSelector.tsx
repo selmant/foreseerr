@@ -1,6 +1,15 @@
+import Alert from '@app/components/Common/Alert';
+import Badge from '@app/components/Common/Badge';
+import Button from '@app/components/Common/Button';
+import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
-import { CheckIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowPathIcon,
+  CheckIcon,
+  PlusIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
 import { MediaRequestStatus } from '@server/constants/media';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
 import { useEffect, useMemo, useState } from 'react';
@@ -21,7 +30,7 @@ interface EpisodeCatalog {
 }
 
 const messages = defineMessages('components.RequestModal.EpisodeSelector', {
-  title: 'Choose episodes',
+  title: 'Choose Episodes',
   instruction: 'Select an episode to request.',
   loading: 'Loading the TVDB episode timeline…',
   unavailable: 'The TVDB episode catalog could not be loaded.',
@@ -33,9 +42,8 @@ const messages = defineMessages('components.RequestModal.EpisodeSelector', {
   first: 'First',
   last: 'Last',
   selected: 'Selected',
-  chooseFirst: 'Choose an episode',
   clear: 'Change selection',
-  extend: 'Add more episodes',
+  extend: 'Add More Episodes',
   extendHint: 'Choose the last episode to include',
   extendFrom: 'Starting with {episodeCode}',
   cancelExtend: 'Cancel',
@@ -45,10 +53,10 @@ const messages = defineMessages('components.RequestModal.EpisodeSelector', {
   selectedInSeason: '{selectedCount} selected',
   specialsSingle: 'Specials can be requested one at a time.',
   episodeLabel: '{episodeCode}: {title}',
-  ongoing: 'Include future episodes',
+  ongoing: 'Include Future Episodes',
   ongoingSummary:
     '{episodeCount} available now across {seasonCount, plural, one {# season} other {# seasons}} · new episodes included',
-  pendingApproval: 'Awaiting approval',
+  pendingApproval: 'Awaiting Approval',
   requested: 'Requested',
   available: 'Available',
   failed: 'Failed',
@@ -288,15 +296,14 @@ const EpisodeSelector = ({
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
-        {intl.formatMessage(messages.unavailable)}
-      </div>
+      <Alert type="error" title={intl.formatMessage(messages.unavailable)} />
     );
   }
   if (!data) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-900/60 p-8 text-center text-sm text-gray-300">
-        {intl.formatMessage(messages.loading)}
+      <div className="rounded-lg border border-gray-700 bg-gray-900/60 p-6 text-center text-sm text-gray-300">
+        <LoadingSpinner />
+        <span className="sr-only">{intl.formatMessage(messages.loading)}</span>
       </div>
     );
   }
@@ -344,13 +351,14 @@ const EpisodeSelector = ({
                 })}
               </p>
             </div>
-            <button
+            <Button
               type="button"
+              buttonSize="sm"
+              className="shrink-0"
               onClick={() => setIsExtending(false)}
-              className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               {intl.formatMessage(messages.cancelExtend)}
-            </button>
+            </Button>
           </div>
         ) : hasSelection && selectedStart ? (
           <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/70 p-3">
@@ -386,23 +394,22 @@ const EpisodeSelector = ({
 
             {!isRange && !isOngoing && selectedStart.seasonNumber > 0 && (
               <div className="mt-3 grid gap-2 border-t border-gray-700 pt-3 sm:grid-cols-2">
-                <button
+                <Button
                   type="button"
                   data-testid="episode-selection-extend"
                   onClick={() => setIsExtending(true)}
-                  className="flex items-center justify-center gap-2 rounded-md bg-gray-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
-                  <PlusIcon className="h-4 w-4" />
-                  {intl.formatMessage(messages.extend)}
-                </button>
-                <button
+                  <PlusIcon />
+                  <span>{intl.formatMessage(messages.extend)}</span>
+                </Button>
+                <Button
                   type="button"
                   data-testid="episode-selection-ongoing"
                   onClick={selectOngoing}
-                  className="rounded-md bg-gray-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
-                  {intl.formatMessage(messages.ongoing)}
-                </button>
+                  <ArrowPathIcon />
+                  <span>{intl.formatMessage(messages.ongoing)}</span>
+                </Button>
               </div>
             )}
             {selectedStart.seasonNumber === 0 && (
@@ -411,18 +418,14 @@ const EpisodeSelector = ({
               </p>
             )}
           </div>
-        ) : (
-          <p className="mt-4 text-sm font-medium text-gray-300">
-            {intl.formatMessage(messages.chooseFirst)}
-          </p>
-        )}
+        ) : null}
       </div>
 
       <div className="border-b border-gray-700 bg-gray-900/50 px-3 py-3 sm:px-4">
-        <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+        <div className="mb-2 px-1 text-sm font-medium text-gray-400">
           {intl.formatMessage(messages.seasons)}
         </div>
-        <div className="scrollbar-hide flex gap-1.5 overflow-x-auto pb-0.5">
+        <div className="hide-scrollbar flex gap-1.5 overflow-x-auto pb-0.5">
           {seasons.map((seasonNumber) => {
             const selected = seasonNumber === activeSeason;
             const selectedCount = resolved.filter(
@@ -572,23 +575,27 @@ const EpisodeSelector = ({
                 {requestStatusLabel ? (
                   <span
                     data-testid={`episode-selection-request-status-${episode.tvdbId}`}
-                    className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${
-                      requestStatus === MediaRequestStatus.FAILED ||
-                      requestStatus === MediaRequestStatus.DECLINED
-                        ? 'bg-red-500/10 text-red-300'
-                        : requestStatus === MediaRequestStatus.COMPLETED
-                          ? 'bg-green-500/10 text-green-300'
-                          : requestStatus === MediaRequestStatus.PENDING
-                            ? 'bg-yellow-500/10 text-yellow-200'
-                            : 'bg-indigo-400/10 text-indigo-200'
-                    }`}
+                    className="shrink-0"
                   >
-                    {intl.formatMessage(requestStatusLabel)}
+                    <Badge
+                      badgeType={
+                        requestStatus === MediaRequestStatus.FAILED ||
+                        requestStatus === MediaRequestStatus.DECLINED
+                          ? 'danger'
+                          : requestStatus === MediaRequestStatus.COMPLETED
+                            ? 'success'
+                            : requestStatus === MediaRequestStatus.PENDING
+                              ? 'warning'
+                              : 'primary'
+                      }
+                    >
+                      {intl.formatMessage(requestStatusLabel)}
+                    </Badge>
                   </span>
                 ) : selectionLabel ? (
-                  <span className="shrink-0 rounded-full bg-indigo-400/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-200">
+                  <Badge className="shrink-0">
                     {intl.formatMessage(selectionLabel)}
-                  </span>
+                  </Badge>
                 ) : inRange ? (
                   <CheckIcon className="h-4 w-4 shrink-0 text-indigo-300" />
                 ) : null}

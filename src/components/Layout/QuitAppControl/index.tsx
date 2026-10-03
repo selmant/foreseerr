@@ -14,7 +14,12 @@ const messages = defineMessages('components.Layout.QuitAppControl', {
   quitConfirm: 'Quit',
 });
 
-const QuitAppControl = () => {
+type QuitAppControlProps = {
+  /** `menu` matches the mobile slide-up menu links instead of the sidebar. */
+  variant?: 'sidebar' | 'menu';
+};
+
+const QuitAppControl = ({ variant = 'sidebar' }: QuitAppControlProps) => {
   const intl = useIntl();
   const { canQuit, quit } = useNativeRuntime();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -25,15 +30,27 @@ const QuitAppControl = () => {
 
   return (
     <>
-      <button
-        type="button"
-        className="flex w-full items-center rounded-md px-2 py-2 text-base font-medium leading-6 text-red-400 transition duration-150 ease-in-out hover:bg-red-600/20 hover:text-red-300 focus:bg-red-600/20 focus:outline-none lg:text-lg"
-        data-testid="native-quit-app"
-        onClick={() => setShowConfirm(true)}
-      >
-        <PowerIcon className="mr-3 h-6 w-6" />
-        {intl.formatMessage(messages.quit)}
-      </button>
+      {variant === 'menu' ? (
+        <button
+          type="button"
+          className="flex w-full items-center text-red-400 transition duration-150 ease-in-out hover:text-red-300 focus:outline-none"
+          data-testid="native-quit-app"
+          onClick={() => setShowConfirm(true)}
+        >
+          <PowerIcon className="h-5 w-5" />
+          <span className="ml-2">{intl.formatMessage(messages.quit)}</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="flex w-full items-center rounded-md px-2 py-2 text-base font-medium leading-6 text-red-400 transition duration-150 ease-in-out hover:bg-red-600/20 hover:text-red-300 focus:bg-red-600/20 focus:outline-none lg:text-lg"
+          data-testid="native-quit-app"
+          onClick={() => setShowConfirm(true)}
+        >
+          <PowerIcon className="mr-3 h-6 w-6" />
+          {intl.formatMessage(messages.quit)}
+        </button>
+      )}
       <Transition
         as="div"
         enter="transition-opacity duration-300"

@@ -1,6 +1,7 @@
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useSettings from '@app/hooks/useSettings';
@@ -9,7 +10,6 @@ import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover.DiscoverAnilist', {
@@ -24,7 +24,6 @@ const messages = defineMessages('components.Discover.DiscoverAnilist', {
   list: 'AniList List',
   linkAccount:
     'Link your AniList account in Linked Accounts to browse this list.',
-  linkedAccounts: 'Linked Accounts',
 });
 
 type DiscoverAnilistPageProps = {
@@ -82,25 +81,12 @@ const DiscoverAnilistPage = ({
 
   if (requiresLink && anilistStatus && !anilistStatus.connected) {
     return (
-      <>
-        <PageTitle title={intl.formatMessage(messages[kind])} />
-        <div className="mb-5 mt-1">
-          <Header>
-            <SliderSourceTitle source="anilist">
-              {intl.formatMessage(messages[kind])}
-            </SliderSourceTitle>
-          </Header>
-        </div>
-        <div className="text-center text-gray-400">
-          <p>{intl.formatMessage(messages.linkAccount)}</p>
-          <Link
-            to="/profile/settings/linked-accounts"
-            className="mt-4 inline-block text-white underline"
-          >
-            {intl.formatMessage(messages.linkedAccounts)}
-          </Link>
-        </div>
-      </>
+      <DiscoverProviderMessage
+        title={intl.formatMessage(messages[kind])}
+        source="anilist"
+        message={intl.formatMessage(messages.linkAccount)}
+        linkAccount
+      />
     );
   }
 

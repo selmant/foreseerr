@@ -276,6 +276,14 @@ const ManageSlideOver = ({
                 data.mediaInfo.externalServiceId4k != null
               }
               onChanged={revalidate}
+              showStandardLink={
+                !(hasPermission(Permission.ADMIN) && data.mediaInfo.serviceUrl)
+              }
+              show4kLink={
+                !(
+                  hasPermission(Permission.ADMIN) && data.mediaInfo.serviceUrl4k
+                )
+              }
             />
           )}
         {((data?.mediaInfo?.downloadStatus ?? []).length > 0 ||

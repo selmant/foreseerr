@@ -7,16 +7,16 @@ import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.TitleCard.FixMappingModal', {
-  title: 'Fix mapping',
+  title: 'Fix Mapping',
   explanation:
-    'A correction wins over every automatic match. Leave the id empty to record that this title has no TMDB entry, which stops repeated lookups.',
-  targetType: 'Target type',
-  movie: 'TMDB movie',
-  tv: 'TMDB show',
-  tmdbId: 'TMDB id or link',
-  invalidId: 'Enter a TMDB id or a themoviedb.org link, or leave it empty.',
-  note: 'Note (optional)',
-  save: 'Save correction',
+    'A correction wins over every automatic match. Leave the ID empty to record that this title has no TMDB entry, which stops repeated lookups.',
+  targetType: 'Target Type',
+  movie: 'TMDB Movie',
+  tv: 'TMDB Series',
+  tmdbId: 'TMDB ID or Link',
+  invalidId: 'Enter a TMDB ID or a themoviedb.org link, or leave it empty',
+  note: 'Note',
+  save: 'Save Correction',
   saved: 'Mapping correction saved.',
   failed: 'Unable to save the mapping correction.',
 });
@@ -119,48 +119,48 @@ const FixMappingModal = ({
         okDisabled={saving || !parsed}
         onOk={save}
       >
-        <div className="space-y-4">
-          <p className="text-sm text-gray-300">
-            {intl.formatMessage(messages.explanation)}
-          </p>
-          <label className="block text-sm font-medium text-gray-200">
-            {intl.formatMessage(messages.targetType)}
-            <select
-              value={parsed?.type ?? target}
-              disabled={Boolean(parsed?.type)}
-              onChange={(event) =>
-                setTarget(event.target.value === 'movie' ? 'movie' : 'tv')
-              }
-              className="mt-1 block w-full rounded-md border border-gray-500 bg-gray-700 px-3 py-2 text-white"
-            >
-              <option value="movie">
-                {intl.formatMessage(messages.movie)}
-              </option>
-              <option value="tv">{intl.formatMessage(messages.tv)}</option>
-            </select>
-          </label>
-          <label className="block text-sm font-medium text-gray-200">
-            {intl.formatMessage(messages.tmdbId)}
-            <input
-              value={tmdbId}
-              placeholder="1429 or https://www.themoviedb.org/tv/1429"
-              onChange={(event) => setTmdbId(event.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-500 bg-gray-700 px-3 py-2 text-white"
-            />
-            {!parsed && (
-              <span className="mt-1 block text-xs text-red-400">
-                {intl.formatMessage(messages.invalidId)}
-              </span>
-            )}
-          </label>
-          <label className="block text-sm font-medium text-gray-200">
-            {intl.formatMessage(messages.note)}
-            <input
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-500 bg-gray-700 px-3 py-2 text-white"
-            />
-          </label>
+        <p>{intl.formatMessage(messages.explanation)}</p>
+        <label htmlFor="fixMappingTarget" className="text-label mt-4">
+          {intl.formatMessage(messages.targetType)}
+        </label>
+        <select
+          id="fixMappingTarget"
+          value={parsed?.type ?? target}
+          disabled={Boolean(parsed?.type)}
+          onChange={(event) =>
+            setTarget(event.target.value === 'movie' ? 'movie' : 'tv')
+          }
+        >
+          <option value="movie">{intl.formatMessage(messages.movie)}</option>
+          <option value="tv">{intl.formatMessage(messages.tv)}</option>
+        </select>
+        <label htmlFor="fixMappingTmdbId" className="text-label mt-4">
+          {intl.formatMessage(messages.tmdbId)}
+        </label>
+        <div className="flex rounded-md shadow-sm">
+          <input
+            id="fixMappingTmdbId"
+            type="text"
+            autoComplete="off"
+            value={tmdbId}
+            placeholder="1429 or https://www.themoviedb.org/tv/1429"
+            onChange={(event) => setTmdbId(event.target.value)}
+          />
+        </div>
+        {!parsed && (
+          <div className="error">{intl.formatMessage(messages.invalidId)}</div>
+        )}
+        <label htmlFor="fixMappingNote" className="text-label mt-4">
+          {intl.formatMessage(messages.note)}
+        </label>
+        <div className="flex rounded-md shadow-sm">
+          <input
+            id="fixMappingNote"
+            type="text"
+            autoComplete="off"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+          />
         </div>
       </Modal>
     </Transition>

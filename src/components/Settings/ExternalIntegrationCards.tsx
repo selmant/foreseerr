@@ -3,7 +3,6 @@ import MdblistLogo from '@app/assets/services/mdblist.svg';
 import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import Badge from '@app/components/Common/Badge';
-import Modal from '@app/components/Common/Modal';
 import SettingsAnilist from '@app/components/Settings/SettingsAnilist';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
 import SettingsMdblist from '@app/components/Settings/SettingsMdblist';
@@ -34,16 +33,12 @@ const messages = defineMessages(
     anilistExperimentalTooltip:
       'Anime seasons and episodes do not always match TMDB one-to-one, so watches can land on the wrong AniList title or be skipped.',
     configured: 'Configured',
-    notConfigured: 'Not configured',
+    notConfigured: 'Not Configured',
     connected: 'Reachable',
-    degraded: 'Needs attention',
+    degraded: 'Needs Attention',
     configure: 'Configure',
     edit: 'Edit',
-    editTrakt: 'Configure Trakt',
-    editMdblist: 'Configure MDBList',
-    editAnilist: 'Configure AniList',
-    editSimkl: 'Configure Simkl',
-    statusUnavailable: 'Status unavailable',
+    statusUnavailable: 'Status Unavailable',
     checkedAt: 'Checked {time}',
   }
 );
@@ -138,9 +133,9 @@ const ExternalIntegrationCards = () => {
           return (
             <li
               key={integration.id}
-              className="col-span-1 overflow-hidden rounded-lg bg-gray-800 shadow ring-1 ring-gray-500"
+              className="col-span-1 flex flex-col overflow-hidden rounded-lg bg-gray-800 shadow ring-1 ring-gray-500"
             >
-              <div className="flex min-h-36 items-start justify-between gap-6 p-6">
+              <div className="flex min-h-36 flex-1 items-start justify-between gap-6 p-6">
                 <div className="min-w-0 flex-1">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     <h3 className="font-medium leading-5 text-white">
@@ -205,47 +200,16 @@ const ExternalIntegrationCards = () => {
       </ul>
 
       <Transition as={Fragment} show={editing === 'trakt'}>
-        <Modal
-          title={intl.formatMessage(messages.editTrakt)}
-          onCancel={() => setEditing(null)}
-          backgroundClickable={false}
-          dialogClass="sm:max-w-4xl"
-        >
-          <SettingsTrakt onSave={() => setEditing(null)} />
-        </Modal>
+        <SettingsTrakt onClose={() => setEditing(null)} />
       </Transition>
-
-      <Transition as={Fragment} show={editing === 'mdblist'}>
-        <Modal
-          title={intl.formatMessage(messages.editMdblist)}
-          onCancel={() => setEditing(null)}
-          backgroundClickable={false}
-          dialogClass="sm:max-w-4xl"
-        >
-          <SettingsMdblist onSave={() => setEditing(null)} />
-        </Modal>
-      </Transition>
-
-      <Transition as={Fragment} show={editing === 'anilist'}>
-        <Modal
-          title={intl.formatMessage(messages.editAnilist)}
-          onCancel={() => setEditing(null)}
-          backgroundClickable={false}
-          dialogClass="sm:max-w-4xl"
-        >
-          <SettingsAnilist onSave={() => setEditing(null)} />
-        </Modal>
-      </Transition>
-
       <Transition as={Fragment} show={editing === 'simkl'}>
-        <Modal
-          title={intl.formatMessage(messages.editSimkl)}
-          onCancel={() => setEditing(null)}
-          backgroundClickable={false}
-          dialogClass="sm:max-w-2xl"
-        >
-          <SettingsSimkl onSave={() => setEditing(null)} />
-        </Modal>
+        <SettingsSimkl onClose={() => setEditing(null)} />
+      </Transition>
+      <Transition as={Fragment} show={editing === 'mdblist'}>
+        <SettingsMdblist onClose={() => setEditing(null)} />
+      </Transition>
+      <Transition as={Fragment} show={editing === 'anilist'}>
+        <SettingsAnilist onClose={() => setEditing(null)} />
       </Transition>
     </>
   );

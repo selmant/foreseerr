@@ -1,7 +1,5 @@
 import Alert from '@app/components/Common/Alert';
-import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
-import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
@@ -9,17 +7,17 @@ import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
-import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
+import { TrashIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
-import { Fragment, useState, type ReactNode } from 'react';
+import { Fragment, forwardRef, useState, type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR, { mutate as globalMutate } from 'swr';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.Settings.SettingsAnilist', {
-  anilist: 'AniList',
+  configureAnilist: 'Configure AniList',
   description:
     'Create an AniList API application, then enter its credentials. Each user authorizes it separately with a PIN.',
   createAppTip:
@@ -29,27 +27,23 @@ const messages = defineMessages('components.Settings.SettingsAnilist', {
   validationClientId: 'You must provide a Client ID',
   validationClientSecret: 'You must provide a Client Secret',
   clientSecretTip:
-    'A secret is saved. Leave this blank to keep it, or enter a replacement.',
-  save: 'Save AniList credentials',
-  actionsEnabled: 'Allow AniList watched and rating actions',
+    'A secret is saved. Leave this blank to keep it, or enter a replacement',
+  actionsEnabled: 'Allow AniList Watched and Rating Actions',
   actionsEnabledTip:
-    'When enabled, marking anime watched or rated in Foreseerr also updates the linked AniList account.',
+    'Marking anime watched or rated in Foreseerr also updates the linked AniList account',
   anilistExperimentalTooltip:
     'Anime seasons and episodes do not always match TMDB one-to-one, so watches can land on the wrong AniList title or be skipped.',
-  toastSettingsSuccess: 'AniList settings saved successfully.',
-  toastSettingsFailure: 'Unable to save AniList settings.',
-  toastActionsSuccess: 'AniList action settings updated.',
-  toastActionsFailure: 'Unable to update AniList action settings.',
-  configured: 'Configured',
-  notConfigured: 'Not configured',
-  clearCredentials: 'Remove credentials',
+  loadFailed: 'Unable to load AniList settings.',
+  toastSettingsSuccess: 'AniList settings saved successfully!',
+  toastSettingsFailure: 'Something went wrong while saving AniList settings.',
+  clearCredentials: 'Remove Credentials',
   clearConfirmTitle: 'Remove AniList credentials?',
   clearConfirmDescription:
     'This will disconnect {count, plural, one {# linked AniList account} other {# linked AniList accounts}}.',
   disconnectConfirmTitle: 'Replace AniList credentials?',
   disconnectConfirmDescription:
     'Replacing these credentials will disconnect {count, plural, one {# linked AniList account} other {# linked AniList accounts}}. Those users must authorize the application again.',
-  confirmReplace: 'Replace credentials',
+  confirmReplace: 'Replace Credentials',
   mappingPacksMissing: 'Anime mapping data is not loaded',
   mappingPacksMissingTip:
     'Foreseerr matches anime to TMDB with datasets it downloads on its own, and none is loaded yet. Until one is, some anime may not show up or be requestable. Check <MappingLink>Mapping settings</MappingLink>.',
@@ -67,318 +61,272 @@ interface AnilistSettingsResponse {
 interface AnilistFormValues {
   clientId: string;
   clientSecret: string;
+  actionsEnabled: boolean;
 }
 
 type SettingsAnilistProps = {
-  onSave?: () => void;
+  onClose: () => void;
 };
 
-const SettingsAnilist = ({ onSave }: SettingsAnilistProps) => {
-  const intl = useIntl();
-  const { addToast } = useToasts();
-  const { data, error, mutate } = useSWR<AnilistSettingsResponse>(
-    '/api/v1/settings/anilist'
-  );
-  const { data: mappingStatus } = useSWR<{
-    datasets: { enabled: boolean; edgeCount: number | null }[];
-  }>('/api/v1/settings/mapping/status');
-  const mappingPacksMissing =
-    !!mappingStatus &&
-    !mappingStatus.datasets.some(
-      (dataset) => dataset.enabled && !!dataset.edgeCount
+const SettingsAnilist = forwardRef<HTMLDivElement, SettingsAnilistProps>(
+  ({ onClose }, ref) => {
+    const intl = useIntl();
+    const { addToast } = useToasts();
+    const { data, error, mutate } = useSWR<AnilistSettingsResponse>(
+      '/api/v1/settings/anilist'
     );
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingValues, setPendingValues] = useState<AnilistFormValues | null>(
-    null
-  );
-  const [clearing, setClearing] = useState(false);
-  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+    const { data: mappingStatus } = useSWR<{
+      datasets: { enabled: boolean; edgeCount: number | null }[];
+    }>('/api/v1/settings/mapping/status');
+    const mappingPacksMissing =
+      !!mappingStatus &&
+      !mappingStatus.datasets.some(
+        (dataset) => dataset.enabled && !!dataset.edgeCount
+      );
+    const [pending, setPending] = useState<{
+      values: AnilistFormValues;
+      clear: boolean;
+    }>();
+    const linkedAccountCount = data?.linkedAccountCount ?? 0;
 
-  const save = async (
-    values: AnilistFormValues,
-    confirmDisconnectLinkedAccounts = false,
-    clearCredentials = false
-  ) => {
-    await axios.post('/api/v1/settings/anilist', {
-      clientId: values.clientId,
-      clientSecret: values.clientSecret,
-      actionsEnabled: data?.actionsEnabled !== false,
-      confirmDisconnectLinkedAccounts,
-      clearCredentials,
-    });
-    await mutate();
-    await globalMutate('/api/v1/settings/public');
-    await globalMutate('/api/v1/settings/integrations/status');
-    addToast(intl.formatMessage(messages.toastSettingsSuccess), {
-      appearance: 'success',
-      autoDismiss: true,
-    });
-    onSave?.();
-  };
+    const save = async (
+      values: AnilistFormValues,
+      { confirmed = false, clear = false } = {}
+    ) => {
+      try {
+        await axios.post('/api/v1/settings/anilist', {
+          clientId: values.clientId.trim(),
+          clientSecret: values.clientSecret.trim(),
+          actionsEnabled: values.actionsEnabled,
+          confirmDisconnectLinkedAccounts: confirmed,
+          clearCredentials: clear,
+        });
+        addToast(intl.formatMessage(messages.toastSettingsSuccess), {
+          appearance: 'success',
+          autoDismiss: true,
+        });
+        onClose();
+      } catch (e) {
+        addToast(
+          axios.isAxiosError(e) && typeof e.response?.data?.message === 'string'
+            ? e.response.data.message
+            : intl.formatMessage(messages.toastSettingsFailure),
+          { appearance: 'error', autoDismiss: true }
+        );
+      } finally {
+        mutate();
+        globalMutate('/api/v1/settings/public');
+        globalMutate('/api/v1/settings/integrations/status');
+      }
+    };
 
-  if (!data && !error) {
-    return <LoadingSpinner />;
-  }
-
-  if (!data) {
-    return <Alert title={intl.formatMessage(messages.toastSettingsFailure)} />;
-  }
-
-  return (
-    <>
+    return (
       <Formik<AnilistFormValues>
         initialValues={{
-          clientId: data.clientId,
+          clientId: data?.clientId ?? '',
           clientSecret: '',
+          actionsEnabled: data?.actionsEnabled !== false,
         }}
         enableReinitialize
         validationSchema={Yup.object().shape({
-          clientId: Yup.string().required(
-            intl.formatMessage(messages.validationClientId)
-          ),
-          clientSecret: data.configured
+          clientId: Yup.string()
+            .trim()
+            .required(intl.formatMessage(messages.validationClientId)),
+          clientSecret: data?.configured
             ? Yup.string()
-            : Yup.string().required(
-                intl.formatMessage(messages.validationClientSecret)
-              ),
+            : Yup.string()
+                .trim()
+                .required(intl.formatMessage(messages.validationClientSecret)),
         })}
         onSubmit={async (values) => {
-          try {
-            const credentialsChanging =
-              values.clientId !== data.clientId || Boolean(values.clientSecret);
-            if (
-              credentialsChanging &&
-              (data.linkedAccountCount ?? 0) > 0 &&
-              data.configured
-            ) {
-              setPendingValues(values);
-              setConfirmOpen(true);
-              return;
-            }
-            await save(values);
-          } catch {
-            addToast(intl.formatMessage(messages.toastSettingsFailure), {
-              appearance: 'error',
-              autoDismiss: true,
-            });
+          const credentialsChanging =
+            values.clientId.trim() !== data?.clientId ||
+            Boolean(values.clientSecret.trim());
+          if (
+            credentialsChanging &&
+            data?.configured &&
+            linkedAccountCount > 0
+          ) {
+            setPending({ values, clear: false });
+            return;
           }
+          await save(values);
         }}
       >
-        {({ handleSubmit, isSubmitting, isValid, values }) => (
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-white">
-                {intl.formatMessage(messages.anilist)}
-              </h3>
-              <Badge badgeType={data.configured ? 'success' : 'warning'}>
-                {intl.formatMessage(
-                  data.configured ? messages.configured : messages.notConfigured
-                )}
-              </Badge>
-            </div>
-            {mappingPacksMissing && (
-              <Alert title={intl.formatMessage(messages.mappingPacksMissing)}>
-                {intl.formatMessage(messages.mappingPacksMissingTip, {
-                  MappingLink: (msg: ReactNode) => (
-                    <Link
-                      to="/settings/mapping"
-                      className="text-white underline"
-                    >
-                      {msg}
-                    </Link>
-                  ),
-                })}
-              </Alert>
+        {({ errors, touched, handleSubmit, isSubmitting, isValid, values }) => (
+          <Modal
+            ref={ref}
+            title={intl.formatMessage(messages.configureAnilist)}
+            loading={!data && !error}
+            backgroundClickable={false}
+            onCancel={onClose}
+            okText={intl.formatMessage(
+              isSubmitting ? globalMessages.saving : globalMessages.save
             )}
-            <p className="text-sm text-gray-400">
-              {intl.formatMessage(messages.description)}
-            </p>
-            <p className="text-sm text-gray-400">
-              {intl.formatMessage(messages.createAppTip, {
-                redirectUrl: data.redirectUrl,
-                AniListAppLink: (msg: ReactNode) => (
-                  <a
-                    href="https://anilist.co/settings/developer"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-white underline"
-                  >
-                    {msg}
-                  </a>
-                ),
-              })}
-            </p>
-            <div className="form-row">
-              <label htmlFor="anilist-client-id" className="text-label">
-                {intl.formatMessage(messages.clientId)}
-              </label>
-              <div className="form-input-area">
-                <Field
-                  id="anilist-client-id"
-                  name="clientId"
-                  type="text"
-                  autoComplete="off"
-                />
-              </div>
-            </div>
-            <div className="form-row">
-              <label htmlFor="anilist-client-secret" className="text-label">
-                {intl.formatMessage(messages.clientSecret)}
-              </label>
-              <div className="form-input-area">
-                <SensitiveInput
-                  as="field"
-                  id="anilist-client-secret"
-                  name="clientSecret"
-                  autoComplete="off"
-                />
-                {data.configured && (
-                  <p className="mt-2 text-xs text-gray-400">
-                    {intl.formatMessage(messages.clientSecretTip)}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <span className="inline-flex rounded-md shadow-sm">
-                <Button
-                  buttonType="primary"
-                  type="submit"
-                  disabled={isSubmitting || !isValid}
-                >
-                  <ArrowDownOnSquareIcon />
-                  <span>
-                    {isSubmitting
-                      ? intl.formatMessage(globalMessages.saving)
-                      : intl.formatMessage(messages.save)}
-                  </span>
-                </Button>
-              </span>
-            </div>
-            <div className="flex items-start">
-              <input
-                id="anilist-actions-enabled"
-                type="checkbox"
-                className="rounded border-gray-500"
-                checked={data.actionsEnabled}
-                onChange={async (event) => {
-                  try {
-                    await axios.post('/api/v1/settings/anilist/actions', {
-                      actionsEnabled: event.target.checked,
-                    });
-                    await mutate();
-                    await globalMutate('/api/v1/settings/public');
-                    addToast(intl.formatMessage(messages.toastActionsSuccess), {
-                      appearance: 'success',
-                      autoDismiss: true,
-                    });
-                  } catch {
-                    addToast(intl.formatMessage(messages.toastActionsFailure), {
-                      appearance: 'error',
-                      autoDismiss: true,
-                    });
-                  }
-                }}
+            okDisabled={isSubmitting || !isValid || !data}
+            onOk={() => handleSubmit()}
+          >
+            {error || !data ? (
+              <Alert
+                type="error"
+                title={intl.formatMessage(messages.loadFailed)}
               />
-              <label htmlFor="anilist-actions-enabled" className="ml-2">
-                <span className="flex items-center gap-2 text-sm font-medium text-gray-200">
-                  {intl.formatMessage(messages.actionsEnabled)}
-                  <SettingsBadge
-                    badgeType="experimental"
-                    tooltip={intl.formatMessage(
-                      messages.anilistExperimentalTooltip
+            ) : (
+              <form onSubmit={handleSubmit}>
+                {mappingPacksMissing && (
+                  <Alert
+                    title={intl.formatMessage(messages.mappingPacksMissing)}
+                  >
+                    {intl.formatMessage(messages.mappingPacksMissingTip, {
+                      MappingLink: (msg: ReactNode) => (
+                        <Link
+                          to="/settings/mapping"
+                          className="text-white underline transition hover:text-gray-200"
+                        >
+                          {msg}
+                        </Link>
+                      ),
+                    })}
+                  </Alert>
+                )}
+                <p className="description">
+                  {intl.formatMessage(messages.description)}{' '}
+                  {intl.formatMessage(messages.createAppTip, {
+                    redirectUrl: data.redirectUrl,
+                    AniListAppLink: (msg: ReactNode) => (
+                      <a
+                        href="https://anilist.co/settings/developer"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-white underline transition hover:text-gray-200"
+                      >
+                        {msg}
+                      </a>
+                    ),
+                  })}
+                </p>
+                <div className="form-row">
+                  <label htmlFor="anilistClientId" className="text-label">
+                    {intl.formatMessage(messages.clientId)}
+                    <span className="label-required">*</span>
+                  </label>
+                  <div className="form-input-area">
+                    <div className="form-input-field">
+                      <Field
+                        id="anilistClientId"
+                        name="clientId"
+                        type="text"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {errors.clientId && touched.clientId && (
+                      <div className="error">{errors.clientId}</div>
                     )}
-                  />
-                </span>
-                <span className="text-xs text-gray-400">
-                  {intl.formatMessage(messages.actionsEnabledTip)}
-                </span>
-              </label>
-            </div>
-            {data.configured && (
-              <Button
-                buttonType="danger"
-                type="button"
-                disabled={clearing}
-                onClick={() => {
-                  setPendingValues(values);
-                  setClearConfirmOpen(true);
-                }}
-              >
-                {intl.formatMessage(messages.clearCredentials)}
-              </Button>
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label htmlFor="anilistClientSecret" className="text-label">
+                    {intl.formatMessage(messages.clientSecret)}
+                    {data.configured ? (
+                      <span className="label-tip">
+                        {intl.formatMessage(messages.clientSecretTip)}
+                      </span>
+                    ) : (
+                      <span className="label-required">*</span>
+                    )}
+                  </label>
+                  <div className="form-input-area">
+                    <div className="form-input-field">
+                      <SensitiveInput
+                        as="field"
+                        id="anilistClientSecret"
+                        name="clientSecret"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {errors.clientSecret && touched.clientSecret && (
+                      <div className="error">{errors.clientSecret}</div>
+                    )}
+                    {data.configured && (
+                      <Button
+                        className="mt-3"
+                        buttonType="danger"
+                        buttonSize="sm"
+                        type="button"
+                        onClick={() => setPending({ values, clear: true })}
+                      >
+                        <TrashIcon />
+                        <span>
+                          {intl.formatMessage(messages.clearCredentials)}
+                        </span>
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="form-row">
+                  <label
+                    htmlFor="anilistActionsEnabled"
+                    className="checkbox-label"
+                  >
+                    <span className="mr-2">
+                      {intl.formatMessage(messages.actionsEnabled)}
+                    </span>
+                    <SettingsBadge
+                      badgeType="experimental"
+                      tooltip={intl.formatMessage(
+                        messages.anilistExperimentalTooltip
+                      )}
+                    />
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.actionsEnabledTip)}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <Field
+                      type="checkbox"
+                      id="anilistActionsEnabled"
+                      name="actionsEnabled"
+                    />
+                  </div>
+                </div>
+              </form>
             )}
-          </form>
+            <Transition as={Fragment} show={!!pending}>
+              <Modal
+                title={intl.formatMessage(
+                  pending?.clear
+                    ? messages.clearConfirmTitle
+                    : messages.disconnectConfirmTitle
+                )}
+                okButtonType="danger"
+                okText={intl.formatMessage(
+                  pending?.clear
+                    ? messages.clearCredentials
+                    : messages.confirmReplace
+                )}
+                onOk={async () => {
+                  if (!pending) return;
+                  const { values: pendingValues, clear } = pending;
+                  setPending(undefined);
+                  await save(pendingValues, { confirmed: true, clear });
+                }}
+                onCancel={() => setPending(undefined)}
+              >
+                {intl.formatMessage(
+                  pending?.clear
+                    ? messages.clearConfirmDescription
+                    : messages.disconnectConfirmDescription,
+                  { count: linkedAccountCount }
+                )}
+              </Modal>
+            </Transition>
+          </Modal>
         )}
       </Formik>
+    );
+  }
+);
 
-      <Transition as={Fragment} show={confirmOpen}>
-        <Modal
-          title={intl.formatMessage(messages.disconnectConfirmTitle)}
-          onCancel={() => {
-            setConfirmOpen(false);
-            setPendingValues(null);
-          }}
-          okButtonType="danger"
-          okText={intl.formatMessage(messages.confirmReplace)}
-          onOk={async () => {
-            if (!pendingValues) {
-              return;
-            }
-            try {
-              await save(pendingValues, true);
-              setConfirmOpen(false);
-              setPendingValues(null);
-            } catch {
-              addToast(intl.formatMessage(messages.toastSettingsFailure), {
-                appearance: 'error',
-                autoDismiss: true,
-              });
-            }
-          }}
-        >
-          {intl.formatMessage(messages.disconnectConfirmDescription, {
-            count: data.linkedAccountCount ?? 0,
-          })}
-        </Modal>
-      </Transition>
-
-      <Transition as={Fragment} show={clearConfirmOpen}>
-        <Modal
-          title={intl.formatMessage(messages.clearConfirmTitle)}
-          okButtonType="danger"
-          okText={intl.formatMessage(messages.clearCredentials)}
-          onCancel={() => {
-            setClearConfirmOpen(false);
-            setPendingValues(null);
-          }}
-          onOk={async () => {
-            if (!pendingValues) {
-              setClearConfirmOpen(false);
-              return;
-            }
-            setClearing(true);
-            try {
-              await save(pendingValues, true, true);
-              setClearConfirmOpen(false);
-              setPendingValues(null);
-            } catch {
-              addToast(intl.formatMessage(messages.toastSettingsFailure), {
-                appearance: 'error',
-                autoDismiss: true,
-              });
-            } finally {
-              setClearing(false);
-            }
-          }}
-        >
-          {intl.formatMessage(messages.clearConfirmDescription, {
-            count: data.linkedAccountCount ?? 0,
-          })}
-        </Modal>
-      </Transition>
-    </>
-  );
-};
+SettingsAnilist.displayName = 'SettingsAnilist';
 
 export default SettingsAnilist;

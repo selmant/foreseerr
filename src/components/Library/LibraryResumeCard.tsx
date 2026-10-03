@@ -2,6 +2,7 @@ import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import useLibraryPlay from '@app/components/Library/useLibraryPlay';
 import defineMessages from '@app/utils/defineMessages';
+import { PlayIcon } from '@heroicons/react/24/solid';
 import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
 import { useIntl } from 'react-intl';
 
@@ -24,15 +25,15 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
   return (
     <article
       data-testid="library-resume-card"
-      className="w-72 overflow-hidden rounded-lg bg-library-charcoal ring-1 ring-gray-800 sm:w-80"
+      className="w-72 overflow-hidden rounded-xl bg-gray-800 shadow ring-1 ring-gray-700 transition duration-300 hover:shadow-lg hover:ring-gray-500 sm:w-80"
     >
       <button
         type="button"
-        className="block w-full text-left"
+        className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         onClick={() => onOpen?.(item)}
         aria-label={item.title}
       >
-        <div className="relative aspect-video bg-library-navy">
+        <div className="relative aspect-video bg-gray-700">
           {artwork ? (
             <CachedImage
               type="library"
@@ -43,19 +44,19 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
               sizes="320px"
             />
           ) : null}
-          <div className="absolute inset-0 bg-gradient-to-t from-library-charcoal via-transparent to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-800 via-transparent to-transparent" />
           {progress > 0 ? (
-            <div className="absolute inset-x-0 bottom-0 h-1 bg-gray-800">
+            <div className="absolute inset-x-0 bottom-0 h-1 bg-black/70">
               <div
                 className="h-full bg-indigo-500"
-                style={{ width: `${progress}%` }}
+                style={{ width: `${Math.min(100, progress)}%` }}
               />
             </div>
           ) : null}
         </div>
       </button>
       <div className="space-y-2 p-3">
-        <h3 className="library-display truncate text-lg font-semibold uppercase tracking-wide text-white">
+        <h3 className="truncate text-base font-bold text-white">
           {item.title}
         </h3>
         {item.subtitle ? (
@@ -66,7 +67,6 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
           href={item.mediaUrl}
           buttonType="primary"
           buttonSize="sm"
-          className="min-h-11"
           data-testid="library-resume-play"
           onClick={(event) => {
             if (!item.mediaUrl) {
@@ -75,7 +75,10 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
             void playItem(event, item, onOpen);
           }}
         >
-          {intl.formatMessage(progress > 0 ? messages.resume : messages.play)}
+          <PlayIcon />
+          <span>
+            {intl.formatMessage(progress > 0 ? messages.resume : messages.play)}
+          </span>
         </Button>
       </div>
     </article>

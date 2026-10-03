@@ -53,7 +53,7 @@ const messages = defineMessages(
     betterTraktNeedsJellyfin: 'Link your Jellyfin account first',
     betterTraktUnavailable: 'Better Trakt unavailable',
     refreshJellyfinSession: 'Refresh Jellyfin Session',
-    watchTrackers: 'Watch trackers',
+    watchTrackers: 'Watch Trackers',
     watchTrackersHint:
       'Choose which linked services receive watched status and ratings from {applicationName}.',
     traktWatchHint:
@@ -62,7 +62,11 @@ const messages = defineMessages(
       'Updates your AniList list and scores when you mark anime watched here.',
     anilistExperimentalTooltip:
       'Anime seasons and episodes do not always match TMDB one-to-one, so watches can land on the wrong AniList title or be skipped.',
+    simklWatchHint:
+      'Updates your Simkl history and ratings when you mark titles watched here.',
     linkAccountToEnable: 'Link this account to enable watch sync.',
+    disabledServerWide:
+      'Watch sync for this service is turned off for everyone by an administrator.',
     updateFailed: 'Unable to update watch tracker settings.',
   }
 );
@@ -92,10 +96,12 @@ type LinkedAccount = {
 };
 
 const WatchTrackerSwitch = ({
+  label,
   enabled,
   disabled,
   onToggle,
 }: {
+  label: string;
   enabled: boolean;
   disabled: boolean;
   onToggle: () => void;
@@ -103,6 +109,7 @@ const WatchTrackerSwitch = ({
   <button
     type="button"
     role="switch"
+    aria-label={label}
     aria-checked={enabled}
     disabled={disabled}
     onClick={() => {
@@ -384,16 +391,6 @@ const UserLinkedAccountsSettings = () => {
   ) {
     return (
       <>
-        {traktStatus?.provider === 'jellyfin' && (
-          <Alert
-            title={intl.formatMessage(
-              traktStatus.needsJellyfinSessionRefresh
-                ? messages.betterTraktSessionRefresh
-                : messages.betterTraktEnabled
-            )}
-            type={traktStatus.needsJellyfinSessionRefresh ? 'warning' : 'info'}
-          />
-        )}
         <div className="mb-6">
           <h3 className="heading">
             {intl.formatMessage(messages.linkedAccounts)}
@@ -500,6 +497,18 @@ const UserLinkedAccountsSettings = () => {
         )}
       </div>
       {error && <Alert title={error} type="error" />}
+      {currentUser?.id === user?.id &&
+        traktStatus?.provider === 'jellyfin' &&
+        traktStatus.pluginState !== 'ready' && (
+          <Alert
+            title={intl.formatMessage(
+              traktStatus.needsJellyfinSessionRefresh
+                ? messages.betterTraktSessionRefresh
+                : messages.betterTraktEnabled
+            )}
+            type={traktStatus.needsJellyfinSessionRefresh ? 'warning' : 'info'}
+          />
+        )}
       {accounts.length ? (
         <ul className="space-y-4">
           {accounts.map((acct, i) => (
@@ -590,15 +599,24 @@ const UserLinkedAccountsSettings = () => {
                   </div>
                   <p className="mt-1 text-sm text-gray-400">
                     {intl.formatMessage(
-                      traktStatus?.connected
-                        ? messages.traktWatchHint
-                        : messages.linkAccountToEnable
+                      !settings.currentSettings.mediaActionsTraktEnabled
+                        ? messages.disabledServerWide
+                        : traktStatus?.connected
+                          ? messages.traktWatchHint
+                          : messages.linkAccountToEnable
                     )}
                   </p>
                 </div>
                 <WatchTrackerSwitch
-                  enabled={traktStatus?.actionsEnabled !== false}
-                  disabled={!traktStatus?.connected}
+                  label="Trakt"
+                  enabled={
+                    settings.currentSettings.mediaActionsTraktEnabled &&
+                    traktStatus?.actionsEnabled !== false
+                  }
+                  disabled={
+                    !settings.currentSettings.mediaActionsTraktEnabled ||
+                    !traktStatus?.connected
+                  }
                   onToggle={() => {
                     void updateActionsEnabled(
                       'trakt',
@@ -625,15 +643,24 @@ const UserLinkedAccountsSettings = () => {
                   </div>
                   <p className="mt-1 text-sm text-gray-400">
                     {intl.formatMessage(
-                      anilistStatus?.connected
-                        ? messages.anilistWatchHint
-                        : messages.linkAccountToEnable
+                      !settings.currentSettings.mediaActionsAnilistEnabled
+                        ? messages.disabledServerWide
+                        : anilistStatus?.connected
+                          ? messages.anilistWatchHint
+                          : messages.linkAccountToEnable
                     )}
                   </p>
                 </div>
                 <WatchTrackerSwitch
-                  enabled={anilistStatus?.actionsEnabled !== false}
-                  disabled={!anilistStatus?.connected}
+                  label="AniList"
+                  enabled={
+                    settings.currentSettings.mediaActionsAnilistEnabled &&
+                    anilistStatus?.actionsEnabled !== false
+                  }
+                  disabled={
+                    !settings.currentSettings.mediaActionsAnilistEnabled ||
+                    !anilistStatus?.connected
+                  }
                   onToggle={() => {
                     void updateActionsEnabled(
                       'anilist',
@@ -651,14 +678,25 @@ const UserLinkedAccountsSettings = () => {
                     Simkl
                   </div>
                   <p className="mt-1 text-sm text-gray-400">
-                    {simklStatus?.connected
-                      ? 'Updates your Simkl history and ratings when you mark titles watched here.'
-                      : intl.formatMessage(messages.linkAccountToEnable)}
+                    {intl.formatMessage(
+                      !settings.currentSettings.mediaActionsSimklEnabled
+                        ? messages.disabledServerWide
+                        : simklStatus?.connected
+                          ? messages.simklWatchHint
+                          : messages.linkAccountToEnable
+                    )}
                   </p>
                 </div>
                 <WatchTrackerSwitch
-                  enabled={simklStatus?.actionsEnabled !== false}
-                  disabled={!simklStatus?.connected}
+                  label="Simkl"
+                  enabled={
+                    settings.currentSettings.mediaActionsSimklEnabled &&
+                    simklStatus?.actionsEnabled !== false
+                  }
+                  disabled={
+                    !settings.currentSettings.mediaActionsSimklEnabled ||
+                    !simklStatus?.connected
+                  }
                   onToggle={() => {
                     void updateActionsEnabled(
                       'simkl',

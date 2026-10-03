@@ -20,7 +20,6 @@ import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { Suspense, lazy, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
 import useSWR from 'swr';
 import * as Yup from 'yup';
 
@@ -362,19 +361,18 @@ const NotificationsWebhook = () => {
             </div>
             {values.supportVariables && (
               <div className="mt-2">
-                <Link to="https://selmant.github.io/foreseerr/using-seerr/notifications/webhook/#template-variables">
-                  <Button
-                    as="a"
-                    buttonSize="sm"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <QuestionMarkCircleIcon />
-                    <span>
-                      {intl.formatMessage(messages.templatevariablehelp)}
-                    </span>
-                  </Button>
-                </Link>
+                <Button
+                  as="a"
+                  href="https://selmant.github.io/foreseerr/using-seerr/notifications/webhook/#template-variables"
+                  buttonSize="sm"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <QuestionMarkCircleIcon />
+                  <span>
+                    {intl.formatMessage(messages.templatevariablehelp)}
+                  </span>
+                </Button>
               </div>
             )}
             <div className="form-row">
@@ -531,19 +529,18 @@ const NotificationsWebhook = () => {
                     <ArrowPathIcon />
                     <span>{intl.formatMessage(messages.resetPayload)}</span>
                   </Button>
-                  <Link to="https://selmant.github.io/foreseerr/using-seerr/notifications/webhook/#template-variables">
-                    <Button
-                      as="a"
-                      buttonSize="sm"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <QuestionMarkCircleIcon />
-                      <span>
-                        {intl.formatMessage(messages.templatevariablehelp)}
-                      </span>
-                    </Button>
-                  </Link>
+                  <Button
+                    as="a"
+                    href="https://selmant.github.io/foreseerr/using-seerr/notifications/webhook/#template-variables"
+                    buttonSize="sm"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <QuestionMarkCircleIcon />
+                    <span>
+                      {intl.formatMessage(messages.templatevariablehelp)}
+                    </span>
+                  </Button>
                 </div>
               </div>
             </div>

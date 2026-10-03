@@ -1,11 +1,13 @@
+import Button from '@app/components/Common/Button';
+import EmptyState from '@app/components/Common/EmptyState';
 import Header from '@app/components/Common/Header';
+import LinkButton from '@app/components/Common/LinkButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import LibraryBrowseFilters from '@app/components/Library/LibraryBrowseFilters';
 import LibraryBrowseGrid from '@app/components/Library/LibraryBrowseGrid';
 import LibraryBrowseToolbar from '@app/components/Library/LibraryBrowseToolbar';
 import LibraryInspector from '@app/components/Library/LibraryInspector';
-import LibraryModeNav from '@app/components/Library/LibraryModeNav';
 import {
   browseStateFromQuery,
   mergeBrowsePatch,
@@ -21,6 +23,11 @@ import useRouteQuery from '@app/hooks/useRouteQuery';
 import defineMessages from '@app/utils/defineMessages';
 import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
 import { buildPath } from '@app/utils/routing';
+import {
+  ExclamationTriangleIcon,
+  LinkIcon,
+  ServerIcon,
+} from '@heroicons/react/24/outline';
 import type {
   LibraryBrowseResponse,
   LibraryFacetsResponse,
@@ -41,9 +48,15 @@ const messages = defineMessages('components.Library.LibraryBrowse', {
   library: 'Library',
   browse: 'Browse',
   subtitle: 'Search and filter everything in your Jellyfin library.',
+  notLinkedTitle: 'Jellyfin account not linked',
   notLinked: 'Link your Jellyfin account in settings to browse your library.',
+  linkAccount: 'Link Account',
+  unsupportedTitle: 'Library needs Jellyfin',
   unsupported: 'Complete Library browse requires a Jellyfin media server.',
   unreachable: 'Could not reach Jellyfin.',
+  unreachableDescription:
+    'Check that your Jellyfin server is running, then try again.',
+  retry: 'Retry',
 });
 
 const paramsFromState = (state: ReturnType<typeof browseStateFromQuery>) => {
@@ -74,6 +87,7 @@ const LibraryBrowse = () => {
     | { data: TvDetails; mediaType: 'tv' }
     | null
   >(null);
+  const [showManager, setShowManager] = useState(false);
   const [searchInput, setSearchInput] = useState('');
 
   const state = useMemo(() => browseStateFromQuery(routeQuery), [routeQuery]);
@@ -186,6 +200,7 @@ const LibraryBrowse = () => {
     setManagedTitle(
       'title' in data ? { data, mediaType: 'movie' } : { data, mediaType: 'tv' }
     );
+    setShowManager(true);
   };
 
   useEffect(() => {
@@ -194,31 +209,63 @@ const LibraryBrowse = () => {
     });
   }, [mutate]);
 
-  const statusMessage =
+  const status =
     code === 'not_linked'
-      ? intl.formatMessage(messages.notLinked)
+      ? {
+          icon: LinkIcon,
+          title: intl.formatMessage(messages.notLinkedTitle),
+          description: intl.formatMessage(messages.notLinked),
+          action: (
+            <LinkButton
+              to="/profile/settings/linked-accounts"
+              buttonType="primary"
+            >
+              <LinkIcon />
+              <span>{intl.formatMessage(messages.linkAccount)}</span>
+            </LinkButton>
+          ),
+        }
       : code === 'unsupported_media_server'
-        ? intl.formatMessage(messages.unsupported)
+        ? {
+            icon: ServerIcon,
+            title: intl.formatMessage(messages.unsupportedTitle),
+            description: intl.formatMessage(messages.unsupported),
+          }
         : code === 'server_unreachable'
-          ? intl.formatMessage(messages.unreachable)
+          ? {
+              icon: ExclamationTriangleIcon,
+              title: intl.formatMessage(messages.unreachable),
+              description: intl.formatMessage(messages.unreachableDescription),
+              action: (
+                <Button onClick={() => void mutate()}>
+                  {intl.formatMessage(messages.retry)}
+                </Button>
+              ),
+            }
           : null;
 
   return (
     <>
-      <PageTitle title={intl.formatMessage(messages.browse)} />
-      <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
-        <div>
-          <Header>{intl.formatMessage(messages.library)}</Header>
-          <p className="mt-1 text-sm text-gray-400">
-            {intl.formatMessage(messages.subtitle)}
-          </p>
-        </div>
-        <LibraryModeNav />
+      <PageTitle
+        title={[
+          intl.formatMessage(messages.browse),
+          intl.formatMessage(messages.library),
+        ]}
+      />
+      <div className="mb-4">
+        <Header subtext={intl.formatMessage(messages.subtitle)}>
+          {intl.formatMessage(messages.library)}
+        </Header>
       </div>
-      {statusMessage ? (
-        <p className="rounded-md border border-gray-700 bg-library-charcoal px-4 py-3 text-sm text-gray-300">
-          {statusMessage}
-        </p>
+      {status ? (
+        <div className="mt-6">
+          <EmptyState
+            icon={status.icon}
+            title={status.title}
+            description={status.description}
+            action={status.action}
+          />
+        </div>
       ) : (
         <>
           <LibraryBrowseToolbar
@@ -275,32 +322,30 @@ const LibraryBrowse = () => {
           )}
         </>
       )}
-      {!managedTitle ? (
-        <LibraryInspector
-          item={inspectorItem}
-          onClose={() => setInspectorItem(null)}
-          onManage={openManage}
-        />
-      ) : null}
+      <LibraryInspector
+        item={inspectorItem}
+        onClose={() => setInspectorItem(null)}
+        onManage={openManage}
+      />
       {managedTitle?.mediaType === 'movie' ? (
         <ManageSlideOver
-          show
+          show={showManager}
           data={managedTitle.data}
           mediaType="movie"
           revalidate={() => {
             void mutate();
           }}
-          onClose={() => setManagedTitle(null)}
+          onClose={() => setShowManager(false)}
         />
       ) : managedTitle?.mediaType === 'tv' ? (
         <ManageSlideOver
-          show
+          show={showManager}
           data={managedTitle.data}
           mediaType="tv"
           revalidate={() => {
             void mutate();
           }}
-          onClose={() => setManagedTitle(null)}
+          onClose={() => setShowManager(false)}
         />
       ) : null}
     </>

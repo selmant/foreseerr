@@ -119,7 +119,9 @@ const RatingBadges = ({
       className={[
         compact
           ? expanded
-            ? 'grid w-full min-w-0 grid-cols-2 items-center gap-x-1 gap-y-1'
+            ? `grid w-full min-w-0 items-center gap-x-1 gap-y-1 ${
+                badges.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
+              }`
             : 'flex flex-col items-start gap-1'
           : 'flex flex-col items-start gap-2',
         className,

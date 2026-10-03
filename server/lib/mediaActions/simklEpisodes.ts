@@ -61,9 +61,10 @@ export interface WatchedCoordinate {
 
 /** Every watched episode Simkl reports for a show, in Simkl's own numbering. */
 export const watchedCoordinates = (
-  payload: Record<string, unknown>,
+  payload: Record<string, unknown> | null | undefined,
   tmdbId: number
 ): WatchedCoordinate[] => {
+  if (!payload || typeof payload !== 'object') return [];
   const shows = Object.values(payload).flatMap((value) =>
     Array.isArray(value) ? value : []
   );

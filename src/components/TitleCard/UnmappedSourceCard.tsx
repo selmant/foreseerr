@@ -37,9 +37,9 @@ const messages = defineMessages('components.TitleCard.UnmappedSourceCard', {
   unmapped: 'Couldn’t map to TMDB',
   notFoundOnTmdb: 'Not found on TMDB',
   ribbon: 'Unmapped',
-  openOriginal: 'Open original',
+  openOriginal: 'Open Original',
   hide: 'Hide',
-  fixMapping: 'Fix mapping',
+  fixMapping: 'Fix Mapping',
   ambiguous: 'Sources disagree',
 });
 
@@ -113,8 +113,10 @@ const UnmappedSourceCard = ({
           <div className="absolute left-0 right-0 flex items-center p-2">
             {type ? (
               <div
-                className={`z-40 rounded-full shadow ${
-                  type === 'movie' ? 'bg-blue-500' : 'bg-purple-600'
+                className={`z-40 rounded-full border shadow-md ${
+                  type === 'movie'
+                    ? 'border-blue-500 bg-blue-600/80'
+                    : 'border-purple-600 bg-purple-600/80'
                 }`}
               >
                 <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">

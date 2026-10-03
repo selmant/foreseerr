@@ -2,7 +2,7 @@
 import { useLockBodyScroll } from '@app/hooks/useLockBodyScroll';
 import { Transition, TransitionChild } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 
 interface SlideOverProps {
@@ -21,12 +21,34 @@ const SlideOver = ({
   children,
 }: SlideOverProps) => {
   const [isMounted, setIsMounted] = useState(false);
-  const slideoverRef = useRef(null);
+  const slideoverRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useLockBodyScroll(show);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Move focus into the panel so Escape and Tab work without a click first,
+  // then hand it back to whatever opened the panel.
+  useEffect(() => {
+    if (!show) {
+      return undefined;
+    }
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const frame = window.requestAnimationFrame(() =>
+      slideoverRef.current?.focus({ preventScroll: true })
+    );
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (opener?.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, [show]);
 
   if (!isMounted) {
     return null;
@@ -65,16 +87,23 @@ const SlideOver = ({
               leaveFrom="translate-x-0"
               leaveTo="translate-x-full"
             >
-              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+              {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
               <div
-                className="slideover relative h-full w-screen max-w-md p-2 sm:p-3"
+                className="slideover relative h-full w-screen max-w-md p-2 focus:outline-none sm:p-3"
                 ref={slideoverRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                tabIndex={-1}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex h-full flex-col rounded-lg bg-gray-800/80 shadow-xl ring-1 ring-gray-700 backdrop-blur">
                   <header className="space-y-1 border-b border-gray-700 px-4 py-4">
                     <div className="flex items-center justify-between space-x-3">
-                      <h2 className="text-overseerr text-2xl font-bold leading-7">
+                      <h2
+                        id={titleId}
+                        className="text-overseerr text-2xl font-bold leading-7"
+                      >
                         {title}
                       </h2>
                       <div className="flex h-7 items-center">

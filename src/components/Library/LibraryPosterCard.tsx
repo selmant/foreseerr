@@ -10,7 +10,7 @@ import useLibraryPlay from '@app/components/Library/useLibraryPlay';
 import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchContext';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import defineMessages from '@app/utils/defineMessages';
-import { CheckCircleIcon, PlayIcon } from '@heroicons/react/24/solid';
+import { CheckBadgeIcon, PlayIcon } from '@heroicons/react/24/solid';
 import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
 import { useIntl } from 'react-intl';
 
@@ -85,13 +85,13 @@ const LibraryPosterCard = ({
       data-testid="library-poster-card"
       data-surface={mode}
       data-watch-mark={watchMark}
-      className={`group relative ${isBrowse ? 'w-full' : 'w-36 sm:w-44'}`}
+      className={`group relative ${isBrowse ? 'w-full' : 'w-36 sm:w-36 md:w-44'}`}
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-library-navy ring-1 ring-gray-800">
+      <div className="relative aspect-[2/3] transform-gpu overflow-hidden rounded-xl bg-gray-800 shadow ring-1 ring-gray-700 transition duration-300 group-focus-within:ring-gray-500 group-hover:scale-105 group-hover:shadow-lg group-hover:ring-gray-500">
         <button
           type="button"
           onClick={openInspector}
-          className="absolute inset-0 z-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400"
+          className="absolute inset-0 z-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
           aria-label={posterLabel}
         >
           {item.posterUrl ? (
@@ -109,7 +109,7 @@ const LibraryPosterCard = ({
         </button>
         {!isBrowse ? (
           <div
-            className={`pointer-events-none absolute left-2 top-2 z-10 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white ${
+            className={`pointer-events-none absolute left-2 top-2 z-10 rounded-full border shadow-md ${
               item.mediaType === 'movie'
                 ? 'border-blue-500 bg-blue-600/80'
                 : isEpisodePoster
@@ -117,69 +117,86 @@ const LibraryPosterCard = ({
                   : 'border-purple-600 bg-purple-600/80'
             }`}
           >
-            {typeLabel}
+            <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
+              {typeLabel}
+            </div>
           </div>
         ) : null}
         {watchMark === 'unplayed' ? (
           <span
             data-testid="library-unplayed-pip"
-            className="pointer-events-none absolute -right-9 top-3.5 z-10 h-2.5 w-28 rotate-45 bg-emerald-400 shadow"
+            className="pointer-events-none absolute right-2 top-2 z-10 h-3 w-3 rounded-full bg-emerald-400 shadow-md ring-2 ring-gray-900/80"
             aria-hidden
           />
         ) : null}
         {watchMark === 'watched' ? (
           <span
             data-testid="library-watched-mark"
-            className="pointer-events-none absolute right-1.5 top-1.5 z-10 rounded-full bg-black/75 text-white shadow-md ring-1 ring-white/30"
+            className="pointer-events-none absolute right-2 top-2 z-10 rounded-full bg-gray-900/80 p-0.5 shadow-md ring-1 ring-emerald-400/60"
             aria-hidden
           >
-            <CheckCircleIcon className="h-5 w-5" />
+            <CheckBadgeIcon className="h-4 w-4 text-emerald-400 sm:h-5 sm:w-5" />
           </span>
         ) : null}
         {watchMark === 'partial' && item.unplayedItemCount ? (
           <span
             data-testid="library-remaining-count"
-            className="pointer-events-none absolute right-1.5 top-1.5 z-10 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-indigo-500 px-1.5 text-[11px] font-bold tabular-nums text-white shadow-md"
+            className="pointer-events-none absolute right-2 top-2 z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-indigo-400 bg-indigo-600/80 px-1.5 text-xs font-semibold tabular-nums text-white shadow-md"
             aria-hidden
           >
             {item.unplayedItemCount}
           </span>
         ) : null}
         {showProgressBar ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-1 bg-gray-800">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-1 bg-black/70">
             <div
               className="h-full bg-indigo-500"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${Math.min(100, progress)}%` }}
             />
           </div>
         ) : null}
         {!isBrowse ? (
           <div
-            className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-2 ${
+            className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-gray-900 via-gray-900/70 to-transparent px-2 pb-2 pt-8 ${
               showOverviewHover
-                ? 'group-focus-within:opacity-0 group-hover:opacity-0'
+                ? 'transition-opacity group-focus-within:opacity-0 group-hover:opacity-0'
                 : ''
             }`}
           >
-            <h3 className="library-display truncate text-sm font-semibold uppercase text-white">
+            <h3 className="truncate text-sm font-semibold text-white">
               {item.title}
             </h3>
             {item.subtitle ? (
-              <p className="truncate text-xs text-gray-200">{item.subtitle}</p>
+              <p className="truncate text-xs text-gray-300">{item.subtitle}</p>
             ) : null}
           </div>
         ) : null}
         {showOverviewHover ? (
-          <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-end bg-gradient-to-t from-black/90 via-black/45 to-transparent p-2 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+          <div
+            className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-end p-2 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+            style={{
+              background:
+                'linear-gradient(180deg, rgba(45, 55, 72, 0.4) 0%, rgba(45, 55, 72, 0.9) 100%)',
+            }}
+          >
             <button
               type="button"
               className="mb-2 w-full text-left text-white"
               onClick={openInspector}
             >
               {item.year ? (
-                <div className="text-xs font-medium">{item.year}</div>
+                <div className="text-sm font-medium">{item.year}</div>
               ) : null}
-              <h3 className="library-display line-clamp-2 text-base font-semibold uppercase leading-tight">
+              <h3
+                className="whitespace-normal text-xl font-bold leading-tight"
+                style={{
+                  WebkitLineClamp: 2,
+                  display: '-webkit-box',
+                  overflow: 'hidden',
+                  WebkitBoxOrient: 'vertical',
+                  wordBreak: 'break-word',
+                }}
+              >
                 {item.title}
               </h3>
               {item.subtitle ? (
@@ -203,7 +220,7 @@ const LibraryPosterCard = ({
                 void playItem(event, item, onOpen);
               }}
             >
-              <PlayIcon className="h-4 w-4" />
+              <PlayIcon />
               <span>
                 {intl.formatMessage(isResume ? messages.resume : messages.play)}
               </span>
@@ -215,9 +232,9 @@ const LibraryPosterCard = ({
         <button
           type="button"
           onClick={openInspector}
-          className="mt-2 block w-full min-w-0 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+          className="mt-2 block w-full min-w-0 rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
         >
-          <h3 className="library-display truncate text-sm font-semibold uppercase tracking-wide text-gray-100">
+          <h3 className="truncate text-sm font-semibold text-white">
             {item.title}
           </h3>
           <p className="truncate text-xs text-gray-400">

@@ -1,6 +1,6 @@
 import Badge from '@app/components/Common/Badge';
-import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
+import LinkButton from '@app/components/Common/LinkButton';
 import Tooltip from '@app/components/Common/Tooltip';
 import { issueOptions } from '@app/components/IssueModal/constants';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -303,12 +303,14 @@ const IssueItem = ({ issue }: IssueItemProps) => {
       </div>
       <div className="z-10 mt-4 flex w-full flex-col justify-center pl-4 pr-4 xl:mt-0 xl:w-96 xl:items-end xl:pl-0">
         <span className="w-full">
-          <Link to={`/issues/${issue.id}`}>
-            <Button as="a" className="w-full" buttonType="primary">
-              <EyeIcon />
-              <span>{intl.formatMessage(messages.viewissue)}</span>
-            </Button>
-          </Link>
+          <LinkButton
+            to={`/issues/${issue.id}`}
+            className="w-full"
+            buttonType="primary"
+          >
+            <EyeIcon />
+            <span>{intl.formatMessage(messages.viewissue)}</span>
+          </LinkButton>
         </span>
       </div>
     </div>

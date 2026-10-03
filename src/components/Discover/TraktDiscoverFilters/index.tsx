@@ -13,16 +13,20 @@ import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { CircleStackIcon, FunnelIcon } from '@heroicons/react/24/solid';
+import {
+  BarsArrowDownIcon,
+  CircleStackIcon,
+  FunnelIcon,
+} from '@heroicons/react/24/solid';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.TraktDiscoverFilters', {
   anime: 'Anime',
   sortLabel: 'Sort',
-  traktOrder: 'Trakt list order',
-  dateAdded: 'Date added (newest first)',
-  releaseDate: 'Release date (newest first)',
+  traktOrder: 'Trakt List Order',
+  dateAdded: 'Date Added Descending',
+  releaseDate: 'Release Date Descending',
   activefilters:
     '{count, plural, one {# Active Filter} other {# Active Filters}}',
 });
@@ -120,10 +124,13 @@ const TraktDiscoverFilters = ({
         <label htmlFor="traktListSort" className="sr-only">
           {intl.formatMessage(messages.sortLabel)}
         </label>
+        <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-gray-100 sm:text-sm">
+          <BarsArrowDownIcon className="h-6 w-6" />
+        </span>
         <select
           id="traktListSort"
           name="traktListSort"
-          className="rounded-md"
+          className="rounded-r-only"
           value={currentSort}
           onChange={(e) =>
             updateQueryParams('sort', e.target.value || undefined)

@@ -23,8 +23,6 @@ const messages = defineMessages(
   {
     markWatched: 'Mark episode watched',
     markUnwatched: 'Mark episode unwatched',
-    watched: 'Watched',
-    notWatched: 'Not watched',
     actionFailed: 'Could not update episode watch status.',
     actionPartial: 'Updated, but {providers} could not be synchronized.',
   }
@@ -143,11 +141,6 @@ const LibraryEpisodeWatchToggle = ({
       ) : (
         <CheckBadgeOutline className="h-4 w-4" />
       )}
-      <span className="sr-only">
-        {intl.formatMessage(
-          localWatched ? messages.watched : messages.notWatched
-        )}
-      </span>
     </Button>
   );
 };

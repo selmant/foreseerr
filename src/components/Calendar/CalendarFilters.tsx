@@ -1,5 +1,7 @@
 import Button from '@app/components/Common/Button';
+import SegmentedControl from '@app/components/Common/SegmentedControl';
 import globalMessages from '@app/i18n/globalMessages';
+import { XCircleIcon } from '@heroicons/react/24/outline';
 import type {
   CalendarMediaType,
   CalendarScope,
@@ -10,6 +12,7 @@ import messages from './calendarMessages';
 import type { CalendarFilterState } from './calendarUtils';
 
 type Props = {
+  activeFilterCount: number;
   hasAdminPermission: boolean;
   onClose: () => void;
   setFilters: {
@@ -21,7 +24,11 @@ type Props = {
   value: CalendarFilterState;
 };
 
+type MediaOption = CalendarMediaType | 'all';
+type SourceOption = CalendarSource | 'all';
+
 const CalendarFilters = ({
+  activeFilterCount,
   hasAdminPermission,
   onClose,
   setFilters,
@@ -29,78 +36,96 @@ const CalendarFilters = ({
 }: Props) => {
   const intl = useIntl();
   return (
-    <>
-      <div className="flex flex-col gap-4">
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium text-gray-200">
-            {intl.formatMessage(messages.scope)}
-          </legend>
-          <div className="grid grid-cols-2 gap-2">
-            {(['mine', 'all'] as CalendarScope[]).map((option) => (
-              <button
-                key={option}
-                onClick={() => setFilters.setScope(option)}
-                className={`rounded-md border px-3 py-2 text-sm font-medium ${value.scope === option ? 'border-indigo-500 bg-indigo-500/20 text-white' : 'border-gray-600 bg-gray-800 text-gray-300 hover:border-gray-400'}`}
-              >
-                {intl.formatMessage(
-                  option === 'mine' ? messages.mine : messages.allMonitored
-                )}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-        <label className="flex flex-col gap-1 text-sm font-medium text-gray-200">
+    <div className="flex flex-col space-y-4">
+      <div>
+        <div className="mb-2 text-lg font-semibold">
+          {intl.formatMessage(messages.scope)}
+        </div>
+        <SegmentedControl<CalendarScope>
+          ariaLabel={intl.formatMessage(messages.scope)}
+          size="sm"
+          value={value.scope}
+          onChange={setFilters.setScope}
+          options={[
+            { value: 'mine', label: intl.formatMessage(messages.mine) },
+            { value: 'all', label: intl.formatMessage(messages.allMonitored) },
+          ]}
+        />
+      </div>
+      <div>
+        <div className="mb-2 text-lg font-semibold">
           {intl.formatMessage(messages.media)}
-          <select
-            value={value.mediaType}
-            onChange={(event) =>
-              setFilters.setMediaType(
-                event.target.value as CalendarMediaType | ''
-              )
-            }
-            className="rounded-md border-gray-600 bg-gray-800 text-sm text-white focus:border-indigo-500 focus:ring-indigo-500"
-          >
-            <option value="">{intl.formatMessage(globalMessages.all)}</option>
-            <option value="movie">{intl.formatMessage(messages.movies)}</option>
-            <option value="tv">{intl.formatMessage(messages.series)}</option>
-          </select>
-        </label>
-        {hasAdminPermission ? (
-          <>
-            <label className="flex flex-col gap-1 text-sm font-medium text-gray-200">
+        </div>
+        <SegmentedControl<MediaOption>
+          ariaLabel={intl.formatMessage(messages.media)}
+          size="sm"
+          value={value.mediaType || 'all'}
+          onChange={(mediaType) =>
+            setFilters.setMediaType(mediaType === 'all' ? '' : mediaType)
+          }
+          options={[
+            { value: 'all', label: intl.formatMessage(globalMessages.all) },
+            { value: 'movie', label: intl.formatMessage(messages.movies) },
+            { value: 'tv', label: intl.formatMessage(messages.series) },
+          ]}
+        />
+      </div>
+      {hasAdminPermission ? (
+        <>
+          <div>
+            <div className="mb-2 text-lg font-semibold">
               {intl.formatMessage(messages.source)}
-              <select
-                value={value.source}
-                onChange={(event) =>
-                  setFilters.setSource(
-                    event.target.value as CalendarSource | ''
-                  )
-                }
-                className="rounded-md border-gray-600 bg-gray-800 text-sm text-white focus:border-indigo-500 focus:ring-indigo-500"
-              >
-                <option value="">
-                  {intl.formatMessage(messages.allSources)}
-                </option>
-                <option value="radarr">Radarr</option>
-                <option value="sonarr">Sonarr</option>
-              </select>
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-200">
-              <input
-                checked={value.is4k}
-                onChange={(event) => setFilters.setIs4k(event.target.checked)}
-                type="checkbox"
-                className="rounded border-gray-500 bg-gray-800 text-indigo-500 focus:ring-indigo-500"
-              />
+            </div>
+            <SegmentedControl<SourceOption>
+              ariaLabel={intl.formatMessage(messages.source)}
+              size="sm"
+              value={value.source || 'all'}
+              onChange={(source) =>
+                setFilters.setSource(source === 'all' ? '' : source)
+              }
+              options={[
+                {
+                  value: 'all',
+                  label: intl.formatMessage(messages.allSources),
+                },
+                { value: 'radarr', label: 'Radarr' },
+                { value: 'sonarr', label: 'Sonarr' },
+              ]}
+            />
+          </div>
+          <div className="flex items-center space-x-3">
+            <input
+              id="calendar4kOnly"
+              type="checkbox"
+              checked={value.is4k}
+              onChange={(event) => setFilters.setIs4k(event.target.checked)}
+            />
+            <label
+              htmlFor="calendar4kOnly"
+              className="cursor-pointer text-base font-normal text-white"
+            >
               {intl.formatMessage(messages.include4k)}
             </label>
-          </>
-        ) : null}
+          </div>
+        </>
+      ) : null}
+      <div className="pt-4">
+        <Button
+          className="w-full"
+          disabled={activeFilterCount === 0}
+          onClick={() => {
+            setFilters.setScope('mine');
+            setFilters.setMediaType('');
+            setFilters.setSource('');
+            setFilters.setIs4k(false);
+            onClose();
+          }}
+        >
+          <XCircleIcon />
+          <span>{intl.formatMessage(messages.clearFilters)}</span>
+        </Button>
       </div>
-      <Button className="mt-6 w-full" buttonType="primary" onClick={onClose}>
-        {intl.formatMessage(messages.view)}
-      </Button>
-    </>
+    </div>
   );
 };
 

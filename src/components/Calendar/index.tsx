@@ -1,21 +1,23 @@
 import { addDays, startOfDay } from '@app/components/Calendar/calendarUtils';
 import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
+import EmptyState from '@app/components/Common/EmptyState';
 import Header from '@app/components/Common/Header';
+import LinkButton from '@app/components/Common/LinkButton';
 import PageTitle from '@app/components/Common/PageTitle';
+import SegmentedControl from '@app/components/Common/SegmentedControl';
 import SlideOver from '@app/components/Common/SlideOver';
 import { Permission, useUser } from '@app/hooks/useUser';
 import {
-  AdjustmentsHorizontalIcon,
   CalendarDaysIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ListBulletIcon,
 } from '@heroicons/react/24/outline';
+import { FunnelIcon } from '@heroicons/react/24/solid';
 import type { CalendarItem } from '@server/interfaces/api/calendarInterfaces';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
 import useSWR from 'swr';
 import AgendaView from './AgendaView';
 import CalendarDetails from './CalendarDetails';
@@ -61,29 +63,25 @@ const EmptyCalendar = () => {
   const noServices = !!radarr && !!sonarr && !radarr.length && !sonarr.length;
   const canConnect = noServices && hasPermission(Permission.ADMIN);
   return (
-    <div className="rounded-lg border border-dashed border-gray-600 bg-gray-800/40 px-6 py-16 text-center">
-      <CalendarDaysIcon className="mx-auto h-10 w-10 text-gray-500" />
-      <h2 className="mt-4 text-lg font-semibold text-white">
-        {intl.formatMessage(
-          noServices ? messages.noServicesTitle : messages.emptyTitle
-        )}
-      </h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-gray-400">
-        {intl.formatMessage(
-          noServices
-            ? messages.noServicesDescription
-            : messages.emptyDescription
-        )}
-      </p>
-      <Link
-        to={canConnect ? '/settings/integrations' : '/'}
-        className="mt-5 inline-flex rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-      >
-        {intl.formatMessage(
-          canConnect ? messages.noServicesSettings : messages.discover
-        )}
-      </Link>
-    </div>
+    <EmptyState
+      icon={CalendarDaysIcon}
+      title={intl.formatMessage(
+        noServices ? messages.noServicesTitle : messages.emptyTitle
+      )}
+      description={intl.formatMessage(
+        noServices ? messages.noServicesDescription : messages.emptyDescription
+      )}
+      action={
+        <LinkButton
+          to={canConnect ? '/settings/integrations' : '/'}
+          buttonType="primary"
+        >
+          {intl.formatMessage(
+            canConnect ? messages.noServicesSettings : messages.discover
+          )}
+        </LinkButton>
+      }
+    />
   );
 };
 
@@ -110,7 +108,17 @@ const Calendar = () => {
     date: Date;
     items: CalendarItem[];
   } | null>(null);
+  // Keep the day list rendered while its panel slides out.
+  const [shownDay, setShownDay] = useState(selectedDay);
+  useEffect(() => {
+    if (selectedDay) setShownDay(selectedDay);
+  }, [selectedDay]);
   const items = data?.results ?? [];
+  const activeFilterCount =
+    Number(filters.scope !== 'mine') +
+    Number(!!filters.mediaType) +
+    Number(!!filters.source) +
+    Number(filters.is4k);
   const monthTitle = intl.formatDate(anchorDate, {
     month: 'long',
     year: 'numeric',
@@ -127,33 +135,37 @@ const Calendar = () => {
     <>
       <PageTitle title={intl.formatMessage(messages.calendar)} />
       <div className="space-y-5">
-        <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
-          <div>
-            <Header>{intl.formatMessage(messages.calendar)}</Header>
-            <p className="mt-1 text-sm text-gray-400">
-              {intl.formatMessage(messages.description)}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="hidden rounded-md border border-gray-600 bg-gray-800 p-0.5 lg:flex">
-              <button
-                onClick={() => setView('month')}
-                className={`rounded px-3 py-1.5 text-sm ${view === 'month' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}`}
-              >
-                <CalendarDaysIcon className="mr-1 inline h-4 w-4" />
-                {intl.formatMessage(messages.month)}
-              </button>
-              <button
-                onClick={() => setView('agenda')}
-                className={`rounded px-3 py-1.5 text-sm ${view === 'agenda' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}`}
-              >
-                <ListBulletIcon className="mr-1 inline h-4 w-4" />
-                {intl.formatMessage(messages.agenda)}
-              </button>
-            </div>
-            <Button buttonSize="sm" onClick={() => setFiltersOpen(true)}>
-              <AdjustmentsHorizontalIcon className="mr-1 h-4 w-4" />
-              {intl.formatMessage(messages.filters)}
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+          <Header subtext={intl.formatMessage(messages.description)}>
+            {intl.formatMessage(messages.calendar)}
+          </Header>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <SegmentedControl
+              ariaLabel={intl.formatMessage(messages.viewMode)}
+              size="sm"
+              className="hidden lg:inline-grid lg:min-w-[14rem]"
+              value={view}
+              onChange={setView}
+              options={[
+                {
+                  value: 'month',
+                  label: intl.formatMessage(messages.month),
+                  icon: CalendarDaysIcon,
+                },
+                {
+                  value: 'agenda',
+                  label: intl.formatMessage(messages.agenda),
+                  icon: ListBulletIcon,
+                },
+              ]}
+            />
+            <Button onClick={() => setFiltersOpen(true)}>
+              <FunnelIcon />
+              <span>
+                {intl.formatMessage(messages.activeFilters, {
+                  count: activeFilterCount,
+                })}
+              </span>
             </Button>
           </div>
         </div>
@@ -179,7 +191,7 @@ const Calendar = () => {
             </div>
             <button
               onClick={() => setAnchorDate(startOfDay(new Date()))}
-              className="text-xs text-indigo-300 hover:text-indigo-100"
+              className="text-xs font-medium text-indigo-400 transition hover:text-indigo-300"
             >
               {intl.formatMessage(messages.today)}
             </button>
@@ -224,9 +236,13 @@ const Calendar = () => {
       <SlideOver
         show={filtersOpen}
         title={intl.formatMessage(messages.filters)}
+        subText={intl.formatMessage(messages.activeFilters, {
+          count: activeFilterCount,
+        })}
         onClose={() => setFiltersOpen(false)}
       >
         <CalendarFilters
+          activeFilterCount={activeFilterCount}
           hasAdminPermission={hasPermission(Permission.ADMIN)}
           value={filters}
           setFilters={setFilters}
@@ -240,9 +256,9 @@ const Calendar = () => {
       <SlideOver
         show={selectedDay !== null}
         title={
-          selectedDay
+          shownDay
             ? intl.formatMessage(messages.dayReleases, {
-                date: intl.formatDate(selectedDay.date, {
+                date: intl.formatDate(shownDay.date, {
                   weekday: 'long',
                   month: 'long',
                   day: 'numeric',
@@ -253,7 +269,7 @@ const Calendar = () => {
         onClose={() => setSelectedDay(null)}
       >
         <div className="space-y-2">
-          {selectedDay?.items.map((item) => (
+          {shownDay?.items.map((item) => (
             <CalendarChip
               item={item}
               key={item.id}

@@ -1,24 +1,23 @@
-import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
-import Button from '@app/components/Common/Button';
 import defineMessages from '@app/utils/defineMessages';
 import {
-  ArrowRightIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Settings.SettingsBetterTrakt', {
+  setup: 'Better Trakt Setup',
   description:
-    'Foreseerr uses each linked Jellyfin user’s Better Trakt connection. The plugin keeps refresh tokens inside Jellyfin and shares only short-lived access tokens.',
-  setup: 'Before switching',
+    'The plugin keeps refresh tokens inside Jellyfin and shares only short-lived access tokens with Foreseerr.',
   plugin: 'Install Better Trakt 1000.2026.731.3 or newer in Jellyfin.',
   pluginLink: 'Open Better Trakt releases',
   user: 'Each user links Trakt from the Better Trakt settings in Jellyfin.',
   admin:
     'A Jellyfin administrator enables external token access for each Foreseerr user.',
-  readiness: 'User readiness',
+  readiness: 'User Readiness',
+  readinessDescription:
+    'This method is configured once for the server, but readiness is checked separately for each Jellyfin user.',
   readinessSummary:
     '{ready} of {eligible} linked {eligible, plural, one {user is} other {users are}} ready',
   noEligibleUsers:
@@ -28,10 +27,6 @@ const messages = defineMessages('components.Settings.SettingsBetterTrakt', {
   needsTraktLink: 'Link Trakt in Better Trakt',
   needsAccess: 'Allow Foreseerr access in Jellyfin',
   unavailable: 'Better Trakt unavailable',
-  serverWide:
-    'This method is configured once for the server, but readiness is checked separately for each Jellyfin user.',
-  active: 'Current method',
-  switch: 'Switch to Better Trakt',
 });
 
 export type BetterTraktUserState =
@@ -51,126 +46,96 @@ export type BetterTraktReadiness = {
   }[];
 };
 
-type SettingsBetterTraktProps = {
-  active: boolean;
-  readiness?: BetterTraktReadiness;
-  activating?: boolean;
-  onActivate: () => void;
+const stateLabel = (state: BetterTraktUserState) => {
+  switch (state) {
+    case 'ready':
+      return messages.ready;
+    case 'needs_session_refresh':
+      return messages.needsSessionRefresh;
+    case 'needs_trakt_link':
+      return messages.needsTraktLink;
+    case 'needs_access':
+      return messages.needsAccess;
+    default:
+      return messages.unavailable;
+  }
 };
 
 const SettingsBetterTrakt = ({
-  active,
   readiness,
-  activating,
-  onActivate,
-}: SettingsBetterTraktProps) => {
+}: {
+  readiness?: BetterTraktReadiness;
+}) => {
   const intl = useIntl();
 
-  const stateLabel = (state: BetterTraktUserState) => {
-    switch (state) {
-      case 'ready':
-        return messages.ready;
-      case 'needs_session_refresh':
-        return messages.needsSessionRefresh;
-      case 'needs_trakt_link':
-        return messages.needsTraktLink;
-      case 'needs_access':
-        return messages.needsAccess;
-      default:
-        return messages.unavailable;
-    }
-  };
-
   return (
-    <div className="space-y-6">
+    <>
+      <h4 className="mt-8 text-lg font-semibold text-gray-100">
+        {intl.formatMessage(messages.setup)}
+      </h4>
       <p className="description">{intl.formatMessage(messages.description)}</p>
-
-      <Alert type="info" title={intl.formatMessage(messages.serverWide)} />
-
-      <section className="rounded-lg border border-gray-700 bg-gray-900/40 p-5">
-        <h4 className="text-base font-semibold text-white">
-          {intl.formatMessage(messages.setup)}
-        </h4>
-        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-gray-300">
-          <li>
-            {intl.formatMessage(messages.plugin)}{' '}
-            <a
-              href="https://github.com/selmant/better-trakt/releases"
-              target="_blank"
-              rel="noreferrer"
-              className="text-white underline decoration-gray-500 underline-offset-2 hover:decoration-white"
-            >
-              {intl.formatMessage(messages.pluginLink)}
-            </a>
-          </li>
-          <li>{intl.formatMessage(messages.user)}</li>
-          <li>{intl.formatMessage(messages.admin)}</li>
-        </ol>
-      </section>
-
-      <section aria-labelledby="better-trakt-readiness-heading">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h4
-            id="better-trakt-readiness-heading"
-            className="text-base font-semibold text-white"
+      <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm leading-6 text-gray-300">
+        <li>
+          {intl.formatMessage(messages.plugin)}{' '}
+          <a
+            href="https://github.com/selmant/better-trakt/releases"
+            target="_blank"
+            rel="noreferrer"
+            className="text-white underline transition hover:text-gray-200"
           >
-            {intl.formatMessage(messages.readiness)}
-          </h4>
-          {readiness && readiness.eligibleUsers > 0 && (
-            <span className="text-sm text-gray-400">
-              {intl.formatMessage(messages.readinessSummary, {
-                ready: readiness.readyUsers,
-                eligible: readiness.eligibleUsers,
-              })}
-            </span>
-          )}
-        </div>
+            {intl.formatMessage(messages.pluginLink)}
+          </a>
+        </li>
+        <li>{intl.formatMessage(messages.user)}</li>
+        <li>{intl.formatMessage(messages.admin)}</li>
+      </ol>
 
-        {!readiness || readiness.eligibleUsers === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-600 px-4 py-5 text-sm leading-6 text-gray-400">
-            {intl.formatMessage(messages.noEligibleUsers)}
-          </div>
-        ) : (
-          <ul className="divide-y divide-gray-700 overflow-hidden rounded-lg border border-gray-700 bg-gray-900/30">
-            {readiness.users.map((user) => {
-              const ready = user.state === 'ready';
-              return (
-                <li
-                  key={user.userId}
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                >
-                  <span className="flex min-w-0 items-center gap-3 text-sm font-medium text-gray-100">
-                    {ready ? (
-                      <CheckCircleIcon className="h-5 w-5 flex-none text-green-400" />
-                    ) : (
-                      <ExclamationTriangleIcon className="h-5 w-5 flex-none text-amber-400" />
-                    )}
-                    <span className="truncate">{user.displayName}</span>
-                  </span>
-                  <Badge badgeType={ready ? 'success' : 'warning'}>
-                    {intl.formatMessage(stateLabel(user.state))}
-                  </Badge>
-                </li>
-              );
+      <div className="mt-8 flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className="text-lg font-semibold text-gray-100">
+          {intl.formatMessage(messages.readiness)}
+        </h4>
+        {readiness && readiness.eligibleUsers > 0 && (
+          <span className="text-sm text-gray-400">
+            {intl.formatMessage(messages.readinessSummary, {
+              ready: readiness.readyUsers,
+              eligible: readiness.eligibleUsers,
             })}
-          </ul>
-        )}
-      </section>
-
-      <div className="flex justify-end border-t border-gray-700 pt-5">
-        <Button
-          buttonType={active ? 'success' : 'primary'}
-          type="button"
-          onClick={onActivate}
-          disabled={active || activating}
-        >
-          {!active && <ArrowRightIcon />}
-          <span>
-            {intl.formatMessage(active ? messages.active : messages.switch)}
           </span>
-        </Button>
+        )}
       </div>
-    </div>
+      <p className="description">
+        {intl.formatMessage(messages.readinessDescription)}
+      </p>
+      {!readiness || readiness.eligibleUsers === 0 ? (
+        <p className="mt-3 rounded-md border border-dashed border-gray-600 px-4 py-4 text-sm text-gray-400">
+          {intl.formatMessage(messages.noEligibleUsers)}
+        </p>
+      ) : (
+        <ul className="mt-3 divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
+          {readiness.users.map((user) => {
+            const ready = user.state === 'ready';
+            return (
+              <li
+                key={user.userId}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <span className="flex min-w-0 items-center gap-3 text-sm font-medium text-gray-100">
+                  {ready ? (
+                    <CheckCircleIcon className="h-5 w-5 flex-none text-green-400" />
+                  ) : (
+                    <ExclamationTriangleIcon className="h-5 w-5 flex-none text-yellow-500" />
+                  )}
+                  <span className="truncate">{user.displayName}</span>
+                </span>
+                <Badge badgeType={ready ? 'success' : 'warning'}>
+                  {intl.formatMessage(stateLabel(user.state))}
+                </Badge>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </>
   );
 };
 
