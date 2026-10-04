@@ -1,4 +1,5 @@
 import Button from '@app/components/Common/Button';
+import CompactCardGrid from '@app/components/Common/CompactCardGrid';
 import EmptyState from '@app/components/Common/EmptyState';
 import Header from '@app/components/Common/Header';
 import LinkButton from '@app/components/Common/LinkButton';
@@ -296,7 +297,10 @@ const DiscoverTraktLists = () => {
               <h2 className="mb-3 text-xl font-semibold text-white">
                 {section.title}
               </h2>
-              <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <CompactCardGrid
+                columns="sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]"
+                gap={12}
+              >
                 {section.lists.map((list) => {
                   const href =
                     list.id === 'watchlist' || list.isWatchlist
@@ -305,41 +309,40 @@ const DiscoverTraktLists = () => {
                           `${list.isLiked && list.username ? list.username : 'me'}/${list.slug || list.id}`
                         )}`;
                   return (
-                    <li key={`${list.id}-${list.slug}`}>
-                      <Link
-                        to={href}
-                        className="flex h-full flex-col rounded-xl bg-gray-800 p-4 shadow ring-1 ring-gray-700 transition duration-300 hover:shadow-lg hover:ring-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 motion-reduce:transition-none"
-                      >
-                        <div className="break-words text-lg font-semibold text-white">
-                          {list.isWatchlist
-                            ? intl.formatMessage(messages.watchlist)
-                            : list.name}
-                        </div>
-                        {list.isLiked && list.username && (
-                          <p className="mt-1 break-words text-sm text-gray-300">
-                            {intl.formatMessage(messages.listOwner, {
-                              owner: list.username,
+                    <Link
+                      key={`${list.id}-${list.slug}`}
+                      to={href}
+                      className="flex flex-col rounded-xl bg-gray-800 p-4 shadow ring-1 ring-gray-700 transition duration-300 hover:shadow-lg hover:ring-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 motion-reduce:transition-none"
+                    >
+                      <div className="break-words text-lg font-semibold text-white">
+                        {list.isWatchlist
+                          ? intl.formatMessage(messages.watchlist)
+                          : list.name}
+                      </div>
+                      {list.isLiked && list.username && (
+                        <p className="mt-1 break-words text-sm text-gray-300">
+                          {intl.formatMessage(messages.listOwner, {
+                            owner: list.username,
+                          })}
+                        </p>
+                      )}
+                      <div className="pt-2 text-sm text-gray-400">
+                        {list.isWatchlist ? (
+                          intl.formatMessage(messages.watchlistDescription)
+                        ) : (
+                          <>
+                            {intl.formatMessage(messages.items, {
+                              count: list.itemCount,
                             })}
-                          </p>
+                            {list.isLiked &&
+                              ` · ${intl.formatMessage(messages.liked)}`}
+                          </>
                         )}
-                        <div className="mt-auto pt-2 text-sm text-gray-400">
-                          {list.isWatchlist ? (
-                            intl.formatMessage(messages.watchlistDescription)
-                          ) : (
-                            <>
-                              {intl.formatMessage(messages.items, {
-                                count: list.itemCount,
-                              })}
-                              {list.isLiked &&
-                                ` · ${intl.formatMessage(messages.liked)}`}
-                            </>
-                          )}
-                        </div>
-                      </Link>
-                    </li>
+                      </div>
+                    </Link>
                   );
                 })}
-              </ul>
+              </CompactCardGrid>
             </section>
           )
       )}

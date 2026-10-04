@@ -4,6 +4,7 @@ import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
+import CompactCardGrid from '@app/components/Common/CompactCardGrid';
 import Header from '@app/components/Common/Header';
 import LinkButton from '@app/components/Common/LinkButton';
 import PageTitle from '@app/components/Common/PageTitle';
@@ -16,7 +17,7 @@ import {
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import { ArrowRightIcon, LinkIcon } from '@heroicons/react/24/outline';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Link, useNavigate } from 'react-router';
 import useSWR from 'swr';
@@ -280,28 +281,6 @@ const DiscoverSources = () => {
   const intl = useIntl();
   const { currentSettings } = useSettings();
   const { hasPermission } = useUser();
-  const sourceGrid = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => {
-    const cards = sourceGrid.current?.querySelectorAll('[data-source-card]');
-    if (!cards) return;
-    const sizeCard = (card: Element) => {
-      // Four-pixel grid rows keep independent columns aligned to a small rhythm.
-      // Include the space after each card; single-column layouts ignore the span.
-      card.parentElement?.style.setProperty(
-        '--source-card-rows',
-        String(Math.ceil((card.getBoundingClientRect().height + 16) / 4))
-      );
-    };
-    const observer = new ResizeObserver((entries) => {
-      entries.forEach(({ target }) => sizeCard(target));
-    });
-    cards.forEach((card) => {
-      sizeCard(card);
-      observer.observe(card);
-    });
-    return () => observer.disconnect();
-  }, []);
 
   return (
     <>
@@ -341,98 +320,91 @@ const DiscoverSources = () => {
           </a>
         ))}
       </nav>
-      <div
-        ref={sourceGrid}
-        className="grid items-start gap-4 xl:auto-rows-[4px] xl:grid-cols-2 xl:gap-y-0"
-      >
+      <CompactCardGrid columns="lg:grid-cols-2">
         {discoverSources.map((source) => {
           const configured = currentSettings[source.setting];
           const Logo = logos[source.id];
           return (
-            <div
+            <section
               key={source.id}
-              className="min-w-0 xl:pb-4 xl:[grid-row-end:span_var(--source-card-rows,150)]"
+              data-source-card
+              aria-labelledby={`${source.id}-heading`}
+              className="rounded-xl border border-gray-700 bg-gray-800/60 p-4 sm:p-5"
             >
-              <section
-                data-source-card
-                aria-labelledby={`${source.id}-heading`}
-                className="rounded-xl border border-gray-700 bg-gray-800/60 p-4 sm:p-5"
-              >
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-900/70">
-                    <Logo aria-hidden="true" className="h-8 w-8" />
-                  </div>
-                  <h2
-                    id={`${source.id}-heading`}
-                    tabIndex={-1}
-                    className="min-w-[5rem] flex-1 scroll-mt-24 rounded text-xl font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
-                  >
-                    {source.name}
-                  </h2>
-                  <Badge badgeType={configured ? 'success' : 'light'}>
-                    {intl.formatMessage(
-                      configured ? messages.available : messages.notConfigured
-                    )}
-                  </Badge>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-900/70">
+                  <Logo aria-hidden="true" className="h-8 w-8" />
                 </div>
-                <p className="mt-3 text-sm leading-6 text-gray-400">
-                  {intl.formatMessage(messages[source.description])}
-                </p>
-                {configured ? (
-                  <>
-                    {source.views.some((view) => !view.personal) && (
-                      <div className="mt-4">
-                        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
-                          {intl.formatMessage(messages.browseViews)}
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                          {source.views
-                            .filter((view) => !view.personal)
-                            .map((view) => (
-                              <Link
-                                key={view.href}
-                                to={view.href}
-                                className={viewClass}
-                              >
-                                {intl.formatMessage(messages[view.label])}
-                              </Link>
-                            ))}
-                        </div>
+                <h2
+                  id={`${source.id}-heading`}
+                  tabIndex={-1}
+                  className="min-w-[5rem] flex-1 scroll-mt-24 rounded text-xl font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                >
+                  {source.name}
+                </h2>
+                <Badge badgeType={configured ? 'success' : 'light'}>
+                  {intl.formatMessage(
+                    configured ? messages.available : messages.notConfigured
+                  )}
+                </Badge>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-gray-400">
+                {intl.formatMessage(messages[source.description])}
+              </p>
+              {configured ? (
+                <>
+                  {source.views.some((view) => !view.personal) && (
+                    <div className="mt-4">
+                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                        {intl.formatMessage(messages.browseViews)}
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {source.views
+                          .filter((view) => !view.personal)
+                          .map((view) => (
+                            <Link
+                              key={view.href}
+                              to={view.href}
+                              className={viewClass}
+                            >
+                              {intl.formatMessage(messages[view.label])}
+                            </Link>
+                          ))}
                       </div>
-                    )}
-                    {source.id !== 'mdblist' && (
-                      <PersonalViews
-                        source={source.id}
-                        name={source.name}
-                        views={source.views.filter((view) => view.personal)}
-                      />
-                    )}
-                    {(source.id === 'trakt' || source.id === 'mdblist') && (
-                      <OpenList source={source.id} />
-                    )}
-                  </>
-                ) : (
-                  <div className="mt-4">
-                    {hasPermission(Permission.ADMIN) ? (
-                      <LinkButton
-                        to="/settings/integrations"
-                        buttonSize="sm"
-                        className="min-h-11"
-                      >
-                        {intl.formatMessage(messages.configure)}
-                      </LinkButton>
-                    ) : (
-                      <p className="text-sm text-gray-400">
-                        {intl.formatMessage(messages.needsAdmin)}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </section>
-            </div>
+                    </div>
+                  )}
+                  {source.id !== 'mdblist' && (
+                    <PersonalViews
+                      source={source.id}
+                      name={source.name}
+                      views={source.views.filter((view) => view.personal)}
+                    />
+                  )}
+                  {(source.id === 'trakt' || source.id === 'mdblist') && (
+                    <OpenList source={source.id} />
+                  )}
+                </>
+              ) : (
+                <div className="mt-4">
+                  {hasPermission(Permission.ADMIN) ? (
+                    <LinkButton
+                      to="/settings/integrations"
+                      buttonSize="sm"
+                      className="min-h-11"
+                    >
+                      {intl.formatMessage(messages.configure)}
+                    </LinkButton>
+                  ) : (
+                    <p className="text-sm text-gray-400">
+                      {intl.formatMessage(messages.needsAdmin)}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
           );
         })}
-      </div>
+      </CompactCardGrid>
     </>
   );
 };
