@@ -54,6 +54,13 @@ const PlexWatchlistSlider = () => {
       </div>
       <Slider
         sliderKey="watchlist"
+        ariaLabel={intl.formatMessage(messages.plexwatchlist)}
+        seeMore={{
+          url: '/discover/watchlist',
+          posters: titles
+            ?.slice(-4)
+            .map((item) => item.image || item.posterPath),
+        }}
         isLoading={!watchlistItems}
         isEmpty={!!watchlistItems && titles?.length === 0}
         emptyMessage={intl.formatMessage(messages.emptywatchlist, {

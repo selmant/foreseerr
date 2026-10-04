@@ -31,6 +31,8 @@ Shelf arrows work with touch and keyboard. Focus a shelf and use the left/right
 arrow keys to browse it. Continue Watching cards show longer title names, a
 clearly labeled resume action, and approximate time remaining when available.
 
+The final card opens the complete catalog from Continue Watching, the catalog sorted by newest additions from Recently Added, and unwatched titles from Ready to Watch. The labels name these destinations. Recently Added Episodes stays a finite shelf because Browse lists movies and series, rather than individual episodes.
+
 Empty shelves are omitted. If nothing is linked, Library tells you to link
 Jellyfin in settings. Playback uses the normal Jellyfin link in a browser, or
 native playback when [Foreseer Desktop](native-desktop.md) is running.

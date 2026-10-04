@@ -12,6 +12,8 @@ including public Trakt and MDBList lists and a named AniList list.
 
 Requests stay manual. Pinning a list does not auto-request titles.
 
+Provider, watchlist, and request shelves end with a **See More** card that opens their full browse page. It supports keyboard navigation and appears only after a nonempty shelf has loaded.
+
 Poster cards show their title and year before you open them. **Tab** reveals a
 card's quick actions; **Enter** on the card opens its details. Tab again to reach
 watch status, rating, watchlist, and request controls when available.

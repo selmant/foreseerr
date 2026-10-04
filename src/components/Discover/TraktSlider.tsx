@@ -76,6 +76,12 @@ const TraktSlider = ({
       <Slider
         sliderKey={sliderKey}
         ariaLabel={title}
+        seeMore={{
+          url: href,
+          posters: titles
+            ?.slice(-4)
+            .map((item) => item.image || item.posterPath),
+        }}
         isLoading={!data}
         isEmpty={!!data && titles?.length === 0}
         emptyMessage={emptyMessage}

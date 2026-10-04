@@ -1,4 +1,3 @@
-import ShowMoreCard from '@app/components/MediaSlider/ShowMoreCard';
 import PersonCard from '@app/components/PersonCard';
 import Slider from '@app/components/Slider';
 import TitleCard from '@app/components/TitleCard';
@@ -172,19 +171,6 @@ const MediaSlider = ({
       }
     });
 
-  if (linkUrl && titles.length > 20) {
-    finalTitles.push(
-      <ShowMoreCard
-        url={linkUrl}
-        posters={titles
-          .slice(20, 24)
-          .map((title) =>
-            title.mediaType !== 'person' ? title.posterPath : undefined
-          )}
-      />
-    );
-  }
-
   return (
     <>
       <div className="slider-header">
@@ -202,6 +188,18 @@ const MediaSlider = ({
       <Slider
         sliderKey={sliderKey}
         ariaLabel={title}
+        seeMore={
+          linkUrl && titles.length > 20
+            ? {
+                url: linkUrl,
+                posters: titles
+                  .slice(20, 24)
+                  .map((item) =>
+                    item.mediaType !== 'person' ? item.posterPath : undefined
+                  ),
+              }
+            : undefined
+        }
         isLoading={!data && !error}
         isEmpty={false}
         items={finalTitles}

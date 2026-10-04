@@ -67,6 +67,12 @@ const DiscoverProviderSlider = ({
       <Slider
         sliderKey={sliderKey}
         ariaLabel={title}
+        seeMore={{
+          url: linkUrl,
+          posters: titles
+            ?.slice(-4)
+            .map((item) => item.image || item.posterPath),
+        }}
         isLoading={!data}
         isEmpty={!!data && titles?.length === 0}
         emptyMessage={emptyMessage}

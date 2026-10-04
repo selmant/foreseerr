@@ -99,7 +99,7 @@ export const DiscoverSliderTitle = ({
   <div className="slider-header">
     <Link to={href} className="slider-title min-w-0 max-w-full">
       <SliderSourceMark source={source} />
-      <span className="min-w-0 break-words">{children}</span>
+      <span className="min-w-0 truncate">{children}</span>
       <ArrowRightCircleIcon />
     </Link>
   </div>

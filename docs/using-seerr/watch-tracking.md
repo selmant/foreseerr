@@ -11,6 +11,14 @@ rating. **Refresh status** checks the enabled services again. **Linked accounts
 & tracking** opens the account settings where you can connect services and
 choose which ones participate in watch tracking.
 
+The panel summarizes how many enabled services loaded this title. Each service
+shows whether its status loaded, the title was not matched, or the service was
+unavailable, along with whether it supports watch status, ratings, or both.
+Inactive services remain accessible under **Other services**. When services
+disagree about watch status, the panel highlights the difference and explains
+how Foreseerr combines their saved values. A failed refresh keeps those values
+visible while you retry.
+
 Foreseerr shows a title as watched when any available service reports it as
 watched. A series can be watched on a tracker while Jellyfin still has
 unwatched episodes; Library episode counts and playback progress come from

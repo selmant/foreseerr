@@ -55,6 +55,7 @@ const messages = defineMessages('components.Library', {
   discover: 'Discover Titles',
   searchLibrary: 'Search library',
   browseAll: 'Browse all titles',
+  browseUnwatched: 'Browse unwatched titles',
   refresh: 'Refresh',
   refreshing: 'Refreshing…',
   partialLibrary: 'Some library shelves could not be refreshed.',
@@ -115,17 +116,26 @@ const Library = () => {
   };
   const shelfCopy: Record<
     LibraryShelf['id'],
-    { title: string; description: string; jump: string }
+    {
+      title: string;
+      description: string;
+      jump: string;
+      href?: string;
+      endLabel?: string;
+    }
   > = {
     continue: {
       title: intl.formatMessage(messages.continue),
       description: intl.formatMessage(messages.continueDescription),
       jump: intl.formatMessage(messages.jumpContinue),
+      href: '/library/browse',
+      endLabel: intl.formatMessage(messages.browseAll),
     },
     recent: {
       title: intl.formatMessage(messages.recent),
       description: intl.formatMessage(messages.recentDescription),
       jump: intl.formatMessage(messages.jumpRecent),
+      href: '/library/browse?sort=dateAdded&order=desc',
     },
     'recent-episodes': {
       title: intl.formatMessage(messages.recentEpisodes),
@@ -136,6 +146,8 @@ const Library = () => {
       title: intl.formatMessage(messages.ready),
       description: intl.formatMessage(messages.readyDescription),
       jump: intl.formatMessage(messages.jumpReady),
+      href: '/library/browse?watched=unwatched',
+      endLabel: intl.formatMessage(messages.browseUnwatched),
     },
   };
 
@@ -345,6 +357,19 @@ const Library = () => {
                   sliderKey={`library-${shelf.id}`}
                   ariaLabel={shelfCopy[shelf.id].title}
                   isLoading={false}
+                  seeMore={
+                    shelfCopy[shelf.id].href
+                      ? {
+                          url: shelfCopy[shelf.id].href!,
+                          posters: shelf.items
+                            .slice(-4)
+                            .map((item) => item.posterUrl),
+                          imageType: 'library',
+                          label: shelfCopy[shelf.id].endLabel,
+                          layout: shelf.id === 'continue' ? 'resume' : 'poster',
+                        }
+                      : undefined
+                  }
                   items={shelf.items.map((item) => (
                     <LibraryPlayCard
                       key={`${shelf.id}-${item.jellyfinItemId}`}

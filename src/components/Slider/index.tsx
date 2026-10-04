@@ -1,3 +1,6 @@
+import ShowMoreCard, {
+  type ShowMoreCardProps,
+} from '@app/components/MediaSlider/ShowMoreCard';
 import TitleCard from '@app/components/TitleCard';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
@@ -32,6 +35,8 @@ interface SliderProps {
   emptyMessage?: React.ReactNode;
   placeholder?: React.ReactNode;
   ariaLabel?: string;
+  /** End-of-shelf navigation to a complete browse page. Hidden for empty/loading shelves. */
+  seeMore?: Omit<ShowMoreCardProps, 'title'> & { title?: string };
 }
 
 enum Direction {
@@ -47,6 +52,7 @@ const Slider = ({
   emptyMessage,
   placeholder = <TitleCard.Placeholder />,
   ariaLabel,
+  seeMore,
 }: SliderProps) => {
   const intl = useIntl();
   const instructionsId = useId();
@@ -204,7 +210,7 @@ const Slider = ({
         {intl.formatMessage(messages.keyboardHelp)}
       </p>
       <div
-        className="hide-scrollbar relative -my-2 -ml-4 -mr-4 overflow-y-auto overflow-x-scroll overscroll-x-contain whitespace-nowrap px-2 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+        className="hide-scrollbar relative -my-2 -ml-4 -mr-4 flex items-stretch overflow-y-auto overflow-x-scroll overscroll-x-contain whitespace-nowrap px-2 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
         ref={containerRef}
         onScroll={onScroll}
         role="list"
@@ -215,23 +221,25 @@ const Slider = ({
         {items?.map((item, index) => (
           <div
             key={`${sliderKey}-${index}`}
-            className="inline-block px-2 align-top"
+            className="shrink-0 px-2"
             role="listitem"
           >
             {item}
           </div>
         ))}
+        {seeMore && !isLoading && !isEmpty && Boolean(items?.length) && (
+          <div className="flex shrink-0 px-2" role="listitem">
+            <ShowMoreCard {...seeMore} title={seeMore.title ?? shelfLabel} />
+          </div>
+        )}
         {isLoading &&
           [...Array(10)].map((_item, i) => (
-            <div
-              key={`placeholder-${i}`}
-              className="inline-block px-2 align-top"
-            >
+            <div key={`placeholder-${i}`} className="shrink-0 px-2">
               {placeholder}
             </div>
           ))}
         {isEmpty && (
-          <div className="mb-16 mt-16 text-center font-medium text-gray-400">
+          <div className="mb-16 mt-16 w-full text-center font-medium text-gray-400">
             {emptyMessage
               ? emptyMessage
               : intl.formatMessage(globalMessages.noresults)}

@@ -27,6 +27,7 @@ const messages = defineMessages('components.Discover.DiscoverTraktLists', {
   items: '{count, plural, one {# item} other {# items}}',
   noLists: 'No Trakt lists found.',
   watchlist: 'Watchlist',
+  watchlistDescription: 'Titles saved to your Trakt watchlist',
   likedLists: 'Liked Lists',
   liked: 'Liked',
   description:
@@ -291,11 +292,11 @@ const DiscoverTraktLists = () => {
       ].map(
         (section) =>
           section.lists.length > 0 && (
-            <section key={section.title} className="mb-8">
-              <h2 className="mb-4 text-xl font-semibold text-white">
+            <section key={section.title} className="mb-6">
+              <h2 className="mb-3 text-xl font-semibold text-white">
                 {section.title}
               </h2>
-              <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {section.lists.map((list) => {
                   const href =
                     list.id === 'watchlist' || list.isWatchlist
@@ -307,7 +308,7 @@ const DiscoverTraktLists = () => {
                     <li key={`${list.id}-${list.slug}`}>
                       <Link
                         to={href}
-                        className="block rounded-xl bg-gray-800 p-5 shadow ring-1 ring-gray-700 transition duration-300 hover:shadow-lg hover:ring-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                        className="flex h-full flex-col rounded-xl bg-gray-800 p-4 shadow ring-1 ring-gray-700 transition duration-300 hover:shadow-lg hover:ring-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 motion-reduce:transition-none"
                       >
                         <div className="break-words text-lg font-semibold text-white">
                           {list.isWatchlist
@@ -321,15 +322,19 @@ const DiscoverTraktLists = () => {
                             })}
                           </p>
                         )}
-                        {!list.isWatchlist && (
-                          <div className="mt-1 text-sm text-gray-400">
-                            {intl.formatMessage(messages.items, {
-                              count: list.itemCount,
-                            })}
-                            {list.isLiked &&
-                              ` · ${intl.formatMessage(messages.liked)}`}
-                          </div>
-                        )}
+                        <div className="mt-auto pt-2 text-sm text-gray-400">
+                          {list.isWatchlist ? (
+                            intl.formatMessage(messages.watchlistDescription)
+                          ) : (
+                            <>
+                              {intl.formatMessage(messages.items, {
+                                count: list.itemCount,
+                              })}
+                              {list.isLiked &&
+                                ` · ${intl.formatMessage(messages.liked)}`}
+                            </>
+                          )}
+                        </div>
                       </Link>
                     </li>
                   );

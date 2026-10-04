@@ -124,7 +124,7 @@
   }
 
   a.slider-title > svg {
-    @apply ml-2 h-6 w-6;
+    @apply ml-2 h-6 w-6 shrink-0;
   }
 
   a.slider-title > span:first-child {

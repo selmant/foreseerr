@@ -8,6 +8,7 @@ import {
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import type { RequestResultsResponse } from '@server/interfaces/api/requestInterfaces';
+import { useCallback, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR from 'swr';
@@ -19,6 +20,19 @@ const messages = defineMessages('components.Discover.RecentRequestsSlider', {
 
 const RecentRequestsSlider = () => {
   const intl = useIntl();
+  const [posters, setPosters] = useState<Record<number, string | undefined>>(
+    {}
+  );
+  const rememberPoster = useCallback(
+    (id: number, title: { posterPath?: string }) => {
+      setPosters((current) =>
+        current[id] === title.posterPath
+          ? current
+          : { ...current, [id]: title.posterPath }
+      );
+    },
+    []
+  );
   const { hasPermission } = useUser();
   const { data: requests, error: requestError } =
     useSWR<RequestResultsResponse>(
@@ -64,11 +78,21 @@ const RecentRequestsSlider = () => {
 
       <Slider
         sliderKey="requests"
+        ariaLabel={intl.formatMessage(sliderTitles.recentrequests)}
+        seeMore={{
+          url: '/requests?filter=all',
+          layout: 'request',
+          posters: requests?.results
+            .map((request) => posters[request.id])
+            .filter(Boolean)
+            .slice(-4),
+        }}
         isLoading={!requests}
         items={(requests?.results ?? []).map((request) => (
           <RequestCard
             key={`request-slider-item-${request.id}`}
             request={request}
+            onTitleData={rememberPoster}
           />
         ))}
         placeholder={<RequestCard.Placeholder />}

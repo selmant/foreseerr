@@ -318,6 +318,20 @@ const UserProfile = () => {
             </div>
             <Slider
               sliderKey="requests"
+              ariaLabel={intl.formatMessage(messages.recentrequests)}
+              seeMore={{
+                url: currentHasPermission(
+                  [Permission.MANAGE_REQUESTS, Permission.REQUEST_VIEW],
+                  { type: 'or' }
+                )
+                  ? `/users/${user.id}/requests?filter=all`
+                  : '/requests',
+                layout: 'request',
+                posters: requests?.results
+                  .map((request) => availableTitles[request.id]?.posterPath)
+                  .filter(Boolean)
+                  .slice(-4),
+              }}
               isLoading={!requests}
               items={(requests?.results ?? []).map((request) => (
                 <RequestCard
@@ -357,6 +371,16 @@ const UserProfile = () => {
             </div>
             <Slider
               sliderKey="watchlist"
+              ariaLabel={watchlistSliderTitle}
+              seeMore={{
+                url:
+                  user.id === currentUser?.id
+                    ? '/profile/watchlist'
+                    : `/users/${user.id}/watchlist`,
+                posters: watchlistItems?.results
+                  .slice(-4)
+                  .map((item) => item.image || item.posterPath),
+              }}
               isLoading={!watchlistItems}
               isEmpty={!!watchlistItems && watchlistItems.results.length === 0}
               emptyMessage={intl.formatMessage(messages.emptywatchlist, {
