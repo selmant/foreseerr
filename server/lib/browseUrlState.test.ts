@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  libraryBrowseApiPath,
   mergeBrowsePatch,
   serializeBrowseApiQuery,
   serializeBrowseState,
@@ -56,5 +57,24 @@ describe('serializeBrowseApiQuery', () => {
     const params = serializeBrowseApiQuery(base);
     assert.equal(params.get('density'), null);
     assert.equal(params.toString().includes('density'), false);
+  });
+
+  it('encodes spaces for OpenAPI without losing genres or pagination', () => {
+    const path = libraryBrowseApiPath({
+      ...base,
+      q: 'World Trigger',
+      genre: ['Action & Adventure', 'Sci-Fi + Fantasy'],
+      skip: 24,
+    });
+    assert.ok(path.includes('q=World%20Trigger'));
+    assert.ok(path.includes('genre=Action%20%26%20Adventure'));
+    assert.ok(path.includes('genre=Sci-Fi%20%2B%20Fantasy'));
+    const params = new URL(path, 'http://localhost').searchParams;
+    assert.deepEqual(params.getAll('genre'), [
+      'Action & Adventure',
+      'Sci-Fi + Fantasy',
+    ]);
+    assert.equal(params.get('skip'), '24');
+    assert.equal(params.get('density'), null);
   });
 });

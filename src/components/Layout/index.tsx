@@ -6,6 +6,7 @@ import Sidebar from '@app/components/Layout/Sidebar';
 import UserDropdown from '@app/components/Layout/UserDropdown';
 import UserWarnings from '@app/components/Layout/UserWarnings';
 import LibraryModeNav from '@app/components/Library/LibraryModeNav';
+import useHashNavigation from '@app/hooks/useHashNavigation';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -34,6 +35,7 @@ type LayoutProps = {
 };
 
 const Layout = ({ children }: LayoutProps) => {
+  useHashNavigation();
   const intl = useIntl();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -42,18 +44,12 @@ const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
   const { currentSettings } = useSettings();
   const { setLocale } = useLocale();
-  const { data: requestResponse, mutate: revalidateRequestsCount } = useSWR(
-    '/api/v1/request/count',
-    {
-      revalidateOnMount: true,
-    }
-  );
-  const { data: issueResponse, mutate: revalidateIssueCount } = useSWR(
-    '/api/v1/issue/count',
-    {
-      revalidateOnMount: true,
-    }
-  );
+  const { data: requestResponse } = useSWR('/api/v1/request/count', {
+    revalidateOnMount: true,
+  });
+  const { data: issueResponse } = useSWR('/api/v1/issue/count', {
+    revalidateOnMount: true,
+  });
   const canManageRequests = hasPermission(Permission.MANAGE_REQUESTS);
   const { data: interventionCount, mutate: refreshInterventionCount } = useSWR<{
     active: number;
@@ -106,16 +102,12 @@ const Layout = ({ children }: LayoutProps) => {
         pendingRequestsCount={requestResponse?.pending ?? 0}
         openIssuesCount={issueResponse?.open ?? 0}
         activeInterventionsCount={interventionCount?.active ?? 0}
-        revalidateIssueCount={() => revalidateIssueCount()}
-        revalidateRequestsCount={() => revalidateRequestsCount()}
       />
       <div className="sm:hidden">
         <MobileMenu
           pendingRequestsCount={requestResponse?.pending ?? 0}
           openIssuesCount={issueResponse?.open ?? 0}
           activeInterventionsCount={interventionCount?.active ?? 0}
-          revalidateIssueCount={() => revalidateIssueCount()}
-          revalidateRequestsCount={() => revalidateRequestsCount()}
         />
       </div>
 

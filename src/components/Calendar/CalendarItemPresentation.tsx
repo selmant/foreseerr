@@ -71,7 +71,7 @@ export const CalendarChip = ({
     <button
       onClick={onClick}
       title={episode ? `${item.title} · ${episode}` : item.title}
-      className={`flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-xs font-medium transition hover:brightness-125 ${item.available ? 'bg-green-500/20 text-green-200' : item.changeKind === 'delayed' ? 'bg-yellow-500/20 text-yellow-100' : 'bg-indigo-500/20 text-indigo-100'}`}
+      className={`flex min-h-8 w-full items-center gap-1 rounded px-1.5 py-1 text-left text-xs font-medium transition hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${item.available ? 'bg-green-500/20 text-green-200' : item.changeKind === 'delayed' ? 'bg-yellow-500/20 text-yellow-100' : 'bg-indigo-500/20 text-indigo-100'}`}
     >
       {item.mediaType === 'movie' ? (
         <FilmIcon aria-hidden="true" className="h-3.5 w-3.5 flex-none" />
@@ -103,7 +103,7 @@ export const CalendarCard = ({
   return (
     <button
       onClick={onClick}
-      className="group flex w-full gap-3 rounded-lg border border-gray-700 bg-gray-800/70 p-3 text-left transition hover:border-gray-500 hover:bg-gray-800"
+      className="group flex w-full gap-3 rounded-lg border border-gray-700 bg-gray-800/70 p-3 text-left transition hover:border-gray-500 hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
     >
       <div className="relative h-20 w-14 flex-none overflow-hidden rounded bg-gray-700">
         {item.posterPath ? (
@@ -123,7 +123,10 @@ export const CalendarCard = ({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex gap-2">
-          <h3 className="truncate font-semibold text-white group-hover:text-indigo-200">
+          <h3
+            className="line-clamp-2 font-semibold text-white group-hover:text-indigo-200"
+            title={item.title}
+          >
             {item.title}
           </h3>
           {item.is4k ? <Badge badgeType="light">4K</Badge> : null}

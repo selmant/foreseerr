@@ -4,14 +4,18 @@ import CachedImage from '@app/components/Common/CachedImage';
 import LinkButton from '@app/components/Common/LinkButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import SlideOver from '@app/components/Common/SlideOver';
-import LibraryEpisodeWatchToggle from '@app/components/Library/LibraryEpisodeWatchToggle';
+import LibraryEpisodeList from '@app/components/Library/LibraryEpisodeList';
 import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
 import MediaActionDetailBar from '@app/components/MediaActions/MediaActionDetailBar';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
-import { CogIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import {
+  ArrowPathIcon,
+  CogIcon,
+  InformationCircleIcon,
+} from '@heroicons/react/24/outline';
 import { PlayIcon } from '@heroicons/react/24/solid';
 import type {
   LibraryItemInspectorResponse,
@@ -30,7 +34,12 @@ const messages = defineMessages('components.Library.LibraryInspector', {
   resume: 'Resume',
   playNext: 'Play Next',
   viewDetails: 'View Details',
-  manage: 'Manage',
+  manage: 'Manage downloads',
+  retry: 'Retry',
+  linkAccount: 'Link Jellyfin account',
+  cached:
+    'Jellyfin could not refresh this title. Showing the last loaded information.',
+  playTitle: '{action}: {title}',
   episodes: 'Episodes',
   watched: 'Watched',
   emptySeason: 'No episodes in this season.',
@@ -41,6 +50,9 @@ const messages = defineMessages('components.Library.LibraryInspector', {
   unsupported: 'Library inspector requires a Jellyfin media server.',
   seasons: 'Season',
   runtime: '{minutes} min',
+  progress: '{percent, number}% watched',
+  readMore: 'Read more',
+  readLess: 'Show less',
 });
 
 interface LibraryInspectorProps {
@@ -61,9 +73,9 @@ const LibraryInspector = ({
   // Keep rendering the last title while the panel slides out.
   const [shownItem, setShownItem] = useState<LibraryTitle | null>(item);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
-  const [episodeWatchOverrides, setEpisodeWatchOverrides] = useState<
-    Map<string, boolean>
-  >(new Map());
+  const [overviewExpanded, setOverviewExpanded] = useState(false);
+
+  useEffect(() => setOverviewExpanded(false), [item?.jellyfinItemId]);
 
   useEffect(() => {
     if (item) {
@@ -84,6 +96,7 @@ const LibraryInspector = ({
     data,
     error,
     mutate: mutateInspector,
+    isValidating: refreshingInspector,
   } = useSWR<LibraryItemInspectorResponse>(inspectorKey || null);
 
   const seriesId =
@@ -116,6 +129,7 @@ const LibraryInspector = ({
     data: episodes,
     error: episodesError,
     mutate: mutateEpisodes,
+    isValidating: refreshingEpisodes,
   } = useSWR<LibrarySeasonEpisodesResponse>(episodesKey || null);
 
   useEffect(() => {
@@ -129,10 +143,6 @@ const LibraryInspector = ({
       ]);
     });
   }, [episodesKey, inspectorKey, mutateEpisodes, mutateInspector, show]);
-
-  useEffect(() => {
-    setEpisodeWatchOverrides(new Map());
-  }, [selectedSeasonId]);
 
   const mediaType = data?.mediaType ?? current?.mediaType;
   const tmdbId = data?.tmdbId ?? current?.tmdbId;
@@ -193,11 +203,106 @@ const LibraryInspector = ({
   const selectedSeason = data?.seasons?.find(
     (season) => season.jellyfinSeasonId === selectedSeasonId
   );
+  const retry = (scope: 'title' | 'episodes') => {
+    const refreshing =
+      scope === 'title' ? refreshingInspector : refreshingEpisodes;
+    const revalidate = scope === 'title' ? mutateInspector : mutateEpisodes;
+    return (
+      <Button
+        type="button"
+        className="mt-3 min-h-11"
+        aria-disabled={refreshing}
+        aria-busy={refreshing}
+        onClick={() => {
+          if (!refreshing) void revalidate().catch(() => undefined);
+        }}
+      >
+        <ArrowPathIcon
+          aria-hidden
+          className={
+            refreshing ? 'animate-spin motion-reduce:animate-none' : ''
+          }
+        />
+        <span>{intl.formatMessage(messages.retry)}</span>
+      </Button>
+    );
+  };
+  const playAction = intl.formatMessage(
+    progress > 0 && progress < 100
+      ? messages.resume
+      : mediaType === 'tv'
+        ? messages.playNext
+        : messages.play
+  );
+  const canPlay = Boolean(
+    data?.playItemId &&
+    (data.playUrl || data.mediaUrl) &&
+    !data.code &&
+    !inspectorNotFound
+  );
+  const footer =
+    canPlay || detailsHref || (canManage && managedTitle) ? (
+      <div className="space-y-3">
+        {canPlay && data?.subtitle ? (
+          <p className="text-sm font-medium text-gray-300">{data.subtitle}</p>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {canPlay && data ? (
+            <Button
+              as="a"
+              href={data.playUrl ?? data.mediaUrl}
+              buttonType="primary"
+              className="min-h-11 w-full justify-center sm:w-auto"
+              aria-label={intl.formatMessage(messages.playTitle, {
+                action: playAction,
+                title: [title, data.subtitle].filter(Boolean).join(' · '),
+              })}
+              onClick={(event) =>
+                playTarget(
+                  event,
+                  data.playItemId as string,
+                  data.subtitle || title,
+                  (data.playUrl ?? data.mediaUrl) as string
+                )
+              }
+            >
+              <PlayIcon />
+              <span>{playAction}</span>
+            </Button>
+          ) : null}
+          {detailsHref ? (
+            <LinkButton
+              to={detailsHref}
+              className="min-h-11 w-full justify-center sm:w-auto"
+            >
+              <InformationCircleIcon />
+              <span>{intl.formatMessage(messages.viewDetails)}</span>
+            </LinkButton>
+          ) : null}
+          {canManage && managedTitle ? (
+            <Button
+              className="min-h-11 w-full justify-center sm:w-auto"
+              onClick={() => onManage(managedTitle)}
+            >
+              <CogIcon />
+              <span>{intl.formatMessage(messages.manage)}</span>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    ) : undefined;
 
   const renderBody = () => {
     if (data?.code === 'not_linked') {
       return (
-        <Alert type="info" title={intl.formatMessage(messages.notLinked)} />
+        <Alert type="info" title={intl.formatMessage(messages.notLinked)}>
+          <LinkButton
+            to="/profile/settings/linked-accounts"
+            className="mt-3 min-h-11"
+          >
+            {intl.formatMessage(messages.linkAccount)}
+          </LinkButton>
+        </Alert>
       );
     }
     if (data?.code === 'unsupported_media_server') {
@@ -210,9 +315,11 @@ const LibraryInspector = ({
         <Alert type="warning" title={intl.formatMessage(messages.notFound)} />
       );
     }
-    if (error || data?.code === 'server_unreachable') {
+    if ((error && !data) || data?.code === 'server_unreachable') {
       return (
-        <Alert type="error" title={intl.formatMessage(messages.unreachable)} />
+        <Alert type="error" title={intl.formatMessage(messages.unreachable)}>
+          {retry('title')}
+        </Alert>
       );
     }
     if (!data) {
@@ -221,6 +328,11 @@ const LibraryInspector = ({
 
     return (
       <div className="space-y-6">
+        {error ? (
+          <Alert type="warning" title={intl.formatMessage(messages.cached)}>
+            {retry('title')}
+          </Alert>
+        ) : null}
         {artwork ? (
           <div className="relative aspect-video overflow-hidden rounded-lg bg-gray-700 shadow ring-1 ring-gray-700">
             <CachedImage
@@ -243,59 +355,43 @@ const LibraryInspector = ({
         ) : null}
 
         <div className="space-y-3">
-          {data.subtitle && data.mediaType === 'tv' ? (
-            <p className="text-sm font-medium text-gray-300">{data.subtitle}</p>
+          {progress > 0 && progress < 100 ? (
+            <p className="text-sm text-indigo-300">
+              {intl.formatMessage(messages.progress, {
+                percent: Math.round(progress),
+              })}
+            </p>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2">
-            {data.playItemId && (data.playUrl || data.mediaUrl) ? (
-              <Button
-                as="a"
-                href={data.playUrl ?? data.mediaUrl}
-                buttonType="primary"
-                onClick={(event) =>
-                  playTarget(
-                    event,
-                    data.playItemId as string,
-                    data.subtitle || title,
-                    (data.playUrl ?? data.mediaUrl) as string
-                  )
-                }
-              >
-                <PlayIcon />
-                <span>
-                  {intl.formatMessage(
-                    data.mediaType === 'tv'
-                      ? messages.playNext
-                      : progress > 0
-                        ? messages.resume
-                        : messages.play
-                  )}
-                </span>
-              </Button>
-            ) : null}
-            {detailsHref ? (
-              <LinkButton to={detailsHref} buttonType="default">
-                <InformationCircleIcon />
-                <span>{intl.formatMessage(messages.viewDetails)}</span>
-              </LinkButton>
-            ) : null}
-            {canManage && managedTitle ? (
-              <Button
-                buttonType="default"
-                onClick={() => onManage(managedTitle)}
-              >
-                <CogIcon />
-                <span>{intl.formatMessage(messages.manage)}</span>
-              </Button>
-            ) : null}
-          </div>
           {tmdbId ? (
-            <MediaActionDetailBar tmdbId={tmdbId} mediaType={data.mediaType} />
+            <MediaActionDetailBar
+              title={title}
+              tmdbId={tmdbId}
+              mediaType={data.mediaType}
+              showLabels
+            />
           ) : null}
         </div>
 
         {data.overview ? (
-          <p className="text-sm leading-6 text-gray-300">{data.overview}</p>
+          <div>
+            <p
+              className={`text-sm leading-6 text-gray-300 ${data.overview.length > 300 && !overviewExpanded ? 'line-clamp-4' : ''}`}
+            >
+              {data.overview}
+            </p>
+            {data.overview.length > 300 ? (
+              <button
+                type="button"
+                aria-expanded={overviewExpanded}
+                onClick={() => setOverviewExpanded((value) => !value)}
+                className="mt-1 min-h-11 rounded px-1 text-sm text-indigo-300 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              >
+                {intl.formatMessage(
+                  overviewExpanded ? messages.readLess : messages.readMore
+                )}
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         {data.mediaType === 'tv' && data.seasons?.length ? (
@@ -307,7 +403,7 @@ const LibraryInspector = ({
               {data.seasons.length > 1 ? (
                 <select
                   aria-label={intl.formatMessage(messages.seasons)}
-                  className="w-auto max-w-[60%] flex-none"
+                  className="min-h-11 w-auto max-w-[60%] flex-none"
                   value={selectedSeasonId ?? ''}
                   onChange={(event) => setSelectedSeasonId(event.target.value)}
                 >
@@ -326,100 +422,50 @@ const LibraryInspector = ({
                 </span>
               ) : null}
             </div>
+            {episodesError || episodes?.code ? (
+              <Alert
+                type="warning"
+                title={intl.formatMessage(
+                  episodes?.code === 'not_linked'
+                    ? messages.notLinked
+                    : messages.loadFailed
+                )}
+              >
+                {episodes?.code === 'not_linked' ? (
+                  <LinkButton
+                    to="/profile/settings/linked-accounts"
+                    className="mt-3 min-h-11"
+                  >
+                    {intl.formatMessage(messages.linkAccount)}
+                  </LinkButton>
+                ) : (
+                  retry('episodes')
+                )}
+              </Alert>
+            ) : null}
             {!episodes && !episodesError ? (
               <LoadingSpinner />
-            ) : episodesError ? (
-              <Alert
-                type="error"
-                title={intl.formatMessage(messages.loadFailed)}
-              />
-            ) : !episodes?.episodes.length ? (
+            ) : !episodes || episodes.code ? null : !episodes.episodes
+                .length ? (
               <p className="text-sm text-gray-400">
                 {intl.formatMessage(messages.emptySeason)}
               </p>
             ) : (
-              <ul className="divide-y divide-gray-700 overflow-hidden rounded-lg border border-gray-700">
-                {episodes.episodes.map((episode) => {
-                  const watched =
-                    episodeWatchOverrides.get(episode.jellyfinItemId) ??
-                    Boolean(episode.watched);
-                  return (
-                    <li
-                      key={episode.jellyfinItemId}
-                      className="flex items-center gap-2 px-3 py-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-white">
-                          {episode.name}
-                        </div>
-                        {episode.subtitle || watched ? (
-                          <div className="truncate text-xs text-gray-400">
-                            {[
-                              episode.subtitle,
-                              watched
-                                ? intl.formatMessage(messages.watched)
-                                : null,
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </div>
-                        ) : null}
-                        {!watched && episode.progressPercent ? (
-                          <div className="mt-1 h-1 overflow-hidden rounded bg-gray-700">
-                            <div
-                              className="h-full bg-indigo-500"
-                              style={{
-                                width: `${Math.min(100, episode.progressPercent)}%`,
-                              }}
-                            />
-                          </div>
-                        ) : null}
-                      </div>
-                      {tmdbId &&
-                      episode.parentIndexNumber != null &&
-                      episode.indexNumber != null ? (
-                        <LibraryEpisodeWatchToggle
-                          tmdbId={tmdbId}
-                          jellyfinItemId={episode.jellyfinItemId}
-                          seasonNumber={episode.parentIndexNumber}
-                          episodeNumber={episode.indexNumber}
-                          watched={watched}
-                          episodesKey={episodesKey}
-                          onLocalChange={(nextWatched) =>
-                            setEpisodeWatchOverrides((overrides) => {
-                              const next = new Map(overrides);
-                              next.set(episode.jellyfinItemId, nextWatched);
-                              return next;
-                            })
-                          }
-                        />
-                      ) : null}
-                      {episode.mediaUrl ? (
-                        <Button
-                          as="a"
-                          href={episode.mediaUrl}
-                          buttonType="primary"
-                          buttonSize="sm"
-                          aria-label={`${intl.formatMessage(messages.play)} ${
-                            episode.subtitle ?? episode.name
-                          }`}
-                          onClick={(event) =>
-                            playTarget(
-                              event,
-                              episode.jellyfinItemId,
-                              `${title} ${episode.subtitle ?? episode.name}`,
-                              episode.mediaUrl as string
-                            )
-                          }
-                        >
-                          <PlayIcon />
-                          <span>{intl.formatMessage(messages.play)}</span>
-                        </Button>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
+              <LibraryEpisodeList
+                key={episodesKey}
+                episodes={episodes.episodes}
+                episodesKey={episodesKey}
+                tmdbId={tmdbId}
+                playItemId={data.playItemId}
+                onPlay={(event, episode) =>
+                  playTarget(
+                    event,
+                    episode.jellyfinItemId,
+                    `${title} ${episode.subtitle ?? episode.name}`,
+                    episode.mediaUrl as string
+                  )
+                }
+              />
             )}
           </div>
         ) : null}
@@ -428,7 +474,13 @@ const LibraryInspector = ({
   };
 
   return (
-    <SlideOver show={show} title={title} subText={meta} onClose={onClose}>
+    <SlideOver
+      show={show}
+      title={title}
+      subText={meta}
+      onClose={onClose}
+      footer={footer}
+    >
       {current ? renderBody() : null}
     </SlideOver>
   );

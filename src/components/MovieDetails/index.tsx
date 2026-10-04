@@ -98,6 +98,10 @@ const messages = defineMessages('components.MovieDetails', {
   traktcommunityscore: 'Trakt Community Score',
   removefromwatchlist: 'Remove From Watchlist',
   addtowatchlist: 'Add To Watchlist',
+  watchlistButton: 'Watchlist',
+  watchlistSaved: 'On Watchlist',
+  titleActions: 'Title actions',
+  watchIn: 'Watch in {server}',
 });
 
 interface MovieDetailsProps {
@@ -196,7 +200,9 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     })
   ) {
     mediaLinks.push({
-      text: getAvailableMediaServerName(),
+      text: intl.formatMessage(messages.watchIn, {
+        server: getAvailableMediaServerName(),
+      }),
       url: plexUrl,
       svg: <PlayIcon />,
       native:
@@ -219,7 +225,9 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
     })
   ) {
     mediaLinks.push({
-      text: getAvailable4kMediaServerName(),
+      text: intl.formatMessage(messages.watchIn, {
+        server: getAvailable4kMediaServerName(),
+      }),
       url: plexUrl4k,
       svg: <PlayIcon />,
       native:
@@ -401,7 +409,7 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
         onComplete={addToBlocklist}
         isUpdating={isBlocklistUpdating}
       />
-      <div className="media-header">
+      <div className="media-header media-header-detail">
         <div className="media-poster">
           <CachedImage
             type="tmdb"
@@ -479,8 +487,17 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                 ))}
           </span>
         </div>
-        <div className="media-actions">
-          <MediaActionDetailBar tmdbId={data.id} mediaType="movie" />
+        <div
+          className="media-actions"
+          role="group"
+          aria-label={intl.formatMessage(messages.titleActions)}
+        >
+          <MediaActionDetailBar
+            title={data.title}
+            tmdbId={data.id}
+            mediaType="movie"
+            showLabels
+          />
           {showHideButton &&
             data?.mediaInfo?.status !== MediaStatus.PROCESSING &&
             data?.mediaInfo?.status !== MediaStatus.AVAILABLE &&
@@ -492,11 +509,13 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
               >
                 <Button
                   buttonType={'ghost'}
-                  className="z-40 mr-2"
+                  className="z-40 mr-2 min-h-[44px]"
                   buttonSize={'md'}
+                  aria-label={intl.formatMessage(globalMessages.addToBlocklist)}
                   onClick={() => setShowBlocklistModal(true)}
                 >
                   <EyeSlashIcon />
+                  <span>{intl.formatMessage(globalMessages.blocklist)}</span>
                 </Button>
               </Tooltip>
             )}
@@ -509,8 +528,12 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                   >
                     <Button
                       buttonType={'ghost'}
-                      className="z-40 mr-2"
+                      className="z-40 mr-2 min-h-[44px]"
                       buttonSize={'md'}
+                      disabled={isWatchlistUpdating}
+                      aria-busy={isWatchlistUpdating}
+                      aria-label={intl.formatMessage(messages.addtowatchlist)}
+                      aria-pressed={false}
                       onClick={addToWatchlist}
                     >
                       {isWatchlistUpdating ? (
@@ -518,6 +541,9 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                       ) : (
                         <BookmarkIcon className={'text-amber-300'} />
                       )}
+                      <span>
+                        {intl.formatMessage(messages.watchlistButton)}
+                      </span>
                     </Button>
                   </Tooltip>
                 ) : (
@@ -525,11 +551,18 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
                     content={intl.formatMessage(messages.removefromwatchlist)}
                   >
                     <Button
-                      className="z-40 mr-2"
+                      className="z-40 mr-2 min-h-[44px]"
                       buttonSize={'md'}
+                      disabled={isWatchlistUpdating}
+                      aria-busy={isWatchlistUpdating}
+                      aria-label={intl.formatMessage(
+                        messages.removefromwatchlist
+                      )}
+                      aria-pressed={true}
                       onClick={removeFromWatchlist}
                     >
                       {isWatchlistUpdating ? <Spinner /> : <MinusCircleIcon />}
+                      <span>{intl.formatMessage(messages.watchlistSaved)}</span>
                     </Button>
                   </Tooltip>
                 )}
@@ -562,10 +595,12 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
               <Tooltip content={intl.formatMessage(messages.reportissue)}>
                 <Button
                   buttonType="warning"
+                  aria-label={intl.formatMessage(messages.reportissue)}
                   onClick={() => setShowIssueModal(true)}
-                  className="ml-2 first:ml-0"
+                  className="ml-2 min-h-[44px] first:ml-0"
                 >
                   <ExclamationTriangleIcon />
+                  <span>{intl.formatMessage(messages.reportissue)}</span>
                 </Button>
               </Tooltip>
             )}
@@ -578,10 +613,12 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
               <Tooltip content={intl.formatMessage(messages.managemovie)}>
                 <Button
                   buttonType="ghost"
+                  aria-label={intl.formatMessage(messages.managemovie)}
                   onClick={() => setShowManager(true)}
-                  className="relative ml-2 first:ml-0"
+                  className="relative ml-2 min-h-[44px] first:ml-0"
                 >
-                  <CogIcon className="!mr-0" />
+                  <CogIcon />
+                  <span>{intl.formatMessage(messages.managemovie)}</span>
                   {hasPermission(
                     [Permission.MANAGE_ISSUES, Permission.VIEW_ISSUES],
                     {

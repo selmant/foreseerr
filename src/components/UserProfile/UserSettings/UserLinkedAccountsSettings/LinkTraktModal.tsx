@@ -1,4 +1,5 @@
 import Alert from '@app/components/Common/Alert';
+import DeviceCodePanel from '@app/components/Common/DeviceCodePanel';
 import { SmallLoadingSpinner } from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import useRouteQuery from '@app/hooks/useRouteQuery';
@@ -11,7 +12,6 @@ import axios from 'axios';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
-import DeviceCodePanel from './DeviceCodePanel';
 
 const messages = defineMessages(
   'components.UserProfile.UserSettings.LinkTraktModal',
@@ -229,6 +229,7 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
       <Modal
         title={intl.formatMessage(messages.title)}
         onCancel={onClose}
+        stickyActions
         {...(status === 'success'
           ? { okText: intl.formatMessage(globalMessages.close), onOk: onClose }
           : status === 'error'
@@ -255,18 +256,15 @@ const LinkTraktModal = ({ show, onClose, onSave }: LinkTraktModalProps) => {
         {device && status === 'polling' && (
           <DeviceCodePanel
             code={device.user_code}
+            verificationUrl={device.verification_url}
+            serviceName="Trakt"
+            expiresAt={deadline.current}
+            onNewCode={() => setAttempt((value) => value + 1)}
             waitingText={intl.formatMessage(messages.waiting)}
             instructions={intl.formatMessage(messages.instructions, {
               applicationName: settings.currentSettings.applicationTitle,
               VerificationLink: (msg: ReactNode) => (
-                <a
-                  href={device.verification_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-white underline transition hover:text-gray-200"
-                >
-                  {msg}
-                </a>
+                <span className="font-medium text-white">{msg}</span>
               ),
             })}
           />

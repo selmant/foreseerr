@@ -29,6 +29,7 @@ type ListViewProps = {
   isReachingEnd?: boolean;
   onScrollBottom: () => void;
   mutateParent?: () => void;
+  emptyContent?: React.ReactNode;
 };
 
 const ListView = ({
@@ -39,6 +40,7 @@ const ListView = ({
   isReachingEnd,
   plexItems,
   mutateParent,
+  emptyContent,
 }: ListViewProps) => {
   const intl = useIntl();
   const { hasPermission } = useUser();
@@ -88,11 +90,12 @@ const ListView = ({
 
   return (
     <TitleCardBatchProvider refs={batchRefs}>
-      {isEmpty && (
-        <div className="mt-64 w-full text-center text-2xl text-gray-400">
-          {intl.formatMessage(globalMessages.noresults)}
-        </div>
-      )}
+      {isEmpty &&
+        (emptyContent ?? (
+          <div className="mt-64 w-full text-center text-2xl text-gray-400">
+            {intl.formatMessage(globalMessages.noresults)}
+          </div>
+        ))}
       <ul className="cards-vertical">
         {plexItems?.map((title, index) => {
           return (

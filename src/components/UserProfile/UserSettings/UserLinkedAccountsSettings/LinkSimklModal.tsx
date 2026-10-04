@@ -1,4 +1,5 @@
 import Alert from '@app/components/Common/Alert';
+import DeviceCodePanel from '@app/components/Common/DeviceCodePanel';
 import { SmallLoadingSpinner } from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import useSettings from '@app/hooks/useSettings';
@@ -7,7 +8,6 @@ import { Transition } from '@headlessui/react';
 import axios from 'axios';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
-import DeviceCodePanel from './DeviceCodePanel';
 
 const messages = defineMessages(
   'components.UserProfile.UserSettings.LinkSimklModal',
@@ -44,7 +44,7 @@ const LinkSimklModal = ({
 }) => {
   const intl = useIntl();
   const settings = useSettings();
-  const [pin, setPin] = useState<Pin | null>(null);
+  const [pin, setPin] = useState<(Pin & { expiresAt: number }) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -74,7 +74,7 @@ const LinkSimklModal = ({
       )
       .then(({ data }) => {
         if (!active) return;
-        setPin(data);
+        setPin({ ...data, expiresAt: Date.now() + data.expiresIn * 1000 });
         const poll = async () => {
           try {
             const response = await axios.post(
@@ -138,6 +138,7 @@ const LinkSimklModal = ({
       <Modal
         title={intl.formatMessage(messages.title)}
         onCancel={onClose}
+        stickyActions
         {...(error
           ? {
               okText: intl.formatMessage(messages.tryAgain),
@@ -151,18 +152,15 @@ const LinkSimklModal = ({
         ) : pin ? (
           <DeviceCodePanel
             code={pin.userCode}
+            verificationUrl={pin.verificationUri}
+            serviceName="Simkl"
+            expiresAt={pin.expiresAt}
+            onNewCode={() => setAttempt((value) => value + 1)}
             waitingText={intl.formatMessage(messages.waiting)}
             instructions={intl.formatMessage(messages.instructions, {
               applicationName: settings.currentSettings.applicationTitle,
               VerificationLink: (msg: ReactNode) => (
-                <a
-                  href={pin.verificationUri}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-white underline transition hover:text-gray-200"
-                >
-                  {msg}
-                </a>
+                <span className="font-medium text-white">{msg}</span>
               ),
             })}
           />

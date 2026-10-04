@@ -1,5 +1,9 @@
 import { useEffect } from 'react';
 
+let lockCount = 0;
+let originalOverflowStyle = '';
+let originalTouchActionStyle = '';
+
 /**
  * Hook to lock the body scroll whenever a component is mounted or
  * whenever isLocked is set to true.
@@ -15,18 +19,17 @@ export const useLockBodyScroll = (
   disabled?: boolean
 ): void => {
   useEffect(() => {
-    const originalOverflowStyle = window.getComputedStyle(
-      document.body
-    ).overflow;
-    const originalTouchActionStyle = window.getComputedStyle(
-      document.body
-    ).touchAction;
-    if (isLocked && !disabled) {
+    if (!isLocked || disabled) return;
+    if (lockCount === 0) {
+      originalOverflowStyle = document.body.style.overflow;
+      originalTouchActionStyle = document.body.style.touchAction;
       document.body.style.overflow = 'hidden';
       document.body.style.touchAction = 'none';
     }
+    lockCount += 1;
     return () => {
-      if (!disabled) {
+      lockCount -= 1;
+      if (lockCount === 0) {
         document.body.style.overflow = originalOverflowStyle;
         document.body.style.touchAction = originalTouchActionStyle;
       }

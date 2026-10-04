@@ -13,16 +13,13 @@ import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import {
-  BarsArrowDownIcon,
-  CircleStackIcon,
-  FunnelIcon,
-} from '@heroicons/react/24/solid';
+import { FunnelIcon } from '@heroicons/react/24/solid';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.TraktDiscoverFilters', {
   anime: 'Anime',
+  contentType: 'Content type',
   sortLabel: 'Sort',
   traktOrder: 'Trakt List Order',
   dateAdded: 'Date Added Descending',
@@ -36,11 +33,13 @@ type TraktMediaType = 'all' | 'movie' | 'tv' | 'anime';
 interface TraktDiscoverFiltersProps {
   showRecommendationFilters?: boolean;
   showHideWatchedFilter?: boolean;
+  showListSort?: boolean;
 }
 
 const TraktDiscoverFilters = ({
   showRecommendationFilters = false,
   showHideWatchedFilter = true,
+  showListSort = false,
 }: TraktDiscoverFiltersProps) => {
   const intl = useIntl();
   const query = useRouteQuery();
@@ -84,15 +83,18 @@ const TraktDiscoverFilters = ({
       : 0);
 
   return (
-    <div className="mt-2 flex flex-grow flex-col sm:flex-row lg:flex-grow-0">
-      <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
-        <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
-          <CircleStackIcon className="h-6 w-6" />
-        </span>
+    <div className="flex flex-wrap items-end gap-3">
+      <div className="w-full min-w-0 sm:w-48">
+        <label
+          htmlFor="traktMediaType"
+          className="mb-1 block text-sm text-gray-300"
+        >
+          {intl.formatMessage(messages.contentType)}
+        </label>
         <select
           id="traktMediaType"
           name="traktMediaType"
-          className="rounded-r-only"
+          className="min-h-[44px] w-full"
           value={currentType}
           onChange={(e) => {
             const value = e.target.value as TraktMediaType;
@@ -120,33 +122,40 @@ const TraktDiscoverFilters = ({
         onClose={() => setShowFilters(false)}
         show={showFilters}
       />
-      <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
-        <label htmlFor="traktListSort" className="sr-only">
-          {intl.formatMessage(messages.sortLabel)}
-        </label>
-        <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-gray-100 sm:text-sm">
-          <BarsArrowDownIcon className="h-6 w-6" />
-        </span>
-        <select
-          id="traktListSort"
-          name="traktListSort"
-          className="rounded-r-only"
-          value={currentSort}
-          onChange={(e) =>
-            updateQueryParams('sort', e.target.value || undefined)
-          }
+      {showListSort && (
+        <div className="w-full min-w-0 sm:w-64">
+          <label
+            htmlFor="traktListSort"
+            className="mb-1 block text-sm text-gray-300"
+          >
+            {intl.formatMessage(messages.sortLabel)}
+          </label>
+          <select
+            id="traktListSort"
+            name="traktListSort"
+            className="min-h-[44px] w-full"
+            value={currentSort}
+            onChange={(e) =>
+              updateQueryParams('sort', e.target.value || undefined)
+            }
+          >
+            <option value="">{intl.formatMessage(messages.traktOrder)}</option>
+            <option value="added">
+              {intl.formatMessage(messages.dateAdded)}
+            </option>
+            <option value="released">
+              {intl.formatMessage(messages.releaseDate)}
+            </option>
+          </select>
+        </div>
+      )}
+      <div className="w-full sm:w-auto">
+        <Button
+          onClick={() => setShowFilters(true)}
+          className="min-h-[44px] w-full"
+          aria-haspopup="dialog"
+          aria-expanded={showFilters}
         >
-          <option value="">{intl.formatMessage(messages.traktOrder)}</option>
-          <option value="added">
-            {intl.formatMessage(messages.dateAdded)}
-          </option>
-          <option value="released">
-            {intl.formatMessage(messages.releaseDate)}
-          </option>
-        </select>
-      </div>
-      <div className="mb-2 flex flex-grow sm:mb-0 lg:flex-grow-0">
-        <Button onClick={() => setShowFilters(true)} className="w-full">
           <FunnelIcon />
           <span>
             {intl.formatMessage(messages.activefilters, {

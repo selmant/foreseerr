@@ -12,6 +12,10 @@ Discovery cards (Trakt, AniList, MDBList, Simkl) sit at the top. Health checks
 show whether each service is reachable. Radarr, Sonarr, override rules, and
 intervention cleanup are on the same page below those cards.
 
+Use the section shortcuts at the top to jump to discovery, Radarr, Sonarr,
+override rules, or queue cleanup. Server integrations apply to everyone;
+**Linked accounts** connects your personal trackers and recommendations.
+
 For Radarr/Sonarr field-by-field setup, see [Services](services.md).
 
 ## Trakt

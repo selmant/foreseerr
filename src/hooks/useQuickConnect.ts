@@ -31,12 +31,15 @@ export const useQuickConnect = ({
   const isMounted = useRef(true);
   const hasInitiated = useRef(false);
   const errorCount = useRef(0);
+  const generation = useRef(0);
 
   useEffect(() => {
     isMounted.current = true;
 
     return () => {
       isMounted.current = false;
+      generation.current += 1;
+      hasInitiated.current = false;
       if (pollingInterval.current) {
         clearInterval(pollingInterval.current);
       }
@@ -45,6 +48,7 @@ export const useQuickConnect = ({
 
   useEffect(() => {
     if (!show) {
+      generation.current += 1;
       hasInitiated.current = false;
       if (pollingInterval.current) {
         clearInterval(pollingInterval.current);
@@ -54,13 +58,14 @@ export const useQuickConnect = ({
   }, [show]);
 
   const authenticateWithQuickConnect = useCallback(
-    async (secret: string) => {
+    async (secret: string, attempt: number) => {
+      if (!isMounted.current || attempt !== generation.current) return;
       try {
         await authenticate(secret);
-        if (!isMounted.current) return;
+        if (!isMounted.current || attempt !== generation.current) return;
         onSuccess();
       } catch (error) {
-        if (!isMounted.current) return;
+        if (!isMounted.current || attempt !== generation.current) return;
 
         const errMsg =
           error?.response?.data?.message ||
@@ -78,7 +83,7 @@ export const useQuickConnect = ({
   );
 
   const startPolling = useCallback(
-    (secret: string) => {
+    (secret: string, attempt: number) => {
       pollingInterval.current = setInterval(async () => {
         try {
           const response = await axios.get(
@@ -88,23 +93,17 @@ export const useQuickConnect = ({
             }
           );
 
+          if (!isMounted.current || attempt !== generation.current) return;
           errorCount.current = 0;
-
-          if (!isMounted.current) {
-            if (pollingInterval.current) {
-              clearInterval(pollingInterval.current);
-            }
-            return;
-          }
 
           if (response.data.authenticated) {
             if (pollingInterval.current) {
               clearInterval(pollingInterval.current);
             }
-            await authenticateWithQuickConnect(secret);
+            await authenticateWithQuickConnect(secret, attempt);
           }
         } catch (error) {
-          if (!isMounted.current) return;
+          if (!isMounted.current || attempt !== generation.current) return;
 
           if (error?.response?.status === 404) {
             if (pollingInterval.current) {
@@ -130,6 +129,8 @@ export const useQuickConnect = ({
   );
 
   const initiateQuickConnect = useCallback(async () => {
+    const attempt = ++generation.current;
+    errorCount.current = 0;
     if (pollingInterval.current) {
       clearInterval(pollingInterval.current);
     }
@@ -145,13 +146,13 @@ export const useQuickConnect = ({
         '/api/v1/auth/jellyfin/quickconnect/initiate'
       );
 
-      if (!isMounted.current) return;
+      if (!isMounted.current || attempt !== generation.current) return;
 
       setCode(response.data.code);
       setIsLoading(false);
-      startPolling(response.data.secret);
+      startPolling(response.data.secret, attempt);
     } catch {
-      if (!isMounted.current) return;
+      if (!isMounted.current || attempt !== generation.current) return;
 
       setHasError(true);
       setIsLoading(false);
@@ -170,8 +171,10 @@ export const useQuickConnect = ({
   }, [show]);
 
   const cleanup = useCallback(() => {
+    generation.current += 1;
     if (pollingInterval.current) {
       clearInterval(pollingInterval.current);
+      pollingInterval.current = undefined;
     }
   }, []);
 

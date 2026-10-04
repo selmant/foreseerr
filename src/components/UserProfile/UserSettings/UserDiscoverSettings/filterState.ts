@@ -1,6 +1,34 @@
 import { genreColorMap } from '@app/components/Discover/constants';
 import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+export function discoverDefaultsEqual(
+  a: DiscoverFilterDefaults,
+  b: DiscoverFilterDefaults
+): boolean {
+  const normalize = (value: DiscoverFilterDefaults) =>
+    Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined && entry !== '')
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [
+          key,
+          key === 'genre' && typeof entry === 'string'
+            ? [
+                ...new Set(
+                  entry
+                    .split(',')
+                    .map((genre) => genre.trim())
+                    .filter(Boolean)
+                ),
+              ]
+                .sort()
+                .join(',')
+            : entry,
+        ])
+    );
+  return JSON.stringify(normalize(a)) === JSON.stringify(normalize(b));
+}
 
 const TV_GENRE_IDS = new Set(
   [10759, 10762, 10763, 10764, 10765, 10766, 10767, 10768].filter(
@@ -53,7 +81,8 @@ export function mergeDiscoverGenres(
 }
 
 export function useDiscoverFilterDraft(
-  data: DiscoverFilterDefaults | undefined
+  data: DiscoverFilterDefaults | undefined,
+  userId?: number
 ): {
   draft: DiscoverFilterDefaults;
   movieGenres: string;
@@ -64,22 +93,41 @@ export function useDiscoverFilterDraft(
   setBool: (key: keyof DiscoverFilterDefaults, value: boolean) => void;
   setString: (key: keyof DiscoverFilterDefaults, value?: string) => void;
   reset: () => void;
+  discard: () => void;
+  hasChanges: boolean;
 } {
   const [draft, setDraft] = useState<DiscoverFilterDefaults>({});
   const [movieGenres, setMovieGenres] = useState('');
   const [tvGenres, setTvGenres] = useState('');
+  const previousData = useRef<DiscoverFilterDefaults | undefined>(undefined);
+  const previousUser = useRef<number | undefined>(undefined);
+  const genresInitialized = useRef(false);
 
   useEffect(() => {
-    if (!data) {
+    if (
+      !data ||
+      (data === previousData.current && userId === previousUser.current)
+    ) {
       return;
     }
+    const shouldSync =
+      userId !== previousUser.current ||
+      !previousData.current ||
+      discoverDefaultsEqual(draft, previousData.current);
+    previousData.current = data;
+    previousUser.current = userId;
+    if (!shouldSync) return;
     setDraft(data);
     const split = splitDiscoverGenres(data.genre);
     setMovieGenres(split.movie);
     setTvGenres(split.tv);
-  }, [data]);
+  }, [data, draft, userId]);
 
   useEffect(() => {
+    if (!genresInitialized.current) {
+      genresInitialized.current = true;
+      return;
+    }
     const genre = mergeDiscoverGenres(movieGenres, tvGenres);
     setDraft((previous) => {
       if ((previous.genre ?? '') === (genre ?? '')) {
@@ -117,6 +165,13 @@ export function useDiscoverFilterDraft(
     setTvGenres('');
   };
 
+  const discard = () => {
+    setDraft(data ?? {});
+    const split = splitDiscoverGenres(data?.genre);
+    setMovieGenres(split.movie);
+    setTvGenres(split.tv);
+  };
+
   return {
     draft,
     movieGenres,
@@ -127,5 +182,7 @@ export function useDiscoverFilterDraft(
     setBool,
     setString,
     reset,
+    discard,
+    hasChanges: !discoverDefaultsEqual(draft, data ?? {}),
   };
 }

@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 // eslint-disable-next-line no-relative-import-paths/no-relative-import-paths
 import {
   failedProviderLabels,
+  hasMediaActionProviderError,
+  isMediaActionMappingMissing,
   writeSucceeded,
 } from '../../../src/utils/mediaActions';
 
@@ -15,6 +17,31 @@ const provider = (ok: boolean) => ({
 });
 
 describe('client media-action write outcome handling', () => {
+  it('distinguishes an unmatched catalog title from a provider outage', () => {
+    assert.equal(
+      isMediaActionMappingMissing('No Jellyfin mapping for item'),
+      true
+    );
+    assert.equal(
+      isMediaActionMappingMissing('No AniList mapping for item'),
+      true
+    );
+    assert.equal(
+      hasMediaActionProviderError([
+        { ...provider(false), error: 'No Jellyfin mapping for item' },
+      ]),
+      false
+    );
+    assert.equal(
+      hasMediaActionProviderError([
+        provider(true),
+        { ...provider(false), error: 'Service unavailable' },
+      ]),
+      true
+    );
+    assert.equal(hasMediaActionProviderError([provider(false)]), true);
+    assert.equal(hasMediaActionProviderError([]), false);
+  });
   it('accepts full and partial writes with an applied provider', () => {
     assert.equal(
       writeSucceeded({

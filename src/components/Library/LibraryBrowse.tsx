@@ -10,6 +10,7 @@ import LibraryBrowseToolbar from '@app/components/Library/LibraryBrowseToolbar';
 import LibraryInspector from '@app/components/Library/LibraryInspector';
 import {
   browseStateFromQuery,
+  libraryBrowseApiPath,
   mergeBrowsePatch,
   restoreBrowseScroll,
   serializeBrowseApiQuery,
@@ -33,12 +34,15 @@ import type {
   LibraryFacetsResponse,
   LibraryTitle,
 } from '@server/interfaces/api/libraryInterfaces';
-import type { ParsedLibraryBrowseQuery } from '@server/lib/libraryBrowseQuery';
+import {
+  countActiveLibraryBrowseFilters,
+  type ParsedLibraryBrowseQuery,
+} from '@server/lib/libraryBrowseQuery';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import useSWR from 'swr';
 import useSWRInfinite from 'swr/infinite';
 
@@ -78,6 +82,7 @@ const paramsFromState = (state: ReturnType<typeof browseStateFromQuery>) => {
 const LibraryBrowse = () => {
   const intl = useIntl();
   const navigate = useNavigate();
+  const location = useLocation();
   const routeQuery = useRouteQuery();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -111,7 +116,7 @@ const LibraryBrowse = () => {
       );
     }, 300);
     return () => window.clearTimeout(handle);
-  }, [searchInput, state]);
+  }, [navigate, searchInput, state]);
 
   const applyPatch = (patch: Partial<ParsedLibraryBrowseQuery>) => {
     void navigate(
@@ -123,7 +128,32 @@ const LibraryBrowse = () => {
     );
   };
 
-  const { data: facets } = useSWR<LibraryFacetsResponse>(
+  const resetFilters = () =>
+    applyPatch({
+      watched: undefined,
+      genre: undefined,
+      yearFrom: undefined,
+      yearTo: undefined,
+    });
+
+  const resetBrowse = () => {
+    setSearchInput('');
+    applyPatch({
+      q: '',
+      mediaType: undefined,
+      watched: undefined,
+      genre: undefined,
+      yearFrom: undefined,
+      yearTo: undefined,
+    });
+  };
+
+  const {
+    data: facets,
+    error: facetsError,
+    isValidating: facetsLoading,
+    mutate: retryFacets,
+  } = useSWR<LibraryFacetsResponse>(
     `/api/v1/library/facets${
       state.mediaType ? `?mediaType=${state.mediaType}` : ''
     }`
@@ -145,14 +175,11 @@ const LibraryBrowse = () => {
       ) {
         return null;
       }
-      const params = serializeBrowseApiQuery({
+      return libraryBrowseApiPath({
         ...state,
         take: PAGE_SIZE,
         skip: pageIndex * PAGE_SIZE,
       });
-      params.set('take', String(PAGE_SIZE));
-      params.set('skip', String(pageIndex * PAGE_SIZE));
-      return `/api/v1/library/browse?${params.toString()}`;
     },
     { revalidateFirstPage: false }
   );
@@ -163,6 +190,9 @@ const LibraryBrowse = () => {
 
   const items = pages?.flatMap((page) => page.results) ?? [];
   const code = pages?.[0]?.code ?? facets?.code;
+  const pageError = Boolean(
+    error || pages?.some((page) => page.code === 'server_unreachable')
+  );
   const total = pages?.[0]?.pageInfo.results;
   const lastPage = pages?.[pages.length - 1];
   const reachedEnd =
@@ -172,15 +202,15 @@ const LibraryBrowse = () => {
     isValidating && !!pages && typeof pages[size - 1] === 'undefined';
 
   const loadMore = useCallback(() => {
-    if (!loadingMore && !reachedEnd && !error) {
-      setSize((current) => current + 1);
+    if (!isValidating && !reachedEnd && !pageError) {
+      void setSize((current) => current + 1).catch(() => undefined);
     }
-  }, [error, loadingMore, reachedEnd, setSize]);
+  }, [pageError, isValidating, reachedEnd, setSize]);
 
   useLibraryInfiniteScroll(
     sentinelRef,
     loadMore,
-    !loadingInitial && !loadingMore && !reachedEnd && !error
+    !loadingInitial && !loadingMore && !reachedEnd && !pageError
   );
 
   useEffect(() => {
@@ -217,6 +247,7 @@ const LibraryBrowse = () => {
           description: intl.formatMessage(messages.notLinked),
           action: (
             <LinkButton
+              className="min-h-11"
               to="/profile/settings/linked-accounts"
               buttonType="primary"
             >
@@ -231,13 +262,19 @@ const LibraryBrowse = () => {
             title: intl.formatMessage(messages.unsupportedTitle),
             description: intl.formatMessage(messages.unsupported),
           }
-        : code === 'server_unreachable'
+        : code === 'server_unreachable' && !items.length
           ? {
               icon: ExclamationTriangleIcon,
               title: intl.formatMessage(messages.unreachable),
               description: intl.formatMessage(messages.unreachableDescription),
               action: (
-                <Button onClick={() => void mutate()}>
+                <Button
+                  className="min-h-11"
+                  aria-disabled={isValidating}
+                  onClick={() => {
+                    if (!isValidating) void mutate().catch(() => undefined);
+                  }}
+                >
                   {intl.formatMessage(messages.retry)}
                 </Button>
               ),
@@ -269,8 +306,12 @@ const LibraryBrowse = () => {
       ) : (
         <>
           <LibraryBrowseToolbar
+            focusSearch={location.hash === '#library-search'}
             query={searchInput}
-            onQueryChange={setSearchInput}
+            onQueryChange={(value) => {
+              setSearchInput(value);
+              if (!value.trim()) applyPatch({ q: '', skip: 0 });
+            }}
             state={state}
             density={state.density}
             resultCount={total}
@@ -280,12 +321,16 @@ const LibraryBrowse = () => {
               void navigate(
                 buildPath(
                   '/library/browse',
-                  paramsFromState({ ...state, density })
+                  paramsFromState({
+                    ...mergeBrowsePatch(state, {}, searchInput),
+                    density,
+                  })
                 ),
                 { replace: true }
               );
             }}
             onOpenFilters={() => setFiltersOpen(true)}
+            onResetFilters={resetFilters}
           />
           <LibraryBrowseFilters
             show={filtersOpen}
@@ -294,15 +339,15 @@ const LibraryBrowse = () => {
             genres={facets?.genres ?? []}
             yearMin={facets?.yearMin}
             yearMax={facets?.yearMax}
+            resultCount={total}
+            loadingResults={loadingInitial || isValidating}
+            genresLoading={facetsLoading}
+            genresError={Boolean(
+              facetsError || facets?.code === 'server_unreachable'
+            )}
+            onRetryGenres={() => void retryFacets().catch(() => undefined)}
             onChange={applyPatch}
-            onReset={() =>
-              applyPatch({
-                watched: undefined,
-                genre: undefined,
-                yearFrom: undefined,
-                yearTo: undefined,
-              })
-            }
+            onReset={resetFilters}
           />
           {loadingInitial ? (
             <LoadingSpinner />
@@ -311,12 +356,21 @@ const LibraryBrowse = () => {
               items={items}
               density={state.density}
               loading={loadingMore}
-              error={Boolean(error)}
+              busy={isValidating}
+              totalCount={total}
+              error={pageError}
               reachedEnd={reachedEnd}
               onRetry={() => {
-                void mutate();
+                void mutate().catch(() => undefined);
               }}
+              onLoadMore={loadMore}
               onOpen={openDetails}
+              hasFilters={Boolean(
+                state.q ||
+                state.mediaType ||
+                countActiveLibraryBrowseFilters(state)
+              )}
+              onReset={resetBrowse}
               sentinelRef={sentinelRef}
             />
           )}

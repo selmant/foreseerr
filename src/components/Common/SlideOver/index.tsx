@@ -3,6 +3,7 @@ import { useLockBodyScroll } from '@app/hooks/useLockBodyScroll';
 import { Transition, TransitionChild } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import { FocusScope } from 'react-aria';
 import ReactDOM from 'react-dom';
 
 interface SlideOverProps {
@@ -11,6 +12,9 @@ interface SlideOverProps {
   subText?: string;
   onClose: () => void;
   children: React.ReactNode;
+  footer?: React.ReactNode;
+  navigation?: React.ReactNode;
+  maxWidth?: 'md' | 'xl';
 }
 
 const SlideOver = ({
@@ -19,6 +23,9 @@ const SlideOver = ({
   subText,
   onClose,
   children,
+  footer,
+  navigation,
+  maxWidth = 'md',
 }: SlideOverProps) => {
   const [isMounted, setIsMounted] = useState(false);
   const slideoverRef = useRef<HTMLDivElement>(null);
@@ -29,26 +36,19 @@ const SlideOver = ({
     setIsMounted(true);
   }, []);
 
-  // Move focus into the panel so Escape and Tab work without a click first,
-  // then hand it back to whatever opened the panel.
+  // Move focus into the panel so Escape and Tab work without a click first.
+  // FocusScope restores the opener after the closing transition unmounts.
   useEffect(() => {
-    if (!show) {
+    if (!show || !isMounted) {
       return undefined;
     }
-    const opener =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
     const frame = window.requestAnimationFrame(() =>
       slideoverRef.current?.focus({ preventScroll: true })
     );
     return () => {
       window.cancelAnimationFrame(frame);
-      if (opener?.isConnected) {
-        opener.focus({ preventScroll: true });
-      }
     };
-  }, [show]);
+  }, [isMounted, show]);
 
   if (!isMounted) {
     return null;
@@ -72,6 +72,7 @@ const SlideOver = ({
         onClick={() => onClose()}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
+            e.stopPropagation();
             onClose();
           }
         }}
@@ -87,50 +88,58 @@ const SlideOver = ({
               leaveFrom="translate-x-0"
               leaveTo="translate-x-full"
             >
-              {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-              <div
-                className="slideover relative h-full w-screen max-w-md p-2 focus:outline-none sm:p-3"
-                ref={slideoverRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby={titleId}
-                tabIndex={-1}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex h-full flex-col rounded-lg bg-gray-800/80 shadow-xl ring-1 ring-gray-700 backdrop-blur">
-                  <header className="space-y-1 border-b border-gray-700 px-4 py-4">
-                    <div className="flex items-center justify-between space-x-3">
-                      <h2
-                        id={titleId}
-                        className="text-overseerr text-2xl font-bold leading-7"
-                      >
-                        {title}
-                      </h2>
-                      <div className="flex h-7 items-center">
-                        <button
-                          aria-label="Close panel"
-                          className="text-gray-200 transition duration-150 ease-in-out hover:text-white"
-                          onClick={() => onClose()}
+              <FocusScope contain restoreFocus>
+                {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+                <div
+                  className={`slideover relative h-full w-screen p-2 focus:outline-none sm:p-3 ${maxWidth === 'xl' ? 'max-w-xl' : 'max-w-md'}`}
+                  ref={slideoverRef}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby={titleId}
+                  tabIndex={-1}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex h-full flex-col rounded-lg bg-gray-800/80 shadow-xl ring-1 ring-gray-700 backdrop-blur">
+                    <header className="space-y-1 border-b border-gray-700 px-4 py-4">
+                      <div className="flex items-center justify-between space-x-3">
+                        <h2
+                          id={titleId}
+                          className="text-overseerr text-2xl font-bold leading-7"
                         >
-                          <XMarkIcon className="h-6 w-6" />
-                        </button>
+                          {title}
+                        </h2>
+                        <div className="flex shrink-0 items-center">
+                          <button
+                            aria-label="Close panel"
+                            className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-200 transition duration-150 ease-in-out hover:bg-gray-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                            onClick={() => onClose()}
+                          >
+                            <XMarkIcon className="h-6 w-6" />
+                          </button>
+                        </div>
+                      </div>
+                      {subText && (
+                        <div>
+                          <p className="font-semibold leading-5 text-gray-300">
+                            {subText}
+                          </p>
+                        </div>
+                      )}
+                      {navigation}
+                    </header>
+                    <div className="hide-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
+                      <div className="flex-1 px-4 py-6 text-white">
+                        {children}
                       </div>
                     </div>
-                    {subText && (
-                      <div>
-                        <p className="font-semibold leading-5 text-gray-300">
-                          {subText}
-                        </p>
+                    {footer ? (
+                      <div className="shrink-0 border-t border-gray-700 px-4 py-4 text-white">
+                        {footer}
                       </div>
-                    )}
-                  </header>
-                  <div className="hide-scrollbar flex flex-1 flex-col overflow-y-auto">
-                    <div className="flex-1 px-4 py-6 text-white">
-                      {children}
-                    </div>
+                    ) : null}
                   </div>
                 </div>
-              </div>
+              </FocusScope>
             </TransitionChild>
           </section>
         </div>

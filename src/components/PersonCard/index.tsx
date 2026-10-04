@@ -23,11 +23,14 @@ const PersonCard = ({
   return (
     <Link
       to={`/person/${personId}`}
-      className={canExpand ? 'w-full' : 'w-36 sm:w-36 md:w-44'}
+      aria-label={[name, subName].filter(Boolean).join(', ')}
+      className={`${canExpand ? 'w-full' : 'w-36 sm:w-36 md:w-44'} block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400`}
       onMouseEnter={() => {
         setHovered(true);
       }}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setHovered(true)}
+      onBlur={() => setHovered(false)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           setHovered(true);
@@ -39,7 +42,7 @@ const PersonCard = ({
       <div
         className={`relative ${
           canExpand ? 'w-full' : 'w-36 sm:w-36 md:w-44'
-        } transform-gpu cursor-pointer rounded-xl text-white shadow ring-1 transition duration-150 ease-in-out ${
+        } transform-gpu cursor-pointer rounded-xl text-white shadow ring-1 transition duration-150 ease-in-out motion-reduce:transform-none motion-reduce:transition-none ${
           isHovered
             ? 'scale-105 bg-gray-700 ring-gray-500'
             : 'scale-100 bg-gray-800 ring-gray-700'
@@ -64,10 +67,12 @@ const PersonCard = ({
                   />
                 </div>
               ) : (
-                <UserCircleIcon className="h-full" />
+                <UserCircleIcon aria-hidden="true" className="h-full" />
               )}
             </div>
-            <div className="w-full truncate text-center font-bold">{name}</div>
+            <div className="line-clamp-2 w-full break-words text-center font-bold">
+              {name}
+            </div>
             {subName && (
               <div
                 className="overflow-hidden whitespace-normal text-center text-sm text-gray-300"

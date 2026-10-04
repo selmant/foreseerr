@@ -7,11 +7,16 @@ import {
   type DiscoverSliderSource,
 } from '@app/components/Discover/SliderSourceMark';
 import defineMessages from '@app/utils/defineMessages';
-import { ExclamationTriangleIcon, LinkIcon } from '@heroicons/react/24/outline';
+import {
+  ExclamationTriangleIcon,
+  LinkIcon,
+  Squares2X2Icon,
+} from '@heroicons/react/24/outline';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverProviderMessage', {
   linkedAccounts: 'Linked Accounts',
+  sources: 'Browse list sources',
 });
 
 /**
@@ -33,7 +38,7 @@ const DiscoverProviderMessage = ({
   return (
     <>
       <PageTitle title={title} />
-      <div className="mb-5 mt-1">
+      <div className="mb-5 mt-1 [&_h2]:whitespace-normal [&_h2]:break-words">
         <Header>
           <SliderSourceTitle source={source}>{title}</SliderSourceTitle>
         </Header>
@@ -46,11 +51,17 @@ const DiscoverProviderMessage = ({
             <LinkButton
               to="/profile/settings/linked-accounts"
               buttonType="primary"
+              className="min-h-[44px]"
             >
               <LinkIcon />
               <span>{intl.formatMessage(messages.linkedAccounts)}</span>
             </LinkButton>
-          ) : undefined
+          ) : (
+            <LinkButton to="/discover/sources" className="min-h-[44px]">
+              <Squares2X2Icon />
+              <span>{intl.formatMessage(messages.sources)}</span>
+            </LinkButton>
+          )
         }
       />
     </>

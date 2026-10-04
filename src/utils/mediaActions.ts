@@ -20,6 +20,22 @@ export const MEDIA_ACTION_PROVIDER_LABELS: Record<string, string> = {
   simkl: 'Simkl',
 };
 
+/** Missing catalog matches explain unavailable controls without implying an outage. */
+export function isMediaActionMappingMissing(error?: string): boolean {
+  return (
+    error === 'No Jellyfin mapping for item' ||
+    error === 'No AniList mapping for item'
+  );
+}
+
+export function hasMediaActionProviderError(
+  providers: MediaActionProviderResult[]
+): boolean {
+  return providers.some(
+    (provider) => !provider.ok && !isMediaActionMappingMissing(provider.error)
+  );
+}
+
 export function failedProviderLabels(
   providers: MediaActionProviderResult[]
 ): string {

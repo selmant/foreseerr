@@ -189,7 +189,7 @@ const MediaSlider = ({
     <>
       <div className="slider-header">
         {linkUrl ? (
-          <Link to={linkUrl} className="slider-title min-w-0 pr-16">
+          <Link to={linkUrl} className="slider-title min-w-0">
             <span className="truncate">{title}</span>
             <ArrowRightCircleIcon />
           </Link>
@@ -201,6 +201,7 @@ const MediaSlider = ({
       </div>
       <Slider
         sliderKey={sliderKey}
+        ariaLabel={title}
         isLoading={!data && !error}
         isEmpty={false}
         items={finalTitles}

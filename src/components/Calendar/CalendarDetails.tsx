@@ -66,7 +66,12 @@ const CalendarDetails = ({
 
   if (!item) return null;
   const episode = formatEpisode(item, intl);
-  const manageService = item.mediaType === 'movie' ? 'Radarr' : 'Sonarr';
+  const hasActions = Boolean(
+    item.detailUrl ||
+    (item.watchUrl && item.available) ||
+    (canManage && managedTitle) ||
+    item.sourceUrl
+  );
 
   return (
     <>
@@ -75,6 +80,79 @@ const CalendarDetails = ({
         title={item.title}
         subText={[episode, item.subtitle].filter(Boolean).join(' · ')}
         onClose={onClose}
+        footer={
+          hasActions ? (
+            <div className="flex flex-wrap gap-2">
+              {item.detailUrl ? (
+                <LinkButton
+                  to={item.detailUrl}
+                  buttonType="primary"
+                  className="min-h-11"
+                >
+                  <InformationCircleIcon />
+                  <span>
+                    {intl.formatMessage(
+                      item.isNewSeason && !item.requestedByCurrentUser
+                        ? messages.requestSeason
+                        : messages.details
+                    )}
+                  </span>
+                </LinkButton>
+              ) : null}
+              {item.watchUrl && item.available ? (
+                <Button
+                  as="a"
+                  href={item.watchUrl}
+                  buttonType="success"
+                  className="min-h-11"
+                  onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+                    if (
+                      item.jellyfinItemId &&
+                      play({
+                        provider: 'jellyfin',
+                        itemId: item.jellyfinItemId,
+                        fallbackUrl: item.watchUrl!,
+                        label: intl.formatMessage(messages.watch),
+                        quality: item.is4k ? '4k' : 'standard',
+                      })
+                    ) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <PlayIcon />
+                  <span>{intl.formatMessage(messages.watch)}</span>
+                </Button>
+              ) : null}
+              {canManage && managedTitle ? (
+                <Button
+                  buttonType="default"
+                  className="min-h-11"
+                  onClick={() => setShowManage(true)}
+                >
+                  <CogIcon />
+                  <span>{intl.formatMessage(messages.manage)}</span>
+                </Button>
+              ) : null}
+              {item.sourceUrl ? (
+                <Button
+                  as="a"
+                  href={item.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-h-11"
+                >
+                  <ArrowTopRightOnSquareIcon />
+                  <span>
+                    {intl.formatMessage(messages.openIn, {
+                      service: item.source === 'radarr' ? 'Radarr' : 'Sonarr',
+                    })}
+                  </span>
+                </Button>
+              ) : null}
+            </div>
+          ) : undefined
+        }
       >
         <div className="space-y-5">
           <div className="flex gap-3">
@@ -90,7 +168,7 @@ const CalendarDetails = ({
                 />
               </div>
             ) : null}
-            <div className="space-y-2">
+            <div className="min-w-0 flex-1 space-y-2">
               <div className="flex flex-wrap gap-1.5">
                 <Badge badgeType="dark">
                   {getDateBadge(item.dateType, intl)}
@@ -111,11 +189,13 @@ const CalendarDetails = ({
                       weekday: 'long',
                       month: 'long',
                       day: 'numeric',
+                      year: 'numeric',
                     })
                   : intl.formatDate(toLocalDate(item.startsAt), {
                       weekday: 'long',
                       month: 'long',
                       day: 'numeric',
+                      year: 'numeric',
                       hour: 'numeric',
                       minute: '2-digit',
                     })}
@@ -157,7 +237,7 @@ const CalendarDetails = ({
                 {item.dates.map((date) => (
                   <li
                     key={`${date.dateType}-${date.startsAt}`}
-                    className="flex items-center justify-between px-4 py-3 text-sm"
+                    className="flex flex-col gap-1 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                   >
                     <span className="text-gray-300">
                       {getDateBadge(date.dateType, intl)}
@@ -182,69 +262,6 @@ const CalendarDetails = ({
               </ul>
             </div>
           ) : null}
-          <div className="flex flex-wrap gap-2">
-            {item.detailUrl ? (
-              <LinkButton to={item.detailUrl} buttonType="primary">
-                <InformationCircleIcon />
-                <span>
-                  {intl.formatMessage(
-                    item.isNewSeason && !item.requestedByCurrentUser
-                      ? messages.requestSeason
-                      : messages.details
-                  )}
-                </span>
-              </LinkButton>
-            ) : null}
-            {item.watchUrl && item.available ? (
-              <Button
-                as="a"
-                href={item.watchUrl}
-                buttonType="success"
-                onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-                  if (
-                    item.jellyfinItemId &&
-                    play({
-                      provider: 'jellyfin',
-                      itemId: item.jellyfinItemId,
-                      fallbackUrl: item.watchUrl!,
-                      label: intl.formatMessage(messages.watch),
-                      quality: item.is4k ? '4k' : 'standard',
-                    })
-                  ) {
-                    event.preventDefault();
-                  }
-                }}
-              >
-                <PlayIcon />
-                <span>{intl.formatMessage(messages.watch)}</span>
-              </Button>
-            ) : null}
-            {canManage && managedTitle ? (
-              <Button buttonType="default" onClick={() => setShowManage(true)}>
-                <CogIcon />
-                <span>
-                  {intl.formatMessage(messages.manage, {
-                    service: manageService,
-                  })}
-                </span>
-              </Button>
-            ) : null}
-            {item.sourceUrl ? (
-              <Button
-                as="a"
-                href={item.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <ArrowTopRightOnSquareIcon />
-                <span>
-                  {intl.formatMessage(messages.openIn, {
-                    service: item.source === 'radarr' ? 'Radarr' : 'Sonarr',
-                  })}
-                </span>
-              </Button>
-            ) : null}
-          </div>
           {!item.dates?.length &&
           !item.detailUrl &&
           !item.watchUrl &&

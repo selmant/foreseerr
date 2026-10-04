@@ -1,7 +1,16 @@
 import { useUser } from '@app/hooks/useUser';
+import defineMessages from '@app/utils/defineMessages';
 import type { Permission } from '@server/lib/permissions';
 import { hasPermission } from '@server/lib/permissions';
+import { useId } from 'react';
+import { useIntl } from 'react-intl';
 import { Link, useLocation, useNavigate } from 'react-router';
+
+const messages = defineMessages('components.Common.SettingsTabs', {
+  sections: 'Settings sections',
+  section: 'Settings section',
+  chooseSection: 'Choose a section',
+});
 
 export interface SettingsRoute {
   text: string;
@@ -13,59 +22,6 @@ export interface SettingsRoute {
   hidden?: boolean;
 }
 
-type SettingsLinkProps = {
-  tabType: 'default' | 'button';
-  currentPath: string;
-  route: string;
-  regex: RegExp;
-  hidden?: boolean;
-  isMobile?: boolean;
-  children: React.ReactNode;
-};
-
-const SettingsLink = ({
-  children,
-  tabType,
-  currentPath,
-  route,
-  regex,
-  hidden = false,
-  isMobile = false,
-}: SettingsLinkProps) => {
-  if (hidden) {
-    return null;
-  }
-
-  if (isMobile) {
-    return <option value={route}>{children}</option>;
-  }
-
-  let linkClasses =
-    'px-1 py-4 ml-8 text-sm font-medium leading-5 transition duration-300 border-b-2 border-transparent whitespace-nowrap first:ml-0';
-  let activeLinkColor = 'text-indigo-500 border-indigo-600';
-  let inactiveLinkColor =
-    'text-gray-500 border-transparent hover:text-gray-300 hover:border-gray-400 focus:text-gray-300 focus:border-gray-400';
-
-  if (tabType === 'button') {
-    linkClasses =
-      'px-3 py-2 text-sm font-medium transition duration-300 rounded-md whitespace-nowrap mx-2 my-1';
-    activeLinkColor = 'bg-indigo-700';
-    inactiveLinkColor = 'bg-gray-800 hover:bg-gray-700 focus:bg-gray-700';
-  }
-
-  return (
-    <Link
-      to={route}
-      className={`${linkClasses} ${
-        currentPath.match(regex) ? activeLinkColor : inactiveLinkColor
-      }`}
-      aria-current="page"
-    >
-      {children}
-    </Link>
-  );
-};
-
 const SettingsTabs = ({
   tabType = 'default',
   settingsRoutes,
@@ -76,101 +32,66 @@ const SettingsTabs = ({
   const navigate = useNavigate();
   const location = useLocation();
   const { user: currentUser } = useUser();
+  const intl = useIntl();
+  const selectId = useId();
+  const visibleRoutes = settingsRoutes.filter(
+    (route) =>
+      !route.hidden &&
+      (!route.requiredPermission ||
+        hasPermission(
+          route.requiredPermission,
+          currentUser?.permissions ?? 0,
+          route.permissionType
+        ))
+  );
+  const selectedRoute =
+    visibleRoutes.find((route) => location.pathname.match(route.regex))
+      ?.route ?? '';
 
   return (
     <>
       <div className="sm:hidden">
-        <label htmlFor="tabs" className="sr-only">
-          Select a Tab
+        <label
+          htmlFor={selectId}
+          className="mb-2 block text-sm font-medium text-gray-400"
+        >
+          {intl.formatMessage(messages.section)}
         </label>
         <select
-          id="tabs"
-          onChange={(e) => {
-            navigate(e.target.value);
-          }}
-          onBlur={(e) => {
-            navigate(e.target.value);
-          }}
-          defaultValue={
-            settingsRoutes.find(
-              (route) => !!location.pathname.match(route.regex)
-            )?.route
-          }
-          aria-label="Selected Tab"
+          id={selectId}
+          className="min-h-[44px] w-full"
+          value={selectedRoute}
+          onChange={(event) => navigate(event.target.value)}
         >
-          {settingsRoutes
-            .filter(
-              (route) =>
-                !route.hidden &&
-                (route.requiredPermission
-                  ? hasPermission(
-                      route.requiredPermission,
-                      currentUser?.permissions ?? 0,
-                      route.permissionType
-                    )
-                  : true)
-            )
-            .map((route, index) => (
-              <SettingsLink
-                tabType={tabType}
-                currentPath={location.pathname}
-                route={route.route}
-                regex={route.regex}
-                hidden={route.hidden ?? false}
-                isMobile
-                key={`mobile-settings-link-${index}`}
-              >
-                {route.text}
-              </SettingsLink>
-            ))}
+          <option value="" disabled>
+            {intl.formatMessage(messages.chooseSection)}
+          </option>
+          {visibleRoutes.map((route) => (
+            <option key={route.route} value={route.route}>
+              {route.text}
+            </option>
+          ))}
         </select>
       </div>
-      {tabType === 'button' ? (
-        <div className="hidden sm:block">
-          <nav className="-mx-2 -my-1 flex flex-wrap" aria-label="Tabs">
-            {settingsRoutes.map((route, index) => (
-              <SettingsLink
-                tabType={tabType}
-                currentPath={location.pathname}
-                route={route.route}
-                regex={route.regex}
-                hidden={route.hidden ?? false}
-                key={`button-settings-link-${index}`}
-              >
-                {route.content ?? route.text}
-              </SettingsLink>
-            ))}
-          </nav>
-        </div>
-      ) : (
-        <div className="hide-scrollbar hidden overflow-x-scroll border-b border-gray-600 sm:block">
-          <nav className="flex" data-testid="settings-nav-desktop">
-            {settingsRoutes
-              .filter(
-                (route) =>
-                  !route.hidden &&
-                  (route.requiredPermission
-                    ? hasPermission(
-                        route.requiredPermission,
-                        currentUser?.permissions ?? 0,
-                        route.permissionType
-                      )
-                    : true)
-              )
-              .map((route, index) => (
-                <SettingsLink
-                  tabType={tabType}
-                  currentPath={location.pathname}
-                  route={route.route}
-                  regex={route.regex}
-                  key={`standard-settings-link-${index}`}
-                >
-                  {route.text}
-                </SettingsLink>
-              ))}
-          </nav>
-        </div>
-      )}
+      <nav
+        aria-label={intl.formatMessage(messages.sections)}
+        data-testid="settings-nav-desktop"
+        className={`hidden flex-wrap gap-2 sm:flex ${tabType === 'default' ? 'rounded-xl border border-gray-700 bg-gray-800/40 p-2' : ''}`}
+      >
+        {visibleRoutes.map((route) => {
+          const active = route.route === selectedRoute;
+          return (
+            <Link
+              key={route.route}
+              to={route.route}
+              aria-current={active ? 'page' : undefined}
+              className={`inline-flex min-h-[44px] items-center rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${active ? 'bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-500/30' : 'text-gray-400 hover:bg-gray-700/60 hover:text-white'}`}
+            >
+              {route.content ?? route.text}
+            </Link>
+          );
+        })}
+      </nav>
     </>
   );
 };

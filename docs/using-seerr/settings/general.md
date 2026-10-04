@@ -55,6 +55,16 @@ These settings are separate from the general "Discover Region" and "Discover Lan
 
 ## Blocklist Content with Tags and Limit Content Blocklisted per Tag
 
+Open **Blocklist** from the sidebar or mobile **More** menu to review excluded
+titles. **All sources** includes manual blocks and tag matches; use **Blocked
+by** to narrow the list, or search by title. Search, source, page, and page size
+stay in the URL so browser navigation restores the same view.
+
+Each tag-matched title shows the matching tag names. Removing a title from
+Blocklist does not change its tag rules. Administrators can use **Tag rules**
+to jump directly to the configuration below. Press **Escape** to cancel an
+armed remove button before confirming.
+
 These settings blocklist any TV shows or movies that have one of the entered tags. The "Process Blocklisted Tags" job adds entries to the blocklist based on the configured blocklisted tags. If a blocklisted tag is removed, any media blocklisted under that tag will be removed from the blocklist when the "Process Blocklisted Tags" job runs.
 
 The limit setting determines how many pages per tag the job will process, with each page containing 20 entries. The job cycles through all 16 available discovery sort options, querying the defined number of pages to blocklist media that is most likely to appear at the top of each sort. Higher limits will create a more accurate blocklist, but will require more storage.

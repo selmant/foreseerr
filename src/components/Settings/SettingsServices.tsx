@@ -122,7 +122,7 @@ const InterventionCleanupSettings = () => {
 
   return (
     <>
-      <div className="mb-6 mt-10">
+      <div id="intervention-cleanup" className="mb-6 mt-10 scroll-mt-24">
         <h3 className="heading">
           {intl.formatMessage(messages.interventionCleanup)}
         </h3>
@@ -431,7 +431,7 @@ const SettingsServices = ({
           intl.formatMessage(globalMessages.settings),
         ]}
       />
-      <div className="mb-6">
+      <div id="radarr-settings" className="mb-6 scroll-mt-24">
         <h3 className="heading">
           {intl.formatMessage(messages.radarrsettings)}
         </h3>
@@ -576,7 +576,7 @@ const SettingsServices = ({
           </>
         )}
       </div>
-      <div className="mb-6 mt-10">
+      <div id="sonarr-settings" className="mb-6 mt-10 scroll-mt-24">
         <h3 className="heading">
           {intl.formatMessage(messages.sonarrsettings)}
         </h3>
@@ -664,7 +664,7 @@ const SettingsServices = ({
           </>
         )}
       </div>
-      <div className="mb-6 mt-10">
+      <div id="override-rules" className="mb-6 mt-10 scroll-mt-24">
         <h3 className="heading">
           {intl.formatMessage(messages.overrideRules)}
         </h3>

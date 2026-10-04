@@ -20,6 +20,8 @@ interface SegmentedControlProps<T extends string> {
   /** Wrap options onto rows of this many; defaults to a single row. */
   columns?: number;
   className?: string;
+  disabled?: boolean;
+  wrapLabels?: boolean;
 }
 
 /**
@@ -35,6 +37,8 @@ const SegmentedControl = <T extends string>({
   size = 'md',
   columns,
   className,
+  disabled = false,
+  wrapLabels = false,
 }: SegmentedControlProps<T>) => {
   const isNav = options.some((option) => option.href);
   const containerClass = twMerge(
@@ -48,7 +52,7 @@ const SegmentedControl = <T extends string>({
   const items = options.map(
     ({ value: optionValue, label, icon: Icon, href, ...rest }) => {
       const active = optionValue === value;
-      const itemClass = `flex items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+      const itemClass = `flex items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 ${wrapLabels ? 'whitespace-normal' : 'whitespace-nowrap'} ${
         size === 'sm' ? 'min-h-[36px] py-1.5' : 'min-h-[44px] py-2'
       } ${
         active
@@ -63,7 +67,15 @@ const SegmentedControl = <T extends string>({
               className={`h-5 w-5 shrink-0 ${active ? 'text-indigo-400' : ''}`}
             />
           ) : null}
-          <span className="truncate">{label}</span>
+          <span
+            className={
+              wrapLabels
+                ? 'min-w-0 whitespace-normal break-words text-center'
+                : 'truncate'
+            }
+          >
+            {label}
+          </span>
         </>
       );
 
@@ -82,6 +94,7 @@ const SegmentedControl = <T extends string>({
           key={optionValue}
           type="button"
           aria-pressed={active}
+          disabled={disabled}
           className={itemClass}
           data-testid={rest['data-testid']}
           onClick={() => onChange?.(optionValue)}

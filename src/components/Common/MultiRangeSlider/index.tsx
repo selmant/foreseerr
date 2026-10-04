@@ -1,6 +1,15 @@
 import Tooltip from '@app/components/Common/Tooltip';
 import useDebouncedState from '@app/hooks/useDebouncedState';
+import defineMessages from '@app/utils/defineMessages';
 import { useEffect, useRef } from 'react';
+import { useIntl } from 'react-intl';
+
+const messages = defineMessages('components.Common.MultiRangeSlider', {
+  minimum: 'Minimum value',
+  maximum: 'Maximum value',
+  minimumLabel: 'Minimum {label}',
+  maximumLabel: 'Maximum {label}',
+});
 
 type MultiRangeSliderProps = {
   min: number;
@@ -12,6 +21,7 @@ type MultiRangeSliderProps = {
   formatValue?: (value: number) => string;
   onUpdateMin: (min: number) => void;
   onUpdateMax: (max: number) => void;
+  label?: string;
 };
 
 const formatSliderValue = (value: number, step: number): string => {
@@ -32,7 +42,9 @@ const MultiRangeSlider = ({
   formatValue,
   onUpdateMin,
   onUpdateMax,
+  label,
 }: MultiRangeSliderProps) => {
+  const intl = useIntl();
   const touched = useRef(false);
   const [valueMin, finalValueMin, setValueMin] = useDebouncedState(
     defaultMinValue ?? min
@@ -63,7 +75,11 @@ const MultiRangeSlider = ({
   }, [defaultMinValue, defaultMaxValue, setValueMax, setValueMin, min, max]);
 
   return (
-    <div className={`relative ${subText ? 'h-8' : 'h-4'} w-full`}>
+    <div
+      role={label ? 'group' : undefined}
+      aria-label={label}
+      className={`relative ${subText ? 'h-8' : 'h-4'} w-full`}
+    >
       <Tooltip
         content={formatValue?.(valueMin) ?? formatSliderValue(valueMin, step)}
         tooltipConfig={{
@@ -72,11 +88,18 @@ const MultiRangeSlider = ({
       >
         <input
           type="range"
+          aria-label={intl.formatMessage(
+            label ? messages.minimumLabel : messages.minimum,
+            { label }
+          )}
+          aria-valuetext={
+            formatValue?.(valueMin) ?? formatSliderValue(valueMin, step)
+          }
           min={min}
           max={max}
           step={step}
           value={valueMin}
-          className={`pointer-events-none absolute h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-700 ${
+          className={`pointer-events-none absolute h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-400 ${
             valueMin >= valueMax && valueMin !== min ? 'z-30' : 'z-10'
           }`}
           onChange={(e) => {
@@ -94,11 +117,18 @@ const MultiRangeSlider = ({
       >
         <input
           type="range"
+          aria-label={intl.formatMessage(
+            label ? messages.maximumLabel : messages.maximum,
+            { label }
+          )}
+          aria-valuetext={
+            formatValue?.(valueMax) ?? formatSliderValue(valueMax, step)
+          }
           min={min}
           max={max}
           step={step}
           value={valueMax}
-          className={`pointer-events-none absolute left-0 right-0 top-0 z-20 h-2 w-full cursor-pointer appearance-none rounded-lg bg-transparent`}
+          className={`pointer-events-none absolute left-0 right-0 top-0 z-20 h-2 w-full cursor-pointer appearance-none rounded-lg bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-400`}
           onChange={(e) => {
             const value = Number(e.target.value);
 

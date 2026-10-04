@@ -109,6 +109,10 @@ const messages = defineMessages('components.TvDetails', {
   traktcommunityscore: 'Trakt Community Score',
   removefromwatchlist: 'Remove From Watchlist',
   addtowatchlist: 'Add To Watchlist',
+  watchlistButton: 'Watchlist',
+  watchlistSaved: 'On Watchlist',
+  titleActions: 'Title actions',
+  watchIn: 'Watch in {server}',
 });
 
 interface TvDetailsProps {
@@ -205,7 +209,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     })
   ) {
     mediaLinks.push({
-      text: getAvailableMediaServerName(),
+      text: intl.formatMessage(messages.watchIn, {
+        server: getAvailableMediaServerName(),
+      }),
       url: plexUrl,
       svg: <PlayIcon />,
       native:
@@ -228,7 +234,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     })
   ) {
     mediaLinks.push({
-      text: getAvailable4kMediaServerName(),
+      text: intl.formatMessage(messages.watchIn, {
+        server: getAvailable4kMediaServerName(),
+      }),
       url: plexUrl4k,
       svg: <PlayIcon />,
       native:
@@ -464,7 +472,7 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
         revalidate={() => revalidate()}
         show={showManager}
       />
-      <div className="media-header">
+      <div className="media-header media-header-detail">
         <div className="media-poster">
           <CachedImage
             type="tmdb"
@@ -542,8 +550,17 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                 ))}
           </span>
         </div>
-        <div className="media-actions">
-          <MediaActionDetailBar tmdbId={data.id} mediaType="tv" />
+        <div
+          className="media-actions"
+          role="group"
+          aria-label={intl.formatMessage(messages.titleActions)}
+        >
+          <MediaActionDetailBar
+            title={data.name}
+            tmdbId={data.id}
+            mediaType="tv"
+            showLabels
+          />
           {showHideButton &&
             data?.mediaInfo?.status !== MediaStatus.PROCESSING &&
             data?.mediaInfo?.status !== MediaStatus.AVAILABLE &&
@@ -555,11 +572,13 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
               >
                 <Button
                   buttonType={'ghost'}
-                  className="z-40 mr-2"
+                  className="z-40 mr-2 min-h-[44px]"
                   buttonSize={'md'}
+                  aria-label={intl.formatMessage(globalMessages.addToBlocklist)}
                   onClick={() => setShowBlocklistModal(true)}
                 >
                   <EyeSlashIcon />
+                  <span>{intl.formatMessage(globalMessages.blocklist)}</span>
                 </Button>
               </Tooltip>
             )}
@@ -572,8 +591,12 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                   >
                     <Button
                       buttonType={'ghost'}
-                      className="z-40 mr-2"
+                      className="z-40 mr-2 min-h-[44px]"
                       buttonSize={'md'}
+                      disabled={isWatchlistUpdating}
+                      aria-busy={isWatchlistUpdating}
+                      aria-label={intl.formatMessage(messages.addtowatchlist)}
+                      aria-pressed={false}
                       onClick={addToWatchlist}
                     >
                       {isWatchlistUpdating ? (
@@ -581,6 +604,9 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                       ) : (
                         <BookmarkIcon className={'text-amber-300'} />
                       )}
+                      <span>
+                        {intl.formatMessage(messages.watchlistButton)}
+                      </span>
                     </Button>
                   </Tooltip>
                 ) : (
@@ -588,11 +614,18 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
                     content={intl.formatMessage(messages.removefromwatchlist)}
                   >
                     <Button
-                      className="z-40 mr-2"
+                      className="z-40 mr-2 min-h-[44px]"
                       buttonSize={'md'}
+                      disabled={isWatchlistUpdating}
+                      aria-busy={isWatchlistUpdating}
+                      aria-label={intl.formatMessage(
+                        messages.removefromwatchlist
+                      )}
+                      aria-pressed={true}
                       onClick={removeFromWatchlist}
                     >
                       {isWatchlistUpdating ? <Spinner /> : <MinusCircleIcon />}
+                      <span>{intl.formatMessage(messages.watchlistSaved)}</span>
                     </Button>
                   </Tooltip>
                 )}
@@ -628,10 +661,12 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
               <Tooltip content={intl.formatMessage(messages.reportissue)}>
                 <Button
                   buttonType="warning"
+                  aria-label={intl.formatMessage(messages.reportissue)}
                   onClick={() => setShowIssueModal(true)}
-                  className="ml-2 first:ml-0"
+                  className="ml-2 min-h-[44px] first:ml-0"
                 >
                   <ExclamationTriangleIcon />
+                  <span>{intl.formatMessage(messages.reportissue)}</span>
                 </Button>
               </Tooltip>
             )}
@@ -639,10 +674,12 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
             <Tooltip content={intl.formatMessage(messages.manageseries)}>
               <Button
                 buttonType="ghost"
+                aria-label={intl.formatMessage(messages.manageseries)}
                 onClick={() => setShowManager(true)}
-                className="relative ml-2 first:ml-0"
+                className="relative ml-2 min-h-[44px] first:ml-0"
               >
-                <CogIcon className="!mr-0" />
+                <CogIcon />
+                <span>{intl.formatMessage(messages.manageseries)}</span>
                 {hasPermission(
                   [Permission.MANAGE_ISSUES, Permission.VIEW_ISSUES],
                   {

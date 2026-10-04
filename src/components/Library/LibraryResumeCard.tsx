@@ -9,6 +9,11 @@ import { useIntl } from 'react-intl';
 const messages = defineMessages('components.Library.LibraryResumeCard', {
   resume: 'Resume',
   play: 'Play',
+  progress: '{percent, number}% watched',
+  openTitle: 'Open {title}',
+  resumeTitle: 'Resume {title}{episode}',
+  playTitle: 'Play {title}{episode}',
+  minutesLeft: 'About {minutes, number} min left',
 });
 
 interface LibraryResumeCardProps {
@@ -21,6 +26,10 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
   const { playItem } = useLibraryPlay();
   const progress = item.progressPercent ?? 0;
   const artwork = item.backdropUrl || item.posterUrl;
+  const remainingMinutes =
+    item.runtimeMinutes && progress > 0 && progress < 100
+      ? Math.max(1, Math.ceil(item.runtimeMinutes * (1 - progress / 100)))
+      : undefined;
 
   return (
     <article
@@ -31,7 +40,8 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
         type="button"
         className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
         onClick={() => onOpen?.(item)}
-        aria-label={item.title}
+        aria-hidden
+        tabIndex={-1}
       >
         <div className="relative aspect-video bg-gray-700">
           {artwork ? (
@@ -56,30 +66,70 @@ const LibraryResumeCard = ({ item, onOpen }: LibraryResumeCardProps) => {
         </div>
       </button>
       <div className="space-y-2 p-3">
-        <h3 className="truncate text-base font-bold text-white">
-          {item.title}
+        <h3 className="text-base font-bold text-white">
+          <button
+            type="button"
+            className="flex min-h-[4.5rem] w-full flex-col justify-center rounded-md text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500"
+            onClick={() => onOpen?.(item)}
+            aria-label={intl.formatMessage(messages.openTitle, {
+              title: item.title,
+            })}
+            title={item.title}
+          >
+            <span className="line-clamp-2 whitespace-normal">{item.title}</span>
+            {item.subtitle && (
+              <span className="mt-1 block w-full truncate text-sm font-normal text-gray-400">
+                {item.subtitle}
+              </span>
+            )}
+          </button>
         </h3>
-        {item.subtitle ? (
-          <p className="truncate text-sm text-gray-400">{item.subtitle}</p>
-        ) : null}
-        <Button
-          as="a"
-          href={item.mediaUrl}
-          buttonType="primary"
-          buttonSize="sm"
-          data-testid="library-resume-play"
-          onClick={(event) => {
-            if (!item.mediaUrl) {
-              event.preventDefault();
-            }
-            void playItem(event, item, onOpen);
-          }}
-        >
-          <PlayIcon />
-          <span>
-            {intl.formatMessage(progress > 0 ? messages.resume : messages.play)}
-          </span>
-        </Button>
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            as="a"
+            href={item.mediaUrl}
+            buttonType="primary"
+            buttonSize="sm"
+            className="min-h-11"
+            data-testid="library-resume-play"
+            aria-label={intl.formatMessage(
+              progress > 0 ? messages.resumeTitle : messages.playTitle,
+              {
+                title: item.title,
+                episode: item.subtitle ? ` · ${item.subtitle}` : '',
+              }
+            )}
+            onClick={(event) => {
+              if (!item.mediaUrl) {
+                event.preventDefault();
+              }
+              void playItem(event, item, onOpen);
+            }}
+          >
+            <PlayIcon />
+            <span>
+              {intl.formatMessage(
+                progress > 0 ? messages.resume : messages.play
+              )}
+            </span>
+          </Button>
+          {progress > 0 ? (
+            <span className="min-w-0 text-right text-xs leading-5 text-gray-400">
+              {remainingMinutes && (
+                <span className="block text-gray-300">
+                  {intl.formatMessage(messages.minutesLeft, {
+                    minutes: remainingMinutes,
+                  })}
+                </span>
+              )}
+              <span className="block">
+                {intl.formatMessage(messages.progress, {
+                  percent: Math.round(progress),
+                })}
+              </span>
+            </span>
+          ) : null}
+        </div>
       </div>
     </article>
   );

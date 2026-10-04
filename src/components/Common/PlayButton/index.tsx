@@ -1,6 +1,12 @@
 import ButtonWithDropdown from '@app/components/Common/ButtonWithDropdown';
 import type { NativePlayTarget } from '@app/context/NativeRuntimeContext';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import defineMessages from '@app/utils/defineMessages';
+import { useIntl } from 'react-intl';
+
+const messages = defineMessages('components.Common.PlayButton', {
+  playbackOptions: 'Playback and trailer options',
+});
 
 interface PlayButtonProps {
   links: PlayButtonLink[];
@@ -14,6 +20,7 @@ export interface PlayButtonLink {
 }
 
 const PlayButton = ({ links }: PlayButtonProps) => {
+  const intl = useIntl();
   const { play } = useNativeRuntime();
   if (!links || !links.length) {
     return null;
@@ -36,6 +43,7 @@ const PlayButton = ({ links }: PlayButtonProps) => {
     <ButtonWithDropdown
       as="a"
       buttonType="ghost"
+      dropdownLabel={intl.formatMessage(messages.playbackOptions)}
       text={
         <>
           {links[0].svg}

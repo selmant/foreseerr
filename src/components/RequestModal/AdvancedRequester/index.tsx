@@ -371,7 +371,7 @@ const AdvancedRequester = ({
                   value={selectedServer}
                   onChange={(e) => setSelectedServer(Number(e.target.value))}
                   onBlur={(e) => setSelectedServer(Number(e.target.value))}
-                  className="border-gray-700 bg-gray-800"
+                  className="min-h-11 border-gray-700 bg-gray-800"
                 >
                   {data
                     .filter((server) => server.is4k === is4k)
@@ -403,7 +403,7 @@ const AdvancedRequester = ({
                   value={selectedProfile}
                   onChange={(e) => setSelectedProfile(Number(e.target.value))}
                   onBlur={(e) => setSelectedProfile(Number(e.target.value))}
-                  className="border-gray-700 bg-gray-800"
+                  className="min-h-11 border-gray-700 bg-gray-800"
                   disabled={isValidating || !serverData}
                 >
                   {(isValidating || !serverData) && (
@@ -454,7 +454,7 @@ const AdvancedRequester = ({
                   value={selectedFolder}
                   onChange={(e) => setSelectedFolder(e.target.value)}
                   onBlur={(e) => setSelectedFolder(e.target.value)}
-                  className="border-gray-700 bg-gray-800"
+                  className="min-h-11 border-gray-700 bg-gray-800"
                   disabled={isValidating || !serverData}
                 >
                   {(isValidating || !serverData) && (
@@ -512,7 +512,7 @@ const AdvancedRequester = ({
                     onBlur={(e) =>
                       setSelectedLanguage(parseInt(e.target.value))
                     }
-                    className="border-gray-700 bg-gray-800"
+                    className="min-h-11 border-gray-700 bg-gray-800"
                     disabled={isValidating || !serverData}
                   >
                     {(isValidating || !serverData) && (
@@ -552,6 +552,7 @@ const AdvancedRequester = ({
             <div className="mb-2">
               <label htmlFor="tags">{intl.formatMessage(messages.tags)}</label>
               <Select<OptionType, true>
+                inputId="tags"
                 name="tags"
                 options={(serverData?.tags ?? []).map((tag) => ({
                   label: tag.label,
@@ -564,7 +565,7 @@ const AdvancedRequester = ({
                     ? intl.formatMessage(globalMessages.loading)
                     : intl.formatMessage(messages.selecttags)
                 }
-                className="react-select-container react-select-container-dark"
+                className="react-select-container react-select-container-dark [&_.react-select__control]:min-h-11"
                 classNamePrefix="react-select"
                 value={
                   selectedTags
@@ -629,7 +630,7 @@ const AdvancedRequester = ({
                   <Label>{intl.formatMessage(messages.requestas)}</Label>
                   <div className="relative">
                     <span className="inline-block w-full rounded-md shadow-sm">
-                      <ListboxButton className="focus:shadow-outline-blue relative w-full cursor-default rounded-md border border-gray-700 bg-gray-800 py-2 pl-3 pr-10 text-left text-white transition duration-150 ease-in-out focus:border-blue-300 focus:outline-none sm:text-sm sm:leading-5">
+                      <ListboxButton className="focus:shadow-outline-blue relative min-h-11 w-full cursor-default rounded-md border border-gray-700 bg-gray-800 py-2 pl-3 pr-10 text-left text-white transition duration-150 ease-in-out focus:border-blue-300 focus:outline-none sm:text-sm sm:leading-5">
                         <span className="flex items-center">
                           <CachedImage
                             type="avatar"

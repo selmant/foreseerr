@@ -108,7 +108,7 @@
   }
 
   .slider-header {
-    @apply relative mb-4 mt-6 flex;
+    @apply relative mb-4 mt-6 flex min-h-11 items-center pr-24;
   }
 
   .service-error-banner {
@@ -176,11 +176,24 @@
   }
 
   .media-actions {
-    @apply relative mt-4 flex flex-shrink-0 flex-wrap items-center justify-center sm:flex-nowrap sm:justify-end xl:ml-auto xl:mt-0;
+    @apply relative mt-4 flex flex-shrink-0 flex-wrap items-center justify-center gap-y-2 sm:justify-end xl:ml-auto xl:mt-0;
   }
 
-  .media-actions > * {
-    @apply mb-3 sm:mb-0;
+  /* Labeled actions get their own row beside the poster on title pages. */
+  .media-header-detail {
+    @apply xl:grid xl:grid-cols-[13rem_minmax(0,1fr)] xl:grid-rows-[auto_1fr] xl:items-start xl:gap-x-6;
+  }
+
+  .media-header-detail > .media-poster {
+    @apply xl:row-span-2 xl:mr-0;
+  }
+
+  .media-header-detail > .media-title {
+    @apply xl:col-start-2 xl:mr-0 xl:min-w-0;
+  }
+
+  .media-header-detail > .media-actions {
+    @apply xl:col-start-2 xl:ml-0 xl:justify-start;
   }
 
   .media-overview {
@@ -327,6 +340,7 @@
 
   input[type='text'],
   input[type='password'],
+  :where(input)[type='search'],
   select,
   textarea {
     @apply block w-full min-w-0 flex-1 rounded-md border border-gray-500 bg-gray-700 text-white transition duration-150 ease-in-out sm:text-sm sm:leading-5;

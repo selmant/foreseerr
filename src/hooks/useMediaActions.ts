@@ -16,7 +16,7 @@ export interface MediaActionCapabilitiesResponse {
   tv: { watched: boolean; rating: boolean };
   episode: { watched: boolean; rating: boolean };
   providers: {
-    id: 'trakt' | 'jellyfin' | 'anilist';
+    id: 'trakt' | 'jellyfin' | 'anilist' | 'simkl';
     linked: boolean;
     capabilities: {
       readWatched: boolean;
@@ -79,7 +79,12 @@ export function useMediaActions({
   batchRefsKey = null,
   onStatusChange,
 }: UseMediaActionsOptions) {
-  const { data: capabilities } = useMediaActionCapabilities();
+  const {
+    data: capabilities,
+    error: capabilitiesError,
+    isLoading: capabilitiesPending,
+    mutate: mutateCapabilities,
+  } = useMediaActionCapabilities();
   const surfaceCapabilities =
     mediaType === 'movie' ? capabilities?.movie : capabilities?.tv;
   const globallyCanWatch = Boolean(surfaceCapabilities?.watched);
@@ -97,6 +102,7 @@ export function useMediaActions({
     data: swrData,
     error: statusError,
     isLoading: swrLoading,
+    mutate: mutateStatus,
   } = useSWR<MediaActionStatusResponse>(statusKey, {
     isPaused: () => deferStatusFetch,
     revalidateOnFocus: false,
@@ -117,6 +123,11 @@ export function useMediaActions({
     actionsConfigured && !statusError && (!data || canWatch || canRate);
   const statusPending =
     actionsConfigured && !data && (deferStatusFetch || swrLoading);
+
+  const refreshStatus = useCallback(async () => {
+    await mutateCapabilities();
+    await mutateStatus();
+  }, [mutateCapabilities, mutateStatus]);
 
   const applyNext = useCallback(
     async (next: MediaActionWriteStatusResponse) => {
@@ -189,6 +200,10 @@ export function useMediaActions({
   );
 
   return {
+    capabilities,
+    capabilitiesError,
+    capabilitiesPending,
+    actionsConfigured,
     actionsEnabled,
     canWatch,
     canRate,
@@ -198,5 +213,6 @@ export function useMediaActions({
     busy,
     toggleWatched,
     submitRating,
+    refreshStatus,
   };
 }

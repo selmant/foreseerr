@@ -36,6 +36,9 @@ const messages = defineMessages('components.RequestButton', {
   selectseasons4k: 'Select Seasons in 4K…',
   requestepisodes: 'Request Episodes…',
   requestepisodes4k: 'Request Episodes in 4K…',
+  watchAhead: 'Watch Ahead…',
+  watchAhead4k: 'Watch Ahead in 4K…',
+  requestOptions: 'Request options',
   season1Success: 'Season 1 requested successfully!',
   season1Error: 'Could not request season 1. Opening the full request form.',
   requestAllSuccess: 'All seasons requested successfully!',
@@ -93,7 +96,7 @@ const RequestButton = ({
     'none' | 'all'
   >('none');
   const [initialRequestScope, setInitialRequestScope] = useState<
-    'seasons' | 'episodes'
+    'seasons' | 'episodes' | 'watchAhead'
   >('seasons');
   const [isQuickRequesting, setIsQuickRequesting] = useState(false);
 
@@ -171,10 +174,13 @@ const RequestButton = ({
     }
   };
 
-  const openEpisodeModal = (is4k: boolean) => {
+  const openEpisodeModal = (
+    is4k: boolean,
+    scope: 'episodes' | 'watchAhead' = 'episodes'
+  ) => {
     setEditRequest(false);
     setInitialSeasonSelection('none');
-    setInitialRequestScope('episodes');
+    setInitialRequestScope(scope);
     if (is4k) {
       setShowRequest4kModal(true);
     } else {
@@ -607,6 +613,27 @@ const RequestButton = ({
     }
   }
 
+  // Offer Watch Ahead wherever an episode request is permitted.
+  for (const is4k of [false, true]) {
+    const episodeOption = buttons.findIndex((button) =>
+      is4k
+        ? button.id === 'request-episodes-4k' ||
+          button.id === 'request-episodes-more-4k'
+        : button.id === 'request-episodes' ||
+          button.id === 'request-episodes-more'
+    );
+    if (episodeOption !== -1) {
+      buttons.splice(episodeOption + 1, 0, {
+        id: is4k ? 'watch-ahead-4k' : 'watch-ahead',
+        text: intl.formatMessage(
+          is4k ? messages.watchAhead4k : messages.watchAhead
+        ),
+        action: () => openEpisodeModal(is4k, 'watchAhead'),
+        svg: <ArrowDownTrayIcon />,
+      });
+    }
+  }
+
   const [buttonOne, ...others] = buttons;
 
   if (!buttonOne) {
@@ -655,6 +682,7 @@ const RequestButton = ({
         }}
       />
       <ButtonWithDropdown
+        dropdownLabel={intl.formatMessage(messages.requestOptions)}
         text={
           <>
             {buttonOne.svg}
@@ -676,6 +704,7 @@ const RequestButton = ({
         {others.length > 0
           ? others.map((button) => (
               <ButtonWithDropdown.Item
+                className="min-h-[44px]"
                 onClick={() => {
                   window.setTimeout(() => button.action(), 0);
                 }}

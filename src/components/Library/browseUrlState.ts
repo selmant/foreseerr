@@ -70,6 +70,14 @@ export const serializeBrowseApiQuery = (
   state: LibraryBrowsePageState
 ): URLSearchParams => serializeLibraryBrowseQuery(state);
 
+export const libraryBrowseApiPath = (state: LibraryBrowsePageState): string => {
+  const params = serializeBrowseApiQuery(state);
+  params.set('take', String(state.take));
+  params.set('skip', String(state.skip));
+  // OpenAPI's reserved-character validation requires %20 rather than + for spaces.
+  return `/api/v1/library/browse?${params.toString().replace(/\+/g, '%20')}`;
+};
+
 /** Keep a typed-but-not-yet-debounced search when Movies/Unwatched patch. */
 export const mergeBrowsePatch = (
   state: LibraryBrowsePageState,

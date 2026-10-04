@@ -1,7 +1,7 @@
 import Header from '@app/components/Common/Header';
-import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
+import DiscoverProviderResults from '@app/components/Discover/DiscoverProviderResults';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import TraktDiscoverFilters from '@app/components/Discover/TraktDiscoverFilters';
 import { prepareTraktDiscoverOptions } from '@app/components/Discover/TraktDiscoverFilters/traktDiscoverOptions';
@@ -11,9 +11,16 @@ import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
+import defineMessages from '@app/utils/defineMessages';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import type { ReactNode } from 'react';
+import { useIntl } from 'react-intl';
 import useSWR from 'swr';
+
+const messages = defineMessages('components.Discover.TraktDiscoverPage', {
+  empty:
+    'Try another content type or adjust your filters. You can also choose another Trakt view above.',
+});
 
 interface TraktDiscoverPageProps {
   title: string;
@@ -43,10 +50,15 @@ const TraktDiscoverPage = ({
   showHideWatchedFilter,
   registerHideWatched = false,
 }: TraktDiscoverPageProps) => {
+  const intl = useIntl();
   const routeQuery = useRouteQuery();
   const settings = useSettings();
   const { user } = useUser();
-  const { data: traktStatus } = useSWR<{
+  const {
+    data: traktStatus,
+    error: accountError,
+    mutate: refreshAccount,
+  } = useSWR<{
     connected: boolean;
     username: string | null;
   }>(
@@ -67,7 +79,7 @@ const TraktDiscoverPage = ({
     titles,
     firstResultData,
     fetchMore,
-    error,
+    loadError,
     mutate,
   } = useDiscover<WatchlistItem, { title?: string }>(
     canLoad ? endpoint : '',
@@ -106,33 +118,36 @@ const TraktDiscoverPage = ({
     );
   }
 
-  if (error) {
-    return <ErrorPage statusCode={500} />;
-  }
-
   const pageTitle = firstResultData?.title || title;
 
   return (
     <>
       <PageTitle title={pageTitle} />
-      <div className="mb-5 mt-1 flex flex-col justify-between lg:flex-row lg:items-end">
+      <div className="mb-5 mt-1 space-y-4 [&_h2]:whitespace-normal [&_h2]:break-words">
         <Header subtext={subtext}>
           <SliderSourceTitle source="trakt">{pageTitle}</SliderSourceTitle>
         </Header>
         <TraktDiscoverFilters
+          showListSort={queryExcludes.includes('sort')}
           showHideWatchedFilter={showHideWatchedFilter}
           showRecommendationFilters={showRecommendationFilters}
         />
       </div>
-      <ListView
-        plexItems={titles}
+      <DiscoverProviderResults
+        source="Trakt"
+        titles={titles}
         isEmpty={isEmpty}
-        isLoading={
-          isLoadingInitialData || (isLoadingMore && (titles?.length ?? 0) > 0)
-        }
+        isLoadingInitialData={isLoadingInitialData && !accountError}
+        isLoadingMore={isLoadingMore && !accountError}
         isReachingEnd={isReachingEnd}
-        onScrollBottom={fetchMore}
-        mutateParent={mutate}
+        fetchMore={fetchMore}
+        error={accountError || loadError}
+        onRefresh={async () => {
+          if (requiresLinkedAccount) await refreshAccount();
+          await mutate?.();
+        }}
+        mutate={mutate}
+        emptyDescription={intl.formatMessage(messages.empty)}
       />
     </>
   );

@@ -653,7 +653,7 @@ const UserGeneralSettings = () => {
                     </div>
                   </div>
                 )}
-              <div className="form-row">
+              <div id="watch-ahead" className="form-row scroll-mt-24">
                 <label htmlFor="watchAheadEpisodeCount" className="text-label">
                   <span>
                     {intl.formatMessage(messages.watchAheadEpisodeCount)}

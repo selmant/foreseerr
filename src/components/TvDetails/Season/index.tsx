@@ -4,6 +4,7 @@ import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
+import useLibraryItem from '@app/components/Library/useLibraryItem';
 import RequestModal from '@app/components/RequestModal';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
@@ -31,7 +32,6 @@ import {
 import { MediaRequestStatus } from '@server/constants/media';
 import type {
   LibraryEpisode,
-  LibraryItemInspectorResponse,
   LibrarySeasonEpisodesResponse,
 } from '@server/interfaces/api/libraryInterfaces';
 import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
@@ -58,6 +58,7 @@ const messages = defineMessages('components.TvDetails.Season', {
   resume: 'Resume',
   declined: 'Declined',
   markWatched: 'Mark watched',
+  markWatchedButton: 'Mark Watched',
   markUnwatched: 'Mark unwatched',
   watched: 'Watched',
   watchActionError: 'Could not update this episode. Try again.',
@@ -139,10 +140,7 @@ const useLibrarySeasonEpisodes = (
   jellyfinSeriesId: string | undefined,
   seasonNumber: number
 ) => {
-  const { data: series } = useSWR<LibraryItemInspectorResponse>(
-    jellyfinSeriesId ? `/api/v1/library/items/${jellyfinSeriesId}` : null,
-    { revalidateOnFocus: false, shouldRetryOnError: false }
-  );
+  const series = useLibraryItem(jellyfinSeriesId);
   const librarySeason = series?.seasons?.find(
     (season) => season.indexNumber === seasonNumber
   );
@@ -561,7 +559,7 @@ const Season = ({
                               {intl.formatMessage(
                                 isWatched
                                   ? messages.watched
-                                  : messages.markWatched
+                                  : messages.markWatchedButton
                               )}
                             </span>
                           </Button>

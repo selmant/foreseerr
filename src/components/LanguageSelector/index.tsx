@@ -9,6 +9,7 @@ import Select from 'react-select';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.LanguageSelector', {
+  originalLanguage: 'Original Language',
   originalLanguageDefault: 'All Languages',
   languageServerDefault: 'Default ({language})',
 });
@@ -98,6 +99,7 @@ const LanguageSelector = ({
 
   return (
     <Select<OptionType, true>
+      aria-label={intl.formatMessage(messages.originalLanguage)}
       options={options}
       isMulti
       isDisabled={isDisabled}

@@ -37,8 +37,9 @@ const messages = defineMessages('components.TitleCard.MediaActionControls', {
   rate: 'Rate',
   ratingLabel: 'Your rating',
   ratingOutOf: '{score}/10',
-  ratingHint: 'Click a star to save',
+  ratingHint: 'Choose a rating to save',
   actionFailed: 'Could not update watch status. Try again.',
+  ratingFailed: 'Could not save your rating. Try again.',
   actionPartial:
     'Updated, but some connected services could not be synchronized.',
 });
@@ -113,8 +114,7 @@ const MediaActionControls = ({
     busy,
     submitRating,
     label: intl.formatMessage(messages.ratingLabel),
-    hint: intl.formatMessage(messages.ratingHint),
-    failureMessage: intl.formatMessage(messages.actionFailed),
+    failureMessage: intl.formatMessage(messages.ratingFailed),
     partialMessage: intl.formatMessage(messages.actionPartial),
     stopPropagation: true,
     scoreClassName: (isHovering) =>
@@ -188,6 +188,13 @@ const MediaActionControls = ({
               buttonSize="sm"
               disabled={busy || statusPending}
               aria-haspopup="dialog"
+              aria-label={
+                hasRating
+                  ? intl.formatMessage(messages.ratingOutOf, {
+                      score: starsToTrakt(savedStars),
+                    })
+                  : intl.formatMessage(messages.rate)
+              }
               aria-expanded={ratingPopover.isOpen}
               aria-controls={ratingPopover.popoverId}
               onClick={(e) => {

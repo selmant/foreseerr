@@ -1,5 +1,6 @@
 import Button from '@app/components/Common/Button';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
+import LinkButton from '@app/components/Common/LinkButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
@@ -32,9 +33,11 @@ import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import {
+  AdjustmentsHorizontalIcon,
   ArrowDownOnSquareIcon,
   ArrowPathIcon,
   ArrowUturnLeftIcon,
+  LinkIcon,
   PencilIcon,
   PlusIcon,
 } from '@heroicons/react/24/solid';
@@ -64,6 +67,11 @@ const messages = defineMessages('components.Discover', {
   customizediscover: 'Customize Discover',
   stopediting: 'Stop Editing',
   createnewslider: 'Create New Slider',
+  subtitle: 'Find your next watch. Make this feed your own.',
+  preferences: 'Discover preferences',
+  linkedAccounts: 'Linked accounts',
+  editDescription:
+    'Choose the rows everyone sees on Discover. Add a list, hide a row, or change the order.',
 });
 
 const Discover = () => {
@@ -139,10 +147,52 @@ const Discover = () => {
   return (
     <>
       <PageTitle title={intl.formatMessage(messages.discover)} />
+      <div className="mb-6 mt-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white sm:text-3xl">
+            {intl.formatMessage(messages.discover)}
+          </h1>
+          <p className="mt-2 text-sm text-gray-400">
+            {intl.formatMessage(messages.subtitle)}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <LinkButton
+            to="/profile/settings/discover"
+            buttonSize="sm"
+            className="min-h-[44px]"
+          >
+            <AdjustmentsHorizontalIcon />
+            <span>{intl.formatMessage(messages.preferences)}</span>
+          </LinkButton>
+          <LinkButton
+            to="/profile/settings/linked-accounts"
+            buttonSize="sm"
+            className="min-h-[44px]"
+          >
+            <LinkIcon />
+            <span>{intl.formatMessage(messages.linkedAccounts)}</span>
+          </LinkButton>
+          {hasPermission(Permission.ADMIN) && !isEditing && (
+            <Button
+              onClick={() => setIsEditing(true)}
+              buttonSize="sm"
+              className="min-h-[44px]"
+              data-testid="discover-start-editing"
+            >
+              <PencilIcon />
+              <span>{intl.formatMessage(messages.customizediscover)}</span>
+            </Button>
+          )}
+        </div>
+      </div>
       {hasPermission(Permission.ADMIN) && (
         <>
           {isEditing && (
             <div className="my-6 rounded-lg bg-gray-800">
+              <p className="px-4 pt-4 text-sm text-gray-300">
+                {intl.formatMessage(messages.editDescription)}
+              </p>
               <div className="flex items-center space-x-2 rounded-t-lg border-l border-r border-t border-gray-800 bg-gray-900 p-4 text-lg font-semibold text-gray-400">
                 <PlusIcon className="w-6" />
                 <span data-testid="create-slider-header">
@@ -162,25 +212,6 @@ const Discover = () => {
               </div>
             </div>
           )}
-          <Transition
-            as="div"
-            show={!isEditing}
-            enter="transition-opacity duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="transition-opacity duration-300"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-            className="absolute-bottom-shift fixed right-6 z-50 flex items-center sm:bottom-8"
-          >
-            <button
-              onClick={() => setIsEditing(true)}
-              data-testid="discover-start-editing"
-              className="h-12 w-12 rounded-full border-2 border-gray-600 bg-gray-700/90 p-3 text-gray-400 shadow transition-all hover:bg-gray-700"
-            >
-              <PencilIcon className="h-full w-full" />
-            </button>
-          </Transition>
           <Transition
             as="div"
             show={isEditing}

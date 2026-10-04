@@ -32,6 +32,8 @@ interface DiscoverResult<T, S> {
   isEmpty: boolean;
   isReachingEnd: boolean;
   error: unknown;
+  /** Includes refresh/page errors even when previously loaded titles remain. */
+  loadError: unknown;
   titles: T[];
   firstResultData?: BaseSearchResult<T> & S;
   mutate?: () => void;
@@ -210,6 +212,7 @@ const useDiscover = <
     isEmpty,
     isReachingEnd,
     error: error && titles.length ? null : error,
+    loadError: error,
     titles,
     firstResultData: data?.[0],
     mutate,

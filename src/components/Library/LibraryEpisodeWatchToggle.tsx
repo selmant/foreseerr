@@ -11,7 +11,10 @@ import {
   writeSucceeded,
   type MediaActionWriteResponse,
 } from '@app/utils/mediaActions';
-import { CheckBadgeIcon as CheckBadgeOutline } from '@heroicons/react/24/outline';
+import {
+  ArrowPathIcon,
+  CheckBadgeIcon as CheckBadgeOutline,
+} from '@heroicons/react/24/outline';
 import { CheckBadgeIcon as CheckBadgeSolid } from '@heroicons/react/24/solid';
 import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
@@ -36,6 +39,7 @@ interface LibraryEpisodeWatchToggleProps {
   watched: boolean;
   episodesKey: string;
   onLocalChange?: (watched: boolean) => void;
+  episodeLabel?: string;
 }
 
 const LibraryEpisodeWatchToggle = ({
@@ -46,6 +50,7 @@ const LibraryEpisodeWatchToggle = ({
   watched,
   episodesKey,
   onLocalChange,
+  episodeLabel,
 }: LibraryEpisodeWatchToggleProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
@@ -127,16 +132,26 @@ const LibraryEpisodeWatchToggle = ({
     <Button
       buttonType="ghost"
       buttonSize="sm"
-      disabled={busy}
+      className="min-h-11 min-w-11 shrink-0"
+      aria-disabled={busy}
+      aria-busy={busy}
       aria-pressed={localWatched}
-      aria-label={
+      aria-label={[
         localWatched
           ? intl.formatMessage(messages.markUnwatched)
-          : intl.formatMessage(messages.markWatched)
-      }
+          : intl.formatMessage(messages.markWatched),
+        episodeLabel,
+      ]
+        .filter(Boolean)
+        .join(': ')}
       onClick={toggle}
     >
-      {localWatched ? (
+      {busy ? (
+        <ArrowPathIcon
+          aria-hidden
+          className="h-4 w-4 animate-spin motion-reduce:animate-none"
+        />
+      ) : localWatched ? (
         <CheckBadgeSolid className="h-4 w-4 text-emerald-400" />
       ) : (
         <CheckBadgeOutline className="h-4 w-4" />

@@ -27,6 +27,9 @@ const MonthView = ({ anchorDate, items, onSelect, onSelectDay }: Props) => {
   );
   return (
     <div className="overflow-hidden rounded-lg border border-gray-700 bg-gray-800/60">
+      <p className="border-b border-gray-700 px-3 py-2 text-xs text-gray-400 lg:hidden">
+        {intl.formatMessage(messages.monthHint)}
+      </p>
       <div className="grid grid-cols-7 border-b border-gray-700 bg-gray-800">
         {weekdays.map((day) => (
           <div
@@ -47,14 +50,37 @@ const MonthView = ({ anchorDate, items, onSelect, onSelectDay }: Props) => {
           return (
             <div
               key={day.toISOString()}
-              className={`min-h-28 border-b border-r border-gray-700/80 p-1.5 ${outside ? 'bg-gray-900/30' : ''}`}
+              className={`min-h-20 border-b border-r border-gray-700/80 p-0.5 lg:min-h-28 lg:p-1.5 ${outside ? 'bg-gray-900/30' : ''}`}
             >
+              {dayItems.length ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectDay(dayItems, day)}
+                  aria-label={`${intl.formatMessage(messages.dayReleases, { date: intl.formatDate(day, { dateStyle: 'full' }) })}: ${intl.formatMessage(messages.dayCount, { count: dayItems.length })}`}
+                  className="flex min-h-16 w-full flex-col items-center gap-1 rounded-md py-1 hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 lg:hidden"
+                >
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${isToday ? 'bg-indigo-600 font-bold text-white' : 'text-gray-300'}`}
+                  >
+                    {day.getDate()}
+                  </span>
+                  <span className="rounded-full bg-indigo-500/20 px-2 text-xs font-medium text-indigo-200">
+                    {dayItems.length}
+                  </span>
+                </button>
+              ) : (
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs lg:hidden ${isToday ? 'bg-indigo-600 font-bold text-white' : 'text-gray-400'}`}
+                >
+                  {day.getDate()}
+                </span>
+              )}
               <div
-                className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs ${isToday ? 'bg-indigo-600 font-bold text-white' : 'text-gray-400'}`}
+                className={`mb-1 hidden h-6 w-6 items-center justify-center rounded-full text-xs lg:flex ${isToday ? 'bg-indigo-600 font-bold text-white' : 'text-gray-400'}`}
               >
                 {day.getDate()}
               </div>
-              <div className="space-y-1">
+              <div className="hidden space-y-1 lg:block">
                 {dayItems.slice(0, 3).map((item) => (
                   <CalendarChip
                     item={item}
@@ -65,7 +91,7 @@ const MonthView = ({ anchorDate, items, onSelect, onSelectDay }: Props) => {
                 {dayItems.length > 3 ? (
                   <button
                     onClick={() => onSelectDay(dayItems, day)}
-                    className="w-full px-1.5 text-left text-xs font-medium text-indigo-400 transition hover:text-indigo-300"
+                    className="min-h-6 w-full rounded px-1.5 text-left text-xs font-medium text-indigo-300 transition hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                   >
                     {intl.formatMessage(messages.moreReleases, {
                       count: dayItems.length - 3,

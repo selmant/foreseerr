@@ -34,6 +34,7 @@ import { useInView } from 'react-intersection-observer';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR, { mutate } from 'swr';
+import RequestActionsMenu from './ActionsMenu';
 
 const messages = defineMessages('components.RequestList.RequestItem', {
   seasons: '{seasonCount, plural, one {Season} other {Seasons}}',
@@ -99,7 +100,7 @@ const RequestItemError = ({
   );
 
   return (
-    <div className="flex h-64 w-full flex-col justify-center rounded-xl bg-gray-800 py-4 text-gray-400 shadow-md ring-1 ring-red-500 xl:h-28 xl:flex-row">
+    <div className="flex h-64 w-full flex-col justify-center rounded-xl bg-gray-800 py-4 text-gray-400 shadow-md ring-1 ring-red-500 xl:min-h-28 xl:flex-row">
       <div className="flex w-full flex-col justify-between overflow-hidden sm:flex-row">
         <div className="flex w-full flex-col justify-center overflow-hidden pl-4 pr-4 sm:pr-0 xl:w-7/12 2xl:w-2/3">
           <div className="flex text-lg font-bold text-white xl:text-xl">
@@ -289,7 +290,7 @@ const RequestItemError = ({
       <div className="z-10 mt-4 flex w-full flex-col justify-center pl-4 pr-4 xl:mt-0 xl:w-96 xl:items-end xl:pl-0">
         {hasPermission(Permission.MANAGE_REQUESTS) && requestData?.media.id && (
           <Button
-            className="w-full"
+            className="min-h-11 w-full"
             buttonType="danger"
             onClick={() => deleteRequest()}
           >
@@ -372,12 +373,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
         );
       } catch (e) {
         if (!axios.isAxiosError(e) || e.response?.status !== 404) {
-          addToast(intl.formatMessage(messages.removemediaerror), {
-            autoDismiss: true,
-            appearance: 'error',
-          });
-          revalidateList();
-          return;
+          throw e;
         }
       }
       revalidateList();
@@ -450,7 +446,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
           setShowEditModal(false);
         }}
       />
-      <div className="relative flex w-full flex-col justify-between overflow-hidden rounded-xl bg-gray-800 py-2 text-gray-400 shadow-md ring-1 ring-gray-700 xl:h-28 xl:flex-row">
+      <div className="relative flex w-full flex-col justify-between overflow-hidden rounded-xl bg-gray-800 py-2 text-gray-400 shadow-md ring-1 ring-gray-700 xl:min-h-28 xl:flex-row">
         {title.backdropPath && (
           <div className="absolute inset-0 z-0 w-full bg-cover bg-center xl:w-2/3">
             <CachedImage
@@ -464,7 +460,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
               className="absolute inset-0"
               style={{
                 backgroundImage:
-                  'linear-gradient(90deg, rgba(31, 41, 55, 0.47) 0%, rgba(31, 41, 55, 1) 100%)',
+                  'linear-gradient(90deg, rgba(17, 24, 39, 0.82) 0%, rgba(31, 41, 55, 0.98) 100%)',
               }}
             />
           </div>
@@ -506,7 +502,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                     ? `/movie/${requestData.media.tmdbId}`
                     : `/tv/${requestData.media.tmdbId}`
                 }
-                className="mr-2 min-w-0 truncate text-lg font-bold text-white hover:underline xl:text-xl"
+                className="mr-2 min-w-0 break-words text-lg font-bold text-white hover:underline xl:text-xl"
               >
                 {isMovie(title) ? title.title : title.name}
               </Link>
@@ -517,7 +513,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                       seasonCount: request.seasons.length,
                     })}
                   </span>
-                  <div className="hide-scrollbar flex flex-nowrap overflow-x-scroll">
+                  <div className="flex flex-wrap gap-1">
                     {request.seasons.map((season) => (
                       <span key={`season-${season.id}`} className="mr-2">
                         <Badge>
@@ -718,11 +714,11 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
             )}
           </div>
         </div>
-        <div className="z-10 mt-4 flex w-full flex-col justify-center space-y-2 pl-4 pr-4 xl:mt-0 xl:w-96 xl:items-end xl:pl-0">
+        <div className="z-10 mt-4 flex w-full flex-col justify-center space-y-2 pl-4 pr-4 xl:mt-0 xl:w-72 xl:items-end xl:pl-0">
           {requestData.status === MediaRequestStatus.FAILED &&
             hasPermission(Permission.MANAGE_REQUESTS) && (
               <Button
-                className="w-full"
+                className="min-h-11 w-full"
                 buttonType="primary"
                 disabled={isRetrying}
                 onClick={() => retryRequest()}
@@ -740,37 +736,20 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
             )}
           {requestData.status !== MediaRequestStatus.PENDING &&
             hasPermission(Permission.MANAGE_REQUESTS) && (
-              <>
-                <ConfirmButton
-                  onClick={() => deleteRequest()}
-                  confirmText={intl.formatMessage(globalMessages.areyousure)}
-                  className="w-full"
-                >
-                  <TrashIcon />
-                  <span>{intl.formatMessage(messages.deleterequest)}</span>
-                </ConfirmButton>
-                {request.canRemove && (
-                  <ConfirmButton
-                    onClick={() => deleteMediaFile()}
-                    confirmText={intl.formatMessage(globalMessages.areyousure)}
-                    className="w-full"
-                  >
-                    <TrashIcon />
-                    <span>
-                      {intl.formatMessage(messages.removearr, {
-                        arr: request.type === 'movie' ? 'Radarr' : 'Sonarr',
-                      })}
-                    </span>
-                  </ConfirmButton>
-                )}
-              </>
+              <RequestActionsMenu
+                title={isMovie(title) ? title.title : title.name}
+                mediaType={request.type}
+                tmdbId={request.media.tmdbId}
+                onDelete={deleteRequest}
+                onRemove={request.canRemove ? deleteMediaFile : undefined}
+              />
             )}
           {requestData.status === MediaRequestStatus.PENDING &&
             hasPermission(Permission.MANAGE_REQUESTS) && (
               <div className="flex w-full flex-row space-x-2">
-                <span className="w-full">
+                <span className="min-h-11 w-full">
                   <Button
-                    className="w-full"
+                    className="min-h-11 w-full"
                     buttonType="success"
                     onClick={() => modifyRequest('approve')}
                     disabled={updatingType !== null}
@@ -779,9 +758,9 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                     <span>{intl.formatMessage(globalMessages.approve)}</span>
                   </Button>
                 </span>
-                <span className="w-full">
+                <span className="min-h-11 w-full">
                   <Button
-                    className="w-full"
+                    className="min-h-11 w-full"
                     buttonType="danger"
                     onClick={() => modifyRequest('decline')}
                     disabled={updatingType !== null}
@@ -797,9 +776,9 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
               (requestData.requestedBy.id === user?.id &&
                 (requestData.type === 'tv' ||
                   hasPermission(Permission.REQUEST_ADVANCED)))) && (
-              <span className="w-full">
+              <span className="min-h-11 w-full">
                 <Button
-                  className="w-full"
+                  className="min-h-11 w-full"
                   buttonType="primary"
                   onClick={() => setShowEditModal(true)}
                   disabled={updatingType !== null}
@@ -815,7 +794,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
               <ConfirmButton
                 onClick={() => deleteRequest()}
                 confirmText={intl.formatMessage(globalMessages.areyousure)}
-                className="w-full"
+                className="min-h-11 w-full"
               >
                 <XMarkIcon />
                 <span>{intl.formatMessage(messages.cancelRequest)}</span>

@@ -2,7 +2,7 @@ import ProgressCircle from '@app/components/Common/ProgressCircle';
 import defineMessages from '@app/utils/defineMessages';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/solid';
 import type { QuotaStatus } from '@server/interfaces/api/userInterfaces';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 
@@ -45,34 +45,31 @@ const QuotaDisplay = ({
 }: QuotaDisplayProps) => {
   const intl = useIntl();
   const [showDetails, setShowDetails] = useState(false);
+  const detailsId = useId();
   return (
-    <div
-      className="my-4 flex flex-col rounded-md border border-gray-700 p-4 backdrop-blur"
-      onClick={() => setShowDetails((s) => !s)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          setShowDetails((s) => !s);
-        }
-      }}
-      role="button"
-      tabIndex={0}
-    >
-      <div className="flex items-center">
+    <div className="my-4 rounded-md border border-gray-700 p-4 backdrop-blur">
+      <button
+        type="button"
+        aria-expanded={showDetails}
+        aria-controls={detailsId}
+        className="flex min-h-11 w-full items-center whitespace-normal rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        onClick={() => setShowDetails((s) => !s)}
+      >
         <ProgressCircle
-          className="h-8 w-8"
+          className="h-8 w-8 shrink-0"
           progress={Math.round(
             ((remaining ?? quota?.remaining ?? 0) / (quota?.limit ?? 1)) * 100
           )}
           useHeatLevel
         />
-        <div
-          className={`flex items-end ${
+        <span
+          className={`min-w-0 flex-1 ${
             (remaining ?? quota?.remaining ?? 0) <= 0 || quota?.restricted
               ? 'text-red-500'
               : ''
           }`}
         >
-          <div className="ml-2 text-lg">
+          <span className="ml-2 block !whitespace-normal text-lg">
             {overLimit !== undefined
               ? intl.formatMessage(messages.notenoughseasonrequests)
               : intl.formatMessage(messages.requestsremaining, {
@@ -82,66 +79,64 @@ const QuotaDisplay = ({
                   ),
                   strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
                 })}
-          </div>
-        </div>
-        <div className="flex flex-1 justify-end">
+          </span>
+        </span>
+        <span aria-hidden className="ml-2 shrink-0">
           {showDetails ? (
             <ChevronUpIcon className="h-6 w-6" />
           ) : (
             <ChevronDownIcon className="h-6 w-6" />
           )}
-        </div>
-      </div>
-      {showDetails && (
-        <div className="mt-4">
-          {overLimit !== undefined && (
-            <div className="mb-2">
-              {intl.formatMessage(
-                userOverride
-                  ? messages.requiredquotaUser
-                  : messages.requiredquota,
-                {
-                  seasons: overLimit,
-                  strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
-                }
-              )}
-            </div>
-          )}
-          <div>
+        </span>
+      </button>
+      <div id={detailsId} hidden={!showDetails} className="mt-4">
+        {overLimit !== undefined && (
+          <div className="mb-2">
             {intl.formatMessage(
               userOverride
-                ? messages.allowedRequestsUser
-                : messages.allowedRequests,
+                ? messages.requiredquotaUser
+                : messages.requiredquota,
               {
-                limit: quota?.limit,
-                days: quota?.days,
-                type: intl.formatMessage(
-                  mediaType === 'movie'
-                    ? messages.movielimit
-                    : messages.seasonlimit,
-                  { limit: quota?.limit }
-                ),
+                seasons: overLimit,
                 strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
               }
             )}
           </div>
-          <div className="mt-2">
-            {intl.formatMessage(
-              userOverride ? messages.quotaLinkUser : messages.quotaLink,
-              {
-                ProfileLink: (msg: React.ReactNode) => (
-                  <Link
-                    to={userOverride ? `/users/${userOverride}` : '/profile'}
-                    className="text-white transition duration-300 hover:underline"
-                  >
-                    {msg}
-                  </Link>
-                ),
-              }
-            )}
-          </div>
+        )}
+        <div>
+          {intl.formatMessage(
+            userOverride
+              ? messages.allowedRequestsUser
+              : messages.allowedRequests,
+            {
+              limit: quota?.limit,
+              days: quota?.days,
+              type: intl.formatMessage(
+                mediaType === 'movie'
+                  ? messages.movielimit
+                  : messages.seasonlimit,
+                { limit: quota?.limit }
+              ),
+              strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
+            }
+          )}
         </div>
-      )}
+        <div className="mt-2">
+          {intl.formatMessage(
+            userOverride ? messages.quotaLinkUser : messages.quotaLink,
+            {
+              ProfileLink: (msg: React.ReactNode) => (
+                <Link
+                  to={userOverride ? `/users/${userOverride}` : '/profile'}
+                  className="inline-flex min-h-11 items-center rounded text-white underline underline-offset-4 transition duration-300 hover:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  {msg}
+                </Link>
+              ),
+            }
+          )}
+        </div>
+      </div>
     </div>
   );
 };

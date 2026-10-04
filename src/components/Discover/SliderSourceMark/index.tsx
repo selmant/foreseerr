@@ -81,9 +81,9 @@ export const SliderSourceTitle = ({
   source: DiscoverSliderSource;
   children: ReactNode;
 }) => (
-  <span className="inline-flex items-center gap-2">
+  <span className="inline-flex max-w-full items-start gap-2">
     <SliderSourceMark source={source} className="h-7 w-7 sm:h-8 sm:w-8" />
-    <span>{children}</span>
+    <span className="text-overseerr min-w-0 break-words">{children}</span>
   </span>
 );
 
@@ -97,9 +97,9 @@ export const DiscoverSliderTitle = ({
   children: ReactNode;
 }) => (
   <div className="slider-header">
-    <Link to={href} className="slider-title">
+    <Link to={href} className="slider-title min-w-0 max-w-full">
       <SliderSourceMark source={source} />
-      <span>{children}</span>
+      <span className="min-w-0 break-words">{children}</span>
       <ArrowRightCircleIcon />
     </Link>
   </div>

@@ -519,7 +519,11 @@ const SettingsMain = () => {
                   </div>
                 </div>
                 <div className="form-row">
-                  <label htmlFor="blocklistedTags" className="text-label">
+                  <label
+                    id="blocklist-tags"
+                    htmlFor="blocklistedTags"
+                    className="text-label scroll-mt-24"
+                  >
                     <span>{intl.formatMessage(messages.blocklistedTags)}</span>
                     <span className="label-tip">
                       {intl.formatMessage(messages.blocklistedTagsTip)}

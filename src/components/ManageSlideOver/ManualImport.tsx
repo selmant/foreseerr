@@ -5,15 +5,16 @@ import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
 import {
   ArrowDownTrayIcon,
+  ArrowPathIcon,
   DocumentMagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
+import EpisodeAssignmentPicker from './EpisodeAssignmentPicker';
 
 import {
   formatSize,
-  type Episode,
   type ImportCandidate,
   type ImportSource,
   type ServarrContext,
@@ -65,6 +66,17 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   statusFailed: 'Unable to read manual import status.',
   importQueued: 'Manual import queued.',
   submitFailed: 'Unable to submit manual import.',
+  title: 'Import downloaded files',
+  description:
+    'Review a completed download and choose which files {service} should add to your library.',
+  checking: 'Checking for completed downloads…',
+  refresh: 'Check downloads again',
+  selectAll: 'Select all ready files',
+  selectedCount:
+    '{selected, number} of {total, plural, one {# file selected} other {# files selected}}',
+  moveHint:
+    'Move removes the files from the download folder after adding them to your library.',
+  copyHint: 'Copy keeps the original files in the download folder.',
 });
 
 const MANUAL_IMPORT_POLL_MS = 2000;
@@ -82,6 +94,7 @@ const ManualImport = ({
   onChanged,
   refreshToken,
   interventionId,
+  onSourceCountChanged,
 }: {
   mediaId: number;
   is4k: boolean;
@@ -89,6 +102,7 @@ const ManualImport = ({
   onChanged: () => void;
   refreshToken: number;
   interventionId?: number;
+  onSourceCountChanged?: (count: number) => void;
 }) => {
   const intl = useIntl();
   const { addToast } = useToasts();
@@ -125,6 +139,21 @@ const ManualImport = ({
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const confirmCancelRef = useRef<HTMLButtonElement>(null);
+  const importTriggerRef = useRef<HTMLButtonElement>(null);
+  useEffect(
+    () => onSourceCountChanged?.(sources.length),
+    [onSourceCountChanged, sources.length]
+  );
+  useEffect(() => {
+    if (confirmOpen) confirmCancelRef.current?.focus({ preventScroll: true });
+  }, [confirmOpen]);
+  const dismissConfirmation = () => {
+    setConfirmOpen(false);
+    window.requestAnimationFrame(() =>
+      importTriggerRef.current?.focus({ preventScroll: true })
+    );
+  };
 
   const refreshSources = useCallback(async () => {
     sourcesAbortRef.current?.abort();
@@ -385,11 +414,37 @@ const ManualImport = ({
 
   const episodes = context.seasons?.flatMap((season) => season.episodes) ?? [];
   const isBusy = scanning || submitting || polling;
+  const readyFiles = candidates.filter((candidate) => candidate.complete);
 
   return (
     <div className="space-y-3">
+      <div>
+        <h4 className="font-semibold text-white">
+          {intl.formatMessage(messages.title)}
+        </h4>
+        <p className="mt-1 text-sm text-gray-400">
+          {intl.formatMessage(messages.description, { service })}
+        </p>
+      </div>
+      <Button
+        className="min-h-11 w-full"
+        disabled={refreshingSources || isBusy}
+        aria-busy={refreshingSources}
+        onClick={() => void refreshSources()}
+      >
+        <ArrowPathIcon />
+        <span>
+          {intl.formatMessage(
+            refreshingSources ? messages.checking : messages.refresh
+          )}
+        </span>
+      </Button>
       {!startOpen && sources.length > 0 && !workflowOpen && (
-        <Button buttonType="warning" className="w-full" onClick={openWorkflow}>
+        <Button
+          buttonType="primary"
+          className="min-h-11 w-full"
+          onClick={openWorkflow}
+        >
           <ArrowDownTrayIcon />
           <span>
             {intl.formatMessage(messages.manualImport, {
@@ -398,8 +453,7 @@ const ManualImport = ({
           </span>
         </Button>
       )}
-      {startOpen &&
-        sourcesLoaded &&
+      {sourcesLoaded &&
         !availabilityError &&
         !sources.length &&
         !importStatus && (
@@ -410,7 +464,7 @@ const ManualImport = ({
       {availabilityError && (
         <Alert type="warning" title={availabilityError}>
           <button
-            className="font-medium underline hover:text-yellow-100"
+            className="min-h-11 font-medium underline hover:text-yellow-100 focus-visible:ring-2 focus-visible:ring-indigo-500"
             type="button"
             disabled={refreshingSources}
             onClick={() => void refreshSources()}
@@ -421,7 +475,7 @@ const ManualImport = ({
       )}
       {error && <Alert type="error" title={error} />}
       {importStatus && (
-        <p className="text-sm text-gray-300">
+        <p role="status" className="text-sm text-gray-300">
           {intl.formatMessage(messages.status, { status: importStatus })}
         </p>
       )}
@@ -438,6 +492,7 @@ const ManualImport = ({
             </p>
           </div>
           <select
+            className="min-h-11 w-full"
             aria-label={intl.formatMessage(messages.importSource)}
             value={selectedSource}
             onChange={(event) => setSelectedSource(event.target.value)}
@@ -449,9 +504,10 @@ const ManualImport = ({
               </option>
             ))}
           </select>
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             {!startOpen && (
               <Button
+                className="min-h-11"
                 disabled={scanning}
                 onClick={() => setWorkflowOpen(false)}
               >
@@ -459,6 +515,7 @@ const ManualImport = ({
               </Button>
             )}
             <Button
+              className="min-h-11"
               buttonType="primary"
               disabled={!selectedSource || scanning}
               onClick={() => void scanSource()}
@@ -483,12 +540,13 @@ const ManualImport = ({
       )}
       {candidates.length > 0 && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-sm text-gray-300">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="min-w-0 break-words text-sm text-gray-300">
               {intl.formatMessage(messages.reviewFrom, { source: sourceLabel })}
             </span>
             <Button
               buttonSize="sm"
+              className="min-h-11"
               disabled={isBusy}
               onClick={() => {
                 setCandidates([]);
@@ -501,19 +559,65 @@ const ManualImport = ({
             </Button>
           </div>
           <SegmentedControl<'move' | 'copy'>
+            disabled={isBusy}
             ariaLabel={intl.formatMessage(messages.importMode)}
-            size="sm"
             value={mode}
             onChange={(value) => {
-              if (!submitting) setMode(value);
+              if (!isBusy) setMode(value);
             }}
             options={[
               { value: 'move', label: intl.formatMessage(messages.moveFiles) },
               { value: 'copy', label: intl.formatMessage(messages.copyFiles) },
             ]}
           />
+          <p className="text-xs text-gray-400">
+            {intl.formatMessage(
+              mode === 'move' ? messages.moveHint : messages.copyHint
+            )}
+          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="mb-0 flex min-h-11 cursor-pointer items-center gap-2 text-sm font-normal text-gray-200">
+              <input
+                type="checkbox"
+                disabled={
+                  isBusy || rematchingToken !== undefined || !readyFiles.length
+                }
+                checked={
+                  readyFiles.length > 0 &&
+                  readyFiles.every((file) => selected.includes(file.token))
+                }
+                onChange={(e) =>
+                  setSelected(
+                    e.target.checked ? readyFiles.map((file) => file.token) : []
+                  )
+                }
+              />
+              {intl.formatMessage(messages.selectAll)}
+            </label>
+            <p role="status" className="text-sm text-gray-400">
+              {intl.formatMessage(messages.selectedCount, {
+                selected: selected.length,
+                total: candidates.length,
+              })}
+            </p>
+          </div>
           {confirmOpen ? (
-            <div className="space-y-3 rounded-md border border-gray-600 bg-gray-900/80 p-4 text-sm shadow">
+            // Escape dismisses this confirmation without closing its parent panel.
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+            <div
+              role="region"
+              aria-label={intl.formatMessage(messages.confirmTitle, {
+                mode,
+                count: selectedFiles.length,
+              })}
+              className="space-y-3 rounded-md border border-gray-600 bg-gray-900/80 p-4 text-sm shadow"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.stopPropagation();
+                  if (!submitting) dismissConfirmation();
+                }
+              }}
+            >
               <div className="font-semibold text-white">
                 {intl.formatMessage(messages.confirmTitle, {
                   mode,
@@ -535,12 +639,14 @@ const ManualImport = ({
                   ))}
                 </ul>
               )}
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button
                   type="button"
                   buttonSize="sm"
+                  className="min-h-11"
+                  ref={confirmCancelRef}
                   disabled={submitting}
-                  onClick={() => setConfirmOpen(false)}
+                  onClick={dismissConfirmation}
                 >
                   {intl.formatMessage(messages.cancel)}
                 </Button>
@@ -548,6 +654,7 @@ const ManualImport = ({
                   type="button"
                   buttonType="success"
                   buttonSize="sm"
+                  className="min-h-11"
                   disabled={!selectedFiles.length || submitting}
                   onClick={() => void submitImport()}
                 >
@@ -563,7 +670,8 @@ const ManualImport = ({
           ) : (
             <Button
               buttonType="success"
-              className="w-full"
+              className="min-h-11 w-full"
+              ref={importTriggerRef}
               type="button"
               disabled={
                 !selected.length || submitting || rematchingToken !== undefined
@@ -610,12 +718,12 @@ const ManualImport = ({
                     />
                     <label
                       htmlFor={checkboxId}
-                      className="mb-0 min-w-0 flex-1 font-normal"
+                      className="mb-0 min-h-11 min-w-0 flex-1 cursor-pointer font-normal"
                     >
                       <span className="block break-all font-medium text-white">
                         {candidate.name}
                       </span>
-                      <span className="block text-xs text-gray-400">
+                      <span className="block break-words text-xs text-gray-400">
                         {[
                           formatSize(candidate.size),
                           candidate.quality ??
@@ -625,7 +733,7 @@ const ManualImport = ({
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
-                      <span className="block text-xs text-gray-400">
+                      <span className="block break-words text-xs text-gray-400">
                         {[
                           candidate.languages.join(', ') ||
                             intl.formatMessage(messages.unknownLanguage),
@@ -641,7 +749,7 @@ const ManualImport = ({
                       </span>
                     </label>
                   </div>
-                  <div className="ml-9 space-y-2">
+                  <div className="mt-2 space-y-2 sm:ml-9">
                     {!candidate.complete && (
                       <p className="mt-1 text-xs text-yellow-300">
                         {intl.formatMessage(messages.incomplete, { service })}
@@ -661,55 +769,24 @@ const ManualImport = ({
                           <div className="mb-2 text-sm font-semibold text-gray-200">
                             {intl.formatMessage(messages.episodeAssignment)}
                           </div>
-                          <div className="max-h-40 space-y-1 overflow-y-auto">
-                            {episodes.map((episode: Episode) => (
-                              <label
-                                key={episode.id}
-                                className="mb-0 flex items-center gap-2 font-normal text-gray-300"
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="flex-none"
-                                  disabled={rematchingToken === candidate.token}
-                                  checked={assigned.includes(episode.id)}
-                                  onChange={() =>
-                                    setEpisodeMappings((current) => {
-                                      const ids =
-                                        current[candidate.token] ?? assigned;
-                                      return {
-                                        ...current,
-                                        [candidate.token]: ids.includes(
-                                          episode.id
-                                        )
-                                          ? ids.filter(
-                                              (id) => id !== episode.id
-                                            )
-                                          : [...ids, episode.id],
-                                      };
-                                    })
-                                  }
-                                />
-                                <span className="truncate">
-                                  S
-                                  {String(episode.seasonNumber).padStart(
-                                    2,
-                                    '0'
-                                  )}
-                                  E
-                                  {String(episode.episodeNumber).padStart(
-                                    2,
-                                    '0'
-                                  )}{' '}
-                                  — {episode.title}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
+                          <EpisodeAssignmentPicker
+                            episodes={episodes}
+                            assigned={assigned}
+                            disabled={isBusy || rematchingToken !== undefined}
+                            onChange={(ids) =>
+                              setEpisodeMappings((current) => ({
+                                ...current,
+                                [candidate.token]: ids,
+                              }))
+                            }
+                          />
                           <Button
-                            className="mt-3"
+                            className="mt-3 min-h-11 w-full whitespace-normal"
                             buttonSize="sm"
                             disabled={
-                              rematchingToken !== undefined || submitting
+                              rematchingToken !== undefined ||
+                              submitting ||
+                              !assigned.length
                             }
                             onClick={() => void rematchCandidate(candidate)}
                           >

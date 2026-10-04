@@ -9,13 +9,14 @@ import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { CheckIcon, MinusIcon } from '@heroicons/react/24/solid';
 import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
 import type { MediaRequest } from '@server/entity/MediaRequest';
 import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
 import { Permission } from '@server/lib/permissions';
 import type { Collection } from '@server/models/Collection';
 import axios from 'axios';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
 
@@ -26,6 +27,12 @@ const messages = defineMessages('components.RequestModal', {
   requestcollection4ktitle: 'Request Collection in 4K',
   requesterror: 'Something went wrong while submitting the request.',
   selectmovies: 'Select Movie(s)',
+  selectcollectionmovie: 'Select {title}',
+  selectallcollectionmovies: 'Select all requestable movies',
+  collectionselectioncount: '{selected} of {total} requestable movies selected',
+  clearcollectionselection: 'Clear selection',
+  collectionquotahint:
+    'Your quota allows {count} more {count, plural, one {movie} other {movies}}. Choose individual movies below.',
   requestmovies: 'Request {count} {count, plural, one {Movie} other {Movies}}',
   requestmovies4k:
     'Request {count} {count, plural, one {Movie} other {Movies}} in 4K',
@@ -47,6 +54,7 @@ const CollectionRequestModal = ({
   is4k = false,
 }: RequestModalProps) => {
   const [isUpdating, setIsUpdating] = useState(false);
+  const requestInFlight = useRef(false);
   const [requestOverrides, setRequestOverrides] =
     useState<RequestOverrides | null>(null);
   const [selectedParts, setSelectedParts] = useState<number[]>([]);
@@ -73,42 +81,29 @@ const CollectionRequestModal = ({
   };
 
   const getAllRequestedParts = (): number[] => {
-    const requestedParts = (data?.parts ?? []).reduce(
-      (requestedParts, part) => {
-        return [
-          ...requestedParts,
-          ...(part.mediaInfo?.requests ?? [])
-            .filter(
-              (request) =>
-                request.is4k === is4k &&
-                request.status !== MediaRequestStatus.DECLINED &&
-                request.status !== MediaRequestStatus.COMPLETED
-            )
-            .map((part) => part.id),
-        ];
-      },
-      [] as number[]
-    );
-
-    const availableParts = (data?.parts ?? [])
-      .filter(
-        (part) =>
-          part.mediaInfo &&
-          (part.mediaInfo[is4k ? 'status4k' : 'status'] ===
-            MediaStatus.AVAILABLE ||
-            part.mediaInfo[is4k ? 'status4k' : 'status'] ===
-              MediaStatus.PROCESSING) &&
-          !requestedParts.includes(part.id)
-      )
+    return (data?.parts ?? [])
+      .filter((part) => {
+        const status = part.mediaInfo?.[is4k ? 'status4k' : 'status'];
+        return (
+          status === MediaStatus.AVAILABLE ||
+          status === MediaStatus.PROCESSING ||
+          (part.mediaInfo?.requests ?? []).some(
+            (request) =>
+              request.is4k === is4k &&
+              request.status !== MediaRequestStatus.DECLINED &&
+              request.status !== MediaRequestStatus.COMPLETED
+          )
+        );
+      })
       .map((part) => part.id);
-
-    return [...requestedParts, ...availableParts];
   };
 
   const isSelectedPart = (tmdbId: number): boolean =>
     selectedParts.includes(tmdbId);
 
   const togglePart = (tmdbId: number): void => {
+    if (requestInFlight.current || !getAllParts().includes(tmdbId)) return;
+
     // If this part already has a pending request, don't allow it to be toggled
     if (getAllRequestedParts().includes(tmdbId)) {
       return;
@@ -134,36 +129,20 @@ const CollectionRequestModal = ({
     (tmdbId) => !getAllRequestedParts().includes(tmdbId)
   );
 
+  const allSelected =
+    unrequestedParts.length > 0 &&
+    selectedParts.length === unrequestedParts.length;
+  const cannotSelectAll = Boolean(
+    quota?.movie.limit && (quota.movie.remaining ?? 0) < unrequestedParts.length
+  );
+
   const toggleAllParts = (): void => {
-    // If the user has a quota and not enough requests for all parts, block toggleAllParts
-    if (
-      quota?.movie.limit &&
-      (quota?.movie.remaining ?? 0) < unrequestedParts.length
-    ) {
-      return;
-    }
-
-    if (
-      data &&
-      selectedParts.length >= 0 &&
-      selectedParts.length < unrequestedParts.length
-    ) {
-      setSelectedParts(unrequestedParts);
-    } else {
+    if (requestInFlight.current || !unrequestedParts.length) return;
+    if (allSelected) {
       setSelectedParts([]);
+    } else if (!cannotSelectAll) {
+      setSelectedParts(unrequestedParts);
     }
-  };
-
-  const isAllParts = (): boolean => {
-    if (!data) {
-      return false;
-    }
-
-    return (
-      selectedParts.length ===
-      getAllParts().filter((part) => !getAllRequestedParts().includes(part))
-        .length
-    );
   };
 
   const getPartRequest = (tmdbId: number): MediaRequest | undefined => {
@@ -184,6 +163,8 @@ const CollectionRequestModal = ({
   }, [isUpdating, onUpdating]);
 
   const sendRequest = useCallback(async () => {
+    if (requestInFlight.current || selectedParts.length === 0) return;
+    requestInFlight.current = true;
     setIsUpdating(true);
 
     try {
@@ -235,6 +216,7 @@ const CollectionRequestModal = ({
         autoDismiss: true,
       });
     } finally {
+      requestInFlight.current = false;
       setIsUpdating(false);
     }
   }, [
@@ -264,6 +246,7 @@ const CollectionRequestModal = ({
 
   return (
     <Modal
+      stickyActions
       loading={(!data && !error) || !quota}
       backgroundClickable
       onCancel={onCancel}
@@ -287,6 +270,7 @@ const CollectionRequestModal = ({
               )
       }
       okDisabled={selectedParts.length === 0}
+      okButtonProps={{ 'aria-disabled': isUpdating, 'aria-busy': isUpdating }}
       okButtonType={'primary'}
       backdrop={`https://image.tmdb.org/t/p/w1920_and_h800_multi_faces/${data?.backdropPath}`}
     >
@@ -310,44 +294,76 @@ const CollectionRequestModal = ({
           }
         />
       )}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3">
+        <p role="status" className="text-sm text-gray-300">
+          {intl.formatMessage(messages.collectionselectioncount, {
+            selected: selectedParts.length,
+            total: unrequestedParts.length,
+          })}
+        </p>
+        <button
+          type="button"
+          aria-disabled={isUpdating || selectedParts.length === 0}
+          onClick={() => {
+            if (!requestInFlight.current && selectedParts.length > 0) {
+              setSelectedParts([]);
+            }
+          }}
+          className="min-h-11 rounded-md px-2 text-sm text-indigo-300 underline underline-offset-4 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 aria-disabled:cursor-default aria-disabled:opacity-50"
+        >
+          {intl.formatMessage(messages.clearcollectionselection)}
+        </button>
+      </div>
+      {cannotSelectAll && (
+        <p id="collection-quota-hint" className="mb-2 text-sm text-gray-400">
+          {intl.formatMessage(messages.collectionquotahint, {
+            count: Math.max(0, quota?.movie.remaining ?? 0),
+          })}
+        </p>
+      )}
       <div className="flex flex-col">
-        <div className="-mx-4 sm:mx-0">
+        <div>
           <div className="inline-block min-w-full py-2 align-middle">
             <div className="overflow-hidden border border-gray-700 backdrop-blur sm:rounded-lg">
-              <table className="min-w-full">
+              <table className="w-full">
                 <thead>
                   <tr>
-                    <th className="w-16 bg-gray-700/80 px-4 py-3">
-                      <span
+                    <th className="w-14 bg-gray-700/80 px-1 py-2 sm:px-3">
+                      <button
+                        type="button"
                         role="checkbox"
-                        tabIndex={0}
-                        aria-checked={isAllParts()}
-                        onClick={() => toggleAllParts()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === 'Space') {
-                            toggleAllParts();
-                          }
-                        }}
-                        className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer items-center justify-center pt-2 focus:outline-none ${
-                          quota?.movie.limit &&
-                          (quota.movie.remaining ?? 0) < unrequestedParts.length
-                            ? 'opacity-50'
-                            : ''
-                        }`}
+                        aria-label={intl.formatMessage(
+                          messages.selectallcollectionmovies
+                        )}
+                        aria-checked={
+                          allSelected
+                            ? true
+                            : selectedParts.length > 0
+                              ? 'mixed'
+                              : false
+                        }
+                        aria-disabled={
+                          isUpdating ||
+                          !unrequestedParts.length ||
+                          (cannotSelectAll && !allSelected)
+                        }
+                        aria-describedby={
+                          cannotSelectAll ? 'collection-quota-hint' : undefined
+                        }
+                        onClick={toggleAllParts}
+                        className="flex min-h-11 min-w-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 aria-disabled:cursor-default aria-disabled:opacity-50"
                       >
                         <span
                           aria-hidden="true"
-                          className={`${
-                            isAllParts() ? 'bg-indigo-500' : 'bg-gray-800'
-                          } absolute mx-auto h-4 w-9 rounded-full transition-colors duration-200 ease-in-out`}
-                        />
-                        <span
-                          aria-hidden="true"
-                          className={`${
-                            isAllParts() ? 'translate-x-5' : 'translate-x-0'
-                          } absolute left-0 inline-block h-5 w-5 rounded-full border border-gray-200 bg-white shadow transition-transform duration-200 ease-in-out group-focus:border-blue-300 group-focus:ring`}
-                        />
-                      </span>
+                          className={`flex h-5 w-5 items-center justify-center rounded border ${selectedParts.length > 0 ? 'border-indigo-400 bg-indigo-500 text-white' : 'border-gray-400 bg-gray-800'}`}
+                        >
+                          {allSelected ? (
+                            <CheckIcon className="h-4 w-4" />
+                          ) : selectedParts.length > 0 ? (
+                            <MinusIcon className="h-4 w-4" />
+                          ) : null}
+                        </span>
+                      </button>
                     </th>
                     <th className="bg-gray-700/80 px-1 py-3 text-left text-xs font-medium uppercase leading-4 tracking-wider text-gray-200 md:px-6">
                       {intl.formatMessage(globalMessages.movie)}
@@ -379,64 +395,36 @@ const CollectionRequestModal = ({
 
                       return (
                         <tr key={`part-${part.id}`}>
-                          <td
-                            className={`whitespace-nowrap px-4 py-4 text-sm font-medium leading-5 text-gray-100 ${
-                              partMedia?.status === MediaStatus.BLOCKLISTED &&
-                              'pointer-events-none opacity-50'
-                            }`}
-                          >
-                            <span
+                          <td className="px-1 py-3 sm:px-3">
+                            <button
+                              type="button"
                               role="checkbox"
-                              tabIndex={0}
-                              aria-checked={
-                                (!!partMedia &&
-                                  partMedia.status !==
-                                    MediaStatus.BLOCKLISTED) ||
-                                isSelectedPart(part.id)
+                              aria-label={intl.formatMessage(
+                                messages.selectcollectionmovie,
+                                { title: part.title }
+                              )}
+                              aria-checked={isSelectedPart(part.id)}
+                              aria-disabled={
+                                isUpdating ||
+                                !unrequestedParts.includes(part.id) ||
+                                Boolean(
+                                  quota?.movie.limit &&
+                                  currentlyRemaining <= 0 &&
+                                  !isSelectedPart(part.id)
+                                )
                               }
                               onClick={() => togglePart(part.id)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === 'Space') {
-                                  togglePart(part.id);
-                                }
-                              }}
-                              className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer items-center justify-center pt-2 focus:outline-none ${
-                                (!!partMedia &&
-                                  partMedia.status !==
-                                    MediaStatus.BLOCKLISTED) ||
-                                partRequest ||
-                                (quota?.movie.limit &&
-                                  currentlyRemaining <= 0 &&
-                                  !isSelectedPart(part.id))
-                                  ? 'opacity-50'
-                                  : ''
-                              }`}
+                              className="flex min-h-11 min-w-11 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 aria-disabled:cursor-default aria-disabled:opacity-50"
                             >
                               <span
                                 aria-hidden="true"
-                                className={`${
-                                  (!!partMedia &&
-                                    partMedia.status !==
-                                      MediaStatus.BLOCKLISTED) ||
-                                  partRequest ||
-                                  isSelectedPart(part.id)
-                                    ? 'bg-indigo-500'
-                                    : 'bg-gray-700'
-                                } absolute mx-auto h-4 w-9 rounded-full transition-colors duration-200 ease-in-out`}
-                              />
-                              <span
-                                aria-hidden="true"
-                                className={`${
-                                  (!!partMedia &&
-                                    partMedia.status !==
-                                      MediaStatus.BLOCKLISTED) ||
-                                  partRequest ||
-                                  isSelectedPart(part.id)
-                                    ? 'translate-x-5'
-                                    : 'translate-x-0'
-                                } absolute left-0 inline-block h-5 w-5 rounded-full border border-gray-200 bg-white shadow transition-transform duration-200 ease-in-out group-focus:border-blue-300 group-focus:ring`}
-                              />
-                            </span>
+                                className={`flex h-5 w-5 items-center justify-center rounded border ${isSelectedPart(part.id) ? 'border-indigo-400 bg-indigo-500 text-white' : 'border-gray-400 bg-gray-800'}`}
+                              >
+                                {isSelectedPart(part.id) && (
+                                  <CheckIcon className="h-4 w-4" />
+                                )}
+                              </span>
+                            </button>
                           </td>
                           <td
                             className={`flex items-center px-1 py-4 text-sm font-medium leading-5 text-gray-100 md:px-6 ${
@@ -444,7 +432,7 @@ const CollectionRequestModal = ({
                               'pointer-events-none opacity-50'
                             }`}
                           >
-                            <div className="relative h-auto w-10 flex-shrink-0 overflow-hidden rounded-md">
+                            <div className="relative hidden h-auto w-10 flex-shrink-0 overflow-hidden rounded-md sm:block">
                               <CachedImage
                                 type="tmdb"
                                 src={
@@ -463,16 +451,16 @@ const CollectionRequestModal = ({
                                 height={900}
                               />
                             </div>
-                            <div className="flex flex-col justify-center pl-2">
+                            <div className="flex min-w-0 flex-col justify-center sm:pl-2">
                               <div className="text-xs font-medium">
                                 {part.releaseDate?.slice(0, 4)}
                               </div>
-                              <div className="text-base font-bold">
+                              <div className="break-words text-sm font-bold sm:text-base">
                                 {part.title}
                               </div>
                             </div>
                           </td>
-                          <td className="whitespace-nowrap py-4 pr-2 text-sm leading-5 text-gray-200 md:px-6">
+                          <td className="py-4 pr-2 text-sm leading-5 text-gray-200 md:px-6 [&_span]:whitespace-normal">
                             {!partMedia && !partRequest && (
                               <Badge>
                                 {intl.formatMessage(

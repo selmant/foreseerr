@@ -9,6 +9,7 @@ import RequestModal from '@app/components/RequestModal';
 import ErrorCard from '@app/components/TitleCard/ErrorCard';
 import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
+import TvRequestMenu from '@app/components/TitleCard/TvRequestMenu';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
@@ -31,16 +32,15 @@ import {
   MinusCircleIcon,
   QueueListIcon,
 } from '@heroicons/react/24/outline';
-import { ChevronDownIcon, CogIcon, PlayIcon } from '@heroicons/react/24/solid';
+import { CogIcon, PlayIcon } from '@heroicons/react/24/solid';
 import type { RatingResponse } from '@server/api/ratings';
 import { MediaStatus } from '@server/constants/media';
 import type { Watchlist } from '@server/entity/Watchlist';
 import type { MediaType } from '@server/models/Search';
 import axios from 'axios';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { mutate } from 'swr';
 
 interface TitleCardProps {
@@ -92,7 +92,6 @@ const messages = defineMessages('components.TitleCard', {
   movieError: 'Could not request. Opening the full request form.',
   play: 'Play',
   manage: 'Manage in {service}',
-  moreRequestOptions: 'More request options',
 });
 
 const TitleCard = ({
@@ -121,6 +120,9 @@ const TitleCard = ({
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
+  const navigate = useNavigate();
+  const displayYear = year?.slice(0, 4);
+  const cardLabel = [title, displayYear, subtitle].filter(Boolean).join(', ');
   const settings = useSettings();
   const { user, hasPermission } = useUser();
   const { play } = useNativeRuntime();
@@ -144,24 +146,12 @@ const TitleCard = ({
     'seasons' | 'episodes'
   >('seasons');
   const [showTvMenu, setShowTvMenu] = useState(false);
-  const [tvMenuPos, setTvMenuPos] = useState<{
-    top: number;
-    left: number;
-  } | null>(null);
   const [isQuickRequesting, setIsQuickRequesting] = useState(false);
   const { addToast } = useToasts();
   const [toggleWatchlist, setToggleWatchlist] =
     useState<boolean>(!isAddedToWatchlist);
   const [showBlocklistModal, setShowBlocklistModal] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  const tvMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const tvMenuRef = useRef<HTMLDivElement>(null);
-
-  // Just to get the year from the date
-  if (year) {
-    year = year.slice(0, 4);
-  }
-
   useEffect(() => {
     setCurrentStatus(status);
   }, [status]);
@@ -182,42 +172,6 @@ const TitleCard = ({
     setInitialRequestScope(scope);
     setShowRequestModal(true);
   };
-
-  const toggleTvMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (showTvMenu) {
-      setShowTvMenu(false);
-      return;
-    }
-    const rect = tvMenuButtonRef.current?.getBoundingClientRect();
-    if (rect) {
-      // Open upward so the menu sits over the poster, not under the card edge.
-      setTvMenuPos({
-        top: rect.top - 8,
-        left: Math.min(rect.right, window.innerWidth - 8),
-      });
-    }
-    setShowTvMenu(true);
-  };
-
-  useEffect(() => {
-    if (!showTvMenu) {
-      return;
-    }
-    const onDoc = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        tvMenuRef.current?.contains(target) ||
-        tvMenuButtonRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setShowTvMenu(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [showTvMenu]);
 
   const requestSeason1 = async () => {
     if (isQuickRequesting) {
@@ -616,7 +570,7 @@ const TitleCard = ({
         isUpdating={isUpdating}
       />
       <div
-        className={`relative transform-gpu cursor-default overflow-hidden rounded-xl bg-gray-800 bg-cover outline-none ring-1 transition duration-300 ${
+        className={`relative transform-gpu cursor-pointer overflow-hidden rounded-xl bg-gray-800 bg-cover outline-none ring-1 transition duration-300 focus-visible:ring-2 focus-visible:ring-indigo-400 motion-reduce:transform-none motion-reduce:transition-none ${
           showDetail
             ? 'scale-105 shadow-lg ring-gray-500'
             : 'scale-100 shadow ring-gray-700'
@@ -629,18 +583,52 @@ const TitleCard = ({
             setShowDetail(true);
           }
         }}
-        onMouseLeave={() => {
-          if (!showTvMenu) {
+        onMouseLeave={(e) => {
+          if (
+            !showTvMenu &&
+            !showRequestModal &&
+            !showBlocklistModal &&
+            !document.activeElement?.closest(
+              '[role="dialog"], [role="menu"]'
+            ) &&
+            !e.currentTarget.contains(document.activeElement)
+          ) {
+            setShowDetail(false);
+          }
+        }}
+        onFocus={() => setShowDetail(true)}
+        onBlur={(event) => {
+          if (!event.relatedTarget && !document.hasFocus()) return;
+          if (
+            !event.currentTarget.contains(event.relatedTarget) &&
+            !event.relatedTarget?.closest('[role="dialog"], [role="menu"]') &&
+            !showTvMenu &&
+            !showRequestModal &&
+            !showBlocklistModal
+          ) {
             setShowDetail(false);
           }
         }}
         onClick={() => setShowDetail(true)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            setShowDetail(true);
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            if (
+              libraryMode &&
+              mediaType === 'tv' &&
+              jellyfinSeriesId &&
+              onLibraryOpenSeries
+            ) {
+              onLibraryOpenSeries(jellyfinSeriesId);
+            } else {
+              navigate(detailHref);
+            }
           }
+          if (event.key === 'Escape') setShowDetail(false);
         }}
         role="link"
+        aria-label={cardLabel}
         tabIndex={0}
       >
         <div className="absolute inset-0 h-full w-full overflow-hidden">
@@ -657,6 +645,21 @@ const TitleCard = ({
             fill
             loading="lazy"
           />
+          {image && !showDetail && !showRequestModal && !showTvMenu && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-gray-950 via-gray-950/80 to-transparent px-2 pb-3 pt-10"
+            >
+              <p className="line-clamp-2 break-words text-sm font-semibold leading-5 text-white">
+                {title}
+              </p>
+              {(subtitle || displayYear) && (
+                <p className="mt-0.5 truncate text-xs text-gray-300">
+                  {subtitle || displayYear}
+                </p>
+              )}
+            </div>
+          )}
           {progressPercent != null && progressPercent > 0 ? (
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 h-1 bg-black/70">
               <div
@@ -838,16 +841,18 @@ const TitleCard = ({
                         currentStatus !== MediaStatus.UNKNOWN &&
                         currentStatus !== MediaStatus.DELETED)
                         ? showLibraryPlay
-                          ? 'pb-11'
+                          ? 'pb-16'
                           : 'pb-2'
-                        : 'pb-11'
+                        : 'pb-16'
                     }`}
                   >
-                    {year && (
-                      <div className="shrink-0 text-sm font-medium">{year}</div>
+                    {displayYear && (
+                      <div className="shrink-0 text-sm font-medium">
+                        {displayYear}
+                      </div>
                     )}
 
-                    <h1
+                    <h3
                       className="shrink-0 whitespace-normal text-xl font-bold leading-tight"
                       style={{
                         WebkitLineClamp: 2,
@@ -859,7 +864,7 @@ const TitleCard = ({
                       data-testid="title-card-title"
                     >
                       {title}
-                    </h1>
+                    </h3>
                     {subtitle ? (
                       <div className="shrink-0 truncate text-xs text-gray-200">
                         {subtitle}
@@ -896,7 +901,7 @@ const TitleCard = ({
                   <Button
                     buttonType="primary"
                     buttonSize="sm"
-                    className="z-40 flex-1"
+                    className="z-40 min-h-11 flex-1"
                     onClick={onLibraryPlay}
                   >
                     <PlayIcon className="h-4 w-4" />{' '}
@@ -912,7 +917,7 @@ const TitleCard = ({
                     <Button
                       buttonType="default"
                       buttonSize="sm"
-                      className="z-40 shrink-0"
+                      className="z-40 min-h-11 min-w-11 shrink-0"
                       aria-label={intl.formatMessage(messages.manage, {
                         service: mediaType === 'movie' ? 'Radarr' : 'Sonarr',
                       })}
@@ -932,7 +937,7 @@ const TitleCard = ({
                       <button
                         type="button"
                         disabled={isQuickRequesting}
-                        className="button-md relative z-40 inline-flex h-7 flex-1 items-center justify-center rounded-l-md border border-indigo-500 bg-indigo-600/80 px-2 text-xs font-medium leading-5 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        className="button-md relative z-40 inline-flex min-h-11 flex-1 items-center justify-center rounded-l-md border border-indigo-500 bg-indigo-600/80 px-2 text-xs font-medium leading-5 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus-visible:z-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -950,95 +955,34 @@ const TitleCard = ({
                             : intl.formatMessage(messages.requestseason1)}
                         </span>
                       </button>
-                      <button
-                        ref={tvMenuButtonRef}
-                        type="button"
+                      <TvRequestMenu
+                        title={title}
                         disabled={isQuickRequesting}
-                        aria-expanded={showTvMenu}
-                        aria-haspopup="menu"
-                        aria-label={intl.formatMessage(
-                          messages.moreRequestOptions
+                        episodeRequestsEnabled={Boolean(
+                          settings.currentSettings.episodeRequestsEnabled
                         )}
-                        className="button-md relative z-40 inline-flex h-7 items-center justify-center rounded-r-md border border-l-0 border-indigo-500 bg-indigo-600/80 px-2 text-white transition duration-150 ease-in-out hover:bg-indigo-600 focus:z-50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        onClick={toggleTvMenu}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
+                        onOpenChange={setShowTvMenu}
+                        onRequestAll={() => void requestAllSeasons()}
+                        onChooseSeasons={() => {
+                          window.setTimeout(
+                            () => openTvRequestModal('none'),
+                            0
+                          );
                         }}
-                      >
-                        <ChevronDownIcon className="h-4 w-4" />
-                      </button>
-                      {showTvMenu &&
-                        tvMenuPos &&
-                        createPortal(
-                          <div
-                            ref={tvMenuRef}
-                            role="menu"
-                            className="fixed z-[100] w-44 -translate-x-full -translate-y-full rounded-md border border-indigo-500 bg-indigo-600 p-1 shadow-lg"
-                            style={{
-                              top: tvMenuPos.top,
-                              left: tvMenuPos.left,
-                            }}
-                          >
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void requestAllSeasons();
-                              }}
-                            >
-                              <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
-                              {intl.formatMessage(messages.requestall)}
-                            </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                window.setTimeout(
-                                  () => openTvRequestModal('none'),
-                                  0
-                                );
-                              }}
-                            >
-                              <ArrowDownTrayIcon className="mr-2 h-4 w-4" />
-                              {intl.formatMessage(messages.selectseasons)}
-                            </button>
-                            {settings.currentSettings
-                              .episodeRequestsEnabled && (
-                              <button
-                                type="button"
-                                role="menuitem"
-                                data-testid="title-card-request-episodes"
-                                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-white hover:bg-indigo-500"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  window.setTimeout(
-                                    () =>
-                                      openTvRequestModal('none', 'episodes'),
-                                    0
-                                  );
-                                }}
-                              >
-                                <QueueListIcon className="mr-2 h-4 w-4" />
-                                {intl.formatMessage(messages.requestepisodes)}
-                              </button>
-                            )}
-                          </div>,
-                          document.body
-                        )}
+                        onChooseEpisodes={() => {
+                          window.setTimeout(
+                            () => openTvRequestModal('none', 'episodes'),
+                            0
+                          );
+                        }}
+                      />
                     </div>
                   ) : mediaType === 'tv' &&
                     settings.currentSettings.episodeRequestsEnabled ? (
                     <div className="relative z-40 flex w-full overflow-hidden rounded-md border border-indigo-500 bg-indigo-600/80">
                       <button
                         type="button"
-                        className="flex h-7 flex-1 items-center justify-center px-2 text-xs font-medium text-white transition hover:bg-indigo-600"
+                        className="flex min-h-11 flex-1 items-center justify-center px-2 text-xs font-medium text-white transition hover:bg-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-200"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1051,7 +995,7 @@ const TitleCard = ({
                       <button
                         type="button"
                         data-testid="title-card-request-episodes"
-                        className="flex h-7 flex-1 items-center justify-center border-l border-indigo-400 px-2 text-xs font-medium text-white transition hover:bg-indigo-600"
+                        className="flex min-h-11 flex-1 items-center justify-center border-l border-indigo-400 px-2 text-xs font-medium text-white transition hover:bg-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-200"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -1066,7 +1010,7 @@ const TitleCard = ({
                     <Button
                       buttonType="primary"
                       buttonSize="sm"
-                      className="z-40 w-full"
+                      className="z-40 min-h-11 w-full"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -1081,7 +1025,7 @@ const TitleCard = ({
                       buttonType="primary"
                       buttonSize="sm"
                       disabled={isQuickRequesting}
-                      className="z-40 w-full"
+                      className="z-40 min-h-11 w-full"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();

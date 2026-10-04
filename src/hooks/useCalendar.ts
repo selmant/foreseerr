@@ -41,6 +41,6 @@ const calendarKey = ({
 };
 
 const useCalendar = (query: CalendarQuery) =>
-  useSWR<CalendarResponse>(calendarKey(query), { keepPreviousData: true });
+  useSWR<CalendarResponse>(calendarKey(query));
 
 export default useCalendar;

@@ -9,9 +9,10 @@ import {
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import axios from 'axios';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import Select, { type StylesConfig } from 'react-select';
+import { filterReleaseResults, type ReleaseSort } from './releaseResults';
 
 import {
   formatSize,
@@ -33,8 +34,8 @@ const messages = defineMessages('components.ManageSlideOver.ReleaseSearch', {
   searching: 'Searching…',
   searchFailed: 'Release search failed.',
   noReleases: 'No releases found.',
-  grab: 'Grab',
-  grabAnyway: 'Grab Anyway',
+  grab: 'Download release',
+  grabAnyway: 'Download anyway',
   sending: 'Sending to {service}…',
   sent: 'Sent to {service}. It may take a moment to appear in the download queue.',
   sentToast: 'Release sent to download client.',
@@ -48,6 +49,32 @@ const messages = defineMessages('components.ManageSlideOver.ReleaseSearch', {
   downloaded: 'Downloaded',
   wanted: 'Wanted',
   notMonitored: 'Not monitored',
+  description:
+    'Search your indexers, compare releases, then send a chosen download to {service}.',
+  seasonHint: 'A season pack can include episodes you already have.',
+  episodeHint: 'Type an episode name or number to find it quickly.',
+  noEpisodes:
+    'No episodes are available to search. Open the series in {service} to check its episode list.',
+  results:
+    '{shown, number} of {total, plural, one {# release} other {# releases}}',
+  filterResults: 'Filter results',
+  filterPlaceholder: 'Title, quality or indexer',
+  sortResults: 'Sort results',
+  defaultOrder: 'Default order',
+  newest: 'Newest first',
+  smallest: 'Smallest first',
+  mostSeeders: 'Most seeders',
+  onlyReady: 'Ready to download only',
+  ready: 'Ready',
+  review: 'Needs review',
+  unavailable: 'Download unavailable',
+  noMatches: 'No releases match these filters.',
+  clearFilters: 'Clear result filters',
+  emptyHint:
+    'Try another episode or a season pack, or check your indexers in {service}.',
+  emptyMovieHint: 'Check your indexers in {service}, then search again.',
+  showMore: 'Show more releases ({count})',
+  releaseAction: '{action}: {title}',
 });
 
 type SelectOption = {
@@ -86,6 +113,13 @@ const episodeStatusOrder: Record<EpisodeStatus, number> = {
 // The menu is portalled out of `.react-select-container`, so it needs the
 // app's dropdown colors inline.
 const selectStyles: StylesConfig<SelectOption, false> = {
+  control: (base) => ({ ...base, minHeight: 44 }),
+  singleValue: (base) => ({
+    ...base,
+    whiteSpace: 'normal',
+    overflow: 'visible',
+    maxWidth: '100%',
+  }),
   menuPortal: (base) => ({ ...base, zIndex: 60 }),
   menu: (base) => ({ ...base, backgroundColor: '#374151', color: '#d1d5db' }),
   option: (base, state) => ({
@@ -114,6 +148,7 @@ const ReleaseSearch = ({
   onGrabbed: () => void;
 }) => {
   const intl = useIntl();
+  const inputId = useId();
   const { addToast } = useToasts();
   const searchAbortRef = useRef<AbortController | undefined>(undefined);
   const grabAbortRef = useRef<AbortController | undefined>(undefined);
@@ -123,6 +158,10 @@ const ReleaseSearch = ({
   const [releases, setReleases] = useState<Release[]>();
   const [searchError, setSearchError] = useState<string>();
   const [searching, setSearching] = useState(false);
+  const [resultQuery, setResultQuery] = useState('');
+  const [onlyReady, setOnlyReady] = useState(false);
+  const [sort, setSort] = useState<ReleaseSort>('default');
+  const [visibleCount, setVisibleCount] = useState(20);
   const [grabbingToken, setGrabbingToken] = useState<string>();
   const [grabFeedback, setGrabFeedback] = useState<{
     kind: 'success' | 'error';
@@ -182,7 +221,21 @@ const ReleaseSearch = ({
   useEffect(() => {
     setReleases(undefined);
     setGrabFeedback(undefined);
+    setSearchError(undefined);
+    setResultQuery('');
+    setOnlyReady(false);
+    setVisibleCount(20);
   }, [target, episodeId, seasonNumber]);
+  useEffect(() => setVisibleCount(20), [resultQuery, onlyReady, sort]);
+  const filteredReleases = useMemo(
+    () => filterReleaseResults(releases ?? [], resultQuery, onlyReady, sort),
+    [releases, resultQuery, onlyReady, sort]
+  );
+  const canSearch =
+    context.mediaType === 'movie' ||
+    (target === 'episode'
+      ? episodeId !== undefined
+      : seasonNumber !== undefined);
 
   useEffect(
     () => () => {
@@ -213,6 +266,7 @@ const ReleaseSearch = ({
       );
       if (!controller.signal.aborted) {
         setReleases(response.data.results);
+        setVisibleCount(20);
         setGrabFeedback(undefined);
       }
     } catch (error) {
@@ -266,13 +320,20 @@ const ReleaseSearch = ({
 
   return (
     <div className="space-y-3">
+      <p className="text-sm text-gray-400">
+        {intl.formatMessage(messages.description, {
+          service: context.service.name,
+        })}
+      </p>
       {context.mediaType === 'tv' && (
         <div className="space-y-2">
           <SegmentedControl<'episode' | 'season'>
+            disabled={searching}
             ariaLabel={intl.formatMessage(messages.searchTarget)}
-            size="sm"
             value={target}
-            onChange={setTarget}
+            onChange={(value) => {
+              if (!searching) setTarget(value);
+            }}
             options={[
               { value: 'episode', label: intl.formatMessage(messages.episode) },
               {
@@ -287,6 +348,7 @@ const ReleaseSearch = ({
               className="react-select-container"
               classNamePrefix="react-select"
               isSearchable
+              isDisabled={searching}
               maxMenuHeight={250}
               menuPortalTarget={
                 typeof document !== 'undefined' ? document.body : undefined
@@ -299,8 +361,8 @@ const ReleaseSearch = ({
               formatOptionLabel={(option) => {
                 const status = episodeStatus[option.status ?? 'wanted'];
                 return (
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <span className="truncate">{option.label}</span>
+                  <div className="min-w-0 space-y-1">
+                    <span className="block break-words">{option.label}</span>
                     <Badge badgeType={status.badgeType} className="shrink-0">
                       {intl.formatMessage(messages[status.message])}
                     </Badge>
@@ -318,6 +380,7 @@ const ReleaseSearch = ({
               className="react-select-container"
               classNamePrefix="react-select"
               isSearchable={false}
+              isDisabled={searching}
               menuPortalTarget={
                 typeof document !== 'undefined' ? document.body : undefined
               }
@@ -332,13 +395,24 @@ const ReleaseSearch = ({
               onChange={(option) => setSeasonNumber(option?.value)}
             />
           )}
+          <p className="text-xs text-gray-400">
+            {intl.formatMessage(
+              canSearch
+                ? target === 'episode'
+                  ? messages.episodeHint
+                  : messages.seasonHint
+                : messages.noEpisodes,
+              { service: context.service.name }
+            )}
+          </p>
         </div>
       )}
       <Button
         buttonType="primary"
-        className="w-full"
+        className="min-h-11 w-full"
         onClick={search}
-        disabled={searching}
+        disabled={searching || !canSearch}
+        aria-busy={searching}
       >
         <MagnifyingGlassIcon />
         <span>
@@ -357,66 +431,194 @@ const ReleaseSearch = ({
         </div>
       )}
       {releases && releases.length === 0 && (
-        <p className="text-sm text-gray-400">
-          {intl.formatMessage(messages.noReleases)}
-        </p>
+        <div
+          role="status"
+          className="space-y-1 rounded-lg border border-gray-700 p-4 text-sm text-gray-400"
+        >
+          <p className="font-medium text-gray-200">
+            {intl.formatMessage(messages.noReleases)}
+          </p>
+          <p>
+            {intl.formatMessage(
+              context.mediaType === 'tv'
+                ? messages.emptyHint
+                : messages.emptyMovieHint,
+              { service: context.service.name }
+            )}
+          </p>
+        </div>
       )}
       {releases && releases.length > 0 && (
-        <ul className="divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
-          {releases.map((release) => (
-            <li
-              key={release.token}
-              className={`space-y-1 px-4 py-3 text-sm ${release.rejected ? 'bg-yellow-500/5' : ''}`}
-            >
-              <div className="break-all font-medium text-white">
-                {release.title}
+        <div className="space-y-3">
+          <div className="space-y-3 rounded-lg border border-gray-700 bg-gray-900/40 p-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor={`${inputId}-query`}>
+                  {intl.formatMessage(messages.filterResults)}
+                </label>
+                <input
+                  id={`${inputId}-query`}
+                  type="search"
+                  className="min-h-11 w-full"
+                  placeholder={intl.formatMessage(messages.filterPlaceholder)}
+                  value={resultQuery}
+                  onChange={(e) => setResultQuery(e.target.value)}
+                />
               </div>
-              <div className="text-xs text-gray-400">
-                {[
-                  release.quality ??
-                    intl.formatMessage(messages.unknownQuality),
-                  formatSize(release.size),
-                  release.indexer,
-                  release.protocol,
-                  release.seeders !== undefined
-                    ? intl.formatMessage(messages.seeders, {
-                        count: release.seeders,
-                      })
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
+              <div>
+                <label htmlFor={`${inputId}-sort`}>
+                  {intl.formatMessage(messages.sortResults)}
+                </label>
+                <select
+                  id={`${inputId}-sort`}
+                  className="min-h-11 w-full"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as ReleaseSort)}
+                >
+                  <option value="default">
+                    {intl.formatMessage(messages.defaultOrder)}
+                  </option>
+                  <option value="newest">
+                    {intl.formatMessage(messages.newest)}
+                  </option>
+                  <option value="smallest">
+                    {intl.formatMessage(messages.smallest)}
+                  </option>
+                  <option value="seeders">
+                    {intl.formatMessage(messages.mostSeeders)}
+                  </option>
+                </select>
               </div>
-              {release.rejections.length > 0 && (
-                <div className="text-xs text-yellow-300">
-                  {release.rejections.join(' • ')}
+            </div>
+            <label className="mb-0 flex min-h-11 cursor-pointer items-center gap-2 text-sm font-normal text-gray-200">
+              <input
+                type="checkbox"
+                checked={onlyReady}
+                onChange={(e) => setOnlyReady(e.target.checked)}
+              />
+              {intl.formatMessage(messages.onlyReady)}
+            </label>
+            {(resultQuery || onlyReady) && (
+              <Button
+                className="min-h-11 w-full"
+                onClick={() => {
+                  setResultQuery('');
+                  setOnlyReady(false);
+                }}
+              >
+                {intl.formatMessage(messages.clearFilters)}
+              </Button>
+            )}
+          </div>
+          <p role="status" className="text-sm text-gray-400">
+            {intl.formatMessage(messages.results, {
+              shown: filteredReleases.length,
+              total: releases.length,
+            })}
+          </p>
+          {filteredReleases.length === 0 && (
+            <p className="text-sm text-gray-300">
+              {intl.formatMessage(messages.noMatches)}
+            </p>
+          )}
+          <ul className="divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
+            {filteredReleases.slice(0, visibleCount).map((release) => (
+              <li
+                key={release.token}
+                className={`space-y-1 px-4 py-3 text-sm ${release.rejected ? 'bg-yellow-500/5' : ''}`}
+              >
+                <div className="break-all font-medium text-white">
+                  {release.title}
                 </div>
-              )}
-              <div className="pt-1">
-                <Button
-                  buttonSize="sm"
-                  buttonType={release.rejected ? 'warning' : 'default'}
-                  onClick={() => void grab(release)}
-                  disabled={
-                    grabbingToken !== undefined ||
-                    (!release.downloadAllowed && !release.rejected)
+                <Badge
+                  badgeType={
+                    release.rejected
+                      ? 'warning'
+                      : release.downloadAllowed
+                        ? 'success'
+                        : 'dark'
                   }
                 >
-                  <ArrowDownTrayIcon />
-                  <span>
-                    {grabbingToken === release.token
-                      ? intl.formatMessage(messages.sending, {
-                          service: context.service.name,
+                  {intl.formatMessage(
+                    release.rejected
+                      ? messages.review
+                      : release.downloadAllowed
+                        ? messages.ready
+                        : messages.unavailable
+                  )}
+                </Badge>
+                <div className="break-words text-xs text-gray-400">
+                  {[
+                    release.quality ??
+                      intl.formatMessage(messages.unknownQuality),
+                    formatSize(release.size),
+                    release.indexer,
+                    release.protocol,
+                    intl.formatRelativeTime(
+                      -Math.round(release.ageHours),
+                      'hour',
+                      { numeric: 'auto' }
+                    ),
+                    release.seeders !== undefined
+                      ? intl.formatMessage(messages.seeders, {
+                          count: release.seeders,
                         })
-                      : intl.formatMessage(
-                          release.rejected ? messages.grabAnyway : messages.grab
-                        )}
-                  </span>
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
+                {release.rejections.length > 0 && (
+                  <div className="break-words text-xs text-yellow-300">
+                    {release.rejections.join(' • ')}
+                  </div>
+                )}
+                <div className="pt-1">
+                  <Button
+                    buttonSize="sm"
+                    buttonType={release.rejected ? 'warning' : 'default'}
+                    className="min-h-11 w-full sm:w-auto"
+                    aria-label={intl.formatMessage(messages.releaseAction, {
+                      action: intl.formatMessage(
+                        release.rejected ? messages.grabAnyway : messages.grab
+                      ),
+                      title: release.title,
+                    })}
+                    aria-busy={grabbingToken === release.token}
+                    onClick={() => void grab(release)}
+                    disabled={
+                      grabbingToken !== undefined ||
+                      (!release.downloadAllowed && !release.rejected)
+                    }
+                  >
+                    <ArrowDownTrayIcon />
+                    <span>
+                      {grabbingToken === release.token
+                        ? intl.formatMessage(messages.sending, {
+                            service: context.service.name,
+                          })
+                        : intl.formatMessage(
+                            release.rejected
+                              ? messages.grabAnyway
+                              : messages.grab
+                          )}
+                    </span>
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {filteredReleases.length > visibleCount && (
+            <Button
+              className="min-h-11 w-full"
+              onClick={() => setVisibleCount((count) => count + 20)}
+            >
+              {intl.formatMessage(messages.showMore, {
+                count: filteredReleases.length - visibleCount,
+              })}
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

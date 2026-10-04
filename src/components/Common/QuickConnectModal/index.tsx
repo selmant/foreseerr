@@ -1,4 +1,5 @@
 import Alert from '@app/components/Common/Alert';
+import DeviceCodePanel from '@app/components/Common/DeviceCodePanel';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import { useQuickConnect } from '@app/hooks/useQuickConnect';
@@ -18,7 +19,9 @@ interface QuickConnectModalProps {
   show: boolean;
   title: string;
   subTitle: string;
-  cancelText: string;
+  cancelText?: string;
+  alternativeText?: string;
+  onAlternative?: () => void;
   instructionsMessage: string;
   dialogClass?: string;
   showInlineError?: boolean;
@@ -33,6 +36,8 @@ const QuickConnectModal = ({
   title,
   subTitle,
   cancelText,
+  alternativeText,
+  onAlternative,
   instructionsMessage,
   dialogClass,
   showInlineError,
@@ -80,6 +85,16 @@ const QuickConnectModal = ({
         title={title}
         subTitle={subTitle}
         cancelText={cancelText}
+        stickyActions
+        secondaryText={alternativeText}
+        onSecondary={
+          onAlternative
+            ? () => {
+                cleanup();
+                onAlternative();
+              }
+            : undefined
+        }
         dialogClass={dialogClass}
         {...(hasError || isExpired
           ? {
@@ -88,12 +103,6 @@ const QuickConnectModal = ({
             }
           : {})}
       >
-        {showInlineError && errorMessage && (
-          <div className="mb-4">
-            <Alert type="error">{errorMessage}</Alert>
-          </div>
-        )}
-
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-8">
             <LoadingSpinner />
@@ -101,39 +110,36 @@ const QuickConnectModal = ({
         )}
 
         {!isLoading && !hasError && !isExpired && (
-          <div className="flex flex-col items-center space-y-4">
-            <p className="text-center text-gray-300">{instructionsMessage}</p>
-
-            <div className="flex flex-col items-center space-y-2">
-              <div className="rounded-lg bg-gray-700 px-8 py-4">
-                <span className="text-4xl font-bold tracking-wider text-white">
-                  {code}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2 text-sm text-gray-400">
-              <div className="h-4 w-4">
-                <LoadingSpinner />
-              </div>
-              <span>{intl.formatMessage(messages.waitingForAuth)}</span>
-            </div>
-          </div>
+          <DeviceCodePanel
+            instructions={instructionsMessage}
+            code={code}
+            waitingText={intl.formatMessage(messages.waitingForAuth)}
+          />
         )}
 
         {hasError && (
-          <div className="flex flex-col items-center space-y-4 py-4">
-            <div className="text-center">
-              <h3 className="text-lg font-semibold text-red-500">
-                {intl.formatMessage(messages.error)}
-              </h3>
-              <p className="mt-2 text-gray-300">{errorMessage}</p>
-            </div>
+          <div
+            role="alert"
+            className="flex flex-col items-center space-y-4 py-4"
+          >
+            {showInlineError ? (
+              <Alert type="error">{errorMessage}</Alert>
+            ) : (
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-red-500">
+                  {intl.formatMessage(messages.error)}
+                </h3>
+                <p className="mt-2 text-gray-300">{errorMessage}</p>
+              </div>
+            )}
           </div>
         )}
 
         {isExpired && (
-          <div className="flex flex-col items-center space-y-4 py-4">
+          <div
+            role="status"
+            className="flex flex-col items-center space-y-4 py-4"
+          >
             <div className="text-center">
               <h3 className="text-lg font-semibold text-yellow-500">
                 {intl.formatMessage(messages.expired)}

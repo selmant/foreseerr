@@ -20,6 +20,12 @@ const messages = defineMessages('components.Library.LibraryPosterCard', {
   movie: 'Movie',
   series: 'Series',
   episode: 'Episode',
+  unwatched: 'Unwatched',
+  watched: 'Watched',
+  remaining:
+    '{count, plural, one {# unwatched episode} other {# unwatched episodes}}',
+  unavailable: 'No episodes available',
+  progress: '{percent, number}% watched',
 });
 
 interface LibraryPosterCardProps {
@@ -69,16 +75,23 @@ const LibraryPosterCard = ({
     onOpen?.(item);
   };
 
-  const posterLabel =
+  const watchLabel =
     watchMark === 'unplayed'
-      ? `${item.title}, unwatched`
+      ? intl.formatMessage(messages.unwatched)
       : watchMark === 'watched'
-        ? `${item.title}, watched`
+        ? intl.formatMessage(messages.watched)
         : watchMark === 'partial' && item.unplayedItemCount
-          ? `${item.title}, ${item.unplayedItemCount} unwatched episodes`
+          ? intl.formatMessage(messages.remaining, {
+              count: item.unplayedItemCount,
+            })
           : watchMark === 'unavailable'
-            ? `${item.title}, no episodes currently available`
-            : item.title;
+            ? intl.formatMessage(messages.unavailable)
+            : progress > 0
+              ? intl.formatMessage(messages.progress, {
+                  percent: Math.round(progress),
+                })
+              : undefined;
+  const posterLabel = [item.title, watchLabel].filter(Boolean).join(', ');
 
   return (
     <article
@@ -93,6 +106,7 @@ const LibraryPosterCard = ({
           onClick={openInspector}
           className="absolute inset-0 z-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500"
           aria-label={posterLabel}
+          title={posterLabel}
         >
           {item.posterUrl ? (
             <CachedImage
@@ -232,14 +246,22 @@ const LibraryPosterCard = ({
         <button
           type="button"
           onClick={openInspector}
-          className="mt-2 block w-full min-w-0 rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="mt-2 block min-h-11 w-full min-w-0 rounded text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          title={posterLabel}
         >
-          <h3 className="truncate text-sm font-semibold text-white">
+          <h3 className="line-clamp-2 min-h-10 text-sm font-semibold text-white">
             {item.title}
           </h3>
           <p className="truncate text-xs text-gray-400">
             {[item.year, typeLabel].filter(Boolean).join(' · ')}
           </p>
+          {watchLabel ? (
+            <p
+              className={`mt-1 text-xs ${watchMark === 'watched' ? 'text-emerald-400' : watchMark === 'partial' || progress > 0 ? 'text-indigo-300' : 'text-gray-400'}`}
+            >
+              {watchLabel}
+            </p>
+          ) : null}
         </button>
       ) : null}
     </article>

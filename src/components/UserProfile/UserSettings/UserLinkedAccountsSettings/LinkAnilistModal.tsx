@@ -1,4 +1,5 @@
 import Alert from '@app/components/Common/Alert';
+import Button from '@app/components/Common/Button';
 import Modal from '@app/components/Common/Modal';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
@@ -6,9 +7,10 @@ import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
@@ -21,6 +23,13 @@ const messages = defineMessages(
     codeLabel: 'Authorization Code',
     codePlaceholder: 'Paste the AniList PIN',
     submit: 'Link AniList',
+    submitting: 'Linking AniList…',
+    authorize: 'Open AniList',
+    loadingAuthorization: 'Preparing AniList authorization…',
+    authorizationError: 'Unable to open AniList authorization. Try again.',
+    retryAuthorization: 'Retry authorization',
+    returnWithCode:
+      'After authorizing, return to this dialog and paste the PIN shown by AniList.',
     success: 'AniList account linked as {username}.',
     error: 'Unable to link AniList account.',
     notConfigured: 'AniList is not configured by an administrator.',
@@ -46,7 +55,11 @@ const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
   );
   const { user: currentUser } = useUser();
   const user = routeUser ?? currentUser;
-  const { data: anilistStatus } = useSWR<{
+  const {
+    data: anilistStatus,
+    error: authorizationError,
+    mutate: revalidateAuthorization,
+  } = useSWR<{
     connected: boolean;
     expired?: boolean;
     username: string | null;
@@ -58,6 +71,7 @@ const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
   );
 
   const [code, setCode] = useState('');
+  const codeInput = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success'>(
     'idle'
@@ -75,9 +89,11 @@ const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
   }, [show]);
 
   const submit = async () => {
-    if (!user?.id) {
+    if (!user?.id || status !== 'idle' || !code.trim()) {
       return;
     }
+    // Keep keyboard focus inside when the submit button becomes disabled.
+    codeInput.current?.focus();
     setStatus('submitting');
     setError(null);
     try {
@@ -126,8 +142,14 @@ const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
           status === 'submitting' || (status !== 'success' && !code.trim())
         }
         okText={intl.formatMessage(
-          status === 'success' ? globalMessages.close : messages.submit
+          status === 'success'
+            ? globalMessages.close
+            : status === 'submitting'
+              ? messages.submitting
+              : messages.submit
         )}
+        okButtonProps={{ 'aria-busy': status === 'submitting' }}
+        stickyActions
         dialogClass="sm:max-w-lg"
       >
         {status === 'success' ? (
@@ -140,7 +162,7 @@ const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (code.trim()) void submit();
+              if (status === 'idle' && code.trim()) void submit();
             }}
           >
             {error && <Alert type="error">{error}</Alert>}
@@ -149,29 +171,64 @@ const LinkAnilistModal = ({ show, onClose, onSave }: LinkAnilistModalProps) => {
                 {intl.formatMessage(messages.expired)}
               </Alert>
             )}
-            <p>
+            <p className="text-gray-300">
               {intl.formatMessage(messages.instructions, {
                 applicationName: settings.currentSettings.applicationTitle,
                 AuthorizeLink: (msg: ReactNode) => (
-                  <a
-                    href={anilistStatus?.authorizeUrl ?? '#'}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-white underline transition hover:text-gray-200"
-                  >
-                    {msg}
-                  </a>
+                  <span className="font-medium text-white">{msg}</span>
                 ),
               })}
             </p>
+            <div className="mt-4">
+              {anilistStatus?.authorizeUrl ? (
+                <Button
+                  as="a"
+                  href={anilistStatus.authorizeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  buttonType="primary"
+                  className="min-h-11"
+                >
+                  <ArrowTopRightOnSquareIcon />
+                  <span>{intl.formatMessage(messages.authorize)}</span>
+                </Button>
+              ) : authorizationError || anilistStatus ? (
+                <div role="status">
+                  <p className="text-sm text-yellow-200">
+                    {intl.formatMessage(messages.authorizationError)}
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-2 min-h-11"
+                    onClick={() =>
+                      void revalidateAuthorization().catch(() => undefined)
+                    }
+                  >
+                    {intl.formatMessage(messages.retryAuthorization)}
+                  </Button>
+                </div>
+              ) : (
+                <p role="status" className="text-sm text-gray-400">
+                  {intl.formatMessage(messages.loadingAuthorization)}
+                </p>
+              )}
+              <p className="mt-3 text-sm leading-6 text-gray-400">
+                {intl.formatMessage(messages.returnWithCode)}
+              </p>
+            </div>
             <label htmlFor="anilist-pin" className="text-label mt-4">
               {intl.formatMessage(messages.codeLabel)}
             </label>
             <div className="flex rounded-md shadow-sm">
               <input
                 id="anilist-pin"
+                ref={codeInput}
                 type="text"
                 autoComplete="off"
+                spellCheck={false}
+                autoCapitalize="none"
+                readOnly={status === 'submitting'}
+                className="min-h-11 min-w-0"
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
                 placeholder={intl.formatMessage(messages.codePlaceholder)}

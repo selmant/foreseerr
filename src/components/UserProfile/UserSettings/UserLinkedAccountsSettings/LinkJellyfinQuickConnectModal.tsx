@@ -12,7 +12,8 @@ const messages = defineMessages(
   {
     title: 'Link {mediaServerName} Account',
     subtitle: 'Quick Connect',
-    instructions: 'Enter this code in your {mediaServerName} app',
+    instructions:
+      'Open Quick Connect in your {mediaServerName} app and enter this code to authorize the connection.',
     usePassword: 'Use Password Instead',
   }
 );
@@ -49,23 +50,19 @@ const LinkJellyfinQuickConnectModal = ({
     [user]
   );
 
-  const handleCancel = () => {
-    onClose();
-    onSwitchToPassword();
-  };
-
   return (
     <QuickConnectModal
       show={show}
       title={intl.formatMessage(messages.title, { mediaServerName })}
       subTitle={intl.formatMessage(messages.subtitle)}
-      cancelText={intl.formatMessage(messages.usePassword)}
+      alternativeText={intl.formatMessage(messages.usePassword)}
+      onAlternative={onSwitchToPassword}
       instructionsMessage={intl.formatMessage(messages.instructions, {
         mediaServerName,
       })}
       dialogClass="sm:max-w-lg"
       showInlineError
-      onCancel={handleCancel}
+      onCancel={onClose}
       onSuccess={() => {
         onSave();
         onClose();

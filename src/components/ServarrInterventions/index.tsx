@@ -2,24 +2,38 @@ import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
-import ConfirmButton from '@app/components/Common/ConfirmButton';
 import EmptyState from '@app/components/Common/EmptyState';
 import Header from '@app/components/Common/Header';
+import LinkButton from '@app/components/Common/LinkButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import SegmentedControl from '@app/components/Common/SegmentedControl';
 import SlideOver from '@app/components/Common/SlideOver';
 import InterventionImport from '@app/components/ServarrInterventions/InterventionImport';
+import type { InterventionState } from '@app/components/ServarrInterventions/queryState';
+import {
+  parseInterventionState,
+  updateInterventionSearch,
+} from '@app/components/ServarrInterventions/queryState';
 import type {
   InterventionResults,
   ServarrIntervention,
 } from '@app/components/ServarrInterventions/types';
 import useToasts from '@app/hooks/useToasts';
+import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import {
+  Description,
+  Dialog,
+  DialogBackdrop,
+  DialogPanel,
+  DialogTitle,
+} from '@headlessui/react';
+import {
   ArrowDownTrayIcon,
   CheckCircleIcon,
+  Cog6ToothIcon,
   NoSymbolIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -27,32 +41,32 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   FilmIcon,
-  FunnelIcon,
   TvIcon,
 } from '@heroicons/react/24/solid';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
-import { Children, useEffect, useMemo, useState } from 'react';
+import { Children, useEffect, useId, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import useSWR, { mutate } from 'swr';
 
 const TAKE = 25;
 
 const messages = defineMessages('components.ServarrInterventions', {
   title: 'Interventions',
-  description: 'Review mapped Sonarr and Radarr queue warnings.',
+  description:
+    'Review Sonarr and Radarr download warnings and resolve blocked imports.',
   active: 'Active',
-  history: 'Blocklisted by Foreseerr',
-  allServices: 'All Services',
-  allTypes: 'All Types',
+  history: 'Blocklist history',
+  allServices: 'All',
+  allTypes: 'All',
   emptyActive: 'No active warnings.',
   emptyHistory: 'No Foreseerr blocklist history.',
   loadError: 'Unable to load interventions.',
   firstSeen: 'First seen {date}',
-  overdue: 'Overdue',
-  remaining: '{hours}h {minutes}m remaining',
+  overdue: 'Automatic rejection due',
+  remaining: 'Automatic rejection in {hours}h {minutes}m',
   cleanupError: 'Last cleanup error: {error}',
   automaticCleanup: 'Automatic Cleanup',
   manualRejection: 'Manual rejection{actor}',
@@ -63,6 +77,9 @@ const messages = defineMessages('components.ServarrInterventions', {
   importing: 'Importing…',
   inProgress: 'In Progress',
   rejectConfirm: 'Delete this download and blocklist the release in {service}?',
+  rejectTitle: 'Reject this release?',
+  rejectExplanation:
+    'This deletes the download and blocklists the release in {service}, allowing the service to try another release.',
   rejected: 'Release rejected and blocklisted.',
   rejectFailed: 'Rejection failed.',
   mode: 'Interventions view',
@@ -71,6 +88,41 @@ const messages = defineMessages('components.ServarrInterventions', {
     'Queue warnings from mapped Sonarr and Radarr downloads will appear here.',
   emptyHistoryDescription:
     'Releases Foreseerr rejects and blocklists will be listed here.',
+  activeHelp:
+    'Use Manual Import to choose files to add to your library. Reject and Blocklist removes the download and prevents this release from being grabbed again.',
+  historyHelp:
+    'Releases blocklisted by Foreseerr, with the time and reason for each action.',
+  actionGuide: 'How to resolve warnings',
+  historyGuide: 'About blocklist history',
+  cleanupEnabled:
+    'Automatic cleanup is on. Overdue warnings will be rejected and blocklisted.',
+  cleanupDisabled:
+    'Automatic cleanup is off. Warnings will not be rejected automatically.',
+  cleanupUnknown: 'Automatic cleanup runs only when enabled in settings.',
+  cleanupSettings: 'Cleanup settings',
+  refresh: 'Refresh',
+  serviceFilter: 'Service',
+  mediaFilter: 'Media type',
+  clearFilters: 'Clear filters',
+  filteredEmpty: 'No warnings match these filters.',
+  filteredHistoryEmpty: 'No blocklisted releases match these filters.',
+  filteredEmptyDescription:
+    'Try another service or media type, or clear the filters to see everything.',
+  warnings: '{count, plural, one {# warning} other {# warnings}}',
+  blocklisted:
+    '{count, plural, one {# blocklisted release} other {# blocklisted releases}}',
+  warningReason: 'Why this needs attention',
+  historicalWarning: 'Warning at the time of rejection',
+  noWarningReason:
+    'The service has reported a download warning without further details.',
+  reviewFiles:
+    'Review the downloaded files and their assignments before importing.',
+  importUnavailable:
+    'Manual import becomes available when {service} reports a completed download and its file location. Open Manage downloads to review its progress or find another release.',
+  manageDownloads: 'Manage downloads',
+  importRelease: 'Manual Import: {release}',
+  rejectRelease: 'Reject and Blocklist: {release}',
+  manageRelease: 'Manage downloads: {release}',
 });
 
 const InterventionTitle = ({ item }: { item: ServarrIntervention }) => {
@@ -90,7 +142,7 @@ const InterventionTitle = ({ item }: { item: ServarrIntervention }) => {
   return (
     <Link
       to={`/${item.mediaType}/${item.tmdbId}`}
-      className="text-base font-semibold text-white transition hover:underline"
+      className="inline-flex min-h-11 items-center break-words text-base font-semibold text-white transition hover:underline"
     >
       {title}
     </Link>
@@ -144,12 +196,34 @@ const Countdown = ({ deadline }: { deadline: string }) => {
 const ServarrInterventions = () => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const [mode, setMode] = useState<'active' | 'history'>('active');
-  const [page, setPage] = useState(0);
-  const [serviceType, setServiceType] = useState('');
-  const [mediaType, setMediaType] = useState('');
+  const { hasPermission } = useUser();
+  const serviceId = useId();
+  const mediaId = useId();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { mode, page, serviceType, mediaType } = parseInterventionState(
+    searchParams.toString()
+  );
+  const updateView = (changes: Partial<InterventionState>) =>
+    setSearchParams((current) =>
+      updateInterventionSearch(current.toString(), changes)
+    );
   const [selected, setSelected] = useState<ServarrIntervention>();
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  const [rejectItem, setRejectItem] = useState<ServarrIntervention>();
+  const { data: counts } = useSWR<{ active: number }>(
+    '/api/v1/servarr/interventions/count'
+  );
+  const { data: cleanupSettings } = useSWR<{
+    automaticCleanupEnabled: boolean;
+  }>(
+    hasPermission(Permission.ADMIN)
+      ? '/api/v1/settings/servarr-interventions'
+      : null
+  );
+  const hasFilters = Boolean(serviceType || mediaType);
+  const clearFilters = () => {
+    updateView({ serviceType: '', mediaType: '' });
+  };
   const query = useMemo(
     () =>
       new URLSearchParams({
@@ -165,6 +239,7 @@ const ServarrInterventions = () => {
     data,
     error,
     mutate: refresh,
+    isValidating,
   } = useSWR<InterventionResults>(`/api/v1/servarr/interventions?${query}`, {
     refreshInterval:
       mode !== 'active'
@@ -177,6 +252,19 @@ const ServarrInterventions = () => {
               ? 3000
               : 60000,
   });
+
+  useEffect(() => {
+    // A resolved warning can remove the last page while someone is reviewing it.
+    if (data && page > 0 && page >= data.pageInfo.pages) {
+      setSearchParams(
+        (current) =>
+          updateInterventionSearch(current.toString(), {
+            page: Math.max(0, data.pageInfo.pages - 1),
+          }),
+        { replace: true }
+      );
+    }
+  }, [data, page, setSearchParams]);
 
   useEffect(() => {
     void axios
@@ -229,56 +317,96 @@ const ServarrInterventions = () => {
         </Header>
         <SegmentedControl<'active' | 'history'>
           ariaLabel={intl.formatMessage(messages.mode)}
-          size="sm"
           className="mt-2 w-full lg:inline-grid lg:w-auto lg:min-w-[26rem]"
           value={mode}
-          onChange={(value) => {
-            setMode(value);
-            setPage(0);
-          }}
+          wrapLabels
+          onChange={(value) => updateView({ mode: value })}
           options={[
             {
               value: 'active',
-              label:
-                data && mode === 'active'
-                  ? intl.formatMessage(messages.activeCount, {
-                      count: data.pageInfo.results,
-                    })
-                  : intl.formatMessage(messages.active),
+              label: counts
+                ? intl.formatMessage(messages.activeCount, {
+                    count: counts.active,
+                  })
+                : intl.formatMessage(messages.active),
             },
             { value: 'history', label: intl.formatMessage(messages.history) },
           ]}
         />
       </div>
-      <div className="mb-4 flex flex-col sm:flex-row sm:space-x-2">
-        <div className="mb-2 flex flex-grow sm:mb-0 lg:flex-grow-0">
-          <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
-            <FunnelIcon className="h-6 w-6" />
-          </span>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {hasPermission(Permission.ADMIN) ? (
+          <LinkButton
+            to="/settings/integrations#intervention-cleanup"
+            className="min-h-11 px-2.5 sm:px-4"
+          >
+            <Cog6ToothIcon />
+            <span>{intl.formatMessage(messages.cleanupSettings)}</span>
+          </LinkButton>
+        ) : null}
+        <Button
+          className="min-h-11 px-2.5 sm:px-4"
+          disabled={isValidating}
+          onClick={() => void refresh()}
+        >
+          <ArrowPathIcon
+            className={isValidating ? 'animate-spin' : undefined}
+          />
+          <span>{intl.formatMessage(messages.refresh)}</span>
+        </Button>
+      </div>
+      <div className="mb-5 rounded-xl border border-gray-700 bg-gray-800/40 px-4 py-2 text-sm leading-6 text-gray-300">
+        <details>
+          <summary className="min-h-11 cursor-pointer rounded-md py-2.5 font-medium text-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500">
+            {intl.formatMessage(
+              mode === 'active' ? messages.actionGuide : messages.historyGuide
+            )}
+          </summary>
+          <p className="pb-3 pt-1">
+            {intl.formatMessage(
+              mode === 'active' ? messages.activeHelp : messages.historyHelp
+            )}
+          </p>
+        </details>
+        {mode === 'active' ? (
+          <p className="mt-1 text-gray-400">
+            {intl.formatMessage(
+              !cleanupSettings
+                ? messages.cleanupUnknown
+                : cleanupSettings.automaticCleanupEnabled
+                  ? messages.cleanupEnabled
+                  : messages.cleanupDisabled
+            )}
+          </p>
+        ) : null}
+      </div>
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
+        <div className="flex min-w-0 flex-col gap-1 sm:w-48">
+          <label htmlFor={serviceId} className="text-sm text-gray-400">
+            {intl.formatMessage(messages.serviceFilter)}
+          </label>
           <select
+            id={serviceId}
             value={serviceType}
-            onChange={(event) => {
-              setServiceType(event.target.value);
-              setPage(0);
-            }}
-            className="rounded-r-only"
+            onChange={(event) =>
+              updateView({ serviceType: event.target.value })
+            }
+            className="min-h-11 w-full min-w-0"
           >
             <option value="">{intl.formatMessage(messages.allServices)}</option>
             <option value="radarr">Radarr</option>
             <option value="sonarr">Sonarr</option>
           </select>
         </div>
-        <div className="mb-2 flex flex-grow sm:mb-0 lg:flex-grow-0">
-          <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
-            <FilmIcon className="h-6 w-6" />
-          </span>
+        <div className="flex min-w-0 flex-col gap-1 sm:w-48">
+          <label htmlFor={mediaId} className="text-sm text-gray-400">
+            {intl.formatMessage(messages.mediaFilter)}
+          </label>
           <select
+            id={mediaId}
             value={mediaType}
-            onChange={(event) => {
-              setMediaType(event.target.value);
-              setPage(0);
-            }}
-            className="rounded-r-only"
+            onChange={(event) => updateView({ mediaType: event.target.value })}
+            className="min-h-11 w-full min-w-0"
           >
             <option value="">{intl.formatMessage(messages.allTypes)}</option>
             <option value="movie">
@@ -289,10 +417,33 @@ const ServarrInterventions = () => {
             </option>
           </select>
         </div>
+        {hasFilters ? (
+          <Button className="col-span-2 min-h-11" onClick={clearFilters}>
+            {intl.formatMessage(messages.clearFilters)}
+          </Button>
+        ) : null}
+        {data ? (
+          <p
+            role="status"
+            className="col-span-2 py-1 text-sm text-gray-400 sm:ml-auto sm:py-3"
+          >
+            {intl.formatMessage(
+              mode === 'active' ? messages.warnings : messages.blocklisted,
+              { count: data.pageInfo.results }
+            )}
+          </p>
+        ) : null}
       </div>
       {!data && !error && <LoadingSpinner />}
       {error && (
-        <Alert type="error" title={intl.formatMessage(messages.loadError)} />
+        <Alert type="error" title={intl.formatMessage(messages.loadError)}>
+          <button
+            className="min-h-11 underline underline-offset-4"
+            onClick={() => void refresh()}
+          >
+            {intl.formatMessage(messages.refresh)}
+          </button>
+        </Alert>
       )}
       {data && (
         <div className="space-y-3">
@@ -300,13 +451,32 @@ const ServarrInterventions = () => {
             <EmptyState
               icon={mode === 'active' ? CheckCircleIcon : NoSymbolIcon}
               title={intl.formatMessage(
-                mode === 'active' ? messages.emptyActive : messages.emptyHistory
+                hasFilters
+                  ? mode === 'active'
+                    ? messages.filteredEmpty
+                    : messages.filteredHistoryEmpty
+                  : mode === 'active'
+                    ? messages.emptyActive
+                    : messages.emptyHistory
               )}
               description={intl.formatMessage(
-                mode === 'active'
-                  ? messages.emptyActiveDescription
-                  : messages.emptyHistoryDescription
+                hasFilters
+                  ? messages.filteredEmptyDescription
+                  : mode === 'active'
+                    ? messages.emptyActiveDescription
+                    : messages.emptyHistoryDescription
               )}
+              action={
+                hasFilters ? (
+                  <Button
+                    buttonType="primary"
+                    className="min-h-11"
+                    onClick={clearFilters}
+                  >
+                    {intl.formatMessage(messages.clearFilters)}
+                  </Button>
+                ) : undefined
+              }
             />
           )}
           {data.results.map((item) => (
@@ -322,7 +492,10 @@ const ServarrInterventions = () => {
                       <h2 className="min-w-0">
                         <InterventionTitle item={item} />
                       </h2>
-                      <Badge badgeType="dark">
+                      <Badge
+                        badgeType="dark"
+                        className="max-w-full whitespace-normal break-words"
+                      >
                         {item.serviceName}
                         {item.is4k ? ' · 4K' : ''}
                       </Badge>
@@ -338,21 +511,34 @@ const ServarrInterventions = () => {
                     >
                       {item.releaseTitle}
                     </p>
-                    {item.warningMessages.length > 0 && (
-                      <ul className="mt-2 list-inside list-disc text-sm text-yellow-200">
-                        {item.warningMessages.map((message, index) => (
-                          <li key={`${item.id}-${index}`}>{message}</li>
-                        ))}
-                      </ul>
-                    )}
+                    <div className="mt-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3 text-sm">
+                      <h3 className="mb-1 font-medium text-yellow-100">
+                        {intl.formatMessage(
+                          mode === 'active'
+                            ? messages.warningReason
+                            : messages.historicalWarning
+                        )}
+                      </h3>
+                      {item.warningMessages.length > 0 ? (
+                        <ul className="list-inside list-disc space-y-1 break-words text-yellow-200">
+                          {item.warningMessages.map((message, index) => (
+                            <li key={`${item.id}-${index}`}>{message}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-gray-300">
+                          {intl.formatMessage(messages.noWarningReason)}
+                        </p>
+                      )}
+                    </div>
                     {item.cleanupError && (
-                      <div className="mt-2 text-sm text-red-300">
+                      <div className="mt-2 break-words text-sm text-red-300">
                         {intl.formatMessage(messages.cleanupError, {
                           error: item.cleanupError,
                         })}
                       </div>
                     )}
-                    <div className="mt-2 text-xs text-gray-400">
+                    <div className="mt-3 text-xs leading-6 text-gray-400">
                       {mode === 'active' ? (
                         <>
                           {intl.formatMessage(messages.firstSeen, {
@@ -360,8 +546,13 @@ const ServarrInterventions = () => {
                               dateStyle: 'medium',
                               timeStyle: 'short',
                             }),
-                          })}{' '}
-                          · <Countdown deadline={item.cleanupDeadlineAt} />
+                          })}
+                          {cleanupSettings?.automaticCleanupEnabled && (
+                            <>
+                              {' · '}
+                              <Countdown deadline={item.cleanupDeadlineAt} />
+                            </>
+                          )}
                         </>
                       ) : (
                         <>
@@ -386,12 +577,41 @@ const ServarrInterventions = () => {
                     </div>
                   </div>
                 </div>
-                {mode === 'active' && (
-                  <div className="flex flex-wrap items-start gap-2">
+              </div>
+              {mode === 'active' && (
+                <div className="mt-4 flex flex-col gap-3 border-t border-gray-700 pt-4 lg:flex-row lg:items-center lg:justify-between">
+                  {!inProgress(item) && (
+                    <p className="max-w-2xl text-sm leading-6 text-gray-400">
+                      {intl.formatMessage(
+                        item.manualImportCapable
+                          ? messages.reviewFiles
+                          : messages.importUnavailable,
+                        { service: item.serviceName }
+                      )}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2 lg:shrink-0">
+                    <LinkButton
+                      to={`/${item.mediaType}/${item.tmdbId}?manage=1`}
+                      className="min-h-11"
+                      aria-label={intl.formatMessage(messages.manageRelease, {
+                        release: item.releaseTitle,
+                      })}
+                    >
+                      <Cog6ToothIcon />
+                      <span>
+                        {intl.formatMessage(messages.manageDownloads)}
+                      </span>
+                    </LinkButton>
                     {item.manualImportCapable && (
                       <Button
+                        buttonType="primary"
+                        className="min-h-11"
                         disabled={inProgress(item)}
                         onClick={() => setSelected(item)}
+                        aria-label={intl.formatMessage(messages.importRelease, {
+                          release: item.releaseTitle,
+                        })}
                       >
                         {item.state === 'importing' ? (
                           <ArrowPathIcon className="animate-spin" />
@@ -408,7 +628,7 @@ const ServarrInterventions = () => {
                       </Button>
                     )}
                     {inProgress(item) ? (
-                      <Button buttonType="danger" disabled>
+                      <Button buttonType="danger" className="min-h-11" disabled>
                         {item.state === 'importing' ? (
                           <span>{intl.formatMessage(messages.reject)}</span>
                         ) : (
@@ -421,19 +641,20 @@ const ServarrInterventions = () => {
                         )}
                       </Button>
                     ) : (
-                      <ConfirmButton
-                        confirmText={intl.formatMessage(
-                          messages.rejectConfirm,
-                          { service: item.serviceName }
-                        )}
-                        onClick={() => void reject(item)}
+                      <Button
+                        buttonType="ghost"
+                        className="min-h-11 border-red-500/40 text-red-300 hover:border-red-400 hover:bg-red-500/10 focus:border-red-400"
+                        onClick={() => setRejectItem(item)}
+                        aria-label={intl.formatMessage(messages.rejectRelease, {
+                          release: item.releaseTitle,
+                        })}
                       >
                         {intl.formatMessage(messages.reject)}
-                      </ConfirmButton>
+                      </Button>
                     )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </article>
           ))}
           {data.pageInfo.pages > 1 && (
@@ -442,7 +663,7 @@ const ServarrInterventions = () => {
                 className="mb-3 flex flex-col items-center space-y-3 sm:flex-row sm:space-y-0"
                 aria-label="Pagination"
               >
-                <div className="hidden lg:flex lg:flex-1">
+                <div className="flex sm:flex-1">
                   <p className="text-sm">
                     {Children.toArray(
                       intl.formatMessage(globalMessages.showingresults, {
@@ -458,15 +679,17 @@ const ServarrInterventions = () => {
                 </div>
                 <div className="flex flex-auto justify-center space-x-2 sm:flex-1 sm:justify-end">
                   <Button
+                    className="min-h-11"
                     disabled={page === 0}
-                    onClick={() => setPage((value) => value - 1)}
+                    onClick={() => updateView({ page: page - 1 })}
                   >
                     <ChevronLeftIcon />
                     <span>{intl.formatMessage(globalMessages.previous)}</span>
                   </Button>
                   <Button
+                    className="min-h-11"
                     disabled={page + 1 >= data.pageInfo.pages}
-                    onClick={() => setPage((value) => value + 1)}
+                    onClick={() => updateView({ page: page + 1 })}
                   >
                     <span>{intl.formatMessage(globalMessages.next)}</span>
                     <ChevronRightIcon />
@@ -477,6 +700,47 @@ const ServarrInterventions = () => {
           )}
         </div>
       )}
+      <Dialog
+        open={Boolean(rejectItem)}
+        onClose={() => setRejectItem(undefined)}
+        className="relative z-[100]"
+      >
+        <DialogBackdrop className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm" />
+        <div className="fixed inset-0 flex items-center justify-center overflow-y-auto p-4">
+          <DialogPanel className="w-full max-w-lg space-y-4 rounded-xl bg-gray-800 p-5 shadow-xl ring-1 ring-gray-700">
+            <DialogTitle className="text-xl font-semibold text-white">
+              {intl.formatMessage(messages.rejectTitle)}
+            </DialogTitle>
+            <Description className="text-sm leading-6 text-gray-300">
+              {intl.formatMessage(messages.rejectExplanation, {
+                service: rejectItem?.serviceName ?? '',
+              })}
+            </Description>
+            <p className="break-all rounded-lg bg-gray-900/70 p-3 font-mono text-xs text-gray-300">
+              {rejectItem?.releaseTitle}
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                data-autofocus
+                className="min-h-11"
+                onClick={() => setRejectItem(undefined)}
+              >
+                {intl.formatMessage(globalMessages.cancel)}
+              </Button>
+              <Button
+                buttonType="danger"
+                className="min-h-11"
+                onClick={() => {
+                  if (rejectItem) void reject(rejectItem);
+                  setRejectItem(undefined);
+                }}
+              >
+                {intl.formatMessage(messages.reject)}
+              </Button>
+            </div>
+          </DialogPanel>
+        </div>
+      </Dialog>
       <SlideOver
         show={!!selected}
         title={intl.formatMessage(messages.manualImport)}

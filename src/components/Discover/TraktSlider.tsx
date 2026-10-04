@@ -75,6 +75,7 @@ const TraktSlider = ({
       )}
       <Slider
         sliderKey={sliderKey}
+        ariaLabel={title}
         isLoading={!data}
         isEmpty={!!data && titles?.length === 0}
         emptyMessage={emptyMessage}

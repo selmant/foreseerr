@@ -14,7 +14,7 @@ interface RequestModalProps {
   is4k?: boolean;
   /** Pre-select seasons when opening the TV modal (e.g. request-all from split button). */
   initialSeasonSelection?: 'none' | 'all';
-  initialRequestScope?: 'seasons' | 'episodes';
+  initialRequestScope?: 'seasons' | 'episodes' | 'watchAhead';
   initialEpisodeSelection?: EpisodeSelection;
   editRequest?: NonFunctionProperties<MediaRequest>;
   onComplete?: (newStatus: MediaStatus) => void;

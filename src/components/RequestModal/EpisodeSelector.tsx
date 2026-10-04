@@ -61,6 +61,13 @@ const messages = defineMessages('components.RequestModal.EpisodeSelector', {
   available: 'Available',
   failed: 'Failed',
   declined: 'Declined',
+  retry: 'Try again',
+  searchEpisodes: 'Search this season',
+  searchPlaceholder: 'Episode name or number',
+  clearSearch: 'Clear episode search',
+  episodeResults: '{count} of {total} episodes',
+  noMatches: 'No episodes match your search.',
+  episodeWithStatus: '{episodeCode}: {title} — {status}',
 });
 
 const episodeCode = (episode: EpisodeCatalogItem) =>
@@ -102,7 +109,7 @@ const EpisodeSelector = ({
 }: EpisodeSelectorProps) => {
   const intl = useIntl();
   const settings = useSettings();
-  const { data, error } = useSWR<EpisodeCatalog>(
+  const { data, error, mutate } = useSWR<EpisodeCatalog>(
     `/api/v1/tv/${tmdbId}/episodes`
   );
   const initialStartId =
@@ -124,6 +131,7 @@ const EpisodeSelector = ({
     initialSelection?.type === 'after'
   );
   const [isExtending, setIsExtending] = useState(false);
+  const [search, setSearch] = useState('');
 
   const selectionEpisodes = useMemo(
     () =>
@@ -148,6 +156,14 @@ const EpisodeSelector = ({
       ),
     [activeSeason, selectionEpisodes]
   );
+  const visibleEpisodes = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return episodesInSeason.filter((episode) =>
+      `${episode.title} ${episodeCode(episode)} S${episode.seasonNumber}E${episode.episodeNumber} ${episode.episodeNumber}`
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [episodesInSeason, search]);
   const requestStateByEpisode = useMemo(() => {
     const states = [...requestStates].sort((a, b) => a.requestId - b.requestId);
     return new Map(
@@ -296,7 +312,16 @@ const EpisodeSelector = ({
 
   if (error) {
     return (
-      <Alert type="error" title={intl.formatMessage(messages.unavailable)} />
+      <div className="space-y-3">
+        <Alert type="error" title={intl.formatMessage(messages.unavailable)} />
+        <Button
+          type="button"
+          className="min-h-[44px]"
+          onClick={() => void mutate()}
+        >
+          {intl.formatMessage(messages.retry)}
+        </Button>
+      </div>
     );
   }
   if (!data) {
@@ -332,7 +357,7 @@ const EpisodeSelector = ({
               type="button"
               onClick={clearSelection}
               aria-label={intl.formatMessage(messages.clear)}
-              className="-mr-1 shrink-0 rounded-md p-2 text-gray-400 transition hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="-mr-1 inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-md p-2 text-gray-400 transition hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <XMarkIcon className="h-5 w-5" />
             </button>
@@ -397,7 +422,10 @@ const EpisodeSelector = ({
                 <Button
                   type="button"
                   data-testid="episode-selection-extend"
-                  onClick={() => setIsExtending(true)}
+                  onClick={() => {
+                    setIsExtending(true);
+                    setSearch('');
+                  }}
                 >
                   <PlusIcon />
                   <span>{intl.formatMessage(messages.extend)}</span>
@@ -422,10 +450,30 @@ const EpisodeSelector = ({
       </div>
 
       <div className="border-b border-gray-700 bg-gray-900/50 px-3 py-3 sm:px-4">
-        <div className="mb-2 px-1 text-sm font-medium text-gray-400">
+        <label
+          htmlFor="request-episode-season"
+          className="mb-2 block px-1 text-sm font-medium text-gray-400"
+        >
           {intl.formatMessage(messages.seasons)}
-        </div>
-        <div className="hide-scrollbar flex gap-1.5 overflow-x-auto pb-0.5">
+        </label>
+        <select
+          id="request-episode-season"
+          value={activeSeason ?? ''}
+          onChange={(event) => {
+            setActiveSeason(Number(event.target.value));
+            setSearch('');
+          }}
+          className="min-h-[44px] w-full sm:hidden"
+        >
+          {seasons.map((seasonNumber) => (
+            <option key={seasonNumber} value={seasonNumber}>
+              {seasonNumber === 0
+                ? intl.formatMessage(messages.specials)
+                : intl.formatMessage(messages.season, { seasonNumber })}
+            </option>
+          ))}
+        </select>
+        <div className="hide-scrollbar hidden gap-1.5 overflow-x-auto pb-0.5 sm:flex">
           {seasons.map((seasonNumber) => {
             const selected = seasonNumber === activeSeason;
             const selectedCount = resolved.filter(
@@ -437,8 +485,11 @@ const EpisodeSelector = ({
                 type="button"
                 data-testid={`episode-selection-season-${seasonNumber}`}
                 aria-pressed={selected}
-                onClick={() => setActiveSeason(seasonNumber)}
-                className={`relative shrink-0 rounded-md px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                onClick={() => {
+                  setActiveSeason(seasonNumber);
+                  setSearch('');
+                }}
+                className={`relative min-h-[44px] shrink-0 rounded-md px-3 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
                   selected
                     ? 'bg-gray-700 text-white shadow-sm'
                     : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
@@ -469,6 +520,32 @@ const EpisodeSelector = ({
             );
           })}
         </div>
+        <div className="relative mt-3">
+          <input
+            type="search"
+            aria-label={intl.formatMessage(messages.searchEpisodes)}
+            placeholder={intl.formatMessage(messages.searchPlaceholder)}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="min-h-[44px] w-full pr-12"
+          />
+          {search && (
+            <button
+              type="button"
+              aria-label={intl.formatMessage(messages.clearSearch)}
+              onClick={() => setSearch('')}
+              className="absolute right-0 top-0 flex h-full min-w-[44px] items-center justify-center rounded-r-md text-gray-400 hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+        <p role="status" className="mt-2 text-xs text-gray-400">
+          {intl.formatMessage(messages.episodeResults, {
+            count: visibleEpisodes.length,
+            total: episodesInSeason.length,
+          })}
+        </p>
       </div>
 
       <div className="max-h-[22rem] overflow-y-auto p-2 sm:p-3">
@@ -477,7 +554,19 @@ const EpisodeSelector = ({
           role="group"
           aria-label={intl.formatMessage(messages.title)}
         >
-          {episodesInSeason.map((episode) => {
+          {visibleEpisodes.length === 0 && (
+            <div className="space-y-3 p-4 text-center text-sm text-gray-400">
+              <p>{intl.formatMessage(messages.noMatches)}</p>
+              <Button
+                type="button"
+                className="min-h-[44px]"
+                onClick={() => setSearch('')}
+              >
+                {intl.formatMessage(messages.clearSearch)}
+              </Button>
+            </div>
+          )}
+          {visibleEpisodes.map((episode) => {
             const index = selectionEpisodes.findIndex(
               (item) => item.tvdbId === episode.tvdbId
             );
@@ -527,11 +616,19 @@ const EpisodeSelector = ({
                 onClick={() => selectEpisode(episode)}
                 disabled={requestCovered}
                 aria-pressed={selected}
-                aria-label={intl.formatMessage(messages.episodeLabel, {
-                  episodeCode: episodeCode(episode),
-                  title,
-                })}
-                className={`group relative flex min-h-14 w-full items-center gap-3 overflow-hidden rounded-md border px-3 py-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 focus:ring-offset-gray-900 ${
+                aria-label={intl.formatMessage(
+                  requestStatusLabel
+                    ? messages.episodeWithStatus
+                    : messages.episodeLabel,
+                  {
+                    episodeCode: episodeCode(episode),
+                    title,
+                    status: requestStatusLabel
+                      ? intl.formatMessage(requestStatusLabel)
+                      : undefined,
+                  }
+                )}
+                className={`group relative flex min-h-14 w-full flex-wrap items-center gap-3 overflow-hidden rounded-md border px-3 py-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 focus:ring-offset-gray-900 ${
                   isStart || isEnd
                     ? 'border-indigo-400/70 bg-indigo-500/15 text-white'
                     : inRange
@@ -553,7 +650,7 @@ const EpisodeSelector = ({
                   E{episode.episodeNumber}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">
+                  <span className="block text-sm font-medium" title={title}>
                     {title}
                   </span>
                   {episode.airDate && (

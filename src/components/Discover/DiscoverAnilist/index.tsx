@@ -1,7 +1,7 @@
 import Header from '@app/components/Common/Header';
-import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
 import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
+import DiscoverProviderResults from '@app/components/Discover/DiscoverProviderResults';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useSettings from '@app/hooks/useSettings';
@@ -24,6 +24,12 @@ const messages = defineMessages('components.Discover.DiscoverAnilist', {
   list: 'AniList List',
   linkAccount:
     'Link your AniList account in Linked Accounts to browse this list.',
+  publicDescription:
+    'Explore anime from AniList. Choose another view above to browse seasonal picks, popular titles, or the Top 100.',
+  personalDescription:
+    'Anime from your linked AniList library, grouped by your watch status.',
+  empty:
+    'Try another AniList view above. Personal lists follow the library in your linked AniList account.',
 });
 
 type DiscoverAnilistPageProps = {
@@ -49,7 +55,11 @@ const DiscoverAnilistPage = ({
   const intl = useIntl();
   const settings = useSettings();
   const { user } = useUser();
-  const { data: anilistStatus } = useSWR<{
+  const {
+    data: anilistStatus,
+    error: accountError,
+    mutate: refreshAccount,
+  } = useSWR<{
     connected: boolean;
     username: string | null;
   }>(
@@ -68,7 +78,8 @@ const DiscoverAnilistPage = ({
     isReachingEnd,
     titles,
     fetchMore,
-    error,
+    loadError,
+    mutate,
   } = useDiscover<WatchlistItem>(
     enabled ? endpoint : '',
     undefined,
@@ -90,28 +101,38 @@ const DiscoverAnilistPage = ({
     );
   }
 
-  if (error) {
-    return <ErrorPage statusCode={500} />;
-  }
-
   return (
     <>
       <PageTitle title={intl.formatMessage(messages[kind])} />
-      <div className="mb-5 mt-1">
+      <div className="mb-5 mt-1 space-y-4 [&_h2]:whitespace-normal [&_h2]:break-words">
         <Header>
           <SliderSourceTitle source="anilist">
             {intl.formatMessage(messages[kind])}
           </SliderSourceTitle>
         </Header>
+        <p className="max-w-2xl text-sm leading-6 text-gray-400">
+          {intl.formatMessage(
+            requiresLink
+              ? messages.personalDescription
+              : messages.publicDescription
+          )}
+        </p>
       </div>
-      <ListView
-        plexItems={titles}
+      <DiscoverProviderResults
+        source="AniList"
+        titles={titles}
         isEmpty={isEmpty}
-        isLoading={
-          isLoadingInitialData || (isLoadingMore && (titles?.length ?? 0) > 0)
-        }
+        isLoadingInitialData={isLoadingInitialData && !accountError}
+        isLoadingMore={isLoadingMore && !accountError}
         isReachingEnd={isReachingEnd}
-        onScrollBottom={fetchMore}
+        fetchMore={fetchMore}
+        error={accountError || loadError}
+        onRefresh={async () => {
+          if (requiresLink) await refreshAccount();
+          await mutate?.();
+        }}
+        mutate={mutate}
+        emptyDescription={intl.formatMessage(messages.empty)}
       />
     </>
   );

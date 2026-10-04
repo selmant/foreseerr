@@ -12,24 +12,47 @@ import type {
   CalendarScope,
   CalendarSource,
 } from '@server/interfaces/api/calendarInterfaces';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router';
+import {
+  parseCalendarPageState,
+  serializeCalendarPageState,
+  type CalendarPageState,
+} from './queryState';
 
 export function useCalendarPageState() {
-  const initialFilters = useMemo(readCalendarFilters, []);
-  const [view, setView] = useState<CalendarView>('month');
-  const [anchorDate, setAnchorDate] = useState(() => startOfDay(new Date()));
-  const [scope, setScope] = useState<CalendarScope>(initialFilters.scope);
-  const [mediaType, setMediaType] = useState<CalendarMediaType | ''>(
-    initialFilters.mediaType
+  const defaults = useMemo<CalendarPageState>(
+    () => ({
+      ...readCalendarFilters(),
+      view:
+        typeof window !== 'undefined' &&
+        window.matchMedia('(max-width: 1023px)').matches
+          ? 'agenda'
+          : 'month',
+      anchorDate: startOfDay(new Date()),
+    }),
+    []
   );
-  const [source, setSource] = useState<CalendarSource | ''>(
-    initialFilters.source
+  const [searchParams, setSearchParams] = useSearchParams();
+  const search = searchParams.toString();
+  const state = useMemo(
+    () => parseCalendarPageState(search, defaults),
+    [defaults, search]
   );
-  const [is4k, setIs4k] = useState(initialFilters.is4k);
+  const { view, anchorDate, scope, mediaType, source, is4k } = state;
+  const updateState = (patch: Partial<CalendarPageState>) =>
+    setSearchParams((current) =>
+      serializeCalendarPageState(
+        { ...parseCalendarPageState(current.toString(), defaults), ...patch },
+        current.toString()
+      )
+    );
 
   useEffect(() => {
-    if (window.matchMedia('(max-width: 1023px)').matches) setView('agenda');
-  }, []);
+    const canonical = serializeCalendarPageState(state, search);
+    if (canonical.toString() !== search)
+      setSearchParams(canonical, { replace: true });
+  }, [search, setSearchParams, state]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -52,11 +75,16 @@ export function useCalendarPageState() {
     includeEpisodes: true,
   });
   const movePeriod = (direction: number) => {
-    setAnchorDate((date) =>
-      view === 'month'
-        ? new Date(date.getFullYear(), date.getMonth() + direction, 1)
-        : addDays(date, direction * 45)
-    );
+    updateState({
+      anchorDate:
+        view === 'month'
+          ? new Date(
+              anchorDate.getFullYear(),
+              anchorDate.getMonth() + direction,
+              1
+            )
+          : addDays(anchorDate, direction * 45),
+    });
   };
 
   return {
@@ -65,9 +93,18 @@ export function useCalendarPageState() {
     filters: { scope, mediaType, source, is4k },
     movePeriod,
     range,
-    setAnchorDate,
-    setFilters: { setScope, setMediaType, setSource, setIs4k },
-    setView,
+    resetFilters: () =>
+      updateState({ scope: 'mine', mediaType: '', source: '', is4k: false }),
+    setAnchorDate: (date: Date) =>
+      updateState({ anchorDate: startOfDay(date) }),
+    setFilters: {
+      setScope: (value: CalendarScope) => updateState({ scope: value }),
+      setMediaType: (value: CalendarMediaType | '') =>
+        updateState({ mediaType: value }),
+      setSource: (value: CalendarSource | '') => updateState({ source: value }),
+      setIs4k: (value: boolean) => updateState({ is4k: value }),
+    },
+    setView: (value: CalendarView) => updateState({ view: value }),
     view,
   };
 }

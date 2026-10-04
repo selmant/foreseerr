@@ -1,9 +1,11 @@
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
+import ConfirmButton from '@app/components/Common/ConfirmButton';
 import Tooltip from '@app/components/Common/Tooltip';
 import RequestModal from '@app/components/RequestModal';
 import useRequestOverride from '@app/hooks/useRequestOverride';
+import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
@@ -11,10 +13,9 @@ import { episodeRequestSummary } from '@app/utils/episodeRequests';
 import {
   CalendarIcon,
   CheckIcon,
-  EyeIcon,
+  ChevronDownIcon,
   PencilIcon,
   TrashIcon,
-  UserIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
 import { MediaRequestStatus } from '@server/constants/media';
@@ -40,6 +41,13 @@ const messages = defineMessages('components.RequestBlock', {
   decline: 'Decline Request',
   edit: 'Edit Request',
   delete: 'Delete Request',
+  deleteHint: 'Removing this request leaves downloaded files in place.',
+  failedmodify: 'Could not update this request. Try again.',
+  scope: 'Requested content',
+  seasonNumber: 'Season {seasonNumber}',
+  viewEpisodes: 'View requested episodes ({count})',
+  watchAheadHint:
+    'Keeps a buffer of {count} unwatched episodes requested as you watch in Jellyfin.',
 });
 
 interface RequestBlockProps {
@@ -50,33 +58,64 @@ interface RequestBlockProps {
 const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
   const { user } = useUser();
   const intl = useIntl();
+  const { addToast } = useToasts();
   const [isUpdating, setIsUpdating] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const { profile, rootFolder, server, languageProfile } =
     useRequestOverride(request);
 
-  const updateRequest = async (type: 'approve' | 'decline'): Promise<void> => {
+  const runAction = async (action: () => Promise<unknown>) => {
     setIsUpdating(true);
-    await axios.post(`/api/v1/request/${request.id}/${type}`);
-
-    if (onUpdate) {
-      onUpdate();
-      mutate('/api/v1/request/count');
+    try {
+      await action();
+      onUpdate?.();
+      void mutate('/api/v1/request/count');
+    } catch {
+      addToast(intl.formatMessage(messages.failedmodify), {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    } finally {
+      setIsUpdating(false);
     }
-    setIsUpdating(false);
   };
-
-  const deleteRequest = async () => {
-    setIsUpdating(true);
-    await axios.delete(`/api/v1/request/${request.id}`);
-
-    if (onUpdate) {
-      onUpdate();
-      mutate('/api/v1/request/count');
-    }
-
-    setIsUpdating(false);
-  };
+  const updateRequest = (type: 'approve' | 'decline') =>
+    runAction(() => axios.post(`/api/v1/request/${request.id}/${type}`));
+  const deleteRequest = () =>
+    runAction(() => axios.delete(`/api/v1/request/${request.id}`));
+  const episodes = [...(request.episodes ?? [])].sort(
+    (a, b) =>
+      a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber
+  );
+  const status = {
+    [MediaRequestStatus.PENDING]: {
+      message: globalMessages.pending,
+      badgeType: 'warning',
+    },
+    [MediaRequestStatus.APPROVED]: {
+      message: globalMessages.approved,
+      badgeType: 'success',
+    },
+    [MediaRequestStatus.DECLINED]: {
+      message: globalMessages.declined,
+      badgeType: 'danger',
+    },
+    [MediaRequestStatus.FAILED]: {
+      message: globalMessages.failed,
+      badgeType: 'danger',
+    },
+    [MediaRequestStatus.COMPLETED]: {
+      message: globalMessages.completed,
+      badgeType: 'success',
+    },
+  } as const;
+  const currentStatus = status[request.status];
+  const overrides = [
+    { label: messages.server, value: server },
+    { label: messages.profilechanged, value: profile },
+    { label: messages.rootfolder, value: rootFolder },
+    { label: messages.languageprofile, value: languageProfile },
+  ].filter((override) => override.value);
 
   return (
     <div className="block">
@@ -94,254 +133,208 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
           setShowEditModal(false);
         }}
       />
-      <div className="px-4 py-3 text-gray-300">
-        <div className="flex items-center justify-between">
-          <div className="mr-6 min-w-0 flex-1 flex-col items-center text-sm leading-5">
-            <div className="white mb-1 flex flex-nowrap">
-              <span className="flex w-40 items-center truncate md:w-auto">
-                <Tooltip content={intl.formatMessage(messages.requestedby)}>
-                  <UserIcon className="mr-1.5 h-5 w-5 min-w-0 flex-shrink-0" />
-                </Tooltip>
-                <Link
-                  to={
-                    request.requestedBy.id === user?.id
-                      ? '/profile'
-                      : `/users/${request.requestedBy.id}`
-                  }
-                  className="flex items-center font-semibold text-gray-100 transition duration-300 hover:text-white hover:underline"
-                >
-                  <span className="avatar-sm">
-                    <CachedImage
-                      type="avatar"
-                      src={request.requestedBy.avatar}
-                      alt=""
-                      className="avatar-sm object-cover"
-                      width={20}
-                      height={20}
-                    />
-                  </span>
-                  {request.requestedBy.displayName}
-                </Link>
-              </span>
-            </div>
-            {request.modifiedBy && (
-              <div className="flex flex-nowrap">
-                <span className="flex w-40 items-center truncate md:w-auto">
-                  <Tooltip
-                    content={intl.formatMessage(messages.lastmodifiedby)}
-                  >
-                    <EyeIcon className="mr-1.5 h-5 w-5 flex-shrink-0" />
-                  </Tooltip>
-                  <Link
-                    to={
-                      request.modifiedBy.id === user?.id
-                        ? '/profile'
-                        : `/users/${request.modifiedBy.id}`
-                    }
-                    className="flex items-center font-semibold text-gray-100 transition duration-300 hover:text-white hover:underline"
-                  >
-                    <span className="avatar-sm">
-                      <CachedImage
-                        type="avatar"
-                        src={request.modifiedBy.avatar}
-                        alt=""
-                        className="avatar-sm object-cover"
-                        width={20}
-                        height={20}
-                      />
-                    </span>
-                    {request.modifiedBy.displayName}
-                  </Link>
-                </span>
-              </div>
+      <div className="space-y-4 px-4 py-4 text-gray-300" aria-busy={isUpdating}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            {request.is4k && <Badge badgeType="warning">4K</Badge>}
+            {currentStatus && (
+              <Badge badgeType={currentStatus.badgeType}>
+                {intl.formatMessage(currentStatus.message)}
+              </Badge>
             )}
           </div>
-          <div className="ml-2 flex flex-shrink-0 flex-wrap">
-            {request.status === MediaRequestStatus.PENDING && (
-              <>
-                <Tooltip content={intl.formatMessage(messages.approve)}>
-                  <Button
-                    buttonType="success"
-                    className="mr-1"
-                    onClick={() => updateRequest('approve')}
-                    disabled={isUpdating}
-                  >
-                    <CheckIcon className="icon-sm" />
-                  </Button>
-                </Tooltip>
-                <Tooltip content={intl.formatMessage(messages.decline)}>
-                  <Button
-                    buttonType="danger"
-                    className="mr-1"
-                    onClick={() => updateRequest('decline')}
-                    disabled={isUpdating}
-                  >
-                    <XMarkIcon />
-                  </Button>
-                </Tooltip>
-                <Tooltip content={intl.formatMessage(messages.edit)}>
-                  <Button
-                    buttonType="warning"
-                    onClick={() => setShowEditModal(true)}
-                    disabled={isUpdating}
-                  >
-                    <PencilIcon className="icon-sm" />
-                  </Button>
-                </Tooltip>
-              </>
-            )}
-            {request.status !== MediaRequestStatus.PENDING && (
-              <Tooltip content={intl.formatMessage(messages.delete)}>
-                <Button
-                  buttonType="danger"
-                  onClick={() => deleteRequest()}
-                  disabled={isUpdating}
-                >
-                  <TrashIcon className="icon-sm" />
-                </Button>
-              </Tooltip>
-            )}
-          </div>
-        </div>
-        <div className="mt-2 sm:flex sm:justify-between">
-          <div className="sm:flex">
-            <div className="mr-6 flex items-center text-sm leading-5">
-              {request.is4k && (
-                <span className="mr-1">
-                  <Badge badgeType="warning">4K</Badge>
-                </span>
-              )}
-              {request.status === MediaRequestStatus.APPROVED && (
-                <Badge badgeType="success">
-                  {intl.formatMessage(globalMessages.approved)}
-                </Badge>
-              )}
-              {request.status === MediaRequestStatus.DECLINED && (
-                <Badge badgeType="danger">
-                  {intl.formatMessage(globalMessages.declined)}
-                </Badge>
-              )}
-              {request.status === MediaRequestStatus.PENDING && (
-                <Badge badgeType="warning">
-                  {intl.formatMessage(globalMessages.pending)}
-                </Badge>
-              )}
-              {request.status === MediaRequestStatus.FAILED && (
-                <Badge badgeType="danger">
-                  {intl.formatMessage(globalMessages.failed)}
-                </Badge>
-              )}
-              {request.status === MediaRequestStatus.COMPLETED && (
-                <Badge badgeType="success">
-                  {intl.formatMessage(globalMessages.completed)}
-                </Badge>
-              )}
-            </div>
-          </div>
-          <div className="mt-2 flex items-center text-sm leading-5 sm:mt-0">
-            <Tooltip content={intl.formatMessage(messages.requestdate)}>
-              <CalendarIcon className="mr-1.5 h-5 w-5 flex-shrink-0" />
-            </Tooltip>
-            <Tooltip
-              content={intl.formatDate(request.createdAt, {
+          <Tooltip
+            content={intl.formatDate(request.createdAt, {
+              dateStyle: 'long',
+              timeStyle: 'short',
+            })}
+          >
+            <span className="flex items-center gap-1.5 text-xs text-gray-400">
+              <CalendarIcon aria-hidden="true" className="h-4 w-4 shrink-0" />
+              {intl.formatDate(request.createdAt, {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
-                hour: 'numeric',
-                minute: 'numeric',
-                second: 'numeric',
-              })}
-            >
-              <span>
-                {intl.formatDate(request.createdAt, {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </span>
-            </Tooltip>
-          </div>
-        </div>
-        {(request.seasons ?? []).length > 0 && (
-          <div className="mt-2 flex flex-col text-sm">
-            <div className="mb-1 font-medium">
-              {intl.formatMessage(messages.seasons, {
-                seasonCount: request.seasons.length,
-              })}
-            </div>
-            <div>
-              {request.seasons.map((season) => (
-                <span
-                  key={`season-${season.id}`}
-                  className="mb-1 mr-2 inline-block"
-                >
-                  <Badge>
-                    {season.seasonNumber === 0
-                      ? intl.formatMessage(globalMessages.specials)
-                      : season.seasonNumber}
-                  </Badge>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-        {((request.episodes ?? []).length > 0 ||
-          request.episodeSelectionType === 'watchAhead') && (
-          <div className="card-field">
-            <span className="card-field-name">
-              {intl.formatMessage(messages.episodes, {
-                episodeCount: request.episodes?.length ?? 0,
               })}
             </span>
-            <Badge>
-              {episodeRequestSummary(intl, {
-                episodes: request.episodes,
-                type: request.episodeSelectionType,
-                watchAheadCount: request.watchAheadCount,
-              })}
-            </Badge>
+          </Tooltip>
+        </div>
+        <dl className="grid gap-2 text-sm sm:grid-cols-2">
+          {[
+            { label: messages.requestedby, person: request.requestedBy },
+            { label: messages.lastmodifiedby, person: request.modifiedBy },
+          ]
+            .filter((row) => row.person)
+            .map(
+              ({ label, person }) =>
+                person && (
+                  <div key={label.id} className="min-w-0">
+                    <dt className="text-xs text-gray-400">
+                      {intl.formatMessage(label)}
+                    </dt>
+                    <dd>
+                      <Link
+                        to={
+                          person.id === user?.id
+                            ? '/profile'
+                            : `/users/${person.id}`
+                        }
+                        className="flex min-h-11 items-center gap-2 rounded-md font-medium text-gray-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                      >
+                        <CachedImage
+                          type="avatar"
+                          src={person.avatar}
+                          alt=""
+                          className="h-6 w-6 shrink-0 rounded-full object-cover"
+                          width={24}
+                          height={24}
+                        />
+                        <span className="min-w-0 break-words">
+                          {person.displayName}
+                        </span>
+                      </Link>
+                    </dd>
+                  </div>
+                )
+            )}
+        </dl>
+        {request.type === 'tv' &&
+          ((request.seasons ?? []).length > 0 ||
+            episodes.length > 0 ||
+            request.episodeSelectionType === 'watchAhead') && (
+            <div className="space-y-2 rounded-lg border border-gray-700 bg-gray-900/30 p-3 text-sm">
+              <h4 className="font-medium text-gray-200">
+                {intl.formatMessage(messages.scope)}
+              </h4>
+              {(request.seasons ?? []).length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {[...request.seasons]
+                    .sort((a, b) => a.seasonNumber - b.seasonNumber)
+                    .map((season) => (
+                      <Badge key={season.id}>
+                        {season.seasonNumber === 0
+                          ? intl.formatMessage(globalMessages.specials)
+                          : intl.formatMessage(messages.seasonNumber, {
+                              seasonNumber: season.seasonNumber,
+                            })}
+                      </Badge>
+                    ))}
+                </div>
+              )}
+              {(episodes.length > 0 ||
+                request.episodeSelectionType === 'watchAhead') && (
+                <Badge className="whitespace-normal">
+                  {episodeRequestSummary(intl, {
+                    episodes,
+                    type: request.episodeSelectionType,
+                    watchAheadCount: request.watchAheadCount,
+                  })}
+                </Badge>
+              )}
+              {request.episodeSelectionType === 'watchAhead' && (
+                <p className="text-xs leading-relaxed text-gray-400">
+                  {intl.formatMessage(messages.watchAheadHint, {
+                    count: request.watchAheadCount ?? 10,
+                  })}
+                </p>
+              )}
+              {episodes.length > 0 && (
+                <details className="group">
+                  <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 rounded-md font-medium text-indigo-300 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+                    {intl.formatMessage(messages.viewEpisodes, {
+                      count: episodes.length,
+                    })}
+                    <ChevronDownIcon
+                      aria-hidden="true"
+                      className="h-5 w-5 shrink-0 transition-transform group-open:rotate-180"
+                    />
+                  </summary>
+                  <ul className="max-h-60 divide-y divide-gray-700 overflow-y-auto">
+                    {episodes.map((episode) => (
+                      <li
+                        key={episode.id}
+                        className="py-2 text-xs text-gray-300"
+                      >
+                        <span className="font-medium text-gray-100">
+                          S{String(episode.seasonNumber).padStart(2, '0')}E
+                          {String(episode.episodeNumber).padStart(2, '0')}
+                        </span>
+                        {episode.title && (
+                          <span className="ml-1 break-words">
+                            — {episode.title}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+        {overrides.length > 0 && (
+          <div>
+            <h4 className="mb-2 text-sm font-medium text-gray-200">
+              {intl.formatMessage(messages.requestoverrides)}
+            </h4>
+            <dl className="divide-y divide-gray-700 rounded-lg bg-gray-900/30 px-3 text-xs">
+              {overrides.map(({ label, value }) => (
+                <div
+                  key={label.id}
+                  className="flex flex-wrap justify-between gap-x-3 gap-y-1 py-2"
+                >
+                  <dt className="font-medium text-gray-400">
+                    {intl.formatMessage(label)}
+                  </dt>
+                  <dd className="min-w-0 break-all text-gray-200">{value}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         )}
-        {(server || profile || rootFolder || languageProfile) && (
-          <>
-            <div className="mb-1 mt-4 text-sm">
-              {intl.formatMessage(messages.requestoverrides)}
-            </div>
-            <ul className="divide-y divide-gray-700 rounded-md bg-gray-800 px-2 text-xs">
-              {server && (
-                <li className="flex justify-between px-1 py-2">
-                  <span className="font-bold">
-                    {intl.formatMessage(messages.server)}
-                  </span>
-                  <span>{server}</span>
-                </li>
-              )}
-              {profile && (
-                <li className="flex justify-between px-1 py-2">
-                  <span className="font-bold">
-                    {intl.formatMessage(messages.profilechanged)}
-                  </span>
-                  <span>{profile}</span>
-                </li>
-              )}
-              {rootFolder && (
-                <li className="flex justify-between px-1 py-2">
-                  <span className="mr-2 font-bold">
-                    {intl.formatMessage(messages.rootfolder)}
-                  </span>
-                  <span>{rootFolder}</span>
-                </li>
-              )}
-              {languageProfile && (
-                <li className="flex justify-between px-1 py-2">
-                  <span className="mr-2 font-bold">
-                    {intl.formatMessage(messages.languageprofile)}
-                  </span>
-                  <span>{languageProfile}</span>
-                </li>
-              )}
-            </ul>
-          </>
+        {request.status === MediaRequestStatus.PENDING ? (
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              buttonType="success"
+              className="min-h-11"
+              onClick={() => void updateRequest('approve')}
+              disabled={isUpdating}
+            >
+              <CheckIcon />
+              <span>{intl.formatMessage(globalMessages.approve)}</span>
+            </Button>
+            <Button
+              buttonType="danger"
+              className="min-h-11"
+              onClick={() => void updateRequest('decline')}
+              disabled={isUpdating}
+            >
+              <XMarkIcon />
+              <span>{intl.formatMessage(globalMessages.decline)}</span>
+            </Button>
+            <Button
+              className="col-span-2 min-h-11"
+              onClick={() => setShowEditModal(true)}
+              disabled={isUpdating}
+            >
+              <PencilIcon />
+              <span>{intl.formatMessage(messages.edit)}</span>
+            </Button>
+          </div>
+        ) : (
+          <div>
+            <ConfirmButton
+              className="min-h-11 w-full"
+              onClick={() => void deleteRequest()}
+              disabled={isUpdating}
+              confirmText={intl.formatMessage(globalMessages.areyousure)}
+            >
+              <TrashIcon />
+              <span>{intl.formatMessage(messages.delete)}</span>
+            </ConfirmButton>
+            <p className="mt-2 text-xs text-gray-400">
+              {intl.formatMessage(messages.deleteHint)}
+            </p>
+          </div>
         )}
       </div>
     </div>

@@ -163,7 +163,7 @@ const ControlledKeywordSelector = ({
   return (
     <AsyncSelect
       key={`keyword-select-blocklistedTags`}
-      inputId="data"
+      inputId="blocklistedTags"
       isMulti
       className="react-select-container"
       classNamePrefix="react-select"

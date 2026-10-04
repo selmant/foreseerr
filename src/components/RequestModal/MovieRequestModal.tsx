@@ -14,7 +14,7 @@ import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
 import { Permission } from '@server/lib/permissions';
 import type { MovieDetails } from '@server/models/Movie';
 import axios from 'axios';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';
 
@@ -55,6 +55,7 @@ const MovieRequestModal = ({
   is4k = false,
 }: RequestModalProps) => {
   const [isUpdating, setIsUpdating] = useState(false);
+  const requestInFlight = useRef(false);
   const [requestOverrides, setRequestOverrides] =
     useState<RequestOverrides | null>(null);
   const { addToast } = useToasts();
@@ -77,6 +78,8 @@ const MovieRequestModal = ({
   }, [isUpdating, onUpdating]);
 
   const sendRequest = useCallback(async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     setIsUpdating(true);
 
     try {
@@ -131,6 +134,7 @@ const MovieRequestModal = ({
         autoDismiss: true,
       });
     } finally {
+      requestInFlight.current = false;
       setIsUpdating(false);
     }
   }, [
@@ -145,6 +149,8 @@ const MovieRequestModal = ({
   ]);
 
   const cancelRequest = async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     setIsUpdating(true);
 
     try {
@@ -169,11 +175,16 @@ const MovieRequestModal = ({
         );
       }
     } catch {
+      // Keep the request open so the user can retry cancelling it.
+    } finally {
+      requestInFlight.current = false;
       setIsUpdating(false);
     }
   };
 
   const updateRequest = async (alsoApproveRequest = false) => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     setIsUpdating(true);
 
     try {
@@ -219,6 +230,7 @@ const MovieRequestModal = ({
         autoDismiss: true,
       });
     } finally {
+      requestInFlight.current = false;
       setIsUpdating(false);
     }
   };
@@ -228,6 +240,7 @@ const MovieRequestModal = ({
 
     return (
       <Modal
+        stickyActions
         loading={!data && !error}
         backgroundClickable
         onCancel={onCancel}
@@ -242,13 +255,15 @@ const MovieRequestModal = ({
               ? updateRequest()
               : cancelRequest()
         }
-        okDisabled={isUpdating}
+        okButtonProps={{ 'aria-disabled': isUpdating, 'aria-busy': isUpdating }}
         okText={
-          hasPermission(Permission.MANAGE_REQUESTS)
-            ? intl.formatMessage(messages.approve)
-            : hasPermission(Permission.REQUEST_ADVANCED)
-              ? intl.formatMessage(messages.edit)
-              : intl.formatMessage(messages.cancel)
+          isUpdating
+            ? intl.formatMessage(globalMessages.saving)
+            : hasPermission(Permission.MANAGE_REQUESTS)
+              ? intl.formatMessage(messages.approve)
+              : hasPermission(Permission.REQUEST_ADVANCED)
+                ? intl.formatMessage(messages.edit)
+                : intl.formatMessage(messages.cancel)
         }
         okButtonType={
           hasPermission(Permission.MANAGE_REQUESTS)
@@ -266,7 +281,10 @@ const MovieRequestModal = ({
             ? () => cancelRequest()
             : undefined
         }
-        secondaryDisabled={isUpdating}
+        secondaryButtonProps={{
+          'aria-disabled': isUpdating,
+          'aria-busy': isUpdating,
+        }}
         secondaryText={
           isOwner &&
           hasPermission(
@@ -317,14 +335,13 @@ const MovieRequestModal = ({
 
   return (
     <Modal
+      stickyActions
       loading={(!data && !error) || !quota}
       backgroundClickable
       onCancel={onCancel}
       onOk={sendRequest}
-      okDisabled={
-        isUpdating ||
-        (quota?.movie.restricted && !requestOverrides?.ignoreQuota)
-      }
+      okDisabled={quota?.movie.restricted && !requestOverrides?.ignoreQuota}
+      okButtonProps={{ 'aria-disabled': isUpdating, 'aria-busy': isUpdating }}
       title={intl.formatMessage(
         is4k ? messages.requestmovie4ktitle : messages.requestmovietitle
       )}

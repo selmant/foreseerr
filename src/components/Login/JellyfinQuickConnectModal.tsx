@@ -7,7 +7,8 @@ import { useIntl } from 'react-intl';
 const messages = defineMessages('components.Login.JellyfinQuickConnectModal', {
   title: 'Quick Connect',
   subtitle: 'Sign in with Quick Connect',
-  instructions: 'Enter this code in your {mediaServerName} app',
+  instructions:
+    'Open Quick Connect in your {mediaServerName} app and enter this code to authorize the connection.',
   cancel: 'Cancel',
 });
 

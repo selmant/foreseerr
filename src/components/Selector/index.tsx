@@ -160,6 +160,7 @@ type GenreSelectorType = 'movie' | 'tv' | 'all';
 
 type GenreSelectorProps = (BaseSelectorMultiProps | BaseSelectorSingleProps) & {
   type: GenreSelectorType;
+  label?: string;
 };
 
 const genreEndpoints = (type: GenreSelectorType): ('movie' | 'tv')[] =>
@@ -190,6 +191,7 @@ export const GenreSelector = ({
   isDisabled,
   onChange,
   type,
+  label,
 }: GenreSelectorProps) => {
   const intl = useIntl();
   const [defaultDataValue, setDefaultDataValue] = useState<
@@ -197,8 +199,10 @@ export const GenreSelector = ({
   >(null);
 
   useEffect(() => {
+    let cancelled = false;
     const loadDefaultGenre = async (): Promise<void> => {
       if (!defaultValue) {
+        setDefaultDataValue(null);
         return;
       }
 
@@ -209,12 +213,16 @@ export const GenreSelector = ({
           .filter((id) => Number.isFinite(id))
       );
       const options = await loadTmdbGenres(type);
+      if (cancelled) return;
       setDefaultDataValue(
         options.filter((option) => selected.has(option.value))
       );
     };
 
     loadDefaultGenre();
+    return () => {
+      cancelled = true;
+    };
   }, [defaultValue, type]);
 
   const loadGenreOptions = async (inputValue: string) => {
@@ -227,10 +235,10 @@ export const GenreSelector = ({
 
   return (
     <AsyncSelect
-      key={`genre-select-${type}-${defaultDataValue}`}
+      aria-label={label ?? intl.formatMessage(messages.searchGenres)}
       className="react-select-container"
       classNamePrefix="react-select"
-      defaultValue={isMulti ? defaultDataValue : defaultDataValue?.[0]}
+      value={isMulti ? defaultDataValue : (defaultDataValue?.[0] ?? null)}
       defaultOptions
       cacheOptions
       isMulti={isMulti}
@@ -238,6 +246,13 @@ export const GenreSelector = ({
       loadOptions={loadGenreOptions}
       placeholder={intl.formatMessage(messages.searchGenres)}
       onChange={(value) => {
+        setDefaultDataValue(
+          Array.isArray(value)
+            ? [...value]
+            : value
+              ? [value as SingleVal]
+              : null
+        );
         handleSelectorChange(isMulti === true, onChange, value);
       }}
     />

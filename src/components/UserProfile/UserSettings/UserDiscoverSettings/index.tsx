@@ -1,4 +1,6 @@
+import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
+import LinkButton from '@app/components/Common/LinkButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import MultiRangeSlider from '@app/components/Common/MultiRangeSlider';
 import PageTitle from '@app/components/Common/PageTitle';
@@ -38,7 +40,7 @@ const messages = defineMessages(
     discover: 'Discover',
     discoversettings: 'Discover Filter Defaults',
     discoversettingsTip:
-      'These filters apply on Discover pages when you have not set a session override. Clearing filters in Discover turns them off until you open a new browser session.',
+      'Choose your starting filters for Discover, then save your changes. Filters you adjust while browsing apply only to the current session.',
     hideWatched: 'Hide Watched',
     hideWatchedTip:
       'Uses Jellyfin and Trakt watch history when either is available.',
@@ -80,6 +82,18 @@ const messages = defineMessages(
     toastSettingsFailure:
       'Something went wrong while saving Discover defaults.',
     clearDefaults: 'Clear All Defaults',
+    unsavedChanges: 'Unsaved changes',
+    saved: 'Changes saved',
+    discard: 'Discard',
+    navigation: 'Discover preference sections',
+    visibility: 'Visibility',
+    titles: 'Dates, genres & language',
+    ratings: 'TMDB ratings',
+    linkedAccounts: 'Linked accounts',
+    clearHint: 'Clearing defaults takes effect when you save.',
+    ratingsUnavailable: 'External rating filters need MDBList',
+    ratingsUnavailableHint:
+      'You can save these preferences now. They will apply once an administrator configures MDBList.',
   }
 );
 
@@ -117,7 +131,9 @@ const UserDiscoverSettings = () => {
     setBool,
     setString,
     reset,
-  } = useDiscoverFilterDraft(data);
+    discard,
+    hasChanges,
+  } = useDiscoverFilterDraft(data, user?.id);
 
   useEffect(() => {
     setHiddenCount(hiddenUnmappedCount(user?.id));
@@ -151,7 +167,7 @@ const UserDiscoverSettings = () => {
   };
 
   return (
-    <>
+    <div className="pb-28">
       <PageTitle
         title={[
           intl.formatMessage(messages.discover),
@@ -167,8 +183,52 @@ const UserDiscoverSettings = () => {
           {intl.formatMessage(messages.discoversettingsTip)}
         </p>
       </div>
-
-      <div className="section">
+      <nav
+        aria-label={intl.formatMessage(messages.navigation)}
+        className="mb-5 flex flex-wrap gap-2"
+      >
+        {[
+          { id: 'discover-visibility', label: messages.visibility },
+          { id: 'discover-titles', label: messages.titles },
+          { id: 'discover-tmdb-ratings', label: messages.ratings },
+          { id: 'discover-external-ratings', label: messages.externalRatings },
+        ].map(({ id, label }) => (
+          <a
+            key={id}
+            href={`#${id}`}
+            className="flex min-h-11 items-center rounded-lg border border-gray-700 bg-gray-800/50 px-3 text-sm text-gray-300 hover:bg-gray-700 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          >
+            {intl.formatMessage(label)}
+          </a>
+        ))}
+      </nav>
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <LinkButton
+          to={
+            query.userId
+              ? `/users/${user.id}/settings/linked-accounts`
+              : '/profile/settings/linked-accounts'
+          }
+          className="min-h-11"
+        >
+          {intl.formatMessage(messages.linkedAccounts)}
+        </LinkButton>
+        <Button
+          disabled={isSaving || Object.keys(draft).length === 0}
+          className="min-h-11"
+          onClick={reset}
+        >
+          <XCircleIcon />
+          <span>{intl.formatMessage(messages.clearDefaults)}</span>
+        </Button>
+        <span className="text-xs text-gray-400">
+          {intl.formatMessage(messages.clearHint)}
+        </span>
+      </div>
+      <div id="discover-visibility" className="section scroll-mt-24">
+        <h3 className="mb-4 text-lg font-semibold">
+          {intl.formatMessage(messages.visibility)}
+        </h3>
         <div className="form-row">
           <label htmlFor="ignoreWatched" className="checkbox-label">
             {intl.formatMessage(messages.hideWatched)}
@@ -290,6 +350,11 @@ const UserDiscoverSettings = () => {
             />
           </div>
         </div>
+      </div>
+      <div id="discover-titles" className="section scroll-mt-24">
+        <h3 className="mb-4 text-lg font-semibold">
+          {intl.formatMessage(messages.titles)}
+        </h3>
         <div className="form-row">
           <span className="text-label group-label">
             {intl.formatMessage(messages.releaseDate)}
@@ -297,9 +362,15 @@ const UserDiscoverSettings = () => {
           <div className="form-input-area">
             <div className="relative z-40 flex max-w-xl space-x-2">
               <div className="flex flex-col">
-                <span className="mb-2 text-gray-400">
+                <label
+                  htmlFor="discover-moviefrom"
+                  className="mb-2 text-gray-400"
+                >
+                  <span className="sr-only">
+                    {intl.formatMessage(messages.releaseDate)}{' '}
+                  </span>
                   {intl.formatMessage(messages.from)}
-                </span>
+                </label>
                 <Datepicker
                   primaryColor="indigo"
                   value={{
@@ -313,6 +384,7 @@ const UserDiscoverSettings = () => {
                     )
                   }
                   inputName="moviefrom"
+                  inputId="discover-moviefrom"
                   useRange={false}
                   asSingle
                   containerClassName="datepicker-wrapper"
@@ -320,9 +392,15 @@ const UserDiscoverSettings = () => {
                 />
               </div>
               <div className="flex flex-col">
-                <span className="mb-2 text-gray-400">
+                <label
+                  htmlFor="discover-movieto"
+                  className="mb-2 text-gray-400"
+                >
+                  <span className="sr-only">
+                    {intl.formatMessage(messages.releaseDate)}{' '}
+                  </span>
                   {intl.formatMessage(messages.to)}
-                </span>
+                </label>
                 <Datepicker
                   primaryColor="indigo"
                   value={{
@@ -336,6 +414,7 @@ const UserDiscoverSettings = () => {
                     )
                   }
                   inputName="movieto"
+                  inputId="discover-movieto"
                   useRange={false}
                   asSingle
                   containerClassName="datepicker-wrapper"
@@ -352,9 +431,12 @@ const UserDiscoverSettings = () => {
           <div className="form-input-area">
             <div className="relative z-40 flex max-w-xl space-x-2">
               <div className="flex flex-col">
-                <span className="mb-2 text-gray-400">
+                <label htmlFor="discover-tvfrom" className="mb-2 text-gray-400">
+                  <span className="sr-only">
+                    {intl.formatMessage(messages.firstAirDate)}{' '}
+                  </span>
                   {intl.formatMessage(messages.from)}
-                </span>
+                </label>
                 <Datepicker
                   primaryColor="indigo"
                   value={{
@@ -368,6 +450,7 @@ const UserDiscoverSettings = () => {
                     )
                   }
                   inputName="tvfrom"
+                  inputId="discover-tvfrom"
                   useRange={false}
                   asSingle
                   containerClassName="datepicker-wrapper"
@@ -375,9 +458,12 @@ const UserDiscoverSettings = () => {
                 />
               </div>
               <div className="flex flex-col">
-                <span className="mb-2 text-gray-400">
+                <label htmlFor="discover-tvto" className="mb-2 text-gray-400">
+                  <span className="sr-only">
+                    {intl.formatMessage(messages.firstAirDate)}{' '}
+                  </span>
                   {intl.formatMessage(messages.to)}
-                </span>
+                </label>
                 <Datepicker
                   primaryColor="indigo"
                   value={{
@@ -391,6 +477,7 @@ const UserDiscoverSettings = () => {
                     )
                   }
                   inputName="tvto"
+                  inputId="discover-tvto"
                   useRange={false}
                   asSingle
                   containerClassName="datepicker-wrapper"
@@ -408,6 +495,7 @@ const UserDiscoverSettings = () => {
             <div className="max-w-xl">
               <GenreSelector
                 type="movie"
+                label={intl.formatMessage(messages.genresMovie)}
                 defaultValue={movieGenres || undefined}
                 isMulti
                 onChange={(value) => {
@@ -427,6 +515,7 @@ const UserDiscoverSettings = () => {
             <div className="max-w-xl">
               <GenreSelector
                 type="tv"
+                label={intl.formatMessage(messages.genresTv)}
                 defaultValue={tvGenres || undefined}
                 isMulti
                 onChange={(value) => {
@@ -453,6 +542,11 @@ const UserDiscoverSettings = () => {
             </div>
           </div>
         </div>
+      </div>
+      <div id="discover-tmdb-ratings" className="section scroll-mt-24">
+        <h3 className="mb-4 text-lg font-semibold">
+          {intl.formatMessage(messages.ratings)}
+        </h3>
         <div className="form-row">
           <span className="text-label group-label">
             {intl.formatMessage(messages.tmdbuserscore)}
@@ -460,6 +554,7 @@ const UserDiscoverSettings = () => {
           <div className="form-input-area">
             <div className="relative z-0 max-w-xl">
               <MultiRangeSlider
+                label={intl.formatMessage(messages.tmdbuserscore)}
                 min={1}
                 max={10}
                 step={0.1}
@@ -504,6 +599,7 @@ const UserDiscoverSettings = () => {
           <div className="form-input-area">
             <div className="relative z-0 max-w-xl">
               <MultiRangeSlider
+                label={intl.formatMessage(messages.tmdbuservotecount)}
                 min={0}
                 max={1000}
                 defaultMinValue={
@@ -538,7 +634,7 @@ const UserDiscoverSettings = () => {
         </div>
       </div>
 
-      <div className="mb-6">
+      <div id="discover-external-ratings" className="mb-6 scroll-mt-24">
         <h3 className="heading">
           {intl.formatMessage(messages.externalRatings)}
         </h3>
@@ -546,6 +642,14 @@ const UserDiscoverSettings = () => {
           {intl.formatMessage(messages.externalRatingsTip)}
         </p>
       </div>
+      {!currentSettings.mdblistConfigured ? (
+        <Alert
+          type="info"
+          title={intl.formatMessage(messages.ratingsUnavailable)}
+        >
+          {intl.formatMessage(messages.ratingsUnavailableHint)}
+        </Alert>
+      ) : null}
       <div className="section">
         {discoverRangeFilters.map((slider) => (
           <div className="form-row" key={slider.keyGte}>
@@ -555,6 +659,9 @@ const UserDiscoverSettings = () => {
             <div className="form-input-area">
               <div className="relative z-0 max-w-xl">
                 <MultiRangeSlider
+                  label={intl.formatMessage(
+                    messages[rangeMessageKeys[slider.id].label]
+                  )}
                   min={slider.min}
                   max={slider.max}
                   step={'step' in slider ? slider.step : undefined}
@@ -623,40 +730,40 @@ const UserDiscoverSettings = () => {
             />
           </div>
         </div>
-
-        <div className="actions">
-          <div className="flex justify-end">
-            <span className="ml-3 inline-flex rounded-md shadow-sm">
-              <Button
-                buttonType="default"
-                disabled={isSaving}
-                onClick={() => {
-                  reset();
-                  void save({});
-                }}
-              >
-                <XCircleIcon />
-                <span>{intl.formatMessage(messages.clearDefaults)}</span>
-              </Button>
+      </div>
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 border-t border-gray-700 bg-gray-900/95 px-4 py-3 shadow-lg backdrop-blur sm:bottom-0 lg:left-64">
+        <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2 sm:gap-3">
+          <p
+            role="status"
+            className={`min-w-0 text-xs sm:text-sm ${hasChanges ? 'text-amber-200' : 'text-gray-400'}`}
+          >
+            {intl.formatMessage(
+              hasChanges ? messages.unsavedChanges : messages.saved
+            )}
+          </p>
+          <Button
+            className="min-h-11"
+            disabled={isSaving || !hasChanges}
+            onClick={discard}
+          >
+            {intl.formatMessage(messages.discard)}
+          </Button>
+          <Button
+            buttonType="primary"
+            className="min-h-11"
+            disabled={isSaving || !hasChanges}
+            onClick={() => void save(draft)}
+          >
+            <ArrowDownOnSquareIcon className="hidden sm:block" />
+            <span>
+              {intl.formatMessage(
+                isSaving ? globalMessages.saving : globalMessages.save
+              )}
             </span>
-            <span className="ml-3 inline-flex rounded-md shadow-sm">
-              <Button
-                buttonType="primary"
-                disabled={isSaving}
-                onClick={() => void save(draft)}
-              >
-                <ArrowDownOnSquareIcon />
-                <span>
-                  {intl.formatMessage(
-                    isSaving ? globalMessages.saving : globalMessages.save
-                  )}
-                </span>
-              </Button>
-            </span>
-          </div>
+          </Button>
         </div>
       </div>
-    </>
+    </div>
   );
 };
 

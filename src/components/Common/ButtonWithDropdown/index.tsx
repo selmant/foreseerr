@@ -1,12 +1,19 @@
 import Dropdown from '@app/components/Common/Dropdown';
+import defineMessages from '@app/utils/defineMessages';
 import { withProperties } from '@app/utils/typeHelpers';
 import { Menu, MenuButton } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/24/solid';
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes } from 'react';
+import { useIntl } from 'react-intl';
+
+const messages = defineMessages('components.Common.ButtonWithDropdown', {
+  moreActions: 'More actions',
+});
 
 type ButtonWithDropdownProps = {
   text: React.ReactNode;
   dropdownIcon?: React.ReactNode;
+  dropdownLabel?: string;
   buttonType?: 'primary' | 'ghost';
 } & (
   | ({ as?: 'button' } & ButtonHTMLAttributes<HTMLButtonElement>)
@@ -17,10 +24,12 @@ const ButtonWithDropdown = ({
   text,
   children,
   dropdownIcon,
+  dropdownLabel,
   className,
   buttonType = 'primary',
   ...props
 }: ButtonWithDropdownProps) => {
+  const intl = useIntl();
   const styleClasses = {
     mainButtonClasses: 'button-md text-white border',
     dropdownSideButtonClasses: 'button-md border',
@@ -50,7 +59,7 @@ const ButtonWithDropdown = ({
     <Menu as="div" className="relative z-10 inline-flex">
       <TriggerElement
         type="button"
-        className={`relative z-10 inline-flex h-full items-center px-4 py-2 text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
+        className={`relative z-10 inline-flex h-full min-h-[44px] items-center px-4 py-2 text-sm font-medium leading-5 transition duration-150 ease-in-out hover:z-20 focus:z-20 focus:outline-none ${
           styleClasses.mainButtonClasses
         } ${hasSideButton ? 'rounded-l-md' : 'rounded-md'} ${className}`}
         {...(props as Record<string, string>)}
@@ -62,8 +71,10 @@ const ButtonWithDropdown = ({
           <MenuButton
             type="button"
             disabled={isDisabled}
-            className={`relative z-10 inline-flex h-full items-center rounded-r-md px-2 py-2 text-sm font-medium leading-5 text-white transition duration-150 ease-in-out hover:z-20 focus:z-20 ${styleClasses.dropdownSideButtonClasses}`}
-            aria-label="Expand"
+            className={`relative z-10 inline-flex h-full min-h-[44px] min-w-[44px] items-center justify-center rounded-r-md px-2 py-2 text-sm font-medium leading-5 text-white transition duration-150 ease-in-out hover:z-20 focus:z-20 focus-visible:ring-2 focus-visible:ring-indigo-300 ${styleClasses.dropdownSideButtonClasses}`}
+            aria-label={
+              dropdownLabel ?? intl.formatMessage(messages.moreActions)
+            }
           >
             {dropdownIcon ? dropdownIcon : <ChevronDownIcon />}
           </MenuButton>

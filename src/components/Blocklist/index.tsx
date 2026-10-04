@@ -1,26 +1,32 @@
+import {
+  blocklistPageSizes,
+  blocklistPath,
+  parseBlocklistQuery,
+  type BlocklistQueryState,
+  type BlocklistSource,
+} from '@app/components/Blocklist/queryState';
 import BlocklistedTagsBadge from '@app/components/BlocklistedTagsBadge';
+import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import CachedImage from '@app/components/Common/CachedImage';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import Header from '@app/components/Common/Header';
+import LinkButton from '@app/components/Common/LinkButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
-import useDebouncedState from '@app/hooks/useDebouncedState';
-import useRouteQuery from '@app/hooks/useRouteQuery';
 import useToasts from '@app/hooks/useToasts';
-import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
-import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import { buildPath } from '@app/utils/routing';
 import {
+  ArrowPathIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
-  FunnelIcon,
+  EyeSlashIcon,
   MagnifyingGlassIcon,
   TrashIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/solid';
 import type {
   BlocklistItem,
@@ -29,8 +35,7 @@ import type {
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
 import axios from 'axios';
-import type { ChangeEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
 import { Link, useLocation, useNavigate } from 'react-router';
@@ -46,100 +51,140 @@ const messages = defineMessages('components.Blocklist', {
   blocklistedby: '{date} by {user}',
   blocklistNotFoundError: '<strong>{title}</strong> is not blocklisted.',
   filterManual: 'Manual',
+  unknownTitle: 'Title {id}',
+  tagRemovalHint: 'Removing this title does not remove the matching tag rules.',
+  description:
+    'Manage titles excluded from requests. Review manual blocks and titles matched by your tag rules.',
+  source: 'Blocked by',
+  allSources: 'All sources',
+  search: 'Search titles',
+  searchPlaceholder: 'Movie or series name',
+  clearSearch: 'Clear search',
+  clearFilters: 'Clear filters',
+  refresh: 'Refresh',
+  tagSettings: 'Tag rules',
+  allHint: 'Showing manual blocks and tag matches.',
+  manualHint: 'Titles added directly to the blocklist.',
+  tagsHint:
+    'Titles matched by configured content tags. Removing a title does not change those rules.',
+  resultCount:
+    '{count, plural, one {# blocked title} other {# blocked titles}}',
+  noMatches: 'No blocked titles match these filters',
+  noMatchesHint: 'Try another title or clear the search and source filter.',
+  empty: 'No titles are blocklisted',
+  emptyHint: 'Titles added manually or matched by tag rules will appear here.',
+  emptyPage: 'No titles on this page',
+  firstPage: 'Go to first page',
+  page: 'Page {page} of {total}',
+  pageSize: 'Per page',
+  pagination: 'Blocklist pagination',
+  loadError: 'Could not load the blocklist. Try again.',
+  retry: 'Try again',
+
   filterBlocklistedTags: 'Blocklisted Tags',
   showAllBlocklisted: 'Show All Blocklisted Media',
 });
-
-enum Filter {
-  ALL = 'all',
-  MANUAL = 'manual',
-  BLOCKLISTEDTAGS = 'blocklistedTags',
-}
 
 const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
   return (movie as MovieDetails).title !== undefined;
 };
 
 const Blocklist = () => {
-  const [currentPageSize, setCurrentPageSize] = useState<number>(10);
-  const [searchFilter, debouncedSearchFilter, setSearchFilter] =
-    useDebouncedState('');
-  const [currentFilter, setCurrentFilter] = useState<Filter>(Filter.MANUAL);
   const navigate = useNavigate();
   const location = useLocation();
-  const routeQuery = useRouteQuery();
   const intl = useIntl();
+  const { hasPermission } = useUser();
+  const state = useMemo(
+    () => parseBlocklistQuery(location.search),
+    [location.search]
+  );
+  const [searchInput, setSearchInput] = useState(state.q);
+  useEffect(() => setSearchInput(state.q), [state.q]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      if (searchInput.trim() !== state.q)
+        navigate(blocklistPath({ ...state, q: searchInput.trim(), page: 1 }), {
+          replace: true,
+        });
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [navigate, searchInput, state]);
 
-  const page = routeQuery.page ? Number(routeQuery.page) : 1;
-  const pageIndex = page - 1;
-  const updateQueryParams = useUpdateQueryParams({ page: page.toString() });
-
+  const applyPatch = (patch: Partial<BlocklistQueryState>) =>
+    navigate(blocklistPath({ ...state, q: searchInput.trim(), ...patch }));
+  const clearFilters = () => {
+    setSearchInput('');
+    applyPatch({ filter: 'all', q: '', page: 1 });
+  };
   const {
     data,
     error,
+    isValidating,
     mutate: revalidate,
   } = useSWR<BlocklistResultsResponse>(
-    `/api/v1/blocklist/?take=${currentPageSize}&skip=${
-      pageIndex * currentPageSize
-    }&filter=${currentFilter}${
-      debouncedSearchFilter ? `&search=${debouncedSearchFilter}` : ''
-    }`,
-    {
-      refreshInterval: 0,
-      revalidateOnFocus: false,
-    }
+    `/api/v1/blocklist/?take=${state.pageSize}&skip=${(state.page - 1) * state.pageSize}&filter=${state.filter}${state.q ? `&search=${encodeURIComponent(state.q)}` : ''}`,
+    { refreshInterval: 0, revalidateOnFocus: false }
   );
-
-  // check if there's no data and no errors in the table
-  // so as to show a spinner inside the table and not refresh the whole component
-  if (!data && error) {
-    return <ErrorPage statusCode={500} />;
-  }
-
-  const searchItem = (e: ChangeEvent<HTMLInputElement>) => {
-    // Remove the "page" query param from the URL
-    // so that the "skip" query param on line 62 is empty
-    // and the search returns results without skipping items
-    if (routeQuery.page) {
-      const remainingQuery = { ...routeQuery };
-      delete remainingQuery.page;
-      navigate(buildPath(location.pathname, remainingQuery), { replace: true });
-    }
-
-    setSearchFilter(e.target.value as string);
-  };
-
-  const hasNextPage = data && data.pageInfo.pages > pageIndex + 1;
-  const hasPrevPage = pageIndex > 0;
+  const hasFilters = state.filter !== 'all' || Boolean(searchInput.trim());
+  const sourceDescription =
+    state.filter === 'manual'
+      ? messages.manualHint
+      : state.filter === 'blocklistedTags'
+        ? messages.tagsHint
+        : messages.allHint;
 
   return (
     <>
       <PageTitle title={[intl.formatMessage(globalMessages.blocklist)]} />
-      <div className="mb-4 flex flex-col justify-between lg:flex-row lg:items-end">
-        <Header>{intl.formatMessage(globalMessages.blocklist)}</Header>
-
-        <div className="mt-2 flex flex-grow flex-col sm:flex-row lg:flex-grow-0">
-          <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">
-            <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
-              <FunnelIcon className="h-6 w-6" />
-            </span>
+      <div className="mb-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Header>{intl.formatMessage(globalMessages.blocklist)}</Header>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              buttonType="ghost"
+              className="min-h-[44px]"
+              disabled={isValidating}
+              onClick={() => void revalidate()}
+            >
+              <ArrowPathIcon />
+              <span>{intl.formatMessage(messages.refresh)}</span>
+            </Button>
+            {hasPermission(Permission.ADMIN) && (
+              <LinkButton
+                to="/settings/main#blocklist-tags"
+                buttonType="ghost"
+                className="min-h-[44px]"
+              >
+                {intl.formatMessage(messages.tagSettings)}
+              </LinkButton>
+            )}
+          </div>
+        </div>
+        <p className="max-w-3xl text-sm leading-6 text-gray-400">
+          {intl.formatMessage(messages.description)}
+        </p>
+        <div className="flex flex-col gap-3 rounded-xl border border-gray-700 bg-gray-800/50 p-4 sm:flex-row sm:items-end">
+          <div className="sm:w-56">
+            <label
+              htmlFor="blocklist-source"
+              className="mb-2 block text-sm font-medium text-gray-300"
+            >
+              {intl.formatMessage(messages.source)}
+            </label>
             <select
-              id="filter"
-              name="filter"
-              onChange={(e) => {
-                setCurrentFilter(e.target.value as Filter);
-                navigate(
-                  buildPath(
-                    location.pathname,
-                    routeQuery.userId ? { userId: routeQuery.userId } : {}
-                  )
-                );
-              }}
-              value={currentFilter}
-              className="rounded-r-only"
+              id="blocklist-source"
+              value={state.filter}
+              className="min-h-[44px] w-full"
+              onChange={(event) =>
+                applyPatch({
+                  filter: event.target.value as BlocklistSource,
+                  page: 1,
+                })
+              }
             >
               <option value="all">
-                {intl.formatMessage(globalMessages.all)}
+                {intl.formatMessage(messages.allSources)}
               </option>
               <option value="manual">
                 {intl.formatMessage(messages.filterManual)}
@@ -149,122 +194,189 @@ const Blocklist = () => {
               </option>
             </select>
           </div>
-
-          <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 md:flex-grow-0">
-            <span className="inline-flex cursor-default items-center rounded-l-md border border-r-0 border-gray-500 bg-gray-800 px-3 text-sm text-gray-100">
-              <MagnifyingGlassIcon className="h-6 w-6" />
-            </span>
-            <input
-              type="text"
-              className="rounded-r-only"
-              value={searchFilter}
-              onChange={(e) => searchItem(e)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {!data ? (
-        <LoadingSpinner />
-      ) : data.results.length === 0 ? (
-        <div className="flex w-full flex-col items-center justify-center py-24 text-white">
-          <span className="text-2xl text-gray-400">
-            {intl.formatMessage(globalMessages.noresults)}
-          </span>
-          {currentFilter !== Filter.ALL && (
-            <div className="mt-4">
-              <Button
-                buttonType="primary"
-                onClick={() => setCurrentFilter(Filter.ALL)}
-              >
-                {intl.formatMessage(messages.showAllBlocklisted)}
-              </Button>
+          <div className="min-w-0 flex-1">
+            <label
+              htmlFor="blocklist-search"
+              className="mb-2 block text-sm font-medium text-gray-300"
+            >
+              {intl.formatMessage(messages.search)}
+            </label>
+            <div className="relative">
+              <MagnifyingGlassIcon
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-gray-400"
+              />
+              <input
+                id="blocklist-search"
+                type="search"
+                placeholder={intl.formatMessage(messages.searchPlaceholder)}
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                className="min-h-[44px] w-full pl-10 pr-12"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  aria-label={intl.formatMessage(messages.clearSearch)}
+                  onClick={() => {
+                    setSearchInput('');
+                    applyPatch({ q: '', page: 1 });
+                  }}
+                  className="absolute inset-y-0 right-0 flex min-w-[44px] items-center justify-center rounded-r-md text-gray-400 hover:text-white focus-visible:ring-2 focus-visible:ring-indigo-400"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              )}
             </div>
+          </div>
+          {hasFilters && (
+            <Button
+              type="button"
+              buttonType="ghost"
+              className="min-h-[44px]"
+              onClick={clearFilters}
+            >
+              {intl.formatMessage(messages.clearFilters)}
+            </Button>
           )}
         </div>
-      ) : (
-        data.results.map((item: BlocklistItem) => {
-          return (
-            <div
-              className="py-2"
-              key={`request-list-${item.mediaType}-${item.tmdbId}`}
-            >
-              <BlocklistedItem item={item} revalidateList={revalidate} />
-            </div>
-          );
-        })
+        <p className="text-sm leading-6 text-gray-400">
+          {intl.formatMessage(sourceDescription)}
+        </p>
+      </div>
+      {error && (
+        <div className="mb-5 space-y-3">
+          <Alert type="error" title={intl.formatMessage(messages.loadError)} />
+          <Button
+            type="button"
+            className="min-h-[44px]"
+            onClick={() => void revalidate()}
+          >
+            {intl.formatMessage(messages.retry)}
+          </Button>
+        </div>
       )}
-
-      <div className="actions">
-        <nav
-          className="mb-3 flex flex-col items-center space-y-3 sm:flex-row sm:space-y-0"
-          aria-label="Pagination"
-        >
-          <div className="hidden lg:flex lg:flex-1">
-            <p className="text-sm">
-              {data &&
-                (data?.results.length ?? 0) > 0 &&
-                intl.formatMessage(globalMessages.showingresults, {
-                  from: pageIndex * currentPageSize + 1,
-                  to:
-                    data.results.length < currentPageSize
-                      ? pageIndex * currentPageSize + data.results.length
-                      : (pageIndex + 1) * currentPageSize,
-                  total: data.pageInfo.results,
-                  strong: (msg: React.ReactNode) => (
-                    <span className="font-medium">{msg}</span>
-                  ),
-                })}
-            </p>
-          </div>
-          <div className="flex justify-center sm:flex-1 sm:justify-start lg:justify-center">
-            <span className="-mt-3 items-center truncate text-sm sm:mt-0">
-              {intl.formatMessage(globalMessages.resultsperpage, {
-                pageSize: (
+      {!data && !error ? (
+        <LoadingSpinner />
+      ) : (
+        data && (
+          <>
+            <div role="status" className="mb-3 text-sm text-gray-400">
+              {intl.formatMessage(messages.resultCount, {
+                count: data.pageInfo.results,
+              })}
+            </div>
+            {data.results.length === 0 ? (
+              <div className="rounded-xl border border-gray-700 bg-gray-800/50 px-5 py-10 text-center">
+                <EyeSlashIcon
+                  aria-hidden="true"
+                  className="mx-auto mb-4 h-10 w-10 text-gray-500"
+                />
+                <h2 className="text-lg font-semibold text-white">
+                  {intl.formatMessage(
+                    hasFilters
+                      ? messages.noMatches
+                      : state.page > 1
+                        ? messages.emptyPage
+                        : messages.empty
+                  )}
+                </h2>
+                <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-gray-400">
+                  {intl.formatMessage(
+                    hasFilters ? messages.noMatchesHint : messages.emptyHint
+                  )}
+                </p>
+                {hasFilters ? (
+                  <Button
+                    type="button"
+                    className="mt-5 min-h-[44px]"
+                    onClick={clearFilters}
+                  >
+                    {intl.formatMessage(messages.clearFilters)}
+                  </Button>
+                ) : (
+                  state.page > 1 && (
+                    <Button
+                      type="button"
+                      className="mt-5 min-h-[44px]"
+                      onClick={() => applyPatch({ page: 1 })}
+                    >
+                      {intl.formatMessage(messages.firstPage)}
+                    </Button>
+                  )
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {data.results.map((item) => (
+                  <BlocklistedItem
+                    key={`${item.mediaType}-${item.tmdbId}`}
+                    item={item}
+                    revalidateList={revalidate}
+                  />
+                ))}
+              </div>
+            )}
+            {(data.pageInfo.results > 0 || state.page > 1) && (
+              <nav
+                aria-label={intl.formatMessage(messages.pagination)}
+                className="my-6 flex flex-wrap items-center justify-between gap-4"
+              >
+                <p className="text-sm text-gray-400">
+                  {intl.formatMessage(messages.page, {
+                    page: state.page,
+                    total: Math.max(1, data.pageInfo.pages),
+                  })}
+                </p>
+                <label
+                  className="flex items-center gap-2 text-sm text-gray-400"
+                  htmlFor="blocklist-page-size"
+                >
+                  {intl.formatMessage(messages.pageSize)}
                   <select
-                    id="pageSize"
-                    name="pageSize"
-                    onChange={(e) => {
-                      setCurrentPageSize(Number(e.target.value));
-                      navigate(
-                        buildPath(
-                          location.pathname,
-                          routeQuery.userId ? { userId: routeQuery.userId } : {}
-                        )
-                      );
+                    id="blocklist-page-size"
+                    value={state.pageSize}
+                    className="short min-h-[44px]"
+                    onChange={(event) => {
+                      applyPatch({
+                        pageSize: Number(event.target.value),
+                        page: 1,
+                      });
                       window.scrollTo(0, 0);
                     }}
-                    value={currentPageSize}
-                    className="short inline"
                   >
-                    <option value="5">5</option>
-                    <option value="10">10</option>
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
+                    {blocklistPageSizes.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
                   </select>
-                ),
-              })}
-            </span>
-          </div>
-          <div className="flex flex-auto justify-center space-x-2 sm:flex-1 sm:justify-end">
-            <Button
-              disabled={!hasPrevPage}
-              onClick={() => updateQueryParams('page', (page - 1).toString())}
-            >
-              <ChevronLeftIcon />
-              <span>{intl.formatMessage(globalMessages.previous)}</span>
-            </Button>
-            <Button
-              disabled={!hasNextPage}
-              onClick={() => updateQueryParams('page', (page + 1).toString())}
-            >
-              <span>{intl.formatMessage(globalMessages.next)}</span>
-              <ChevronRightIcon />
-            </Button>
-          </div>
-        </nav>
-      </div>
+                </label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    className="min-h-[44px]"
+                    disabled={state.page <= 1}
+                    onClick={() => applyPatch({ page: state.page - 1 })}
+                  >
+                    <ChevronLeftIcon />
+                    <span>{intl.formatMessage(globalMessages.previous)}</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    className="min-h-[44px]"
+                    disabled={state.page >= data.pageInfo.pages}
+                    onClick={() => applyPatch({ page: state.page + 1 })}
+                  >
+                    <span>{intl.formatMessage(globalMessages.next)}</span>
+                    <ChevronRightIcon />
+                  </Button>
+                </div>
+              </nav>
+            )}
+          </>
+        )
+      )}
     </>
   );
 };
@@ -289,18 +401,7 @@ const BlocklistedItem = ({ item, revalidateList }: BlocklistedItemProps) => {
     item.mediaType === 'movie'
       ? `/api/v1/movie/${item.tmdbId}`
       : `/api/v1/tv/${item.tmdbId}`;
-  const { data: title, error } = useSWR<MovieDetails | TvDetails>(
-    inView ? url : null
-  );
-
-  if (!title && !error) {
-    return (
-      <div
-        className="h-64 w-full animate-pulse rounded-xl bg-gray-800 xl:h-28"
-        ref={ref}
-      />
-    );
-  }
+  const { data: title } = useSWR<MovieDetails | TvDetails>(inView ? url : null);
 
   const removeFromBlocklist = async (tmdbId: number, title?: string) => {
     setIsUpdating(true);
@@ -330,35 +431,29 @@ const BlocklistedItem = ({ item, revalidateList }: BlocklistedItemProps) => {
     setIsUpdating(false);
   };
 
+  const titleName = title
+    ? isMovie(title)
+      ? title.title
+      : title.name
+    : item.title ||
+      intl.formatMessage(messages.unknownTitle, { id: item.tmdbId });
+  const titleId = useId();
+  const titlePath = `/${item.mediaType === 'movie' ? 'movie' : 'tv'}/${item.tmdbId}`;
+  const year =
+    title &&
+    (isMovie(title) ? title.releaseDate : title.firstAirDate)?.slice(0, 4);
+
   return (
-    <div className="relative flex w-full flex-col justify-between overflow-hidden rounded-xl bg-gray-800 py-4 text-gray-400 shadow-md ring-1 ring-gray-700 xl:h-28 xl:flex-row">
-      {title && title.backdropPath && (
-        <div className="absolute inset-0 z-0 w-full bg-cover bg-center xl:w-2/3">
-          <CachedImage
-            type="tmdb"
-            src={`https://image.tmdb.org/t/p/w1920_and_h800_multi_faces/${title.backdropPath}`}
-            alt=""
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            fill
-          />
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage:
-                'linear-gradient(90deg, rgba(31, 41, 55, 0.47) 0%, rgba(31, 41, 55, 1) 100%)',
-            }}
-          />
-        </div>
-      )}
-      <div className="relative flex w-full flex-col justify-between overflow-hidden sm:flex-row">
-        <div className="relative z-10 flex w-full items-center overflow-hidden pl-4 pr-4 sm:pr-0 xl:w-7/12 2xl:w-2/3">
+    <article
+      ref={ref}
+      className="rounded-xl border border-gray-700 bg-gray-800/70 p-4 shadow-sm"
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex min-w-0 flex-1 gap-3">
           <Link
-            to={
-              item.mediaType === 'movie'
-                ? `/movie/${item.tmdbId}`
-                : `/tv/${item.tmdbId}`
-            }
-            className="relative h-auto w-12 flex-shrink-0 scale-100 transform-gpu overflow-hidden rounded-md transition duration-300 hover:scale-105"
+            to={titlePath}
+            aria-label={titleName}
+            className="relative block h-24 w-16 shrink-0 overflow-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
           >
             <CachedImage
               type="tmdb"
@@ -368,128 +463,98 @@ const BlocklistedItem = ({ item, revalidateList }: BlocklistedItemProps) => {
                   : '/images/seerr_poster_not_found.png'
               }
               alt=""
-              sizes="100vw"
-              style={{ width: '100%', height: 'auto', objectFit: 'cover' }}
-              width={600}
-              height={900}
+              fill
+              style={{ objectFit: 'cover' }}
             />
           </Link>
-          <div className="flex flex-col justify-center overflow-hidden pl-2 xl:pl-4">
-            <div className="pt-0.5 text-xs font-medium text-white sm:pt-1">
-              {title &&
-                (isMovie(title)
-                  ? title.releaseDate
-                  : title.firstAirDate
-                )?.slice(0, 4)}
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-gray-400">
+              <span>
+                {intl.formatMessage(
+                  item.mediaType === 'movie'
+                    ? globalMessages.movie
+                    : globalMessages.tvshow
+                )}
+              </span>
+              {year && <span>{year}</span>}
             </div>
-            <Link
-              to={
-                item.mediaType === 'movie'
-                  ? `/movie/${item.tmdbId}`
-                  : `/tv/${item.tmdbId}`
-              }
+            <h3
+              id={titleId}
+              className="break-words text-lg font-semibold leading-7 text-white"
             >
-              <span className="mr-2 min-w-0 truncate text-lg font-bold text-white hover:underline xl:text-xl">
-                {title && (isMovie(title) ? title.title : title.name)}
-              </span>
-            </Link>
-          </div>
-        </div>
-
-        <div className="z-10 ml-4 mt-4 flex w-full flex-col justify-center overflow-hidden pr-4 text-sm sm:ml-2 sm:mt-0 xl:flex-1 xl:pr-0">
-          <div className="card-field">
-            <span className="card-field-name">Status</span>
-            <Badge badgeType="danger">
-              {intl.formatMessage(globalMessages.blocklisted)}
-            </Badge>
-          </div>
-
-          {item.createdAt && (
-            <div className="card-field">
-              <span className="card-field-name">
-                {intl.formatMessage(globalMessages.blocklisted)}
-              </span>
-              <span className="flex truncate text-sm text-gray-300">
-                {intl.formatMessage(messages.blocklistedby, {
-                  date: (
-                    <FormattedRelativeTime
-                      value={Math.floor(
-                        (new Date(item.createdAt).getTime() - Date.now()) / 1000
-                      )}
-                      updateIntervalInSeconds={1}
-                      numeric="auto"
-                    />
-                  ),
-                  user: item.user ? (
-                    <Link to={`/users/${item.user.id}`}>
-                      <span className="group flex items-center truncate">
-                        <CachedImage
-                          type="avatar"
-                          src={item.user.avatar}
-                          alt=""
-                          className="avatar-sm ml-1.5"
-                          width={20}
-                          height={20}
-                          style={{ objectFit: 'cover' }}
-                        />
-                        <span className="ml-1 truncate text-sm font-semibold group-hover:text-white group-hover:underline">
-                          {item.user.displayName}
-                        </span>
-                      </span>
-                    </Link>
-                  ) : item.blocklistedTags ? (
-                    <span className="ml-1">
-                      <BlocklistedTagsBadge data={item} />
-                    </span>
-                  ) : (
-                    <span className="ml-1 truncate text-sm font-semibold">
-                      ???
-                    </span>
-                  ),
-                })}
-              </span>
+              <Link
+                to={titlePath}
+                className="rounded hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              >
+                {titleName}
+              </Link>
+            </h3>
+            <div className="mt-2">
+              {item.blocklistedTags ? (
+                <BlocklistedTagsBadge data={item} showDetails />
+              ) : (
+                <Badge badgeType="dark">
+                  {intl.formatMessage(messages.filterManual)}
+                </Badge>
+              )}
             </div>
-          )}
-          <div className="card-field">
-            {item.mediaType === 'movie' ? (
-              <div className="pointer-events-none z-40 self-start rounded-full border border-blue-500 bg-blue-600/80 shadow-md">
-                <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
-                  {intl.formatMessage(globalMessages.movie)}
-                </div>
-              </div>
-            ) : (
-              <div className="pointer-events-none z-40 self-start rounded-full border border-purple-600 bg-purple-600/80 shadow-md">
-                <div className="flex h-4 items-center px-2 py-2 text-center text-xs font-medium uppercase tracking-wider text-white sm:h-5">
-                  {intl.formatMessage(globalMessages.tvshow)}
-                </div>
+            {item.createdAt && (
+              <div
+                className="mt-2 flex flex-wrap items-center gap-x-1 text-xs leading-5 text-gray-400"
+                title={intl.formatDate(item.createdAt, {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              >
+                <FormattedRelativeTime
+                  value={Math.floor(
+                    (new Date(item.createdAt).getTime() - Date.now()) / 1000
+                  )}
+                  updateIntervalInSeconds={60}
+                  numeric="auto"
+                />
+                {item.user &&
+                  intl.formatMessage(messages.blocklistedby, {
+                    date: '',
+                    user: (
+                      <Link
+                        to={`/users/${item.user.id}`}
+                        className="break-words font-medium text-gray-300 hover:text-white hover:underline"
+                      >
+                        {item.user.displayName}
+                      </Link>
+                    ),
+                  })}
               </div>
             )}
           </div>
         </div>
-      </div>
-      <div className="z-10 mt-4 flex w-full flex-col justify-center space-y-2 pl-4 pr-4 xl:mt-0 xl:w-96 xl:items-end xl:pl-0">
         {hasPermission(Permission.MANAGE_BLOCKLIST) && (
-          <ConfirmButton
-            onClick={() =>
-              removeFromBlocklist(
-                item.tmdbId,
-                title && (isMovie(title) ? title.title : title.name)
-              )
-            }
-            confirmText={intl.formatMessage(
-              isUpdating ? globalMessages.deleting : globalMessages.areyousure
+          <div className="w-full shrink-0 space-y-2 sm:w-56">
+            <ConfirmButton
+              disabled={isUpdating}
+              aria-busy={isUpdating}
+              aria-describedby={titleId}
+              onClick={() => void removeFromBlocklist(item.tmdbId, titleName)}
+              confirmText={intl.formatMessage(
+                isUpdating ? globalMessages.deleting : globalMessages.areyousure
+              )}
+              className="min-h-[44px] w-full"
+            >
+              <TrashIcon />
+              <span>
+                {intl.formatMessage(globalMessages.removefromBlocklist)}
+              </span>
+            </ConfirmButton>
+            {item.blocklistedTags && (
+              <p className="text-xs leading-5 text-gray-400">
+                {intl.formatMessage(messages.tagRemovalHint)}
+              </p>
             )}
-            className={`w-full ${
-              isUpdating ? 'pointer-events-none opacity-50' : ''
-            }`}
-          >
-            <TrashIcon />
-            <span>
-              {intl.formatMessage(globalMessages.removefromBlocklist)}
-            </span>
-          </ConfirmButton>
+          </div>
         )}
       </div>
-    </div>
+    </article>
   );
 };

@@ -68,10 +68,27 @@ Linked Accounts**), not from this admin edit form. An admin must configure the
 apps first under [Integrations](/using-seerr/settings/integrations). MDBList
 uses a single instance API key and is not linked per user.
 
+Available services appear as connection cards with direct **Link** buttons.
+Connected cards link to the user's library or lists. **Unlink** disconnects a
+service from Foreseerr; it does not delete the external account.
+
+For Trakt and Simkl, **Copy code** copies the authorization code and **Open
+Trakt** or **Open Simkl** opens the provider in a new tab. Keep the dialog open;
+it updates automatically after authorization. The countdown shows how long the
+code remains valid, and an expired code can be replaced without closing the
+dialog. For AniList, open the authorization page, then return and paste its PIN
+before choosing **Link AniList**.
+
+Jellyfin supports a username and password or **Quick Connect**. Quick Connect
+shows a copyable code to enter in your Jellyfin app. **Use Password Instead**
+switches back to sign-in; **Cancel** closes the dialog and stops waiting for
+authorization.
+
 **Watch trackers** (below the identity cards) control whether watched status and
 ratings fan out to Trakt, AniList, or Simkl. They default to **on** after the
 account is linked. Turning a tracker off does not unlink it. AniList is marked
 Experimental because season/episode mapping is not always 1:1 with TMDB.
+Use the **Watch Trackers** shortcut at the top to jump to these controls.
 
 ## Skipped episode endings
 

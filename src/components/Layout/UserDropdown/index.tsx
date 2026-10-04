@@ -13,9 +13,12 @@ import {
   Transition,
 } from '@headlessui/react';
 import {
+  AdjustmentsHorizontalIcon,
   ArrowLeftOnRectangleIcon,
   ArrowRightOnRectangleIcon,
+  BookmarkIcon,
   ClockIcon,
+  LinkIcon,
 } from '@heroicons/react/24/outline';
 import { CogIcon, UserIcon } from '@heroicons/react/24/solid';
 import axios from 'axios';
@@ -35,6 +38,10 @@ const messages = defineMessages('components.Layout.UserDropdown', {
   requests: 'Requests',
   signout: 'Sign Out',
   backToJellyfin: 'Back to Jellyfin',
+  accountMenu: 'Account menu',
+  linkedAccounts: 'Linked accounts',
+  discoverPreferences: 'Discover preferences',
+  watchlist: 'Your watchlist',
 });
 
 const ForwardedLink = forwardRef<
@@ -99,7 +106,8 @@ const UserDropdown = () => {
     <Menu as="div" className="relative ml-3">
       <div>
         <MenuButton
-          className="flex max-w-xs items-center rounded-full text-sm ring-1 ring-gray-700 hover:ring-gray-500 focus:outline-none focus:ring-gray-500"
+          aria-label={intl.formatMessage(messages.accountMenu)}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm ring-1 ring-gray-700 hover:ring-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
           data-testid="user-menu"
         >
           <CachedImage
@@ -114,15 +122,15 @@ const UserDropdown = () => {
       </div>
       <Transition
         as={Fragment}
-        enter="transition ease-out duration-100"
+        enter="transition ease-out duration-100 motion-reduce:transition-none"
         enterFrom="opacity-0 scale-95"
         enterTo="opacity-100 scale-100"
-        leave="transition ease-in duration-75"
+        leave="transition ease-in duration-75 motion-reduce:transition-none"
         leaveFrom="opacity-100 scale-100"
         leaveTo="opacity-0 scale-95"
         appear
       >
-        <MenuItems className="absolute right-0 mt-2 w-72 origin-top-right rounded-md shadow-lg">
+        <MenuItems className="absolute right-0 mt-2 max-h-[calc(100dvh-10rem)] w-72 max-w-[calc(100vw-2rem)] origin-top-right overflow-y-auto overscroll-contain rounded-md shadow-lg focus:outline-none sm:max-h-[calc(100dvh-5rem)]">
           <div className="divide-y divide-gray-700 rounded-md bg-gray-800/80 ring-1 ring-gray-700 backdrop-blur">
             <div className="flex flex-col space-y-4 px-4 py-4">
               <div className="flex items-center space-x-2">
@@ -152,7 +160,7 @@ const UserDropdown = () => {
                 {({ active }) => (
                   <ForwardedLink
                     to={`/profile`}
-                    className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
+                    className={`flex min-h-11 items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
                       active
                         ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
                         : ''
@@ -175,12 +183,12 @@ const UserDropdown = () => {
                         ? `/users/${user?.id}/requests?filter=all`
                         : '/requests'
                     }
-                    className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
+                    className={`flex min-h-11 items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
                       active
                         ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
                         : ''
                     }`}
-                    data-testid="user-menu-settings"
+                    data-testid="user-menu-requests"
                   >
                     <ClockIcon className="mr-2 inline h-5 w-5" />
                     <span>{intl.formatMessage(messages.requests)}</span>
@@ -191,7 +199,7 @@ const UserDropdown = () => {
                 {({ active }) => (
                   <ForwardedLink
                     to={`/profile/settings`}
-                    className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
+                    className={`flex min-h-11 items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
                       active
                         ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
                         : ''
@@ -203,6 +211,35 @@ const UserDropdown = () => {
                   </ForwardedLink>
                 )}
               </MenuItem>
+              {[
+                {
+                  to: '/profile/watchlist',
+                  label: messages.watchlist,
+                  Icon: BookmarkIcon,
+                },
+                {
+                  to: '/profile/settings/linked-accounts',
+                  label: messages.linkedAccounts,
+                  Icon: LinkIcon,
+                },
+                {
+                  to: '/profile/settings/discover',
+                  label: messages.discoverPreferences,
+                  Icon: AdjustmentsHorizontalIcon,
+                },
+              ].map(({ to, label, Icon }) => (
+                <MenuItem key={to}>
+                  {({ active }) => (
+                    <ForwardedLink
+                      to={to}
+                      className={`flex min-h-[44px] items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition ${active ? 'bg-indigo-600 text-white' : ''}`}
+                    >
+                      <Icon aria-hidden="true" className="mr-2 h-5 w-5" />
+                      <span>{intl.formatMessage(label)}</span>
+                    </ForwardedLink>
+                  )}
+                </MenuItem>
+              ))}
               {currentSettings.pluginMode ? (
                 // The Jellyfin login is the session; signing out here would
                 // only sign straight back in.
@@ -210,7 +247,7 @@ const UserDropdown = () => {
                   {({ active }) => (
                     <a
                       href={jellyfinWebPath()}
-                      className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
+                      className={`flex min-h-11 items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
                         active
                           ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
                           : ''
@@ -225,9 +262,9 @@ const UserDropdown = () => {
               ) : (
                 <MenuItem>
                   {({ active }) => (
-                    <a
-                      href="#"
-                      className={`flex items-center rounded px-4 py-2 text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
+                    <button
+                      type="button"
+                      className={`flex min-h-11 w-full items-center rounded px-4 py-2 text-left text-sm font-medium text-gray-200 transition duration-150 ease-in-out ${
                         active
                           ? 'bg-gradient-to-br from-indigo-600 to-purple-600 text-white'
                           : ''
@@ -236,7 +273,7 @@ const UserDropdown = () => {
                     >
                       <ArrowRightOnRectangleIcon className="mr-2 inline h-5 w-5" />
                       <span>{intl.formatMessage(messages.signout)}</span>
-                    </a>
+                    </button>
                   )}
                 </MenuItem>
               )}
