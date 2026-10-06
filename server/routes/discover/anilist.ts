@@ -1,4 +1,5 @@
 import type AnilistAPI from '@server/api/anilist';
+import { AnilistGraphQLError } from '@server/api/anilist';
 import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
 import { createAnilistDiscoverClient } from '@server/lib/anilist';
 import {
@@ -7,6 +8,7 @@ import {
   mapAnilistMediaList,
   matchesListName,
   paginateItems,
+  parseAnilistListUrl,
   toWatchlistItems,
 } from '@server/lib/anilist/discover';
 import { getAnilistUserContext } from '@server/lib/anilist/userContext';
@@ -19,6 +21,7 @@ import {
   shouldHideUnmappedFromQuery,
 } from '@server/lib/discover/unmapped';
 import { confirmOrRepair } from '@server/lib/discover/validity';
+import axios from 'axios';
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 
@@ -193,6 +196,22 @@ anilistDiscoverRoutes.get('/completed', (req, res, next) =>
       list.status === 'COMPLETED' || list.name.toLowerCase() === 'completed'
   )
 );
+anilistDiscoverRoutes.get('/paused', (req, res, next) =>
+  userList(
+    req,
+    res,
+    next,
+    (list) => list.status === 'PAUSED' || list.name.toLowerCase() === 'paused'
+  )
+);
+anilistDiscoverRoutes.get('/dropped', (req, res, next) =>
+  userList(
+    req,
+    res,
+    next,
+    (list) => list.status === 'DROPPED' || list.name.toLowerCase() === 'dropped'
+  )
+);
 
 anilistDiscoverRoutes.get('/lists', async (req, res, next) => {
   try {
@@ -210,10 +229,65 @@ anilistDiscoverRoutes.get('/lists', async (req, res, next) => {
   }
 });
 
+async function publicList(
+  req: Request,
+  res: Response,
+  next: (err?: unknown) => void,
+  url: string
+) {
+  let owner: ReturnType<typeof parseAnilistListUrl>;
+  try {
+    owner = parseAnilistListUrl(url);
+  } catch (error) {
+    return next({
+      status: 400,
+      message: error instanceof Error ? error.message : 'Invalid list URL',
+    });
+  }
+  try {
+    const page = req.query.page ? Number(req.query.page) : 1;
+    const client = await createAnilistDiscoverClient(req.user?.id);
+    const { listName } = owner;
+    const paged = paginateItems(
+      await collectUserListItems(client, owner.userName, (list) =>
+        listName ? matchesListName(list, listName) : true
+      ),
+      page
+    );
+    return res.status(200).json({
+      page: paged.page,
+      hasMore: paged.hasMore,
+      results: await anilistResults(paged.results, req),
+      title: listName
+        ? `${listName} · ${owner.userName}`
+        : `${owner.userName}'s Anime List`,
+    });
+  } catch (error) {
+    // AniList answers an unknown or private user with a 404 or a plain
+    // GraphQL error rather than anything more specific.
+    if (
+      error instanceof AnilistGraphQLError ||
+      (axios.isAxiosError(error) && error.response?.status === 404)
+    ) {
+      return next({
+        status: 404,
+        message: 'AniList user not found, or their list is private.',
+      });
+    }
+    return handleAnilistDiscoverRouteError(
+      error,
+      next,
+      'Unable to retrieve AniList list.'
+    );
+  }
+}
+
 anilistDiscoverRoutes.get('/list', async (req, res, next) => {
+  const url = String(req.query.url ?? '').trim();
+  if (url) return publicList(req, res, next, url);
   try {
     if (!req.user?.id) return next({ status: 401, message: 'Unauthorized' });
-    const name = String(req.query.name ?? req.query.url ?? '').trim();
+    const name = String(req.query.name ?? '').trim();
     if (!name)
       return next({ status: 400, message: 'name query parameter is required' });
     const page = req.query.page ? Number(req.query.page) : 1;

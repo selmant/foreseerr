@@ -13,12 +13,15 @@ export const sourceMessages = defineMessages('components.Discover.Sources', {
   connectionError: 'Could not update the account connection status.',
   connectionHint:
     'Review your {source} connection in Linked accounts to use these personal views.',
+  traktConnectionHint:
+    'Trakt requires a linked account for every view, including the charts above. Review your connection in Linked accounts.',
   reviewConnection: 'Review {source} connection',
-  refreshLists: 'Refresh lists',
-  savedListsError:
-    'Could not update your lists. Your previously loaded lists are still available.',
   publicListHint:
-    'Open a public {source} list using its URL, username/list-slug, or list ID. Your account does not need to be linked.',
+    'Paste a link to any public list on mdblist.com. No account needed.',
+  anilistListHint:
+    'Paste a link to anyone’s anime list on anilist.co, either a whole profile list or a single list such as Completed.',
+  traktListHint:
+    'Paste a link to any public list on trakt.tv. Trakt requires a linked account to load lists.',
   notConfigured: 'Not configured',
   configure: 'Set up integration',
   needsAdmin: 'Ask your administrator to enable this source.',
@@ -28,15 +31,10 @@ export const sourceMessages = defineMessages('components.Discover.Sources', {
   personalViews: 'Your account',
   browseViews: 'Explore',
   openList: 'Open list',
-  listUrl: '{source} list URL or username/list-slug',
-  customLists: 'Your AniList lists',
-  selectList: 'Choose a list',
-  listsError: 'Could not load your lists.',
+  listUrl: 'Public {source} list link',
   retry: 'Try again',
-  noLists: 'No lists found in your AniList account.',
-  loadingLists: 'Loading your lists…',
   traktDescription:
-    'Recommendations based on your taste, watch history, and community lists.',
+    'Charts from the Trakt community, plus recommendations and lists from your own history.',
   anilistDescription:
     'Find anime by season, popularity, and rating, or revisit your own lists.',
   simklDescription:
@@ -50,6 +48,7 @@ export const sourceMessages = defineMessages('components.Discover.Sources', {
   trending: 'Trending',
   season: 'This season',
   popular: 'Popular',
+  anticipated: 'Anticipated',
   top: 'Top 100',
   nextSeason: 'Next season',
   watching: 'Watching',
@@ -86,6 +85,9 @@ export const discoverSources: {
     description: 'traktDescription',
     setting: 'traktConfigured',
     views: [
+      { label: 'trending', href: '/discover/trakt/trending' },
+      { label: 'popular', href: '/discover/trakt/popular' },
+      { label: 'anticipated', href: '/discover/trakt/anticipated' },
       {
         label: 'recommendations',
         href: '/discover/trakt/recommendations',
@@ -109,11 +111,14 @@ export const discoverSources: {
       { label: 'nextSeason', href: '/discover/anilist/next-season' },
       { label: 'watching', href: '/discover/anilist/watching', personal: true },
       { label: 'planning', href: '/discover/anilist/planning', personal: true },
+      { label: 'hold', href: '/discover/anilist/paused', personal: true },
       {
         label: 'completed',
         href: '/discover/anilist/completed',
         personal: true,
       },
+      { label: 'dropped', href: '/discover/anilist/dropped', personal: true },
+      { label: 'lists', href: '/discover/anilist/lists', personal: true },
     ],
   },
   {

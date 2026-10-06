@@ -1,5 +1,7 @@
 import ExternalAPI from '@server/api/externalapi';
 import type {
+  TraktChart,
+  TraktChartEntry,
   TraktDeviceCodeResponse,
   TraktDevicePollResult,
   TraktFetchMediaType,
@@ -921,6 +923,53 @@ class TraktAPI extends ExternalAPI {
     );
   }
 
+  /**
+   * A page of one of Trakt's charts. Mixed pages interleave movies and shows
+   * by chart position, since chart entries carry no timestamp to merge on.
+   */
+  public async getChartItems(
+    chart: TraktChart,
+    mediaType: TraktFetchMediaType = 'all',
+    options: { limit?: number; page?: number; extended?: 'min' | 'full' } = {}
+  ): Promise<TraktPaginatedItems> {
+    await this.ensureFreshToken();
+    const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
+    const page = Math.max(1, options.page ?? 1);
+    const extended = options.extended ?? 'min';
+    const fetchTypePage = async (
+      type: 'movies' | 'shows',
+      streamPage: number,
+      streamLimit: number
+    ): Promise<TraktListEntry[]> => {
+      const payload = await this.getAuthenticated<TraktChartEntry[]>(
+        `/${type}/${chart}`,
+        { params: { limit: streamLimit, page: streamPage, extended } }
+      );
+      const key = type === 'movies' ? 'movie' : 'show';
+      return (payload || []).map((entry) => ({
+        type: key,
+        [key]: entry[key] ?? entry,
+      }));
+    };
+
+    if (mediaType !== 'all') {
+      const items = this.normalizeListItems(
+        await fetchTypePage(
+          mediaType === 'movie' ? 'movies' : 'shows',
+          page,
+          limit
+        )
+      );
+      return { items, hasMore: items.length >= limit };
+    }
+
+    return this.fetchMergedMediaPages(fetchTypePage, {
+      limit,
+      page,
+      byPosition: true,
+    });
+  }
+
   private async fetchSingleTypePage(
     path: string,
     options: { limit: number; page: number; extended: 'min' | 'full' }
@@ -941,7 +990,8 @@ class TraktAPI extends ExternalAPI {
 
   /**
    * Fetch up to `page * limit` from movies and shows, merge by listed_at /
-   * watched_at, dedupe, then return the requested page slice.
+   * watched_at (or by position within each stream), dedupe, then return the
+   * requested page slice.
    */
   private async fetchMergedMediaPages(
     fetchTypePage: (
@@ -949,19 +999,29 @@ class TraktAPI extends ExternalAPI {
       page: number,
       limit: number
     ) => Promise<TraktListEntry[] | undefined>,
-    options: { limit: number; page: number }
+    options: { limit: number; page: number; byPosition?: boolean }
   ): Promise<TraktPaginatedItems> {
     const needed = options.page * options.limit;
     const [movies, shows] = await Promise.all([
       this.collectTypePrefix(fetchTypePage, 'movies', needed, options.limit),
       this.collectTypePrefix(fetchTypePage, 'shows', needed, options.limit),
     ]);
+    const positions = options.byPosition
+      ? new Map(
+          [movies.items, shows.items].flatMap((items) =>
+            items.map((item, index) => [item, index] as const)
+          )
+        )
+      : undefined;
 
     return mergeAndPaginateTraktItems(movies.items, shows.items, {
       page: options.page,
       limit: options.limit,
       movieHasMore: movies.hasMore,
       tvHasMore: shows.hasMore,
+      ...(positions
+        ? { getTimestamp: (item) => -(positions.get(item) ?? 0) }
+        : {}),
     });
   }
 

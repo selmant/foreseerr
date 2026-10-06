@@ -9021,6 +9021,198 @@ paths:
                       type: object
         '404':
           description: Trakt account not linked
+  /discover/trakt/trending:
+    get:
+      summary: Get the titles Trakt users are watching right now.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [movie, tv, all, anime]
+            default: all
+        - $ref: '#/components/parameters/DiscoverGenre'
+        - $ref: '#/components/parameters/DiscoverLanguage'
+        - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateGte'
+        - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateLte'
+        - $ref: '#/components/parameters/DiscoverFirstAirDateGte'
+        - $ref: '#/components/parameters/DiscoverFirstAirDateLte'
+        - $ref: '#/components/parameters/DiscoverVoteAverageGte'
+        - $ref: '#/components/parameters/DiscoverVoteAverageLte'
+        - $ref: '#/components/parameters/DiscoverVoteCountGte'
+        - $ref: '#/components/parameters/DiscoverVoteCountLte'
+        - $ref: '#/components/parameters/DiscoverImdbRatingGte'
+        - $ref: '#/components/parameters/DiscoverImdbRatingLte'
+        - $ref: '#/components/parameters/DiscoverImdbVotesGte'
+        - $ref: '#/components/parameters/DiscoverImdbVotesLte'
+        - $ref: '#/components/parameters/DiscoverRtCriticsGte'
+        - $ref: '#/components/parameters/DiscoverRtCriticsLte'
+        - $ref: '#/components/parameters/DiscoverRtAudienceGte'
+        - $ref: '#/components/parameters/DiscoverRtAudienceLte'
+        - $ref: '#/components/parameters/DiscoverMetacriticGte'
+        - $ref: '#/components/parameters/DiscoverMetacriticLte'
+        - $ref: '#/components/parameters/DiscoverTraktRatingGte'
+        - $ref: '#/components/parameters/DiscoverTraktRatingLte'
+        - $ref: '#/components/parameters/DiscoverIncludeNoRating'
+        - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+      responses:
+        '200':
+          description: Trakt trending titles returned. Exact totals are omitted; use hasMore for continuation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [page, hasMore, results]
+                properties:
+                  page:
+                    type: number
+                  hasMore:
+                    type: boolean
+                    description: Whether another page may exist after mixed-media merge/filters.
+                  results:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          description: Trakt account not linked
+  /discover/trakt/popular:
+    get:
+      summary: Get the most popular titles on Trakt.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [movie, tv, all, anime]
+            default: all
+        - $ref: '#/components/parameters/DiscoverGenre'
+        - $ref: '#/components/parameters/DiscoverLanguage'
+        - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateGte'
+        - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateLte'
+        - $ref: '#/components/parameters/DiscoverFirstAirDateGte'
+        - $ref: '#/components/parameters/DiscoverFirstAirDateLte'
+        - $ref: '#/components/parameters/DiscoverVoteAverageGte'
+        - $ref: '#/components/parameters/DiscoverVoteAverageLte'
+        - $ref: '#/components/parameters/DiscoverVoteCountGte'
+        - $ref: '#/components/parameters/DiscoverVoteCountLte'
+        - $ref: '#/components/parameters/DiscoverImdbRatingGte'
+        - $ref: '#/components/parameters/DiscoverImdbRatingLte'
+        - $ref: '#/components/parameters/DiscoverImdbVotesGte'
+        - $ref: '#/components/parameters/DiscoverImdbVotesLte'
+        - $ref: '#/components/parameters/DiscoverRtCriticsGte'
+        - $ref: '#/components/parameters/DiscoverRtCriticsLte'
+        - $ref: '#/components/parameters/DiscoverRtAudienceGte'
+        - $ref: '#/components/parameters/DiscoverRtAudienceLte'
+        - $ref: '#/components/parameters/DiscoverMetacriticGte'
+        - $ref: '#/components/parameters/DiscoverMetacriticLte'
+        - $ref: '#/components/parameters/DiscoverTraktRatingGte'
+        - $ref: '#/components/parameters/DiscoverTraktRatingLte'
+        - $ref: '#/components/parameters/DiscoverIncludeNoRating'
+        - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+      responses:
+        '200':
+          description: Trakt popular titles returned. Exact totals are omitted; use hasMore for continuation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [page, hasMore, results]
+                properties:
+                  page:
+                    type: number
+                  hasMore:
+                    type: boolean
+                    description: Whether another page may exist after mixed-media merge/filters.
+                  results:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          description: Trakt account not linked
+  /discover/trakt/anticipated:
+    get:
+      summary: Get the most anticipated upcoming titles on Trakt.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            example: 1
+            default: 1
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [movie, tv, all, anime]
+            default: all
+        - $ref: '#/components/parameters/DiscoverGenre'
+        - $ref: '#/components/parameters/DiscoverLanguage'
+        - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateGte'
+        - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateLte'
+        - $ref: '#/components/parameters/DiscoverFirstAirDateGte'
+        - $ref: '#/components/parameters/DiscoverFirstAirDateLte'
+        - $ref: '#/components/parameters/DiscoverVoteAverageGte'
+        - $ref: '#/components/parameters/DiscoverVoteAverageLte'
+        - $ref: '#/components/parameters/DiscoverVoteCountGte'
+        - $ref: '#/components/parameters/DiscoverVoteCountLte'
+        - $ref: '#/components/parameters/DiscoverImdbRatingGte'
+        - $ref: '#/components/parameters/DiscoverImdbRatingLte'
+        - $ref: '#/components/parameters/DiscoverImdbVotesGte'
+        - $ref: '#/components/parameters/DiscoverImdbVotesLte'
+        - $ref: '#/components/parameters/DiscoverRtCriticsGte'
+        - $ref: '#/components/parameters/DiscoverRtCriticsLte'
+        - $ref: '#/components/parameters/DiscoverRtAudienceGte'
+        - $ref: '#/components/parameters/DiscoverRtAudienceLte'
+        - $ref: '#/components/parameters/DiscoverMetacriticGte'
+        - $ref: '#/components/parameters/DiscoverMetacriticLte'
+        - $ref: '#/components/parameters/DiscoverTraktRatingGte'
+        - $ref: '#/components/parameters/DiscoverTraktRatingLte'
+        - $ref: '#/components/parameters/DiscoverIncludeNoRating'
+        - $ref: '#/components/parameters/DiscoverIgnoreWatched'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+      responses:
+        '200':
+          description: Trakt anticipated titles returned. Exact totals are omitted; use hasMore for continuation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [page, hasMore, results]
+                properties:
+                  page:
+                    type: number
+                  hasMore:
+                    type: boolean
+                    description: Whether another page may exist after mixed-media merge/filters.
+                  results:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          description: Trakt account not linked
   /discover/trakt/lists:
     get:
       summary: List the authenticated user's Trakt lists.
@@ -9243,6 +9435,42 @@ paths:
           description: AniList completed list returned
         '404':
           description: AniList account not linked
+  /discover/anilist/paused:
+    get:
+      summary: Get the authenticated user's AniList on-hold (paused) list.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+      responses:
+        '200':
+          description: AniList on-hold (paused) list returned
+        '404':
+          description: AniList account not linked
+  /discover/anilist/dropped:
+    get:
+      summary: Get the authenticated user's AniList dropped list.
+      tags:
+        - search
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: number
+            default: 1
+        - $ref: '#/components/parameters/DiscoverHideUnmapped'
+        - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
+      responses:
+        '200':
+          description: AniList dropped list returned
+        '404':
+          description: AniList account not linked
   /discover/anilist/lists:
     get:
       summary: List the authenticated user's AniList anime lists.
@@ -9253,13 +9481,18 @@ paths:
           description: AniList lists returned
   /discover/anilist/list:
     get:
-      summary: Get an AniList anime list by name.
+      summary: Get one of your AniList anime lists by name, or anyone's public anime list by link.
       tags:
         - search
       parameters:
         - in: query
           name: name
-          required: true
+          description: Name of one of the linked account's lists.
+          schema:
+            type: string
+        - in: query
+          name: url
+          description: Public list link (anilist.co/user/<name>/animelist[/<list>]) or a username. Takes precedence over name.
           schema:
             type: string
         - in: query
@@ -9272,6 +9505,10 @@ paths:
       responses:
         '200':
           description: AniList list items returned
+        '400':
+          description: Missing list name, or a link that is not an AniList anime list
+        '404':
+          description: AniList account not linked, or the public list's user was not found or is private
   /discover/mdblist/lists/search:
     get:
       summary: Search public MDBList lists

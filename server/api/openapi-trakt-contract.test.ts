@@ -27,6 +27,9 @@ describe('OpenAPI Trakt contract', () => {
     '/discover/trakt/recommendations': ['get'],
     '/discover/trakt/watchlist': ['get'],
     '/discover/trakt/history': ['get'],
+    '/discover/trakt/trending': ['get'],
+    '/discover/trakt/popular': ['get'],
+    '/discover/trakt/anticipated': ['get'],
     '/discover/trakt/lists': ['get'],
     '/discover/trakt/lists/search': ['get'],
     '/user/{userId}/settings/linked-accounts/anilist': [
@@ -43,6 +46,8 @@ describe('OpenAPI Trakt contract', () => {
     '/discover/anilist/watching': ['get'],
     '/discover/anilist/planning': ['get'],
     '/discover/anilist/completed': ['get'],
+    '/discover/anilist/paused': ['get'],
+    '/discover/anilist/dropped': ['get'],
     '/discover/anilist/lists': ['get'],
     '/discover/anilist/list': ['get'],
   };

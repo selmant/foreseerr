@@ -20,12 +20,16 @@ const messages = defineMessages('components.Discover.DiscoverAnilist', {
   nextSeason: 'AniList Next Season',
   watching: 'AniList Watching',
   planning: 'AniList Planning',
+  paused: 'AniList On Hold',
   completed: 'AniList Completed',
+  dropped: 'AniList Dropped',
   list: 'AniList List',
   linkAccount:
     'Link your AniList account in Linked Accounts to browse this list.',
   publicDescription:
     'Explore anime from AniList. Choose another view above to browse seasonal picks, popular titles, or the Top 100.',
+  publicListDescription:
+    'A public anime list from AniList. Choose a view above to explore more.',
   personalDescription:
     'Anime from your linked AniList library, grouped by your watch status.',
   empty:
@@ -41,16 +45,21 @@ type DiscoverAnilistPageProps = {
     | 'nextSeason'
     | 'watching'
     | 'planning'
+    | 'paused'
     | 'completed'
+    | 'dropped'
     | 'list';
   endpoint: string;
   requiresLink?: boolean;
+  /** Overrides the view name, such as with the name of an opened list. */
+  title?: string;
 };
 
 const DiscoverAnilistPage = ({
   kind,
   endpoint,
   requiresLink = false,
+  title: titleOverride,
 }: DiscoverAnilistPageProps) => {
   const intl = useIntl();
   const settings = useSettings();
@@ -77,14 +86,20 @@ const DiscoverAnilistPage = ({
     isLoadingMore,
     isReachingEnd,
     titles,
+    firstResultData,
     fetchMore,
     loadError,
     mutate,
-  } = useDiscover<WatchlistItem>(
+  } = useDiscover<WatchlistItem, { title?: string }>(
     enabled ? endpoint : '',
     undefined,
     providerListFilters
   );
+
+  const title =
+    titleOverride ||
+    firstResultData?.title ||
+    intl.formatMessage(messages[kind]);
 
   if (!settings.currentSettings.anilistConfigured) {
     return <ErrorPage statusCode={404} />;
@@ -93,7 +108,7 @@ const DiscoverAnilistPage = ({
   if (requiresLink && anilistStatus && !anilistStatus.connected) {
     return (
       <DiscoverProviderMessage
-        title={intl.formatMessage(messages[kind])}
+        title={title}
         source="anilist"
         message={intl.formatMessage(messages.linkAccount)}
         linkAccount
@@ -103,18 +118,18 @@ const DiscoverAnilistPage = ({
 
   return (
     <>
-      <PageTitle title={intl.formatMessage(messages[kind])} />
+      <PageTitle title={title} />
       <div className="mb-5 mt-1 space-y-4 [&_h2]:whitespace-normal [&_h2]:break-words">
         <Header>
-          <SliderSourceTitle source="anilist">
-            {intl.formatMessage(messages[kind])}
-          </SliderSourceTitle>
+          <SliderSourceTitle source="anilist">{title}</SliderSourceTitle>
         </Header>
         <p className="max-w-2xl text-sm leading-6 text-gray-400">
           {intl.formatMessage(
             requiresLink
               ? messages.personalDescription
-              : messages.publicDescription
+              : kind === 'list'
+                ? messages.publicListDescription
+                : messages.publicDescription
           )}
         </p>
       </div>

@@ -92,8 +92,8 @@ const VIEWER_QUERY = `
 `;
 
 const MEDIA_LIST_COLLECTION_QUERY = `
-  query MediaListCollection($userId: Int!) {
-    MediaListCollection(userId: $userId, type: ANIME) {
+  query MediaListCollection($userId: Int, $userName: String) {
+    MediaListCollection(userId: $userId, userName: $userName, type: ANIME) {
       lists {
         name
         isCustomList
@@ -347,12 +347,17 @@ class AnilistAPI extends ExternalAPI {
     return data.Viewer;
   }
 
+  /** A user's anime lists, by account id or by username. */
   async getMediaListCollection(
-    userId: number
+    user: number | string
   ): Promise<AnilistMediaListCollection> {
     const data = await this.graphql<{
       MediaListCollection: AnilistMediaListCollection;
-    }>(MEDIA_LIST_COLLECTION_QUERY, { userId }, 0);
+    }>(
+      MEDIA_LIST_COLLECTION_QUERY,
+      typeof user === 'number' ? { userId: user } : { userName: user },
+      0
+    );
     return {
       lists: data.MediaListCollection?.lists ?? [],
     };

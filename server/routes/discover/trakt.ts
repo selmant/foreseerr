@@ -2,6 +2,7 @@ import TheMovieDb from '@server/api/themoviedb';
 import TraktAPI, { TraktRateLimitedError } from '@server/api/trakt';
 import type {
   TraktBrowseMediaType,
+  TraktChart,
   TraktFetchMediaType,
   TraktListSortBy,
   TraktMediaItem,
@@ -464,6 +465,53 @@ traktDiscoverRoutes.get('/history', async (req, res, next) => {
     );
   }
 });
+
+const traktCharts: [TraktChart, string][] = [
+  ['trending', 'Unable to retrieve Trakt trending titles.'],
+  ['popular', 'Unable to retrieve Trakt popular titles.'],
+  ['anticipated', 'Unable to retrieve Trakt anticipated titles.'],
+];
+
+for (const [chart, errorMessage] of traktCharts) {
+  traktDiscoverRoutes.get(`/${chart}`, async (req, res, next) => {
+    try {
+      const page = req.query.page ? Number(req.query.page) : 1;
+      const mediaType = parseTraktMediaTypeQuery(req.query.type);
+      const itemsPerPage = 20;
+      const trakt = await traktClientForRequest(req);
+      const tmdb = createTmdbWithRegionLanguage(req.user);
+      const traktFetchType = toTraktFetchMediaType(mediaType);
+      const extended = traktExtendedForBrowseQuery(req.query);
+      const { items, hasMore } = await resolveTraktDiscoverPage({
+        page,
+        itemsPerPage,
+        mediaType,
+        user: req.user,
+        query: req.query,
+        tmdb,
+        fetchRawPage: (traktPage) =>
+          trakt.getChartItems(chart, traktFetchType, {
+            page: traktPage,
+            limit: itemsPerPage,
+            extended,
+          }),
+      });
+
+      return res.status(200).json({
+        page,
+        hasMore,
+        results: await mapFilteredTraktItems(items, {
+          user: req.user,
+          query: req.query,
+          tmdb,
+          skipPostFilters: true,
+        }),
+      } satisfies WatchlistResponse);
+    } catch (e) {
+      return handleTraktDiscoverRouteError(e, next, errorMessage);
+    }
+  });
+}
 
 traktDiscoverRoutes.get('/lists', async (req, res, next) => {
   try {

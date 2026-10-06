@@ -130,14 +130,14 @@ export function paginateItems<T>(
 
 export async function collectUserListItems(
   client: AnilistAPI,
-  anilistUserId: number,
+  anilistUser: number | string,
   matcher: (list: {
     name: string;
     status: AnilistMediaListStatus | null;
     isCustomList: boolean;
   }) => boolean
 ): Promise<AnilistDiscoverItem[]> {
-  const collection = await client.getMediaListCollection(anilistUserId);
+  const collection = await client.getMediaListCollection(anilistUser);
   const media: AnilistMedia[] = [];
   const seenMedia = new Set<number>();
 
@@ -178,6 +178,43 @@ export async function listUserAniListLists(
 
 export function statusListName(status: AnilistMediaListStatus): string {
   return STATUS_LIST_NAMES[status];
+}
+
+/**
+ * Reads a public AniList anime list link: `anilist.co/user/<name>/animelist`
+ * for a whole library, `…/animelist/<list>` for one list, or a bare username.
+ */
+export function parseAnilistListUrl(input: string): {
+  userName: string;
+  listName?: string;
+} {
+  const value = input.trim();
+  if (!value) {
+    throw new Error('List URL or reference is required');
+  }
+  const match = value.match(
+    /^(?:https?:\/\/)?(?:www\.)?anilist\.co\/user\/([^/?#]+)(?:\/([^/?#]+)(?:\/([^/?#]+))?)?\/?(?:[?#].*)?$/i
+  );
+  if (!match) {
+    if (/^[A-Za-z0-9_-]+$/.test(value)) {
+      return { userName: value };
+    }
+    throw new Error('Unsupported AniList list URL');
+  }
+  const [, userName, section, listName] = match;
+  if (section && section.toLowerCase() !== 'animelist') {
+    throw new Error(
+      'Unsupported AniList list URL: only anime lists can be opened'
+    );
+  }
+  try {
+    return {
+      userName: decodeURIComponent(userName),
+      ...(listName ? { listName: decodeURIComponent(listName) } : {}),
+    };
+  } catch {
+    throw new Error('Unsupported AniList list URL');
+  }
 }
 
 export function matchesListName(

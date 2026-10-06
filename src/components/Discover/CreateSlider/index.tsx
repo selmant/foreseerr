@@ -36,7 +36,7 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   providetmdbsearch: 'Provide a search query',
   providetmdbstudio: 'Provide TMDB Studio ID',
   providetmdbnetwork: 'Provide TMDB Network ID',
-  providetraktlisturl: 'Paste a Trakt list URL or username/list-slug',
+  providetraktlisturl: 'Paste a link to a public Trakt list',
   searchTraktLists: 'Search Trakt lists or paste a list URL…',
   customTraktList: 'Use: {value}',
   traktListNotLinked:
@@ -44,7 +44,7 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   searchAnilistLists: 'Choose one of your AniList lists…',
   anilistListNotLinked:
     'Link AniList in Linked Accounts to pick from your anime lists.',
-  providemdblistlisturl: 'Paste an MDBList URL, username/list-slug, or list id',
+  providemdblistlisturl: 'Paste a link to a public MDBList list',
   searchMdblistLists: 'Search MDBList lists or paste a list URL…',
   customMdblistList: 'Use: {value}',
   liked: 'liked',

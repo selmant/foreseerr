@@ -44,6 +44,18 @@ export type TraktFetchMediaType = 'movie' | 'tv' | 'all';
 
 export type TraktListSortBy = 'added' | 'released';
 
+/** Trakt's site-wide charts, served from /movies/{chart} and /shows/{chart}. */
+export type TraktChart = 'trending' | 'popular' | 'anticipated';
+
+/**
+ * Popular returns bare media objects; trending and anticipated wrap them with
+ * watcher or list counts.
+ */
+export type TraktChartEntry = TraktMediaObject & {
+  movie?: TraktMediaObject;
+  show?: TraktMediaObject;
+};
+
 export interface TraktMediaItem {
   tmdbId?: number;
   mediaType: 'movie' | 'tv';
