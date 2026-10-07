@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - develop
+      - main
+  path_filters:
+    - '!bun.lock'
+    - '!**/bun.lock'
+    - '!devenv.lock'
+    - '!dist/**'
+    - '!src/i18n/locale/**'
+  path_instructions:
+    - path: 'server/migration/**'
+      instructions: >-
+        TypeORM migrations must ship for both SQLite and Postgres, be
+        reversible in down(), and never edit an already released migration.
+chat:
+  auto_reply: true
