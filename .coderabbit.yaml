@@ -17,7 +17,6 @@ reviews:
     - '!devenv.lock'
     - '!dist/**'
     - '!src/i18n/locale/**'
-    - 'src/i18n/locale/en.json'
   path_instructions:
     - path: 'server/migration/**'
       instructions: >-
