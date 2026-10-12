@@ -1,5 +1,8 @@
 import TheMovieDb from '@server/api/themoviedb';
-import TraktAPI, { TraktRateLimitedError } from '@server/api/trakt';
+import TraktAPI, {
+  TRAKT_GET_CACHE_TTL_SECONDS,
+  TraktRateLimitedError,
+} from '@server/api/trakt';
 import type {
   TraktBrowseMediaType,
   TraktChart,
@@ -16,6 +19,7 @@ import { parseDiscoverTruthyQuery } from '@server/lib/discover/filterOptions';
 import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
 import { withTmdbPosters } from '@server/lib/discover/posters';
 import { handleTraktDiscoverRouteError } from '@server/lib/discover/providerErrors';
+import { cachedProviderRow } from '@server/lib/discover/rowCache';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import {
   fetchPaginatedTraktDiscoverWithPostFilters,
@@ -110,7 +114,8 @@ interface MapFilteredTraktItemsOptions {
   discoverSource?: string;
 }
 
-const mapFilteredTraktItems = async (
+/** The tiles of `items`, resolved, filtered and drawn: the part worth storing. */
+const traktTiles = async (
   items: TraktMediaItem[],
   options: MapFilteredTraktItemsOptions = {}
 ): Promise<WatchlistItem[]> => {
@@ -132,13 +137,20 @@ const mapFilteredTraktItems = async (
         skipWatchedFilter: options.skipWatchedFilter,
       });
 
-  const mapped = await withTmdbPosters(
+  return withTmdbPosters(
     await enrichResultsWithRatings(mapTraktItems(filtered), {
       query: options.query,
       skipExisting: true,
     }),
     tmdb
   );
+};
+
+/** What every serve does with stored tiles: sightings, `hideUnmapped`, requests. */
+const serveTraktTiles = (
+  mapped: WatchlistItem[],
+  options: Pick<MapFilteredTraktItemsOptions, 'query' | 'discoverSource'>
+): Promise<WatchlistItem[]> => {
   recordUnmappedItems(mapped, {
     namespace: 'trakt',
     discoverSource: options.discoverSource ?? 'trakt',
@@ -151,6 +163,42 @@ const mapFilteredTraktItems = async (
     )
   );
 };
+
+const mapFilteredTraktItems = async (
+  items: TraktMediaItem[],
+  options: MapFilteredTraktItemsOptions = {}
+): Promise<WatchlistItem[]> =>
+  serveTraktTiles(await traktTiles(items, options), options);
+
+/**
+ * A chart or list row's key: the user (their token, locale and region answer)
+ * and every query key but `hideUnmapped`, which only applies on serve.
+ */
+function traktRowKey(req: Request): string {
+  const query = Object.keys(req.query)
+    .filter((key) => key !== 'hideUnmapped')
+    .sort()
+    .map((key) => [key, req.query[key]]);
+  return [
+    `trakt${req.path}`,
+    `user:${req.user?.id ?? 0}`,
+    JSON.stringify(query),
+  ].join('|');
+}
+
+/**
+ * A chart or list page through the row cache, unless the post-filters (per
+ * user watched state, availability) shape it.
+ */
+async function traktRow<T>(
+  req: Request,
+  usePostFilters: boolean,
+  run: () => Promise<T>
+): Promise<T> {
+  return usePostFilters
+    ? run()
+    : cachedProviderRow(traktRowKey(req), TRAKT_GET_CACHE_TTL_SECONDS, run);
+}
 
 async function resolveTraktDiscoverPage(options: {
   page: number;
@@ -482,30 +530,40 @@ for (const [chart, errorMessage] of traktCharts) {
       const tmdb = createTmdbWithRegionLanguage(req.user);
       const traktFetchType = toTraktFetchMediaType(mediaType);
       const extended = traktExtendedForBrowseQuery(req.query);
-      const { items, hasMore } = await resolveTraktDiscoverPage({
-        page,
-        itemsPerPage,
-        mediaType,
-        user: req.user,
-        query: req.query,
-        tmdb,
-        fetchRawPage: (traktPage) =>
-          trakt.getChartItems(chart, traktFetchType, {
-            page: traktPage,
-            limit: itemsPerPage,
-            extended,
-          }),
-      });
+      const { tiles, hasMore } = await traktRow(
+        req,
+        needsTraktDiscoverPostFilters(req.user, req.query),
+        async () => {
+          const { items, hasMore } = await resolveTraktDiscoverPage({
+            page,
+            itemsPerPage,
+            mediaType,
+            user: req.user,
+            query: req.query,
+            tmdb,
+            fetchRawPage: (traktPage) =>
+              trakt.getChartItems(chart, traktFetchType, {
+                page: traktPage,
+                limit: itemsPerPage,
+                extended,
+              }),
+          });
+          return {
+            hasMore,
+            tiles: await traktTiles(items, {
+              user: req.user,
+              query: req.query,
+              tmdb,
+              skipPostFilters: true,
+            }),
+          };
+        }
+      );
 
       return res.status(200).json({
         page,
         hasMore,
-        results: await mapFilteredTraktItems(items, {
-          user: req.user,
-          query: req.query,
-          tmdb,
-          skipPostFilters: true,
-        }),
+        results: await serveTraktTiles(tiles, { query: req.query }),
       } satisfies WatchlistResponse);
     } catch (e) {
       return handleTraktDiscoverRouteError(e, next, errorMessage);
@@ -580,7 +638,6 @@ traktDiscoverRoutes.get('/list', async (req, res, next) => {
     const { username, listRef } = parseTraktListUrlOrThrow(url);
     const trakt = await traktClientForRequest(req);
 
-    let metadataName = listRef;
     const tmdb = createTmdbWithRegionLanguage(req.user);
     const traktFetchType = toTraktFetchMediaType(mediaType);
     const listSort = parseTraktListSortQuery(req.query.sort);
@@ -604,53 +661,65 @@ traktDiscoverRoutes.get('/list', async (req, res, next) => {
       });
     }
 
-    if (listRef !== 'watchlist') {
-      try {
-        const metadata = await trakt.getListMetadata(username, listRef);
-        metadataName = metadata.name || listRef;
-      } catch (e) {
-        if (e instanceof TraktRateLimitedError) {
-          throw e;
+    const { title, hasMore, tiles } = await traktRow(
+      req,
+      usePostFilters,
+      async () => {
+        let metadataName = listRef;
+        if (listRef !== 'watchlist') {
+          try {
+            const metadata = await trakt.getListMetadata(username, listRef);
+            metadataName = metadata.name || listRef;
+          } catch (e) {
+            if (e instanceof TraktRateLimitedError) {
+              throw e;
+            }
+            // Metadata is optional for browsing items
+          }
+        } else {
+          metadataName = `${username}'s Watchlist`;
         }
-        // Metadata is optional for browsing items
-      }
-    } else {
-      metadataName = `${username}'s Watchlist`;
-    }
 
-    const { items, hasMore } = await resolveTraktDiscoverPage({
-      page,
-      itemsPerPage,
-      mediaType,
-      user: req.user,
-      query: req.query,
-      tmdb,
-      listSort,
-      fetchRawPage: (traktPage) =>
-        listRef === 'watchlist'
-          ? trakt.getWatchlistItems(username!, traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-            })
-          : trakt.getListItems(username, listRef, traktFetchType, {
-              page: traktPage,
-              limit: itemsPerPage,
-              extended,
-              sortBy: sortInsideTraktClient ? listSort : undefined,
-            }),
-    });
+        const { items, hasMore } = await resolveTraktDiscoverPage({
+          page,
+          itemsPerPage,
+          mediaType,
+          user: req.user,
+          query: req.query,
+          tmdb,
+          listSort,
+          fetchRawPage: (traktPage) =>
+            listRef === 'watchlist'
+              ? trakt.getWatchlistItems(username!, traktFetchType, {
+                  page: traktPage,
+                  limit: itemsPerPage,
+                  extended,
+                })
+              : trakt.getListItems(username, listRef, traktFetchType, {
+                  page: traktPage,
+                  limit: itemsPerPage,
+                  extended,
+                  sortBy: sortInsideTraktClient ? listSort : undefined,
+                }),
+        });
+        return {
+          title: metadataName,
+          hasMore,
+          tiles: await traktTiles(items, {
+            user: req.user,
+            query: req.query,
+            tmdb,
+            skipPostFilters: true,
+          }),
+        };
+      }
+    );
 
     return res.status(200).json({
       page,
       hasMore,
-      results: await mapFilteredTraktItems(items, {
-        user: req.user,
-        query: req.query,
-        tmdb,
-        skipPostFilters: true,
-      }),
-      title: metadataName,
+      results: await serveTraktTiles(tiles, { query: req.query }),
+      title,
     });
   } catch (e) {
     if (

@@ -1,4 +1,5 @@
 import MdblistAPI, {
+  MDBLIST_LIST_ITEMS_TTL_SECONDS,
   MdblistNotConfiguredError,
   type MdblistDiscoverItem,
 } from '@server/api/mdblist';
@@ -8,6 +9,7 @@ import type {
 } from '@server/interfaces/api/discoverInterfaces';
 import { handleMdblistDiscoverRouteError } from '@server/lib/discover/providerErrors';
 import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
+import { cachedProviderRow } from '@server/lib/discover/rowCache';
 import {
   resolveDiscoverItems,
   type ResolvableDiscoverItem,
@@ -58,12 +60,17 @@ const mapItems = (items: MdblistDiscoverItem[]): ResolvableDiscoverItem[] =>
     };
   });
 
-const resolvedMdblistItems = async (
+const resolvedMdblistItems = (
   items: MdblistDiscoverItem[]
-): Promise<WatchlistItem[]> => {
-  const resolved = await resolveDiscoverItems(mapItems(items), {
+): Promise<WatchlistItem[]> =>
+  resolveDiscoverItems(mapItems(items), {
     discoverSource: 'mdblist/list',
   });
+
+/** What every serve does with stored tiles: sightings, then requests. */
+const serveMdblistItems = (
+  resolved: WatchlistItem[]
+): Promise<WatchlistItem[]> => {
   recordUnmappedItems(resolved, {
     discoverSource: 'mdblist/list',
   });
@@ -95,15 +102,26 @@ mdblistDiscoverRoutes.get('/list', async (req, res, next) => {
     if (!url)
       return next({ status: 400, message: 'url query parameter is required' });
     const page = req.query.page ? Number(req.query.page) : 1;
-    const { title, items, hasMore } = await mdblist.getListItems(url, {
-      limit: 20,
-      offset: Math.max(0, (page - 1) * 20),
-    });
+    const { title, tiles, hasMore } = await cachedProviderRow(
+      `mdblist/list|${url}|page:${page}`,
+      MDBLIST_LIST_ITEMS_TTL_SECONDS,
+      async () => {
+        const listPage = await mdblist.getListItems(url, {
+          limit: 20,
+          offset: Math.max(0, (page - 1) * 20),
+        });
+        return {
+          title: listPage.title,
+          hasMore: listPage.hasMore,
+          tiles: await resolvedMdblistItems(listPage.items),
+        };
+      }
+    );
     return res.status(200).json({
       page,
       hasMore,
       results: omitUnmappedDiscoverItems(
-        await resolvedMdblistItems(items),
+        await serveMdblistItems(tiles),
         shouldHideUnmappedFromQuery(req.query)
       ),
       title,

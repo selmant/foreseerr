@@ -1,6 +1,11 @@
-import type AnilistAPI from '@server/api/anilist';
-import { AnilistGraphQLError } from '@server/api/anilist';
-import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
+import AnilistAPI, {
+  AnilistGraphQLError,
+  PUBLIC_PAGE_CACHE_TTL_SECONDS,
+} from '@server/api/anilist';
+import type {
+  WatchlistItem,
+  WatchlistResponse,
+} from '@server/interfaces/api/discoverInterfaces';
 import { createAnilistDiscoverClient } from '@server/lib/anilist';
 import {
   PROVIDER_ROW_CONCURRENCY,
@@ -19,6 +24,7 @@ import { getAnilistUserContext } from '@server/lib/anilist/userContext';
 import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
 import { withTmdbPoster } from '@server/lib/discover/posters';
 import { handleAnilistDiscoverRouteError } from '@server/lib/discover/providerErrors';
+import { cachedProviderRow } from '@server/lib/discover/rowCache';
 import {
   omitUnmappedDiscoverItems,
   recordUnmappedItems,
@@ -31,14 +37,14 @@ import { Router } from 'express';
 
 const anilistDiscoverRoutes = Router();
 
-async function anilistResults(
+/** The tiles of `items`, confirmed and drawn: the part of a row worth storing. */
+async function anilistTiles(
   items: Parameters<typeof toWatchlistItems>[0],
-  req: Request
-) {
-  const discoverSource = `anilist${req.path}`;
+  discoverSource: string
+): Promise<WatchlistItem[]> {
   // Dataset entries go stale, and a mapping that once pointed somewhere real
   // can outlive the TMDB record it names.
-  const mapped = await mapWithConcurrency(
+  return mapWithConcurrency(
     toWatchlistItems(items),
     PROVIDER_ROW_CONCURRENCY,
     async (item) => {
@@ -78,10 +84,51 @@ async function anilistResults(
       });
     }
   );
-  recordUnmappedItems(mapped, { namespace: 'anilist', discoverSource });
+}
+
+/** What every serve does with stored tiles: sightings, `hideUnmapped`, requests. */
+async function serveAnilistTiles(tiles: WatchlistItem[], req: Request) {
+  recordUnmappedItems(tiles, {
+    namespace: 'anilist',
+    discoverSource: `anilist${req.path}`,
+  });
   return annotateProviderActiveRequests(
-    omitUnmappedDiscoverItems(mapped, shouldHideUnmappedFromQuery(req.query))
+    omitUnmappedDiscoverItems(tiles, shouldHideUnmappedFromQuery(req.query))
   );
+}
+
+async function anilistResults(
+  items: Parameters<typeof toWatchlistItems>[0],
+  req: Request
+) {
+  return serveAnilistTiles(
+    await anilistTiles(items, `anilist${req.path}`),
+    req
+  );
+}
+
+/**
+ * A public page's row key. The user's own client answers when one is linked,
+ * and the seasonal rows name their season so a new one is not served stale.
+ */
+export function anilistPublicRowKey(
+  path: string,
+  userId: number | undefined,
+  page: number,
+  now = new Date()
+): string {
+  const season =
+    path === '/season'
+      ? AnilistAPI.currentSeason(now)
+      : path === '/next-season'
+        ? AnilistAPI.nextSeason(now)
+        : undefined;
+  return [
+    `anilist${path}`,
+    `user:${userId ?? 0}`,
+    season ? `${season.season}-${season.year}` : '',
+    `page:${page}`,
+  ].join('|');
 }
 
 async function publicPage(
@@ -96,13 +143,25 @@ async function publicPage(
 ) {
   try {
     const page = req.query.page ? Number(req.query.page) : 1;
-    const client = await createAnilistDiscoverClient(req.user?.id);
-    const mediaPage = await fetchPage(client, page);
-    const mapped = await mapAnilistMediaList(mediaPage.media);
+    const row = await cachedProviderRow(
+      anilistPublicRowKey(req.path, req.user?.id, page),
+      PUBLIC_PAGE_CACHE_TTL_SECONDS,
+      async () => {
+        const client = await createAnilistDiscoverClient(req.user?.id);
+        const mediaPage = await fetchPage(client, page);
+        return {
+          hasMore: Boolean(mediaPage.pageInfo.hasNextPage),
+          tiles: await anilistTiles(
+            await mapAnilistMediaList(mediaPage.media),
+            `anilist${req.path}`
+          ),
+        };
+      }
+    );
     return res.status(200).json({
       page,
-      hasMore: Boolean(mediaPage.pageInfo.hasNextPage),
-      results: await anilistResults(mapped, req),
+      hasMore: row.hasMore,
+      results: await serveAnilistTiles(row.tiles, req),
     } satisfies WatchlistResponse);
   } catch (error) {
     return handleAnilistDiscoverRouteError(error, next, errorMessage);

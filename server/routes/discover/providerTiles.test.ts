@@ -13,6 +13,7 @@ import { discoverSliderEndpoint } from '@server/lib/discover/sliderEndpoint';
 import { resetTmdbValidityCache } from '@server/lib/discover/validity';
 import { getSettings } from '@server/lib/settings';
 import discoverRoutes from '@server/routes/discover';
+import { anilistPublicRowKey } from '@server/routes/discover/anilist';
 import { setupTestDb } from '@server/test/db';
 import { edge, seedEdges } from '@server/test/mapping';
 import express from 'express';
@@ -306,5 +307,62 @@ describe('slider endpoints return clean tiles', () => {
     const unmapped = body.results.find((tile) => tile.sourceId === '3');
     assert.equal(unmapped?.tmdbId, undefined);
     assert.equal(unmapped?.id, 3);
+  });
+});
+
+describe('provider row cache', () => {
+  it('names the season in a seasonal AniList key', () => {
+    const march = new Date(2026, 2, 31);
+    const april = new Date(2026, 3, 1);
+    assert.equal(
+      anilistPublicRowKey('/season', 4, 2, march),
+      'anilist/season|user:4|WINTER-2026|page:2'
+    );
+    assert.notEqual(
+      anilistPublicRowKey('/next-season', undefined, 1, march),
+      anilistPublicRowKey('/next-season', undefined, 1, april)
+    );
+    assert.equal(
+      anilistPublicRowKey('/trending', undefined, 1, march),
+      'anilist/trending|user:0||page:1'
+    );
+  });
+
+  const calls = (method: unknown): number =>
+    (method as { mock: { callCount: () => number } }).mock.callCount();
+
+  it('stores a row once and applies hideUnmapped on every serve', async () => {
+    const before = calls(AnilistAPI.prototype.getTrending);
+    const hidden = await page(
+      '/api/v1/discover/anilist/trending?hideUnmapped=true'
+    );
+    const shown = await page(
+      '/api/v1/discover/anilist/trending?hideUnmapped=false'
+    );
+    assert.equal(calls(AnilistAPI.prototype.getTrending) - before, 1);
+    assert.equal(hidden.results.length, 2);
+    assert.equal(shown.results.length, 3);
+  });
+
+  it('serves the stored Simkl trending page and refreshes it behind', async () => {
+    const before = calls(SimklAPI.prototype.getCdnCatalog);
+    const first = await page('/api/v1/discover/simkl/trending');
+    const second = await page('/api/v1/discover/simkl/trending');
+    assert.deepEqual(second.results, first.results);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(calls(SimklAPI.prototype.getCdnCatalog) - before, 2);
+  });
+
+  it('skips the store when post-filters shape a Trakt page', async () => {
+    const url = encodeURIComponent(
+      'https://trakt.tv/users/someone/lists/picks'
+    );
+    const before = calls(TraktAPI.prototype.getListItems);
+    await page(`/api/v1/discover/trakt/list?url=${url}`);
+    await page(`/api/v1/discover/trakt/list?url=${url}&hideUnmapped=false`);
+    assert.equal(calls(TraktAPI.prototype.getListItems) - before, 1);
+    await page(`/api/v1/discover/trakt/list?url=${url}&voteAverageGte=1`);
+    await page(`/api/v1/discover/trakt/list?url=${url}&voteAverageGte=1`);
+    assert.ok(calls(TraktAPI.prototype.getListItems) - before >= 3);
   });
 });

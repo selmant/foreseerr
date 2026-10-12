@@ -1,5 +1,6 @@
 import type TheMovieDb from '@server/api/themoviedb';
 import type { MappingResolution } from '@server/entity/MappingResolution';
+import { clearProviderRowCache } from '@server/lib/discover/rowCache';
 import logger from '@server/logger';
 import {
   datasetsLoading,
@@ -77,6 +78,7 @@ export const invalidateResolutions = (): void => {
   hot.clear();
   failed.clear();
   invalidateCorrections();
+  clearProviderRowCache();
 };
 
 /** A correction as an answer; undefined when it records "no TMDB entry". */
