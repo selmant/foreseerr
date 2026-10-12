@@ -67,6 +67,8 @@ interface TitleCardProps {
   mediaUrl?: string | null;
   onLibraryOpenSeries?: (jellyfinSeriesId: string) => void;
   onLibraryManage?: () => void;
+  /** Hover, focus, or tap opened (true) or closed (false) the detail overlay. */
+  onShowDetailChange?: (shown: boolean) => void;
 }
 
 const messages = defineMessages('components.TitleCard', {
@@ -117,6 +119,7 @@ const TitleCard = ({
   mediaUrl,
   onLibraryOpenSeries,
   onLibraryManage,
+  onShowDetailChange,
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
@@ -155,6 +158,10 @@ const TitleCard = ({
   useEffect(() => {
     setCurrentStatus(status);
   }, [status]);
+
+  useEffect(() => {
+    onShowDetailChange?.(showDetail);
+  }, [showDetail, onShowDetailChange]);
 
   const requestComplete = useCallback((newStatus: MediaStatus) => {
     setCurrentStatus(newStatus);
