@@ -10,13 +10,15 @@ afterEach(() => {
 });
 
 const fakeTmdb = {
-  getMovie: async ({ movieId }: { movieId: number }) => ({
-    id: movieId,
-    title: 'Motor City',
-    poster_path: '/motor.jpg',
-  }),
-  getTvShow: async () => {
-    throw new Error('should not fetch tv');
+  getTitleSummary: async ({
+    mediaType,
+    tmdbId,
+  }: {
+    mediaType: 'movie' | 'tv';
+    tmdbId: number;
+  }) => {
+    if (mediaType === 'tv') throw new Error('should not fetch tv');
+    return { id: tmdbId, title: 'Motor City', poster_path: '/motor.jpg' };
   },
 } as unknown as TheMovieDb;
 
