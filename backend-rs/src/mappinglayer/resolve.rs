@@ -71,6 +71,7 @@ pub fn invalidate_resolutions() {
     lock(&HOT).clear();
     lock(&FAILED).clear();
     resolutions::invalidate_corrections();
+    crate::rowcache::clear();
 }
 
 /// The dataset-change listener: drop the answers (not the failures).

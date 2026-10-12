@@ -8,6 +8,8 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::LazyLock;
+use std::time::Duration;
 
 use axum::http::Method;
 use serde_json::{Map, Value};
@@ -17,12 +19,14 @@ use super::discoverkit::{
     route_error, trakt_tmdb_ids, with_tmdb_posters, BrowseFilters, Kind, Param, Query,
     RATING_PARAMS,
 };
+use super::providerkit::{provider_row, Recompute};
 use super::ratingsenrich::{enrich_results_with_ratings, fetch_batch_combined_ratings};
 use super::traktpages::{needs_post_filters, post_filtered, resolve_page, Upstream};
 use super::traktrecs::{recommendation_page, RecsOptions};
 use super::{Outcome, Ready, Table};
 use crate::db::Bind;
 use crate::media::js_string;
+use crate::rowcache::RowCache;
 use crate::settings::public::truthy;
 use crate::trakt::{app_credentials, FetchType, NodeRefresh, TraktClient, TraktError};
 use crate::traktitems::{js_number_of_text, parse_list_url, ListUrlError, SortBy};
@@ -137,7 +141,7 @@ impl Browse {
 }
 
 /// What a failing step means for the route.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) enum Fail {
     /// A Trakt client error, classified as Node's handler does.
     Trakt(TraktError),
@@ -428,6 +432,13 @@ pub(super) fn map_trakt_items(items: &[Value]) -> Vec<Value> {
 
 /// `mapFilteredTraktItems(items, { skipPostFilters: true })`.
 pub(super) async fn map_filtered(run: &Run<'_>, items: Vec<Value>) -> Result<Vec<Value>, Fail> {
+    let tiles = trakt_tiles(run, items).await?;
+    serve_tiles(run, tiles).await
+}
+
+/// `traktTiles`: the tiles of `items`, resolved, rated and drawn, the
+/// part of a row worth storing.
+async fn trakt_tiles(run: &Run<'_>, items: Vec<Value>) -> Result<Vec<Value>, Fail> {
     let ctx = run.ctx;
     let hydrated = if items.is_empty() {
         items
@@ -440,9 +451,13 @@ pub(super) async fn map_filtered(run: &Run<'_>, items: Vec<Value>) -> Result<Vec
         enrich_results_with_ratings(ctx, map_trakt_items(&hydrated), Some(&run.query), true)
             .await
             .map_err(Fail::Error)?;
-    let mapped = with_tmdb_posters(ctx, enriched)
-        .await
-        .map_err(Fail::Error)?;
+    with_tmdb_posters(ctx, enriched).await.map_err(Fail::Error)
+}
+
+/// `serveTraktTiles`: what every serve does with stored tiles
+/// (sightings, `hideUnmapped`, requests).
+async fn serve_tiles(run: &Run<'_>, mapped: Vec<Value>) -> Result<Vec<Value>, Fail> {
+    let ctx = run.ctx;
     if mapped
         .iter()
         .any(|item| !has_discover_tmdb_id(item.get("tmdbId")))
@@ -456,6 +471,102 @@ pub(super) async fn map_filtered(run: &Run<'_>, items: Vec<Value>) -> Result<Vec
     }
     let hide = run.query.truthy("hideUnmapped");
     Ok(annotate_provider_active_requests(ctx, omit_unmapped(mapped, hide)).await)
+}
+
+/// A chart or list page as stored: before the sightings, `hideUnmapped`
+/// and the request annotations every serve applies.
+#[derive(Debug, Clone)]
+struct TraktRow {
+    has_more: bool,
+    /// The list's title (the list route only).
+    title: Option<Value>,
+    tiles: Vec<Value>,
+}
+
+static TRAKT_ROWS: LazyLock<RowCache<TraktRow, Fail>> = LazyLock::new(RowCache::new);
+
+/// The freshness of a stored page: the Trakt client's own page cache.
+const ROW_FRESH: Duration = Duration::from_secs(crate::trakt::GET_CACHE_TTL);
+
+/// Where Node mounts `traktDiscoverRoutes`.
+const MOUNT: &str = "/api/v1/discover/trakt";
+
+/// `traktRowKey`: the user (their token, locale and region answer) and
+/// every query key but `hideUnmapped`, which only applies on serve.
+fn row_key(run: &Run<'_>) -> String {
+    format!(
+        "trakt{}|user:{}|{}",
+        run.ctx.path_below(MOUNT),
+        run.user_id,
+        run.query.row_key()
+    )
+}
+
+/// The stored page of `run`, then what every serve does with it.
+async fn stored_page<Fut>(
+    run: &Run<'_>,
+    page: i64,
+    compute: Fut,
+    recompute: Recompute<TraktRow, Fail>,
+) -> Result<Value, Fail>
+where
+    Fut: Future<Output = Result<TraktRow, Fail>> + Send,
+{
+    let stored = provider_row(
+        run.ctx,
+        &TRAKT_ROWS,
+        &row_key(run),
+        ROW_FRESH,
+        compute,
+        recompute,
+    )
+    .await?;
+    let results = serve_tiles(run, stored.tiles).await?;
+    let mut body = page_body(page, stored.has_more, results);
+    if let Some(title) = stored.title {
+        body.insert(String::from("title"), title);
+    }
+    Ok(Value::Object(body))
+}
+
+/// A chart page computed: the upstream pages, then the tiles.
+async fn chart_tiles(
+    run: &Run<'_>,
+    upstream: &Upstream,
+    page: i64,
+    skip_watched: bool,
+) -> Result<TraktRow, Fail> {
+    let paged = resolve_page(run, upstream, page, ITEMS_PER_PAGE, skip_watched, None).await?;
+    Ok(TraktRow {
+        has_more: paged.has_more,
+        title: None,
+        tiles: trakt_tiles(run, paged.items).await?,
+    })
+}
+
+/// A stale chart page computed again from its request.
+fn refresh_chart<'a>(
+    ctx: &'a Ready<'a>,
+) -> Pin<Box<dyn Future<Output = Result<TraktRow, Fail>> + Send + 'a>> {
+    Box::pin(async move {
+        let chart = match ctx.path_below(MOUNT).as_str() {
+            "/trending" => "trending",
+            "/popular" => "popular",
+            "/anticipated" => "anticipated",
+            other => return Err(Fail::Error(format!("{other} is not a chart"))),
+        };
+        let params: [&[Param]; 4] = [&PAGE_TYPE, &BROWSE, &RATING_PARAMS, &TAIL];
+        let start = start(ctx, &params, &item_defaults(), true)
+            .await
+            .map_err(|why| Fail::Error(why.why))?;
+        let client = client_for_request(ctx, start.user_id)
+            .await
+            .map_err(Fail::Error)??;
+        let extended = extended_for(&start.query);
+        let run = run(ctx, client, start, extended);
+        let page = run.query.page_number();
+        chart_tiles(&run, &Upstream::Chart(chart), page, false).await
+    })
 }
 
 /// `{ page, hasMore, results }`.
@@ -502,13 +613,20 @@ fn item_row<'a>(
         let extended = extended_for(&start.query);
         let run = run(ctx, client, start, extended);
         let page = run.query.page_number();
-        let result = async {
-            let paged =
-                resolve_page(&run, &upstream, page, ITEMS_PER_PAGE, skip_watched, None).await?;
-            let results = map_filtered(&run, paged.items).await?;
-            Ok(Value::Object(page_body(page, paged.has_more, results)))
-        }
-        .await;
+        let result = if matches!(upstream, Upstream::Chart(_))
+            && !needs_post_filters(&run, skip_watched)
+        {
+            let compute = Box::pin(chart_tiles(&run, &upstream, page, skip_watched));
+            stored_page(&run, page, compute, refresh_chart).await
+        } else {
+            async {
+                let paged =
+                    resolve_page(&run, &upstream, page, ITEMS_PER_PAGE, skip_watched, None).await?;
+                let results = map_filtered(&run, paged.items).await?;
+                Ok(Value::Object(page_body(page, paged.has_more, results)))
+            }
+            .await
+        };
         finish(ctx, fallback, result)
     })
 }
@@ -694,49 +812,112 @@ fn lists_search<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
+/// The list route's checks passed: its run and what it reads.
+struct ListPlan<'a> {
+    run: Run<'a>,
+    owner: (Option<String>, String),
+    page: i64,
+    list_sort: Option<SortBy>,
+    sort_inside: Option<SortBy>,
+    use_post: bool,
+}
+
+/// How the list route's checks ended early.
+enum ListEarly {
+    /// Node's to answer.
+    Forward(String),
+    /// The route's 400, with its message.
+    Bad(String),
+    /// A client error, answered as `handleTraktDiscoverRouteError` does.
+    Fail(Fail),
+}
+
+/// The list route up to its first Trakt call.
+async fn plan_list<'a>(ctx: &'a Ready<'a>) -> Result<ListPlan<'a>, ListEarly> {
+    let params: [&[Param]; 5] = [&PAGE_TYPE, &LIST, &BROWSE, &RATING_PARAMS, &TAIL];
+    let start = start(ctx, &params, &item_defaults(), true)
+        .await
+        .map_err(|why| ListEarly::Forward(why.why))?;
+    if !start.query.has("url") {
+        return Err(ListEarly::Forward(String::from(
+            "a missing url; the validator answers 400",
+        )));
+    }
+    let url = start.query.text("url");
+    let url = crate::traktitems::js_trim(&url).to_owned();
+    if url.is_empty() {
+        return Err(ListEarly::Bad(String::from(
+            "url query parameter is required",
+        )));
+    }
+    let (username, list_ref) = match parse_list_url(&url) {
+        Ok(parsed) => parsed,
+        Err(ListUrlError::Bad(message)) => return Err(ListEarly::Bad(message)),
+    };
+    let client = match client_for_request(ctx, start.user_id).await {
+        Ok(Ok(client)) => client,
+        Ok(Err(e)) => return Err(ListEarly::Fail(e.into())),
+        Err(why) => return Err(ListEarly::Forward(why)),
+    };
+    let list_sort = match start.query.get("sort").and_then(Value::as_str) {
+        Some("added") => Some(SortBy::Added),
+        Some("released") => Some(SortBy::Released),
+        _ => None,
+    };
+    let mut run = run(ctx, client, start, "min");
+    let use_post = needs_post_filters(&run, false);
+    let sort_inside = list_sort.filter(|_| !use_post);
+    run.extended = if list_sort.is_some() || use_post {
+        "full"
+    } else {
+        extended_for(&run.query)
+    };
+    if list_ref == "watchlist" && username.is_none() {
+        return Err(ListEarly::Bad(String::from(
+            "Watchlist URL must include a username",
+        )));
+    }
+    let page = run.query.page_number();
+    Ok(ListPlan {
+        run,
+        owner: (username, list_ref),
+        page,
+        list_sort,
+        sort_inside,
+        use_post,
+    })
+}
+
 fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     const FALLBACK: &str = "Unable to retrieve Trakt public list.";
     Box::pin(async move {
-        let params: [&[Param]; 5] = [&PAGE_TYPE, &LIST, &BROWSE, &RATING_PARAMS, &TAIL];
-        let start = match start(ctx, &params, &item_defaults(), true).await {
-            Ok(start) => start,
-            Err(why) => return Outcome::forward(why),
+        let plan = match plan_list(ctx).await {
+            Ok(plan) => plan,
+            Err(ListEarly::Forward(why)) => return Outcome::forward(why),
+            Err(ListEarly::Bad(message)) => return route_error(ctx, 400, &message, None),
+            Err(ListEarly::Fail(fail)) => return finish(ctx, FALLBACK, Err(fail)),
         };
-        if !start.query.has("url") {
-            return Outcome::forward(String::from("a missing url; the validator answers 400"));
-        }
-        let url = start.query.text("url");
-        let url = crate::traktitems::js_trim(&url).to_owned();
-        if url.is_empty() {
-            return route_error(ctx, 400, "url query parameter is required", None);
-        }
-        let (username, list_ref) = match parse_list_url(&url) {
-            Ok(parsed) => parsed,
-            Err(ListUrlError::Bad(message)) => return route_error(ctx, 400, &message, None),
-        };
-        let client = match client_for_request(ctx, start.user_id).await {
-            Ok(Ok(client)) => client,
-            Ok(Err(e)) => return finish(ctx, FALLBACK, Err(e.into())),
-            Err(why) => return Outcome::forward(why),
-        };
-        let list_sort = match start.query.get("sort").and_then(Value::as_str) {
-            Some("added") => Some(SortBy::Added),
-            Some("released") => Some(SortBy::Released),
-            _ => None,
-        };
-        let mut run = run(ctx, client, start, "min");
-        let use_post = needs_post_filters(&run, false);
-        let sort_inside = list_sort.filter(|_| !use_post);
-        run.extended = if list_sort.is_some() || use_post {
-            "full"
+        let run = &plan.run;
+        let compute = Box::pin(list_tiles(
+            run,
+            plan.owner,
+            plan.page,
+            plan.list_sort,
+            plan.sort_inside,
+        ));
+        let result = if plan.use_post {
+            async {
+                let stored = compute.await?;
+                let results = serve_tiles(run, stored.tiles).await?;
+                let mut body = page_body(plan.page, stored.has_more, results);
+                body.insert(String::from("title"), stored.title.unwrap_or(Value::Null));
+                Ok(Value::Object(body))
+            }
+            .await
         } else {
-            extended_for(&run.query)
+            stored_page(run, plan.page, compute, refresh_list).await
         };
-        if list_ref == "watchlist" && username.is_none() {
-            return route_error(ctx, 400, "Watchlist URL must include a username", None);
-        }
-        let page = run.query.page_number();
-        match list_body(&run, (username, list_ref), page, list_sort, sort_inside).await {
+        match result {
             // An AxiosError carries `status`, so the route's own `status ===
             // 400` check passes Trakt's 400 straight to Express.
             Err(Fail::Trakt(e @ TraktError::Axios(400))) => {
@@ -747,14 +928,14 @@ fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// The list route after its checks: the title, the page and the body.
-async fn list_body(
+/// A list page computed: the title, the upstream pages, the tiles.
+async fn list_tiles(
     run: &Run<'_>,
     (username, list_ref): (Option<String>, String),
     page: i64,
     list_sort: Option<SortBy>,
     sort_inside: Option<SortBy>,
-) -> Result<Value, Fail> {
+) -> Result<TraktRow, Fail> {
     let title = if list_ref == "watchlist" {
         Value::from(format!("{}'s Watchlist", username.as_deref().unwrap_or("")))
     } else {
@@ -780,10 +961,32 @@ async fn list_body(
         sort_inside,
     };
     let paged = resolve_page(run, &upstream, page, ITEMS_PER_PAGE, false, list_sort).await?;
-    let results = map_filtered(run, paged.items).await?;
-    let mut body = page_body(page, paged.has_more, results);
-    body.insert(String::from("title"), title);
-    Ok(Value::Object(body))
+    Ok(TraktRow {
+        has_more: paged.has_more,
+        title: Some(title),
+        tiles: trakt_tiles(run, paged.items).await?,
+    })
+}
+
+/// A stale list page computed again from its request.
+fn refresh_list<'a>(
+    ctx: &'a Ready<'a>,
+) -> Pin<Box<dyn Future<Output = Result<TraktRow, Fail>> + Send + 'a>> {
+    Box::pin(async move {
+        let plan = match plan_list(ctx).await {
+            Ok(plan) => plan,
+            Err(ListEarly::Fail(fail)) => return Err(fail),
+            Err(ListEarly::Forward(why) | ListEarly::Bad(why)) => return Err(Fail::Error(why)),
+        };
+        list_tiles(
+            &plan.run,
+            plan.owner,
+            plan.page,
+            plan.list_sort,
+            plan.sort_inside,
+        )
+        .await
+    })
 }
 
 #[cfg(test)]

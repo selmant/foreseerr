@@ -78,6 +78,7 @@ pub async fn ensure(db: &Db) -> Result<()> {
 pub fn datasets_changed() {
     edges::clear_edge_cache();
     resolve::clear_hot();
+    crate::rowcache::mark_stale();
 }
 
 /// What the lookups need: the database, TMDB, the outgoing client and

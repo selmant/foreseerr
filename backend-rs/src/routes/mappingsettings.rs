@@ -305,8 +305,10 @@ fn resolutions<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
     })
 }
 
-/// Drop Node's lookup caches after a write here.
+/// Drop Node's lookup caches after a write here, and this process's
+/// stored provider rows (Node may own the lookups).
 async fn invalidate(ctx: &Ready<'_>) {
+    crate::rowcache::clear();
     match mapping_call(ctx, Method::POST, "/mapping/invalidate", None).await {
         Ok((204, _)) => {}
         Ok((status, _)) => tracing::warn!("Node refused to drop mapping caches: {status}"),

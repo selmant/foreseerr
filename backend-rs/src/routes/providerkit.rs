@@ -2,11 +2,18 @@
 //! watchlist) share: the signed-in user's settings row and the query as
 //! the validator and the discover router leave it.
 
+use std::fmt::Debug;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+
 use serde_json::{Map, Value};
 
 use super::discoverkit::{Param, Query};
 use super::{Outcome, Ready};
 use crate::db::Bind;
+use crate::rowcache::RowCache;
 
 /// The `user_settings` columns these rows read (the row of `req.user`,
 /// eager in Node, plus the `select: false` `AniList` token columns its
@@ -69,4 +76,46 @@ pub(super) fn page_body(
         body.insert((*k).to_owned(), v.clone());
     }
     Value::Object(body)
+}
+
+/// A refresh that rebuilds its row from the request alone, as a route
+/// handler does.
+pub(super) type Recompute<V, E> =
+    for<'r> fn(&'r Ready<'r>) -> Pin<Box<dyn Future<Output = Result<V, E>> + Send + 'r>>;
+
+/// `cachedProviderRow(key, freshSeconds, run)` for a route: `inline`
+/// computes a miss in this request; a stale row is refreshed by
+/// `recompute` on a copy of the request that outlives it.
+pub(super) async fn provider_row<V, E, Fut>(
+    ctx: &Ready<'_>,
+    cache: &'static RowCache<V, E>,
+    key: &str,
+    fresh: Duration,
+    inline: Fut,
+    recompute: Recompute<V, E>,
+) -> Result<V, E>
+where
+    V: Clone + Debug + Send + Sync + 'static,
+    E: Clone + Debug + Send + Sync + 'static,
+    Fut: Future<Output = Result<V, E>> + Send,
+{
+    cache
+        .get(key, fresh, inline, || {
+            let shared = Arc::clone(&ctx.shared);
+            let settings = Arc::clone(&ctx.settings);
+            let user = ctx.user.clone();
+            let req = ctx.req.clone();
+            Box::pin(async move {
+                let ready = Ready {
+                    state: &shared,
+                    shared: Arc::clone(&shared),
+                    settings,
+                    user,
+                    req: &req,
+                    body: None,
+                };
+                recompute(&ready).await
+            })
+        })
+        .await
 }

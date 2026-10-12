@@ -26,7 +26,8 @@ const BASE_URL: &str = "https://api.mdblist.com";
 /// `MDBLIST_COLD_RATINGS_TTL_SECONDS`, the batch default.
 pub const COLD_TTL_SECS: u64 = 86_400 * 30;
 const LIST_SEARCH_TTL_SECS: u64 = 15 * 60;
-const LIST_ITEMS_TTL_SECS: u64 = 60 * 60;
+/// `MDBLIST_LIST_ITEMS_TTL_SECONDS`.
+pub const LIST_ITEMS_TTL_SECS: u64 = 60 * 60;
 const CIRCUIT_OPEN_MS: i64 = 60_000;
 const MAX_TIMEOUT_MS: u64 = 4_000;
 const UNAVAILABLE: &str = "MDBList is temporarily unavailable";

@@ -276,6 +276,8 @@ pub async fn load_active_generations(db: &Db, force: bool) -> Result<()> {
 /// The readable edge set changed: Node reloads its generations and drops
 /// its lookup caches.
 async fn notify_changed(state: &AppState) {
+    // The stored provider rows resolved against the old edge set.
+    crate::rowcache::mark_stale();
     if crate::mappinglayer::owned() {
         // This process's lookups follow the database; drop their caches.
         crate::mappinglayer::datasets_changed();

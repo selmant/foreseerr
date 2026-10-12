@@ -7,14 +7,18 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::LazyLock;
+use std::time::Duration;
 
 use axum::http::Method;
 use serde_json::{json, Map, Value};
 
 use super::discoverkit::{has_discover_tmdb_id, route_error, Kind, Param};
-use super::providerkit::prepare;
+use super::providerkit::{prepare, provider_row};
 use super::{Outcome, Ready, Table};
 use crate::db::Bind;
+use crate::mappinglayer::simklresolve::{resolve_page, ResolvedPage};
+use crate::rowcache::RowCache;
 use crate::simkl::{
     catalog_candidates, hydrate, paginate, sync_candidate, trending_file, Simkl, SyncRow,
 };
@@ -303,6 +307,34 @@ fn trending<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         ) else {
             return unavailable("Simkl application Client ID is not configured");
         };
+        let source = format!("simkl/trending/{media_type}");
+        if crate::mappinglayer::owned() {
+            let page = page.max(1);
+            let stored = provider_row(
+                ctx,
+                &TRENDING_ROWS,
+                &format!("simkl/trending|{media_type}|{period}|page:{page}"),
+                TRENDING_FRESH,
+                Box::pin(trending_page(ctx, &simkl, (&media_type, &period), page)),
+                refresh_trending,
+            )
+            .await;
+            let stored = match stored {
+                Ok(stored) => stored,
+                Err(message) => return unavailable(&message),
+            };
+            let mapping = crate::mappinglayer::Ctx::with_settings(ctx.state, &ctx.settings);
+            let items = stored
+                .resolved
+                .serve(&mapping, &source, query.truthy("hideUnmapped"));
+            let results = super::discoverkit::annotate_provider_active_requests(ctx, items).await;
+            return ctx.json(&super::providerkit::page_body(
+                stored.page,
+                stored.has_more,
+                results,
+                &[],
+            ));
+        }
         let payload = match simkl
             .cdn_catalog(&trending_file(&media_type, &period))
             .await
@@ -316,7 +348,6 @@ fn trending<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         let (slice, has_more, page) = paginate(candidates, page);
         let hydrated = hydrate(&simkl, slice).await;
-        let source = format!("simkl/trending/{media_type}");
         match resolve(ctx, hydrated, &source, query.truthy("hideUnmapped"), None).await {
             Ok(results) => ctx.json(&super::providerkit::page_body(page, has_more, results, &[])),
             Err(why) => {
@@ -324,5 +355,65 @@ fn trending<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 unavailable(&why)
             }
         }
+    })
+}
+
+/// A trending page as stored: before the gap sightings, `hideUnmapped`
+/// and the request annotations every serve applies.
+#[derive(Debug, Clone)]
+struct TrendingRow {
+    page: i64,
+    has_more: bool,
+    resolved: ResolvedPage,
+}
+
+static TRENDING_ROWS: LazyLock<RowCache<TrendingRow, String>> = LazyLock::new(RowCache::new);
+
+/// Nothing in front of the trending catalog caches it, so its row is never
+/// fresh: every view gets the last page at once and refreshes it.
+const TRENDING_FRESH: Duration = Duration::ZERO;
+
+/// A trending page computed (with this process's mapping layer): the
+/// catalog, its page hydrated, resolved and drawn. An error is the 503's
+/// message.
+async fn trending_page(
+    ctx: &Ready<'_>,
+    simkl: &Simkl,
+    (media_type, period): (&str, &str),
+    page: i64,
+) -> Result<TrendingRow, String> {
+    let payload = simkl
+        .cdn_catalog(&trending_file(media_type, period))
+        .await
+        .map_err(|e| e.message().to_owned())?;
+    let candidates = catalog_candidates(&payload, media_type, "simkl-public")?;
+    let (slice, has_more, page) = paginate(candidates, page);
+    let hydrated = hydrate(simkl, slice).await;
+    let mapping = crate::mappinglayer::Ctx::with_settings(ctx.state, &ctx.settings);
+    Ok(TrendingRow {
+        page,
+        has_more,
+        resolved: resolve_page(&mapping, hydrated).await,
+    })
+}
+
+/// A stale trending page computed again from its request.
+fn refresh_trending<'a>(
+    ctx: &'a Ready<'a>,
+) -> Pin<Box<dyn Future<Output = Result<TrendingRow, String>> + Send + 'a>> {
+    Box::pin(async move {
+        let (_, _, query) = prepare(ctx, &[&TRENDING_PARAMS], &[])
+            .await
+            .map_err(|why| why.why)?;
+        let simkl = Simkl::new(
+            &ctx.state.outbound,
+            &ctx.settings,
+            &ctx.state.version.version,
+        )
+        .ok_or_else(|| String::from("Simkl application Client ID is not configured"))?;
+        let media_type = query.str("mediaType").unwrap_or("all");
+        let period = query.str("period").unwrap_or("week");
+        let page = super::providerkit::page(&query).max(1);
+        trending_page(ctx, &simkl, (media_type, period), page).await
     })
 }

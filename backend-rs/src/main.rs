@@ -51,6 +51,7 @@ pub mod proxy;
 pub mod ratings;
 pub mod respond;
 pub mod routes;
+pub mod rowcache;
 pub mod runtime;
 pub mod servarr;
 pub mod settings;

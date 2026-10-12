@@ -3,6 +3,8 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::LazyLock;
+use std::time::Duration;
 
 use axum::http::Method;
 use serde_json::{json, Map, Value};
@@ -11,10 +13,11 @@ use super::discoverkit::{
     annotate_provider_active_requests, omit_unmapped, record_unmapped, resolve_discover_items,
     route_error, Kind, Param,
 };
-use super::providerkit::{fallback_error, page_body, prepare};
+use super::providerkit::{fallback_error, page_body, prepare, provider_row};
 use super::{Outcome, Ready, Table};
 use crate::jsval;
-use crate::mdblist::{parse_list_ref, ListError, ListItem, Mdblist, RefError};
+use crate::mdblist::{parse_list_ref, ListError, ListItem, ListRef, Mdblist, RefError};
+use crate::rowcache::RowCache;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
@@ -110,21 +113,25 @@ fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Err(RefError::Invalid(message)) => return route_error(ctx, 400, &message, None),
             Err(RefError::Forward(why)) => return Outcome::forward(why),
         };
-        let offset = crate::jsnum::from_i64(page.saturating_sub(1).saturating_mul(20));
-        let page_data = match mdblist.list_items(&list_ref, 20, offset).await {
-            Ok(p) => p,
-            Err(e) => return list_error(ctx, e, LIST_FAILED),
+        let stored = provider_row(
+            ctx,
+            &LIST_ROWS,
+            &format!("mdblist/list|{url}|page:{page}"),
+            Duration::from_secs(crate::mdblist::LIST_ITEMS_TTL_SECS),
+            Box::pin(list_tiles(ctx, &mdblist, &list_ref, page)),
+            refresh_list,
+        )
+        .await;
+        let page_data = match stored {
+            Ok(stored) => stored,
+            Err(ListFail::List(e)) => return list_error(ctx, e, LIST_FAILED),
+            Err(ListFail::Mapping(why)) => return fallback_error(ctx, LIST_FAILED, &why),
         };
-        let items: Vec<Value> = page_data.items.iter().map(tile).collect();
         let source = json!({ "discoverSource": "mdblist/list" });
-        let resolved = match resolve_discover_items(ctx, items, source.clone()).await {
-            Ok(r) => r,
-            Err(why) => return fallback_error(ctx, LIST_FAILED, &why),
-        };
-        if let Err(why) = record_unmapped(ctx, &resolved, source).await {
+        if let Err(why) = record_unmapped(ctx, &page_data.tiles, source).await {
             return fallback_error(ctx, LIST_FAILED, &why);
         }
-        let annotated = annotate_provider_active_requests(ctx, resolved).await;
+        let annotated = annotate_provider_active_requests(ctx, page_data.tiles).await;
         let results = omit_unmapped(annotated, query.truthy("hideUnmapped"));
         ctx.json(&page_body(
             page,
@@ -132,6 +139,66 @@ fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             results,
             &[("title", Value::from(page_data.title))],
         ))
+    })
+}
+
+/// A list page as stored: before the sightings, the request annotations
+/// and `hideUnmapped` every serve applies.
+#[derive(Debug, Clone)]
+struct ListRow {
+    title: String,
+    has_more: bool,
+    tiles: Vec<Value>,
+}
+
+/// Why a list page could not be computed, as the route answers it.
+#[derive(Debug, Clone)]
+enum ListFail {
+    /// The `MDBList` call failed.
+    List(ListError),
+    /// Resolving the tiles failed (or, refreshing, the request no longer
+    /// reads as it did).
+    Mapping(String),
+}
+
+static LIST_ROWS: LazyLock<RowCache<ListRow, ListFail>> = LazyLock::new(RowCache::new);
+
+/// A list page computed: the `MDBList` page, its tiles resolved.
+async fn list_tiles(
+    ctx: &Ready<'_>,
+    mdblist: &Mdblist,
+    list_ref: &ListRef,
+    page: i64,
+) -> Result<ListRow, ListFail> {
+    let offset = crate::jsnum::from_i64(page.saturating_sub(1).saturating_mul(20));
+    let page_data = mdblist
+        .list_items(list_ref, 20, offset)
+        .await
+        .map_err(ListFail::List)?;
+    let items: Vec<Value> = page_data.items.iter().map(tile).collect();
+    let tiles = resolve_discover_items(ctx, items, json!({ "discoverSource": "mdblist/list" }))
+        .await
+        .map_err(ListFail::Mapping)?;
+    Ok(ListRow {
+        title: page_data.title,
+        has_more: page_data.has_more,
+        tiles,
+    })
+}
+
+/// A stale list page computed again from its request.
+fn refresh_list<'a>(
+    ctx: &'a Ready<'a>,
+) -> Pin<Box<dyn Future<Output = Result<ListRow, ListFail>> + Send + 'a>> {
+    Box::pin(async move {
+        let (_, _, query) = prepare(ctx, &[&LIST_PARAMS], &[("page", json!(1))])
+            .await
+            .map_err(|why| ListFail::Mapping(why.why))?;
+        let url = jsval::trim(&query.text("url")).to_owned();
+        let list_ref = parse_list_ref(&url)
+            .map_err(|e| ListFail::Mapping(format!("the list reference no longer reads: {e:?}")))?;
+        let mdblist = Mdblist::new(&ctx.state.outbound, &ctx.settings);
+        list_tiles(ctx, &mdblist, &list_ref, super::providerkit::page(&query)).await
     })
 }
 

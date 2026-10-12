@@ -373,6 +373,53 @@ fn with_mapping_state(resolved: Vec<Resolved>, hide_unmapped: bool) -> Vec<Value
         .collect()
 }
 
+/// One trending page resolved and drawn, before anything request-specific:
+/// the gap sightings and `hideUnmapped` run on every serve
+/// ([`ResolvedPage::serve`]).
+#[derive(Debug, Clone)]
+pub struct ResolvedPage {
+    /// The unresolved items, for the sightings.
+    gaps: Vec<Resolved>,
+    /// Every tile, with its mapping state and art.
+    tiles: Vec<Value>,
+}
+
+impl ResolvedPage {
+    /// `recordSimklGaps`, then `omitUnmappedDiscoverItems`.
+    #[must_use]
+    pub fn serve(&self, ctx: &Ctx<'_>, discover_source: &str, hide_unmapped: bool) -> Vec<Value> {
+        record_gaps(ctx, &self.gaps, discover_source);
+        self.tiles
+            .iter()
+            .filter(|item| {
+                !hide_unmapped
+                    || (has_discover_tmdb_id(item.get("tmdbId"))
+                        && matches!(
+                            item.get("mediaType").and_then(Value::as_str),
+                            Some("movie" | "tv")
+                        ))
+            })
+            .cloned()
+            .collect()
+    }
+}
+
+/// `resolveCatalogPage` past the hydration: resolve, then draw every tile.
+/// Art is per tile, so drawing every tile and dropping some afterwards
+/// leaves the same tiles as dropping first.
+pub async fn resolve_page(ctx: &Ctx<'_>, candidates: Vec<Value>) -> ResolvedPage {
+    let resolved = resolve_candidates(ctx, candidates).await;
+    let gaps = resolved
+        .iter()
+        .filter(|(item, _, _)| !has_discover_tmdb_id(item.get("tmdbId")))
+        .cloned()
+        .collect();
+    ResolvedPage {
+        gaps,
+        tiles: with_tmdb_posters(ctx, with_mapping_state(resolved, false)).await,
+    }
+}
+
 /// The `/internal/simkl/resolve` work before `annotateProviderActiveRequests`.
 pub async fn resolve(
     ctx: &Ctx<'_>,

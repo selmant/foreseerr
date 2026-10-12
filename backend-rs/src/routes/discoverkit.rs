@@ -170,6 +170,22 @@ impl Query {
         self.0.get(key)
     }
 
+    /// `traktRowKey`'s query part: every key but `hideUnmapped` (which
+    /// only applies on serve), sorted, as `[[key, value], ...]`.
+    pub(super) fn row_key(&self) -> String {
+        let mut pairs: Vec<(&String, &Value)> = self
+            .0
+            .iter()
+            .filter(|(key, _)| key.as_str() != "hideUnmapped")
+            .collect();
+        pairs.sort_by(|a, b| a.0.cmp(b.0));
+        let pairs: Vec<Value> = pairs
+            .into_iter()
+            .map(|(key, value)| Value::Array(vec![Value::from(key.as_str()), value.clone()]))
+            .collect();
+        Value::Array(pairs).to_string()
+    }
+
     /// Whether the key is present.
     pub(super) fn has(&self, key: &str) -> bool {
         self.0.contains_key(key)
@@ -913,6 +929,22 @@ mod tests {
             &[&PARAMS, &FLAG_PARAMS, &RATING_PARAMS],
             &[("page", json!(1)), ("includeNoRating", json!(true))],
         )
+    }
+
+    #[test]
+    fn row_keys_leave_out_hide_unmapped() {
+        let key = |raw: &str| parse(raw).map(|q| q.row_key());
+        assert_eq!(
+            key("type=movie&page=2&hideUnmapped=true"),
+            key("page=2&type=movie"),
+            "order and hideUnmapped don't matter"
+        );
+        assert_eq!(
+            key("page=2&type=movie").ok().as_deref(),
+            Some(r#"[["includeNoRating",true],["page",2],["type","movie"]]"#),
+            "sorted pairs"
+        );
+        assert_ne!(key("page=2"), key("page=3"), "the page does");
     }
 
     #[test]

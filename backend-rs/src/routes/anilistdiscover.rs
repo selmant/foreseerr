@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::LazyLock;
 
 use axum::http::Method;
 use serde_json::{json, Map, Value};
@@ -15,12 +16,13 @@ use super::discoverkit::{
     anilist_media_list, annotate_provider_active_requests, confirm_or_repair, has_discover_tmdb_id,
     omit_unmapped, record_unmapped, route_error, with_tmdb_posters, Kind, Param, Query,
 };
-use super::providerkit::{fallback_error, page_body, prepare};
+use super::providerkit::{fallback_error, page_body, prepare, provider_row};
 use super::{Outcome, Ready, Table};
 use crate::anilist::{
     current_season, next_season, parse_list_url, status_list_name, Anilist, AnilistError, Season,
 };
 use crate::jsval;
+use crate::rowcache::RowCache;
 use crate::settings::public::truthy;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
@@ -246,10 +248,29 @@ fn next_season_row<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     ))
 }
 
-/// The five public rows.
-async fn public_page(ctx: &Ready<'_>, path: &str, message: &str) -> Outcome {
-    let (_, row, query) = try_forward!(prepare(ctx, &[&PAGE_PARAMS], &page_defaults()).await);
-    let page = super::providerkit::page(&query);
+/// A public page as stored: before the sightings, `hideUnmapped` and the
+/// request annotations every serve applies.
+#[derive(Debug, Clone)]
+struct PublicRow {
+    has_more: bool,
+    tiles: Vec<Value>,
+}
+
+/// Why a public page could not be computed, as the route answers it.
+#[derive(Debug, Clone)]
+enum PublicFail {
+    /// Node's to answer.
+    Forward(String),
+    /// The `AniList` call failed.
+    Anilist(AnilistError),
+    /// Mapping or confirming the tiles failed.
+    Mapping(String),
+}
+
+static PUBLIC_ROWS: LazyLock<RowCache<PublicRow, PublicFail>> = LazyLock::new(RowCache::new);
+
+/// A public row's sort and, for the seasonal rows, its season now.
+fn public_query(path: &str) -> (&'static str, Option<Season>) {
     let (sort, pick): (&str, Option<SeasonPick>) = match path {
         "/trending" => ("TRENDING_DESC", None),
         "/season" => ("POPULARITY_DESC", Some(current_season)),
@@ -261,29 +282,91 @@ async fn public_page(ctx: &Ready<'_>, path: &str, message: &str) -> Outcome {
         let (month, year) = local_month_year();
         pick(month, year)
     });
+    (sort, season)
+}
+
+/// `anilistPublicRowKey`: the user's own client answers when one is
+/// linked, and the seasonal rows name their season so a new one is not
+/// served stale.
+fn public_row_key(path: &str, user_id: i64, season: Option<Season>, page: i64) -> String {
+    let season = season.map_or_else(String::new, |s| format!("{}-{}", s.name, s.year));
+    format!("anilist{path}|user:{user_id}|{season}|page:{page}")
+}
+
+/// The five public rows.
+async fn public_page(ctx: &Ready<'_>, path: &str, message: &str) -> Outcome {
+    let (user_id, row, query) = try_forward!(prepare(ctx, &[&PAGE_PARAMS], &page_defaults()).await);
+    let page = super::providerkit::page(&query);
+    let (sort, season) = public_query(path);
     if !configured(ctx) {
         return not_configured(ctx);
     }
-    let client = try_forward!(discover_client(ctx, &row).await);
-    let media_page = match client.media_page(page, sort, season).await {
-        Ok(p) => p,
-        Err(e) => return anilist_error(ctx, e, message, false),
-    };
-    let mapped = match map_media(ctx, media_page.media).await {
-        Ok(m) => m,
-        Err(why) => return fallback_error(ctx, message, &why),
-    };
-    match anilist_results(
+    let source = format!("anilist{}", ctx.path_below(MOUNT));
+    let stored = provider_row(
         ctx,
-        mapped,
-        &format!("anilist{}", ctx.path_below(MOUNT)),
-        &query,
+        &PUBLIC_ROWS,
+        &public_row_key(path, user_id, season, page),
+        crate::anilist::PAGE_TTL,
+        Box::pin(public_tiles(ctx, &row, (sort, season), page, &source)),
+        refresh_public,
     )
-    .await
-    {
-        Ok(results) => ctx.json(&page_body(page, media_page.has_next_page, results, &[])),
+    .await;
+    let stored = match stored {
+        Ok(stored) => stored,
+        Err(PublicFail::Forward(why)) => return Outcome::forward(why),
+        Err(PublicFail::Anilist(e)) => return anilist_error(ctx, e, message, false),
+        Err(PublicFail::Mapping(why)) => return fallback_error(ctx, message, &why),
+    };
+    match serve_tiles(ctx, stored.tiles, &source, &query).await {
+        Ok(results) => ctx.json(&page_body(page, stored.has_more, results, &[])),
         Err(why) => fallback_error(ctx, message, &why),
     }
+}
+
+/// A public page computed: the `AniList` page, mapped, confirmed, drawn.
+async fn public_tiles(
+    ctx: &Ready<'_>,
+    row: &Map<String, Value>,
+    (sort, season): (&str, Option<Season>),
+    page: i64,
+    source: &str,
+) -> Result<PublicRow, PublicFail> {
+    let client = discover_client(ctx, row)
+        .await
+        .map_err(PublicFail::Forward)?;
+    let media_page = client
+        .media_page(page, sort, season)
+        .await
+        .map_err(PublicFail::Anilist)?;
+    let mapped = map_media(ctx, media_page.media)
+        .await
+        .map_err(PublicFail::Mapping)?;
+    Ok(PublicRow {
+        has_more: media_page.has_next_page,
+        tiles: anilist_tiles(ctx, mapped, source)
+            .await
+            .map_err(PublicFail::Mapping)?,
+    })
+}
+
+/// A stale public page computed again from its request.
+fn refresh_public<'a>(
+    ctx: &'a Ready<'a>,
+) -> Pin<Box<dyn Future<Output = Result<PublicRow, PublicFail>> + Send + 'a>> {
+    Box::pin(async move {
+        let (_, row, query) = prepare(ctx, &[&PAGE_PARAMS], &page_defaults())
+            .await
+            .map_err(|why| PublicFail::Forward(why.why))?;
+        let path = ctx.path_below(MOUNT);
+        public_tiles(
+            ctx,
+            &row,
+            public_query(&path),
+            super::providerkit::page(&query),
+            &format!("anilist{path}"),
+        )
+        .await
+    })
 }
 
 /// `mapAnilistMediaList(media)` in bodies Node's JSON parser accepts: a
@@ -406,6 +489,17 @@ async fn anilist_results(
     source: &str,
     query: &Query,
 ) -> Result<Vec<Value>, String> {
+    let tiles = anilist_tiles(ctx, mapped, source).await?;
+    serve_tiles(ctx, tiles, source, query).await
+}
+
+/// `anilistTiles`: the tiles of `mapped`, confirmed and drawn, the part
+/// of a row worth storing.
+async fn anilist_tiles(
+    ctx: &Ready<'_>,
+    mapped: Vec<Value>,
+    source: &str,
+) -> Result<Vec<Value>, String> {
     let items: Vec<Value> = mapped.iter().map(to_watchlist_item).collect();
     let wanted: Vec<usize> = items
         .iter()
@@ -450,14 +544,24 @@ async fn anilist_results(
             merge_confirmed(item, result)
         })
         .collect();
-    let posters = with_tmdb_posters(ctx, merged).await?;
+    with_tmdb_posters(ctx, merged).await
+}
+
+/// `serveAnilistTiles`: what every serve does with stored tiles
+/// (sightings, `hideUnmapped`, requests).
+async fn serve_tiles(
+    ctx: &Ready<'_>,
+    tiles: Vec<Value>,
+    source: &str,
+    query: &Query,
+) -> Result<Vec<Value>, String> {
     record_unmapped(
         ctx,
-        &posters,
+        &tiles,
         json!({ "namespace": "anilist", "discoverSource": source }),
     )
     .await?;
-    let shown = omit_unmapped(posters, query.truthy("hideUnmapped"));
+    let shown = omit_unmapped(tiles, query.truthy("hideUnmapped"));
     Ok(annotate_provider_active_requests(ctx, shown).await)
 }
 
@@ -870,6 +974,27 @@ mod tests {
             (1..=crate::routes::params::count(mapped.len())).collect::<Vec<_>>(),
             "a prefix, once each"
         );
+    }
+
+    #[test]
+    fn public_row_keys() {
+        let winter = Season {
+            name: "WINTER",
+            year: 2026,
+        };
+        assert_eq!(
+            public_row_key("/season", 4, Some(winter), 2),
+            "anilist/season|user:4|WINTER-2026|page:2",
+            "a seasonal row names its season"
+        );
+        assert_eq!(
+            public_row_key("/trending", 0, None, 1),
+            "anilist/trending|user:0||page:1",
+            "trending"
+        );
+        let (_, season) = public_query("/next-season");
+        assert!(season.is_some(), "next season is seasonal");
+        assert_eq!(public_query("/top"), ("SCORE_DESC", None), "top");
     }
 
     #[test]

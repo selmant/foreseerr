@@ -18,7 +18,7 @@ use crate::memcache::{self, CacheId};
 const GRAPHQL_URL: &str = "https://graphql.anilist.co";
 const PAGE_SIZE: i64 = 20;
 /// `PUBLIC_PAGE_CACHE_TTL_SECONDS`.
-const PAGE_TTL: Duration = Duration::from_secs(300);
+pub const PAGE_TTL: Duration = Duration::from_secs(300);
 
 macro_rules! media_fields {
     () => {

@@ -29,7 +29,7 @@ const REFRESH_WINDOW_SECONDS: f64 = 300.0;
 const RETRY_AFTER_MAX_SECONDS: u64 = 5;
 const RATE_LIMIT_FALLBACK_SECONDS: u64 = 1;
 /// `TRAKT_GET_CACHE_TTL_SECONDS`, also every `this.get(..., 300)`.
-const GET_CACHE_TTL: u64 = 300;
+pub const GET_CACHE_TTL: u64 = 300;
 const CIRCUIT_FALLBACK_SECONDS: u64 = 60;
 const RECOMMENDATIONS_LIMIT_MAX: i64 = 500;
 /// The `rawAxios` instance's timeout.
