@@ -60,7 +60,11 @@ pub(super) fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if let Err(why) = ctx.authenticated(MANAGE_BLOCKLIST | VIEW_BLOCKLIST) {
             return Outcome::forward(why);
         }
-        let query = match parse_query(ctx.req.uri.query().unwrap_or("")) {
+        let query = super::params::query(ctx).map_or_else(
+            || parse_query(ctx.req.uri.query().unwrap_or("")).map_err(super::Fallback::from),
+            |validated| validated_query(&validated),
+        );
+        let query = match query {
             Ok(query) => query,
             Err(why) => return Outcome::forward(why),
         };
@@ -110,6 +114,36 @@ pub(super) fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         body.insert(String::from("pageInfo"), Value::Object(page_info));
         body.insert(String::from("results"), Value::Array(results));
         ctx.json(&Value::Object(body))
+    })
+}
+
+/// The query the validator passed, as `blocklistGet` (zod) reads it.
+fn validated_query(q: &Map<String, Value>) -> Result<BlocklistQuery, super::Fallback> {
+    let take = super::params::int(q.get("take"), "take")?.unwrap_or(25);
+    let skip = super::params::int(q.get("skip"), "skip")?.unwrap_or(0);
+    if take <= 0 {
+        return Err(super::Fallback::from("take must be a positive integer"));
+    }
+    if skip < 0 {
+        return Err(super::Fallback::from("skip must be a non-negative integer"));
+    }
+    let search = match q.get("search") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(search)) => (!search.is_empty()).then(|| search.clone()),
+        Some(_) => return Err(super::Fallback::from("search isn't a string")),
+    };
+    let tagged = match q.get("filter").and_then(Value::as_str) {
+        Some("all") => None,
+        Some("blocklistedTags") => Some(true),
+        // `manual`, also the validator's default.
+        Some("manual") | None => Some(false),
+        Some(_) => return Err(super::Fallback::from("filter outside the enum")),
+    };
+    Ok(BlocklistQuery {
+        search,
+        tagged,
+        take,
+        skip,
     })
 }
 
@@ -197,5 +231,30 @@ mod tests {
         ] {
             assert!(parse_query(raw).is_err(), "{raw} is forwarded");
         }
+    }
+
+    #[test]
+    fn validated_queries() {
+        let q = |v: Value| v.as_object().and_then(|map| validated_query(map).ok());
+        let parsed = q(serde_json::json!({"search": "Don't (1999)!*", "take": 10}));
+        assert_eq!(
+            parsed.map(|q| (q.take, q.skip, q.tagged, q.search)),
+            Some((10, 0, Some(false), Some(String::from("Don't (1999)!*")))),
+            "characters encodeURIComponent leaves alone"
+        );
+        let parsed = q(serde_json::json!({"filter": "all", "skip": "5"}));
+        assert_eq!(
+            parsed.map(|q| (q.take, q.skip, q.tagged)),
+            Some((25, 5, None)),
+            "defaults and filter"
+        );
+        assert!(
+            q(serde_json::json!({"take": 0})).is_none(),
+            "take must be positive"
+        );
+        assert!(
+            q(serde_json::json!({"filter": "x"})).is_none(),
+            "filter enum"
+        );
     }
 }
