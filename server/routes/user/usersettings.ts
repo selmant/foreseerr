@@ -1148,6 +1148,10 @@ userSettingsRoutes.post<{ id: string }>(
         deviceCode: userCode,
       });
     } catch (e) {
+      logger.error('Failed to start Simkl PIN authorization', {
+        label: 'API',
+        errorMessage: e instanceof Error ? e.message : 'unknown error',
+      });
       return res.status(e instanceof SimklNotConfiguredError ? 400 : 500).json({
         message:
           e instanceof Error
@@ -1223,6 +1227,10 @@ userSettingsRoutes.post<{ id: string }>(
     } catch (e) {
       if (e instanceof SimklAccountAlreadyLinkedError)
         return res.status(409).json({ message: e.message });
+      logger.error('Failed to complete Simkl PIN authorization', {
+        label: 'API',
+        errorMessage: e instanceof Error ? e.message : 'unknown error',
+      });
       return res.status(e instanceof SimklNotConfiguredError ? 400 : 500).json({
         message:
           e instanceof Error

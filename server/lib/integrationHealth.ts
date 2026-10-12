@@ -237,7 +237,11 @@ const checkSimkl = async (): Promise<IntegrationHealth> => {
   try {
     await new SimklAPI().validateClientId();
     return healthy('Simkl is reachable and the Client ID was accepted.');
-  } catch {
+  } catch (e) {
+    logger.warn('Simkl health check failed', {
+      label: 'Integration Health',
+      errorMessage: e instanceof Error ? e.message : 'unknown error',
+    });
     return degraded('Simkl could not accept the saved Client ID.');
   }
 };

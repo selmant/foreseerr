@@ -49,6 +49,42 @@ export class SimklTemporarilyUnavailableError extends Error {
   }
 }
 
+/** Simkl (or a proxy on the way) refused the request; keeps its explanation. */
+export class SimklRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    detail?: string,
+    cause?: unknown
+  ) {
+    super(
+      `Simkl rejected the request (HTTP ${status})${detail ? `: ${detail}` : ''}`
+    );
+    this.name = 'SimklRequestError';
+    this.cause = cause;
+  }
+}
+
+const SIMKL_ERROR_DETAIL_LIMIT = 200;
+
+/** Simkl answers `{ error, message }`; proxies tend to answer HTML or text. */
+export const simklErrorDetail = (data: unknown): string | undefined => {
+  let text = '';
+  if (data && typeof data === 'object') {
+    const { message, error } = data as { message?: unknown; error?: unknown };
+    text = [error, message]
+      .filter(
+        (part): part is string => typeof part === 'string' && part.length > 0
+      )
+      .join(' — ');
+  } else if (typeof data === 'string') {
+    text = data
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  return text ? text.slice(0, SIMKL_ERROR_DETAIL_LIMIT) : undefined;
+};
+
 type SimklOptions = {
   clientId?: string;
   accessToken?: string;
@@ -138,14 +174,22 @@ export default class SimklAPI extends ExternalAPI {
         }
         if (!status || status >= 500)
           throw new SimklTemporarilyUnavailableError(error);
-        throw error;
+        throw new SimklRequestError(
+          status,
+          simklErrorDetail(error.response?.data),
+          error
+        );
       }
     }
   }
 
-  /** Requires a real Client ID; `/movies/trending` succeeds without one. */
+  /**
+   * The PIN endpoint is the only one found to check the Client ID (412
+   * `client_id_failed`); catalogs and title lookups accept any value. The
+   * code it issues just expires unused.
+   */
   public async validateClientId(): Promise<void> {
-    await this.getCdnCatalog('/discover/trending/tv/week_100.json');
+    await this.requestPinCode();
   }
 
   public async requestPinCode(): Promise<SimklPinCodeResponse> {
