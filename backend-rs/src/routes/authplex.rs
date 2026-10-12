@@ -122,9 +122,6 @@ async fn run(ctx: &Ready<'_>) -> Step {
         Err(AccountError::Unable(why)) => return Ok(unable(ctx, &why)),
         Err(AccountError::Forward(why)) => return Err(why.into()),
     };
-    if !account.email.is_ascii() {
-        return Err(String::from("non-ASCII email case folding").into());
-    }
     let db = &ctx.state.db;
     let db_err = |e: anyhow::Error| format!("database: {e:#}");
     let found = db

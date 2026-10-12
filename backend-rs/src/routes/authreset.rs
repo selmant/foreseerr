@@ -63,9 +63,6 @@ async fn request_reset_route(ctx: &Ready<'_>) -> Step {
     if email.is_empty() {
         return Ok(ctx.error(500, "Email address required."));
     }
-    if !email.is_ascii() {
-        return Err(String::from("non-ASCII email case folding").into());
-    }
     let db = &ctx.state.db;
     let db_err = |e: anyhow::Error| format!("database: {e:#}");
     let id = db
