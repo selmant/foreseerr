@@ -67,30 +67,28 @@ fn mapping_refs(ids: Option<&Value>) -> Vec<IdRef> {
         .collect()
 }
 
-/// `tmdbResolvers(tmdb).findByExternalId`.
+/// `tmdbResolvers(tmdb).findByExternalId`: through the mapping layer's
+/// `/find`, so an id TMDB does not know is remembered for hours.
 async fn find_ids(ctx: &Ctx<'_>, source: &str, external_id: &str, media_type: &str) -> Vec<i64> {
     if source == "tvdb" && media_type == "movie" {
         return Vec::new();
     }
-    let Ok(found) = probe::find_by_external_id(ctx, source, external_id).await else {
+    let Ok(found) = probe::tmdb_find(ctx, source, external_id).await else {
         return Vec::new();
     };
-    let key = if media_type == "movie" {
-        "movie_results"
+    let ids = if media_type == "movie" {
+        found.movies
     } else {
-        "tv_results"
+        found.shows
     };
-    found
-        .get(key)
-        .and_then(Value::as_array)
-        .map(|results| {
-            results
-                .iter()
-                .filter_map(|r| r.get("id").and_then(Value::as_i64))
-                .filter(|id| *id > 0)
-                .collect()
-        })
-        .unwrap_or_default()
+    ids.into_iter().filter(|id| *id > 0).collect()
+}
+
+/// A TVDB answer can only change the outcome when the IMDB one has not
+/// already settled it: agreeing with Simkl's own id, or (without one)
+/// naming a single record.
+fn settled_by(found: &[i64], simkl_tmdb: Option<i64>) -> bool {
+    simkl_tmdb.map_or(found.len() == 1, |tmdb| found.contains(&tmdb))
 }
 
 /// `resolveViaMappingLayer`.
@@ -196,11 +194,14 @@ async fn resolve_one(ctx: &Ctx<'_>, candidate: &Value) -> anyhow::Result<Resolut
         let found = find_ids(ctx, "imdb", imdb, &declared).await;
         corroborating.push(("tmdb-find:imdb", found, declared.clone()));
     }
-    if let Some(tvdb) = tv_db.as_ref().filter(|_| declared == "tv") {
+    let tmdb_int = simkl_tmdb.and_then(super::int_of);
+    let settled = corroborating
+        .iter()
+        .any(|(_, found, _)| settled_by(found, tmdb_int));
+    if let Some(tvdb) = tv_db.as_ref().filter(|_| declared == "tv" && !settled) {
         let found = find_ids(ctx, "tvdb", tvdb, "tv").await;
         corroborating.push(("tmdb-find:tvdb", found, String::from("tv")));
     }
-    let tmdb_int = simkl_tmdb.and_then(super::int_of);
     if let (Some(tmdb_id), Some((key, _, kind))) = (
         tmdb_int,
         corroborating
@@ -411,6 +412,18 @@ mod tests {
             ),
             "ambiguous tile"
         );
+    }
+
+    #[test]
+    fn tvdb_only_when_imdb_left_it_open() {
+        assert!(settled_by(&[1429], Some(1429)), "imdb agrees with simkl");
+        assert!(!settled_by(&[500], Some(1429)), "tvdb may still agree");
+        assert!(
+            settled_by(&[500], None),
+            "one record, nothing to agree with"
+        );
+        assert!(!settled_by(&[], None), "no answer");
+        assert!(!settled_by(&[1, 2], None), "a split");
     }
 
     #[test]
