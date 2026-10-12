@@ -3,16 +3,16 @@
 //! legacy `X-RateLimit-*` headers).
 
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::sync::{Mutex, OnceLock};
 
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{header, HeaderValue, Method, Response, StatusCode};
 use serde_json::{Map, Number, Value};
 
 use super::nodestate::{json_safe, NativeFut};
 use super::{Outcome, Ready, Table};
-use crate::settings::public::truthy;
 
 /// This module's routes.
 pub(super) const ROUTES: &Table = &[("/api/v1/settings/logs", Method::GET, logs)];
@@ -364,32 +364,41 @@ fn peek(key: &str, now_ms: i64) -> i64 {
         .map_or(1, |c| c.hits + 1)
 }
 
-/// The limiter's key: `ipKeyGenerator(req.ip)`. Without `trust proxy` every
-/// request reaches Node from this proxy, so all share one key; with it,
-/// `req.ip` is the leftmost forwarded address, which needs the header here.
+/// The limiter's key: `ipKeyGenerator(req.ip)`, with `trust proxy` as
+/// Express set it at startup. Trusted, `req.ip` is the leftmost forwarded
+/// address, else the peer's. With Node behind this server and no trust,
+/// every request reaches Node from here, so all share one key.
 fn limiter_key(ctx: &Ready<'_>) -> Result<String, String> {
-    if ctx.state.restart_required(&ctx.settings) {
-        return Err(String::from("trustProxy changed since startup"));
-    }
-    if !truthy(ctx.settings.get("/network/trustProxy")) {
+    let trusted = ctx.state.trust_proxy_at_startup();
+    if !trusted && !crate::standalone::enabled() {
         return Ok(String::from("proxy"));
     }
-    let first = ctx
+    let forwarded = ctx
         .req
         .headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.split(',').next())
         .map(str::trim)
-        .ok_or_else(|| String::from("req.ip would be this proxy's peer address"))?;
-    match first.parse::<IpAddr>() {
-        Ok(IpAddr::V4(v4)) => Ok(v4.to_string()),
-        Ok(IpAddr::V6(v6)) => {
+        .filter(|first| trusted && !first.is_empty());
+    let ip = match forwarded {
+        Some(first) => first
+            .parse::<IpAddr>()
+            .map_err(|_| String::from("a forwarded address that isn't an IP"))?,
+        None => ctx
+            .req
+            .extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|c| c.0.ip().to_canonical())
+            .ok_or_else(|| String::from("no peer address"))?,
+    };
+    Ok(match ip {
+        IpAddr::V4(v4) => v4.to_string(),
+        IpAddr::V6(v6) => {
             let masked = u128::from(v6) & !((1_u128 << 72) - 1);
-            Ok(format!("{}/56", Ipv6Addr::from(masked)))
+            format!("{}/56", Ipv6Addr::from(masked))
         }
-        Err(_) => Err(String::from("a forwarded address that isn't an IP")),
-    }
+    })
 }
 
 /// Add the legacy `X-RateLimit-*` headers.
