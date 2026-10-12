@@ -1,8 +1,13 @@
 //! `lib/library.ts`: the library payloads, built from the signed-in user's
-//! Jellyfin view and the media table. Every function only reads, so any
-//! `Err` (a reason) can still hand the request to Node.
+//! Jellyfin view and the media table.
+//!
+//! Every function only reads, so any `Err` (a reason) can still hand the
+//! request to Node; the one write, the watch-now skipped-episode cleanup,
+//! is safe to repeat there (Trakt then already has the episode, and
+//! Jellyfin marks it played again).
 
 use std::collections::HashMap;
+use std::sync::{Arc, LazyLock};
 
 use serde_json::{json, Map, Value};
 
@@ -14,8 +19,11 @@ use crate::librarymap::{
     resolve_series_play_target, resumable, safe_integer, series_of, sxe, title_from_item,
     tmdb_from_providers, tmdb_from_raw, BrowseQuery, JsObj, MediaInfo, PlayTarget, MEDIA_COLUMNS,
 };
+use crate::mediaactions::Env;
+use crate::routes::procstate::KeyLock;
 use crate::settings::public::truthy;
 use crate::settings::Settings;
+use crate::skippedepisodes;
 use crate::state::AppState;
 
 /// One series' episode lookup: title index, series id, result.
@@ -23,6 +31,10 @@ type EpisodeLookup<'a> = (usize, &'a str, Result<Vec<Item>, JfError>);
 
 /// `PLAY_TARGET_CONCURRENCY`.
 const PLAY_TARGET_CONCURRENCY: usize = 4;
+
+/// `watchNowCleanupLock`: one watch-now build at a time per user while the
+/// skipped-episode cleanup can write.
+static WATCH_NOW_CLEANUP_LOCK: LazyLock<KeyLock> = LazyLock::new(KeyLock::default);
 
 /// A failed Jellyfin call.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +69,8 @@ pub struct Linked {
     pub client: JellyfinClient,
     /// `user.settings.autoCompleteSkippedEpisodeEndings === true`.
     pub auto_complete: bool,
+    /// `skippedEpisodeProgressThreshold(autoCompleteSkippedEpisodeThreshold)`.
+    pub skip_threshold: f64,
 }
 
 /// The image route's result.
@@ -127,7 +141,7 @@ impl Lib<'_> {
             .state
             .db
             .rows(
-                r#"SELECT u."jellyfinUserId" AS "jellyfinUserId", u."jellyfinAuthToken" AS "jellyfinAuthToken", u."jellyfinDeviceId" AS "jellyfinDeviceId", s."autoCompleteSkippedEpisodeEndings" AS "autoComplete" FROM "user" u LEFT JOIN "user_settings" s ON s."userId" = u."id" WHERE u."id" = ?1"#,
+                r#"SELECT u."jellyfinUserId" AS "jellyfinUserId", u."jellyfinAuthToken" AS "jellyfinAuthToken", u."jellyfinDeviceId" AS "jellyfinDeviceId", s."autoCompleteSkippedEpisodeEndings" AS "autoComplete", s."autoCompleteSkippedEpisodeThreshold" AS "skipThreshold" FROM "user" u LEFT JOIN "user_settings" s ON s."userId" = u."id" WHERE u."id" = ?1"#,
                 &[Bind::Int(self.user_id)],
             )
             .await
@@ -161,6 +175,7 @@ impl Lib<'_> {
         Ok(Link::Linked(Box::new(Linked {
             client,
             auto_complete,
+            skip_threshold: skippedepisodes::progress_threshold(row.get("skipThreshold")),
         })))
     }
 
@@ -452,8 +467,10 @@ impl Lib<'_> {
         Ok(ids)
     }
 
-    /// `buildWatchNowResponse` without the skipped-episode cleanup, which
-    /// writes to Jellyfin under a per-user lock: those users go to Node.
+    /// `buildWatchNowResponse`. With `autoCompleteSkippedEpisodeEndings`
+    /// on, the resume list goes through the skipped-episode cleanup first,
+    /// and the whole build runs one at a time per user
+    /// (`watchNowCleanupLock`).
     ///
     /// # Errors
     ///
@@ -463,11 +480,11 @@ impl Lib<'_> {
             Link::Code(code) => return Ok(json!({"shelves": [], "code": code})),
             Link::Linked(linked) => linked,
         };
-        if linked.auto_complete {
-            return Err(String::from(
-                "autoCompleteSkippedEpisodeEndings cleans up through Jellyfin; Node runs it",
-            ));
-        }
+        let _cleanup_lock = if linked.auto_complete {
+            Some(WATCH_NOW_CLEANUP_LOCK.acquire(self.user_id).await)
+        } else {
+            None
+        };
         let client = &linked.client;
         let libraries = self.tv_library_ids()?;
         let mut jobs: Vec<Job<'_, Result<Vec<Item>, JfError>>> = vec![
@@ -500,7 +517,17 @@ impl Lib<'_> {
             );
         }
         let mut lists = lists.into_iter();
-        let resume = lists.next().flatten().unwrap_or_default();
+        let mut resume = lists.next().flatten().unwrap_or_default();
+        if linked.auto_complete {
+            let env = Env {
+                state: self.state,
+                settings: Arc::new(self.settings.clone()),
+                user: self.user_id,
+            };
+            let deps = skippedepisodes::Live::new(env, client);
+            resume =
+                skippedepisodes::cleanup(self.user_id, &deps, resume, linked.skip_threshold).await;
+        }
         let latest = lists.next().flatten().unwrap_or_default();
         let next_up = lists.next().flatten().unwrap_or_default();
         let latest_episodes = latest_episodes(lists.flatten())?;

@@ -54,6 +54,7 @@ pub mod runtime;
 pub mod servarr;
 pub mod settings;
 pub mod simkl;
+pub mod skippedepisodes;
 pub mod standalone;
 pub mod state;
 pub mod sync;

@@ -345,6 +345,27 @@ pub async fn set_episode_watched(
     Ok(EpisodeWrite::Done(true))
 }
 
+/// `traktEpisodeActions.removePlaybackProgress`: nothing when Trakt isn't
+/// available.
+///
+/// # Errors
+///
+/// What the availability check throws, or listing the paused rows failed.
+pub async fn remove_episode_playback(
+    env: &Env<'_>,
+    tmdb_id: i64,
+    season: i64,
+    episode: i64,
+) -> Result<(), Thrown> {
+    if !available(env).await? {
+        return Ok(());
+    }
+    let client = client(env).await.map_err(|e| e.message())?;
+    actions::remove_episode_playback_progress(&client, tmdb_id, season, episode)
+        .await
+        .map_err(|e| e.message())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
