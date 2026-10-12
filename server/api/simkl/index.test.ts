@@ -65,6 +65,13 @@ describe('SimklAPI errors', () => {
     assert.equal(simklErrorDetail({}), undefined);
   });
 
+  it('caps a long JSON reason like a text one', () => {
+    assert.equal(
+      simklErrorDetail({ error: 'bad', message: 'x'.repeat(500) })?.length,
+      200
+    );
+  });
+
   it('validates the Client ID against the PIN endpoint', async () => {
     const { client, urls } = clientAnswering(200, {
       result: 'OK',

@@ -64,21 +64,25 @@ export class SimklRequestError extends Error {
   }
 }
 
+const SIMKL_ERROR_DETAIL_LIMIT = 200;
+
 /** Simkl answers `{ error, message }`; proxies tend to answer HTML or text. */
 export const simklErrorDetail = (data: unknown): string | undefined => {
+  let text = '';
   if (data && typeof data === 'object') {
     const { message, error } = data as { message?: unknown; error?: unknown };
-    const parts = [error, message].filter(
-      (part): part is string => typeof part === 'string' && part.length > 0
-    );
-    return parts.length ? parts.join(' — ') : undefined;
+    text = [error, message]
+      .filter(
+        (part): part is string => typeof part === 'string' && part.length > 0
+      )
+      .join(' — ');
+  } else if (typeof data === 'string') {
+    text = data
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
-  if (typeof data !== 'string') return undefined;
-  const text = data
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return text ? text.slice(0, 200) : undefined;
+  return text ? text.slice(0, SIMKL_ERROR_DETAIL_LIMIT) : undefined;
 };
 
 type SimklOptions = {
