@@ -577,13 +577,12 @@ fn relevant(occurrence: &Occurrence, request: &Request) -> bool {
 }
 
 /// The current user's relevance for one occurrence: the status of their
-/// first relevant request. `Err` where Node would throw (a relevant
-/// request without requester) or the order is the database's to decide.
+/// first relevant request (by id; Node takes the database's order). `Err`
+/// where Node would throw (a relevant request without requester).
 fn user_relevance(
     occurrence: &Occurrence,
     requests: &[Request],
     user_id: i64,
-    postgres: bool,
 ) -> Result<Option<i64>, String> {
     let Some(media_id) = occurrence.media_id.filter(|id| *id != 0) else {
         return Ok(None);
@@ -601,11 +600,6 @@ fn user_relevance(
             Some(id) if id == user_id => statuses.push(request.status),
             Some(_) => {}
         }
-    }
-    if postgres && statuses.iter().any(|s| Some(s) != statuses.first()) {
-        return Err(String::from(
-            "the user's requests disagree and Postgres returns them unordered",
-        ));
     }
     Ok(statuses.first().copied())
 }
@@ -816,8 +810,7 @@ async fn results(
     };
     let mut items = Vec::new();
     for occurrence in &selected {
-        let status = match user_relevance(occurrence, &requests, context.user_id, db.is_postgres())
-        {
+        let status = match user_relevance(occurrence, &requests, context.user_id) {
             Ok(status) => status,
             Err(why) => return Ok(Err(why)),
         };
@@ -1098,13 +1091,9 @@ mod tests {
             ..series.clone()
         };
         assert_eq!(
-            user_relevance(&o, &[series.clone(), pending.clone()], 9, false),
+            user_relevance(&o, &[series, pending], 9),
             Ok(Some(2)),
             "first relevant request wins"
-        );
-        assert!(
-            user_relevance(&o, &[series, pending], 9, true).is_err(),
-            "unordered on Postgres"
         );
     }
 
