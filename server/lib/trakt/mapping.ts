@@ -1,4 +1,8 @@
 import type { TraktMediaItem } from '@server/api/trakt/interfaces';
+import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import { confirmOrRepair } from '@server/lib/discover/validity';
 import { resolveTmdb } from '@server/lib/mapping/resolve';
 import type { IdRef } from '@server/lib/mapping/types';
@@ -35,7 +39,7 @@ export async function hydrateTraktTmdbIds(
   if (!missing.length) return items;
 
   const resolved = new Map<TraktMediaItem, number>();
-  for (const item of missing) {
+  await mapWithConcurrency(missing, PROVIDER_ROW_CONCURRENCY, async (item) => {
     const resolution = await resolveTmdb({
       refs: sourceRefs(item),
       identity: traktRef(item),
@@ -50,7 +54,7 @@ export async function hydrateTraktTmdbIds(
     if (resolution?.mediaType === item.mediaType) {
       resolved.set(item, resolution.tmdbId);
     }
-  }
+  });
 
   if (!resolved.size) return items;
   return items.map((item) => {
@@ -75,37 +79,36 @@ export async function confirmTraktTmdbIds(
   const withIds = items.filter((item) => item.tmdbId);
   if (!withIds.length) return items;
 
-  // Fired together rather than in sequence: a page is 20 items and confirmed
+  // Run in parallel rather than in sequence: a page is 20 items and confirmed
   // ids are cached for a day, so serialising here would only add latency to
-  // the first render of every slider.
+  // the first render of every slider. Bounded, since TMDB slows down sharply
+  // with many requests in flight.
   const replacements = new Map<
     TraktMediaItem,
     Pick<TraktMediaItem, 'tmdbId' | 'mediaType'>
   >();
-  await Promise.all(
-    withIds.map(async (item) => {
-      const confirmed = await confirmOrRepair(
-        {
-          tmdbId: item.tmdbId,
-          mediaType: item.mediaType,
-          title: item.title,
-          year: item.year,
-          refs: sourceRefs(item),
-        },
-        {
-          discoverSource: options.discoverSource ?? 'trakt',
-          offline: options.offline,
-          namespace: traktRef(item),
-        }
-      );
-      if (confirmed) {
-        replacements.set(item, {
-          tmdbId: confirmed.tmdbId,
-          mediaType: confirmed.mediaType ?? item.mediaType,
-        });
+  await mapWithConcurrency(withIds, PROVIDER_ROW_CONCURRENCY, async (item) => {
+    const confirmed = await confirmOrRepair(
+      {
+        tmdbId: item.tmdbId,
+        mediaType: item.mediaType,
+        title: item.title,
+        year: item.year,
+        refs: sourceRefs(item),
+      },
+      {
+        discoverSource: options.discoverSource ?? 'trakt',
+        offline: options.offline,
+        namespace: traktRef(item),
       }
-    })
-  );
+    );
+    if (confirmed) {
+      replacements.set(item, {
+        tmdbId: confirmed.tmdbId,
+        mediaType: confirmed.mediaType ?? item.mediaType,
+      });
+    }
+  });
 
   if (!replacements.size) return items;
   return items.map((item) => {

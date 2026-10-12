@@ -3,6 +3,10 @@ import { AnilistGraphQLError } from '@server/api/anilist';
 import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
 import { createAnilistDiscoverClient } from '@server/lib/anilist';
 import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
+import {
   collectUserListItems,
   listUserAniListLists,
   mapAnilistMediaList,
@@ -34,8 +38,10 @@ async function anilistResults(
   const discoverSource = `anilist${req.path}`;
   // Dataset entries go stale, and a mapping that once pointed somewhere real
   // can outlive the TMDB record it names.
-  const mapped = await Promise.all(
-    toWatchlistItems(items).map(async (item) => {
+  const mapped = await mapWithConcurrency(
+    toWatchlistItems(items),
+    PROVIDER_ROW_CONCURRENCY,
+    async (item) => {
       const confirmed =
         item.tmdbId && item.mediaType
           ? await confirmOrRepair(
@@ -70,7 +76,7 @@ async function anilistResults(
           ...(item.sourceId ? { externalId: item.sourceId } : {}),
         },
       });
-    })
+    }
   );
   recordUnmappedItems(mapped, { namespace: 'anilist', discoverSource });
   return annotateProviderActiveRequests(

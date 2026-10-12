@@ -6,6 +6,10 @@ import type {
   AnilistMediaListStatus,
 } from '@server/api/anilist/interfaces';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import anilistIdMapping, {
   anilistFormatToMediaType,
 } from '@server/lib/anilist/mapping';
@@ -71,13 +75,16 @@ export async function mapAnilistMedia(
   };
 }
 
-export async function mapAnilistMediaList(
-  mediaList: AnilistMedia[]
-): Promise<AnilistDiscoverItem[]> {
-  const mapped: AnilistDiscoverItem[] = [];
-  const seen = new Set<string>();
-  for (const media of mediaList) {
-    const item = await mapAnilistMedia(media);
+/**
+ * Append mapped entries in order, skipping a repeat of an AniList id or of a
+ * TMDB id (two AniList seasons often share one TMDB show).
+ */
+function appendUnique(
+  out: AnilistDiscoverItem[],
+  seen: Set<string>,
+  items: (AnilistDiscoverItem | null)[]
+): void {
+  for (const item of items) {
     if (!item) {
       continue;
     }
@@ -93,8 +100,21 @@ export async function mapAnilistMediaList(
       }
       seen.add(tmdbKey);
     }
-    mapped.push(item);
+    out.push(item);
   }
+}
+
+export async function mapAnilistMediaList(
+  mediaList: AnilistMedia[]
+): Promise<AnilistDiscoverItem[]> {
+  const mapped: AnilistDiscoverItem[] = [];
+  appendUnique(
+    mapped,
+    new Set<string>(),
+    await mapWithConcurrency(mediaList, PROVIDER_ROW_CONCURRENCY, (media) =>
+      mapAnilistMedia(media)
+    )
+  );
   return mapped;
 }
 

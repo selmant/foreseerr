@@ -2,7 +2,8 @@ import type TheMovieDb from '@server/api/themoviedb';
 import { clearTmdbNegativeCache } from '@server/lib/mapping/tmdb';
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-import { withTmdbPoster } from './posters';
+import { PROVIDER_ROW_CONCURRENCY } from '@server/lib/concurrency';
+import { withTmdbPoster, withTmdbPosters } from './posters';
 import { resetTmdbValidityCache } from './validity';
 
 beforeEach(() => {
@@ -157,5 +158,32 @@ describe('withTmdbPoster', () => {
     );
     assert.equal(item.posterPath, '/already.jpg');
     assert.equal(calls, 0);
+  });
+
+  it('probes a page a few tiles at a time, in order', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const tmdb = {
+      getTitleSummary: async ({ tmdbId }: SummaryArgs) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        inFlight -= 1;
+        return { id: tmdbId, title: 'T', poster_path: `/${tmdbId}.jpg` };
+      },
+    } as unknown as TheMovieDb;
+    const tiles = Array.from({ length: 20 }, (_, n) => ({
+      id: 900100 + n,
+      ratingKey: `mdblist-movie-${900100 + n}`,
+      tmdbId: 900100 + n,
+      mediaType: 'movie' as const,
+      title: 'T',
+    }));
+    const out = await withTmdbPosters(tiles, tmdb);
+    assert.deepEqual(
+      out.map((tile) => tile.posterPath),
+      tiles.map((tile) => `/${tile.tmdbId}.jpg`)
+    );
+    assert.equal(peak, PROVIDER_ROW_CONCURRENCY);
   });
 });

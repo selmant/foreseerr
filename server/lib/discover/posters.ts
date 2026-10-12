@@ -1,4 +1,8 @@
 import type TheMovieDb from '@server/api/themoviedb';
+import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
 import { hasDiscoverTmdbId } from './unmapped';
 import { tmdbTileArt } from './validity';
@@ -38,5 +42,7 @@ export async function withTmdbPosters(
   items: WatchlistItem[],
   tmdb?: TheMovieDb
 ): Promise<WatchlistItem[]> {
-  return Promise.all(items.map((item) => withTmdbPoster(item, tmdb)));
+  return mapWithConcurrency(items, PROVIDER_ROW_CONCURRENCY, (item) =>
+    withTmdbPoster(item, tmdb)
+  );
 }

@@ -1,8 +1,12 @@
 import type TheMovieDb from '@server/api/themoviedb';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import { resolveTmdb } from '@server/lib/mapping/resolve';
 import type { IdRef } from '@server/lib/mapping/types';
-import { withTmdbPoster } from './posters';
+import { withTmdbPosters } from './posters';
 import { hasDiscoverTmdbId } from './unmapped';
 import { confirmOrRepair, confirmTmdbId } from './validity';
 
@@ -32,84 +36,82 @@ export async function resolveDiscoverItems(
 ): Promise<WatchlistItem[]> {
   if (!items.length) return [];
 
-  const resolved: WatchlistItem[] = [];
-  for (const { from, ...item } of items) {
-    if (hasDiscoverTmdbId(item.tmdbId)) {
-      // An id that arrived is not an id that works: confirm it, and fall back
-      // to the source's other ids when TMDB has deleted or merged the record.
-      const confirmed = item.mediaType
-        ? await confirmOrRepair(
-            {
-              tmdbId: item.tmdbId,
-              mediaType: item.mediaType,
-              title: item.title,
-              refs: from ? [from] : [],
-            },
-            {
-              discoverSource: options.discoverSource,
-              offline: options.offline,
-              namespace: from,
-              tmdb: options.tmdb,
-            }
-          )
-        : undefined;
+  const resolved = await mapWithConcurrency(
+    items,
+    PROVIDER_ROW_CONCURRENCY,
+    async ({ from, ...item }): Promise<WatchlistItem> => {
+      if (hasDiscoverTmdbId(item.tmdbId)) {
+        // An id that arrived is not an id that works: confirm it, and fall back
+        // to the source's other ids when TMDB has deleted or merged the record.
+        const confirmed = item.mediaType
+          ? await confirmOrRepair(
+              {
+                tmdbId: item.tmdbId,
+                mediaType: item.mediaType,
+                title: item.title,
+                refs: from ? [from] : [],
+              },
+              {
+                discoverSource: options.discoverSource,
+                offline: options.offline,
+                namespace: from,
+                tmdb: options.tmdb,
+              }
+            )
+          : undefined;
 
-      resolved.push({
-        ...item,
-        ...(confirmed
-          ? {
-              tmdbId: confirmed.tmdbId,
-              ...(confirmed.tmdbId ? { id: confirmed.tmdbId } : {}),
-              ...(confirmed.mediaType
-                ? { mediaType: confirmed.mediaType }
-                : {}),
-            }
-          : {}),
-        mappingState: confirmed?.mappingState ?? { state: 'mapped' },
+        return {
+          ...item,
+          ...(confirmed
+            ? {
+                tmdbId: confirmed.tmdbId,
+                ...(confirmed.tmdbId ? { id: confirmed.tmdbId } : {}),
+                ...(confirmed.mediaType
+                  ? { mediaType: confirmed.mediaType }
+                  : {}),
+              }
+            : {}),
+          mappingState: confirmed?.mappingState ?? { state: 'mapped' },
+        };
+      }
+      if (!from) {
+        return { ...item, mappingState: { state: 'unmapped' } };
+      }
+
+      // Without a declared media type the answer settles it: a unified list's
+      // shows are recovered by letting the resolver try both.
+      const resolution = await resolveTmdb({
+        refs: [from],
+        mediaType: item.mediaType,
+        title: item.title,
+        discoverSource: options.discoverSource,
+        offline: options.offline,
+        tmdb: options.tmdb,
       });
-      continue;
+      const source = { namespace: from.ns, externalId: String(from.id) };
+      if (
+        resolution &&
+        (await confirmTmdbId(
+          resolution.mediaType,
+          resolution.tmdbId,
+          options.tmdb
+        ))
+      ) {
+        return {
+          ...item,
+          tmdbId: resolution.tmdbId,
+          id: resolution.tmdbId,
+          mediaType: resolution.mediaType,
+          mappingState: {
+            state: 'mapped',
+            sourceKey: resolution.origin,
+            ...source,
+          },
+        };
+      }
+      return { ...item, mappingState: { state: 'unmapped', ...source } };
     }
-    if (!from) {
-      resolved.push({ ...item, mappingState: { state: 'unmapped' } });
-      continue;
-    }
-
-    // Without a declared media type the answer settles it: a unified list's
-    // shows are recovered by letting the resolver try both.
-    const resolution = await resolveTmdb({
-      refs: [from],
-      mediaType: item.mediaType,
-      title: item.title,
-      discoverSource: options.discoverSource,
-      offline: options.offline,
-      tmdb: options.tmdb,
-    });
-    const source = { namespace: from.ns, externalId: String(from.id) };
-    if (
-      resolution &&
-      (await confirmTmdbId(
-        resolution.mediaType,
-        resolution.tmdbId,
-        options.tmdb
-      ))
-    ) {
-      resolved.push({
-        ...item,
-        tmdbId: resolution.tmdbId,
-        id: resolution.tmdbId,
-        mediaType: resolution.mediaType,
-        mappingState: {
-          state: 'mapped',
-          sourceKey: resolution.origin,
-          ...source,
-        },
-      });
-      continue;
-    }
-    resolved.push({ ...item, mappingState: { state: 'unmapped', ...source } });
-  }
-
-  return Promise.all(
-    resolved.map((item) => withTmdbPoster(item, options.tmdb))
   );
+
+  return withTmdbPosters(resolved, options.tmdb);
 }

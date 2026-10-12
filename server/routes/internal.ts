@@ -11,6 +11,10 @@ import {
 } from '@server/job/schedule';
 import { disconnectAllAnilistLinks } from '@server/lib/anilist';
 import { mapAnilistMediaList } from '@server/lib/anilist/discover';
+import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import cacheManager, {
   getMemoryCacheStats,
   type AvailableCacheIds,
@@ -596,15 +600,15 @@ internalRoutes.get('/metadata/tv/:kind/:tvId', async (req, res) => {
 
 // ---- Rust /discover routes ----
 
-// confirmOrRepair(item, options) for each item, together as the routes do.
+// confirmOrRepair(item, options) for each item, a few at a time as the routes do.
 // `null` stands for "the id is fine" (undefined).
 internalRoutes.post('/mapping/confirm', async (req, res, next) => {
   try {
     const { items, options } = req.body ?? {};
-    const results = await Promise.all(
-      (items ?? []).map((item: Parameters<typeof confirmOrRepair>[0]) =>
-        confirmOrRepair(item, options ?? {})
-      )
+    const results = await mapWithConcurrency(
+      (items ?? []) as Parameters<typeof confirmOrRepair>[0][],
+      PROVIDER_ROW_CONCURRENCY,
+      (item) => confirmOrRepair(item, options ?? {})
     );
     res.status(200).json(results.map((r) => r ?? null));
   } catch (e) {
