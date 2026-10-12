@@ -292,25 +292,77 @@ async fn map_media(ctx: &Ready<'_>, media: Vec<Value>) -> Result<Vec<Value>, Str
     let mut out = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     for chunk in media.chunks(100) {
-        for item in anilist_media_list(ctx, chunk.to_vec()).await? {
-            let anilist_key = format!("anilist:{}", jsval::string_of(item.get("anilistId")));
-            if !seen.insert(anilist_key) {
-                continue;
-            }
-            if has_discover_tmdb_id(item.get("tmdbId")) {
-                let tmdb_key = format!(
-                    "{}:{}",
-                    jsval::string_of(item.get("mediaType")),
-                    jsval::string_of(item.get("tmdbId"))
-                );
-                if !seen.insert(tmdb_key) {
-                    continue;
-                }
-            }
-            out.push(item);
-        }
+        append_unique(
+            &mut out,
+            &mut seen,
+            anilist_media_list(ctx, chunk.to_vec()).await?,
+        );
     }
     Ok(out)
+}
+
+/// `appendUnique`: mapped entries in order, without a repeat of an
+/// `AniList` id or of a TMDB id.
+fn append_unique(out: &mut Vec<Value>, seen: &mut HashSet<String>, items: Vec<Value>) {
+    for item in items {
+        let anilist_key = format!("anilist:{}", jsval::string_of(item.get("anilistId")));
+        if !seen.insert(anilist_key) {
+            continue;
+        }
+        if has_discover_tmdb_id(item.get("tmdbId")) {
+            let tmdb_key = format!(
+                "{}:{}",
+                jsval::string_of(item.get("mediaType")),
+                jsval::string_of(item.get("tmdbId"))
+            );
+            if !seen.insert(tmdb_key) {
+                continue;
+            }
+        }
+        out.push(item);
+    }
+}
+
+/// `ANILIST_LIST_PAGE_SIZE`.
+const LIST_PAGE_SIZE: i64 = 20;
+
+/// `mapAnilistMediaPage(media, page)`: the page `mapAnilistMediaList`
+/// over the whole list and then `paginateItems` would give, mapping only
+/// the entries up to the end of that page and one more (for `hasMore`), in
+/// order, a batch at a time. A batch is never larger than the tiles still
+/// missing (an entry yields at most one) nor than a hundred media.
+async fn map_media_page<F, Fut>(
+    media: Vec<Value>,
+    page: i64,
+    mut map_batch: F,
+) -> Result<(Vec<Value>, bool, i64), String>
+where
+    F: FnMut(Vec<Value>) -> Fut,
+    Fut: Future<Output = Result<Vec<Value>, String>>,
+{
+    let page = page.max(1);
+    let start = (page - 1).saturating_mul(LIST_PAGE_SIZE);
+    let wanted = usize::try_from(start.saturating_add(LIST_PAGE_SIZE + 1)).unwrap_or(usize::MAX);
+    let mut mapped = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut next = 0;
+    while mapped.len() < wanted && next < media.len() {
+        let take = (wanted - mapped.len()).min(100).min(media.len() - next);
+        let batch = media.get(next..next + take).unwrap_or_default().to_vec();
+        next += take;
+        append_unique(&mut mapped, &mut seen, map_batch(batch).await?);
+    }
+    let has_more = start + LIST_PAGE_SIZE < super::params::count(mapped.len());
+    let range = super::params::slice_range(mapped.len(), start, start + LIST_PAGE_SIZE);
+    Ok((
+        mapped
+            .into_iter()
+            .skip(range.start)
+            .take(range.len())
+            .collect(),
+        has_more,
+        page,
+    ))
 }
 
 /// `toWatchlistItems(items)`.
@@ -537,23 +589,6 @@ fn collect_media(lists: &[Value], matcher: &Matcher<'_>) -> Result<Vec<Value>, S
     Ok(media)
 }
 
-/// `paginateItems(items, page)`.
-fn paginate(items: Vec<Value>, page: i64) -> (Vec<Value>, bool, i64) {
-    let page = page.max(1);
-    let start = (page - 1).saturating_mul(20);
-    let has_more = start + 20 < super::params::count(items.len());
-    let range = super::params::slice_range(items.len(), start, start + 20);
-    (
-        items
-            .into_iter()
-            .skip(range.start)
-            .take(range.len())
-            .collect(),
-        has_more,
-        page,
-    )
-}
-
 fn watching<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move { user_list(ctx, &status_matcher("CURRENT", "watching")).await })
 }
@@ -603,11 +638,12 @@ async fn linked_list(
         Err(e) => return anilist_error(ctx, e, LIST_FAILED, false),
     };
     let media = try_forward!(collect_media(&lists, matcher));
-    let mapped = match map_media(ctx, media).await {
-        Ok(m) => m,
+    // Only the requested page is mapped, not the whole list.
+    let paged = map_media_page(media, page, |batch| anilist_media_list(ctx, batch)).await;
+    let (slice, has_more, page) = match paged {
+        Ok(paged) => paged,
         Err(why) => return fallback_error(ctx, LIST_FAILED, &why),
     };
-    let (slice, has_more, page) = paginate(mapped, page);
     match anilist_results(
         ctx,
         slice,
@@ -725,11 +761,11 @@ async fn public_list(
             .map_or(Ok(true), |wanted| matches_list_name(name, status, wanted))
     };
     let media = try_forward!(collect_media(&lists, &matcher));
-    let mapped = match map_media(ctx, media).await {
-        Ok(m) => m,
+    let paged = map_media_page(media, page, |batch| anilist_media_list(ctx, batch)).await;
+    let (slice, has_more, page) = match paged {
+        Ok(paged) => paged,
         Err(why) => return fallback_error(ctx, LIST_FAILED, &why),
     };
-    let (slice, has_more, page) = paginate(mapped, page);
     let title = list_name.as_ref().map_or_else(
         || format!("{user_name}'s Anime List"),
         |l| format!("{l} · {user_name}"),
@@ -782,6 +818,60 @@ mod tests {
         );
     }
 
+    /// What mapping the whole list and then paging gave: entries divisible
+    /// by 7 drop out, every fifth shares a TMDB show with the one before.
+    fn fake_map(seen: &std::sync::Mutex<Vec<i64>>, batch: &[Value]) -> Vec<Value> {
+        batch
+            .iter()
+            .filter_map(|m| {
+                let id = m.get("id").and_then(Value::as_i64).unwrap_or_default();
+                crate::sync::lock(seen).push(id);
+                let tmdb = if id % 5 == 0 { 999 + id } else { 1000 + id };
+                (id % 7 != 0).then(|| json!({"anilistId": id, "tmdbId": tmdb, "mediaType": "tv"}))
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn pages_like_the_whole_list() {
+        let media: Vec<Value> = (1..=95).map(|id| json!({"id": id})).collect();
+        let none = std::sync::Mutex::new(Vec::new());
+        let mut all = Vec::new();
+        append_unique(&mut all, &mut HashSet::new(), fake_map(&none, &media));
+        for page in [0, 1, 2, 3, 4, 5, 6] {
+            let got = map_media_page(media.clone(), page, |batch| {
+                let out = fake_map(&none, &batch);
+                async move { Ok(out) }
+            })
+            .await;
+            let start = usize::try_from((page.max(1) - 1) * 20).unwrap_or_default();
+            let want: Vec<Value> = all.iter().skip(start).take(20).cloned().collect();
+            assert_eq!(
+                got,
+                Ok((want, start + 20 < all.len(), page.max(1))),
+                "page {page}"
+            );
+        }
+        let mapped = std::sync::Mutex::new(Vec::new());
+        let first = map_media_page(media, 1, |batch| {
+            let out = fake_map(&mapped, &batch);
+            async move { Ok(out) }
+        })
+        .await;
+        assert_eq!(
+            first.map(|(tiles, more, _)| (tiles.len(), more)),
+            Ok((20, true)),
+            "first page"
+        );
+        let mapped = crate::sync::lock(&mapped).clone();
+        assert!(mapped.len() < 30, "mapped {} of 95", mapped.len());
+        assert_eq!(
+            mapped,
+            (1..=crate::routes::params::count(mapped.len())).collect::<Vec<_>>(),
+            "a prefix, once each"
+        );
+    }
+
     #[test]
     fn list_matching() {
         let watching = status_matcher("CURRENT", "watching");
@@ -825,7 +915,6 @@ mod tests {
             json!({"name": "Watching", "status": "CURRENT", "isCustomList": false, "itemCount": 2}),
             "summary"
         );
-        assert!(paginate(vec![json!(1); 21], 0).1, "page one has more");
         assert!(!token_expired(Some(&json!("0"))), "zero never expires");
         assert!(token_expired(Some(&json!(1))), "the past");
     }
