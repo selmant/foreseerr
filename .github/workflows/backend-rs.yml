@@ -1,0 +1,56 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Rust backend
+
+on:
+  pull_request:
+    paths:
+      - 'backend-rs/**'
+      # Compiled or read in from outside the crate.
+      - 'package.json'
+      - 'seerr-api.yml'
+      - 'server/i18n/locale/**'
+      - '.github/workflows/backend-rs.yml'
+  push:
+    branches:
+      - develop
+    paths:
+      - 'backend-rs/**'
+      # Compiled or read in from outside the crate.
+      - 'package.json'
+      - 'seerr-api.yml'
+      - 'server/i18n/locale/**'
+      - '.github/workflows/backend-rs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Format, lint and test
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend-rs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked

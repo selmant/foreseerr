@@ -1,0 +1,5 @@
+# Pinned so lint results only change when this file does.
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

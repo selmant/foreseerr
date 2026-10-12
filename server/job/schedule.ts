@@ -179,6 +179,10 @@ export const startJobs = (): void => {
   if (scheduledJobs.length > 0) {
     return;
   }
+  if (process.env.FORESEERR_RUST_JOBS === '1') {
+    logger.info('Jobs are scheduled by the Rust backend', { label: 'Jobs' });
+    return;
+  }
   const jobs = getSettings().jobs;
   const mediaServerType = getSettings().main.mediaServerType;
 
@@ -450,6 +454,7 @@ export const startJobs = (): void => {
 /** Queue one coalesced desktop catch-up pass after the UI has settled. */
 export const startDesktopCatchUp = (): void => {
   if (!isDesktopRuntime()) return;
+  if (process.env.FORESEERR_RUST_JOBS === '1') return;
   if (desktopCatchUpTimer) return;
   desktopCatchUpTimer = setTimeout(() => {
     desktopCatchUpTimer = undefined;

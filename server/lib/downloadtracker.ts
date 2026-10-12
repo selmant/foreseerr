@@ -55,6 +55,18 @@ class DownloadTracker {
     );
   }
 
+  /**
+   * Everything tracked right now, per server id. Read by the Rust backend
+   * over the internal route so it can serialise `downloadStatus` exactly as
+   * this process would.
+   */
+  public snapshot(): {
+    radarr: Record<number, DownloadingItem[]>;
+    sonarr: Record<number, DownloadingItem[]>;
+  } {
+    return { radarr: this.radarrServers, sonarr: this.sonarrServers };
+  }
+
   public async resetDownloadTracker() {
     this.radarrServers = {};
     this.sonarrServers = {};

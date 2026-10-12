@@ -1,0 +1,3 @@
+# Notification agents and route handlers mirror long Node functions
+# statement for statement; splitting them obscures the correspondence.
+too-many-lines-threshold = 200

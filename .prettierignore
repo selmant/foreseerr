@@ -20,3 +20,6 @@ public/*
 
 # Prettier breaks GitHub alert syntax in markdown
 *.md
+
+# Served byte-for-byte by the Rust backend (swagger-ui-express's generated page)
+backend-rs/src/standalone/apidocs.html
