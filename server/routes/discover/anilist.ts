@@ -7,11 +7,11 @@ import {
   mapWithConcurrency,
 } from '@server/lib/concurrency';
 import {
-  collectUserListItems,
+  collectUserListMedia,
   listUserAniListLists,
   mapAnilistMediaList,
+  mapAnilistMediaPage,
   matchesListName,
-  paginateItems,
   parseAnilistListUrl,
   toWatchlistItems,
 } from '@server/lib/anilist/discover';
@@ -151,14 +151,15 @@ async function userList(
   req: Request,
   res: Response,
   next: (err?: unknown) => void,
-  matcher: Parameters<typeof collectUserListItems>[2]
+  matcher: Parameters<typeof collectUserListMedia>[2]
 ) {
   try {
     if (!req.user?.id) return next({ status: 401, message: 'Unauthorized' });
     const page = req.query.page ? Number(req.query.page) : 1;
     const { client, anilistUserId } = await getAnilistUserContext(req.user.id);
-    const paged = paginateItems(
-      await collectUserListItems(client, anilistUserId, matcher),
+    // Only the requested page is mapped, not the whole list.
+    const paged = await mapAnilistMediaPage(
+      await collectUserListMedia(client, anilistUserId, matcher),
       page
     );
     return res.status(200).json({
@@ -254,8 +255,8 @@ async function publicList(
     const page = req.query.page ? Number(req.query.page) : 1;
     const client = await createAnilistDiscoverClient(req.user?.id);
     const { listName } = owner;
-    const paged = paginateItems(
-      await collectUserListItems(client, owner.userName, (list) =>
+    const paged = await mapAnilistMediaPage(
+      await collectUserListMedia(client, owner.userName, (list) =>
         listName ? matchesListName(list, listName) : true
       ),
       page
@@ -298,8 +299,8 @@ anilistDiscoverRoutes.get('/list', async (req, res, next) => {
       return next({ status: 400, message: 'name query parameter is required' });
     const page = req.query.page ? Number(req.query.page) : 1;
     const { client, anilistUserId } = await getAnilistUserContext(req.user.id);
-    const paged = paginateItems(
-      await collectUserListItems(client, anilistUserId, (list) =>
+    const paged = await mapAnilistMediaPage(
+      await collectUserListMedia(client, anilistUserId, (list) =>
         matchesListName(list, name)
       ),
       page
