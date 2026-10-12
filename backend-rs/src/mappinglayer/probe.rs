@@ -102,6 +102,8 @@ pub struct Probe {
     pub release_date: Option<String>,
     /// `firstAirDate` (series).
     pub first_air_date: Option<String>,
+    /// `voteAverage`: TMDB's `vote_average`, when the record carries one.
+    pub vote_average: Option<serde_json::Number>,
 }
 
 fn non_empty(value: Option<&Value>) -> Option<String> {
@@ -131,11 +133,12 @@ pub async fn tmdb_record(ctx: &Ctx<'_>, media_type: &str, tmdb_id: i64) -> Resul
         return Ok(Probe::default());
     }
     let movie = media_type == "movie";
-    let record = if movie {
-        ctx.tmdb.movie(tmdb_id, &ctx.locale).await
-    } else {
-        ctx.tmdb.tv(tmdb_id, &ctx.locale).await
-    };
+    // The bare record: poster, dates and score need no appends, and a full
+    // details answer already cached is reused.
+    let record = ctx
+        .tmdb
+        .title_summary(if movie { "movie" } else { "tv" }, tmdb_id, &ctx.locale)
+        .await;
     let record = match record {
         Ok(record) => record,
         Err(e) if not_found(&e) => {
@@ -156,6 +159,10 @@ pub async fn tmdb_record(ctx: &Ctx<'_>, media_type: &str, tmdb_id: i64) -> Resul
         backdrop_path: non_empty(record.get("backdrop_path")),
         release_date: date.clone().filter(|_| movie),
         first_air_date: date.filter(|_| !movie),
+        vote_average: match record.get("vote_average") {
+            Some(Value::Number(n)) => Some(n.clone()),
+            _ => None,
+        },
     })
 }
 

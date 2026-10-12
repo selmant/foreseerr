@@ -114,6 +114,36 @@ impl TmdbClient {
         self.title("tv", id, language, TV_DETAILS_APPEND).await
     }
 
+    /// `getTitleSummary`: the bare `/movie/{id}` or `/tv/{id}` record, without
+    /// appends, for a list tile and an existence check. A full [`Self::movie`]
+    /// or [`Self::tv`] answer already cached is reused; otherwise the request
+    /// shares its cache entry (and its twelve hours) with the browse metadata
+    /// lookups.
+    ///
+    /// # Errors
+    ///
+    /// Fails when TMDB can't be reached or answers an error.
+    pub async fn title_summary(&self, kind: &str, id: i64, language: &str) -> Result<Value> {
+        let path = format!("/{kind}/{id}");
+        let append = if kind == "movie" {
+            MOVIE_DETAILS_APPEND
+        } else {
+            TV_DETAILS_APPEND
+        };
+        let full = cache_key(
+            &path,
+            &[
+                ("language", language),
+                ("append_to_response", append),
+                ("include_video_language", language),
+            ],
+        );
+        if let Some(cached) = memcache::get(CacheId::Tmdb, &full) {
+            return Ok(cached);
+        }
+        self.get(&path, &[("language", language)], HALF_DAY).await
+    }
+
     /// A title's details. For a non-English language without a trailer,
     /// English trailers are appended from a second lookup (failures of that
     /// one are ignored).
@@ -487,6 +517,13 @@ fn cache_key(path: &str, params: &[(&str, &str)]) -> String {
     format!("{BASE_URL}{path} {params:?}")
 }
 
+/// Put an answer in the `tmdb` cache as a request would, for tests that
+/// must not reach TMDB.
+#[cfg(test)]
+pub fn remember_for_tests(path: &str, params: &[(&str, &str)], value: Value) {
+    memcache::set(CacheId::Tmdb, cache_key(path, params), value, HALF_DAY);
+}
+
 /// Replace a cached answer's value, keeping its age, as a mutation of the
 /// object Node's cache hands out does.
 fn overwrite_cached(path: &str, params: &[(&str, &str)], value: Value) {
@@ -621,6 +658,43 @@ impl PathNumber for f64 {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn title_summary_reuses_cached_details() {
+        let full = json!({"id": 9_700_003, "name": "Cached", "poster_path": "/c.jpg", "vote_average": 7.1});
+        memcache::set(
+            CacheId::Tmdb,
+            cache_key(
+                "/tv/9700003",
+                &[
+                    ("language", "en"),
+                    ("append_to_response", TV_DETAILS_APPEND),
+                    ("include_video_language", "en"),
+                ],
+            ),
+            full.clone(),
+            HALF_DAY,
+        );
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        // Served from the cache: TMDB itself would answer something else.
+        let client = TmdbClient::new(reqwest::Client::new());
+        let summary = client.title_summary("tv", 9_700_003, "en").await.ok();
+        assert_eq!(summary, Some(full), "the cached full record");
+        let bare = json!({"id": 9_700_004, "title": "Bare"});
+        memcache::set(
+            CacheId::Tmdb,
+            cache_key("/movie/9700004", &[("language", "en")]),
+            bare.clone(),
+            HALF_DAY,
+        );
+        let summary = client.title_summary("movie", 9_700_004, "en").await.ok();
+        assert_eq!(summary, Some(bare), "the bare record's own entry");
+    }
 
     #[test]
     fn cache_keys_tell_requests_apart() {

@@ -293,8 +293,9 @@ pub async fn confirm_items(
         .collect()
 }
 
-/// `withTmdbPoster(item)`: the poster, backdrop and date the confirm
-/// probe already fetched, on a tile that has none.
+/// `withTmdbPoster(item)`: the poster, backdrop, date and score
+/// (`voteAverage`) the confirm probe already fetched, on a tile that has
+/// none.
 pub async fn with_tmdb_poster(ctx: &Ctx<'_>, item: Value) -> Value {
     let Value::Object(mut map) = item else {
         return item;
@@ -332,6 +333,9 @@ pub async fn with_tmdb_poster(ctx: &Ctx<'_>, item: Value) -> Value {
         if let Some(date) = record.first_air_date {
             map.insert(String::from("firstAirDate"), Value::from(date));
         }
+    }
+    if let Some(score) = record.vote_average {
+        map.insert(String::from("voteAverage"), Value::Number(score));
     }
     Value::Object(map)
 }
@@ -865,6 +869,59 @@ pub async fn map_anilist_media_list(ctx: &Ctx<'_>, media: &[Value]) -> Result<Ve
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn posters_carry_the_score() {
+        crate::tmdb::remember_for_tests(
+            "/movie/9700101",
+            &[("language", "en")],
+            json!({"id": 9_700_101, "title": "Scored", "poster_path": "/s.jpg", "backdrop_path": "/b.jpg",
+                   "release_date": "2020-01-02", "vote_average": 7.25}),
+        );
+        crate::tmdb::remember_for_tests(
+            "/tv/9700102",
+            &[("language", "en")],
+            json!({"id": 9_700_102, "name": "Unscored", "poster_path": "/u.jpg", "first_air_date": "2021-03-04"}),
+        );
+        let db = crate::db::Db::Sqlite(
+            sqlx::sqlite::SqlitePoolOptions::new()
+                .connect_lazy_with(sqlx::sqlite::SqliteConnectOptions::new().filename(":memory:")),
+        );
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let http = reqwest::Client::new();
+        let tmdb = crate::tmdb::TmdbClient::new(http.clone());
+        let ctx = Ctx {
+            db: &db,
+            tmdb: &tmdb,
+            http: &http,
+            locale: String::from("en"),
+        };
+        let movie = with_tmdb_poster(
+            &ctx,
+            json!({"id": 9_700_101, "tmdbId": 9_700_101, "mediaType": "movie", "title": "Scored"}),
+        )
+        .await;
+        assert_eq!(
+            movie.to_string(),
+            r#"{"id":9700101,"tmdbId":9700101,"mediaType":"movie","title":"Scored","posterPath":"/s.jpg","backdropPath":"/b.jpg","releaseDate":"2020-01-02","voteAverage":7.25}"#,
+            "art, date and score in Node's order"
+        );
+        let show = with_tmdb_poster(
+            &ctx,
+            json!({"id": 9_700_102, "tmdbId": 9_700_102, "mediaType": "tv", "title": "Unscored"}),
+        )
+        .await;
+        assert_eq!(
+            show.to_string(),
+            r#"{"id":9700102,"tmdbId":9700102,"mediaType":"tv","title":"Unscored","posterPath":"/u.jpg","firstAirDate":"2021-03-04"}"#,
+            "no score, no field"
+        );
+    }
 
     #[test]
     fn tmdb_ids() {
