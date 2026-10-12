@@ -79,11 +79,11 @@ pub(super) async fn enrich_results_with_ratings(
         if truthy(release) {
             let text = crate::jsval::string_of(release);
             let head = String::from_utf16_lossy(&text.encode_utf16().take(4).collect::<Vec<u16>>());
+            // A date that doesn't start with a year has none.
             let year = crate::jsval::number_of_str(&head);
-            if year.is_nan() {
-                return Err(String::from("a release date whose year is NaN"));
+            if !year.is_nan() {
+                item.insert(String::from("year"), crate::jsval::num(year));
             }
-            item.insert(String::from("year"), crate::jsval::num(year));
         }
         batch_items.push(Value::Object(item));
     }
