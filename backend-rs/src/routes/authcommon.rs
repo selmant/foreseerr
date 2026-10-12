@@ -806,6 +806,16 @@ mod tests {
             "undefined parts"
         );
         assert_eq!(
+            hostname_of(
+                None,
+                Some(&json!("h")),
+                Some(&json!("8920")),
+                Some(&json!(""))
+            ),
+            "http://h:8920",
+            "a port sent as text"
+        );
+        assert_eq!(
             combine_url("http://h:1//", "/Users/Me"),
             "http://h:1/Users/Me",
             "combine"

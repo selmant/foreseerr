@@ -199,9 +199,12 @@ fn login_body(ctx: &Ready<'_>) -> Result<LoginBody, String> {
         Some(v @ Value::Number(_)) => js_int(v),
         Some(_) => return Err(String::from("serverType is the validator's")),
     };
+    // Kept as sent (a number, or the text of the setup form's field), as
+    // Node keeps `body.port`.
     let port = match body.get("port") {
         None => None,
         Some(v @ Value::Number(n)) if n.is_i64() => Some(v.clone()),
+        Some(v @ Value::String(_)) => Some(v.clone()),
         Some(_) => return Err(String::from("an unusual port")),
     };
     let url_base = match body.get("urlBase") {
