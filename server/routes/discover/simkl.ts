@@ -19,6 +19,7 @@ import {
 } from '@server/lib/discover/unmapped';
 import { confirmTmdbId } from '@server/lib/discover/validity';
 import { recordMiss } from '@server/lib/mapping/resolutions';
+import { tmdbFind } from '@server/lib/mapping/tmdb';
 import {
   catalogCandidates,
   hydrateSimklCandidates,
@@ -85,16 +86,11 @@ export const tmdbResolvers = (tmdb: TheMovieDb): SimklTmdbResolvers => ({
   findByExternalId: async (source, externalId, mediaType) => {
     if (source === 'tvdb' && mediaType === 'movie') return [];
     try {
-      const found =
-        source === 'imdb'
-          ? await tmdb.getByExternalId({ externalId, type: 'imdb' })
-          : await tmdb.getByExternalId({
-              externalId: Number(externalId),
-              type: 'tvdb',
-            });
-      const results =
-        mediaType === 'movie' ? found.movie_results : found.tv_results;
-      return results.map((result) => result.id).filter((id) => id > 0);
+      // Through the mapping layer's `/find`, so an id TMDB does not know is
+      // remembered for hours instead of being asked again on every render.
+      const found = await tmdbFind(source, externalId, tmdb);
+      const results = mediaType === 'movie' ? found.movies : found.shows;
+      return results.filter((id) => id > 0);
     } catch {
       return [];
     }

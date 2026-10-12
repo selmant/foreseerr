@@ -545,7 +545,13 @@ export async function resolveSimklTmdbId(
       ids: preferredIds,
     });
   }
-  if (tvdb && declaredType === 'tv') {
+  // A TVDB answer can only change the outcome when the IMDB one has not
+  // already settled it: agreeing with Simkl's own id, or (without one) naming
+  // a single record. Skipping it then saves a `/find` per tile.
+  const settledByImdb = corroborating.some(({ ids }) =>
+    tmdb ? ids.includes(tmdb) : ids.length === 1
+  );
+  if (tvdb && declaredType === 'tv' && !settledByImdb) {
     corroborating.push({
       sourceKey: 'tmdb-find:tvdb',
       mediaType: 'tv',
