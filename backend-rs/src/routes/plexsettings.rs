@@ -733,7 +733,7 @@ fn plex_users<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             let Some(id) = user
                 .attr("id")
                 .filter(|id| {
-                    !id.is_empty() && id.len() < 10 && id.bytes().all(|b| b.is_ascii_digit())
+                    !id.is_empty() && id.len() <= 15 && id.bytes().all(|b| b.is_ascii_digit())
                 })
                 .and_then(|id| id.parse::<i64>().ok())
             else {

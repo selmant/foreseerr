@@ -55,10 +55,11 @@ fn shared_users(root: &Element) -> Result<Vec<Shared<'_>>, String> {
         let Some(email) = user.attr("email").filter(|e| !e.is_empty()) else {
             continue;
         };
-        let Some(raw_id) = user
-            .attr("id")
-            .filter(|id| !id.is_empty() && id.len() < 10 && id.bytes().all(|b| b.is_ascii_digit()))
-        else {
+        // Up to 15 digits, which `parseInt` reads exactly (Plex ids are
+        // about 9 now).
+        let Some(raw_id) = user.attr("id").filter(|id| {
+            !id.is_empty() && id.len() <= 15 && id.bytes().all(|b| b.is_ascii_digit())
+        }) else {
             return Err(String::from("a Plex user id parseInt may read differently"));
         };
         let (Some(username), Some(thumb)) = (user.attr("username"), user.attr("thumb")) else {
@@ -307,6 +308,22 @@ mod tests {
         let users = shared_users(&root);
         let ids: Vec<(i64, &str)> = users.iter().flatten().map(|u| (u.id, u.email)).collect();
         assert_eq!(ids, vec![(12, "A@b.c")]);
+        let long = element(
+            "MediaContainer",
+            &[],
+            vec![element(
+                "User",
+                &[
+                    ("id", "1234567890"),
+                    ("email", "a@b.c"),
+                    ("username", "a"),
+                    ("thumb", "t"),
+                ],
+                Vec::new(),
+            )],
+        );
+        let ids: Vec<i64> = shared_users(&long).iter().flatten().map(|u| u.id).collect();
+        assert_eq!(ids, vec![1_234_567_890], "a ten-digit Plex id");
     }
 
     #[test]
