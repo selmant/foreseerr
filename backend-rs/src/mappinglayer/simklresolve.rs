@@ -4,9 +4,6 @@
 //! `recordSimklGaps` and `toSimklWatchlistItems` (`routes/discover/simkl.ts`).
 //! The caller adds `annotateProviderActiveRequests`.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
-
 use serde_json::{Map, Value};
 
 use super::derive::AnimeHints;
@@ -14,8 +11,8 @@ use super::discover::{has_discover_tmdb_id, with_tmdb_posters};
 use super::resolutions::{self, Observation};
 use super::resolve::{self, Request};
 use super::{probe, Ctx, IdRef, MediaType};
+use crate::concurrency::{map_with_concurrency, PROVIDER_ROW_CONCURRENCY};
 use crate::settings::public::truthy;
-use crate::sync::lock;
 
 /// `SimklTmdbResolution`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -285,33 +282,21 @@ fn resolved_item(candidate: &Value, resolution: &Resolution) -> Map<String, Valu
     item
 }
 
-/// `resolveSimklCandidates(candidates, tmdbResolvers(tmdb))`: two at a
+/// `resolveSimklCandidates(candidates, tmdbResolvers(tmdb))`: a few at a
 /// time, in order.
 async fn resolve_candidates(ctx: &Ctx<'_>, candidates: Vec<Value>) -> Vec<Resolved> {
-    let next = AtomicUsize::new(0);
-    let results: Mutex<Vec<Option<Resolved>>> = Mutex::new(vec![None; candidates.len()]);
-    let worker = || async {
-        loop {
-            let index = next.fetch_add(1, Ordering::SeqCst);
-            let Some(candidate) = candidates.get(index) else {
-                return;
-            };
-            let resolution = resolve_one(ctx, candidate)
+    map_with_concurrency(
+        candidates,
+        PROVIDER_ROW_CONCURRENCY,
+        |candidate| async move {
+            let resolution = resolve_one(ctx, &candidate)
                 .await
                 .unwrap_or_else(|_| Resolution::unresolved());
-            let item = resolved_item(candidate, &resolution);
-            if let Some(slot) = lock(&results).get_mut(index) {
-                *slot = Some((item, resolution, candidate.clone()));
-            }
-        }
-    };
-    tokio::join!(worker(), worker());
-    results
-        .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .into_iter()
-        .flatten()
-        .collect()
+            let item = resolved_item(&candidate, &resolution);
+            (item, resolution, candidate)
+        },
+    )
+    .await
 }
 
 /// `recordSimklGaps(resolved, discoverSource)`.

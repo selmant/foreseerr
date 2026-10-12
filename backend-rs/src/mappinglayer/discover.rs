@@ -14,7 +14,7 @@ use super::derive::AnimeHints;
 use super::resolutions::{self, Observation};
 use super::resolve::{self, Request};
 use super::{probe, Ctx, IdRef, MediaType, NAMESPACES};
-use crate::jellyfin::{join_all, Job};
+use crate::concurrency::{map_with_concurrency, PROVIDER_ROW_CONCURRENCY};
 use crate::settings::public::truthy;
 
 /// `hasDiscoverTmdbId(value)`: a finite number above zero.
@@ -263,8 +263,8 @@ pub async fn confirm_or_repair(
     Ok(Some(Value::Object(out)))
 }
 
-/// `POST /internal/mapping/confirm`: `confirmOrRepair` for each item at
-/// once, `null` where the id is fine.
+/// `POST /internal/mapping/confirm`: `confirmOrRepair` for each item, a
+/// few at a time, `null` where the id is fine.
 ///
 /// # Errors
 ///
@@ -275,22 +275,16 @@ pub async fn confirm_items(
     options: Option<&Value>,
 ) -> Result<Vec<Value>> {
     let options = ConfirmOptions::of(options);
-    let jobs: Vec<Job<'_, Result<Option<Value>>>> = items
-        .iter()
-        .map(|item| {
-            let options = &options;
-            let job: Job<'_, Result<Option<Value>>> =
-                Box::pin(
-                    async move { confirm_or_repair(ctx, &Confirmable::of(item), options).await },
-                );
-            job
-        })
-        .collect();
-    join_all(jobs)
-        .await
-        .into_iter()
-        .map(|r| r.map(|v| v.unwrap_or(Value::Null)))
-        .collect()
+    let options = &options;
+    map_with_concurrency(
+        items.iter().collect(),
+        PROVIDER_ROW_CONCURRENCY,
+        |item: &Value| async move { confirm_or_repair(ctx, &Confirmable::of(item), options).await },
+    )
+    .await
+    .into_iter()
+    .map(|r| r.map(|v| v.unwrap_or(Value::Null)))
+    .collect()
 }
 
 /// `withTmdbPoster(item)`: the poster, backdrop, date and score
@@ -340,16 +334,12 @@ pub async fn with_tmdb_poster(ctx: &Ctx<'_>, item: Value) -> Value {
     Value::Object(map)
 }
 
-/// `withTmdbPosters(items)`, all at once.
+/// `withTmdbPosters(items)`, a few at a time.
 pub async fn with_tmdb_posters(ctx: &Ctx<'_>, items: Vec<Value>) -> Vec<Value> {
-    let jobs: Vec<Job<'_, Value>> = items
-        .into_iter()
-        .map(|item| {
-            let job: Job<'_, Value> = Box::pin(with_tmdb_poster(ctx, item));
-            job
-        })
-        .collect();
-    join_all(jobs).await
+    map_with_concurrency(items, PROVIDER_ROW_CONCURRENCY, |item| {
+        with_tmdb_poster(ctx, item)
+    })
+    .await
 }
 
 /// `resolveDiscoverItems(items, { discoverSource, offline })`.
@@ -363,109 +353,119 @@ pub async fn resolve_discover_items(
     discover_source: Option<String>,
     offline: bool,
 ) -> Result<Vec<Value>> {
-    let mut resolved = Vec::new();
-    for item in items {
-        let Value::Object(mut item) = item else {
-            resolved.push(item);
-            continue;
+    let source = discover_source.as_deref();
+    let resolved = map_with_concurrency(items, PROVIDER_ROW_CONCURRENCY, |item| {
+        resolve_discover_item(ctx, item, source, offline)
+    })
+    .await
+    .into_iter()
+    .collect::<Result<Vec<Value>>>()?;
+    Ok(with_tmdb_posters(ctx, resolved).await)
+}
+
+/// One item of `resolveDiscoverItems`, before its poster.
+async fn resolve_discover_item(
+    ctx: &Ctx<'_>,
+    item: Value,
+    discover_source: Option<&str>,
+    offline: bool,
+) -> Result<Value> {
+    let Value::Object(mut item) = item else {
+        return Ok(item);
+    };
+    let from = IdRef::of(item.get("from"));
+    let from_given = item.get("from").is_some_and(|f| truthy(Some(f)));
+    item.shift_remove("from");
+    if has_discover_tmdb_id(item.get("tmdbId")) {
+        let confirmed = if truthy(item.get("mediaType")) {
+            let confirmable = Confirmable {
+                tmdb_id: item.get("tmdbId").and_then(Value::as_f64),
+                media_type: item.get("mediaType").cloned().unwrap_or(Value::Null),
+                title: item.get("title").cloned().unwrap_or(Value::Null),
+                year: Value::Null,
+                refs: from.iter().cloned().collect(),
+            };
+            let options = ConfirmOptions {
+                discover_source: discover_source.map(str::to_owned),
+                offline,
+                namespace: from.clone(),
+            };
+            confirm_or_repair(ctx, &confirmable, &options).await?
+        } else {
+            None
         };
-        let from = IdRef::of(item.get("from"));
-        let from_given = item.get("from").is_some_and(|f| truthy(Some(f)));
-        item.shift_remove("from");
-        if has_discover_tmdb_id(item.get("tmdbId")) {
-            let confirmed = if truthy(item.get("mediaType")) {
-                let confirmable = Confirmable {
-                    tmdb_id: item.get("tmdbId").and_then(Value::as_f64),
-                    media_type: item.get("mediaType").cloned().unwrap_or(Value::Null),
-                    title: item.get("title").cloned().unwrap_or(Value::Null),
-                    year: Value::Null,
-                    refs: from.iter().cloned().collect(),
-                };
-                let options = ConfirmOptions {
-                    discover_source: discover_source.clone(),
-                    offline,
-                    namespace: from.clone(),
-                };
-                confirm_or_repair(ctx, &confirmable, &options).await?
-            } else {
-                None
-            };
-            let state = match confirmed {
-                Some(Value::Object(mut confirmed)) => {
-                    match confirmed.get("tmdbId").cloned() {
-                        Some(id) => {
-                            item.insert(String::from("tmdbId"), id.clone());
-                            item.insert(String::from("id"), id);
-                        }
-                        None => {
-                            item.shift_remove("tmdbId");
-                        }
+        let state = match confirmed {
+            Some(Value::Object(mut confirmed)) => {
+                match confirmed.get("tmdbId").cloned() {
+                    Some(id) => {
+                        item.insert(String::from("tmdbId"), id.clone());
+                        item.insert(String::from("id"), id);
                     }
-                    if let Some(kind) = confirmed.get("mediaType").cloned() {
-                        item.insert(String::from("mediaType"), kind);
+                    None => {
+                        item.shift_remove("tmdbId");
                     }
-                    confirmed
-                        .shift_remove("mappingState")
-                        .unwrap_or(Value::Null)
                 }
-                _ => mapping_state("mapped", None, Map::new()),
-            };
-            item.insert(String::from("mappingState"), state);
-            resolved.push(Value::Object(item));
-            continue;
-        }
-        let Some(from) = from.filter(|_| from_given) else {
+                if let Some(kind) = confirmed.get("mediaType").cloned() {
+                    item.insert(String::from("mediaType"), kind);
+                }
+                confirmed
+                    .shift_remove("mappingState")
+                    .unwrap_or(Value::Null)
+            }
+            _ => mapping_state("mapped", None, Map::new()),
+        };
+        item.insert(String::from("mappingState"), state);
+        return Ok(Value::Object(item));
+    }
+    let Some(from) = from.filter(|_| from_given) else {
+        item.insert(
+            String::from("mappingState"),
+            mapping_state("unmapped", None, Map::new()),
+        );
+        return Ok(Value::Object(item));
+    };
+    let declared = item
+        .get("mediaType")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let resolution = resolve::resolve_tmdb(
+        ctx,
+        Request {
+            refs: vec![from.clone()],
+            media_type: declared.as_deref().and_then(MediaType::parse),
+            title: text(item.get("title")),
+            discover_source: discover_source.map(str::to_owned),
+            offline,
+            ..Request::default()
+        },
+    )
+    .await?;
+    let source = source_of(Some(&from));
+    let confirmed = match &resolution {
+        Some(r) => probe::confirm_tmdb_id(ctx, r.media_type.as_str(), r.tmdb_id).await,
+        None => false,
+    };
+    match resolution.filter(|_| confirmed) {
+        Some(r) => {
+            item.insert(String::from("tmdbId"), Value::from(r.tmdb_id));
+            item.insert(String::from("id"), Value::from(r.tmdb_id));
+            item.insert(
+                String::from("mediaType"),
+                Value::from(r.media_type.as_str()),
+            );
             item.insert(
                 String::from("mappingState"),
-                mapping_state("unmapped", None, Map::new()),
+                mapping_state("mapped", Some(&r.origin), source),
             );
-            resolved.push(Value::Object(item));
-            continue;
-        };
-        let declared = item
-            .get("mediaType")
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        let resolution = resolve::resolve_tmdb(
-            ctx,
-            Request {
-                refs: vec![from.clone()],
-                media_type: declared.as_deref().and_then(MediaType::parse),
-                title: text(item.get("title")),
-                discover_source: discover_source.clone(),
-                offline,
-                ..Request::default()
-            },
-        )
-        .await?;
-        let source = source_of(Some(&from));
-        let confirmed = match &resolution {
-            Some(r) => probe::confirm_tmdb_id(ctx, r.media_type.as_str(), r.tmdb_id).await,
-            None => false,
-        };
-        match resolution.filter(|_| confirmed) {
-            Some(r) => {
-                item.insert(String::from("tmdbId"), Value::from(r.tmdb_id));
-                item.insert(String::from("id"), Value::from(r.tmdb_id));
-                item.insert(
-                    String::from("mediaType"),
-                    Value::from(r.media_type.as_str()),
-                );
-                item.insert(
-                    String::from("mappingState"),
-                    mapping_state("mapped", Some(&r.origin), source),
-                );
-            }
-            None => {
-                item.insert(
-                    String::from("mappingState"),
-                    mapping_state("unmapped", None, source),
-                );
-            }
         }
-        resolved.push(Value::Object(item));
+        None => {
+            item.insert(
+                String::from("mappingState"),
+                mapping_state("unmapped", None, source),
+            );
+        }
     }
-    Ok(with_tmdb_posters(ctx, resolved).await)
+    Ok(Value::Object(item))
 }
 
 /// `SOURCE_NAMESPACE[source]`.
@@ -578,11 +578,9 @@ pub async fn hydrate_trakt_tmdb_ids(
     items: Vec<Value>,
     discover_source: &str,
 ) -> Result<Vec<Value>> {
-    let mut out = Vec::with_capacity(items.len());
-    for item in items {
+    map_with_concurrency(items, PROVIDER_ROW_CONCURRENCY, |item| async move {
         if truthy(item.get("tmdbId")) {
-            out.push(item);
-            continue;
+            return Ok(item);
         }
         let declared = item.get("mediaType").and_then(Value::as_str);
         let resolution = resolve::resolve_tmdb(
@@ -598,18 +596,20 @@ pub async fn hydrate_trakt_tmdb_ids(
             },
         )
         .await?;
-        match (resolution, item) {
+        Ok(match (resolution, item) {
             (Some(r), Value::Object(mut map))
                 if Some(r.media_type.as_str()) == map.get("mediaType").and_then(Value::as_str)
                     && r.tmdb_id != 0 =>
             {
                 map.insert(String::from("tmdbId"), Value::from(r.tmdb_id));
-                out.push(Value::Object(map));
+                Value::Object(map)
             }
-            (_, item) => out.push(item),
-        }
-    }
-    Ok(out)
+            (_, item) => item,
+        })
+    })
+    .await
+    .into_iter()
+    .collect()
 }
 
 /// `confirmTraktTmdbIds(items, { discoverSource })`.
@@ -630,28 +630,26 @@ pub async fn confirm_trakt_tmdb_ids(
             namespace: trakt_ref(item),
         })
         .collect();
-    let jobs: Vec<Job<'_, Result<Option<Value>>>> = items
-        .iter()
-        .zip(&options)
-        .map(|(item, options)| {
-            let job: Job<'_, Result<Option<Value>>> = Box::pin(async move {
-                if !truthy(item.get("tmdbId")) {
-                    return Ok(None);
-                }
-                let confirmable = Confirmable {
-                    tmdb_id: item.get("tmdbId").and_then(Value::as_f64),
-                    media_type: item.get("mediaType").cloned().unwrap_or(Value::Null),
-                    title: item.get("title").cloned().unwrap_or(Value::Null),
-                    year: item.get("year").cloned().unwrap_or(Value::Null),
-                    refs: trakt_source_refs(item),
-                };
-                confirm_or_repair(ctx, &confirmable, options).await
-            });
-            job
-        })
-        .collect();
     let mut replacements = Vec::new();
-    for result in join_all(jobs).await {
+    let pending = map_with_concurrency(
+        items.iter().zip(&options).collect(),
+        PROVIDER_ROW_CONCURRENCY,
+        |(item, options): (&Value, &ConfirmOptions)| async move {
+            if !truthy(item.get("tmdbId")) {
+                return Ok(None);
+            }
+            let confirmable = Confirmable {
+                tmdb_id: item.get("tmdbId").and_then(Value::as_f64),
+                media_type: item.get("mediaType").cloned().unwrap_or(Value::Null),
+                title: item.get("title").cloned().unwrap_or(Value::Null),
+                year: item.get("year").cloned().unwrap_or(Value::Null),
+                refs: trakt_source_refs(item),
+            };
+            confirm_or_repair(ctx, &confirmable, options).await
+        },
+    )
+    .await;
+    for result in pending {
         replacements.push(result?);
     }
     Ok(items
@@ -837,10 +835,14 @@ async fn map_anilist_media(ctx: &Ctx<'_>, media: &Value) -> Result<Option<Map<St
 ///
 /// Fails when the mapping layer can't be loaded.
 pub async fn map_anilist_media_list(ctx: &Ctx<'_>, media: &[Value]) -> Result<Vec<Value>> {
-    let mut mapped = Vec::new();
+    let mapped = map_with_concurrency(media.iter().collect(), PROVIDER_ROW_CONCURRENCY, |entry| {
+        map_anilist_media(ctx, entry)
+    })
+    .await;
+    let mut out = Vec::new();
     let mut seen = HashSet::new();
-    for entry in media {
-        let Some(item) = map_anilist_media(ctx, entry).await? else {
+    for item in mapped {
+        let Some(item) = item? else {
             continue;
         };
         let anilist_key = format!(
@@ -860,9 +862,9 @@ pub async fn map_anilist_media_list(ctx: &Ctx<'_>, media: &[Value]) -> Result<Ve
                 continue;
             }
         }
-        mapped.push(Value::Object(item));
+        out.push(Value::Object(item));
     }
-    Ok(mapped)
+    Ok(out)
 }
 
 #[cfg(test)]

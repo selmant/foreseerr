@@ -7,6 +7,7 @@ pub mod anilist;
 pub mod arr;
 pub mod auth;
 pub mod clock;
+pub mod concurrency;
 pub mod csrf;
 pub mod db;
 pub mod dbmigrate;
