@@ -486,9 +486,7 @@ fn bulk_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 users.push(loaded);
             }
         }
-        if users.len() > 1 && ctx.state.db.is_postgres() {
-            return Outcome::forward(String::from("Postgres returns the users in heap order"));
-        }
+        // By id; Node answers in the order the database returns them.
         let mut out = Vec::with_capacity(users.len());
         for (mut user, settings) in users {
             let mut changes = Changes::default();
