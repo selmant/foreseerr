@@ -13,6 +13,8 @@ use std::time::Duration;
 
 use reqwest::header::{HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{Map, Value};
+use unicode_normalization::UnicodeNormalization;
+use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory};
 
 use crate::media::js_string;
 use crate::settings::public::truthy;
@@ -747,7 +749,7 @@ impl JellyfinClient {
         ];
         match self.get("/Items/Filters2", &params).await {
             Ok(body) => {
-                let genres = unique_sorted_genres(named(body.get("Genres"))?)?;
+                let genres = unique_sorted_genres(named(body.get("Genres"))?);
                 if !genres.is_empty() {
                     return Ok(genres);
                 }
@@ -774,7 +776,7 @@ impl JellyfinClient {
                         .collect::<Result<Vec<_>, _>>()?,
                     Some(_) => return Err(JfError::unsure("Genres that isn't a list")),
                 };
-                let genres = unique_sorted_genres(names)?;
+                let genres = unique_sorted_genres(names);
                 if !genres.is_empty() {
                     return Ok(genres);
                 }
@@ -785,7 +787,7 @@ impl JellyfinClient {
             Err(unsure @ JfError::Unsure(_)) => return Err(unsure),
         }
         match self.get("/Genres", &params).await {
-            Ok(body) => unique_sorted_genres(named(body.get("Items"))?),
+            Ok(body) => Ok(unique_sorted_genres(named(body.get("Items"))?)),
             Err(e) => {
                 if let JfError::Failed { message, .. } = &e {
                     tracing::error!(
@@ -946,32 +948,36 @@ pub fn js_trim(text: &str) -> &str {
     text.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
 }
 
-/// Primary collation weights under ICU's root order for the characters it
-/// is known for here: space, `-`, `&`, digits, then letters ignoring case.
-fn collation_key(name: &str) -> Option<Vec<u8>> {
-    name.bytes()
-        .map(|b| match b {
-            b' ' => Some(1),
-            b'-' => Some(2),
-            b'&' => Some(3),
-            b'0'..=b'9' => Some(b - b'0' + 10),
-            b'a'..=b'z' => Some(b - b'a' + 30),
-            b'A'..=b'Z' => Some(b - b'A' + 30),
-            _ => None,
+/// Primary collation weights after ICU's root order, as `(group, weight)`:
+/// whitespace, `-`, `&`, other symbols, digits, letters. Accents are
+/// dropped and case is ignored (`sensitivity: 'base'`), so `Çocuk` sorts
+/// with `cocuk`; what ICU orders by tables of its own (other scripts,
+/// symbols) goes by code point within its group.
+fn collation_key(name: &str) -> Vec<(u8, u32)> {
+    name.nfd()
+        .filter(|c| c.general_category_group() != GeneralCategoryGroup::Mark)
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            '-' => (1, 0),
+            '&' => (2, 0),
+            '0'..='9' => (4, u32::from(c)),
+            'a'..='z' => (5, u32::from(c)),
+            // Turkish dotless i sits right after i in ICU's root order.
+            '\u{131}' => (5, u32::from('i')),
+            c if c.is_whitespace() => (0, 0),
+            c if c.is_alphabetic() => (6, u32::from(c)),
+            c => (3, u32::from(c)),
         })
         .collect()
 }
 
 /// `uniqueSortedGenres`: trimmed, first spelling of each lower-cased name,
-/// sorted with `localeCompare(…, { sensitivity: 'base' })`.
-///
-/// # Errors
-///
-/// [`JfError::Unsure`] when a name has characters whose collation order
-/// isn't reproduced here.
-pub fn unique_sorted_genres(names: Vec<String>) -> Result<Vec<String>, JfError> {
+/// sorted with `localeCompare(…, { sensitivity: 'base' })` (as
+/// [`collation_key`] approximates it; ties keep their order).
+#[must_use]
+pub fn unique_sorted_genres(names: Vec<String>) -> Vec<String> {
     let mut seen: Vec<String> = Vec::new();
-    let mut unique: Vec<(Vec<u8>, String)> = Vec::new();
+    let mut unique: Vec<(Vec<(u8, u32)>, String)> = Vec::new();
     for raw in names {
         let name = js_trim(&raw);
         if name.is_empty() {
@@ -981,13 +987,11 @@ pub fn unique_sorted_genres(names: Vec<String>) -> Result<Vec<String>, JfError> 
         if seen.contains(&lower) {
             continue;
         }
-        let key = collation_key(name)
-            .ok_or_else(|| JfError::unsure("a genre name outside plain ASCII letters"))?;
         seen.push(lower);
-        unique.push((key, name.to_owned()));
+        unique.push((collation_key(name), name.to_owned()));
     }
     unique.sort_by(|a, b| a.0.cmp(&b.0));
-    Ok(unique.into_iter().map(|(_, name)| name).collect())
+    unique.into_iter().map(|(_, name)| name).collect()
 }
 
 #[cfg(test)]
@@ -1073,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn genres_unique_and_sorted() -> Result<(), JfError> {
+    fn genres_unique_and_sorted() {
         let names = [
             "drama",
             " Action ",
@@ -1088,7 +1092,7 @@ mod tests {
         .map(|s| (*s).to_owned())
         .collect();
         assert_eq!(
-            unique_sorted_genres(names)?,
+            unique_sorted_genres(names),
             vec![
                 "10s",
                 "Action",
@@ -1099,11 +1103,32 @@ mod tests {
             ],
             "deduped, base collation"
         );
-        assert!(
-            unique_sorted_genres(vec![String::from("Comédie")]).is_err(),
-            "non-ASCII goes to Node"
+        let turkish = [
+            "Suç",
+            "Aile",
+            "Çocuk",
+            "Bilim Kurgu",
+            "Belgesel",
+            "Vahşi Batı",
+            "Vahşi Batz",
+            "cocuk",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert_eq!(
+            unique_sorted_genres(turkish),
+            vec![
+                "Aile",
+                "Belgesel",
+                "Bilim Kurgu",
+                "Çocuk",
+                "cocuk",
+                "Suç",
+                "Vahşi Batı",
+                "Vahşi Batz"
+            ],
+            "accents folded, ties in order, dotless i with i"
         );
-        Ok(())
     }
 
     #[test]
