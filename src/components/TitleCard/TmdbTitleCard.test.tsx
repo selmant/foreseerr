@@ -73,6 +73,20 @@ describe('Provider row title cards', () => {
     assert.equal(markup.includes('/details.jpg'), false);
   });
 
+  it('shows the TMDB score from the row on first paint', () => {
+    const markup = render({ ...traktTile, voteAverage: 8.9 });
+
+    assert.ok(markup.includes('data-testid="rating-badges"'));
+    assert.ok(markup.includes('>89%<'));
+  });
+
+  it('leaves the TMDB score to the details load when the row has none', () => {
+    assert.equal(
+      render(traktTile).includes('data-testid="rating-badges"'),
+      false
+    );
+  });
+
   it('keeps the placeholder and lazy details load for rows without a TMDB poster', () => {
     const markup = render({ ...traktTile, posterPath: undefined });
 

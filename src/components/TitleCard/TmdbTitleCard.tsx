@@ -51,6 +51,7 @@ export interface TmdbTitleCardProps {
   posterPath?: string;
   releaseDate?: string;
   firstAirDate?: string;
+  voteAverage?: number;
   mediaInfo?: WatchlistItemMediaInfo;
 }
 
@@ -72,6 +73,7 @@ export function watchlistTitleCardProps(
   | 'posterPath'
   | 'releaseDate'
   | 'firstAirDate'
+  | 'voteAverage'
   | 'mediaInfo'
 > {
   return {
@@ -89,6 +91,7 @@ export function watchlistTitleCardProps(
     posterPath: item.posterPath,
     releaseDate: item.releaseDate,
     firstAirDate: item.firstAirDate,
+    voteAverage: item.voteAverage,
     mediaInfo: item.mediaInfo,
   };
 }
@@ -135,6 +138,7 @@ const TmdbTitleCard = ({
   posterPath,
   releaseDate,
   firstAirDate,
+  voteAverage,
   mediaInfo,
 }: TmdbTitleCardProps) => {
   const { hasPermission } = useUser();
@@ -143,7 +147,7 @@ const TmdbTitleCard = ({
   const resolvedTmdbId = hasTmdbId(tmdbId) ? tmdbId : undefined;
   const rowPosterPath = tmdbPosterPath(posterPath);
   // The row already carries everything the closed card shows; details only
-  // add the overview and TMDB score of the open card.
+  // add the overview of the open card, and the TMDB score when the row has none.
   const paintFromRow = Boolean(
     resolvedTmdbId && type && originalTitle && rowPosterPath && !libraryMode
   );
@@ -216,7 +220,7 @@ const TmdbTitleCard = ({
               : title.name
             : (originalTitle ?? '')
         }
-        userScore={title?.voteAverage}
+        userScore={title?.voteAverage ?? voteAverage}
         ratings={ratings ?? title?.ratings}
         year={
           (type === 'movie' ? releaseDate : firstAirDate) ??

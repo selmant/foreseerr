@@ -7,6 +7,19 @@ import { resetMappingState } from '@server/test/mapping';
 import http from 'node:http';
 import https from 'node:https';
 import { after, afterEach, before } from 'node:test';
+import { createElement } from 'react';
+
+// Vite turns `*.svg` imports into React components (svgr); without this, a
+// frontend render test that reaches an icon asset gets a file path as a tag.
+Bun.plugin({
+  name: 'svg-component-stub',
+  setup(build) {
+    build.onLoad({ filter: /\.svg$/ }, () => ({
+      exports: { default: () => createElement('svg', { 'aria-hidden': true }) },
+      loader: 'object',
+    }));
+  },
+});
 
 // supertest serves the app over a real loopback socket, so only external hosts
 // can be refused
