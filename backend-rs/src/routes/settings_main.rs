@@ -92,24 +92,6 @@ const MAIN_SCHEMA: &[(&str, Ty)] = &[
     ("imageCacheIdleDays", Ty::IntRange(1, 90)),
 ];
 
-/// `clampImageCacheIdleDays` for what JSON can hold; strings and objects
-/// go through `Number()`, which isn't reproduced.
-fn clamp_idle_days(value: &Value) -> Option<i64> {
-    match value {
-        Value::Null | Value::Bool(_) => Some(1),
-        Value::Number(n) => {
-            let rounded = n.as_i64().or_else(|| {
-                n.as_f64()
-                    .map(|f| (f + 0.5).floor())
-                    .filter(|f| f.abs() < 1e15)
-                    .and_then(|f| format!("{f:.0}").parse().ok())
-            })?;
-            Some(rounded.clamp(1, 90))
-        }
-        Value::String(_) | Value::Array(_) | Value::Object(_) => None,
-    }
-}
-
 /// Whether lodash `merge` of `body` into `current` is what
 /// [`lodash_merge`] does: it isn't when an object meets an array (lodash
 /// writes the keys onto the array).
@@ -149,10 +131,7 @@ fn main<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         lodash_merge(main, &body);
         if let Some(days) = main.get_mut("imageCacheIdleDays") {
-            let Some(clamped) = clamp_idle_days(days) else {
-                return Outcome::forward(String::from("imageCacheIdleDays needs Number()"));
-            };
-            *days = Value::from(clamped);
+            *days = Value::from(crate::imagecache::clamp_idle_days(Some(days)));
         }
         let mut main = main.clone();
         save_or_forward!(ctx, data);
@@ -882,15 +861,6 @@ mod tests {
         );
         let no_port = json!({"hostname": "t.local"});
         assert_eq!(no_port.as_object().and_then(tautulli_url), None, "no port");
-    }
-
-    #[test]
-    fn clamps_idle_days() {
-        assert_eq!(clamp_idle_days(&json!(7)), Some(7), "in range");
-        assert_eq!(clamp_idle_days(&json!(200)), Some(90), "max");
-        assert_eq!(clamp_idle_days(&json!(2.5)), Some(3), "rounds half up");
-        assert_eq!(clamp_idle_days(&Value::Null), Some(1), "null");
-        assert_eq!(clamp_idle_days(&json!("7")), None, "string");
     }
 
     #[test]
