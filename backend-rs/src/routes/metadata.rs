@@ -40,9 +40,9 @@ pub(super) fn safe_path_id(ctx: &Ready<'_>, depth: usize) -> Result<i64, super::
 }
 
 /// `req.locale`: the user's settings locale, else `settings.main.locale`
-/// as it is (empty included). A missing main locale makes TMDB's client
-/// fall back to its own default, which isn't reproduced.
-pub(super) fn request_locale(ctx: &Ready<'_>, user_locale: Option<&str>) -> Option<String> {
+/// as it is (empty included). Without a main locale the TMDB and TVDB
+/// clients use their default, English.
+pub(super) fn request_locale(ctx: &Ready<'_>, user_locale: Option<&str>) -> String {
     user_locale
         .filter(|l| !l.is_empty())
         .map(str::to_owned)
@@ -52,6 +52,7 @@ pub(super) fn request_locale(ctx: &Ready<'_>, user_locale: Option<&str>) -> Opti
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         })
+        .unwrap_or_else(|| String::from("en"))
 }
 
 fn genres_movie<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
@@ -73,9 +74,7 @@ fn genres<'a>(ctx: &'a Ready<'a>, kind: &'static str, failure: &'static str) -> 
             Ok(language) => language,
             Err(why) => return Outcome::forward(why),
         };
-        let Some(language) = query.or_else(|| request_locale(ctx, user.locale.as_deref())) else {
-            return Outcome::forward(String::from("no main locale; TMDB's default applies"));
-        };
+        let language = query.unwrap_or_else(|| request_locale(ctx, user.locale.as_deref()));
         match ctx.state.tmdb.genres(kind, &language).await {
             Ok(items) => ctx.json(&Value::Array(items)),
             Err(e) => failed(ctx, failure, &e),

@@ -69,9 +69,7 @@ fn catalog<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             tracing::error!("Failed to get metadata provider: {e:#}");
             return ctx.error(409, "Episode requests require the TVDB metadata provider.");
         }
-        let Some(language) = request_locale(ctx, user.locale.as_deref()) else {
-            return Outcome::forward(String::from("no main locale; the TVDB default applies"));
-        };
+        let language = request_locale(ctx, user.locale.as_deref());
         let Some(wanted) = crate::tvdb::tvdb_language(&language) else {
             return Outcome::forward(String::from("a locale named like an Object property"));
         };
