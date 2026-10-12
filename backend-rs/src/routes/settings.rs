@@ -360,19 +360,14 @@ fn masked(value: Option<&Value>) -> Value {
 }
 
 /// `GET /settings/about`: version, row counts, `TZ` and the config
-/// directory. Node prints `CONFIG_DIRECTORY` as given, so without that
-/// variable (its default is relative to Node's own files) Node answers.
+/// directory (`appDataPath()`: `CONFIG_DIRECTORY`, else `config/` under the
+/// app root).
 pub(super) fn about<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         if let Err(why) = ctx.no_query().and_then(|()| admin(ctx)) {
             return Outcome::forward(why);
         }
-        let Some(app_data) = std::env::var_os("CONFIG_DIRECTORY") else {
-            return Outcome::forward(String::from("CONFIG_DIRECTORY is unset"));
-        };
-        let Some(app_data) = app_data.to_str() else {
-            return Outcome::forward(String::from("CONFIG_DIRECTORY is not UTF-8"));
-        };
+        let app_data = ctx.state.env.config_dir.to_string_lossy();
         let (media, requests) = match ctx.state.db.media_and_request_counts().await {
             Ok(counts) => counts,
             Err(e) => return Outcome::forward(format!("counting rows failed: {e:#}")),
@@ -387,7 +382,7 @@ pub(super) fn about<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if let Ok(tz) = std::env::var("TZ") {
             out.insert(String::from("tz"), Value::from(tz));
         }
-        out.insert(String::from("appDataPath"), Value::from(app_data));
+        out.insert(String::from("appDataPath"), Value::from(app_data.as_ref()));
         ctx.json(&Value::Object(out))
     })
 }
