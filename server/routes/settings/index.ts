@@ -3,7 +3,7 @@ import type { JellyfinLibrary } from '@server/api/jellyfin';
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexAPI from '@server/api/plexapi';
 import PlexTvAPI from '@server/api/plextv';
-import SimklAPI from '@server/api/simkl';
+import SimklAPI, { SimklRequestError } from '@server/api/simkl';
 import TautulliAPI from '@server/api/tautulli';
 import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
@@ -749,6 +749,8 @@ settingsRoutes.post('/simkl', async (req, res, next) => {
       label: 'Settings',
       errorMessage: e instanceof Error ? e.message : 'unknown error',
     });
+    if (e instanceof SimklRequestError)
+      return next({ status: 400, message: e.message });
     return next({ status: 500, message: 'Unable to save Simkl settings.' });
   }
 });
