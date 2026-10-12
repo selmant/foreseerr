@@ -180,8 +180,9 @@ impl Lib<'_> {
     }
 
     /// `resolveMediaRows`: each item's media row by Jellyfin id (item or
-    /// series), else by TMDB id. Rows whose order would decide the match
-    /// go to Node.
+    /// series), else by TMDB id. Node reads the rows unordered; here they
+    /// come by id, so when rows share an id the newest one's Jellyfin id
+    /// wins (later rows overwrite) and the oldest one's TMDB id (`find`).
     async fn media_rows(&self, items: &[Item]) -> Result<HashMap<String, MediaInfo>, String> {
         let mut ids: Vec<&str> = Vec::new();
         for item in items {
@@ -217,9 +218,6 @@ impl Lib<'_> {
                     .flatten()
                     .filter(|k| !k.is_empty())
                 {
-                    if by_jellyfin.get(key).is_some_and(|m| m.id != media.id) {
-                        return Err(String::from("two media rows share a Jellyfin id"));
-                    }
                     by_jellyfin.insert(key.clone(), media.clone());
                 }
             }
@@ -272,14 +270,10 @@ impl Lib<'_> {
             .map(|row| MediaInfo::from_row(row, self.settings))
             .collect::<Result<Vec<_>, _>>()?;
         for (tmdb_id, media_type, item_id) in lookups {
-            let mut matches = related
+            if let Some(media) = related
                 .iter()
-                .filter(|m| m.tmdb_id == tmdb_id && m.media_type == media_type);
-            let first = matches.next();
-            if matches.next().is_some() {
-                return Err(String::from("two media rows share a TMDB id and type"));
-            }
-            if let Some(media) = first {
+                .find(|m| m.tmdb_id == tmdb_id && m.media_type == media_type)
+            {
                 item_media.insert(item_id.to_owned(), media.clone());
             }
         }
