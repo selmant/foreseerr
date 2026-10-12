@@ -291,20 +291,21 @@ enum Fetched {
     Failed(String),
 }
 
-/// Map a client result: a body that isn't JSON is a string to axios (no
-/// error), so that case can't be followed here and goes to Node.
-fn classify(result: anyhow::Result<Value>) -> Result<Fetched, String> {
+/// Map a client result. A body that isn't JSON (an HTML page behind a
+/// wrong URL base) is a string to axios, which Node's handler then trips
+/// over: a failure here too.
+fn classify(result: anyhow::Result<Value>) -> Fetched {
     match result {
-        Ok(value) => Ok(Fetched::Ok(json_safe(value))),
+        Ok(value) => Fetched::Ok(json_safe(value)),
         Err(e) => {
             let decode = e
                 .downcast_ref::<reqwest::Error>()
                 .is_some_and(reqwest::Error::is_decode);
-            if decode {
-                Err(String::from("an *arr answer that isn't JSON"))
+            Fetched::Failed(if decode {
+                String::from("an *arr answer that isn't JSON")
             } else {
-                Ok(Fetched::Failed(format!("{e:#}")))
-            }
+                format!("{e:#}")
+            })
         }
     }
 }
@@ -355,29 +356,25 @@ fn radarr_test<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         };
         // `.then((value) => value.urlBase).catch(() => req.body.baseUrl)`
         let url_base = match classify(client.system_status(&server, timeout).await) {
-            Err(why) => return Outcome::forward(why),
-            Ok(Fetched::Ok(Value::Null) | Fetched::Failed(_)) => server.get("baseUrl").cloned(),
-            Ok(Fetched::Ok(Value::Object(status))) => status.get("urlBase").cloned(),
-            Ok(Fetched::Ok(_)) => None,
+            Fetched::Ok(Value::Null) | Fetched::Failed(_) => server.get("baseUrl").cloned(),
+            Fetched::Ok(Value::Object(status)) => status.get("urlBase").cloned(),
+            Fetched::Ok(_) => None,
         };
         let profiles = match classify(
             client
                 .get_rolling(&server, "/qualityProfile", timeout)
                 .await,
         ) {
-            Err(why) => return Outcome::forward(why),
-            Ok(Fetched::Failed(why)) => return fail(&why),
-            Ok(Fetched::Ok(v)) => v,
+            Fetched::Failed(why) => return fail(&why),
+            Fetched::Ok(v) => v,
         };
         let folders = match classify(client.get_rolling(&server, "/rootfolder", timeout).await) {
-            Err(why) => return Outcome::forward(why),
-            Ok(Fetched::Failed(why)) => return fail(&why),
-            Ok(Fetched::Ok(v)) => v,
+            Fetched::Failed(why) => return fail(&why),
+            Fetched::Ok(v) => v,
         };
         let tags = match classify(client.tags(&server, timeout).await) {
-            Err(why) => return Outcome::forward(why),
-            Ok(Fetched::Failed(why)) => return fail(&why),
-            Ok(Fetched::Ok(v)) => v,
+            Fetched::Failed(why) => return fail(&why),
+            Fetched::Ok(v) => v,
         };
         let Some(root_folders) = root_folders(&folders) else {
             return fail("the root folders are not a list");
@@ -421,9 +418,8 @@ fn sonarr_test<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             ctx.error(500, "Failed to connect to Sonarr")
         };
         let status = match classify(client.system_status(&server, timeout).await) {
-            Err(why) => return Outcome::forward(why),
-            Ok(Fetched::Failed(why)) => return fail(&why),
-            Ok(Fetched::Ok(v)) => v,
+            Fetched::Failed(why) => return fail(&why),
+            Fetched::Ok(v) => v,
         };
         let Some(version) = status.get("version") else {
             return fail("the system status has no version");
@@ -440,14 +436,12 @@ fn sonarr_test<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
                 .get_rolling(&server, "/qualityProfile", timeout)
                 .await,
         ) {
-            Err(why) => return Outcome::forward(why),
-            Ok(Fetched::Failed(why)) => return fail(&why),
-            Ok(Fetched::Ok(v)) => v,
+            Fetched::Failed(why) => return fail(&why),
+            Fetched::Ok(v) => v,
         };
         let folders = match classify(client.get_rolling(&server, "/rootfolder", timeout).await) {
-            Err(why) => return Outcome::forward(why),
-            Ok(Fetched::Failed(why)) => return fail(&why),
-            Ok(Fetched::Ok(v)) => v,
+            Fetched::Failed(why) => return fail(&why),
+            Fetched::Ok(v) => v,
         };
         let language_profiles = if v3 {
             match classify(
@@ -455,17 +449,15 @@ fn sonarr_test<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
                     .get_rolling(&server, "/languageprofile", timeout)
                     .await,
             ) {
-                Err(why) => return Outcome::forward(why),
-                Ok(Fetched::Failed(why)) => return fail(&why),
-                Ok(Fetched::Ok(v)) => v,
+                Fetched::Failed(why) => return fail(&why),
+                Fetched::Ok(v) => v,
             }
         } else {
             Value::Null
         };
         let tags = match classify(client.tags(&server, timeout).await) {
-            Err(why) => return Outcome::forward(why),
-            Ok(Fetched::Failed(why)) => return fail(&why),
-            Ok(Fetched::Ok(v)) => v,
+            Fetched::Failed(why) => return fail(&why),
+            Fetched::Ok(v) => v,
         };
         let Some(root_folders) = root_folders(&folders) else {
             return fail("the root folders are not a list");
@@ -506,8 +498,8 @@ fn radarr_profiles<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
                 .get_rolling(server, "/qualityProfile", timeout)
                 .await,
         ) {
-            Ok(Fetched::Ok(v)) => v,
-            Ok(Fetched::Failed(why)) | Err(why) => {
+            Fetched::Ok(v) => v,
+            Fetched::Failed(why) => {
                 return Outcome::forward(format!("fetching profiles failed: {why}"));
             }
         };
