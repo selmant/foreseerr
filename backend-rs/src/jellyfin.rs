@@ -13,8 +13,6 @@ use std::time::Duration;
 
 use reqwest::header::{HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{Map, Value};
-use unicode_normalization::UnicodeNormalization;
-use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory};
 
 use crate::media::js_string;
 use crate::settings::public::truthy;
@@ -948,32 +946,11 @@ pub fn js_trim(text: &str) -> &str {
     text.trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
 }
 
-/// Primary collation weights after ICU's root order, as `(group, weight)`:
-/// whitespace, `-`, `&`, other symbols, digits, letters. Accents are
-/// dropped and case is ignored (`sensitivity: 'base'`), so `Çocuk` sorts
-/// with `cocuk`; what ICU orders by tables of its own (other scripts,
-/// symbols) goes by code point within its group.
-fn collation_key(name: &str) -> Vec<(u8, u32)> {
-    name.nfd()
-        .filter(|c| c.general_category_group() != GeneralCategoryGroup::Mark)
-        .flat_map(char::to_lowercase)
-        .map(|c| match c {
-            '-' => (1, 0),
-            '&' => (2, 0),
-            '0'..='9' => (4, u32::from(c)),
-            'a'..='z' => (5, u32::from(c)),
-            // Turkish dotless i sits right after i in ICU's root order.
-            '\u{131}' => (5, u32::from('i')),
-            c if c.is_whitespace() => (0, 0),
-            c if c.is_alphabetic() => (6, u32::from(c)),
-            c => (3, u32::from(c)),
-        })
-        .collect()
-}
-
-/// `uniqueSortedGenres`: trimmed, first spelling of each lower-cased name,
-/// sorted with `localeCompare(…, { sensitivity: 'base' })` (as
-/// [`collation_key`] approximates it; ties keep their order).
+/// `uniqueSortedGenres`: trimmed, first spelling of each lower-cased name.
+///
+/// Sorted with `localeCompare(…, { sensitivity: 'base' })` as
+/// [`crate::jsval::base_collation_key`] approximates it; ties keep their
+/// order.
 #[must_use]
 pub fn unique_sorted_genres(names: Vec<String>) -> Vec<String> {
     let mut seen: Vec<String> = Vec::new();
@@ -988,7 +965,7 @@ pub fn unique_sorted_genres(names: Vec<String>) -> Vec<String> {
             continue;
         }
         seen.push(lower);
-        unique.push((collation_key(name), name.to_owned()));
+        unique.push((crate::jsval::base_collation_key(name), name.to_owned()));
     }
     unique.sort_by(|a, b| a.0.cmp(&b.0));
     unique.into_iter().map(|(_, name)| name).collect()

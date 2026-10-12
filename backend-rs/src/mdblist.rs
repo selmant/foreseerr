@@ -588,8 +588,9 @@ impl Mdblist {
                     Failure::Status { status, .. } => {
                         ListError::Unavailable(format!("Request failed with status code {status}"))
                     }
-                    Failure::Timeout(message) => ListError::Unavailable(message),
-                    Failure::Network(message) => ListError::Forward(message),
+                    Failure::Timeout(message) | Failure::Network(message) => {
+                        ListError::Unavailable(message)
+                    }
                 })
             }
         }
@@ -877,7 +878,7 @@ fn map_list_item(item: &Value) -> Result<Option<ListItem>, ListError> {
 }
 
 /// `mapMdblistListItems`: mapped, ranked, ties by title as
-/// `localeCompare` orders them (titles only ICU can order go to Node).
+/// `localeCompare` orders them ([`jsval::locale_compare_or_base`]).
 fn map_list_items(raw: &[Value]) -> Result<Vec<ListItem>, ListError> {
     let mut mapped = Vec::with_capacity(raw.len());
     for item in raw {
@@ -886,23 +887,14 @@ fn map_list_items(raw: &[Value]) -> Result<Vec<ListItem>, ListError> {
         }
     }
     let max = 9_007_199_254_740_991.0;
-    let mut unknown = false;
     mapped.sort_by(|a, b| {
         let (ra, rb) = (a.rank.unwrap_or(max), b.rank.unwrap_or(max));
         match ra.partial_cmp(&rb) {
             Some(std::cmp::Ordering::Equal) | None => {}
             Some(order) => return order,
         }
-        jsval::locale_compare(&a.title, &b.title).unwrap_or_else(|| {
-            unknown = true;
-            std::cmp::Ordering::Equal
-        })
+        jsval::locale_compare_or_base(&a.title, &b.title)
     });
-    if unknown {
-        return Err(ListError::Forward(String::from(
-            "equal ranks with titles only ICU collation orders",
-        )));
-    }
     Ok(mapped)
 }
 
@@ -1136,6 +1128,21 @@ mod tests {
         let items = map_list_items(&raw).unwrap_or_default();
         let titles: Vec<&str> = items.iter().map(|i| i.title.as_str()).collect();
         assert_eq!(titles, vec!["7", "alpha", "Beta"], "rank then title");
+        let tied = vec![
+            json!({"rank": 1, "title": "Şahsiyet"}),
+            json!({"rank": 1, "title": "Rüya"}),
+            json!({"rank": 1, "title": "Sahne"}),
+        ];
+        let titles: Vec<String> = map_list_items(&tied)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|i| i.title)
+            .collect();
+        assert_eq!(
+            titles,
+            vec!["Rüya", "Sahne", "Şahsiyet"],
+            "accented ties still sort"
+        );
         assert_eq!(items.first().and_then(|i| i.tvdb_id), Some(9.0), "tvdb");
         assert_eq!(
             items.get(2).and_then(|i| i.media_type),

@@ -7,6 +7,8 @@
 use std::cmp::Ordering;
 
 use serde_json::Value;
+use unicode_normalization::UnicodeNormalization;
+use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory};
 
 /// JavaScript's `WhiteSpace` and `LineTerminator` characters, which
 /// `String.prototype.trim` strips.
@@ -372,6 +374,42 @@ pub fn locale_compare(a: &str, b: &str) -> Option<Ordering> {
     )
 }
 
+/// Primary collation weights after ICU's root order, as `(group, weight)`.
+///
+/// Groups: whitespace, `-`, `&`, other symbols, digits, letters. Accents
+/// are dropped and case is ignored (`sensitivity: 'base'`), so `Çocuk`
+/// sorts with `cocuk`; what ICU orders by tables of its own (other
+/// scripts, symbols) goes by code point within its group.
+#[must_use]
+pub fn base_collation_key(name: &str) -> Vec<(u8, u32)> {
+    name.nfd()
+        .filter(|c| c.general_category_group() != GeneralCategoryGroup::Mark)
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            '-' => (1, 0),
+            '&' => (2, 0),
+            '0'..='9' => (4, u32::from(c)),
+            'a'..='z' => (5, u32::from(c)),
+            // Turkish dotless i sits right after i in ICU's root order.
+            '\u{131}' => (5, u32::from('i')),
+            c if c.is_whitespace() => (0, 0),
+            c if c.is_alphabetic() => (6, u32::from(c)),
+            c => (3, u32::from(c)),
+        })
+        .collect()
+}
+
+/// [`locale_compare`], or for text it can't order, [`base_collation_key`]
+/// and then the code points: a total order that never needs ICU.
+#[must_use]
+pub fn locale_compare_or_base(a: &str, b: &str) -> Ordering {
+    locale_compare(a, b).unwrap_or_else(|| {
+        base_collation_key(a)
+            .cmp(&base_collation_key(b))
+            .then_with(|| a.cmp(b))
+    })
+}
+
 /// `Object.keys` order: array-index keys ascending first, then the rest in
 /// insertion order.
 #[must_use]
@@ -565,6 +603,21 @@ mod tests {
             "digits before letters"
         );
         assert_eq!(locale_compare("é", "e"), None, "only ICU knows");
+        assert_eq!(
+            locale_compare_or_base("Şehir", "Sahne"),
+            Ordering::Greater,
+            "accents folded"
+        );
+        assert_eq!(
+            locale_compare_or_base("é", "e"),
+            Ordering::Greater,
+            "a tie on the base letters goes by code point"
+        );
+        assert_eq!(
+            locale_compare_or_base("Ab", "ac"),
+            Ordering::Less,
+            "ICU's answer when it is known"
+        );
         assert_eq!(
             locale_compare("x.y", "x.y"),
             Some(Ordering::Equal),
