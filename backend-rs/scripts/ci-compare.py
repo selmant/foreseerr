@@ -12,7 +12,7 @@ compared: the port deliberately does not reproduce Node's error texts.
 Scenario cases compare a derived result instead (rows left after a failed
 write, ids returned by concurrent creates, a credential in an error, ...).
 
-Cases in KNOWN_GAPS are open findings from backend-rs/REVIEW.md: they are
+Cases in KNOWN_GAPS are differences not fixed yet (none at present): they are
 reported but do not fail the run, and one that starts agreeing is flagged so
 it can be removed from the list.
 
@@ -46,12 +46,7 @@ _spec.loader.exec_module(smoke)
 
 # Open findings from the review that this comparison reproduces. Remove an
 # entry once the Rust fix lands; the run says when one starts to agree.
-KNOWN_GAPS = {
-    'request edit rolls back after a failed parent update',
-    'concurrent radarr server creation',
-    'service error does not leak the api key',
-    'gzip-encoded upstream answer',
-}
+KNOWN_GAPS: set[str] = set()
 
 # Fields whose values differ between any two installs or runs.
 VOLATILE = {
