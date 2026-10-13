@@ -541,6 +541,7 @@ fn radarr_profiles<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::ops::ControlFlow;
 
     #[test]
     fn helpers() {
@@ -593,9 +594,9 @@ mod tests {
             let body = body.as_object().cloned().unwrap_or_default();
             adds.spawn(async move {
                 let added = store
-                    .mutate(|doc| match append_server(doc, Kind::Radarr, body) {
-                        Ok(server) => std::ops::ControlFlow::Continue(server),
-                        Err(_) => std::ops::ControlFlow::Break(()),
+                    .mutate(|doc| {
+                        append_server(doc, Kind::Radarr, body)
+                            .map_or(ControlFlow::Break(()), ControlFlow::Continue)
                     })
                     .await
                     .ok()?;

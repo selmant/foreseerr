@@ -694,22 +694,6 @@ impl Ready<'_> {
         Outcome::Done(res)
     }
 
-    /// Save a changed settings document (the whole merged document, as
-    /// `getSettings().save()` writes it) and have Node read it again.
-    ///
-    /// # Errors
-    ///
-    /// Fails when the file can't be written; a Node that can't be told is
-    /// only logged, as it may still be starting.
-    pub(super) async fn save_settings(&self, data: &Value) -> anyhow::Result<()> {
-        self.state
-            .settings
-            .save_from(self.settings.data(), data)
-            .await?;
-        self.reload_node_settings().await;
-        Ok(())
-    }
-
     /// [`crate::settings::SettingsStore::mutate`] from a handler: `change`
     /// runs on the latest settings under the mutation lock, and Node reads
     /// the file again once it is written.

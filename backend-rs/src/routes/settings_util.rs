@@ -2,6 +2,8 @@
 //! rely on, JavaScript string semantics, the settings document as Node
 //! holds it in memory, and Node's in-process side effects.
 
+use std::ops::ControlFlow;
+
 use anyhow::{Context, Result};
 use serde_json::{json, Map, Value};
 
@@ -170,6 +172,26 @@ pub(super) fn node_memory(ctx: &Ready<'_>) -> Value {
         }
     }
     data
+}
+
+/// One change made to the latest settings as Node holds them and saved
+/// (see [`Ready::mutate_settings`]). A reason from `change` hands the
+/// request on with nothing written, as does a failed save.
+pub(super) async fn change_settings<T>(
+    ctx: &Ready<'_>,
+    change: impl FnOnce(&mut Value) -> Result<T, String>,
+) -> Result<T, super::Fallback> {
+    let flow = ctx
+        .mutate_settings(|doc| match change(doc) {
+            Ok(out) => ControlFlow::Continue(out),
+            Err(why) => ControlFlow::Break(why),
+        })
+        .await;
+    match flow {
+        Ok(ControlFlow::Continue(out)) => Ok(out),
+        Ok(ControlFlow::Break(why)) => Err(why.into()),
+        Err(e) => Err(format!("saving settings failed: {e:#}").into()),
+    }
 }
 
 /// `mergeSettings(current, incoming)` as a setter runs it: objects merge

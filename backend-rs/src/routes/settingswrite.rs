@@ -79,7 +79,6 @@ fn network<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         {
             return Outcome::forward(why);
         }
-        let mut data = ctx.settings.data().clone();
         // `merge(settings.network, undefined)` changes nothing.
         let empty = Value::Object(serde_json::Map::new());
         let body = if super::settings_util::body_undefined(ctx) {
@@ -90,18 +89,21 @@ fn network<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some(body) = body.filter(|b| b.is_object()) else {
             return Outcome::forward(String::from("a body that isn't an object"));
         };
-        let Some(network) = data.get_mut("network") else {
-            return Outcome::forward(String::from("no network settings"));
-        };
-        if !same_shape(network, body) {
-            return Outcome::forward(String::from("keys or types the validator may reject"));
+        let saved = super::settings_util::change_settings(ctx, |doc| {
+            let Some(network) = doc.get_mut("network") else {
+                return Err(String::from("no network settings"));
+            };
+            if !same_shape(network, body) {
+                return Err(String::from("keys or types the validator may reject"));
+            }
+            lodash_merge(network, body);
+            Ok(network.clone())
+        })
+        .await;
+        match saved {
+            Ok(network) => ctx.json(&network),
+            Err(why) => Outcome::forward(why),
         }
-        lodash_merge(network, body);
-        let network = network.clone();
-        if let Err(e) = ctx.save_settings(&data).await {
-            return Outcome::forward(format!("saving settings failed: {e:#}"));
-        }
-        ctx.json(&network)
     })
 }
 
