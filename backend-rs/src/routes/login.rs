@@ -70,10 +70,8 @@ pub(super) fn local<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if !hash.starts_with("$2") {
             return Outcome::forward(String::from("a password hash that isn't bcrypt"));
         }
-        let (password, hash_owned) = (crate::typeorm::bun_password(password), hash.to_owned());
-        let matched =
-            tokio::task::spawn_blocking(move || bcrypt::verify(password, &hash_owned)).await;
-        let Ok(Ok(matched)) = matched else {
+        let matched = crate::typeorm::verify_password(password, hash.to_owned()).await;
+        let Ok(matched) = matched else {
             return Outcome::forward(String::from("the stored hash couldn't be checked"));
         };
         if !matched {

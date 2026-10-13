@@ -753,9 +753,8 @@ pub(super) fn js_length(text: &str) -> usize {
 
 /// `Bun.password.hash(password, { algorithm: 'bcrypt', cost: 12 })`.
 pub(super) async fn hash_password(password: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || bcrypt::hash(crate::typeorm::bun_password(&password), 12))
+    crate::typeorm::hash_password(password)
         .await
-        .map_err(|e| format!("hashing: {e}"))?
         .map_err(|e| format!("hashing: {e}"))
 }
 

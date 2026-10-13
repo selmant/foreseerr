@@ -429,9 +429,20 @@ pub fn nanoid16() -> String {
 ///
 /// Fails when hashing fails.
 pub async fn hash_password(password: String) -> Result<String> {
-    tokio::task::spawn_blocking(move || bcrypt::hash(bun_password(&password), 12))
-        .await
-        .map_err(|e| anyhow!("the hashing task failed: {e}"))?
+    crate::cpu::run(move || bcrypt::hash(bun_password(&password), 12))
+        .await?
+        .map_err(|e| anyhow!("bcrypt: {e}"))
+}
+
+/// `Bun.password.verify(password, hash)` for a bcrypt hash.
+///
+/// # Errors
+///
+/// Fails when the hash can't be checked.
+pub async fn verify_password(password: &str, hash: String) -> Result<bool> {
+    let password = bun_password(password);
+    crate::cpu::run(move || bcrypt::verify(password, &hash))
+        .await?
         .map_err(|e| anyhow!("bcrypt: {e}"))
 }
 
