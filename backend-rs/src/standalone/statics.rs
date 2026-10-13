@@ -277,16 +277,83 @@ async fn send_file(
     if parts.method == Method::HEAD {
         return Sent::Response(res);
     }
-    let Ok(bytes) = tokio::fs::read(file).await else {
+    let Ok(body) = FileRange::open(file, start, len).await else {
         return Sent::Failed(500);
     };
-    let from = usize::try_from(start).unwrap_or(usize::MAX);
-    let to = usize::try_from(start + len).unwrap_or(usize::MAX);
-    let Some(slice) = bytes.get(from..to) else {
-        return Sent::Failed(500);
-    };
-    *res.body_mut() = Body::from(slice.to_vec());
+    *res.body_mut() = Body::new(body);
     Sent::Response(res)
+}
+
+/// How much of a file one body frame carries.
+const CHUNK: usize = 64 * 1024;
+
+/// `len` bytes of a file from `start`, read a chunk at a time the way
+/// send's `fs.createReadStream({ start, end })` streams them.
+struct FileRange {
+    file: tokio::fs::File,
+    remaining: u64,
+    buf: Box<[u8]>,
+}
+
+impl FileRange {
+    async fn open(path: &Path, start: u64, len: u64) -> std::io::Result<Self> {
+        use tokio::io::AsyncSeekExt as _;
+        let mut file = tokio::fs::File::open(path).await?;
+        if start > 0 {
+            file.seek(std::io::SeekFrom::Start(start)).await?;
+        }
+        let chunk = usize::try_from(len).map_or(CHUNK, |l| l.clamp(1, CHUNK));
+        Ok(Self {
+            file,
+            remaining: len,
+            buf: vec![0; chunk].into_boxed_slice(),
+        })
+    }
+}
+
+impl axum::body::HttpBody for FileRange {
+    type Data = axum::body::Bytes;
+    type Error = std::io::Error;
+
+    fn poll_frame(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
+        use std::task::Poll;
+        let this = self.get_mut();
+        if this.remaining == 0 {
+            return Poll::Ready(None);
+        }
+        let want =
+            usize::try_from(this.remaining).map_or(this.buf.len(), |r| r.min(this.buf.len()));
+        let Some(window) = this.buf.get_mut(..want) else {
+            return Poll::Ready(None);
+        };
+        let mut read = tokio::io::ReadBuf::new(window);
+        match tokio::io::AsyncRead::poll_read(std::pin::Pin::new(&mut this.file), cx, &mut read) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(Ok(())) => {
+                let filled = read.filled();
+                if filled.is_empty() {
+                    // The file shrank under the advertised length.
+                    this.remaining = 0;
+                    return Poll::Ready(Some(Err(std::io::ErrorKind::UnexpectedEof.into())));
+                }
+                this.remaining -= u64::try_from(filled.len()).unwrap_or(this.remaining);
+                let data = axum::body::Bytes::copy_from_slice(filled);
+                Poll::Ready(Some(Ok(hyper::body::Frame::data(data))))
+            }
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.remaining == 0
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        hyper::body::SizeHint::with_exact(self.remaining)
+    }
 }
 
 fn validators(
@@ -634,6 +701,99 @@ mod tests {
             !fresh(&req, "W/\"1-2\"", "Sun, 11 Oct 2026 14:37:22 GMT"),
             "modified"
         );
+    }
+
+    async fn send(
+        file: &Path,
+        method: Method,
+        range: Option<&str>,
+    ) -> (StatusCode, HeaderMap, Vec<u8>) {
+        use http_body_util::BodyExt as _;
+        let mut req = axum::http::Request::builder().method(method).uri("/f.bin");
+        if let Some(range) = range {
+            req = req.header(header::RANGE, range);
+        }
+        let Ok(req) = req.body(()) else {
+            return (StatusCode::IM_A_TEAPOT, HeaderMap::new(), Vec::new());
+        };
+        let (parts, ()) = req.into_parts();
+        let Ok(meta) = std::fs::metadata(file) else {
+            return (StatusCode::IM_A_TEAPOT, HeaderMap::new(), Vec::new());
+        };
+        let Sent::Response(res) = send_file(file, &meta, &parts, None).await else {
+            return (StatusCode::IM_A_TEAPOT, HeaderMap::new(), Vec::new());
+        };
+        let (head, body) = res.into_parts();
+        let bytes = body
+            .collect()
+            .await
+            .map(|c| c.to_bytes().to_vec())
+            .unwrap_or_default();
+        (head.status, head.headers, bytes)
+    }
+
+    #[tokio::test]
+    async fn streams_whole_files_and_ranges() {
+        let dir = std::env::temp_dir().join(format!(
+            "foreseerr-statics-{}-{}",
+            std::process::id(),
+            crate::clock::now_millis()
+        ));
+        std::fs::create_dir_all(&dir).ok();
+        let file = dir.join("f.bin");
+        // Several chunks plus a ragged tail.
+        let data: Vec<u8> = (0..(CHUNK * 3 + 17))
+            .map(|i| u8::try_from(i % 251).unwrap_or(0))
+            .collect();
+        std::fs::write(&file, &data).ok();
+
+        let (status, headers, body) = send(&file, Method::GET, None).await;
+        assert_eq!(status, StatusCode::OK, "whole file");
+        assert_eq!(body, data, "every byte");
+        assert_eq!(
+            headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|v| v.to_str().ok()),
+            Some(data.len().to_string().as_str()),
+            "length"
+        );
+
+        let from = CHUNK - 3;
+        let to = CHUNK * 2 + 5;
+        let (status, headers, body) =
+            send(&file, Method::GET, Some(&format!("bytes={from}-{to}"))).await;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT, "range");
+        assert_eq!(
+            body.as_slice(),
+            data.get(from..=to).unwrap_or_default(),
+            "range bytes"
+        );
+        assert_eq!(
+            headers
+                .get(header::CONTENT_RANGE)
+                .and_then(|v| v.to_str().ok()),
+            Some(format!("bytes {from}-{to}/{}", data.len()).as_str()),
+            "content range"
+        );
+
+        let (status, _, body) = send(&file, Method::GET, Some("bytes=0-0")).await;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT, "one byte");
+        assert_eq!(body, vec![0], "first byte");
+
+        let (status, _, body) = send(&file, Method::GET, Some("bytes=-4")).await;
+        assert_eq!(status, StatusCode::PARTIAL_CONTENT, "suffix");
+        assert_eq!(
+            body.as_slice(),
+            data.get(data.len() - 4..).unwrap_or_default(),
+            "tail"
+        );
+
+        let (status, headers, body) = send(&file, Method::HEAD, None).await;
+        assert_eq!(status, StatusCode::OK, "head");
+        assert!(body.is_empty(), "no head body");
+        assert!(headers.contains_key(header::CONTENT_LENGTH), "head length");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
