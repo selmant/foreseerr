@@ -23,7 +23,7 @@ http-body-util = "0.1"
 lettre = { version = "0.11.23", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls-native-certs", "ring", "builder", "hostname"] }
 hyper = { version = "1", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "service", "tokio"] }
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "deflate", "brotli"] }
 ring = { version = "0.17", default-features = false, features = ["alloc"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde = { version = "1", features = ["derive"] }
