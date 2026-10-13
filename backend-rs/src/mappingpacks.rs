@@ -3,7 +3,7 @@
 //! with its last-good copy (`download.ts`).
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
@@ -588,7 +588,20 @@ pub struct FetchPack<'a> {
     pub cache: Option<(Option<String>, Option<String>)>,
     /// The config directory.
     pub config_dir: &'a Path,
+    /// The largest body accepted (`MAX_PACK_BYTES`).
+    pub max_bytes: u64,
 }
+
+/// The largest dataset download accepted.
+///
+/// Node has no limit. The packs are about 9 MB (anibridge) and 7.5 MB
+/// (fribb), and the retired animeapi pack was 33 MB, so this leaves room
+/// to grow while bounding what one refresh can write to disk and parse.
+pub const MAX_PACK_BYTES: u64 = 64 * 1024 * 1024;
+
+/// The check a download must pass before it is published. It runs on the
+/// CPU pool, so it is shared rather than borrowed.
+pub type Validate = Arc<dyn Fn(&str) -> Result<ParsedDataset> + Send + Sync>;
 
 /// `axios.get(mirror, { timeout: 60000, maxRedirects: 5 })`'s client.
 ///
@@ -650,13 +663,81 @@ fn content_length(response: &reqwest::Response) -> Option<f64> {
     (n.is_finite() && n > 0.0).then_some(n)
 }
 
+/// Stream a response body to `file`, hashing it on the way.
+///
+/// # Errors
+///
+/// Fails on a transport or write error, or once more than `limit` bytes
+/// have arrived.
+async fn stream_to_file(
+    response: &mut reqwest::Response,
+    file: &Path,
+    limit: u64,
+    mut progress: impl FnMut(u64),
+) -> Result<Sha256> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut out = tokio::fs::File::create(file).await?;
+    let mut hasher = Sha256::new();
+    let mut received: u64 = 0;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| anyhow!(crate::outbound::describe(&e)))?
+    {
+        received = received.saturating_add(u64::try_from(chunk.len()).unwrap_or(u64::MAX));
+        if received > limit {
+            anyhow::bail!("{}", too_large(limit));
+        }
+        hasher.update(&chunk);
+        out.write_all(&chunk).await?;
+        progress(received);
+    }
+    out.flush().await?;
+    Ok(hasher)
+}
+
+fn too_large(limit: u64) -> String {
+    format!("mapping dataset is larger than the {limit}-byte limit")
+}
+
+/// Read a downloaded file and validate it on the CPU pool: the text, what
+/// validation parsed and the SHA-256 of the text.
+async fn check_download(
+    temporary: &Path,
+    hasher: Sha256,
+    validate: &Validate,
+) -> Result<(String, ParsedDataset, String)> {
+    let temporary = temporary.to_owned();
+    let validate = Arc::clone(validate);
+    crate::cpu::run(move || {
+        let data = std::fs::read(&temporary)?;
+        if data.is_empty() {
+            anyhow::bail!("empty response body");
+        }
+        // The streamed hash is of the bytes; Node hashes the decoded text,
+        // which only differs when the bytes aren't UTF-8.
+        let (body, sha256) = match String::from_utf8(data) {
+            Ok(body) => (body, hex(&hasher.finalize())),
+            Err(e) => {
+                let body = String::from_utf8_lossy(e.as_bytes()).into_owned();
+                let sha256 = hex(&Sha256::digest(body.as_bytes()));
+                (body, sha256)
+            }
+        };
+        let parsed = validate(&body)?;
+        Ok((body, parsed, sha256))
+    })
+    .await?
+}
+
 /// One mirror: download to a temporary file, validate, publish.
 async fn try_mirror(
     client: &reqwest::Client,
     pack: &FetchPack<'_>,
     mirror: &str,
     temporary: &Path,
-    validate: &(dyn Fn(&str) -> Result<ParsedDataset> + Sync),
+    validate: &Validate,
 ) -> Result<Fetched> {
     let target = pack_path(pack.config_dir, pack.key);
     let mut request = client.get(mirror);
@@ -693,6 +774,10 @@ async fn try_mirror(
         anyhow::bail!("Request failed with status code {status}");
     }
     let total = content_length(&response);
+    if total.is_some_and(|t| t > jsnum::from_i64(i64::try_from(pack.max_bytes).unwrap_or(i64::MAX)))
+    {
+        anyhow::bail!("{}", too_large(pack.max_bytes));
+    }
     let header = |name: reqwest::header::HeaderName| {
         response
             .headers()
@@ -702,28 +787,17 @@ async fn try_mirror(
     };
     let etag = header(reqwest::header::ETAG);
     let last_modified = header(reqwest::header::LAST_MODIFIED);
-    let mut data: Vec<u8> = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| anyhow!(crate::outbound::describe(&e)))?
-    {
-        data.extend_from_slice(&chunk);
-        let received = jsnum::from_i64(i64::try_from(data.len()).unwrap_or(i64::MAX));
+    let hasher = stream_to_file(&mut response, temporary, pack.max_bytes, |received| {
+        let received = jsnum::from_i64(i64::try_from(received).unwrap_or(i64::MAX));
         report_download_bytes(pack.key, received, total, mirror);
-    }
-    tokio::fs::write(temporary, &data).await?;
-    let body = String::from_utf8_lossy(&data).into_owned();
-    drop(data);
-    if body.is_empty() {
-        anyhow::bail!("empty response body");
-    }
-    let parsed = validate(&body)?;
+    })
+    .await?;
+    drop(response);
+    let (body, parsed, sha256) = check_download(temporary, hasher, validate).await?;
     if let Some(previous) = read_if_present(&target).await.filter(|p| !p.is_empty()) {
         tokio::fs::write(last_good_path(pack.config_dir, pack.key), previous).await?;
     }
     tokio::fs::rename(temporary, &target).await?;
-    let sha256 = hex(&Sha256::digest(body.as_bytes()));
     Ok(Fetched {
         status: FetchStatus::Downloaded,
         body: Some(body),
@@ -735,6 +809,16 @@ async fn try_mirror(
     })
 }
 
+/// `validate` on a copy already on disk, on the CPU pool; the text comes
+/// back with what it parsed to.
+async fn check_copy(body: String, validate: &Validate) -> Option<(String, ParsedDataset)> {
+    let validate = Arc::clone(validate);
+    crate::cpu::run(move || validate(&body).ok().map(|parsed| (body, parsed)))
+        .await
+        .ok()
+        .flatten()
+}
+
 /// `fetchPack`: each mirror in turn, then the copies on disk.
 ///
 /// # Errors
@@ -744,7 +828,7 @@ async fn try_mirror(
 pub async fn fetch_pack(
     client: &reqwest::Client,
     pack: &FetchPack<'_>,
-    validate: &(dyn Fn(&str) -> Result<ParsedDataset> + Sync),
+    validate: &Validate,
 ) -> Result<Fetched> {
     tokio::fs::create_dir_all(pack_directory(pack.config_dir)).await?;
     let target = pack_path(pack.config_dir, pack.key);
@@ -774,7 +858,7 @@ pub async fn fetch_pack(
         let Some(body) = read_if_present(&candidate).await.filter(|b| !b.is_empty()) else {
             continue;
         };
-        if let Ok(parsed) = validate(&body) {
+        if let Some((body, parsed)) = check_copy(body, validate).await {
             tracing::warn!(
                 label = "Mapping",
                 pack = pack.key,
@@ -1040,6 +1124,149 @@ mod tests {
             Some("Downloading mapping dataset fribb: 1.0 MB / 1.0 MB (100%)"),
             "completion"
         );
+    }
+
+    /// Answer every request on a local port with `head` and then `body`, in
+    /// 16 KiB writes.
+    async fn serve(head: String, body: Vec<u8>) -> Result<String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}/pack.json", listener.local_addr()?);
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut request = Vec::new();
+                let mut buf = [0_u8; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match socket.read(&mut buf).await {
+                        Ok(n) if n > 0 => request.extend_from_slice(buf.get(..n).unwrap_or(&[])),
+                        _ => break,
+                    }
+                }
+                if socket.write_all(head.as_bytes()).await.is_err() {
+                    continue;
+                }
+                for chunk in body.chunks(16 * 1024) {
+                    if socket.write_all(chunk).await.is_err() {
+                        break;
+                    }
+                }
+                if let Err(e) = socket.shutdown().await {
+                    tracing::trace!("{e}");
+                }
+            }
+        });
+        Ok(url)
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "foreseerr-mappingpacks-{name}-{}-{}",
+            std::process::id(),
+            random_hex()
+        ))
+    }
+
+    fn client() -> Result<reqwest::Client> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        Ok(reqwest::Client::builder().build()?)
+    }
+
+    fn anibridge() -> Validate {
+        Arc::new(parse_anibridge)
+    }
+
+    /// Leftover temporary files in the pack directory.
+    fn temporaries(config_dir: &Path) -> usize {
+        std::fs::read_dir(pack_directory(config_dir)).map_or(0, |entries| {
+            entries
+                .filter_map(std::result::Result::ok)
+                .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+                .count()
+        })
+    }
+
+    #[tokio::test]
+    async fn streamed_download_hashes_the_whole_body() -> Result<()> {
+        let graph: Map<String, Value> = (1..=5000)
+            .map(|i| (format!("anilist:{i}"), json!({ format!("mal:{i}"): {} })))
+            .collect();
+        let body = Value::Object(graph).to_string().into_bytes();
+        assert!(body.len() > 64 * 1024, "spans several chunks");
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nETag: \"v1\"\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let url = serve(head, body.clone()).await?;
+        let config_dir = scratch("stream");
+        let mirrors = [url];
+        let pack = FetchPack {
+            key: "test-stream",
+            mirrors: &mirrors,
+            cache: None,
+            config_dir: &config_dir,
+            max_bytes: MAX_PACK_BYTES,
+        };
+        let fetched = fetch_pack(&client()?, &pack, &anibridge()).await?;
+        let on_disk = std::fs::read(pack_path(&config_dir, "test-stream"))?;
+        std::fs::remove_dir_all(&config_dir).ok();
+        assert_eq!(fetched.status, FetchStatus::Downloaded, "downloaded");
+        assert_eq!(
+            fetched.sha256,
+            Some(hex(&Sha256::digest(&body))),
+            "hash of the whole body"
+        );
+        assert_eq!(on_disk, body, "published as received");
+        assert_eq!(fetched.etag.as_deref(), Some("\"v1\""), "etag");
+        assert_eq!(
+            fetched.parsed.map(|p| p.edges.len()),
+            Some(5000),
+            "validated"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn oversized_downloads_are_rejected() -> Result<()> {
+        let body = vec![b' '; 256 * 1024];
+        // Announced up front, and only found out while streaming.
+        let announced = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let unannounced = String::from("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+        for head in [announced, unannounced] {
+            let url = serve(head, body.clone()).await?;
+            let config_dir = scratch("oversized");
+            let mirrors = [url];
+            let pack = FetchPack {
+                key: "test-oversized",
+                mirrors: &mirrors,
+                cache: None,
+                config_dir: &config_dir,
+                max_bytes: 64 * 1024,
+            };
+            let error = fetch_pack(&client()?, &pack, &anibridge())
+                .await
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_default();
+            let left = temporaries(&config_dir);
+            let published = pack_path(&config_dir, "test-oversized").exists();
+            std::fs::remove_dir_all(&config_dir).ok();
+            assert!(
+                error.contains("larger than the 65536-byte limit"),
+                "rejected: {error}"
+            );
+            assert_eq!(left, 0, "temporary file removed");
+            assert!(!published, "nothing published");
+        }
+        Ok(())
     }
 
     #[test]
