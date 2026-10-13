@@ -6,7 +6,6 @@ use std::pin::Pin;
 use serde_json::{Map, Value};
 
 use super::{Outcome, Ready};
-use crate::clock::Utc;
 use crate::db::QuotaWindow;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
@@ -81,15 +80,8 @@ pub(super) fn quota<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         let movie_limit = if can_bypass { Some(0) } else { movie_limit };
         let tv_limit = if can_bypass { Some(0) } else { tv_limit };
-        let now = Utc::now();
-        let window = |days: Option<i64>| {
-            days.filter(|d| *d != 0).map(|d| QuotaWindow {
-                // `setDate(getDate() - days)` in the server's local time; a DST
-                // change inside the window shifts Node's boundary by an hour,
-                // which this doesn't reproduce.
-                start: Utc::from_unix_millis(unix_millis(now) - d * 86_400_000),
-            })
-        };
+        let now = crate::clock::now_millis();
+        let window = |days: Option<i64>| QuotaWindow::days_before(now, days);
         let movie_used = if movie_limit.unwrap_or(0) != 0 {
             match ctx
                 .state
@@ -169,41 +161,9 @@ const fn viewer_bypasses(permissions: i64) -> bool {
     permissions & 2 != 0 || permissions & MANAGE_USERS != 0
 }
 
-fn unix_millis(t: Utc) -> i64 {
-    // Round-trips through the same civil algorithm; cheap enough here.
-    let days = days_from_civil(t.year, t.month, t.day);
-    days * 86_400_000
-        + i64::from(t.hour) * 3_600_000
-        + i64::from(t.minute) * 60_000
-        + i64::from(t.second) * 1000
-        + i64::from(t.millis)
-}
-
-fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = y.div_euclid(400);
-    let yoe = y.rem_euclid(400);
-    let m = i64::from(month);
-    let mp = if m > 2 { m - 3 } else { m + 9 };
-    let doy = (153 * mp + 2) / 5 + i64::from(day) - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn civil_round_trip() {
-        for ms in [0, 951_782_400_000, 1_791_661_865_758, -86_400_000] {
-            assert_eq!(
-                unix_millis(Utc::from_unix_millis(ms)),
-                ms,
-                "{ms} round-trips"
-            );
-        }
-    }
 
     #[test]
     fn quota_shape() {

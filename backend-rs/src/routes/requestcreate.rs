@@ -244,11 +244,7 @@ pub(super) async fn quotas(ctx: &Ready<'_>, rel: &UserRel) -> Result<(Quota, Quo
     let u = &rel.0;
     let bypass = has_any(u.permissions, MANAGE_USERS);
     let now = crate::clock::now_millis();
-    let window = |days: Option<i64>| {
-        days.filter(|d| *d != 0).map(|d| QuotaWindow {
-            start: crate::clock::Utc::from_unix_millis(now - d * 86_400_000),
-        })
-    };
+    let window = |days: Option<i64>| QuotaWindow::days_before(now, days);
     let pick = |own: Option<i64>, path: &str| -> Result<Option<i64>, String> {
         own.map_or_else(|| default_quota(ctx, path), |v| Ok(Some(v)))
     };

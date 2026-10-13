@@ -39,7 +39,7 @@ Node, so they can be recorded and replayed too.
 | `GET /api/v1/watchproviders/movies`, `.../tv` | a credential is present and `watchRegion` is the only parameter |
 | `GET /api/v1/user/{id}/settings/{main,password,notifications,discover}` | the user themselves or a `MANAGE_USERS` holder; `discover` only when the settings row exists (Node creates it otherwise) |
 | `GET /api/v1/user/{id}/settings/permissions` | a `MANAGE_USERS` holder                                  |
-| `GET /api/v1/user/{id}/quota`      | the user themselves or a `MANAGE_USERS` + `MANAGE_REQUESTS` holder; the window boundary is `now - days` in UTC where Node uses the server's local calendar, so a DST change inside the window shifts Node's boundary by an hour |
+| `GET /api/v1/user/{id}/quota`      | the user themselves or a `MANAGE_USERS` + `MANAGE_REQUESTS` holder |
 | `GET /api/v1/settings/{main,network,plex,jellyfin,tautulli,radarr,sonarr,metadatas,servarr-interventions,trakt,simkl,anilist,mdblist}` | an admin is signed in |
 | `GET /api/v1/settings/notifications/{discord,slack,telegram,pushbullet,pushover,email,webpush,webhook,gotify,ntfy}` | an admin is signed in |
 | `GET /api/v1/overrideRule`         | an admin is signed in and there is no query string               |
