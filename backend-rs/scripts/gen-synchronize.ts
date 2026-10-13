@@ -104,7 +104,7 @@ writeFileSync(
 );
 writeFileSync(
   join(out, 'synchronize_reference.json'),
-  JSON.stringify({ schema }, undefined, 1) + '\n'
+  JSON.stringify({ schema }, undefined, 2) + '\n'
 );
 console.log(`${statements.length} statements, ${schema.length} schema rows`);
 process.exit(0);
