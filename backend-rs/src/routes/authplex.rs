@@ -4,6 +4,8 @@
 //! to Plex; otherwise it signs in users with access to the configured
 //! server, creating them when `newPlexLogin` allows.
 
+use std::ops::ControlFlow;
+
 use axum::http::Method;
 use serde_json::Value;
 
@@ -160,13 +162,21 @@ fn unable(ctx: &Ready<'_>, why: &str) -> super::Outcome {
 
 /// No users yet: settings switch to Plex, then the admin is created.
 async fn first_user(ctx: &Ready<'_>, account: &Account) -> Step {
-    let mut data = ctx.settings.data().clone();
-    let Some(main) = data.get_mut("main").and_then(Value::as_object_mut) else {
-        return Err(String::from("settings.main isn't an object").into());
-    };
-    main.insert(String::from("mediaServerType"), Value::from(PLEX));
-    if let Err(e) = ctx.save_settings(&data).await {
-        return Ok(unable(ctx, &format!("{e:#}")));
+    let saved = ctx
+        .mutate_settings(|doc| {
+            let Some(main) = doc.get_mut("main").and_then(Value::as_object_mut) else {
+                return ControlFlow::Break(());
+            };
+            main.insert(String::from("mediaServerType"), Value::from(PLEX));
+            ControlFlow::Continue(())
+        })
+        .await;
+    match saved {
+        Ok(ControlFlow::Continue(())) => {}
+        Ok(ControlFlow::Break(())) => {
+            return Err(String::from("settings.main isn't an object").into());
+        }
+        Err(e) => return Ok(unable(ctx, &format!("{e:#}"))),
     }
     let new_user = NewUser {
         email: Some(account.email.clone()),

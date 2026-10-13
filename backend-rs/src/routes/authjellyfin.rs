@@ -2,6 +2,8 @@
 //! `POST /auth/jellyfin/plugin`, the three Quick Connect routes, and the
 //! Jellyfin device cleanup `POST /auth/logout` does.
 
+use std::ops::ControlFlow;
+
 use axum::http::Method;
 use serde_json::{Map, Value};
 
@@ -527,38 +529,41 @@ impl Flow<'_, '_> {
         let server_name = server_name(self.server)
             .await
             .map_err(|e| caught(ctx, Some(e), "reading the server name failed"))?;
-        let mut data = ctx.settings.data().clone();
         let body = self.body;
-        let shape = || {
-            caught(
-                ctx,
-                None,
-                "settings.main or settings.jellyfin isn't an object",
-            )
-        };
-        let main = data
-            .get_mut("main")
-            .and_then(Value::as_object_mut)
-            .ok_or_else(shape)?;
-        assign(main, "mediaServerType", Some(Value::from(server_type)));
-        let jf = data
-            .get_mut("jellyfin")
-            .and_then(Value::as_object_mut)
-            .ok_or_else(shape)?;
-        assign(jf, "name", server_name);
-        assign(jf, "serverId", account.server_id.clone());
-        let hostname = body.hostname.clone().unwrap_or_default();
-        assign(jf, "ip", Some(Value::from(hostname)));
-        let port = body.port.clone().unwrap_or_else(|| Value::from(8096));
-        assign(jf, "port", Some(port));
-        let url_base = body.url_base.clone().unwrap_or_else(|| Value::from(""));
-        assign(jf, "urlBase", Some(url_base));
-        let use_ssl = body.use_ssl.clone().unwrap_or(Value::Bool(false));
-        assign(jf, "useSsl", Some(use_ssl));
-        assign(jf, "apiKey", api_key);
-        ctx.save_settings(&data)
-            .await
-            .map_err(|e| caught(ctx, None, &format!("{e:#}")))?;
+        let saved = ctx
+            .mutate_settings(|doc| {
+                let Some(main) = doc.get_mut("main").and_then(Value::as_object_mut) else {
+                    return ControlFlow::Break(());
+                };
+                assign(main, "mediaServerType", Some(Value::from(server_type)));
+                let Some(jf) = doc.get_mut("jellyfin").and_then(Value::as_object_mut) else {
+                    return ControlFlow::Break(());
+                };
+                assign(jf, "name", server_name);
+                assign(jf, "serverId", account.server_id.clone());
+                let hostname = body.hostname.clone().unwrap_or_default();
+                assign(jf, "ip", Some(Value::from(hostname)));
+                let port = body.port.clone().unwrap_or_else(|| Value::from(8096));
+                assign(jf, "port", Some(port));
+                let url_base = body.url_base.clone().unwrap_or_else(|| Value::from(""));
+                assign(jf, "urlBase", Some(url_base));
+                let use_ssl = body.use_ssl.clone().unwrap_or(Value::Bool(false));
+                assign(jf, "useSsl", Some(use_ssl));
+                assign(jf, "apiKey", api_key);
+                ControlFlow::Continue(())
+            })
+            .await;
+        match saved {
+            Ok(ControlFlow::Continue(())) => {}
+            Ok(ControlFlow::Break(())) => {
+                return Err(caught(
+                    ctx,
+                    None,
+                    "settings.main or settings.jellyfin isn't an object",
+                ));
+            }
+            Err(e) => return Err(caught(ctx, None, &format!("{e:#}"))),
+        }
         start_jobs(ctx).await;
         Ok(())
     }

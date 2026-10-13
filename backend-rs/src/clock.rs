@@ -87,6 +87,84 @@ impl Utc {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{FixedOffset, MappedLocalTime, NaiveDate, NaiveDateTime};
+
+    /// Central European time: +01:00, +02:00 from the last Sunday of March
+    /// 01:00 UTC to the last Sunday of October 01:00 UTC (2026 only).
+    #[derive(Debug, Clone, Copy)]
+    struct Cet;
+
+    fn ms(text: &str) -> i64 {
+        parse_date_millis(text).unwrap_or_default()
+    }
+
+    fn cet_offset(seconds: i32) -> FixedOffset {
+        FixedOffset::east_opt(seconds).unwrap_or_else(|| chrono::Offset::fix(&chrono::Utc))
+    }
+
+    impl chrono::TimeZone for Cet {
+        type Offset = FixedOffset;
+
+        fn from_offset(_: &FixedOffset) -> Self {
+            Self
+        }
+
+        fn offset_from_local_date(&self, _: &NaiveDate) -> MappedLocalTime<FixedOffset> {
+            MappedLocalTime::None
+        }
+
+        fn offset_from_local_datetime(&self, _: &NaiveDateTime) -> MappedLocalTime<FixedOffset> {
+            MappedLocalTime::None
+        }
+
+        fn offset_from_utc_date(&self, _: &NaiveDate) -> FixedOffset {
+            cet_offset(3600)
+        }
+
+        fn offset_from_utc_datetime(&self, utc: &NaiveDateTime) -> FixedOffset {
+            let t = utc.and_utc().timestamp_millis();
+            let summer = (ms("2026-03-29T01:00:00Z")..ms("2026-10-25T01:00:00Z")).contains(&t);
+            cet_offset(if summer { 7200 } else { 3600 })
+        }
+    }
+
+    #[test]
+    fn local_calendar_days() {
+        // Node and Bun with TZ=Europe/Berlin give the same moments.
+        let before = |now: &str, days| {
+            Utc::from_unix_millis(local_days_before(&Cet, ms(now), days)).iso_string()
+        };
+        assert_eq!(
+            before("2026-03-30T10:00:00.000Z", 7),
+            "2026-03-23T11:00:00.000Z",
+            "a week with a 23-hour day"
+        );
+        assert_eq!(
+            before("2026-10-26T10:00:00.000Z", 7),
+            "2026-10-19T09:00:00.000Z",
+            "a week with a 25-hour day"
+        );
+        assert_eq!(
+            before("2026-03-30T00:30:00.000Z", 1),
+            "2026-03-29T01:30:00.000Z",
+            "02:30 was skipped: read at +01:00"
+        );
+        assert_eq!(
+            before("2026-10-26T01:30:00.000Z", 1),
+            "2026-10-25T00:30:00.000Z",
+            "02:30 happened twice: the first"
+        );
+        assert_eq!(
+            before("2026-06-15T12:00:00.000Z", 30),
+            "2026-05-16T12:00:00.000Z",
+            "no change in between"
+        );
+        assert_eq!(
+            before("2026-03-23T11:00:00.000Z", -7),
+            "2026-03-30T10:00:00.000Z",
+            "negative days go forward"
+        );
+    }
 
     #[test]
     fn formats_known_moments() {
@@ -187,4 +265,47 @@ mod date_tests {
             "round trip"
         );
     }
+}
+
+/// `date.setDate(date.getDate() - days)` on a `Date` at `now` in `tz`.
+///
+/// The result (Unix milliseconds) shows the same wall-clock time `days`
+/// calendar days earlier, so a daylight-saving change in between makes the
+/// span an hour longer or shorter than `days` times 24 hours.
+#[must_use]
+pub fn local_days_before<Tz: chrono::TimeZone>(tz: &Tz, now: i64, days: i64) -> i64 {
+    let fixed = || now.saturating_sub(days.saturating_mul(86_400_000));
+    let Some(at) = chrono::DateTime::from_timestamp_millis(now) else {
+        return fixed();
+    };
+    let wall = tz.from_utc_datetime(&at.naive_utc()).naive_local();
+    let step = chrono::Days::new(days.unsigned_abs());
+    let shifted = if days >= 0 {
+        wall.checked_sub_days(step)
+    } else {
+        wall.checked_add_days(step)
+    };
+    shifted.map_or_else(fixed, |wall| from_local_wall(tz, wall))
+}
+
+/// `UTC(t)`: the moment the wall-clock fields `wall` show in `tz`. An
+/// ambiguous time (clocks going back) is the earlier moment; a skipped one
+/// (clocks going forward) is read with the offset in force before the
+/// change.
+fn from_local_wall<Tz: chrono::TimeZone>(tz: &Tz, wall: chrono::NaiveDateTime) -> i64 {
+    let local = wall.and_utc().timestamp_millis();
+    let offset = |utc: i64| {
+        chrono::DateTime::from_timestamp_millis(utc).map_or(0, |at| {
+            let fixed = chrono::Offset::fix(&tz.offset_from_utc_datetime(&at.naive_utc()));
+            i64::from(fixed.local_minus_utc()) * 1000
+        })
+    };
+    let before = offset(local - 86_400_000);
+    let after = offset(local + 86_400_000);
+    [before, after]
+        .into_iter()
+        .map(|o| local - o)
+        .filter(|&utc| offset(utc) == local - utc)
+        .min()
+        .unwrap_or(local - before)
 }

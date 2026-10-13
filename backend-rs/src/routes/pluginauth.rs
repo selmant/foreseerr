@@ -8,6 +8,7 @@
 //! Outside plugin mode the route answers 404 (`authjellyfin.rs`).
 
 use std::net::SocketAddr;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use axum::extract::ConnectInfo;
@@ -57,44 +58,53 @@ async fn sync_admin(
     jellyfin_user_id: &str,
     is_administrator: bool,
 ) -> anyhow::Result<i64> {
-    let settings = state.settings.current().await?;
-    // `new Set(settings.plugin.jellyfinAdmins)`.
-    let mut admins: Vec<Value> = Vec::new();
-    for id in settings
-        .get("/plugin/jellyfinAdmins")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        if !admins.contains(id) {
-            admins.push(id.clone());
-        }
-    }
-    let key = Value::from(jellyfin_user_id);
-    let had = admins.contains(&key);
-    let defaults = settings
-        .get("/main/defaultPermissions")
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let (permissions, granted) = admin_permissions(current, is_administrator, had, defaults);
-    if granted != had {
-        if granted {
-            admins.push(key);
-        } else {
-            admins.retain(|id| *id != key);
-        }
-        let mut data = settings.data().clone();
-        if let Some(root) = data.as_object_mut() {
-            let plugin = root
-                .entry(String::from("plugin"))
-                .or_insert_with(|| Value::Object(Map::new()));
-            if let Some(plugin) = plugin.as_object_mut() {
-                plugin.insert(String::from("jellyfinAdmins"), Value::Array(admins));
+    // Read, decide and save on the latest settings under the mutation
+    // lock: Node does all of it on its shared settings object at once.
+    let flow = state
+        .settings
+        .mutate(|doc| {
+            // `new Set(settings.plugin.jellyfinAdmins)`.
+            let mut admins: Vec<Value> = Vec::new();
+            for id in doc
+                .pointer("/plugin/jellyfinAdmins")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                if !admins.contains(id) {
+                    admins.push(id.clone());
+                }
             }
-        }
-        state.settings.save(&data).await?;
-    }
-    Ok(permissions)
+            let key = Value::from(jellyfin_user_id);
+            let had = admins.contains(&key);
+            let defaults = doc
+                .pointer("/main/defaultPermissions")
+                .and_then(Value::as_i64)
+                .unwrap_or(0);
+            let (permissions, granted) =
+                admin_permissions(current, is_administrator, had, defaults);
+            if granted == had {
+                return ControlFlow::Break(permissions);
+            }
+            if granted {
+                admins.push(key);
+            } else {
+                admins.retain(|id| *id != key);
+            }
+            if let Some(root) = doc.as_object_mut() {
+                let plugin = root
+                    .entry(String::from("plugin"))
+                    .or_insert_with(|| Value::Object(Map::new()));
+                if let Some(plugin) = plugin.as_object_mut() {
+                    plugin.insert(String::from("jellyfinAdmins"), Value::Array(admins));
+                }
+            }
+            ControlFlow::Continue(permissions)
+        })
+        .await?;
+    Ok(match flow {
+        ControlFlow::Break(permissions) | ControlFlow::Continue(permissions) => permissions,
+    })
 }
 
 /// `availablePluginEmail(username, jellyfinUserId)`: the lower-cased name,

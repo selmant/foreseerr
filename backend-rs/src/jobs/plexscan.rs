@@ -11,7 +11,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT, CONTENT_TYPE};
 use serde_json::Value;
 
 use super::scanbase::{
-    anime_special, anime_sync, array_of, js_truthy, save_settings, str_of, uniq_with, AnidbItem,
+    anime_special, anime_sync, array_of, js_truthy, mutate_settings, str_of, uniq_with, AnidbItem,
     Kind, Scan,
 };
 use super::scanmedia::{MovieOpts, ProcessableSeason, ShowOpts};
@@ -408,24 +408,24 @@ impl Plex<'_> {
             .bundles(&items, BUNDLE, |item| self.process_item(item))
             .await?;
         let job = self.scan.job;
-        let settings = job.current_settings().await?;
-        let mut data = settings.data().clone();
-        if let Some(all) = data
-            .pointer_mut("/plex/libraries")
-            .and_then(Value::as_array_mut)
-        {
-            for lib in all.iter_mut() {
-                if lib.get("id") == library.get("id") {
-                    if let Some(obj) = lib.as_object_mut() {
-                        obj.insert(
-                            String::from("lastScan"),
-                            Value::from(crate::clock::now_millis()),
-                        );
+        mutate_settings(job, |doc| {
+            if let Some(all) = doc
+                .pointer_mut("/plex/libraries")
+                .and_then(Value::as_array_mut)
+            {
+                for lib in all.iter_mut() {
+                    if lib.get("id") == library.get("id") {
+                        if let Some(obj) = lib.as_object_mut() {
+                            obj.insert(
+                                String::from("lastScan"),
+                                Value::from(crate::clock::now_millis()),
+                            );
+                        }
                     }
                 }
             }
-        }
-        save_settings(job, &data).await
+        })
+        .await
     }
 
     /// `paginateLibrary(library)`.

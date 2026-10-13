@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use serde_json::{json, Map, Value};
 
-use super::Ready;
+use super::{Outcome, Ready};
 
 /// What a body property must be for the `OpenAPI` validator to let it
 /// through (as far as these routes go).
@@ -170,6 +170,20 @@ pub(super) fn node_memory(ctx: &Ready<'_>) -> Value {
         }
     }
     data
+}
+
+/// One change made to the latest settings as Node holds them and saved
+/// (see [`Ready::mutate_settings`]). A reason from `change` hands the
+/// request on with nothing written; a failed save is answered here, as it
+/// may have written part of the file.
+pub(super) async fn change_settings<T>(
+    ctx: &Ready<'_>,
+    change: impl FnOnce(&mut Value) -> Result<T, String>,
+) -> Result<T, Outcome> {
+    super::nodestate::mutate(ctx, |doc| {
+        change(doc).map_err(|why| Box::new(Outcome::forward(why)))
+    })
+    .await
 }
 
 /// `mergeSettings(current, incoming)` as a setter runs it: objects merge

@@ -13,7 +13,7 @@ use base64::prelude::*;
 use serde_json::{json, Map, Value};
 
 use super::settings_util::{
-    assign_merged, body_undefined, conforms, js_integer, json_body, no_body, node_memory, Ty,
+    assign_merged, body_undefined, change_settings, conforms, js_integer, json_body, no_body, Ty,
 };
 use super::settingswrite::lodash_merge;
 use super::{Outcome, Ready, Table, ADMIN};
@@ -57,20 +57,20 @@ macro_rules! try_forward {
     };
 }
 
+/// A settings change ([`change_settings`]): the `Err` is the answer.
+macro_rules! try_saved {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(outcome) => return outcome,
+        }
+    };
+}
+
 /// `no_query` and the admin check.
 fn admin(ctx: &Ready<'_>) -> Result<(), super::Fallback> {
     ctx.no_query()?;
     ctx.authenticated(ADMIN).map(|_| ())
-}
-
-/// Save, or a logged 500: a failed save may have written part of the
-/// file, so the request is never handed on.
-macro_rules! save_or_fail {
-    ($ctx:expr, $data:expr) => {
-        if let Err(outcome) = super::nodestate::save($ctx, &$data).await {
-            return outcome;
-        }
-    };
 }
 
 /// `MainSettings` in the spec.
@@ -123,19 +123,22 @@ fn main<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return Outcome::forward(String::from("a body the validator may reject"));
         }
         let body = js_numbers(body.clone());
-        let mut data = node_memory(ctx);
-        let Some(main) = data.get_mut("main") else {
-            return Outcome::forward(String::from("no main settings"));
-        };
-        if !merges_plainly(main, &body) {
-            return Outcome::forward(String::from("lodash would merge an object into an array"));
-        }
-        lodash_merge(main, &body);
-        if let Some(days) = main.get_mut("imageCacheIdleDays") {
-            *days = Value::from(crate::imagecache::clamp_idle_days(Some(days)));
-        }
-        let mut main = main.clone();
-        save_or_fail!(ctx, data);
+        let mut main = try_saved!(
+            change_settings(ctx, |doc| {
+                let Some(main) = doc.get_mut("main") else {
+                    return Err(String::from("no main settings"));
+                };
+                if !merges_plainly(main, &body) {
+                    return Err(String::from("lodash would merge an object into an array"));
+                }
+                lodash_merge(main, &body);
+                if let Some(days) = main.get_mut("imageCacheIdleDays") {
+                    *days = Value::from(crate::imagecache::clamp_idle_days(Some(days)));
+                }
+                Ok(main.clone())
+            })
+            .await
+        );
         crate::runtime::desktop::effective_main(&mut main);
         ctx.json(&main)
     })
@@ -181,13 +184,16 @@ fn regenerate<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         try_forward!(admin(ctx));
         try_forward!(no_body(ctx));
-        let mut data = node_memory(ctx);
-        let Some(main) = data.get_mut("main").and_then(Value::as_object_mut) else {
-            return Outcome::forward(String::from("main is not an object"));
-        };
-        main.insert(String::from("apiKey"), Value::from(generate_api_key()));
-        let main = Value::Object(main.clone());
-        save_or_fail!(ctx, data);
+        let main = try_saved!(
+            change_settings(ctx, |doc| {
+                let Some(main) = doc.get_mut("main").and_then(Value::as_object_mut) else {
+                    return Err(String::from("main is not an object"));
+                };
+                main.insert(String::from("apiKey"), Value::from(generate_api_key()));
+                Ok(Value::Object(main.clone()))
+            })
+            .await
+        );
         ctx.json(&main)
     })
 }
@@ -197,13 +203,16 @@ fn initialize<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         try_forward!(admin(ctx));
         try_forward!(no_body(ctx));
-        let mut data = node_memory(ctx);
-        let Some(public) = data.get_mut("public").and_then(Value::as_object_mut) else {
-            return Outcome::forward(String::from("public is not an object"));
-        };
-        public.insert(String::from("initialized"), Value::Bool(true));
-        let public = Value::Object(public.clone());
-        save_or_fail!(ctx, data);
+        let public = try_saved!(
+            change_settings(ctx, |doc| {
+                let Some(public) = doc.get_mut("public").and_then(Value::as_object_mut) else {
+                    return Err(String::from("public is not an object"));
+                };
+                public.insert(String::from("initialized"), Value::Bool(true));
+                Ok(Value::Object(public.clone()))
+            })
+            .await
+        );
         ctx.json(&public)
     })
 }
@@ -293,9 +302,13 @@ fn metadata<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
         }
         out.insert(String::from("tests"), tests);
-        let mut data = node_memory(ctx);
-        assign_merged(&mut data, "metadataSettings", Value::Object(incoming));
-        save_or_fail!(ctx, data);
+        try_saved!(
+            change_settings(ctx, |doc| {
+                assign_merged(doc, "metadataSettings", Value::Object(incoming));
+                Ok(())
+            })
+            .await
+        );
         ctx.json(&Value::Object(out))
     })
 }
@@ -471,24 +484,37 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Value::Object(body) = js_numbers(body.clone()) else {
             return Outcome::forward(String::from("a body that isn't an object"));
         };
-        let mut data = node_memory(ctx);
-        let Some(current) = data.get_mut("tautulli").and_then(Value::as_object_mut) else {
+        let Some(mut current) = ctx
+            .settings
+            .get("/tautulli")
+            .and_then(Value::as_object)
+            .cloned()
+        else {
             return Outcome::forward(String::from("tautulli is not an object"));
         };
         let before = current.clone();
-        for (k, v) in body {
-            current.insert(k, v);
-        }
+        let assign = |t: &mut Map<String, Value>| {
+            for (k, v) in &body {
+                t.insert(k.clone(), v.clone());
+            }
+        };
+        assign(&mut current);
         // Node's in-memory copy only differs from the file when the body
         // changed something.
-        let unchanged = *current == before;
+        let unchanged = current == before;
         // `Object.assign(settings.tautulli, req.body)` lands in Node's
         // shared settings before anything else; requests in between see it.
         if !unchanged && crate::standalone::enabled() {
-            let base = node_memory(ctx);
-            let assigned =
-                crate::settings::delta::with_key(&base, "tautulli", Value::Object(current.clone()));
-            if let Err(e) = ctx.state.settings.keep_unsaved_from(&base, &assigned).await {
+            let kept = ctx
+                .state
+                .settings
+                .mutate_unsaved(|doc| {
+                    if let Some(t) = doc.get_mut("tautulli").and_then(Value::as_object_mut) {
+                        assign(t);
+                    }
+                })
+                .await;
+            if let Err(e) = kept {
                 return Outcome::forward(format!("reading the settings failed: {e:#}"));
             }
         }
@@ -499,15 +525,14 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
             return ctx.json(&answer);
         }
-        let url = match tautulli_url(current) {
+        let url = match tautulli_url(&current) {
             Some(url) => Some(url),
             // `new URL` throws on the port, so axios never sends anything.
-            None if port_breaks_url(current) => None,
+            None if port_breaks_url(&current) => None,
             None => {
                 return Outcome::forward(String::from("a Tautulli URL axios would build oddly"));
             }
         };
-        let current = Value::Object(current.clone());
         let passed = match url {
             Some(url) => tautulli_check(ctx, &url).await,
             None => false,
@@ -518,8 +543,17 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
             return ctx.error(500, "Unable to connect to Tautulli.");
         }
-        save_or_fail!(ctx, data);
-        ctx.json(&current)
+        let saved = try_saved!(
+            change_settings(ctx, |doc| {
+                let Some(t) = doc.get_mut("tautulli").and_then(Value::as_object_mut) else {
+                    return Err(String::from("tautulli is not an object"));
+                };
+                assign(t);
+                Ok(Value::Object(t.clone()))
+            })
+            .await
+        );
+        ctx.json(&saved)
     })
 }
 
@@ -559,17 +593,20 @@ fn servarr_interventions<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
             return Outcome::forward(String::from("a body the validator rejects"));
         };
-        let mut data = node_memory(ctx);
-        assign_merged(
-            &mut data,
-            "servarrInterventions",
-            json!({ "automaticCleanupEnabled": enabled, "cleanupGraceHours": hours }),
+        let saved = try_saved!(
+            change_settings(ctx, |doc| {
+                assign_merged(
+                    doc,
+                    "servarrInterventions",
+                    json!({ "automaticCleanupEnabled": enabled, "cleanupGraceHours": hours }),
+                );
+                Ok(doc
+                    .get("servarrInterventions")
+                    .cloned()
+                    .unwrap_or(Value::Null))
+            })
+            .await
         );
-        let saved = data
-            .get("servarrInterventions")
-            .cloned()
-            .unwrap_or(Value::Null);
-        save_or_fail!(ctx, data);
         ctx.json(&saved)
     })
 }

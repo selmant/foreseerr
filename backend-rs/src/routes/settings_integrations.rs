@@ -13,8 +13,9 @@ use axum::http::Method;
 use serde_json::{json, Map, Value};
 
 use super::settings_util::{
-    assign_merged, body_text, body_undefined, conforms, is_true, js_trim, json_body, linked,
-    masked, node_effects, node_memory, not_false, provider_enabled, set_provider, Ty,
+    assign_merged, body_text, body_undefined, change_settings, conforms, is_true, js_trim,
+    json_body, linked, masked, node_effects, node_memory, not_false, provider_enabled,
+    set_provider, Ty,
 };
 use super::{Outcome, Ready, Table, ADMIN};
 use crate::db::LinkedAccounts;
@@ -59,12 +60,12 @@ macro_rules! try_forward {
     };
 }
 
-/// Save, or a logged 500: a failed save may have written part of the
-/// file, so the request is never handed on.
-macro_rules! save_or_fail {
-    ($ctx:expr, $data:expr) => {
-        if let Err(outcome) = super::nodestate::save($ctx, &$data).await {
-            return outcome;
+/// A settings change ([`change_settings`]): the `Err` is the answer.
+macro_rules! try_saved {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(outcome) => return outcome,
         }
     };
 }
@@ -89,9 +90,13 @@ fn actions_body<'a>(ctx: &'a Ready<'a>) -> Result<bool, super::Fallback> {
 /// The `/{provider}/actions` routes: one media-actions switch.
 async fn set_actions(ctx: &Ready<'_>, provider: &str) -> Outcome {
     let enabled = try_forward!(actions_body(ctx));
-    let mut data = node_memory(ctx);
-    set_provider(&mut data, provider, enabled);
-    save_or_fail!(ctx, data);
+    try_saved!(
+        change_settings(ctx, |doc| {
+            set_provider(doc, provider, enabled);
+            Ok(())
+        })
+        .await
+    );
     ctx.json(&json!({ "actionsEnabled": enabled }))
 }
 
@@ -166,7 +171,7 @@ fn trakt<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if !conforms(body, TRAKT_SCHEMA, &[]) {
             return Outcome::forward(String::from("a body the validator may reject"));
         }
-        let mut data = node_memory(ctx);
+        let data = node_memory(ctx);
         let jellyfin = body.get("provider").and_then(Value::as_str) == Some("jellyfin");
         let provider = if jellyfin { "jellyfin" } else { "direct" };
         let was_jellyfin =
@@ -230,13 +235,18 @@ fn trakt<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 return ctx.error(500, "Unable to save Trakt settings.");
             }
         }
-        assign_merged(
-            &mut data,
-            "trakt",
-            json!({ "provider": provider, "clientId": client_id, "clientSecret": client_secret }),
+        let data = try_saved!(
+            change_settings(ctx, |doc| {
+                assign_merged(
+                    doc,
+                    "trakt",
+                    json!({ "provider": provider, "clientId": client_id, "clientSecret": client_secret }),
+                );
+                set_provider(doc, "trakt", not_false(body, "actionsEnabled"));
+                Ok(doc.clone())
+            })
+            .await
         );
-        set_provider(&mut data, "trakt", not_false(body, "actionsEnabled"));
-        save_or_fail!(ctx, data);
         let mut effects = vec!["clearIntegrationHealthCache"];
         if !jellyfin && credentials_changing {
             effects.extend(["disconnectAllTraktLinks", "clearSyncCache"]);
@@ -377,7 +387,7 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if !conforms(body, &schema, &[]) {
             return Outcome::forward(String::from("a body the validator may reject"));
         }
-        let mut data = node_memory(ctx);
+        let data = node_memory(ctx);
         let client_id = body_text(body, "clientId");
         let changing = data.pointer("/simkl/clientId").and_then(Value::as_str) != Some(&client_id);
         let count = try_forward!(linked(ctx, LinkedAccounts::Simkl).await);
@@ -392,13 +402,18 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         let show = not_false(body, "showCommunityRating");
         let poster = is_true(body, "posterCommunityRating");
-        assign_merged(
-            &mut data,
-            "simkl",
-            json!({ "clientId": client_id, "showCommunityRating": show, "posterCommunityRating": poster }),
+        let data = try_saved!(
+            change_settings(ctx, |doc| {
+                assign_merged(
+                    doc,
+                    "simkl",
+                    json!({ "clientId": client_id, "showCommunityRating": show, "posterCommunityRating": poster }),
+                );
+                set_provider(doc, "simkl", not_false(body, "actionsEnabled"));
+                Ok(doc.clone())
+            })
+            .await
         );
-        set_provider(&mut data, "simkl", not_false(body, "actionsEnabled"));
-        save_or_fail!(ctx, data);
         let mut effects = vec!["clearIntegrationHealthCache"];
         if changing && count > 0 {
             effects.push("disconnectAllSimklLinks");
@@ -454,7 +469,7 @@ fn anilist<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if !conforms(body, &schema, &[]) {
             return Outcome::forward(String::from("a body the validator may reject"));
         }
-        let mut data = node_memory(ctx);
+        let data = node_memory(ctx);
         let previous_id = data.pointer("/anilist/clientId").cloned();
         let previous_secret = data.pointer("/anilist/clientSecret").cloned();
         let mut client_id = Value::from(body_text(body, "clientId"));
@@ -484,13 +499,18 @@ fn anilist<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 }));
             }
         }
-        assign_merged(
-            &mut data,
-            "anilist",
-            json!({ "clientId": client_id, "clientSecret": client_secret }),
+        let data = try_saved!(
+            change_settings(ctx, |doc| {
+                assign_merged(
+                    doc,
+                    "anilist",
+                    json!({ "clientId": client_id, "clientSecret": client_secret }),
+                );
+                set_provider(doc, "anilist", not_false(body, "actionsEnabled"));
+                Ok(doc.clone())
+            })
+            .await
         );
-        set_provider(&mut data, "anilist", not_false(body, "actionsEnabled"));
-        save_or_fail!(ctx, data);
         let mut effects = vec!["clearIntegrationHealthCache"];
         if changing {
             effects.extend(["disconnectAllAnilistLinks", "clearAnilistSyncCache"]);
@@ -651,8 +671,14 @@ fn mdblist<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             incoming.insert(String::from(key), value);
         }
         let changed = clearing || previous.as_ref() != Some(&api_key);
-        assign_merged(&mut data, "mdblist", Value::Object(incoming));
-        save_or_fail!(ctx, data);
+        let data = try_saved!(
+            change_settings(ctx, |doc| {
+                mdblist_backfilled(doc);
+                assign_merged(doc, "mdblist", Value::Object(incoming));
+                Ok(doc.clone())
+            })
+            .await
+        );
         let mut effects = vec!["clearIntegrationHealthCache"];
         if changed {
             effects.push("clearMdblistProviderState");

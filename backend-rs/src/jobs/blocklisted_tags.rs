@@ -13,7 +13,7 @@ use std::time::Duration;
 use anyhow::Result;
 use serde_json::{Map, Value};
 
-use super::syncutil::{http_status, int, js_number_text, save_settings, text, Tx};
+use super::syncutil::{http_status, int, js_number_text, mutate_settings, text, Tx};
 use super::JobCtx;
 use crate::db::Bind;
 
@@ -180,15 +180,15 @@ async fn clean_invalid(
     if cleaned == tags_setting {
         return Ok(());
     }
-    let current = job.current_settings().await?;
-    let mut data = current.data().clone();
-    if let Some(Value::Object(main)) = data.get_mut("main") {
-        main.insert(
-            String::from("blocklistedTags"),
-            Value::from(cleaned.clone()),
-        );
-    }
-    save_settings(&job.state, &data).await?;
+    mutate_settings(&job.state, |doc| {
+        if let Some(Value::Object(main)) = doc.get_mut("main") {
+            main.insert(
+                String::from("blocklistedTags"),
+                Value::from(cleaned.clone()),
+            );
+        }
+    })
+    .await?;
     tracing::info!(
         label = "Blocklisted Tags Processor",
         removed_keywords = ?invalid,

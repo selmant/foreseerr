@@ -19,7 +19,7 @@ use axum::http::Method;
 use base64::prelude::*;
 use serde_json::{Map, Value};
 
-use super::settings_util::{body_undefined, conforms, json_body, Ty};
+use super::settings_util::{body_undefined, change_settings, conforms, json_body, Ty};
 use super::{Outcome, Ready, Table, ADMIN};
 use crate::notify::{agents, Env, Kind, Payload, Person};
 use crate::settings::public::truthy;
@@ -32,6 +32,16 @@ macro_rules! try_forward {
         match $e {
             Ok(v) => v,
             Err(why) => return Outcome::forward(why),
+        }
+    };
+}
+
+/// A settings change ([`change_settings`]): the `Err` is the answer.
+macro_rules! try_saved {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(outcome) => return outcome,
         }
     };
 }
@@ -334,15 +344,22 @@ fn with_agent(ctx: &Ready<'_>, name: &str, section: Value) -> Option<Value> {
     Some(data)
 }
 
+/// `settings.notifications.agents`, when it is an object.
+fn agent_sections(doc: &mut Value) -> Result<&mut Map<String, Value>, String> {
+    doc.pointer_mut("/notifications/agents")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| String::from("notifications.agents is not an object"))
+}
+
 /// Save one agent section and answer with it.
 async fn store(ctx: &Ready<'_>, name: &str, section: Value) -> Outcome {
-    let Some(data) = with_agent(ctx, name, section.clone()) else {
-        return Outcome::forward(String::from("notifications.agents is not an object"));
-    };
-    // A failed save may have written part of the file: answered here.
-    if let Err(outcome) = super::nodestate::save(ctx, &data).await {
-        return outcome;
-    }
+    try_saved!(
+        change_settings(ctx, |doc| {
+            agent_sections(doc)?.insert(name.to_owned(), section.clone());
+            Ok(())
+        })
+        .await
+    );
     ctx.json(&section)
 }
 
@@ -365,18 +382,13 @@ fn admin_only(ctx: &Ready<'_>) -> Result<(), super::Fallback> {
 /// The section set to `undefined`: `settings.json` loses the key and
 /// `res.json(undefined)` sends an empty JSON answer.
 async fn drop_agent(ctx: &Ready<'_>, name: &str) -> Outcome {
-    let mut data = super::settings_util::node_memory(ctx);
-    let Some(agents) = data
-        .pointer_mut("/notifications/agents")
-        .and_then(Value::as_object_mut)
-    else {
-        return Outcome::forward(String::from("notifications.agents is not an object"));
-    };
-    agents.shift_remove(name);
-    // A failed save may have written part of the file: answered here.
-    if let Err(outcome) = super::nodestate::save(ctx, &data).await {
-        return outcome;
-    }
+    try_saved!(
+        change_settings(ctx, |doc| {
+            agent_sections(doc)?.shift_remove(name);
+            Ok(())
+        })
+        .await
+    );
     super::empty_json()
 }
 

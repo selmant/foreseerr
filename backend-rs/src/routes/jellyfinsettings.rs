@@ -5,7 +5,7 @@ use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::nodestate::{
-    admin, admin_columns, assign, fits, js_key_order, node_call, object_body_or_empty, opt, save,
+    admin, admin_columns, assign, fits, js_key_order, mutate, node_call, object_body_or_empty, opt,
     upstream_get, Field, NativeFut, Ty, Upstream,
 };
 use super::plexsettings::merge_libraries;
@@ -133,8 +133,7 @@ fn jellyfin_save<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         else {
             return Outcome::forward(String::from("a body that isn't an object"));
         };
-        let mut data = ctx.settings.data().clone();
-        let Some(jellyfin) = data.get_mut("jellyfin").and_then(Value::as_object_mut) else {
+        let Some(jellyfin) = ctx.settings.get("/jellyfin").and_then(Value::as_object) else {
             return Outcome::forward(String::from("settings.jellyfin isn't an object"));
         };
         let mut temp = jellyfin.clone();
@@ -159,21 +158,29 @@ fn jellyfin_save<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
                 Some(_) => Outcome::forward(String::from("a status field Express may reject")),
             };
         };
-        let id = id.clone();
-        assign(jellyfin, &body);
-        jellyfin.insert(String::from("serverId"), id);
-        match info.get("ServerName") {
-            Some(name) => {
-                jellyfin.insert(String::from("name"), name.clone());
+        let saved = mutate(ctx, |doc| {
+            let Some(jellyfin) = doc.get_mut("jellyfin").and_then(Value::as_object_mut) else {
+                return Err(Box::new(Outcome::forward(String::from(
+                    "settings.jellyfin isn't an object",
+                ))));
+            };
+            assign(jellyfin, &body);
+            jellyfin.insert(String::from("serverId"), id.clone());
+            match info.get("ServerName") {
+                Some(name) => {
+                    jellyfin.insert(String::from("name"), name.clone());
+                }
+                None => {
+                    jellyfin.shift_remove("name");
+                }
             }
-            None => {
-                jellyfin.shift_remove("name");
-            }
-        }
-        let saved = Value::Object(jellyfin.clone());
-        if let Err(outcome) = save(ctx, &data).await {
-            return outcome;
-        }
+            Ok(Value::Object(jellyfin.clone()))
+        })
+        .await;
+        let saved = match saved {
+            Ok(saved) => saved,
+            Err(outcome) => return outcome,
+        };
         clear_integration_health(ctx).await;
         ctx.json(&saved)
     })
@@ -272,8 +279,7 @@ fn library_sync<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             Err(why) => return Outcome::forward(why),
         };
         let user_id = user_id.unwrap_or_default();
-        let mut data = ctx.settings.data().clone();
-        let Some(jellyfin) = data.get("jellyfin").cloned() else {
+        let Some(jellyfin) = ctx.settings.get("/jellyfin").cloned() else {
             return Outcome::forward(String::from("no jellyfin settings"));
         };
         let Some(existing) = jellyfin.get("libraries").and_then(Value::as_array).cloned() else {
@@ -301,10 +307,14 @@ fn library_sync<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         let Some(libraries) = merge_libraries(&found, &existing) else {
             return Outcome::forward(String::from("a null library; find throws"));
         };
-        if let Some(jellyfin) = data.get_mut("jellyfin").and_then(Value::as_object_mut) {
-            jellyfin.insert(String::from("libraries"), Value::Array(libraries.clone()));
-        }
-        if let Err(outcome) = save(ctx, &data).await {
+        let saved = mutate(ctx, |doc| {
+            if let Some(jellyfin) = doc.get_mut("jellyfin").and_then(Value::as_object_mut) {
+                jellyfin.insert(String::from("libraries"), Value::Array(libraries.clone()));
+            }
+            Ok(())
+        })
+        .await;
+        if let Err(outcome) = saved {
             return outcome;
         }
         ctx.json(&Value::Array(libraries))

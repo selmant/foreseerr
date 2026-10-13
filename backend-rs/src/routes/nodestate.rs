@@ -5,6 +5,7 @@
 //! (key order, strict equality, `jsonSafeClone`).
 
 use std::future::Future;
+use std::ops::ControlFlow;
 use std::pin::Pin;
 
 use anyhow::{Context, Result};
@@ -345,12 +346,27 @@ where
     slots.into_iter().flatten().collect()
 }
 
-/// The settings document with one change saved, or why it couldn't be.
-pub(super) async fn save(ctx: &Ready<'_>, data: &Value) -> Result<(), Outcome> {
-    ctx.save_settings(data).await.map_err(|e| {
-        tracing::error!("saving settings failed: {e:#}");
-        ctx.error(500, "Unable to save settings.")
-    })
+/// One change made to the latest settings and saved (see
+/// [`Ready::mutate_settings`]); an `Err` from `change` is answered and
+/// nothing is written.
+pub(super) async fn mutate<T>(
+    ctx: &Ready<'_>,
+    change: impl FnOnce(&mut Value) -> Result<T, Box<Outcome>>,
+) -> Result<T, Outcome> {
+    let flow = ctx
+        .mutate_settings(|doc| match change(doc) {
+            Ok(out) => ControlFlow::Continue(out),
+            Err(outcome) => ControlFlow::Break(outcome),
+        })
+        .await;
+    match flow {
+        Ok(ControlFlow::Continue(out)) => Ok(out),
+        Ok(ControlFlow::Break(outcome)) => Err(*outcome),
+        Err(e) => {
+            tracing::error!("saving settings failed: {e:#}");
+            Err(ctx.error(500, "Unable to save settings."))
+        }
+    }
 }
 
 /// How a third-party GET ended, in axios's terms.

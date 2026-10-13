@@ -20,7 +20,11 @@ In hybrid mode Node still owns the schema and migrations and, unless
 `FORESEERR_RUST_JOBS` says otherwise, the jobs and the state that lives in
 its memory. The Rust side reads settings.json (reloaded when the file
 changes) and writes it as `getSettings().save()` does, then tells Node to
-read it again (`POST /internal/settings/reload`). It reads and writes the
+read it again (`POST /internal/settings/reload`). Each change runs on the
+latest document under one lock (`SettingsStore::mutate`), so concurrent
+Rust writes don't lose each other; the lock doesn't reach Node, so a Node
+write landing at the same moment as a Rust one can still lose one of them.
+It reads and writes the
 database as the TypeORM handlers do, refreshes session expiry as
 express-session does on every request, and runs the request lifecycle
 (notifications, sending to Radarr/Sonarr). State that lives only in Node's
@@ -48,7 +52,7 @@ Every path and method `seerr-api.yml` documents has a native handler, plus
 | `POST /api/v1/auth/jellyfin/plugin`, `/api/v1/desktop/{auth-tickets,auth-tickets/redeem,browser-cache/redeem}` | the binary runs standalone as the Jellyfin plugin sidecar or the desktop child respectively; with Node behind, both runtimes go to Node whole |
 | `/api/v1/user`: list, create, bulk `PUT`, `{id}` (`GET`, `PUT`, `DELETE`), `{id}/requests`, `{id}/watchlist`, `{id}/watch_data`, `{id}/pushSubscriptions`, `{id}/pushSubscription/{endpoint}`, `registerPushSubscription`, `import-from-plex`, `import-from-jellyfin`, `jellyfin/{id}` | unless a general case below applies |
 | `GET`/`POST /api/v1/user/{id}/settings/{main,password,notifications,permissions,discover}` | unless a general case below applies |
-| `GET /api/v1/user/{id}/quota`      | the user themselves or a `MANAGE_USERS` + `MANAGE_REQUESTS` holder; the window boundary is `now - days` in UTC where Node uses the server's local calendar, so a DST change inside the window shifts Node's boundary by an hour |
+| `GET /api/v1/user/{id}/quota`      | the user themselves or a `MANAGE_USERS` + `MANAGE_REQUESTS` holder |
 | `/api/v1/user/{id}/settings/linked-accounts/`: Plex and Jellyfin (link, Quick Connect, unlink), Trakt and Simkl (`GET`, `PATCH`, `DELETE`), AniList (`GET`, `POST`, `PATCH`, `DELETE`) | unless a general case below applies |
 | `POST .../linked-accounts/trakt/device/{code,token}`, `.../simkl/pin/{code,token}`, `.../simkl/sync` | standalone only: the device and PIN sessions, their throttles and the Simkl sync's per-user lock live in Node's memory, so with Node behind these always go to Node |
 | `/api/v1/settings/` (admin): `main` (+`regenerate`), `initialize`, `network`, `plex` (+libraries, library sync, users, `devices/servers`), `jellyfin` (+libraries, library sync, users), `tautulli`, `radarr`/`sonarr` (+`test`, `{id}`, `{id}/profiles`), `metadatas` (+`test`), `servarr-interventions`, `trakt`/`simkl`/`anilist` (+`actions`), `mdblist`, every notification agent (+`test`, Pushover `sounds`), `discover` (+`add`, `{id}`, `reset`), `jobs`, `plex/sync`, `jellyfin/sync`, `cache`, `integrations/status`, `mapping/*`, `logs`, `about` | unless a general case below applies. Sections Node returns as stored are read from settings.json as they are. `POST /settings/plex` and `/settings/tautulli` go to Node when the body changed the settings and the connection test fails (or Tautulli has no hostname): Node keeps the assigned body unsaved in its memory, which only Node can reproduce |

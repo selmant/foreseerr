@@ -3,13 +3,15 @@
 //! The file is merged over the same defaults Node uses (`defaults.json`,
 //! generated from `server/lib/settings/index.ts`) and reloaded whenever it
 //! changes on disk (unless a handler left an unsaved change in memory, see
-//! [`SettingsStore::keep_unsaved`]). Node still runs the settings migrations and generates
-//! keys; writes made here are saved the way `Settings.save()` saves them
-//! and Node is told to read the file again.
+//! [`SettingsStore::mutate_unsaved`]). Node still runs the settings
+//! migrations and generates keys; writes made here are changes to the
+//! latest document under one lock ([`SettingsStore::mutate`]), saved the
+//! way `Settings.save()` saves them, and Node is told to read the file
+//! again.
 
-pub mod delta;
 pub mod public;
 
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
@@ -130,7 +132,9 @@ struct Cached {
 #[derive(Debug)]
 pub struct SettingsStore {
     path: PathBuf,
-    save_lock: tokio::sync::Mutex<()>,
+    /// Held from reading the document a change starts from until that
+    /// change is written (or kept unsaved), so no two changes interleave.
+    mutation_lock: tokio::sync::Mutex<()>,
     api_key_override: Option<String>,
     cached: RwLock<Option<Cached>>,
     /// Node's in-memory settings when a handler changed them and answered
@@ -146,7 +150,7 @@ impl SettingsStore {
     pub fn new(config_dir: &std::path::Path) -> Self {
         Self {
             path: config_dir.join("settings.json"),
-            save_lock: tokio::sync::Mutex::new(()),
+            mutation_lock: tokio::sync::Mutex::new(()),
             api_key_override: std::env::var("API_KEY").ok(),
             cached: RwLock::new(None),
             unsaved: RwLock::new(None),
@@ -156,40 +160,79 @@ impl SettingsStore {
     /// Keep `data` (a whole merged document) as the current settings without
     /// writing the file: a Node handler that changed `getSettings()` and
     /// returned before `save()`. The next save writes it with its own change.
-    pub fn keep_unsaved(&self, data: Value) {
+    fn keep_unsaved(&self, data: Value) {
         *write(&self.unsaved) = Some(Arc::new(Settings {
             data,
             api_key_override: self.api_key_override.clone(),
         }));
     }
 
-    /// [`SettingsStore::keep_unsaved`] for a handler that built `data` from
-    /// the snapshot `base`: only its own changes go onto the settings as
-    /// they are now (see [`delta`]).
-    ///
-    /// # Errors
-    ///
-    /// Fails when the current settings can't be read.
-    pub async fn keep_unsaved_from(&self, base: &Value, data: &Value) -> Result<()> {
-        let _guard = self.save_lock.lock().await;
-        let mut doc = self.current().await?.data().clone();
-        delta::apply(&mut doc, base, data);
-        self.keep_unsaved(doc);
-        Ok(())
-    }
-
-    /// `Settings.save()` for a handler that built `data` from the snapshot
-    /// `base`: its changes go onto the settings as they are now (other
-    /// requests' saved or unsaved changes included) and that is written.
+    /// Change the settings and save them, as a Node handler changes the one
+    /// shared settings object and calls `save()`: `change` runs on the
+    /// latest document (other requests' saved or unsaved changes included)
+    /// under the mutation lock, so nothing it reads, allocates or edits can
+    /// be overtaken before the write. `Break` writes nothing.
     ///
     /// # Errors
     ///
     /// Fails when the settings can't be read or the file can't be written.
-    pub async fn save_from(&self, base: &Value, data: &Value) -> Result<()> {
-        let guard = self.save_lock.lock().await;
-        let mut doc = self.current().await?.data().clone();
-        delta::apply(&mut doc, base, data);
-        self.write_locked(&doc, guard).await
+    pub async fn mutate<B, C>(
+        &self,
+        change: impl FnOnce(&mut Value) -> ControlFlow<B, C>,
+    ) -> Result<ControlFlow<B, C>> {
+        let guard = self.mutation_lock.lock().await;
+        let mut doc = self.node_memory().await?;
+        let flow = change(&mut doc);
+        if flow.is_continue() {
+            self.write_locked(&doc, guard).await?;
+        } else {
+            drop(guard);
+        }
+        Ok(flow)
+    }
+
+    /// [`SettingsStore::mutate`] for a change that is always saved.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the settings can't be read or the file can't be written.
+    pub async fn update(&self, change: impl FnOnce(&mut Value)) -> Result<()> {
+        self.mutate(|doc| {
+            change(doc);
+            ControlFlow::<(), ()>::Continue(())
+        })
+        .await
+        .map(drop)
+    }
+
+    /// [`SettingsStore::mutate`] without the write, the changed document
+    /// kept as the current settings instead: a Node handler that changed
+    /// `getSettings()` and returned before `save()`.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the current settings can't be read.
+    pub async fn mutate_unsaved<T>(&self, change: impl FnOnce(&mut Value) -> T) -> Result<T> {
+        let guard = self.mutation_lock.lock().await;
+        let mut doc = self.node_memory().await?;
+        let out = change(&mut doc);
+        self.keep_unsaved(doc);
+        drop(guard);
+        Ok(out)
+    }
+
+    /// The current document as Node holds it: `API_KEY` replaces the
+    /// stored key in memory at load (every save writes it anyway).
+    async fn node_memory(&self) -> Result<Value> {
+        let current = self.current().await?;
+        let mut doc = current.data().clone();
+        let key = current.api_key();
+        if key != current.str("/main/apiKey") {
+            if let Some(main) = doc.get_mut("main").and_then(Value::as_object_mut) {
+                main.insert(String::from("apiKey"), Value::from(key));
+            }
+        }
+        Ok(doc)
     }
 
     /// The current settings, re-read if the file changed since last time.
@@ -231,19 +274,9 @@ impl SettingsStore {
     }
 
     /// `Settings.save()`: the whole document, `JSON.stringify(data,
-    /// undefined, ' ')`, through a temp file and a rename.
-    ///
-    /// # Errors
-    ///
-    /// Fails when the file can't be written.
-    pub async fn save(&self, data: &Value) -> Result<()> {
-        let guard = self.save_lock.lock().await;
-        self.write_locked(data, guard).await
-    }
-
-    /// The write of [`SettingsStore::save`], holding the save lock; the
-    /// written document becomes the cached one at once, so the next save
-    /// builds on it whatever the file's timestamp says.
+    /// undefined, ' ')`, through a temp file and a rename, holding the
+    /// mutation lock. The written document becomes the cached one at once,
+    /// so the next change builds on it whatever the file's timestamp says.
     async fn write_locked(
         &self,
         data: &Value,

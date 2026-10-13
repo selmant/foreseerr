@@ -215,9 +215,12 @@ async fn sync_plex_libraries(
         .cloned()
         .unwrap_or_default();
     let libraries = merge_libraries(&found, &existing).context("a null library")?;
-    let mut data = settings.data().clone();
-    if let Some(plex) = data.get_mut("plex").and_then(Value::as_object_mut) {
-        plex.insert(String::from("libraries"), Value::Array(libraries));
-    }
-    state.settings.save(&data).await
+    state
+        .settings
+        .update(|doc| {
+            if let Some(plex) = doc.get_mut("plex").and_then(Value::as_object_mut) {
+                plex.insert(String::from("libraries"), Value::Array(libraries));
+            }
+        })
+        .await
 }

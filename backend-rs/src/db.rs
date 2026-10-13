@@ -2341,8 +2341,24 @@ const PROFILE_PG: &str = concat!(
 /// The start of a quota window; the end is a century later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuotaWindow {
-    /// `now - days`.
+    /// `days` calendar days before now, in the server's time zone.
     pub start: crate::clock::Utc,
+}
+
+impl QuotaWindow {
+    /// `User.getQuota`'s window: `date.setDate(date.getDate() - days)` on
+    /// `now` (Unix milliseconds) in the server's time zone, when `days` is
+    /// set and not 0. Quota reads and request admission both count from it.
+    #[must_use]
+    pub fn days_before(now: i64, days: Option<i64>) -> Option<Self> {
+        days.filter(|d| *d != 0).map(|d| Self {
+            start: crate::clock::Utc::from_unix_millis(crate::clock::local_days_before(
+                &chrono::Local,
+                now,
+                d,
+            )),
+        })
+    }
 }
 
 /// Which linked accounts `GET /settings/*` counts in `user_settings`.
