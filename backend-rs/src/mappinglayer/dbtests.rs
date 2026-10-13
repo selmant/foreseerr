@@ -1,6 +1,7 @@
 //! The SQL against a real database: a scratch copy named by
-//! `FORESEERR_MAPPING_TEST_DB` (skipped when unset). It writes to that
-//! copy, so never point it at a live database.
+//! `FORESEERR_MAPPING_TEST_DB` (skipped when unset, except under `CI`,
+//! where a missing database fails). It writes to that copy, so never point
+//! it at a live database. `scripts/ci-smoke.py --mapping-db` builds one.
 
 use anyhow::Result;
 use serde_json::{json, Value};
@@ -12,7 +13,18 @@ use crate::db::{Bind, Db};
 use crate::tmdb::TmdbClient;
 
 fn open() -> Option<Db> {
-    let path = std::env::var("FORESEERR_MAPPING_TEST_DB").ok()?;
+    let Ok(path) = std::env::var("FORESEERR_MAPPING_TEST_DB") else {
+        // CI must run this test, not pass it vacuously.
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI is set but FORESEERR_MAPPING_TEST_DB is not; build one with scripts/ci-smoke.py --mapping-db"
+        );
+        return None;
+    };
+    assert!(
+        std::path::Path::new(&path).is_file(),
+        "FORESEERR_MAPPING_TEST_DB={path} is not a file"
+    );
     let options = SqliteConnectOptions::new().filename(path);
     Some(Db::Sqlite(
         SqlitePoolOptions::new()

@@ -298,5 +298,5 @@ writeFileSync(
 );
 writeFileSync(
   join(out, 'sqlite_reference.json'),
-  JSON.stringify(await reference(), undefined, 1) + '\n'
+  JSON.stringify(await reference(), undefined, 2) + '\n'
 );
