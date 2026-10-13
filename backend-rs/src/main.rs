@@ -8,6 +8,7 @@ pub mod arr;
 pub mod auth;
 pub mod clock;
 pub mod concurrency;
+pub mod cpu;
 pub mod csrf;
 pub mod db;
 pub mod dbmigrate;
