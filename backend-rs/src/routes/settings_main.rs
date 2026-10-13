@@ -63,11 +63,12 @@ fn admin(ctx: &Ready<'_>) -> Result<(), super::Fallback> {
     ctx.authenticated(ADMIN).map(|_| ())
 }
 
-/// Save, or hand the request on when nothing could be written.
-macro_rules! save_or_forward {
+/// Save, or a logged 500: a failed save may have written part of the
+/// file, so the request is never handed on.
+macro_rules! save_or_fail {
     ($ctx:expr, $data:expr) => {
-        if let Err(e) = $ctx.save_settings(&$data).await {
-            return Outcome::forward(format!("saving settings failed: {e:#}"));
+        if let Err(outcome) = super::nodestate::save($ctx, &$data).await {
+            return outcome;
         }
     };
 }
@@ -134,7 +135,7 @@ fn main<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             *days = Value::from(crate::imagecache::clamp_idle_days(Some(days)));
         }
         let mut main = main.clone();
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         crate::runtime::desktop::effective_main(&mut main);
         ctx.json(&main)
     })
@@ -186,7 +187,7 @@ fn regenerate<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         main.insert(String::from("apiKey"), Value::from(generate_api_key()));
         let main = Value::Object(main.clone());
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         ctx.json(&main)
     })
 }
@@ -202,7 +203,7 @@ fn initialize<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         public.insert(String::from("initialized"), Value::Bool(true));
         let public = Value::Object(public.clone());
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         ctx.json(&public)
     })
 }
@@ -294,7 +295,7 @@ fn metadata<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         out.insert(String::from("tests"), tests);
         let mut data = node_memory(ctx);
         assign_merged(&mut data, "metadataSettings", Value::Object(incoming));
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         ctx.json(&Value::Object(out))
     })
 }
@@ -516,7 +517,7 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
             return ctx.error(500, "Unable to connect to Tautulli.");
         }
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         ctx.json(&current)
     })
 }
@@ -567,7 +568,7 @@ fn servarr_interventions<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             .get("servarrInterventions")
             .cloned()
             .unwrap_or(Value::Null);
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         ctx.json(&saved)
     })
 }
@@ -729,10 +730,8 @@ fn discover<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         for (x, slider) in sliders.iter().enumerate() {
             let order = i64::try_from(x).unwrap_or(i64::MAX);
+            // Even the first failed save may have written: answered here.
             if let Err(e) = slider_save(ctx, slider, order).await {
-                if x == 0 {
-                    return Outcome::forward(format!("saving a slider failed: {e:#}"));
-                }
                 tracing::error!("saving discover slider {x} failed: {e:#}");
                 return ctx.error(500, &format!("{e:#}"));
             }

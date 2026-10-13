@@ -59,10 +59,12 @@ macro_rules! try_forward {
     };
 }
 
-macro_rules! save_or_forward {
+/// Save, or a logged 500: a failed save may have written part of the
+/// file, so the request is never handed on.
+macro_rules! save_or_fail {
     ($ctx:expr, $data:expr) => {
-        if let Err(e) = $ctx.save_settings(&$data).await {
-            return Outcome::forward(format!("saving settings failed: {e:#}"));
+        if let Err(outcome) = super::nodestate::save($ctx, &$data).await {
+            return outcome;
         }
     };
 }
@@ -89,7 +91,7 @@ async fn set_actions(ctx: &Ready<'_>, provider: &str) -> Outcome {
     let enabled = try_forward!(actions_body(ctx));
     let mut data = node_memory(ctx);
     set_provider(&mut data, provider, enabled);
-    save_or_forward!(ctx, data);
+    save_or_fail!(ctx, data);
     ctx.json(&json!({ "actionsEnabled": enabled }))
 }
 
@@ -234,7 +236,7 @@ fn trakt<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             json!({ "provider": provider, "clientId": client_id, "clientSecret": client_secret }),
         );
         set_provider(&mut data, "trakt", not_false(body, "actionsEnabled"));
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         let mut effects = vec!["clearIntegrationHealthCache"];
         if !jellyfin && credentials_changing {
             effects.extend(["disconnectAllTraktLinks", "clearSyncCache"]);
@@ -396,7 +398,7 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             json!({ "clientId": client_id, "showCommunityRating": show, "posterCommunityRating": poster }),
         );
         set_provider(&mut data, "simkl", not_false(body, "actionsEnabled"));
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         let mut effects = vec!["clearIntegrationHealthCache"];
         if changing && count > 0 {
             effects.push("disconnectAllSimklLinks");
@@ -488,7 +490,7 @@ fn anilist<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             json!({ "clientId": client_id, "clientSecret": client_secret }),
         );
         set_provider(&mut data, "anilist", not_false(body, "actionsEnabled"));
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         let mut effects = vec!["clearIntegrationHealthCache"];
         if changing {
             effects.extend(["disconnectAllAnilistLinks", "clearAnilistSyncCache"]);
@@ -650,7 +652,7 @@ fn mdblist<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         let changed = clearing || previous.as_ref() != Some(&api_key);
         assign_merged(&mut data, "mdblist", Value::Object(incoming));
-        save_or_forward!(ctx, data);
+        save_or_fail!(ctx, data);
         let mut effects = vec!["clearIntegrationHealthCache"];
         if changed {
             effects.push("clearMdblistProviderState");

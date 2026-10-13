@@ -51,15 +51,6 @@ macro_rules! try_forward {
     };
 }
 
-macro_rules! try_db {
-    ($e:expr) => {
-        match $e {
-            Ok(v) => v,
-            Err(e) => return Outcome::forward(format!("database: {e:#}")),
-        }
-    };
-}
-
 /// `PLEX` in `MediaServerType`, `LOCAL` in `UserType`.
 const SERVER_PLEX: i64 = 1;
 const USER_TYPE_LOCAL: i64 = 2;
@@ -97,7 +88,8 @@ enum Patched {
 
 /// `patchLinkedAccountActions`: the owner check, then `ensureUserSettings`
 /// and an unconditional update of the toggle. `missing_status` is the
-/// status the route gives "User not found".
+/// status the route gives "User not found". Once the settings row may be
+/// written, failures are answered here (500).
 async fn patch_actions(
     ctx: &Ready<'_>,
     id: i64,
@@ -115,9 +107,10 @@ async fn patch_actions(
             "You do not have permission to modify this user's settings.",
         )));
     }
-    let settings_id = typeorm::ensure_user_settings(&ctx.state.db, id)
-        .await
-        .map_err(|e| format!("database: {e:#}"))?;
+    let settings_id = match typeorm::ensure_user_settings(&ctx.state.db, id).await {
+        Ok(settings_id) => settings_id,
+        Err(e) => return Ok(Patched::Answer(write_failed(ctx, &e))),
+    };
     let Some(settings_id) = settings_id else {
         return Ok(Patched::Answer(ctx.error(missing_status, "User not found")));
     };
@@ -125,12 +118,17 @@ async fn patch_actions(
         "UPDATE \"user_settings\" SET \"{column}\" = {} WHERE \"id\" = ?1",
         if enabled { "TRUE" } else { "FALSE" }
     );
-    ctx.state
-        .db
-        .execute(&sql, &[Bind::Int(settings_id)])
-        .await
-        .map_err(|e| format!("database: {e:#}"))?;
+    if let Err(e) = ctx.state.db.execute(&sql, &[Bind::Int(settings_id)]).await {
+        return Ok(Patched::Answer(write_failed(ctx, &e)));
+    }
     Ok(Patched::Done)
+}
+
+/// The 500 for a failed write: answered here, never handed on.
+fn write_failed(ctx: &Ready<'_>, e: &anyhow::Error) -> Outcome {
+    let why = format!("database: {e:#}");
+    tracing::error!("{} {}: {why}", ctx.req.method, ctx.req.uri.path());
+    ctx.error(500, &why)
 }
 
 /// `getTraktLinkedAccountPayload` for the direct provider.
@@ -246,9 +244,14 @@ fn anilist_patch<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 // ---------------------------------------------------------------------------
 
 /// Set these settings columns to NULL on the user's row, if there is one.
-/// Returns whether there was a row.
-async fn clear_settings(ctx: &Ready<'_>, id: i64, columns: &[&str]) -> anyhow::Result<bool> {
-    let Some(settings_id) = typeorm::settings_id(&ctx.state.db, id).await? else {
+/// Returns whether there was a row; `Err` is the handler's answer (a
+/// failed update is a 500, not handed on).
+async fn clear_settings(ctx: &Ready<'_>, id: i64, columns: &[&str]) -> Result<bool, Outcome> {
+    let settings_id = match typeorm::settings_id(&ctx.state.db, id).await {
+        Ok(settings_id) => settings_id,
+        Err(e) => return Err(Outcome::forward(format!("database: {e:#}"))),
+    };
+    let Some(settings_id) = settings_id else {
         return Ok(false);
     };
     let sets: Vec<String> = columns.iter().map(|c| format!("\"{c}\" = NULL")).collect();
@@ -256,11 +259,10 @@ async fn clear_settings(ctx: &Ready<'_>, id: i64, columns: &[&str]) -> anyhow::R
         "UPDATE \"user_settings\" SET {} WHERE \"id\" = ?1",
         sets.join(", ")
     );
-    ctx.state
-        .db
-        .execute(&sql, &[Bind::Int(settings_id)])
-        .await?;
-    Ok(true)
+    match ctx.state.db.execute(&sql, &[Bind::Int(settings_id)]).await {
+        Ok(_) => Ok(true),
+        Err(e) => Err(write_failed(ctx, &e)),
+    }
 }
 
 /// `DELETE .../linked-accounts/trakt`.
@@ -293,7 +295,7 @@ fn trakt_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 Ready::no_content()
             }
             Ok(false) => Ready::no_content(),
-            Err(e) => Outcome::forward(format!("database: {e:#}")),
+            Err(outcome) => outcome,
         }
     })
 }
@@ -321,7 +323,7 @@ fn anilist_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 Ready::no_content()
             }
             Ok(false) => Ready::no_content(),
-            Err(e) => Outcome::forward(format!("database: {e:#}")),
+            Err(outcome) => outcome,
         }
     })
 }
@@ -333,14 +335,16 @@ fn simkl_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         try_forward!(ctx.no_query());
         let id = try_forward!(linked_id(ctx));
         try_forward!(own_or_admin(ctx, id));
-        let cleared = try_db!(
-            clear_settings(
-                ctx,
-                id,
-                &["simklAccessToken", "simklUsername", "simklUserId"]
-            )
-            .await
-        );
+        let cleared = match clear_settings(
+            ctx,
+            id,
+            &["simklAccessToken", "simklUsername", "simklUserId"],
+        )
+        .await
+        {
+            Ok(cleared) => cleared,
+            Err(outcome) => return outcome,
+        };
         if cleared {
             for table in ["simkl_sync_item", "simkl_sync_state"] {
                 let sql = format!("DELETE FROM \"{table}\" WHERE \"userId\" = ?1");
@@ -422,7 +426,7 @@ async fn save_unlink(
     };
     match typeorm::run(&ctx.state.db, update).await {
         Ok(()) => Ready::no_content(),
-        Err(e) => Outcome::forward(format!("saving the user failed: {e:#}")),
+        Err(e) => write_failed(ctx, &e),
     }
 }
 

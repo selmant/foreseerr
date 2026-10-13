@@ -79,9 +79,13 @@ pub(super) fn local<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if !matched {
             return ctx.error(403, "Access denied.");
         }
+        // The session store may have been written: answer here.
         let cookie = match start_session(ctx, account.id).await {
             Ok(cookie) => cookie,
-            Err(why) => return Outcome::forward(why),
+            Err(why) => {
+                tracing::error!("password sign-in: {why}");
+                return ctx.error(500, "Unable to authenticate.");
+            }
         };
         let email = account.email.unwrap_or_default().to_lowercase();
         let mut out = Map::new();
@@ -133,7 +137,11 @@ pub(super) fn logout<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some(sid) = session_id(&headers, ctx.settings.session_secret()) else {
             return ctx.json(&Value::Object(ok));
         };
-        let session = try_db!(ctx.state.db.session_user_id(&sid, now_ms()).await);
+        // The login state is gone: failures are answered here from now on.
+        let session = match ctx.state.db.session_user_id(&sid, now_ms()).await {
+            Ok(session) => session,
+            Err(e) => return logout_failed(ctx, &format!("database: {e:#}")),
+        };
         let user_id = session.and_then(|s| s.user_id).filter(|id| *id != 0);
         if user_id.is_none() {
             return ctx.json(&Value::Object(ok));
@@ -145,17 +153,28 @@ pub(super) fn logout<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         // The plugin's Jellyfin owns the device; Node leaves it alone there.
         let plugin = crate::runtime::active() && crate::runtime::plugin_mode();
         if let (Some(2 | 3), Some(user_id), false) = (server_type, user_id, plugin) {
-            try_forward!(super::authjellyfin::forget_device(ctx, user_id).await);
+            if let Err(why) = super::authjellyfin::forget_device(ctx, user_id).await {
+                return logout_failed(ctx, &why);
+            }
         }
-        try_db!(
-            ctx.state
-                .db
-                .execute(
-                    r#"UPDATE "session" SET "destroyedAt" = CURRENT_TIMESTAMP WHERE "id" = ?1 AND "destroyedAt" IS NULL"#,
-                    &[Bind::Text(sid)],
-                )
-                .await
-        );
+        let destroyed = ctx
+            .state
+            .db
+            .execute(
+                r#"UPDATE "session" SET "destroyedAt" = CURRENT_TIMESTAMP WHERE "id" = ?1 AND "destroyedAt" IS NULL"#,
+                &[Bind::Text(sid)],
+            )
+            .await;
+        if let Err(e) = destroyed {
+            tracing::error!("logout: database: {e:#}");
+            return ctx.error(500, "Failed to destroy session.");
+        }
         ctx.json(&Value::Object(ok))
     })
+}
+
+/// Logout's catch-all 500, once the login state has been forgotten.
+fn logout_failed(ctx: &Ready<'_>, why: &str) -> Outcome {
+    tracing::error!("logout: {why}");
+    ctx.error(500, "Error during logout process.")
 }

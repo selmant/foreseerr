@@ -2,9 +2,9 @@
 //! Jellyfin view and the media table.
 //!
 //! Every function only reads, so any `Err` (a reason) can still hand the
-//! request to Node; the one write, the watch-now skipped-episode cleanup,
-//! is safe to repeat there (Trakt then already has the episode, and
-//! Jellyfin marks it played again).
+//! request to Node; the one write, the watch-now skipped-episode cleanup
+//! (episodes marked watched on Trakt, played on Jellyfin), is not replayed:
+//! once it has run, [`Lib::watch_now`] reports [`WatchNowFail::Failed`].
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -25,6 +25,15 @@ use crate::settings::public::truthy;
 use crate::settings::Settings;
 use crate::skippedepisodes;
 use crate::state::AppState;
+
+/// Why [`Lib::watch_now`] built no answer.
+#[derive(Debug)]
+pub enum WatchNowFail {
+    /// Nothing written yet: Node may answer.
+    Forward(String),
+    /// After the skipped-episode cleanup ran: answered here, not replayed.
+    Failed(String),
+}
 
 /// One series' episode lookup: title index, series id, result.
 type EpisodeLookup<'a> = (usize, &'a str, Result<Vec<Item>, JfError>);
@@ -468,9 +477,10 @@ impl Lib<'_> {
     ///
     /// # Errors
     ///
-    /// Reasons for Node to answer.
-    pub async fn watch_now(&self) -> Result<Value, String> {
-        let linked = match self.link().await? {
+    /// A reason for Node to answer, or one to answer here once the cleanup
+    /// has run.
+    pub async fn watch_now(&self) -> Result<Value, WatchNowFail> {
+        let linked = match self.link().await.map_err(WatchNowFail::Forward)? {
             Link::Code(code) => return Ok(json!({"shelves": [], "code": code})),
             Link::Linked(linked) => linked,
         };
@@ -480,7 +490,7 @@ impl Lib<'_> {
             None
         };
         let client = &linked.client;
-        let libraries = self.tv_library_ids()?;
+        let libraries = self.tv_library_ids().map_err(WatchNowFail::Forward)?;
         let mut jobs: Vec<Job<'_, Result<Vec<Item>, JfError>>> = vec![
             Box::pin(client.resume_items(16)),
             Box::pin(client.latest_items(16)),
@@ -496,7 +506,7 @@ impl Lib<'_> {
         let mut lists = Vec::new();
         let mut failures = Vec::new();
         for result in join_all(jobs).await {
-            match sure(result)? {
+            match sure(result).map_err(WatchNowFail::Forward)? {
                 Ok(items) => lists.push(Some(items)),
                 Err(failure) => {
                     failures.push(failure.message);
@@ -522,6 +532,27 @@ impl Lib<'_> {
             resume =
                 skippedepisodes::cleanup(self.user_id, &deps, resume, linked.skip_threshold).await;
         }
+        let cleaned = linked.auto_complete;
+        self.watch_now_shelves(client, resume, lists, &failures)
+            .await
+            .map_err(|why| {
+                if cleaned {
+                    WatchNowFail::Failed(why)
+                } else {
+                    WatchNowFail::Forward(why)
+                }
+            })
+    }
+
+    /// The watch-now shelves from the resume list (cleaned up) and the
+    /// remaining source lists; `failures` are the sources that failed.
+    async fn watch_now_shelves(
+        &self,
+        client: &JellyfinClient,
+        resume: Vec<Item>,
+        mut lists: impl Iterator<Item = Option<Vec<Item>>>,
+        failures: &[String],
+    ) -> Result<Value, String> {
         let latest = lists.next().flatten().unwrap_or_default();
         let next_up = lists.next().flatten().unwrap_or_default();
         let latest_episodes = latest_episodes(lists.flatten())?;

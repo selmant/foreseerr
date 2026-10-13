@@ -178,12 +178,16 @@ async fn reset_route(ctx: &Ready<'_>) -> Step {
         return Ok(ctx.error(500, "Invalid password reset link."));
     }
     let hash = hash_password(password.to_owned()).await?;
-    db.execute(
-        r#"UPDATE "user" SET "recoveryLinkExpirationDate" = NULL, "password" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
-        &[Bind::Text(hash), Bind::Int(id)],
-    )
-    .await
-    .map_err(db_err)?;
+    if let Err(e) = db
+        .execute(
+            r#"UPDATE "user" SET "recoveryLinkExpirationDate" = NULL, "password" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
+            &[Bind::Text(hash), Bind::Int(id)],
+        )
+        .await
+    {
+        tracing::error!("saving the new password failed: {e:#}");
+        return Ok(ctx.error(500, "Unable to save the new password."));
+    }
     tracing::info!("Successfully reset password");
     Ok(ok(ctx))
 }

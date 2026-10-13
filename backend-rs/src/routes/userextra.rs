@@ -270,15 +270,18 @@ pub(super) fn push_subscription_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let id = try_forward!(super::params::path_int(ctx, 2));
         try_forward!(own_or_admin(ctx, id));
         let endpoint = try_forward!(endpoint(ctx));
-        try_db!(
-            ctx.state
-                .db
-                .execute(
-                    r#"DELETE FROM "user_push_subscription" WHERE "id" = (SELECT "id" FROM "user_push_subscription" WHERE "userId" = ?1 AND "endpoint" = ?2 ORDER BY "id" LIMIT 1)"#,
-                    &[Bind::Int(id), Bind::Text(endpoint)],
-                )
-                .await
-        );
+        let removed = ctx
+            .state
+            .db
+            .execute(
+                r#"DELETE FROM "user_push_subscription" WHERE "id" = (SELECT "id" FROM "user_push_subscription" WHERE "userId" = ?1 AND "endpoint" = ?2 ORDER BY "id" LIMIT 1)"#,
+                &[Bind::Int(id), Bind::Text(endpoint)],
+            )
+            .await;
+        if let Err(e) = removed {
+            tracing::error!("Something went wrong deleting the user push subscription: {e:#}");
+            return ctx.error(500, "User push subscription not found");
+        }
         Ready::no_content()
     })
 }

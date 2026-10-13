@@ -516,9 +516,8 @@ fn jellyfin_link<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let account = match link_account(&data) {
             Ok(account) => account,
             Err(true) => return caught("the login answer has no User"),
-            Err(false) => {
-                return Outcome::forward(String::from("a Jellyfin login answer of another shape"))
-            }
+            // Jellyfin has signed in: answered here, not replayed.
+            Err(false) => return caught("a Jellyfin login answer of another shape"),
         };
         let user_type = if server == Some(EMBY) {
             USER_EMBY
@@ -586,11 +585,16 @@ fn quickconnect_link<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let account = match link_account(&data) {
             Ok(account) => account,
             Err(true) => return caught(500, "the answer has no User"),
-            Err(false) => {
-                return Outcome::forward(String::from("a Quick Connect answer of another shape"))
-            }
+            // The secret is spent: answered here, not replayed.
+            Err(false) => return caught(500, "a Quick Connect answer of another shape"),
         };
-        let row = try_outcome!(user_row(ctx, viewer.id).await);
+        let row = match user_row(ctx, viewer.id).await {
+            Ok(row) => row,
+            Err(outcome) => match *outcome {
+                Outcome::Forward(why) => return caught(500, &why.why),
+                done @ Outcome::Done(_) => return done,
+            },
+        };
         let device = device_id(&row, viewer.id);
         match store_link(ctx, &row, viewer.id, account, USER_JELLYFIN, device).await {
             Ok(outcome) => outcome,

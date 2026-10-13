@@ -13,7 +13,7 @@ use super::blocklist::plain_integer;
 use super::{Outcome, Ready, Table};
 use crate::auth::CurrentUser;
 use crate::jellyfin::{js_trim, MAX_SAFE_INTEGER};
-use crate::library::{ImageOutcome, Lib, Page};
+use crate::library::{ImageOutcome, Lib, Page, WatchNowFail};
 use crate::librarymap::{is_jellyfin_item_id, BrowseQuery};
 use crate::tmdb::js_numbers;
 
@@ -371,7 +371,15 @@ fn watch_now<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(user) => user,
             Err(why) => return Outcome::forward(why),
         };
-        answer(ctx, lib(ctx, user).watch_now().await)
+        match lib(ctx, user).watch_now().await {
+            Ok(value) => ctx.json(&js_numbers(value)),
+            Err(WatchNowFail::Forward(why)) => Outcome::forward(why),
+            // The skipped-episode cleanup has marked episodes watched.
+            Err(WatchNowFail::Failed(why)) => {
+                tracing::error!("Failed to load library shelves after the cleanup: {why}");
+                ctx.error(500, "Failed to load library shelves")
+            }
+        }
     })
 }
 

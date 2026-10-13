@@ -207,7 +207,13 @@ fn watchlist_add<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             let found = details.get("id").and_then(Value::as_i64).unwrap_or(tmdb_id);
             match insert_media(ctx, kind, (found, tvdb), (UNKNOWN, UNKNOWN)).await {
                 Ok(id) => id,
-                Err(e) => return Outcome::forward(format!("inserting media failed: {e:#}")),
+                // A `QueryFailedError` in Node: its 409.
+                Err(e) => {
+                    tracing::error!(
+                        "Something wrong with data watchlist: inserting media failed: {e:#}"
+                    );
+                    return ctx.error(409, "Something wrong");
+                }
             }
         };
         let inserted = db
@@ -275,7 +281,7 @@ fn watchlist_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let user = forward_on_err!(ctx.authenticated(0));
         let kind = forward_on_err!(media_type_query(ctx));
         let tmdb_id = forward_on_err!(super::params::path_int(ctx, 0));
-        let removed = forward_on_err!(ctx
+        let removed = fail_on_err!(ctx, ctx
             .state
             .db
             .execute(

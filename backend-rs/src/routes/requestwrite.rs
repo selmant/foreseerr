@@ -10,6 +10,7 @@ use std::pin::Pin;
 use serde_json::{Map, Value};
 
 use super::blocklist::plain_integer;
+use super::draft::fail_on_err;
 use super::request::{columns, count_of, episodes_json, seasons_json};
 use super::{Outcome, Ready};
 use crate::downloads::Downloads;
@@ -84,6 +85,13 @@ pub(super) fn status<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         } else {
             Downloads::default()
         };
+        // The answer's users print before the save: past it nothing is
+        // handed on.
+        for rel in [entity.requested_by.as_ref(), Some(&viewer_record)] {
+            if let Err(why) = user_json(rel) {
+                return Outcome::forward(why);
+            }
+        }
         entity.row.status = to;
         entity.row.modified_by_id = Some(viewer);
         entity.modified_by = Some(viewer_record);
@@ -97,25 +105,30 @@ pub(super) fn status<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
             return ctx.error(404, "Request not found.");
         }
-        match entity_json(ctx, &entity, &downloads) {
-            Ok(json) => ctx.json(&json),
-            Err(why) => Outcome::forward(why),
-        }
+        ctx.json(&fail_on_err!(ctx, entity_json(ctx, &entity, &downloads)))
+    })
+}
+
+/// A request's user relation as the answer prints it.
+fn user_json(rel: Option<&crate::lifecycle::UserRel>) -> Result<Value, String> {
+    rel.map_or(Ok(Value::Null), |(u, s)| {
+        filtered_json(u, Some(s.as_ref()), true).map_err(str::to_owned)
     })
 }
 
 /// The request as `findOne` with `requestedBy` and `modifiedBy` builds it,
 /// after the handler and the hooks changed it.
 fn entity_json(ctx: &Ready<'_>, e: &Entity, downloads: &Downloads) -> Result<Value, String> {
-    let user = |rel: Option<&crate::lifecycle::UserRel>| -> Result<Value, String> {
-        rel.map_or(Ok(Value::Null), |(u, s)| {
-            filtered_json(u, Some(s.as_ref()), true).map_err(str::to_owned)
-        })
-    };
     let mut out = Map::new();
     columns(&mut out, &e.row);
-    out.insert(String::from("requestedBy"), user(e.requested_by.as_ref())?);
-    out.insert(String::from("modifiedBy"), user(e.modified_by.as_ref())?);
+    out.insert(
+        String::from("requestedBy"),
+        user_json(e.requested_by.as_ref())?,
+    );
+    out.insert(
+        String::from("modifiedBy"),
+        user_json(e.modified_by.as_ref())?,
+    );
     out.insert(
         String::from("media"),
         e.media.as_ref().map_or(Value::Null, |m| {

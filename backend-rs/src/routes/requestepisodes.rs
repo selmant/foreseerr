@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value};
 
-use super::draft::forward_on_err;
+use super::draft::{fail_on_err, forward_on_err};
 use super::episodeselect::{self, Refused, Resolved, Selection};
 use super::requestedit::{changed_columns, loaded_json, Body};
 use super::{Outcome, Ready};
@@ -230,14 +230,18 @@ pub(super) async fn edit(
         tracing::error!("editing request {} failed: {err:#}", e.row.id);
         return ctx.error(500, &crate::db::failure_message(&err));
     }
-    let fresh = forward_on_err!(ctx
-        .state
-        .db
-        .request_by_id(e.row.id)
-        .await
-        .map_err(|err| format!("database: {err:#}")));
+    // Saved: from here on failures are answered here.
+    let fresh = fail_on_err!(
+        ctx,
+        ctx.state
+            .db
+            .request_by_id(e.row.id)
+            .await
+            .map_err(|err| format!("database: {err:#}"))
+    );
     let Some(fresh) = fresh else {
-        return Outcome::forward(String::from("the request vanished"));
+        tracing::error!("request {} vanished after its edit", e.row.id);
+        return ctx.error(500, "the request vanished");
     };
     ctx.json(&edited_json(
         loaded,

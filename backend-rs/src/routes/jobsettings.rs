@@ -167,15 +167,21 @@ async fn job_action(ctx: &Ready<'_>, action: &str) -> Outcome {
     match node_call(ctx, Method::POST, &path, None).await {
         Ok((200, job)) => ctx.json(&Value::Object(pick(&job, &JOB_FIELDS))),
         Ok((404, _)) => ctx.error(404, "Job not found."),
-        Ok((status @ (400 | 403), _)) => Outcome::forward(format!(
-            "the internal job {action} refused the call: {status}"
-        )),
-        Ok((status, _)) => {
-            tracing::error!("the internal job {action} answered {status}");
-            ctx.error(500, "Unable to reach the job scheduler.")
-        }
-        Err(e) => Outcome::forward(format!("{e:#}")),
+        Ok((status, _)) => acted_failed(
+            ctx,
+            &format!("the internal job {action} answered {status}"),
+            "Unable to reach the job scheduler.",
+        ),
+        Err(e) => acted_failed(ctx, &format!("{e:#}"), "Unable to reach the job scheduler."),
     }
+}
+
+/// A Node `/internal` POST that failed after it was sent: Node may already
+/// have acted, so the request is answered here (a logged 500) rather than
+/// replayed.
+fn acted_failed(ctx: &Ready<'_>, why: &str, message: &str) -> Outcome {
+    tracing::error!("{why}");
+    ctx.error(500, message)
 }
 
 fn job_run<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
@@ -235,9 +241,13 @@ fn job_schedule<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             Ok((200, _)) => return ctx.error(400, "Invalid job schedule."),
             Ok((404, _)) => return ctx.error(404, "Job not found."),
             Ok((status, _)) => {
-                return Outcome::forward(format!("the internal reschedule answered {status}"))
+                return acted_failed(
+                    ctx,
+                    &format!("the internal reschedule answered {status}"),
+                    "Unable to reschedule the job.",
+                )
             }
-            Err(e) => return Outcome::forward(format!("{e:#}")),
+            Err(e) => return acted_failed(ctx, &format!("{e:#}"), "Unable to reschedule the job."),
         };
         if let Some(Value::Object(settings)) = data.get_mut("jobs").and_then(|j| j.get_mut(&id)) {
             settings.insert(String::from("schedule"), Value::from(schedule.as_str()));
@@ -372,14 +382,16 @@ async fn scan_control(ctx: &Ready<'_>, server: &str) -> Outcome {
     let path = format!("/scanners/{server}");
     match node_call(ctx, Method::POST, &path, Some(&Value::Object(request))).await {
         Ok((200, status)) => ctx.json(&Value::Object(pick(&status, &SCAN_FIELDS))),
-        Ok((status @ (400 | 403 | 404), _)) => Outcome::forward(format!(
-            "the internal scanner control refused the call: {status}"
-        )),
-        Ok((status, _)) => {
-            tracing::error!("the internal scanner control answered {status}");
-            ctx.error(500, "Unable to reach the library scanner.")
-        }
-        Err(e) => Outcome::forward(format!("{e:#}")),
+        Ok((status, _)) => acted_failed(
+            ctx,
+            &format!("the internal scanner control answered {status}"),
+            "Unable to reach the library scanner.",
+        ),
+        Err(e) => acted_failed(
+            ctx,
+            &format!("{e:#}"),
+            "Unable to reach the library scanner.",
+        ),
     }
 }
 
@@ -451,10 +463,12 @@ fn cache_flush<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         match node_call(ctx, Method::POST, &path, None).await {
             Ok((204, _)) => Ready::no_content(),
             Ok((404, _)) => ctx.error(404, "Cache not found."),
-            Ok((status, _)) => {
-                Outcome::forward(format!("the internal cache flush answered {status}"))
-            }
-            Err(e) => Outcome::forward(format!("{e:#}")),
+            Ok((status, _)) => acted_failed(
+                ctx,
+                &format!("the internal cache flush answered {status}"),
+                "Unable to flush the cache.",
+            ),
+            Err(e) => acted_failed(ctx, &format!("{e:#}"), "Unable to flush the cache."),
         }
     })
 }
@@ -473,10 +487,12 @@ fn dns_flush<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         match node_call(ctx, Method::POST, &path, None).await {
             Ok((204, _)) => Ready::no_content(),
             Ok((404, _)) => ctx.error(404, "Cache not found."),
-            Ok((status, _)) => {
-                Outcome::forward(format!("the internal DNS flush answered {status}"))
-            }
-            Err(e) => Outcome::forward(format!("{e:#}")),
+            Ok((status, _)) => acted_failed(
+                ctx,
+                &format!("the internal DNS flush answered {status}"),
+                "Unable to flush the DNS cache.",
+            ),
+            Err(e) => acted_failed(ctx, &format!("{e:#}"), "Unable to flush the DNS cache."),
         }
     })
 }
@@ -506,6 +522,13 @@ async fn health(ctx: &Ready<'_>, refresh: bool) -> Outcome {
             tracing::error!("{failure} {why}");
             ctx.error(500, failure)
         }
+        // A refresh has made Node act: answered here, never replayed.
+        Ok((status, _)) if refresh => acted_failed(
+            ctx,
+            &format!("the internal integration health refresh answered {status}"),
+            failure,
+        ),
+        Err(e) if refresh => acted_failed(ctx, &format!("{e:#}"), failure),
         Ok((status, _)) => {
             Outcome::forward(format!("the internal integration health answered {status}"))
         }
