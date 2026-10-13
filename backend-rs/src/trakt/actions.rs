@@ -60,7 +60,7 @@ pub async fn request(
         let key = client.scoped_key(endpoint, params);
         if cached_get {
             if let Some(cached) = cache_get(&key) {
-                return Ok(cached);
+                return Ok(std::sync::Arc::unwrap_or_clone(cached));
             }
         }
         let token = client.access();

@@ -521,10 +521,10 @@ where
         recompute,
     )
     .await?;
-    let results = serve_tiles(run, stored.tiles).await?;
+    let results = serve_tiles(run, stored.tiles.clone()).await?;
     let mut body = page_body(page, stored.has_more, results);
-    if let Some(title) = stored.title {
-        body.insert(String::from("title"), title);
+    if let Some(title) = &stored.title {
+        body.insert(String::from("title"), title.clone());
     }
     Ok(Value::Object(body))
 }

@@ -356,7 +356,7 @@ async fn provider_search(
                     ("language", main_locale.to_owned()),
                     (year_key, year.clone()),
                 ];
-                async move { tmdb.raw(path, &params, 300).await.unwrap_or(Value::Null) }
+                async move { tmdb.raw(path, &params, 300).await.unwrap_or_default() }
             };
             let (movies, shows) = tokio::join!(
                 search("/search/movie", "primary_release_year"),

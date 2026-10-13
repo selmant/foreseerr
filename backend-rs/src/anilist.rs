@@ -337,9 +337,9 @@ impl Anilist {
             if let Some(pace) = self.pace {
                 pace.wait().await;
             }
-            let response = self.post(&body).await?;
+            let response = std::sync::Arc::new(self.post(&body).await?);
             if let Some(ttl) = ttl {
-                memcache::set(CacheId::Anilist, key, response.clone(), ttl);
+                memcache::set(CacheId::Anilist, key, std::sync::Arc::clone(&response), ttl);
             }
             response
         };

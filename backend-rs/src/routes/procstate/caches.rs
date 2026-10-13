@@ -28,6 +28,10 @@ pub async fn stats(state: &AppState) -> Answer {
     let mut out = Map::new();
     out.insert(String::from("apiCaches"), api_caches);
     out.insert(String::from("imageCache"), image_cache);
+    // The shared budget of the response caches and library artwork, as
+    // Node's `getMemoryCacheStats()` reports it: the provider rows and the
+    // per-user sync snapshots have their own bounds outside it, so this
+    // isn't the process's memory.
     out.insert(String::from("memory"), memcache::memory_stats());
     out.insert(String::from("images"), images);
     out.insert(String::from("dnsCache"), Value::Object(dns));

@@ -105,17 +105,21 @@ validator fills in `sort=created`, so the handler's own default never
 applies, and TypeORM leaves the search `OR` chain unparenthesised, so
 `includeIds` only narrows the last branch of it.
 
+One is deliberately not: `GET /tv/{id}/season/{n}` prefixes the image host
+onto episode stills once per answer. Node writes the prefix onto its cached
+object, so it stacks once more per call within the cache's five minutes;
+cached answers here are shared and never changed in place.
+
 A handler that can't be sure of answering as Node would hands the request
 on instead (`Outcome::Forward` in `src/routes/mod.rs`, logged at `debug`
 with the reason, `RUST_LOG=foreseerr=debug`). In hybrid mode it goes to
 Node with the request intact; standalone, the handler's own fallback
 answer is given instead (see "Standalone" below). Forwarding is meant to
-be decided before a handler changes anything, so that Node runs the
-request from the start. A few write handlers can still forward after
-their first write committed (for example when reloading the row they just
-inserted fails); Node then repeats that write. This is an open finding of
-the code review. The general cases, on top of the per-route ones in the
-table:
+be decided before a handler changes anything, so that Node runs the request
+from the start: once a write handler has written to the database or
+settings.json, or called an upstream that acts, a failure is answered
+here (`try_written!` in `src/routes/writes.rs`), never handed to Node to
+run again. The general cases, on top of the per-route ones in the table:
 
 - plugin mode (`FORESEERR_PLUGIN`) and the desktop runtime with Node
   behind: nothing is answered here and the OpenAPI gate is skipped, so

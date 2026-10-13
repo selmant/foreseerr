@@ -106,9 +106,9 @@ impl Shared {
     }
 }
 
-/// A stored `mdblist` answer.
+/// A copy of a stored `mdblist` answer.
 fn cached(key: &str) -> Option<Value> {
-    memcache::get(CacheId::Mdblist, key)
+    memcache::get(CacheId::Mdblist, key).map(std::sync::Arc::unwrap_or_clone)
 }
 
 /// `cache.set(key, value, ttl)`; a TTL of 0 stores nothing.

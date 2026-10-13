@@ -262,6 +262,7 @@ impl<'a> Discover<'a> {
             .tmdb
             .raw(&format!("/discover/{media_type}"), &params, 300)
             .await
+            .map(std::sync::Arc::unwrap_or_clone)
     }
 
     /// `processTagForType`: `false` when the run was cancelled.

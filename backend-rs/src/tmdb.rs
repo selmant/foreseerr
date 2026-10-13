@@ -1,7 +1,11 @@
 //! `server/api/themoviedb`: the parts of the TMDB client ported so far,
 //! with `ExternalAPI.get`'s response cache (five minutes unless a call
 //! names its own TTL).
+//!
+//! Cached answers are shared: [`TmdbClient::raw`] hands out the stored
+//! value itself, and the lookups that reshape theirs copy it first.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -43,7 +47,7 @@ impl TmdbClient {
     /// Fails when TMDB can't be reached or answers an error.
     pub async fn regions(&self) -> Result<Vec<Value>> {
         let data = self.get("/configuration/countries", &[], DAY).await?;
-        Ok(sort_by_english_name(as_array(data)))
+        Ok(sort_by_english_name(as_array(&data)))
     }
 
     /// `getLanguages`: languages sorted by English name.
@@ -53,7 +57,7 @@ impl TmdbClient {
     /// Fails when TMDB can't be reached or answers an error.
     pub async fn languages(&self) -> Result<Vec<Value>> {
         let data = self.get("/configuration/languages", &[], DAY).await?;
-        Ok(sort_by_english_name(as_array(data)))
+        Ok(sort_by_english_name(as_array(&data)))
     }
 
     /// `getAvailableWatchProviderRegions`.
@@ -66,7 +70,7 @@ impl TmdbClient {
         let data = self
             .get("/watch/providers/regions", params.as_slice(), DAY)
             .await?;
-        Ok(results(data))
+        Ok(results(&data))
     }
 
     /// `getMovieWatchProviders` or `getTvWatchProviders`, by `kind`.
@@ -88,7 +92,7 @@ impl TmdbClient {
         let data = self
             .get(&format!("/watch/providers/{kind}"), &params, DAY)
             .await?;
-        Ok(results(data))
+        Ok(results(&data))
     }
 
     /// `getMovie`: the movie with credits, external ids, videos, keywords,
@@ -139,9 +143,9 @@ impl TmdbClient {
             ],
         );
         if let Some(cached) = memcache::get(CacheId::Tmdb, &full) {
-            return Ok(cached);
+            return Ok(Arc::unwrap_or_clone(cached));
         }
-        self.get(&path, &[("language", language)], HALF_DAY).await
+        self.owned(&path, &[("language", language)], HALF_DAY).await
     }
 
     /// A title's details. For a non-English language without a trailer,
@@ -156,7 +160,7 @@ impl TmdbClient {
     ) -> Result<Value> {
         let path = format!("/{kind}/{}", id.path_text());
         let mut data = self
-            .get(
+            .owned(
                 &path,
                 &[
                     ("language", language),
@@ -251,7 +255,7 @@ impl TmdbClient {
         page: impl PathNumber,
         language: &str,
     ) -> Result<Value> {
-        self.get(
+        self.owned(
             &format!("/{kind}/{}/{list}", id.path_text()),
             &[("page", &page.path_text()), ("language", language)],
             DEFAULT_TTL,
@@ -265,7 +269,7 @@ impl TmdbClient {
     ///
     /// Fails when TMDB can't be reached or answers an error.
     pub async fn person(&self, id: impl PathNumber, language: &str) -> Result<Value> {
-        self.get(
+        self.owned(
             &format!("/person/{}", id.path_text()),
             &[("language", language)],
             DEFAULT_TTL,
@@ -283,7 +287,7 @@ impl TmdbClient {
         id: impl PathNumber,
         language: &str,
     ) -> Result<Value> {
-        self.get(
+        self.owned(
             &format!("/person/{}/combined_credits", id.path_text()),
             &[("language", language)],
             DEFAULT_TTL,
@@ -297,7 +301,7 @@ impl TmdbClient {
     ///
     /// Fails when TMDB can't be reached or answers an error.
     pub async fn collection(&self, id: impl PathNumber, language: &str) -> Result<Value> {
-        self.get(
+        self.owned(
             &format!("/collection/{}", id.path_text()),
             &[("language", language)],
             DEFAULT_TTL,
@@ -306,9 +310,10 @@ impl TmdbClient {
     }
 
     /// `getTvSeason`: a season with its episodes and external ids, cached
-    /// five minutes. Node prefixes the image host onto each episode's
-    /// `still_path` in place, on the object the cache holds, so every call
-    /// within the TTL prefixes it once more; the same happens here.
+    /// five minutes, with the image host prefixed onto each episode's
+    /// `still_path`. The prefix goes on a copy: Node writes it onto the
+    /// object its cache holds, so each later call within the TTL prefixes
+    /// it once more, and that isn't carried over.
     ///
     /// # Errors
     ///
@@ -324,7 +329,7 @@ impl TmdbClient {
             ("language", language),
             ("append_to_response", "external_ids"),
         ];
-        let mut data = self.get(&path, &params, DEFAULT_TTL).await?;
+        let mut data = self.owned(&path, &params, DEFAULT_TTL).await?;
         if let Some(Value::Array(episodes)) = data.get_mut("episodes") {
             for episode in episodes.iter_mut() {
                 let still = episode
@@ -339,7 +344,6 @@ impl TmdbClient {
                 }
             }
         }
-        overwrite_cached(&path, &params, data.clone());
         Ok(data)
     }
 
@@ -347,7 +351,7 @@ impl TmdbClient {
     /// Node swallows it.
     pub async fn search_multi(&self, query: &str, page: impl PathNumber, language: &str) -> Value {
         match self
-            .get(
+            .owned(
                 "/search/multi",
                 &[
                     ("query", query),
@@ -384,7 +388,7 @@ impl TmdbClient {
         query: &str,
         page: impl PathNumber,
     ) -> Result<Value> {
-        self.get(
+        self.owned(
             &format!("/search/{kind}"),
             &[("query", query), ("page", &page.path_text())],
             DAY,
@@ -394,11 +398,17 @@ impl TmdbClient {
 
     /// A cached GET with parameters already in axios order (absent ones
     /// left out), for the routes that build their own; `ttl` in seconds.
+    /// The answer is the cached one, shared.
     ///
     /// # Errors
     ///
     /// Fails when TMDB can't be reached or answers an error.
-    pub async fn raw(&self, path: &str, params: &[(&str, String)], ttl_secs: u64) -> Result<Value> {
+    pub async fn raw(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+        ttl_secs: u64,
+    ) -> Result<Arc<Value>> {
         let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         self.get(path, &borrowed, Duration::from_secs(ttl_secs))
             .await
@@ -414,7 +424,7 @@ impl TmdbClient {
         path: &str,
         params: &[(&str, String)],
         ttl_secs: u64,
-    ) -> Result<Value> {
+    ) -> Result<Arc<Value>> {
         let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         self.get_in(
             CacheId::TmdbScan,
@@ -476,8 +486,13 @@ impl TmdbClient {
 
     /// `ExternalAPI.get`: the cached answer if it is still fresh, otherwise
     /// a request with `api_key` first and `params` after it.
-    async fn get(&self, path: &str, params: &[(&str, &str)], ttl: Duration) -> Result<Value> {
+    async fn get(&self, path: &str, params: &[(&str, &str)], ttl: Duration) -> Result<Arc<Value>> {
         self.get_in(CacheId::Tmdb, path, params, ttl).await
+    }
+
+    /// [`Self::get`], as a copy the caller may change.
+    async fn owned(&self, path: &str, params: &[(&str, &str)], ttl: Duration) -> Result<Value> {
+        self.get(path, params, ttl).await.map(Arc::unwrap_or_clone)
     }
 
     /// `ExternalAPI.get` with `options.cache`.
@@ -487,7 +502,7 @@ impl TmdbClient {
         path: &str,
         params: &[(&str, &str)],
         ttl: Duration,
-    ) -> Result<Value> {
+    ) -> Result<Arc<Value>> {
         let url = request_url(path, params);
         let key = cache_key(path, params);
         if let Some(value) = memcache::get(cache, &key) {
@@ -509,8 +524,8 @@ impl TmdbClient {
             .await
             .map_err(crate::outbound::redact)
             .with_context(|| format!("GET {path}: not JSON"))?;
-        let value = js_numbers(value);
-        memcache::set(cache, key, value.clone(), ttl);
+        let value = Arc::new(js_numbers(value));
+        memcache::set(cache, key, Arc::clone(&value), ttl);
         Ok(value)
     }
 }
@@ -525,12 +540,6 @@ fn cache_key(path: &str, params: &[(&str, &str)]) -> String {
 #[cfg(test)]
 pub fn remember_for_tests(path: &str, params: &[(&str, &str)], value: Value) {
     memcache::set(CacheId::Tmdb, cache_key(path, params), value, HALF_DAY);
-}
-
-/// Replace a cached answer's value, keeping its age, as a mutation of the
-/// object Node's cache hands out does.
-fn overwrite_cached(path: &str, params: &[(&str, &str)], value: Value) {
-    memcache::replace(CacheId::Tmdb, &cache_key(path, params), value);
 }
 
 /// The request URL: the API key first, then the parameters in order.
@@ -577,21 +586,14 @@ pub fn js_numbers(value: Value) -> Value {
     }
 }
 
-fn as_array(value: Value) -> Vec<Value> {
-    match value {
-        Value::Array(items) => items,
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
-            Vec::new()
-        }
-    }
+/// A copy of the items, or nothing when `value` isn't a list.
+fn as_array(value: &Value) -> Vec<Value> {
+    value.as_array().cloned().unwrap_or_default()
 }
 
-/// `data.results`, or nothing when the shape is off.
-fn results(mut value: Value) -> Vec<Value> {
-    value
-        .get_mut("results")
-        .map(Value::take)
-        .map_or_else(Vec::new, as_array)
+/// A copy of `data.results`, or nothing when the shape is off.
+fn results(value: &Value) -> Vec<Value> {
+    value.get("results").map_or_else(Vec::new, as_array)
 }
 
 /// lodash `sortBy(data, 'english_name')`: a stable sort comparing the
@@ -757,10 +759,10 @@ mod tests {
     #[test]
     fn unwraps_results() {
         assert_eq!(
-            results(json!({"results": [1, 2]})),
+            results(&json!({"results": [1, 2]})),
             vec![json!(1), json!(2)],
             "results"
         );
-        assert!(results(json!({"other": 1})).is_empty(), "missing");
+        assert!(results(&json!({"other": 1})).is_empty(), "missing");
     }
 }

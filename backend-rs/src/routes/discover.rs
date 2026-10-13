@@ -630,7 +630,7 @@ async fn keyword_details(ctx: &Ready<'_>, keywords: &str) -> Result<Vec<Value>, 
             .raw(&format!("/keyword/{id}"), &[], WEEK)
             .await
         {
-            Ok(keyword) => out.push(keyword),
+            Ok(keyword) => out.push(std::sync::Arc::unwrap_or_clone(keyword)),
             Err(e) if http_status(&e) == Some(404) => {}
             Err(e) => return Err(Fail::Error(format!("{e:#}"))),
         }

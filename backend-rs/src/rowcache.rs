@@ -9,13 +9,18 @@
 //!
 //! What is stored is the row before anything request-specific: the unmapped
 //! sightings, `hideUnmapped` and the request annotations run on every serve.
+//! A stored row is shared, never changed: a serve that annotates copies
+//! the parts it changes once it holds no lock.
+//!
+//! Rows sit outside [`crate::memcache`]'s budget; [`MAX_ROWS`] and
+//! [`MAX_AGE`] bound them.
 
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
@@ -84,11 +89,11 @@ pub fn mark_stale() {
 /// A background refresh, built from owned parts.
 pub type Refresh<V, E> = Pin<Box<dyn Future<Output = Result<V, E>> + Send + 'static>>;
 
-type Answer<V, E> = Option<Result<V, E>>;
+type Answer<V, E> = Option<Result<Arc<V>, E>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Row<V> {
-    value: V,
+    value: Arc<V>,
     stored: Instant,
     generation: u64,
     epoch: u64,
@@ -125,8 +130,8 @@ struct Owned<V, E> {
 
 /// What a lookup does once no other request's computation is awaited.
 enum Plan<V, E> {
-    Serve(V),
-    ServeAndRefresh(V, Owned<V, E>),
+    Serve(Arc<V>),
+    ServeAndRefresh(Arc<V>, Owned<V, E>),
     Compute(Owned<V, E>),
 }
 
@@ -156,9 +161,20 @@ impl<V, E> Drop for Landing<'_, V, E> {
     }
 }
 
+impl<V> Clone for Row<V> {
+    fn clone(&self) -> Self {
+        Self {
+            value: Arc::clone(&self.value),
+            stored: self.stored,
+            generation: self.generation,
+            epoch: self.epoch,
+        }
+    }
+}
+
 impl<V, E> RowCache<V, E>
 where
-    V: Clone + Debug + Send + Sync + 'static,
+    V: Debug + Send + Sync + 'static,
     E: Clone + Debug + Send + Sync + 'static,
 {
     /// A cache answering to the process's [`MARKS`].
@@ -236,13 +252,13 @@ where
     }
 
     /// Store a computed row, unless a clear came after it started.
-    fn land(&self, key: &str, owned: &Owned<V, E>, result: &Result<V, E>) {
+    fn land(&self, key: &str, owned: &Owned<V, E>, result: &Result<Arc<V>, E>) {
         if let Ok(value) = result {
             if owned.generation == self.marks.generation() {
                 self.lock().rows.set(
                     key.to_owned(),
                     Row {
-                        value: value.clone(),
+                        value: Arc::clone(value),
                         stored: Instant::now(),
                         generation: owned.generation,
                         epoch: owned.epoch,
@@ -254,7 +270,7 @@ where
 
     /// `cachedProviderRow(key, freshSeconds, run)`: `inline` computes a
     /// miss in the request; `refresh` builds the background refresh of a
-    /// stale row.
+    /// stale row. The row is the stored one, shared.
     ///
     /// # Errors
     ///
@@ -265,7 +281,7 @@ where
         fresh: Duration,
         inline: Fut,
         refresh: R,
-    ) -> Result<V, E>
+    ) -> Result<Arc<V>, E>
     where
         Fut: Future<Output = Result<V, E>> + Send,
         R: FnOnce() -> Refresh<V, E> + Send,
@@ -295,7 +311,7 @@ where
                     key,
                     id: owned.id,
                 };
-                let result = inline.await;
+                let result = inline.await.map(Arc::new);
                 self.land(key, &owned, &result);
                 owned.answer.send_replace(Some(result.clone()));
                 result
@@ -310,7 +326,7 @@ where
                 key: &key,
                 id: owned.id,
             };
-            let result = work.await;
+            let result = work.await.map(Arc::new);
             if let Err(e) = &result {
                 tracing::warn!(key = %key, "Provider row refresh failed; serving the stored row: {e:?}");
             }
@@ -322,7 +338,7 @@ where
 
 impl<V, E> Default for RowCache<V, E>
 where
-    V: Clone + Debug + Send + Sync + 'static,
+    V: Debug + Send + Sync + 'static,
     E: Clone + Debug + Send + Sync + 'static,
 {
     fn default() -> Self {
@@ -357,6 +373,21 @@ mod tests {
         })
     }
 
+    /// [`RowCache::get`], the row read out.
+    async fn read<Fut, R>(
+        c: &'static Cache,
+        key: &'static str,
+        fresh: Duration,
+        inline: Fut,
+        refresh: R,
+    ) -> Result<i64, String>
+    where
+        Fut: Future<Output = Result<i64, String>> + Send,
+        R: FnOnce() -> Refresh<i64, String> + Send,
+    {
+        c.get(key, fresh, inline, refresh).await.map(|row| *row)
+    }
+
     async fn settle() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -366,12 +397,42 @@ mod tests {
     #[tokio::test]
     async fn fresh_rows_are_served_as_is() {
         let (c, _) = cache(MAX_AGE);
-        assert_eq!(c.get("k", MIN, async { Ok(1) }, never).await, Ok(1), "miss");
-        assert_eq!(c.get("k", MIN, async { Ok(2) }, never).await, Ok(1), "hit");
         assert_eq!(
-            c.get("j", MIN, async { Ok(3) }, never).await,
+            read(c, "k", MIN, async { Ok(1) }, never).await,
+            Ok(1),
+            "miss"
+        );
+        assert_eq!(
+            read(c, "k", MIN, async { Ok(2) }, never).await,
+            Ok(1),
+            "hit"
+        );
+        assert_eq!(
+            read(c, "j", MIN, async { Ok(3) }, never).await,
             Ok(3),
             "keys apart"
+        );
+    }
+
+    #[tokio::test]
+    async fn hits_and_joins_share_the_stored_row() {
+        let (c, _) = cache(MAX_AGE);
+        let computed = || async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Ok(1)
+        };
+        let (a, b) = tokio::join!(
+            c.get("k", MIN, computed(), never),
+            c.get("k", MIN, computed(), never)
+        );
+        let hit = c.get("k", MIN, async { Ok(2) }, never).await;
+        let shared = match (a, b, hit) {
+            (Ok(a), Ok(b), Ok(hit)) => Arc::ptr_eq(&a, &b) && Arc::ptr_eq(&a, &hit),
+            _ => false,
+        };
+        assert!(
+            shared,
+            "one allocation: the computing request's, the joiner's, the hit's"
         );
     }
 
@@ -379,21 +440,20 @@ mod tests {
     async fn stale_rows_are_served_while_one_refresh_runs() {
         let (c, _) = cache(MAX_AGE);
         let calls = Arc::new(AtomicUsize::new(0));
-        c.get("k", Duration::ZERO, async { Ok(1) }, never)
+        read(c, "k", Duration::ZERO, async { Ok(1) }, never)
             .await
             .ok();
         for _ in 0..3 {
-            let served = c
-                .get("k", Duration::ZERO, async { Ok(9) }, || {
-                    counted(&calls, Ok(2))
-                })
-                .await;
+            let served = read(c, "k", Duration::ZERO, async { Ok(9) }, || {
+                counted(&calls, Ok(2))
+            })
+            .await;
             assert_eq!(served, Ok(1), "the stored row, at once");
         }
         settle().await;
         assert_eq!(calls.load(Ordering::SeqCst), 1, "one refresh");
         assert_eq!(
-            c.get("k", MIN, async { Ok(9) }, never).await,
+            read(c, "k", MIN, async { Ok(9) }, never).await,
             Ok(2),
             "refreshed"
         );
@@ -403,17 +463,20 @@ mod tests {
     async fn a_failed_refresh_keeps_the_row() {
         let (c, _) = cache(MAX_AGE);
         let calls = Arc::new(AtomicUsize::new(0));
-        c.get("k", Duration::ZERO, async { Ok(1) }, never)
+        read(c, "k", Duration::ZERO, async { Ok(1) }, never)
             .await
             .ok();
-        let served = c
-            .get("k", Duration::ZERO, async { Ok(9) }, || {
-                counted(&calls, Err(String::from("down")))
-            })
-            .await;
+        let served = read(c, "k", Duration::ZERO, async { Ok(9) }, || {
+            counted(&calls, Err(String::from("down")))
+        })
+        .await;
         assert_eq!(served, Ok(1), "stale");
         settle().await;
-        assert_eq!(c.get("k", MIN, async { Ok(9) }, never).await, Ok(1), "kept");
+        assert_eq!(
+            read(c, "k", MIN, async { Ok(9) }, never).await,
+            Ok(1),
+            "kept"
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 1, "it ran");
     }
 
@@ -426,7 +489,10 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
             Err::<i64, String>(String::from("upstream down"))
         };
-        let (a, b) = tokio::join!(c.get("k", MIN, run(), never), c.get("k", MIN, run(), never));
+        let (a, b) = tokio::join!(
+            read(c, "k", MIN, run(), never),
+            read(c, "k", MIN, run(), never)
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 1, "one computation");
         assert_eq!(a, Err(String::from("upstream down")), "first");
         assert_eq!(
@@ -435,7 +501,7 @@ mod tests {
             "joined, error included"
         );
         assert!(
-            c.get("k", MIN, run(), never).await.is_err(),
+            read(c, "k", MIN, run(), never).await.is_err(),
             "nothing stored"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 2, "computed again");
@@ -444,7 +510,8 @@ mod tests {
     #[tokio::test]
     async fn an_abandoned_miss_hands_over() {
         let (c, _) = cache(MAX_AGE);
-        let first = tokio::spawn(c.get(
+        let first = tokio::spawn(read(
+            c,
             "k",
             MIN,
             async {
@@ -454,7 +521,7 @@ mod tests {
             never,
         ));
         tokio::time::sleep(Duration::from_millis(5)).await;
-        let second = tokio::spawn(c.get("k", MIN, async { Ok(2) }, never));
+        let second = tokio::spawn(read(c, "k", MIN, async { Ok(2) }, never));
         tokio::time::sleep(Duration::from_millis(5)).await;
         first.abort();
         let second = second.await.ok();
@@ -464,18 +531,23 @@ mod tests {
     #[tokio::test]
     async fn rows_past_the_maximum_age_are_misses() {
         let (c, _) = cache(Duration::from_millis(10));
-        c.get("k", MIN, async { Ok(1) }, never).await.ok();
+        read(c, "k", MIN, async { Ok(1) }, never).await.ok();
         settle().await;
-        assert_eq!(c.get("k", MIN, async { Ok(2) }, never).await, Ok(2), "miss");
+        assert_eq!(
+            read(c, "k", MIN, async { Ok(2) }, never).await,
+            Ok(2),
+            "miss"
+        );
     }
 
     #[tokio::test]
     async fn a_clear_drops_rows_and_late_computations() {
         let (c, marks) = cache(MAX_AGE);
-        c.get("k", MIN, async { Ok(1) }, never).await.ok();
+        read(c, "k", MIN, async { Ok(1) }, never).await.ok();
         marks.clear();
         let (release, wait) = tokio::sync::oneshot::channel::<()>();
-        let slow = tokio::spawn(c.get(
+        let slow = tokio::spawn(read(
+            c,
             "k",
             MIN,
             async {
@@ -489,7 +561,7 @@ mod tests {
         release.send(()).ok();
         assert_eq!(slow.await.ok(), Some(Ok(2)), "its caller still gets it");
         assert_eq!(
-            c.get("k", MIN, async { Ok(3) }, never).await,
+            read(c, "k", MIN, async { Ok(3) }, never).await,
             Ok(3),
             "not stored"
         );
@@ -500,15 +572,13 @@ mod tests {
         let (c, marks) = cache(MAX_AGE);
         let calls = Arc::new(AtomicUsize::new(0));
         let hour = Duration::from_secs(3600);
-        c.get("k", hour, async { Ok(1) }, never).await.ok();
+        read(c, "k", hour, async { Ok(1) }, never).await.ok();
         marks.mark_stale();
-        let served = c
-            .get("k", hour, async { Ok(9) }, || counted(&calls, Ok(2)))
-            .await;
+        let served = read(c, "k", hour, async { Ok(9) }, || counted(&calls, Ok(2))).await;
         assert_eq!(served, Ok(1), "stale");
         settle().await;
         assert_eq!(
-            c.get("k", hour, async { Ok(9) }, never).await,
+            read(c, "k", hour, async { Ok(9) }, never).await,
             Ok(2),
             "fresh"
         );
