@@ -311,7 +311,7 @@ async fn has_anime_keyword(run: &Run<'_>, item: &Value) -> Result<bool, Fail> {
     let key = format!("anime-keyword:{media_type}:{id}");
     // The `anime-keyword:<type>:<id>` entries of the shared `tmdb` cache.
     let cached = crate::memcache::get(crate::memcache::CacheId::Tmdb, &key);
-    if let Some(anime) = cached.as_ref().and_then(Value::as_bool) {
+    if let Some(anime) = cached.and_then(|v| v.as_bool()) {
         return Ok(anime);
     }
     let kind = if media_type == "movie" { "movie" } else { "tv" };
@@ -326,7 +326,7 @@ async fn has_anime_keyword(run: &Run<'_>, item: &Value) -> Result<bool, Fail> {
                 "[TMDB] Failed to fetch keywords for {media_type}/{id}: {e:#}"
             ))
         })?;
-    let list = match &data {
+    let list = match &*data {
         Value::Array(list) => Some(list),
         Value::Object(_) => data
             .get("keywords")

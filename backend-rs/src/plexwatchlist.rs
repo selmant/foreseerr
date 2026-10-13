@@ -287,7 +287,7 @@ async fn rolling(client: &reqwest::Client, token: &str, path: &str) -> Result<Op
                 }
             });
         }
-        return Ok(Some(value));
+        return Ok(Some(std::sync::Arc::unwrap_or_clone(value)));
     }
     let (status, _, body) = fetch_json(request(client, token, &url)).await?;
     if status == 404 {

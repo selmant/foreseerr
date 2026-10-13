@@ -59,7 +59,7 @@ Node, so they can be recorded and replayed too.
 | `GET /api/v1/movie/{id}/ratings`   | a user is signed in and the id is a plain integer                |
 | `GET /api/v1/tv/{id}`              | like the movie route, and the metadata provider for the show (TV or anime, detected as `isAnimeMedia` does) is TMDB; a TVDB provider stays with Node |
 | `GET /api/v1/tv/{id}/recommendations`, `/similar`, `/ratings` | like the movie routes                                |
-| `GET /api/v1/tv/{id}/season/{n}`   | like the show route; Node prefixes the image host onto episode stills on the cached object, once more per call within the cache's five minutes, and so does this server |
+| `GET /api/v1/tv/{id}/season/{n}`   | like the show route; the image host is prefixed onto episode stills once per answer (Node writes the prefix onto its cached object, so it stacks once more per call within the cache's five minutes; this server doesn't) |
 | `GET /api/v1/person/{id}`          | a user is signed in, the id is a plain integer and the query is at most a non-empty `language` |
 | `GET /api/v1/person/{id}/combined_credits`, `GET /api/v1/collection/{id}` | the same, and no MDBList key is configured |
 | `GET /api/v1/search`               | a user is signed in, `query` is a plain text search (the `tmdb:`, `imdb:`, `tvdb:` and `year:` forms stay with Node), `page` is a plain integer and no MDBList key is configured |

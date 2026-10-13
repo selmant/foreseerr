@@ -146,7 +146,7 @@ pub async fn get_ttl(client: &reqwest::Client, path: &str, ttl: Duration) -> Res
     let url = format!("{BASE_URL}{path}");
     let key = cache_key(path, &token);
     if let Some(value) = memcache::get(CacheId::Tvdb, &key) {
-        return Ok(value);
+        return Ok(std::sync::Arc::unwrap_or_clone(value));
     }
     let value: Value = client
         .get(&url)

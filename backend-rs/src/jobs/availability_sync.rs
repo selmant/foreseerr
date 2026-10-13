@@ -552,7 +552,7 @@ impl Sync<'_> {
             }
         };
         match result {
-            Ok(show) => Some(show),
+            Ok(show) => Some(Arc::unwrap_or_clone(show)),
             Err(e) => {
                 tracing::debug!(
                     label = "AvailabilitySync",

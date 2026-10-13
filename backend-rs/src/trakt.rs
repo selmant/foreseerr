@@ -7,7 +7,7 @@
 //! [`crate::routes::procstate::traktrefresh`] when this process owns it.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
@@ -43,9 +43,9 @@ const SORTED_LIST_MAX_PAGES: i64 = 10;
 /// `traktCircuitOpenUntilMs`, per token or app client.
 static CIRCUITS: LazyLock<Mutex<HashMap<String, Instant>>> = LazyLock::new(Mutex::default);
 
-/// A fresh entry of the shared `trakt` cache.
+/// A fresh entry of the shared `trakt` cache, shared; copy it to change it.
 #[must_use]
-pub fn cache_get(key: &str) -> Option<Value> {
+pub fn cache_get(key: &str) -> Option<Arc<Value>> {
     crate::memcache::get(crate::memcache::CacheId::Trakt, key)
 }
 
@@ -586,7 +586,7 @@ impl TraktClient {
             assert_circuit_closed(&self.circuit_key())?;
             let key = self.scoped_key(endpoint, params);
             if let Some(cached) = cache_get(&key) {
-                return Ok(cached);
+                return Ok(Arc::unwrap_or_clone(cached));
             }
             let token = self.access();
             let mut req = self
@@ -673,7 +673,7 @@ impl TraktClient {
         assert_circuit_closed(&self.circuit_key())?;
         let key = format!("{BASE_URL}{endpoint}{}", params_json(params, None));
         if let Some(cached) = cache_get(&key).filter(|v| truthy(Some(v))) {
-            return Ok(cached);
+            return Ok(Arc::unwrap_or_clone(cached));
         }
         let mut req = self
             .http

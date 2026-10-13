@@ -62,7 +62,7 @@ impl GithubApi {
         // The request URL is the cache key.
         let url = format!("{BASE_URL}{path}?{query}");
         if let Some(value) = memcache::get(CacheId::Github, &url) {
-            return Ok(value);
+            return Ok(std::sync::Arc::unwrap_or_clone(value));
         }
         let value: Value = self
             .client

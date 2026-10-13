@@ -147,7 +147,7 @@ impl ServarrClient {
                     }
                 });
             }
-            return Ok(value);
+            return Ok(std::sync::Arc::unwrap_or_clone(value));
         }
         let value = self.fetch(&url, timeout).await?;
         memcache::set(cache, key, value.clone(), PROFILES_TTL);

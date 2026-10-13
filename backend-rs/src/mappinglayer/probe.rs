@@ -65,6 +65,7 @@ pub async fn find_by_external_id(ctx: &Ctx<'_>, source: &str, external_id: &str)
             300,
         )
         .await
+        .map(std::sync::Arc::unwrap_or_clone)
 }
 
 /// `tmdbFind(source, externalId)`: the ids TMDB files an `IMDb` or TVDB id

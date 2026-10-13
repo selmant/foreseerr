@@ -38,11 +38,16 @@ pub async fn tv_for_scan(job: &JobCtx, tv_id: i64) -> Result<Value> {
             SCAN_TTL,
         )
         .await
+        .map(std::sync::Arc::unwrap_or_clone)
         .context("[TMDB] Failed to fetch TV show scan details")
 }
 
 /// `getByExternalIdForScan({ externalId, type })`.
-async fn find_for_scan(job: &JobCtx, external_id: &str, imdb: bool) -> Result<Value> {
+async fn find_for_scan(
+    job: &JobCtx,
+    external_id: &str,
+    imdb: bool,
+) -> Result<std::sync::Arc<Value>> {
     job.state
         .tmdb
         .raw_scan(

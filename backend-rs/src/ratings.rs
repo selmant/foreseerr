@@ -328,9 +328,11 @@ impl Ratings {
     }
 }
 
-/// `ExternalAPI`'s cache check: a stored answer that is truthy.
+/// `ExternalAPI`'s cache check: a copy of a stored answer that is truthy.
 fn cached(id: CacheId, key: &str) -> Option<Value> {
-    memcache::get(id, key).filter(|v| truthy(Some(v)))
+    memcache::get(id, key)
+        .filter(|v| truthy(Some(v)))
+        .map(std::sync::Arc::unwrap_or_clone)
 }
 
 /// An `RTRating` from the best hit.
