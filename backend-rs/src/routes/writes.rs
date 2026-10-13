@@ -5,11 +5,13 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use anyhow::Context;
 use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::{Native as NativeFn, Outcome, Ready};
-use crate::db::{Bind, DiscoverSliderRow, IssueCommentRow, OverrideRuleRow};
+use crate::db::{Bind, Db, DiscoverSliderRow, IssueCommentRow, OverrideRuleRow};
+use crate::jobs::syncutil::Tx;
 use crate::user::filtered_json;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
@@ -72,6 +74,30 @@ macro_rules! try_db {
         match $e {
             Ok(v) => v,
             Err(e) => return Outcome::forward(format!("database: {e:#}")),
+        }
+    };
+}
+
+/// A database result once the handler has started writing: an error is
+/// answered here (`status`, the handler's catch), never forwarded, as Node
+/// would write again.
+macro_rules! try_written {
+    ($ctx:expr, $status:expr, $e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("{e:#}");
+                return $ctx.error($status, &crate::db::failure_message(&e));
+            }
+        }
+    };
+    ($ctx:expr, $status:expr, $message:expr, $e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("{e:#}");
+                return $ctx.error($status, $message);
+            }
         }
     };
 }
@@ -176,18 +202,8 @@ fn rule_create<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             .iter()
             .map(|(_, f, int)| if *int { f.int_bind() } else { f.text_bind() })
             .collect();
-        let id = try_db!(
-            ctx.state
-                .db
-                .scalar(
-                    r#"INSERT INTO "override_rule" ("users", "genre", "language", "keywords", "profileId", "rootFolder", "tags", "radarrServiceId", "sonarrServiceId") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING CAST("id" AS BIGINT)"#,
-                    &binds,
-                )
-                .await
-        );
-        let Some(rule) = try_db!(ctx.state.db.override_rule(id).await) else {
-            return Outcome::forward(String::from("the new rule vanished"));
-        };
+        // From the insert on, a failure is the handler's catch (a 404).
+        let rule = try_written!(ctx, 404, insert_rule(&ctx.state.db, &binds).await);
         let mut out = Map::new();
         for (key, field, _) in &fields {
             out.insert((*key).to_owned(), field.json().unwrap_or(Value::Null));
@@ -197,6 +213,61 @@ fn rule_create<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         out.insert(String::from("updatedAt"), text(rule.updated_at.as_ref()));
         ctx.json(&Value::Object(out))
     })
+}
+
+/// The id and dates of a rule inserted from these binds.
+#[derive(Debug)]
+struct NewRule {
+    id: i64,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+}
+
+/// The insert of `POST /overrideRule` and the dates `TypeORM` reads back,
+/// in one transaction: a row that can't be read back isn't kept.
+async fn insert_rule(db: &Db, binds: &[Bind]) -> anyhow::Result<NewRule> {
+    let mut tx = Tx::begin(db).await?;
+    let id = tx
+        .insert_id(
+            r#"INSERT INTO "override_rule" ("users", "genre", "language", "keywords", "profileId", "rootFolder", "tags", "radarrServiceId", "sonarrServiceId") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING CAST("id" AS BIGINT) AS "id""#,
+            binds,
+        )
+        .await?;
+    let (created, updated) = if db.is_postgres() {
+        (db.iso_sql(r#""createdAt""#), db.iso_sql(r#""updatedAt""#))
+    } else {
+        (
+            String::from(r#""createdAt""#),
+            String::from(r#""updatedAt""#),
+        )
+    };
+    let rows = tx
+        .rows(
+            &format!(
+                r#"SELECT {created} AS "createdAt", {updated} AS "updatedAt" FROM "override_rule" WHERE "id" = ?1"#
+            ),
+            &[Bind::Int(id)],
+        )
+        .await?;
+    let row = rows.first().context("the new rule vanished")?;
+    let date = |key: &str| -> anyhow::Result<Option<String>> {
+        let Some(text) = row.get(key).and_then(Value::as_str) else {
+            return Ok(None);
+        };
+        if db.is_postgres() {
+            return Ok(Some(text.to_owned()));
+        }
+        crate::db::sqlite_datetime_to_iso(text)
+            .map(Some)
+            .with_context(|| format!("{key}={text:?} is not a datetime TypeORM wrote"))
+    };
+    let rule = NewRule {
+        id,
+        created_at: date("createdAt")?,
+        updated_at: date("updatedAt")?,
+    };
+    tx.commit().await?;
+    Ok(rule)
 }
 
 /// `PUT /overrideRule/{id}`: fields missing from the body are left alone
@@ -230,10 +301,11 @@ fn rule_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 sets.join(", "),
                 binds.len()
             );
-            try_db!(ctx.state.db.execute(&sql, &binds).await);
+            try_written!(ctx, 404, ctx.state.db.execute(&sql, &binds).await);
         }
-        let Some(rule) = try_db!(ctx.state.db.override_rule(id).await) else {
-            return Outcome::forward(String::from("the rule vanished"));
+        let reloaded = ctx.state.db.override_rule(id).await;
+        let Some(rule) = try_written!(ctx, 404, reloaded) else {
+            return ctx.error(404, "Override Rule not found.");
         };
         let mut out = rule_json(&rule, true);
         let updated = !sets.is_empty();
@@ -261,7 +333,9 @@ fn rule_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some(rule) = try_db!(ctx.state.db.override_rule(id).await) else {
             return ctx.error(404, "Override Rule not found.");
         };
-        try_db!(
+        try_written!(
+            ctx,
+            404,
             ctx.state
                 .db
                 .execute(
@@ -356,7 +430,10 @@ fn comment_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return ctx.error(403, "You can only edit your own comments.");
         }
         if *message != comment.message {
-            try_db!(
+            try_written!(
+                ctx,
+                404,
+                "Issue comment not found.",
                 ctx.state
                     .db
                     .execute(
@@ -366,10 +443,17 @@ fn comment_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                     .await
             );
         }
-        let Some(comment) = try_db!(ctx.state.db.issue_comment(id).await) else {
-            return Outcome::forward(String::from("the comment vanished"));
+        let reloaded = ctx.state.db.issue_comment(id).await;
+        let Some(comment) = try_written!(ctx, 404, "Issue comment not found.", reloaded) else {
+            return ctx.error(404, "Issue comment not found.");
         };
-        ctx.json(&try_forward!(comment_json(ctx, &comment).await))
+        match comment_json(ctx, &comment).await {
+            Ok(json) => ctx.json(&json),
+            Err(why) => {
+                tracing::error!("printing issue comment {id} failed: {why}");
+                ctx.error(500, &why)
+            }
+        }
     })
 }
 
@@ -385,7 +469,10 @@ fn comment_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if !user.has_permission(MANAGE_ISSUES) && comment.user_id != Some(user.id) {
             return ctx.error(403, "You do not have permission to delete this comment.");
         }
-        try_db!(
+        try_written!(
+            ctx,
+            404,
+            "Issue comment not found.",
             ctx.state
                 .db
                 .execute(
@@ -465,8 +552,9 @@ fn slider_add<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             // Without a `type` the NOT NULL column refuses the row.
             Err(e) => return ctx.error(500, &crate::db::failure_message(&e)),
         };
-        let Some(row) = try_db!(ctx.state.db.discover_slider(id).await) else {
-            return Outcome::forward(String::from("the new slider vanished"));
+        let reloaded = ctx.state.db.discover_slider(id).await;
+        let Some(row) = try_written!(ctx, 500, reloaded) else {
+            return ctx.error(500, "The new slider could not be read back.");
         };
         let mut out = Map::new();
         out.insert(String::from("isBuiltIn"), Value::Bool(false));
@@ -519,10 +607,17 @@ fn slider_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 sets.join(", "),
                 binds.len()
             );
-            try_db!(ctx.state.db.execute(&sql, &binds).await);
+            try_written!(
+                ctx,
+                404,
+                "Slider not found or cannot be updated.",
+                ctx.state.db.execute(&sql, &binds).await
+            );
         }
-        let Some(row) = try_db!(ctx.state.db.discover_slider(id).await) else {
-            return Outcome::forward(String::from("the slider vanished"));
+        let reloaded = ctx.state.db.discover_slider(id).await;
+        let Some(row) = try_written!(ctx, 404, "Slider not found or cannot be updated.", reloaded)
+        else {
+            return ctx.error(404, "Slider not found or cannot be updated.");
         };
         let mut out = slider_json(&row);
         let updated = !sets.is_empty();
@@ -548,7 +643,10 @@ fn slider_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         try_forward!(ctx.no_query());
         try_forward!(ctx.authenticated(ADMIN));
         let id = try_forward!(super::params::path_int(ctx, 0));
-        let removed = try_db!(
+        let removed = try_written!(
+            ctx,
+            404,
+            "Slider not found or cannot be deleted.",
             ctx.state
                 .db
                 .execute(
@@ -583,7 +681,9 @@ pub(super) fn blocklist_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if found == 0 {
             return ctx.error(404, &super::draft::not_found("Blocklist"));
         }
-        try_db!(
+        try_written!(
+            ctx,
+            500,
             ctx.state
                 .db
                 .execute(
@@ -592,7 +692,9 @@ pub(super) fn blocklist_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 )
                 .await
         );
-        let removed = try_db!(
+        let removed = try_written!(
+            ctx,
+            500,
             ctx.state
                 .db
                 .execute(
@@ -606,4 +708,46 @@ pub(super) fn blocklist_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         Ready::no_content()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dbtx::scratch::{self, ints};
+
+    const RULE: [Bind; 9] = [
+        Bind::OptText(None),
+        Bind::OptText(None),
+        Bind::OptText(None),
+        Bind::OptText(None),
+        Bind::OptInt(Some(4)),
+        Bind::OptText(None),
+        Bind::OptText(None),
+        Bind::OptInt(None),
+        Bind::OptInt(None),
+    ];
+
+    #[tokio::test]
+    async fn a_rule_that_cannot_be_read_back_is_not_kept() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("rule-create").await?;
+        let db = &scratch.db;
+        let rule = insert_rule(db, &RULE).await?;
+        assert!(
+            rule.created_at
+                .as_deref()
+                .is_some_and(|at| at.ends_with('Z') && at.contains('T')),
+            "an ISO date: {rule:?}"
+        );
+        // The hydration of the reloaded row fails: the insert goes too,
+        // so the handler's 404 leaves nothing a retry would duplicate.
+        scratch::run(
+            db,
+            &[r#"CREATE TRIGGER "garble_date" AFTER INSERT ON "override_rule" BEGIN UPDATE "override_rule" SET "createdAt" = 'not a date' WHERE "id" = NEW."id"; END"#],
+        )
+        .await?;
+        assert!(insert_rule(db, &RULE).await.is_err(), "unreadable");
+        let ids = r#"SELECT "id" FROM "override_rule""#;
+        assert_eq!(ints(db, ids).await?, [rule.id], "only the first rule");
+        Ok(())
+    }
 }

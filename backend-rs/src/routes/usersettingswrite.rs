@@ -7,12 +7,15 @@ use std::pin::Pin;
 use axum::http::Method;
 use serde_json::{Map, Value};
 
+use super::draft::fail_on_err;
 use super::userwrite::{
     body_object, can_make_permissions_change, check_fields, flag, has_permission, int, load_user,
     own_or_admin, text, Kind, ADMIN, MANAGE_USERS, USER_TYPE_PLEX,
 };
 use super::{Outcome, Ready, Table};
-use crate::db::{Bind, UserRecord, UserSettingsRecord};
+use crate::db::{Bind, Db, UserRecord, UserSettingsRecord};
+use crate::dbtx::{self, Exec};
+use crate::jobs::syncutil::Tx;
 use crate::typeorm::{self, Changes};
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
@@ -89,22 +92,32 @@ fn echoed(out: &mut Map<String, Value>, key: &str, assigned: Option<&Value>, wri
     }
 }
 
-/// Run a user update (with `updatedAt`) and a settings update.
-async fn save(
-    ctx: &Ready<'_>,
-    user_id: i64,
-    user: &Changes,
-    settings: Option<(i64, &Changes)>,
-) -> anyhow::Result<()> {
-    typeorm::run(&ctx.state.db, user.update_sql("user", user_id, true)?).await?;
-    if let Some((id, changes)) = settings {
-        typeorm::run(
-            &ctx.state.db,
-            changes.update_sql("user_settings", id, false)?,
-        )
-        .await?;
+/// What `userRepository.save(user)` cascades to the user's settings.
+enum Cascade<'a> {
+    /// Nothing.
+    Nothing,
+    /// An update of the row with this id.
+    Update(i64, &'a Changes),
+    /// A new row with these columns.
+    Insert(&'a [(&'a str, Value)]),
+}
+
+/// Run a user update (with `updatedAt`) and the settings write it
+/// cascades to, in one transaction as the save runs them.
+async fn save(db: &Db, user_id: i64, user: &Changes, settings: Cascade<'_>) -> anyhow::Result<()> {
+    let mut tx = Tx::begin(db).await?;
+    let exec = &mut Exec::Tx(&mut tx);
+    dbtx::run(exec, user.update_sql("user", user_id, true)?).await?;
+    match settings {
+        Cascade::Nothing => {}
+        Cascade::Update(id, changes) => {
+            dbtx::run(exec, changes.update_sql("user_settings", id, false)?).await?;
+        }
+        Cascade::Insert(columns) => {
+            dbtx::insert(exec, "user_settings", columns).await?;
+        }
     }
-    Ok(())
+    tx.commit().await
 }
 
 // ---------------------------------------------------------------------------
@@ -218,16 +231,30 @@ fn main<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let settings_out = if let Some(s) = settings.as_ref() {
             let changes = main_settings_changes(body, s, threshold, watch_ahead);
             let written = changes.any() || typeorm::settings_change_by_itself(s);
-            if let Err(e) = save(ctx, user.id, &user_changes, Some((s.id, &changes))).await {
-                return Outcome::forward(format!("saving the settings failed: {e:#}"));
+            let saved = save(
+                &ctx.state.db,
+                user.id,
+                &user_changes,
+                Cascade::Update(s.id, &changes),
+            )
+            .await;
+            if let Err(e) = saved {
+                tracing::error!("saving the settings of user {} failed: {e:#}", user.id);
+                return ctx.error(500, &crate::db::failure_message(&e));
             }
             main_settings_json(body, Some(s), written, threshold, watch_ahead)
         } else {
-            if let Err(e) = save(ctx, user.id, &user_changes, None).await {
-                return Outcome::forward(format!("saving the user failed: {e:#}"));
-            }
-            if let Err(e) = insert_main_settings(ctx, user.id, body, threshold, watch_ahead).await {
-                return ctx.error(500, &format!("{e:#}"));
+            let columns = main_settings_columns(user.id, body, threshold, watch_ahead);
+            let saved = save(
+                &ctx.state.db,
+                user.id,
+                &user_changes,
+                Cascade::Insert(&columns),
+            )
+            .await;
+            if let Err(e) = saved {
+                tracing::error!("saving the settings of user {} failed: {e:#}", user.id);
+                return ctx.error(500, &crate::db::failure_message(&e));
             }
             main_settings_json(body, None, true, threshold, watch_ahead)
         };
@@ -337,14 +364,14 @@ fn main_settings_changes(
     changes
 }
 
-/// A new settings row for `/settings/main` (the cascade insert).
-async fn insert_main_settings(
-    ctx: &Ready<'_>,
+/// The columns of a new settings row for `/settings/main` (the cascade
+/// insert).
+fn main_settings_columns(
     user_id: i64,
     body: &Map<String, Value>,
     threshold: Option<i64>,
     watch_ahead: Option<i64>,
-) -> anyhow::Result<()> {
+) -> Vec<(&'static str, Value)> {
     let mut columns: Vec<(&str, Value)> = vec![(
         "locale",
         body.get("locale")
@@ -370,8 +397,7 @@ async fn insert_main_settings(
         columns.push(("watchAheadEpisodeCount", Value::from(w)));
     }
     columns.push(("userId", Value::from(user_id)));
-    typeorm::insert(&ctx.state.db, "user_settings", &columns).await?;
-    Ok(())
+    columns
 }
 
 /// The settings part of the `/settings/main` answer, in handler order.
@@ -470,8 +496,9 @@ fn password<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             .map_err(|e| format!("{e:#}")));
         let mut changes = Changes::default();
         changes.set("password", Value::from(hash));
-        if let Err(e) = save(ctx, user.id, &changes, None).await {
-            return Outcome::forward(format!("saving the password failed: {e:#}"));
+        if let Err(e) = save(&ctx.state.db, user.id, &changes, Cascade::Nothing).await {
+            tracing::error!("saving the password of user {} failed: {e:#}", user.id);
+            return ctx.error(500, &crate::db::failure_message(&e));
         }
         if viewer.has_permission(MANAGE_USERS) && viewer.id != user.id {
             tracing::debug!("Password overriden by user.");
@@ -510,7 +537,7 @@ fn permissions<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Some(&Value::from(permissions)),
             &super::userwrite::stored_permissions(&user),
         );
-        if let Err(e) = save(ctx, user.id, &changes, None).await {
+        if let Err(e) = save(&ctx.state.db, user.id, &changes, Cascade::Nothing).await {
             return ctx.error(500, &crate::db::failure_message(&e));
         }
         let mut out = Map::new();
@@ -599,26 +626,30 @@ fn notifications<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return ctx.error(403, OWNER_ONLY);
         }
         let out = match settings.as_ref() {
-            Some(s) => try_forward!(update_notifications(ctx, s, &parsed).await),
+            Some(s) => update_notifications(ctx, s, &parsed).await,
             // `new UserSettings({ user: req.user })`, but the cascade from
             // the saved user writes the row as theirs.
-            None => try_forward!(insert_notifications(ctx, &user, &parsed).await),
+            None => insert_notifications(ctx, &user, &parsed).await,
         };
-        ctx.json(&Value::Object(out))
+        match out {
+            Ok(out) => ctx.json(&Value::Object(out)),
+            Err(outcome) => outcome,
+        }
     })
 }
 
-/// The existing row: assign, merge the types, save the differences.
+/// The existing row: assign, merge the types, save the differences. The
+/// answer when that fails: forwarded before the save, a 500 once it ran.
 async fn update_notifications(
     ctx: &Ready<'_>,
     s: &UserSettingsRecord,
     parsed: &NotificationBody<'_>,
-) -> Result<Map<String, Value>, String> {
+) -> Result<Map<String, Value>, Outcome> {
     let body = parsed.body;
     let mut types = match crate::user::notification_types(s.public.notification_types.as_deref()) {
         Ok(Value::Object(types)) => types,
         Ok(_) => Map::new(),
-        Err(why) => return Err(why.to_owned()),
+        Err(why) => return Err(Outcome::forward(why)),
     };
     let stored_types = typeorm::notification_types_to(&mut types.clone());
     if let Some(new) = parsed.types {
@@ -654,10 +685,11 @@ async fn update_notifications(
     let written = changes.any() || typeorm::settings_change_by_itself(s);
     let update = changes
         .update_sql("user_settings", s.id, false)
-        .map_err(|e| format!("{e:#}"))?;
-    typeorm::run(&ctx.state.db, update)
-        .await
-        .map_err(|e| format!("saving the settings failed: {e:#}"))?;
+        .map_err(|e| Outcome::forward(format!("{e:#}")))?;
+    if let Err(e) = typeorm::run(&ctx.state.db, update).await {
+        tracing::error!("saving the notification settings failed: {e:#}");
+        return Err(ctx.error(500, &crate::db::failure_message(&e)));
+    }
     let mut out = Map::new();
     echoed(&mut out, "pgpKey", body.get("pgpKey"), written);
     out.insert(
@@ -671,12 +703,13 @@ async fn update_notifications(
     Ok(out)
 }
 
-/// No row yet: the cascade inserts one from the body.
+/// No row yet: the cascade inserts one from the body. A failed insert is
+/// answered here.
 async fn insert_notifications(
     ctx: &Ready<'_>,
     user: &UserRecord,
     parsed: &NotificationBody<'_>,
-) -> Result<Map<String, Value>, String> {
+) -> Result<Map<String, Value>, Outcome> {
     let body = parsed.body;
     let field = |k: &str| body.get(k).cloned().unwrap_or(Value::Null);
     let types = parsed.types.map(|t| {
@@ -701,9 +734,10 @@ async fn insert_notifications(
             .map_or(Value::Null, |(_, stored)| Value::from(stored.as_str())),
     ));
     columns.push(("userId", Value::from(user.id)));
-    typeorm::insert(&ctx.state.db, "user_settings", &columns)
-        .await
-        .map_err(|e| format!("creating the settings failed: {e:#}"))?;
+    if let Err(e) = typeorm::insert(&ctx.state.db, "user_settings", &columns).await {
+        tracing::error!("creating the notification settings failed: {e:#}");
+        return Err(ctx.error(500, &crate::db::failure_message(&e)));
+    }
     let mut out = Map::new();
     out.insert(String::from("pgpKey"), field("pgpKey"));
     out.insert(
@@ -772,19 +806,24 @@ fn discover<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some(parsed) = typeorm::parse_filter_defaults(body) else {
             return ctx.error(400, "Invalid discover filter defaults.");
         };
-        let Some(settings_id) = try_db!(typeorm::ensure_user_settings(&ctx.state.db, id).await)
-        else {
-            return ctx.error(500, "User not found");
+        // `ensureUserSettings` may insert the row: no forwarding from here.
+        let settings_id = match typeorm::ensure_user_settings(&ctx.state.db, id).await {
+            Ok(Some(settings_id)) => settings_id,
+            Ok(None) => return ctx.error(500, "User not found"),
+            Err(e) => return ctx.error(500, &crate::db::failure_message(&e)),
         };
-        let stored = try_db!(
-            ctx.state
-                .db
-                .rows(
-                    r#"SELECT "discoverFilterDefaults" FROM "user_settings" WHERE "id" = ?1"#,
-                    &[Bind::Int(settings_id)],
-                )
-                .await
-        );
+        let stored = match ctx
+            .state
+            .db
+            .rows(
+                r#"SELECT "discoverFilterDefaults" FROM "user_settings" WHERE "id" = ?1"#,
+                &[Bind::Int(settings_id)],
+            )
+            .await
+        {
+            Ok(stored) => stored,
+            Err(e) => return ctx.error(500, &crate::db::failure_message(&e)),
+        };
         let stored = stored
             .first()
             .and_then(|r| r.get("discoverFilterDefaults"))
@@ -806,9 +845,12 @@ fn discover<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if old.is_null() || !typeorm::strict_eq(&new, &old) {
             let mut changes = Changes::default();
             changes.set("discoverFilterDefaults", new);
-            let update = try_forward!(changes
-                .update_sql("user_settings", settings_id, false)
-                .map_err(|e| format!("{e:#}")));
+            let update = fail_on_err!(
+                ctx,
+                changes
+                    .update_sql("user_settings", settings_id, false)
+                    .map_err(|e| format!("{e:#}"))
+            );
             if let Err(e) = typeorm::run(&ctx.state.db, update).await {
                 return ctx.error(500, &format!("{e:#}"));
             }
@@ -820,6 +862,7 @@ fn discover<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dbtx::scratch;
     use serde_json::json;
 
     #[test]
@@ -874,5 +917,47 @@ mod tests {
             !filter_schema_ok(&bad.as_object().cloned().unwrap_or_default()),
             "a string for a boolean"
         );
+    }
+
+    #[tokio::test]
+    async fn a_failed_settings_write_keeps_the_user_row() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("usersettings").await?;
+        let db = &scratch.db;
+        scratch::run(
+            db,
+            &[
+                r#"INSERT INTO "user" ("id", "email", "username", "avatar") VALUES (1, 'owner@example.test', 'before', '')"#,
+                r#"INSERT INTO "user_settings" ("id", "locale", "userId") VALUES (1, 'en', 1)"#,
+                r#"CREATE TRIGGER "refuse_settings" BEFORE UPDATE ON "user_settings" BEGIN SELECT RAISE(ABORT, 'settings update refused'); END"#,
+            ],
+        )
+        .await?;
+        let mut user = Changes::default();
+        user.set("username", json!("after"));
+        let mut settings = Changes::default();
+        settings.set("locale", json!("de"));
+        assert!(
+            save(db, 1, &user, Cascade::Update(1, &settings))
+                .await
+                .is_err(),
+            "the settings update fails"
+        );
+        let name = r#"SELECT "username" FROM "user" WHERE "id" = 1"#;
+        let stored = db.rows(name, &[]).await?;
+        assert_eq!(
+            stored.first().and_then(|r| r.get("username")),
+            Some(&json!("before")),
+            "the user update rolled back"
+        );
+
+        scratch::run(db, &[r#"DROP TRIGGER "refuse_settings""#]).await?;
+        save(db, 1, &user, Cascade::Update(1, &settings)).await?;
+        let stored = db.rows(name, &[]).await?;
+        assert_eq!(
+            stored.first().and_then(|r| r.get("username")),
+            Some(&json!("after")),
+            "saved together"
+        );
+        Ok(())
     }
 }

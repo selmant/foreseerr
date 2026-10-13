@@ -1071,7 +1071,9 @@ async fn create_request(ctx: &Ready<'_>, user: &CurrentUser, body: &Body) -> Out
     // back: the new media row's `tvdbId` goes first, then the request's.
     if let Some(plan) = &p.episodes {
         if let Some(old) = &plan.replace {
-            return replace_request(ctx, user, &p, plan, old, media_head).await;
+            // The requester's JSON is built before any write.
+            let people = (requested_by, modified_by);
+            return replace_request(ctx, user, &p, plan, old, media_head, people).await;
         }
         if let Some(key) = &plan.key {
             // Node's insert breaks the unique index and its transaction
@@ -1140,7 +1142,8 @@ async fn create_request(ctx: &Ready<'_>, user: &CurrentUser, body: &Body) -> Out
 /// `persistEpisodeReplacement`: the active ongoing request takes the new
 /// selection (its routing where the new one has a value, the requester,
 /// the status unless already approved), its episodes are replaced, and
-/// the update hooks run when the row changed.
+/// the update hooks run when the row changed. `people` is the
+/// `requestedBy` and `modifiedBy` JSON.
 async fn replace_request(
     ctx: &Ready<'_>,
     user: &CurrentUser,
@@ -1148,6 +1151,7 @@ async fn replace_request(
     plan: &EpisodePlan,
     old: &RequestRow,
     media_head: Option<Map<String, Value>>,
+    (requested_by, modified_by): (Value, Option<Value>),
 ) -> Outcome {
     let assigned = if p.approved { APPROVED } else { PENDING };
     let status = if old.status == APPROVED {
@@ -1294,10 +1298,7 @@ async fn replace_request(
         &mut out,
     );
     out.insert(String::from("media"), media_json);
-    out.insert(
-        String::from("requestedBy"),
-        forward_on_err!(user_json(&p.request_user)),
-    );
+    out.insert(String::from("requestedBy"), requested_by);
     out.insert(String::from("seasons"), Value::Array(Vec::new()));
     out.insert(
         String::from("episodes"),
@@ -1307,11 +1308,8 @@ async fn replace_request(
         String::from("seasonCount"),
         Value::from(i64::try_from(old.seasons.len()).unwrap_or(i64::MAX)),
     );
-    if p.approved {
-        out.insert(
-            String::from("modifiedBy"),
-            forward_on_err!(user_json(&p.actor)),
-        );
+    if let Some(modified_by) = modified_by {
+        out.insert(String::from("modifiedBy"), modified_by);
     }
     ctx.json_with(201, &Value::Object(out))
 }

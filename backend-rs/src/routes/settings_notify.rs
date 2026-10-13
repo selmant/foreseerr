@@ -339,8 +339,9 @@ async fn store(ctx: &Ready<'_>, name: &str, section: Value) -> Outcome {
     let Some(data) = with_agent(ctx, name, section.clone()) else {
         return Outcome::forward(String::from("notifications.agents is not an object"));
     };
-    if let Err(e) = ctx.save_settings(&data).await {
-        return Outcome::forward(format!("saving settings failed: {e:#}"));
+    // A failed save may have written part of the file: answered here.
+    if let Err(outcome) = super::nodestate::save(ctx, &data).await {
+        return outcome;
     }
     ctx.json(&section)
 }
@@ -372,8 +373,9 @@ async fn drop_agent(ctx: &Ready<'_>, name: &str) -> Outcome {
         return Outcome::forward(String::from("notifications.agents is not an object"));
     };
     agents.shift_remove(name);
-    if let Err(e) = ctx.save_settings(&data).await {
-        return Outcome::forward(format!("saving settings failed: {e:#}"));
+    // A failed save may have written part of the file: answered here.
+    if let Err(outcome) = super::nodestate::save(ctx, &data).await {
+        return outcome;
     }
     super::empty_json()
 }

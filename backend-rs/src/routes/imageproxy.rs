@@ -316,6 +316,16 @@ async fn image(state: &Arc<AppState>, parts: &Parts) -> Decided {
             return Ok(error(parts, 500, "Failed to proxy image."));
         }
     };
+    // The fetch may have written the disk cache: answered here from now on.
+    Ok(image_response(parts, &image).unwrap_or_else(|why| {
+        tracing::error!("Failed to proxy image {image_path}: {why}");
+        error(parts, 500, "Failed to proxy image.")
+    }))
+}
+
+/// The image route's answer for a fetched image; `Err` for a header value
+/// HTTP can't carry.
+fn image_response(parts: &Parts, image: &Image) -> Result<Response<Body>, String> {
     let revalidate = if image.meta.cur_revalidate.is_nan() {
         0.0
     } else {
@@ -337,7 +347,7 @@ async fn image(state: &Arc<AppState>, parts: &Parts) -> Decided {
         headers.insert(header::ETAG, etag_value);
         headers.insert(header::CACHE_CONTROL, cache_control_value);
         headers.insert("os-cache-key", key_value);
-        headers.insert("os-cache-status", cache_status(&image));
+        headers.insert("os-cache-status", cache_status(image));
         return Ok(res);
     }
     let content_type = header_value(&format!(
@@ -351,7 +361,7 @@ async fn image(state: &Arc<AppState>, parts: &Parts) -> Decided {
     headers.insert(header::CACHE_CONTROL, cache_control_value);
     headers.insert(header::ETAG, etag_value);
     headers.insert("os-cache-key", key_value);
-    headers.insert("os-cache-status", cache_status(&image));
+    headers.insert("os-cache-status", cache_status(image));
     Ok(res)
 }
 
@@ -459,6 +469,22 @@ async fn avatar(state: &Arc<AppState>, parts: &Parts) -> Decided {
             return Ok(error(parts, 500, "Failed to proxy avatar image."));
         }
     };
+    // The fetch may have written the disk cache: answered here from now on.
+    Ok(
+        avatar_response(parts, &image, version_param).unwrap_or_else(|why| {
+            tracing::error!("Failed to proxy avatar image: {why}");
+            error(parts, 500, "Failed to proxy avatar image.")
+        }),
+    )
+}
+
+/// The avatar route's answer for a fetched image; `Err` for a header
+/// value HTTP can't carry.
+fn avatar_response(
+    parts: &Parts,
+    image: &Image,
+    version_param: bool,
+) -> Result<Response<Body>, String> {
     let etag = format!("\"{}\"", imagecache::part_text(image.meta.etag.as_deref()));
     let if_none_match = request_header(&parts.headers, header::IF_NONE_MATCH);
     if if_none_match.is_some_and(|tag| !tag.is_empty() && tag == etag) && !version_param {
@@ -483,7 +509,7 @@ async fn avatar(state: &Arc<AppState>, parts: &Parts) -> Decided {
     headers.insert(header::CACHE_CONTROL, cache_control);
     headers.insert(header::ETAG, etag_value);
     headers.insert("os-cache-key", key_value);
-    headers.insert("os-cache-status", cache_status(&image));
+    headers.insert("os-cache-status", cache_status(image));
     Ok(res)
 }
 

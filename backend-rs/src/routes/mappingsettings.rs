@@ -268,7 +268,11 @@ fn resolutions<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
                     tracing::error!("Node's mapping flush answered {status}");
                     return ctx.error(500, "Unable to retrieve mappings.");
                 }
-                Err(e) => return Outcome::forward(format!("{e:#}")),
+                // The flush may have written: answered here, never replayed.
+                Err(e) => {
+                    tracing::error!("Node's mapping flush failed: {e:#}");
+                    return ctx.error(500, "Unable to retrieve mappings.");
+                }
             }
         }
         let db = &ctx.state.db;
@@ -753,14 +757,16 @@ fn dataset_toggle<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
                 let dataset = answer.get("dataset").unwrap_or(&Value::Null);
                 ctx.json(&Value::Object(pick(dataset, &DATASET_FIELDS)))
             }
-            Ok((status @ (400 | 403 | 404), _)) => Outcome::forward(format!(
-                "the internal dataset toggle refused the call: {status}"
-            )),
+            // Node may have acted by now: answered here, never replayed.
+            Ok((404, _)) => ctx.error(404, "Mapping dataset not found."),
             Ok((status, _)) => {
                 tracing::error!("the internal dataset toggle answered {status}");
                 ctx.error(500, "Unable to update the mapping dataset.")
             }
-            Err(e) => Outcome::forward(format!("{e:#}")),
+            Err(e) => {
+                tracing::error!("the internal dataset toggle failed: {e:#}");
+                ctx.error(500, "Unable to update the mapping dataset.")
+            }
         }
     })
 }
@@ -783,14 +789,16 @@ fn dataset_refresh<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
                 &result,
                 &["key", "status", "edges", "error"],
             ))),
-            Ok((status @ (400 | 403 | 404), _)) => Outcome::forward(format!(
-                "the internal dataset refresh refused the call: {status}"
-            )),
+            // Node may have acted by now: answered here, never replayed.
+            Ok((404, _)) => ctx.error(404, "Mapping dataset not found."),
             Ok((status, _)) => {
                 tracing::error!("the internal dataset refresh answered {status}");
                 ctx.error(500, "Unable to refresh the mapping dataset.")
             }
-            Err(e) => Outcome::forward(format!("{e:#}")),
+            Err(e) => {
+                tracing::error!("the internal dataset refresh failed: {e:#}");
+                ctx.error(500, "Unable to refresh the mapping dataset.")
+            }
         }
     })
 }

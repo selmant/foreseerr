@@ -282,8 +282,14 @@ async fn login_route(ctx: &Ready<'_>) -> Step {
         Ok(data) => data,
         Err(e) => return Ok(caught(ctx, Some(e), "Jellyfin login failed")),
     };
+    // Jellyfin has signed the device in: from here on every failure is
+    // answered here, never replayed.
     let Some(account) = parse_account(&data) else {
-        return Err(String::from("a Jellyfin login answer of another shape").into());
+        return Ok(caught(
+            ctx,
+            None,
+            "a Jellyfin login answer of another shape",
+        ));
     };
     let flow = Flow {
         ctx,
@@ -294,7 +300,10 @@ async fn login_route(ctx: &Ready<'_>) -> Step {
         server: &server,
         server_type,
     };
-    flow.run().await
+    Ok(match flow.run().await {
+        Ok(Outcome::Forward(why)) | Err(why) => caught(ctx, None, &why.why),
+        Ok(done) => done,
+    })
 }
 
 /// The device id the handler logs in with: the admin's is always

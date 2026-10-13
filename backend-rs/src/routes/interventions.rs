@@ -14,6 +14,7 @@ use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::arrcall::{ArrError, ArrServer};
+use super::draft::fail_on_err;
 use super::mediawrite::{timeout_ms, MANAGE_REQUESTS};
 use super::{Outcome, Ready, Table};
 use crate::clock::Utc;
@@ -701,7 +702,8 @@ fn reject<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
             return ctx.error(409, "This warning is no longer active.");
         }
-        let claimed = try_forward!(db
+        // The claim is a write: its failure is answered here.
+        let claimed = fail_on_err!(ctx, db
             .execute(
                 r#"UPDATE "servarr_intervention" SET "state" = ?1, "cleanupError" = NULL, "actedByUserId" = ?2, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3 AND "state" = ?4"#,
                 &[

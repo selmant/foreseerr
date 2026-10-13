@@ -219,8 +219,10 @@ fn create<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 ],
             )
             .await;
-        let issue_id =
-            forward_on_err!(issue_id.map_err(|e| format!("inserting the issue failed: {e:#}")));
+        let issue_id = fail_on_err!(
+            ctx,
+            issue_id.map_err(|e| format!("inserting the issue failed: {e:#}"))
+        );
         let comment_id = crate::dbtx::Exec::Tx(&mut tx)
             .scalar(
                 &format!(
@@ -324,8 +326,13 @@ async fn comment(ctx: &Ready<'_>) -> Outcome {
             &[Bind::Text(message.clone()), Bind::Int(user.id), Bind::Int(id)],
         )
         .await;
-    let comment_id =
-        forward_on_err!(comment_id.map_err(|e| format!("inserting the comment failed: {e:#}")));
+    let comment_id = match comment_id {
+        Ok(comment_id) => comment_id,
+        Err(e) => {
+            tracing::error!("inserting the issue comment failed: {e:#}");
+            return ctx.error(500, "Issue not found.");
+        }
+    };
     let now = crate::clock::Utc::now();
     let (placeholder, stamp) = if db.is_postgres() {
         ("CAST(?1 AS TIMESTAMPTZ)", now.iso_string())

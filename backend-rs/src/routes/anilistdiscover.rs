@@ -137,18 +137,25 @@ const EXPIRED: &str = "AniList authorization expired; reconnect your account";
 
 /// `createAnilistDiscoverClient(userId)` once the credentials are known
 /// to be set: the user's client, or the app client when none is linked
-/// (an expired link is cleared first).
-async fn discover_client(ctx: &Ready<'_>, row: &Map<String, Value>) -> Result<Anilist, String> {
+/// (an expired link is cleared first), and whether that clear ran. Once
+/// it has, the request is answered here, never handed on.
+///
+/// The `Err` is the clear failing, so it is answered here too.
+async fn discover_client(
+    ctx: &Ready<'_>,
+    row: &Map<String, Value>,
+) -> Result<(Anilist, bool), String> {
     let token = linked_token(row);
     if token.is_some() && token_expired(row.get("anilistTokenExpiresAt")) {
         clear_expired(ctx, row).await?;
-        return Ok(Anilist::new(&ctx.state.outbound, None));
+        return Ok((Anilist::new(&ctx.state.outbound, None), true));
     }
-    Ok(Anilist::new(&ctx.state.outbound, token))
+    Ok((Anilist::new(&ctx.state.outbound, token), false))
 }
 
 /// `getAnilistUserContext(userId)`: the client and the `AniList` account
-/// id, or the 404 for an unlinked account.
+/// id, or the 404 for an unlinked account. The `Err` is the expired-token
+/// clear failing: answered here, never handed on.
 async fn user_context(
     ctx: &Ready<'_>,
     row: &Map<String, Value>,
@@ -261,6 +268,9 @@ struct PublicRow {
 enum PublicFail {
     /// Node's to answer.
     Forward(String),
+    /// The expired-token clear ran (or failed) first: the route's 500,
+    /// never handed on.
+    Written(String),
     /// The `AniList` call failed.
     Anilist(AnilistError),
     /// Mapping or confirming the tiles failed.
@@ -315,7 +325,9 @@ async fn public_page(ctx: &Ready<'_>, path: &str, message: &str) -> Outcome {
         Ok(stored) => stored,
         Err(PublicFail::Forward(why)) => return Outcome::forward(why),
         Err(PublicFail::Anilist(e)) => return anilist_error(ctx, e, message, false),
-        Err(PublicFail::Mapping(why)) => return fallback_error(ctx, message, &why),
+        Err(PublicFail::Written(why) | PublicFail::Mapping(why)) => {
+            return fallback_error(ctx, message, &why)
+        }
     };
     match serve_tiles(ctx, stored.tiles, &source, &query).await {
         Ok(results) => ctx.json(&page_body(page, stored.has_more, results, &[])),
@@ -331,13 +343,22 @@ async fn public_tiles(
     page: i64,
     source: &str,
 ) -> Result<PublicRow, PublicFail> {
-    let client = discover_client(ctx, row)
+    let (client, cleared) = discover_client(ctx, row)
         .await
-        .map_err(PublicFail::Forward)?;
+        .map_err(PublicFail::Written)?;
     let media_page = client
         .media_page(page, sort, season)
         .await
-        .map_err(PublicFail::Anilist)?;
+        .map_err(|e| match e {
+            AnilistError::Forward(why) if cleared => PublicFail::Written(why),
+            other @ (AnilistError::Auth(_)
+            | AnilistError::Outage(_)
+            | AnilistError::RateLimited(_)
+            | AnilistError::GraphQl(_)
+            | AnilistError::Http(_)
+            | AnilistError::Network(_)
+            | AnilistError::Forward(_)) => PublicFail::Anilist(other),
+        })?;
     let mapped = map_media(ctx, media_page.media)
         .await
         .map_err(PublicFail::Mapping)?;
@@ -733,9 +754,10 @@ async fn linked_list(
     if !configured(ctx) {
         return not_configured(ctx);
     }
-    let (client, account) = match try_forward!(user_context(ctx, row).await) {
-        Ok(context) => context,
-        Err(outcome) => return outcome,
+    let (client, account) = match user_context(ctx, row).await {
+        Ok(Ok(context)) => context,
+        Ok(Err(outcome)) => return outcome,
+        Err(why) => return fallback_error(ctx, LIST_FAILED, &why),
     };
     let lists = match client.media_list_collection(&jsval::num(account)).await {
         Ok(lists) => lists,
@@ -770,9 +792,10 @@ fn lists<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if !configured(ctx) {
             return not_configured(ctx);
         }
-        let (client, account) = match try_forward!(user_context(ctx, &row).await) {
-            Ok(context) => context,
-            Err(outcome) => return outcome,
+        let (client, account) = match user_context(ctx, &row).await {
+            Ok(Ok(context)) => context,
+            Ok(Err(outcome)) => return outcome,
+            Err(why) => return fallback_error(ctx, "Unable to retrieve AniList lists.", &why),
         };
         let lists = match client.media_list_collection(&jsval::num(account)).await {
             Ok(lists) => lists,
@@ -851,12 +874,19 @@ async fn public_list(
     if !configured(ctx) {
         return not_configured(ctx);
     }
-    let client = try_forward!(discover_client(ctx, row).await);
+    let (client, cleared) = match discover_client(ctx, row).await {
+        Ok(client) => client,
+        Err(why) => return fallback_error(ctx, LIST_FAILED, &why),
+    };
     let lists = match client
         .media_list_collection(&Value::from(user_name.as_str()))
         .await
     {
         Ok(lists) => lists,
+        // The expired-token clear has run: answered here.
+        Err(AnilistError::Forward(why)) if cleared => {
+            return fallback_error(ctx, LIST_FAILED, &why)
+        }
         Err(e) => return anilist_error(ctx, e, LIST_FAILED, true),
     };
     let matcher = |name: Option<&Value>, status: Option<&Value>| {
@@ -864,7 +894,11 @@ async fn public_list(
             .as_ref()
             .map_or(Ok(true), |wanted| matches_list_name(name, status, wanted))
     };
-    let media = try_forward!(collect_media(&lists, &matcher));
+    let media = match collect_media(&lists, &matcher) {
+        Ok(media) => media,
+        Err(why) if cleared => return fallback_error(ctx, LIST_FAILED, &why),
+        Err(why) => return Outcome::forward(why),
+    };
     let paged = map_media_page(media, page, |batch| anilist_media_list(ctx, batch)).await;
     let (slice, has_more, page) = match paged {
         Ok(paged) => paged,

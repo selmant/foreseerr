@@ -14,8 +14,9 @@ use serde_json::{Map, Value};
 use super::arrcall::{ArrError, ArrServer};
 use super::mediasave::{self, MediaEdit, M_AVAILABLE, M_DELETED, M_PARTIAL};
 use super::{Outcome, Ready, Table, ADMIN};
-use crate::db::{Bind, MediaRow};
+use crate::db::{Bind, Db, MediaRow};
 use crate::downloads::Downloads;
+use crate::jobs::syncutil::Tx;
 use crate::media::{js_string, tracks_downloads};
 use crate::settings::public::truthy;
 
@@ -71,7 +72,7 @@ fn delete_media<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             mediasave::reset_service_data(&mut edit.after, None);
             mediasave::save(&mediasave::lc_of(ctx), &mut edit).await
         } else {
-            remove_media(ctx, id).await
+            remove_media(&ctx.state.db, id).await
         };
         match result {
             Ok(()) => Ready::no_content(),
@@ -83,17 +84,18 @@ fn delete_media<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// `mediaRepository.remove(media)`: the eager seasons (cascade) first.
-async fn remove_media(ctx: &Ready<'_>, id: i64) -> anyhow::Result<()> {
-    let db = &ctx.state.db;
-    db.execute(
+/// `mediaRepository.remove(media)`: the eager seasons (cascade) first, in
+/// one transaction.
+async fn remove_media(db: &Db, id: i64) -> anyhow::Result<()> {
+    let mut tx = Tx::begin(db).await?;
+    tx.execute(
         r#"DELETE FROM "season" WHERE "mediaId" = ?1"#,
         &[Bind::Int(id)],
     )
     .await?;
-    db.execute(r#"DELETE FROM "media" WHERE "id" = ?1"#, &[Bind::Int(id)])
+    tx.execute(r#"DELETE FROM "media" WHERE "id" = ?1"#, &[Bind::Int(id)])
         .await?;
-    Ok(())
+    tx.commit().await
 }
 
 /// The body of a status change: `is4k` as `String(is4k) === 'true'` reads
@@ -532,6 +534,7 @@ fn watch_data<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
     use serde_json::json;
 
     #[test]
@@ -573,5 +576,29 @@ mod tests {
             Some(json!(0)),
             "server 0 is falsy, so the default stays"
         );
+    }
+
+    #[tokio::test]
+    async fn a_failed_media_delete_keeps_its_seasons() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("mediawrite").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[r#"CREATE TRIGGER "refuse_media" BEFORE DELETE ON "media" BEGIN SELECT RAISE(ABORT, 'media delete refused'); END"#],
+        )
+        .await?;
+        assert!(remove_media(db, 1).await.is_err(), "the media delete fails");
+        let seasons = r#"SELECT "seasonNumber" FROM "season" WHERE "mediaId" = 1"#;
+        assert_eq!(
+            ints(db, seasons).await?,
+            [1],
+            "the season delete rolled back"
+        );
+
+        scratch::run(db, &[r#"DROP TRIGGER "refuse_media""#]).await?;
+        remove_media(db, 1).await?;
+        assert!(ints(db, seasons).await?.is_empty(), "removed together");
+        Ok(())
     }
 }

@@ -98,8 +98,9 @@ fn network<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         lodash_merge(network, body);
         let network = network.clone();
-        if let Err(e) = ctx.save_settings(&data).await {
-            return Outcome::forward(format!("saving settings failed: {e:#}"));
+        // A failed save may have written part of the file: answered here.
+        if let Err(outcome) = super::nodestate::save(ctx, &data).await {
+            return outcome;
         }
         ctx.json(&network)
     })
