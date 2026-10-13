@@ -175,12 +175,20 @@ fn segments<'a>(parts: &'a Parts, mount: &str) -> Result<Vec<&'a str>, super::Fa
         .path()
         .strip_prefix(mount)
         .ok_or_else(|| super::Fallback::from("a path outside the mount"))?;
+    plain_segments(rest).ok_or_else(|| super::Fallback::from("a path with encoded or dot segments"))
+}
+
+/// `rest` split as Express splits a wildcard: an empty segment inside the
+/// path (`w1920_and_h800_multi_faces//x.jpg`, as the frontend builds every
+/// backdrop URL) is kept, one at either end is not judged here.
+fn plain_segments(rest: &str) -> Option<Vec<&str>> {
     let segments: Vec<&str> = rest.split('/').collect();
-    if segments.iter().all(|s| plain_segment(s)) {
-        Ok(segments)
-    } else {
-        Err(super::Fallback::from("a path with encoded or dot segments"))
-    }
+    let last = segments.len().saturating_sub(1);
+    segments
+        .iter()
+        .enumerate()
+        .all(|(i, s)| plain_segment(s) || (s.is_empty() && i != 0 && i != last))
+        .then_some(segments)
 }
 
 /// `next({ status, message })` through Node's error handler.
@@ -298,6 +306,10 @@ async fn image(state: &Arc<AppState>, parts: &Parts) -> Decided {
         Some(_) => return Err("an unsupported query string".into()),
     };
     let image_path = format!("/{}", path_segments.join("/"));
+    if image_path.starts_with("//") || image_path.contains("://") {
+        tracing::error!("Invalid URL for image proxy: {image_path}");
+        return Ok(error(parts, 403, "Invalid URL for image proxy."));
+    }
     let (proxy, fetch) = match resolve(source, path_segments, &search) {
         Resolved::Fetch(proxy, fetch) => (proxy, fetch),
         Resolved::Unsupported => {
@@ -564,6 +576,21 @@ mod tests {
         assert!(!plain_segment(".."), "dot segment");
         assert!(!plain_segment("a%2Fb"), "encoded");
         assert!(!plain_segment("a b"), "space");
+        assert_eq!(
+            plain_segments("tmdb/t/p/w1920_and_h800_multi_faces//x.jpg"),
+            Some(vec![
+                "tmdb",
+                "t",
+                "p",
+                "w1920_and_h800_multi_faces",
+                "",
+                "x.jpg"
+            ]),
+            "an empty segment inside, as backdrop URLs have"
+        );
+        assert_eq!(plain_segments("/tmdb/x.jpg"), None, "empty first");
+        assert_eq!(plain_segments("tmdb/x.jpg/"), None, "empty last");
+        assert_eq!(plain_segments("tmdb/a%2Fb.jpg"), None, "encoded");
         assert!(plain_query("a=1&b=%20"), "query");
         assert!(!plain_query("a=\"x\""), "quote");
     }

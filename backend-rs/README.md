@@ -64,7 +64,7 @@ Every path and method `seerr-api.yml` documents has a native handler, plus
 | `/api/v1/discover/`: the TMDB lists (`movies`, `tv`, `trending`, upcoming, by language, genre, studio, network and keyword, `genreslider`), `trakt/*`, `anilist/*`, `simkl/*`, `mdblist/*`, `watchlist` | unless a general case below applies; the mapping layer (TMDB resolution of provider items, the Simkl library sync) is Node's over `/internal` unless this process runs the jobs |
 | `/api/v1/library/*`, `/api/v1/calendar`, `/api/v1/service/{radarr,sonarr}` (+`{id}`, `sonarr/lookup/{tmdbId}`), `/api/v1/servarr/interventions` (+`count`, `seen`, `{id}/reject`) | unless a general case below applies |
 | `/api/v1/blocklist` (+`{id}`, `collection/{id}`), `/api/v1/blacklist` (the deprecated alias), `/api/v1/watchlist`, `/api/v1/overrideRule` | unless a general case below applies |
-| `GET /imageproxy/*`, `GET /avatarproxy/*` (`HEAD` runs the `GET` route, as in Express) | the path is one Express wouldn't decode or normalise (no `%`, dot or empty segments, trailing slash); other methods go to Node |
+| `GET /imageproxy/*`, `GET /avatarproxy/*` (`HEAD` runs the `GET` route, as in Express) | the path is one Express wouldn't decode or normalise (no `%` or dot segments, no empty segment first or last; an empty one inside, as in the `...//x.jpg` backdrop URLs the frontend builds, is kept as Express keeps it); other methods go to Node |
 
 Routes are registered in `src/routes/mod.rs` from three tables: `ROUTES`
 maps a path to the `GET` handler that answers it, `SETTINGS_SECTIONS` maps
