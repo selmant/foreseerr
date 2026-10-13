@@ -493,9 +493,9 @@ pub async fn send(
             .context("envelope")?;
         let raw = without_from(&message.formatted());
         let raw = match pgp_key.filter(|k| !k.is_empty()) {
-            Some(key) => {
-                pgp_wrap(&raw, key, &text("pgpPrivateKey"), &text("pgpPassword")).unwrap_or(raw)
-            }
+            Some(key) => pgp_wrap_blocking(&raw, key, text("pgpPrivateKey"), text("pgpPassword"))
+                .await
+                .unwrap_or(raw),
             None => raw,
         };
         transport.send_raw(&envelope, &raw).await.context("SMTP")?;
@@ -504,7 +504,14 @@ pub async fn send(
     match pgp_key.filter(|k| !k.is_empty()) {
         Some(key) => {
             let raw = message.formatted();
-            let wrapped = match pgp_wrap(&raw, key, &text("pgpPrivateKey"), &text("pgpPassword")) {
+            let wrapped = match pgp_wrap_blocking(
+                &raw,
+                key,
+                text("pgpPrivateKey"),
+                text("pgpPassword"),
+            )
+            .await
+            {
                 Ok(wrapped) => wrapped,
                 Err(e) => {
                     tracing::error!(
@@ -554,6 +561,18 @@ pub fn plain_part(text: String) -> SinglePart {
     SinglePart::builder()
         .header(ContentType::TEXT_PLAIN)
         .body(text)
+}
+
+/// `pgp_wrap` on the CPU pool: key parsing, signing and encryption are
+/// too slow for an async worker.
+async fn pgp_wrap_blocking(
+    raw: &[u8],
+    public_key: &str,
+    signing_key: String,
+    password: String,
+) -> Result<Vec<u8>> {
+    let (raw, public_key) = (raw.to_vec(), public_key.to_owned());
+    crate::cpu::run(move || pgp_wrap(&raw, &public_key, &signing_key, &password)).await?
 }
 
 /// `openpgpEncrypt`: moves the content headers and body into an armored,

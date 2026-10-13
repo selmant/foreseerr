@@ -24,7 +24,7 @@ use crate::db::{Bind, Db};
 use crate::jobs::JobCtx;
 use crate::mappingpacks::{
     self, begin_pack_progress, end_pack_progress, update_pack_progress, FetchPack, FetchStatus,
-    ParsedDataset,
+    ParsedDataset, Validate,
 };
 use crate::state::AppState;
 
@@ -435,10 +435,11 @@ fn count(n: usize) -> i64 {
 // Refresh.
 
 /// The checks `validate` makes before a download is published.
-fn validate(def: &Definition, previous: i64) -> impl Fn(&str) -> Result<ParsedDataset> + Sync + '_ {
-    move |body: &str| {
-        update_pack_progress(def.key, &[("phase", Some(Value::from("parsing")))]);
-        let result = (def.parse)(body)?;
+fn validate(def: &Definition, previous: i64) -> Validate {
+    let (key, parse) = (def.key, def.parse);
+    Arc::new(move |body: &str| {
+        update_pack_progress(key, &[("phase", Some(Value::from("parsing")))]);
+        let result = parse(body)?;
         let edges = count(result.edges.len());
         if edges == 0 {
             anyhow::bail!("dataset parsed to zero edges");
@@ -449,7 +450,7 @@ fn validate(def: &Definition, previous: i64) -> impl Fn(&str) -> Result<ParsedDa
             anyhow::bail!("dataset dropped from {previous} to {edges} edges");
         }
         Ok(result)
-    }
+    })
 }
 
 /// The body of `refreshUnlocked` inside its `try`.
@@ -473,6 +474,7 @@ async fn attempt(
         mirrors: &mirrors,
         cache: conditional.then(|| (text("etag"), text("lastModified"))),
         config_dir: &state.env.config_dir,
+        max_bytes: mappingpacks::MAX_PACK_BYTES,
     };
     let client = mappingpacks::download_client(state).await?;
     let check = validate(def, edge_count.unwrap_or(0));
@@ -514,7 +516,10 @@ async fn attempt(
     }
     let result = match (fetched.parsed.clone(), fetched.body.as_deref()) {
         (Some(parsed), _) => parsed,
-        (None, Some(body)) => (def.parse)(body)?,
+        (None, Some(body)) => {
+            let (parse, body) = (def.parse, body.to_owned());
+            crate::cpu::run(move || parse(&body)).await??
+        }
         (None, None) => ParsedDataset::default(),
     };
     if result.edges.is_empty() {
