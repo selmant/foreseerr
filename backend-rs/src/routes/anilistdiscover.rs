@@ -317,7 +317,7 @@ async fn public_page(ctx: &Ready<'_>, path: &str, message: &str) -> Outcome {
         Err(PublicFail::Anilist(e)) => return anilist_error(ctx, e, message, false),
         Err(PublicFail::Mapping(why)) => return fallback_error(ctx, message, &why),
     };
-    match serve_tiles(ctx, stored.tiles, &source, &query).await {
+    match serve_tiles(ctx, stored.tiles.clone(), &source, &query).await {
         Ok(results) => ctx.json(&page_body(page, stored.has_more, results, &[])),
         Err(why) => fallback_error(ctx, message, &why),
     }

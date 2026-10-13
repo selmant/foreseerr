@@ -85,7 +85,8 @@ pub(super) type Recompute<V, E> =
 
 /// `cachedProviderRow(key, freshSeconds, run)` for a route: `inline`
 /// computes a miss in this request; a stale row is refreshed by
-/// `recompute` on a copy of the request that outlives it.
+/// `recompute` on a copy of the request that outlives it. The row is the
+/// stored one, shared: copy what the serve changes.
 pub(super) async fn provider_row<V, E, Fut>(
     ctx: &Ready<'_>,
     cache: &'static RowCache<V, E>,
@@ -93,9 +94,9 @@ pub(super) async fn provider_row<V, E, Fut>(
     fresh: Duration,
     inline: Fut,
     recompute: Recompute<V, E>,
-) -> Result<V, E>
+) -> Result<Arc<V>, E>
 where
-    V: Clone + Debug + Send + Sync + 'static,
+    V: Debug + Send + Sync + 'static,
     E: Clone + Debug + Send + Sync + 'static,
     Fut: Future<Output = Result<V, E>> + Send,
 {

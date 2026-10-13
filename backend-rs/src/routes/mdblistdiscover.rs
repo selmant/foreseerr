@@ -131,13 +131,13 @@ fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if let Err(why) = record_unmapped(ctx, &page_data.tiles, source).await {
             return fallback_error(ctx, LIST_FAILED, &why);
         }
-        let annotated = annotate_provider_active_requests(ctx, page_data.tiles).await;
+        let annotated = annotate_provider_active_requests(ctx, page_data.tiles.clone()).await;
         let results = omit_unmapped(annotated, query.truthy("hideUnmapped"));
         ctx.json(&page_body(
             page,
             page_data.has_more,
             results,
-            &[("title", Value::from(page_data.title))],
+            &[("title", Value::from(page_data.title.as_str()))],
         ))
     })
 }
