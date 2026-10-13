@@ -5,13 +5,18 @@
 //! bearer token it refreshes a week before it expires; this process keeps
 //! its own, the same way. Responses are cached for twelve hours, keyed by
 //! URL and token as `ExternalAPI.get` keys them by params and headers.
+//! Requests that reach TVDB, logins included, pass the instance's
+//! `axios-rate-limit` (`maxRPS: 50`); cached answers don't. Concurrent
+//! logins are folded into one.
 
+use std::future::Future;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
+use crate::concurrency::MaxRps;
 use crate::memcache::{self, CacheId};
 use crate::sync::lock;
 
@@ -24,6 +29,8 @@ const CACHE_TTL: Duration = Duration::from_secs(43_200);
 pub const DEFAULT_LANGUAGE: &str = "eng";
 /// A token is renewed when it expires within a week.
 const REFRESH_WINDOW_SECS: f64 = 604_800.0;
+/// `DEFAULT_CONFIG.maxRequestsPerSecond` (it overrides `maxRequests`).
+const MAX_RPS: usize = 50;
 
 /// The process-wide TVDB client state.
 #[derive(Debug, Default)]
@@ -33,12 +40,40 @@ struct State {
     token: Option<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Tvdb {
     state: Mutex<State>,
+    /// Held for a login, so callers that find the token missing or stale
+    /// at once wait for one login instead of each sending their own.
+    login: tokio::sync::Mutex<()>,
+    pace: MaxRps,
 }
 
-static TVDB: LazyLock<Tvdb> = LazyLock::new(Tvdb::default);
+impl Tvdb {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(State::default()),
+            login: tokio::sync::Mutex::const_new(()),
+            pace: MaxRps::new(MAX_RPS),
+        }
+    }
+
+    /// `login` for a caller that found `seen` as the token, unless another
+    /// login replaced it while this one waited its turn.
+    async fn login_unless_renewed<F, Fut>(&self, seen: Option<String>, login: F) -> Result<()>
+    where
+        F: FnOnce() -> Fut + Send,
+        Fut: Future<Output = Result<()>> + Send,
+    {
+        let _login = self.login.lock().await;
+        if lock(&self.state).token != seen {
+            return Ok(());
+        }
+        login().await
+    }
+}
+
+static TVDB: LazyLock<Tvdb> = LazyLock::new(Tvdb::new);
 
 /// `Tvdb.getInstance()`: the first call logs in.
 ///
@@ -50,10 +85,12 @@ pub async fn ensure_instance(client: &reqwest::Client) -> Result<()> {
         let mut state = lock(&TVDB.state);
         let first = !state.created;
         state.created = true;
-        first
+        let seen = state.token.clone();
+        drop(state);
+        first.then_some(seen)
     };
-    if first {
-        login(client).await?;
+    if let Some(seen) = first {
+        TVDB.login_unless_renewed(seen, || login(client)).await?;
     }
     Ok(())
 }
@@ -67,7 +104,7 @@ pub async fn ensure_instance(client: &reqwest::Client) -> Result<()> {
 pub async fn refresh_token(client: &reqwest::Client) -> Result<()> {
     let token = lock(&TVDB.state).token.clone();
     let Some(token) = token else {
-        return login(client).await;
+        return TVDB.login_unless_renewed(None, || login(client)).await;
     };
     let payload = token
         .split('.')
@@ -85,7 +122,8 @@ pub async fn refresh_token(client: &reqwest::Client) -> Result<()> {
         .and_then(Value::as_f64)
         .is_none_or(|exp| exp == 0.0 || exp - now < REFRESH_WINDOW_SECS);
     if renew {
-        login(client).await?;
+        TVDB.login_unless_renewed(Some(token), || login(client))
+            .await?;
     }
     Ok(())
 }
@@ -96,11 +134,13 @@ pub async fn refresh_token(client: &reqwest::Client) -> Result<()> {
 ///
 /// Fails when the login fails.
 pub async fn test(client: &reqwest::Client) -> Result<()> {
+    let _login = TVDB.login.lock().await;
     login(client).await
 }
 
-/// `login`: POST the API key, keep the token.
+/// `login`: POST the API key, keep the token. Callers hold `TVDB.login`.
 async fn login(client: &reqwest::Client) -> Result<()> {
+    TVDB.pace.wait().await;
     let body: Value = client
         .post(format!("{BASE_URL}/login"))
         .header(reqwest::header::ACCEPT, "application/json")
@@ -148,6 +188,7 @@ pub async fn get_ttl(client: &reqwest::Client, path: &str, ttl: Duration) -> Res
     if let Some(value) = memcache::get(CacheId::Tvdb, &key) {
         return Ok(value);
     }
+    TVDB.pace.wait().await;
     let value: Value = client
         .get(&url)
         .header(reqwest::header::ACCEPT, "application/json")
@@ -282,6 +323,43 @@ mod tests {
         assert_eq!(tvdb_language("xx"), Some("eng"), "fallback");
         assert_eq!(tvdb_language(""), Some("eng"), "empty");
         assert_eq!(tvdb_language("toString"), None, "prototype names");
+    }
+
+    #[tokio::test]
+    async fn concurrent_logins_fold_into_one() -> Result<()> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let tvdb = Tvdb::new();
+        let logins = AtomicUsize::new(0);
+        let attempt = |seen: Option<String>| {
+            let (tvdb, logins) = (&tvdb, &logins);
+            tvdb.login_unless_renewed(seen, move || async move {
+                logins.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                let n = logins.load(Ordering::SeqCst);
+                lock(&tvdb.state).token = Some(format!("token-{n}"));
+                Ok(())
+            })
+        };
+        let (a, b, c) = tokio::join!(attempt(None), attempt(None), attempt(None));
+        assert!(a.is_ok() && b.is_ok() && c.is_ok(), "all succeed");
+        assert_eq!(
+            logins.load(Ordering::SeqCst),
+            1,
+            "one login for a cold start"
+        );
+        let stale = Some(String::from("token-1"));
+        let (a, b, c) = tokio::join!(
+            attempt(stale.clone()),
+            attempt(stale.clone()),
+            attempt(stale)
+        );
+        assert!(a.is_ok() && b.is_ok() && c.is_ok(), "all succeed");
+        assert_eq!(
+            logins.load(Ordering::SeqCst),
+            2,
+            "one login renews a stale token"
+        );
+        Ok(())
     }
 
     #[test]

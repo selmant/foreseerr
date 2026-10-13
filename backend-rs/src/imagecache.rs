@@ -24,6 +24,7 @@ use bytes::Bytes;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::concurrency::RpsWindow;
 use crate::jsnum;
 use crate::settings::Settings;
 use crate::state::AppState;
@@ -283,7 +284,7 @@ async fn client(state: &AppState, follow_redirects: bool) -> Result<reqwest::Cli
 
 /// Request start times per rate-limited group, for `axios-rate-limit`'s
 /// `maxRPS: 50`.
-static STARTED: Mutex<Vec<(&'static str, VecDeque<Instant>)>> = Mutex::new(Vec::new());
+static STARTED: Mutex<Vec<(&'static str, RpsWindow)>> = Mutex::new(Vec::new());
 const MAX_RPS: usize = 50;
 
 /// Take a request slot now, or say how long until one frees up.
@@ -291,26 +292,12 @@ fn take_slot(group: &'static str) -> Option<Duration> {
     let now = Instant::now();
     let mut started = crate::sync::lock(&STARTED);
     if !started.iter().any(|(g, _)| *g == group) {
-        started.push((group, VecDeque::new()));
+        started.push((group, RpsWindow::new()));
     }
-    let times = started
+    let wait = started
         .iter_mut()
         .find(|(g, _)| *g == group)
-        .map(|(_, times)| times)?;
-    while times
-        .front()
-        .is_some_and(|t| now.duration_since(*t) >= Duration::from_secs(1))
-    {
-        times.pop_front();
-    }
-    let wait = if times.len() < MAX_RPS {
-        times.push_back(now);
-        None
-    } else {
-        times
-            .front()
-            .map(|t| (*t + Duration::from_secs(1)).saturating_duration_since(now))
-    };
+        .and_then(|(_, window)| window.take(MAX_RPS, now));
     drop(started);
     wait
 }
