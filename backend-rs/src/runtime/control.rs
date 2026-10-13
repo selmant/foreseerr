@@ -14,10 +14,11 @@
 //! (`stopping` is already set, so it goes straight to `process.exit(0)`).
 //!
 //! Stopping: `stopping` is set (every request but `/api/v1/status` gets
-//! 503), the jobs stop, the listener closes and open requests get until the
-//! deadline, then `SQLite` is checkpointed (`wal_checkpoint(TRUNCATE)`),
-//! the database closed and the instance lock released; the process exits
-//! with 0.
+//! 503), the jobs stop, the listener closes and open requests and the
+//! cancelled job runs get until the deadline, then `SQLite` is checkpointed
+//! (`wal_checkpoint(TRUNCATE)`) and the database closed, within what is
+//! left of the deadline (at least [`CLOSE_GRACE`]), and the instance lock
+//! released; the process exits with 0.
 
 use std::io::BufRead;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,6 +32,10 @@ use crate::state::AppState;
 
 /// `requestManagedShutdown`'s default deadline.
 const DEFAULT_DEADLINE_MS: u64 = 10_000;
+
+/// The least time the checkpoint and close get, even when the requests
+/// and jobs used up the whole deadline.
+const CLOSE_GRACE: Duration = Duration::from_secs(1);
 
 struct Channels {
     requests: mpsc::UnboundedSender<u64>,
@@ -133,24 +138,43 @@ async fn stopper(mut rx: mpsc::UnboundedReceiver<u64>) {
     let Some(deadline) = rx.recv().await else {
         return;
     };
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(deadline);
     super::desktop::set_stopping(true);
     super::desktop::stop_jobs();
     let Some(channels) = CHANNELS.get() else {
         return;
     };
     channels.graceful.send_replace(true);
-    if SERVING.load(Ordering::SeqCst) {
-        let mut done = channels.finished.subscribe();
-        let wait = done.wait_for(|finished| *finished);
-        if tokio::time::timeout(Duration::from_millis(deadline), wait)
+    let http = async {
+        if SERVING.load(Ordering::SeqCst) {
+            let mut done = channels.finished.subscribe();
+            done.wait_for(|finished| *finished).await.ok();
+        }
+    };
+    // Open requests and the cancelled job runs wind down side by side.
+    if tokio::time::timeout_at(deadline, async {
+        tokio::join!(http, crate::jobs::scheduler::idle());
+    })
+    .await
+    .is_err()
+    {
+        tracing::debug!(
+            label = "Desktop",
+            "closing the remaining connections and abandoning the running jobs"
+        );
+    }
+    if let Some(state) = STATE.get() {
+        // A connection a request or job still holds keeps `close()`
+        // waiting; past the deadline (or a short grace when the drain used
+        // it all) the process exits with the database as it is, its WAL
+        // intact.
+        let close_by = deadline.max(tokio::time::Instant::now() + CLOSE_GRACE);
+        if tokio::time::timeout_at(close_by, close_database(state))
             .await
             .is_err()
         {
-            tracing::debug!(label = "Desktop", "closing the remaining connections");
+            tracing::debug!(label = "Desktop", "closing the database timed out");
         }
-    }
-    if let Some(state) = STATE.get() {
-        close_database(state).await;
     }
     super::process::release_lock();
     channels.exit.send_replace(Some(0));

@@ -103,6 +103,17 @@ impl Slots {
     pub fn is_active(&self, id: &str) -> bool {
         self.active.iter().any(|a| a == id)
     }
+
+    /// The ids holding a slot.
+    #[must_use]
+    pub fn active(&self) -> &[String] {
+        &self.active
+    }
+
+    /// Drop every queued request; a freed slot then starts nothing.
+    pub fn clear_pending(&mut self) {
+        self.pending.clear();
+    }
 }
 
 /// `summarizeFailure`: the message with credentials redacted

@@ -313,9 +313,14 @@ struct Inner {
     jobs: Vec<Scheduled>,
     slots: Slots,
     runs: HashMap<String, Run>,
+    /// `stopJobs()` ran: nothing is scheduled or admitted any more.
+    stopped: bool,
 }
 
 static INNER: LazyLock<Mutex<Inner>> = LazyLock::new(Mutex::default);
+
+/// Woken whenever a run frees its slot.
+static RELEASED: LazyLock<tokio::sync::Notify> = LazyLock::new(tokio::sync::Notify::new);
 
 fn inner() -> MutexGuard<'static, Inner> {
     crate::sync::lock(&INNER)
@@ -351,6 +356,34 @@ impl Inner {
     fn job(&self, id: &str) -> Option<&Scheduled> {
         self.jobs.iter().find(|j| j.def.id == id)
     }
+
+    /// `stopJobs()`'s share of the scheduler: no more admissions, every
+    /// timer cancelled and `scheduledJobs` emptied, the queue dropped, and
+    /// each active run aborted (`cancelManagedJobs`) and told to stop (its
+    /// `cancelFn`).
+    fn stop(&mut self) {
+        self.stopped = true;
+        for job in self.jobs.drain(..) {
+            if let Some(timer) = job.timer {
+                timer.abort();
+            }
+        }
+        self.slots.clear_pending();
+        for id in self.slots.active() {
+            if let Some(run) = self.runs.get(id) {
+                run.aborted.store(true, Ordering::SeqCst);
+                run.ctx.cancel();
+            }
+        }
+    }
+
+    /// `Slots::admit`, refused outright once stopped.
+    fn admit(&mut self, id: &str, weight: Weight) -> Option<bool> {
+        if self.stopped {
+            return None;
+        }
+        Some(self.slots.admit(id, weight))
+    }
 }
 
 /// The schedule string node-schedule is handed (`expression + ''`).
@@ -380,7 +413,7 @@ pub async fn start(state: Arc<AppState>) {
     };
     let now = crate::clock::now_millis();
     let mut inner = inner();
-    if !inner.jobs.is_empty() {
+    if inner.stopped || !inner.jobs.is_empty() {
         return;
     }
     for def in server_jobs.iter().chain(COMMON_JOBS.iter()) {
@@ -516,6 +549,9 @@ fn set_next(id: &str, generation: u64, next: Option<i64>) -> bool {
 
 /// The cron callback (`job.invoke()`): log and start the managed run.
 fn invoke(state: &Arc<AppState>, def: &'static JobDef) {
+    if inner().stopped {
+        return;
+    }
     if def.id == "download-sync" {
         tracing::debug!(label = "Jobs", "Starting scheduled job: {}", def.log_name);
     } else {
@@ -549,7 +585,10 @@ pub async fn execute_managed(
     id: &str,
     weight: Weight,
 ) -> anyhow::Result<bool> {
-    let admitted = inner().slots.admit(id, weight);
+    let Some(admitted) = inner().admit(id, weight) else {
+        tracing::debug!(label = "Jobs", "Not starting {id}: the jobs are stopped");
+        return Ok(false);
+    };
     if !admitted {
         tracing::info!(
             label = "Jobs",
@@ -568,13 +607,23 @@ async fn run_admitted(state: Arc<AppState>, id: String, weight: Weight) -> anyho
         Ok(settings) => {
             let ctx = JobCtx::new(Arc::clone(&state), settings);
             let aborted = Arc::new(AtomicBool::new(false));
-            inner().runs.insert(
-                id.clone(),
-                Run {
-                    ctx: ctx.clone(),
-                    aborted: Arc::clone(&aborted),
-                },
-            );
+            {
+                let mut inner = inner();
+                // Admitted before `stopJobs()` but registered after it:
+                // Node's controller already existed then, so this run
+                // starts aborted.
+                if inner.stopped {
+                    aborted.store(true, Ordering::SeqCst);
+                    ctx.cancel();
+                }
+                inner.runs.insert(
+                    id.clone(),
+                    Run {
+                        ctx: ctx.clone(),
+                        aborted: Arc::clone(&aborted),
+                    },
+                );
+            }
             let task_id = id.clone();
             run_recorded(
                 &state.db,
@@ -593,10 +642,29 @@ async fn run_admitted(state: Arc<AppState>, id: String, weight: Weight) -> anyho
         Err(e) => Err(e),
     };
     let started = inner().slots.release(&id, weight);
+    RELEASED.notify_waiters();
     for (next, next_weight) in started {
         spawn_admitted(Arc::clone(&state), next, next_weight);
     }
     result
+}
+
+/// `stopJobs()` for the scheduler (see [`Inner::stop`]). The active runs
+/// carry on until they notice; [`idle`] waits for them.
+pub fn stop() {
+    inner().stop();
+}
+
+/// Resolves once no run holds an executor slot.
+pub async fn idle() {
+    loop {
+        // Registered before the check, so a release in between still wakes it.
+        let released = RELEASED.notified();
+        if inner().slots.active().is_empty() {
+            return;
+        }
+        released.await;
+    }
 }
 
 /// `void executeManagedJob(...)` of `drainPendingJobs`, already admitted.
@@ -812,6 +880,48 @@ mod tests {
             inner.job_json(&job).get("nextExecutionTime"),
             Some(&Value::Null),
             "not scheduled"
+        );
+    }
+
+    #[tokio::test]
+    async fn nothing_starts_after_stop() {
+        let Some(def) = definition("download-sync-reset") else {
+            return;
+        };
+        let timer = tokio::spawn(std::future::pending::<()>());
+        let mut inner = Inner::default();
+        inner.jobs.push(Scheduled {
+            def,
+            cron_schedule: Value::from("* * * * * *"),
+            broken: false,
+            next: None,
+            generation: 0,
+            timer: Some(timer.abort_handle()),
+        });
+        assert_eq!(
+            inner.admit("radarr-scan", Weight::Heavy),
+            Some(true),
+            "runs"
+        );
+        assert_eq!(
+            inner.admit("sonarr-scan", Weight::Heavy),
+            Some(false),
+            "queued"
+        );
+        inner.stop();
+        assert!(
+            timer.await.is_err_and(|e| e.is_cancelled()),
+            "timer aborted"
+        );
+        assert!(inner.jobs.is_empty(), "scheduledJobs emptied");
+        assert!(
+            inner.slots.release("radarr-scan", Weight::Heavy).is_empty(),
+            "the queued run was dropped"
+        );
+        assert_eq!(
+            inner.admit("download-sync", Weight::Light),
+            None,
+            "no admission"
         );
     }
 }

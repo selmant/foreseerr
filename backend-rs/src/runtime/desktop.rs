@@ -571,6 +571,10 @@ fn schedule_jobs(delay_ms: u64) {
     };
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        // `stopJobs()` ran meanwhile; Node's process is exiting by now.
+        if stopping() {
+            return;
+        }
         scheduler::start(Arc::clone(&state)).await;
         start_catch_up();
     });
@@ -588,7 +592,7 @@ pub fn start_jobs_now(state: &Arc<AppState>) {
 /// `startDesktopCatchUp()`: one pass, thirty seconds from now, unless one
 /// is already queued.
 pub fn start_catch_up() {
-    if !on() {
+    if !on() || stopping() {
         return;
     }
     let Some(state) = STATE.get().cloned() else {
@@ -613,6 +617,10 @@ pub fn start_catch_up() {
 }
 
 /// `stopJobs()` as the desktop shutdown runs it.
+///
+/// The catch-up and the deferred heavy jobs are dropped and the scheduler
+/// stops (its timers, queue and active runs). The runs end on their own;
+/// the shutdown waits for them with [`scheduler::idle`].
 pub fn stop_jobs() {
     let pending = crate::sync::lock(&CATCH_UP_PENDING).take();
     if let Some(task) = pending {
@@ -620,6 +628,7 @@ pub fn stop_jobs() {
     }
     DOWNLOAD_STARTUP_RUN.store(false, Ordering::SeqCst);
     crate::sync::lock(&DEFERRED).clear();
+    scheduler::stop();
     tracing::info!(label = "Jobs", "Scheduled jobs stopped");
 }
 
