@@ -135,10 +135,21 @@ fn intended(want: &(u16, String), got: &(u16, String)) -> Option<&'static str> {
     None
 }
 
+/// `OPENAPI_CORPUS`, or `None` to skip. Under `CI` a missing corpus fails:
+/// the job that runs these with `--ignored` must not pass vacuously.
+fn corpus_path() -> Option<std::ffi::OsString> {
+    let corpus = std::env::var_os("OPENAPI_CORPUS");
+    assert!(
+        corpus.is_some() || std::env::var_os("CI").is_none(),
+        "CI is set but OPENAPI_CORPUS is not; run scripts/openapi-diff.sh"
+    );
+    corpus
+}
+
 #[test]
 #[ignore = "needs the corpus from scripts/openapi-diff.js"]
 fn openapi_differential() {
-    let Some(corpus) = std::env::var_os("OPENAPI_CORPUS") else {
+    let Some(corpus) = corpus_path() else {
         return;
     };
     let validator = Validator::load(&spec_path());
@@ -210,13 +221,14 @@ fn openapi_differential() {
         writeln!(report, "  intended difference: {n} x {why}").ok();
     }
     std::io::stderr().write_all(report.as_bytes()).ok();
+    assert!(total > 0, "the corpus has requests");
     assert_eq!(sure_ok, sure, "every certain decision matches Node");
 }
 
 #[test]
 #[ignore = "needs the spec JSON from scripts/openapi-diff.js"]
 fn openapi_yaml_matches_js_yaml() {
-    let Some(corpus) = std::env::var_os("OPENAPI_CORPUS") else {
+    let Some(corpus) = corpus_path() else {
         return;
     };
     let json_path = corpus.to_string_lossy().replace(".jsonl", ".spec.json");
