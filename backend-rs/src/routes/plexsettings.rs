@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 
 use super::nodestate::{
     admin, admin_columns, assign, decode_segment, fits, join_ordered, js_key_order, js_strict_eq,
-    json_safe, nullable, object_body, raw_segment, req, save, upstream_get, Field, NativeFut, Ty,
+    json_safe, mutate, nullable, object_body, raw_segment, req, upstream_get, Field, NativeFut, Ty,
     Upstream,
 };
 use super::plexxml::{self, Element};
@@ -131,21 +131,31 @@ fn plex_save<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         else {
             return Outcome::forward(String::from("a body that isn't an object"));
         };
-        let mut data = ctx.settings.data().clone();
-        let Some(plex) = data.get_mut("plex").and_then(Value::as_object_mut) else {
+        let Some(mut plex) = ctx
+            .settings
+            .get("/plex")
+            .and_then(Value::as_object)
+            .cloned()
+        else {
             return Outcome::forward(String::from("settings.plex isn't an object"));
         };
         let before = plex.clone();
-        assign(plex, &body);
-        let unchanged = *plex == before;
-        let url = format!("{}/", plex_base(&Value::Object(plex.clone())));
+        assign(&mut plex, &body);
+        let unchanged = plex == before;
+        let url = format!("{}/", plex_base(&Value::Object(plex)));
         // `Object.assign(settings.plex, req.body)` lands in Node's shared
         // settings before the test; requests in between see it.
         if !unchanged && crate::standalone::enabled() {
-            let base = ctx.settings.data();
-            let assigned =
-                crate::settings::delta::with_key(base, "plex", Value::Object(plex.clone()));
-            if let Err(e) = ctx.state.settings.keep_unsaved_from(base, &assigned).await {
+            let kept = ctx
+                .state
+                .settings
+                .mutate_unsaved(|doc| {
+                    if let Some(plex) = doc.get_mut("plex").and_then(Value::as_object_mut) {
+                        assign(plex, &body);
+                    }
+                })
+                .await;
+            if let Err(e) = kept {
                 return Outcome::forward(format!("reading the settings failed: {e:#}"));
             }
         }
@@ -172,20 +182,30 @@ fn plex_save<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             }
             return ctx.error(500, "Unable to connect to Plex.");
         };
-        plex.insert(String::from("machineId"), machine_id.clone());
-        match container.and_then(|c| c.get("friendlyName")) {
-            Some(name) => {
-                plex.insert(String::from("name"), name.clone());
+        let name = container.and_then(|c| c.get("friendlyName"));
+        let saved = mutate(ctx, |doc| {
+            let Some(plex) = doc.get_mut("plex").and_then(Value::as_object_mut) else {
+                return Err(Box::new(Outcome::forward(String::from(
+                    "settings.plex isn't an object",
+                ))));
+            };
+            assign(plex, &body);
+            plex.insert(String::from("machineId"), machine_id.clone());
+            match name {
+                Some(name) => {
+                    plex.insert(String::from("name"), name.clone());
+                }
+                None => {
+                    plex.shift_remove("name");
+                }
             }
-            None => {
-                plex.shift_remove("name");
-            }
+            Ok(Value::Object(plex.clone()))
+        })
+        .await;
+        match saved {
+            Ok(saved) => ctx.json(&saved),
+            Err(outcome) => outcome,
         }
-        let saved = Value::Object(plex.clone());
-        if let Err(outcome) = save(ctx, &data).await {
-            return outcome;
-        }
-        ctx.json(&saved)
     })
 }
 
@@ -206,37 +226,45 @@ async fn library_toggle(ctx: &Ready<'_>, server: &str) -> Outcome {
     let Some(id) = decode_segment(raw_segment(ctx, 0)) else {
         return Outcome::forward(String::from("a library id Express can't decode"));
     };
-    let mut data = ctx.settings.data().clone();
-    let Some(libraries) = data
-        .get_mut(server)
-        .and_then(|s| s.get_mut("libraries"))
-        .and_then(Value::as_array_mut)
-    else {
-        return Outcome::forward(String::from("libraries isn't a list"));
-    };
     let wanted = Value::String(id);
-    let mut found = None;
-    for (i, library) in libraries.iter().enumerate() {
-        if library.is_null() {
-            return Outcome::forward(String::from("a null library; find throws"));
+    let updated = mutate(ctx, |doc| {
+        let Some(libraries) = doc
+            .get_mut(server)
+            .and_then(|s| s.get_mut("libraries"))
+            .and_then(Value::as_array_mut)
+        else {
+            return Err(Box::new(Outcome::forward(String::from(
+                "libraries isn't a list",
+            ))));
+        };
+        let mut found = None;
+        for (i, library) in libraries.iter().enumerate() {
+            if library.is_null() {
+                return Err(Box::new(Outcome::forward(String::from(
+                    "a null library; find throws",
+                ))));
+            }
+            if js_strict_eq(library.get("id"), Some(&wanted)) {
+                found = Some(i);
+                break;
+            }
         }
-        if js_strict_eq(library.get("id"), Some(&wanted)) {
-            found = Some(i);
-            break;
-        }
+        let Some(library) = found.and_then(|i| libraries.get_mut(i)) else {
+            return Err(Box::new(ctx.error(404, "Library does not exist.")));
+        };
+        let Some(map) = library.as_object_mut() else {
+            return Err(Box::new(Outcome::forward(String::from(
+                "a library that isn't an object",
+            ))));
+        };
+        map.insert(String::from("enabled"), Value::Bool(*enabled));
+        Ok(library.clone())
+    })
+    .await;
+    match updated {
+        Ok(updated) => ctx.json(&updated),
+        Err(outcome) => outcome,
     }
-    let Some(library) = found.and_then(|i| libraries.get_mut(i)) else {
-        return ctx.error(404, "Library does not exist.");
-    };
-    let Some(map) = library.as_object_mut() else {
-        return Outcome::forward(String::from("a library that isn't an object"));
-    };
-    map.insert(String::from("enabled"), Value::Bool(*enabled));
-    let updated = library.clone();
-    if let Err(outcome) = save(ctx, &data).await {
-        return outcome;
-    }
-    ctx.json(&updated)
 }
 
 fn plex_library<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
@@ -317,8 +345,7 @@ fn plex_library_sync<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             Ok(token) => token,
             Err(why) => return Outcome::forward(why),
         };
-        let mut data = ctx.settings.data().clone();
-        let Some(plex) = data.get("plex").cloned() else {
+        let Some(plex) = ctx.settings.get("/plex").cloned() else {
             return Outcome::forward(String::from("no plex settings"));
         };
         let Some(existing) = plex.get("libraries").and_then(Value::as_array).cloned() else {
@@ -354,10 +381,14 @@ fn plex_library_sync<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         let Some(libraries) = merge_libraries(&found, &existing) else {
             return Outcome::forward(String::from("a null library; find throws"));
         };
-        if let Some(plex) = data.get_mut("plex").and_then(Value::as_object_mut) {
-            plex.insert(String::from("libraries"), Value::Array(libraries.clone()));
-        }
-        if let Err(outcome) = save(ctx, &data).await {
+        let saved = mutate(ctx, |doc| {
+            if let Some(plex) = doc.get_mut("plex").and_then(Value::as_object_mut) {
+                plex.insert(String::from("libraries"), Value::Array(libraries.clone()));
+            }
+            Ok(())
+        })
+        .await;
+        if let Err(outcome) = saved {
             return outcome;
         }
         ctx.json(&Value::Array(libraries))

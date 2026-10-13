@@ -509,14 +509,17 @@ pub async fn node_call(job: &JobCtx, method: reqwest::Method, path: &str) -> Res
     serde_json::from_slice(&bytes).with_context(|| format!("Node's answer to {path}"))
 }
 
-/// `settings.save()` from a job: write settings.json and have Node reload
-/// it (only logged when Node can't be told).
+/// `settings.save()` after a scan's change to the shared settings.
+///
+/// `change` runs on the latest settings under the mutation lock (see
+/// [`crate::settings::SettingsStore::mutate`]), then Node reloads the file
+/// (only logged when it can't be told).
 ///
 /// # Errors
 ///
-/// Fails when the file can't be written.
-pub async fn save_settings(job: &JobCtx, data: &Value) -> Result<()> {
-    job.state.settings.save(data).await?;
+/// Fails when the file can't be read or written.
+pub async fn mutate_settings(job: &JobCtx, change: impl FnOnce(&mut Value)) -> Result<()> {
+    job.state.settings.update(change).await?;
     if let Err(e) = node_call(job, reqwest::Method::POST, "/settings/reload").await {
         tracing::warn!("Node could not be told to reload settings: {e:#}");
     }

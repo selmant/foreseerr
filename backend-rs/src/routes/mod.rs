@@ -706,9 +706,33 @@ impl Ready<'_> {
             .settings
             .save_from(self.settings.data(), data)
             .await?;
+        self.reload_node_settings().await;
+        Ok(())
+    }
+
+    /// [`crate::settings::SettingsStore::mutate`] from a handler: `change`
+    /// runs on the latest settings under the mutation lock, and Node reads
+    /// the file again once it is written.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the settings can't be read or the file can't be written.
+    pub(super) async fn mutate_settings<B, C>(
+        &self,
+        change: impl FnOnce(&mut Value) -> std::ops::ControlFlow<B, C>,
+    ) -> anyhow::Result<std::ops::ControlFlow<B, C>> {
+        let flow = self.state.settings.mutate(change).await?;
+        if flow.is_continue() {
+            self.reload_node_settings().await;
+        }
+        Ok(flow)
+    }
+
+    /// Tell Node settings.json changed; only logged when it can't be told.
+    async fn reload_node_settings(&self) {
         if crate::standalone::enabled() {
             // No Node to tell; the settings store reloads the file itself.
-            return Ok(());
+            return;
         }
         let url = format!(
             "{}/internal/settings/reload",
@@ -726,7 +750,6 @@ impl Ready<'_> {
             Ok(res) => tracing::warn!("Node refused to reload settings: {}", res.status()),
             Err(e) => tracing::warn!("Node could not be told to reload settings: {e:#}"),
         }
-        Ok(())
     }
 
     /// A JSON answer with any status.

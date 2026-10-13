@@ -5,7 +5,7 @@ use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::nodestate::{
-    admin, fits, js_key_order, js_strict_eq, json_safe, nullable, object_body, opt, req, save,
+    admin, fits, js_key_order, js_strict_eq, json_safe, mutate, nullable, object_body, opt, req,
     Field, NativeFut, Ty,
 };
 use super::{Outcome, Ready, Table};
@@ -168,35 +168,57 @@ fn not_found(ctx: &Ready<'_>) -> Outcome {
     ctx.json_with(404, &Value::Object(body))
 }
 
-/// `POST /settings/<kind>`: append with the next id.
-async fn create(ctx: &Ready<'_>, kind: Kind) -> Outcome {
-    let mut body = match server_body(ctx, kind) {
-        Ok(body) => body,
-        Err(why) => return Outcome::forward(why),
-    };
-    let mut data = ctx.settings.data().clone();
-    let Some(list) = data
-        .get_mut(kind.key())
+/// `settings.<kind>` in the latest settings, when it is a list of objects.
+fn server_list(doc: &mut Value, kind: Kind) -> Result<&mut Vec<Value>, Box<Outcome>> {
+    doc.get_mut(kind.key())
         .and_then(Value::as_array_mut)
         .filter(|l| l.iter().all(Value::is_object))
-    else {
-        return Outcome::forward(format!("settings.{} is not a list of objects", kind.key()));
-    };
+        .ok_or_else(|| {
+            Box::new(Outcome::forward(format!(
+                "settings.{} is not a list of objects",
+                kind.key()
+            )))
+        })
+}
+
+/// `body` appended to `settings.<kind>` with the next id
+/// (`lastItem ? lastItem.id + 1 : 0`): the server as saved.
+fn append_server(
+    doc: &mut Value,
+    kind: Kind,
+    mut body: Map<String, Value>,
+) -> Result<Value, Box<Outcome>> {
+    let list = server_list(doc, kind)?;
     let id = match list.last() {
         None => 0,
         Some(final_server) => match final_server.get("id").and_then(Value::as_i64) {
             Some(id) => id + 1,
-            None => return Outcome::forward(String::from("the last server's id isn't an integer")),
+            None => {
+                return Err(Box::new(Outcome::forward(String::from(
+                    "the last server's id isn't an integer",
+                ))))
+            }
         },
     };
     body.insert(String::from("id"), Value::from(id));
     clear_defaults(list, &body);
     let created = Value::Object(body);
     list.push(created.clone());
-    if let Err(outcome) = save(ctx, &data).await {
-        return outcome;
+    Ok(created)
+}
+
+/// `POST /settings/<kind>`: append with the next id. The id is taken from
+/// the latest list under the settings mutation lock, so concurrent adds
+/// get distinct ids as they do in Node.
+async fn create(ctx: &Ready<'_>, kind: Kind) -> Outcome {
+    let body = match server_body(ctx, kind) {
+        Ok(body) => body,
+        Err(why) => return Outcome::forward(why),
+    };
+    match mutate(ctx, |doc| append_server(doc, kind, body)).await {
+        Ok(created) => ctx.json_with(201, &created),
+        Err(outcome) => outcome,
     }
-    ctx.json_with(201, &created)
 }
 
 /// `PUT /settings/<kind>/{id}`: replace the server, keeping its id.
@@ -209,28 +231,27 @@ async fn update(ctx: &Ready<'_>, kind: Kind) -> Outcome {
         Ok(id) => id,
         Err(why) => return Outcome::forward(why),
     };
-    let mut data = ctx.settings.data().clone();
-    let Some(list) = data
-        .get_mut(kind.key())
-        .and_then(Value::as_array_mut)
-        .filter(|l| l.iter().all(Value::is_object))
-    else {
-        return Outcome::forward(format!("settings.{} is not a list of objects", kind.key()));
-    };
-    let Some(index) = find_index(list, id) else {
-        return not_found(ctx);
-    };
-    clear_defaults(list, &body);
-    body.insert(String::from("id"), Value::from(id));
-    let updated = Value::Object(body);
-    let Some(slot) = list.get_mut(index) else {
-        return Outcome::forward(String::from("the server vanished"));
-    };
-    *slot = updated.clone();
-    if let Err(outcome) = save(ctx, &data).await {
-        return outcome;
+    let updated = mutate(ctx, |doc| {
+        let list = server_list(doc, kind)?;
+        let Some(index) = find_index(list, id) else {
+            return Err(Box::new(not_found(ctx)));
+        };
+        clear_defaults(list, &body);
+        body.insert(String::from("id"), Value::from(id));
+        let updated = Value::Object(body);
+        let Some(slot) = list.get_mut(index) else {
+            return Err(Box::new(Outcome::forward(String::from(
+                "the server vanished",
+            ))));
+        };
+        *slot = updated.clone();
+        Ok(updated)
+    })
+    .await;
+    match updated {
+        Ok(updated) => ctx.json(&updated),
+        Err(outcome) => outcome,
     }
-    ctx.json(&updated)
 }
 
 /// `DELETE /settings/<kind>/{id}`: the removed server.
@@ -242,22 +263,18 @@ async fn delete(ctx: &Ready<'_>, kind: Kind) -> Outcome {
         Ok(id) => id,
         Err(why) => return Outcome::forward(why),
     };
-    let mut data = ctx.settings.data().clone();
-    let Some(list) = data
-        .get_mut(kind.key())
-        .and_then(Value::as_array_mut)
-        .filter(|l| l.iter().all(Value::is_object))
-    else {
-        return Outcome::forward(format!("settings.{} is not a list of objects", kind.key()));
-    };
-    let Some(index) = find_index(list, id) else {
-        return not_found(ctx);
-    };
-    let removed = list.remove(index);
-    if let Err(outcome) = save(ctx, &data).await {
-        return outcome;
+    let removed = mutate(ctx, |doc| {
+        let list = server_list(doc, kind)?;
+        let Some(index) = find_index(list, id) else {
+            return Err(Box::new(not_found(ctx)));
+        };
+        Ok(list.remove(index))
+    })
+    .await;
+    match removed {
+        Ok(removed) => ctx.json(&removed),
+        Err(outcome) => outcome,
     }
-    ctx.json(&removed)
 }
 
 fn radarr_create<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
@@ -556,5 +573,52 @@ mod tests {
             "folders"
         );
         assert_eq!(root_folders(&json!([null])), None, "null folder throws");
+    }
+
+    /// Concurrent adds each take the next id from the latest list and all
+    /// of them stay (they used to share one id, and only one was kept).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_adds_keep_every_server() -> anyhow::Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "foreseerr-arrsettings-{}-{}",
+            std::process::id(),
+            crate::clock::now_millis()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        let store = std::sync::Arc::new(crate::settings::SettingsStore::new(&dir));
+        let mut adds = tokio::task::JoinSet::new();
+        for n in 0..20 {
+            let store = std::sync::Arc::clone(&store);
+            let body = json!({"name": format!("radarr {n}"), "isDefault": false});
+            let body = body.as_object().cloned().unwrap_or_default();
+            adds.spawn(async move {
+                let added = store
+                    .mutate(|doc| match append_server(doc, Kind::Radarr, body) {
+                        Ok(server) => std::ops::ControlFlow::Continue(server),
+                        Err(_) => std::ops::ControlFlow::Break(()),
+                    })
+                    .await
+                    .ok()?;
+                added.continue_value()?.get("id").and_then(Value::as_i64)
+            });
+        }
+        let mut ids = Vec::new();
+        while let Some(id) = adds.join_next().await {
+            ids.extend(id?);
+        }
+        ids.sort_unstable();
+        assert_eq!(ids, (0..20).collect::<Vec<_>>(), "distinct ids");
+        let file: Value = serde_json::from_slice(&std::fs::read(dir.join("settings.json"))?)?;
+        let mut saved: Vec<i64> = file
+            .get("radarr")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|server| server.get("id").and_then(Value::as_i64))
+            .collect();
+        saved.sort_unstable();
+        assert_eq!(saved, ids, "every server saved");
+        std::fs::remove_dir_all(&dir).ok();
+        Ok(())
     }
 }

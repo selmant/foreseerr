@@ -41,17 +41,6 @@ pub fn apply(current: &mut Value, base: &Value, data: &Value) {
     }
 }
 
-/// `doc` with its top-level `key` set to `value` (in place when it
-/// exists): a section as a handler assigned it.
-#[must_use]
-pub fn with_key(doc: &Value, key: &str, value: Value) -> Value {
-    let mut doc = doc.clone();
-    if let Some(map) = doc.as_object_mut() {
-        map.insert(key.to_owned(), value);
-    }
-    doc
-}
-
 #[cfg(test)]
 mod tests {
     use super::apply;

@@ -130,14 +130,20 @@ impl Tx {
     }
 }
 
-/// `settings.save()` from a job: write settings.json the way the settings
-/// routes do and tell Node to reload it.
+/// `settings.save()` after a job's change to the shared settings.
+///
+/// `change` runs on the latest settings under the mutation lock (see
+/// [`crate::settings::SettingsStore::mutate`]), settings.json is written
+/// and Node is told to reload it.
 ///
 /// # Errors
 ///
-/// Fails when settings.json can't be written.
-pub async fn save_settings(state: &crate::state::AppState, data: &Value) -> Result<()> {
-    state.settings.save(data).await?;
+/// Fails when settings.json can't be read or written.
+pub async fn mutate_settings(
+    state: &crate::state::AppState,
+    change: impl FnOnce(&mut Value),
+) -> Result<()> {
+    state.settings.update(change).await?;
     if crate::standalone::enabled() {
         return Ok(());
     }

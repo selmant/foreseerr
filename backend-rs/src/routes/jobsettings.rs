@@ -8,7 +8,7 @@ use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::nodestate::{
-    admin, decode_segment, node_call, object_body, pick, raw_segment, save, NativeFut,
+    admin, decode_segment, mutate, node_call, object_body, pick, raw_segment, NativeFut,
 };
 use super::{Outcome, Ready, Table};
 use crate::jobs::execution::Weight;
@@ -217,8 +217,9 @@ fn job_schedule<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         let Some(id) = decode_segment(raw) else {
             return Outcome::forward(String::from("a job id Express can't decode"));
         };
-        let mut data = ctx.settings.data().clone();
-        if !data
+        if !ctx
+            .settings
+            .data()
             .get("jobs")
             .and_then(|j| j.get(&id))
             .is_some_and(Value::is_object)
@@ -239,10 +240,15 @@ fn job_schedule<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             }
             Err(e) => return Outcome::forward(format!("{e:#}")),
         };
-        if let Some(Value::Object(settings)) = data.get_mut("jobs").and_then(|j| j.get_mut(&id)) {
-            settings.insert(String::from("schedule"), Value::from(schedule.as_str()));
-        }
-        if let Err(outcome) = save(ctx, &data).await {
+        let saved = mutate(ctx, |doc| {
+            if let Some(Value::Object(settings)) = doc.get_mut("jobs").and_then(|j| j.get_mut(&id))
+            {
+                settings.insert(String::from("schedule"), Value::from(schedule.as_str()));
+            }
+            Ok(())
+        })
+        .await;
+        if let Err(outcome) = saved {
             return outcome;
         }
         ctx.json(&Value::Object(pick(&job, &JOB_FIELDS)))
@@ -279,14 +285,17 @@ async fn rust_schedule(ctx: &Ready<'_>, body: &Map<String, Value>) -> Outcome {
     let JobAnswer::Job(job) = answer else {
         return job_answer(ctx, answer);
     };
-    let mut data = ctx.settings.data().clone();
-    if let Some(Value::Object(settings)) = data.get_mut("jobs").and_then(|j| j.get_mut(&id)) {
-        settings.insert(
-            String::from("schedule"),
-            Value::from(schedule.unwrap_or_default()),
-        );
-    }
-    if let Err(outcome) = save(ctx, &data).await {
+    let saved = mutate(ctx, |doc| {
+        if let Some(Value::Object(settings)) = doc.get_mut("jobs").and_then(|j| j.get_mut(&id)) {
+            settings.insert(
+                String::from("schedule"),
+                Value::from(schedule.unwrap_or_default()),
+            );
+        }
+        Ok(())
+    })
+    .await;
+    if let Err(outcome) = saved {
         return outcome;
     }
     ctx.json(&Value::Object(job))

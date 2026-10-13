@@ -474,8 +474,8 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return Outcome::forward(String::from("tautulli is not an object"));
         };
         let before = current.clone();
-        for (k, v) in body {
-            current.insert(k, v);
+        for (k, v) in &body {
+            current.insert(k.clone(), v.clone());
         }
         // Node's in-memory copy only differs from the file when the body
         // changed something.
@@ -483,10 +483,18 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         // `Object.assign(settings.tautulli, req.body)` lands in Node's
         // shared settings before anything else; requests in between see it.
         if !unchanged && crate::standalone::enabled() {
-            let base = node_memory(ctx);
-            let assigned =
-                crate::settings::delta::with_key(&base, "tautulli", Value::Object(current.clone()));
-            if let Err(e) = ctx.state.settings.keep_unsaved_from(&base, &assigned).await {
+            let kept = ctx
+                .state
+                .settings
+                .mutate_unsaved(|doc| {
+                    if let Some(t) = doc.get_mut("tautulli").and_then(Value::as_object_mut) {
+                        for (k, v) in &body {
+                            t.insert(k.clone(), v.clone());
+                        }
+                    }
+                })
+                .await;
+            if let Err(e) = kept {
                 return Outcome::forward(format!("reading the settings failed: {e:#}"));
             }
         }
