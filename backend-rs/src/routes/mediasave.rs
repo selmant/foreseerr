@@ -12,7 +12,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde_json::{Map, Value};
 
-use crate::db::{Bind, MediaRow, SeasonRow};
+use crate::db::{Bind, Db, MediaRow, SeasonRow};
+use crate::dbtx::Exec;
+use crate::jobs::syncutil::Tx;
 use crate::lifecycle::{Entity, Lc, APPROVED, COMPLETED, FAILED, PENDING};
 
 /// `MediaStatus` values.
@@ -172,7 +174,7 @@ const DATE_COLUMNS: [&str; 2] = ["lastSeasonChange", "mediaAddedAt"];
 
 /// An ISO date as `TypeORM` writes it: `YYYY-MM-DD HH:MM:SS.SSS` on
 /// `SQLite`, the ISO string (cast) on Postgres.
-fn date_bind(db: &crate::db::Db, bind: &Bind) -> Bind {
+fn date_bind(db: &Db, bind: &Bind) -> Bind {
     match bind {
         Bind::OptText(Some(iso)) | Bind::Text(iso) if !db.is_postgres() => {
             Bind::OptText(Some(crate::clock::parse_date_millis(iso).map_or_else(
@@ -210,6 +212,11 @@ pub(super) fn reset_service_data(media: &mut MediaRow, four_k: Option<bool>) {
 /// entity holds in Node: the reloaded `updatedAt` values and the new
 /// seasons' ids and defaults.
 ///
+/// The media and season writes are one transaction. The subscriber's
+/// request saves are their own (each one transactional) before and after
+/// it rather than nested in it as in Node: they call out to Radarr and
+/// Sonarr, which no transaction should wait on.
+///
 /// # Errors
 ///
 /// Database errors.
@@ -232,32 +239,65 @@ pub async fn save_with_orphans(lc: &Lc, edit: &mut MediaEdit, orphans: &[i64]) -
     } else {
         Vec::new()
     };
-    write(lc, edit, &changes).await?;
-    for id in orphans {
-        lc.state
-            .db
-            .execute(
-                r#"UPDATE "season" SET "mediaId" = NULL, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?1"#,
-                &[Bind::Int(*id)],
-            )
-            .await
-            .context("detaching a season")?;
-    }
+    write(&lc.state.db, edit, &changes, orphans).await?;
     if media_changed {
         after_update(lc, edit, &db_seasons).await;
     }
     Ok(())
 }
 
-/// The inserts and updates, then the values `TypeORM` reads back.
-async fn write(lc: &Lc, edit: &mut MediaEdit, changes: &[(&'static str, Bind)]) -> Result<()> {
-    let db = &lc.state.db;
+/// The inserts, updates and orphan detaches in one transaction, as the
+/// save runs them, then the values `TypeORM` reads back.
+async fn write(
+    db: &Db,
+    edit: &mut MediaEdit,
+    changes: &[(&'static str, Bind)],
+    orphans: &[i64],
+) -> Result<()> {
+    let mut tx = Tx::begin(db).await?;
+    let touched = write_rows(&mut Exec::Tx(&mut tx), db, edit, changes, orphans).await?;
+    tx.commit().await?;
+    if changes.is_empty() && touched.is_empty() {
+        return Ok(());
+    }
+    let media_id = edit.after.id;
+    let Some(fresh_row) = db.media_by_ids(&[media_id], true).await?.pop() else {
+        return Ok(());
+    };
+    if !changes.is_empty() {
+        edit.after.updated_at.clone_from(&fresh_row.updated_at);
+    }
+    for season in &mut edit.after.seasons {
+        if !touched.contains(&season.id) {
+            continue;
+        }
+        if let Some(stored) = fresh_row.seasons.iter().find(|s| s.id == season.id) {
+            season.updated_at.clone_from(&stored.updated_at);
+            if season.created_at.is_none() {
+                season.created_at.clone_from(&stored.created_at);
+                season.status = stored.status;
+                season.status4k = stored.status4k;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The statements of [`write`]; the ids of the seasons inserted or
+/// updated. `db` only says which dialect the dates are bound for.
+async fn write_rows(
+    exec: &mut Exec<'_>,
+    db: &Db,
+    edit: &mut MediaEdit,
+    changes: &[(&'static str, Bind)],
+    orphans: &[i64],
+) -> Result<Vec<i64>> {
     let media_id = edit.after.id;
     for fresh in &edit.fresh {
         let Some(season) = edit.after.seasons.get_mut(fresh.index) else {
             continue;
         };
-        let id = db
+        let id = exec
             .scalar(
                 r#"INSERT INTO "season" ("seasonNumber", "status", "status4k", "mediaId") VALUES (?1, ?2, ?3, ?4) RETURNING CAST("id" AS BIGINT)"#,
                 &[
@@ -293,7 +333,7 @@ async fn write(lc: &Lc, edit: &mut MediaEdit, changes: &[(&'static str, Bind)]) 
             sets.join(", "),
             binds.len()
         );
-        db.execute(&sql, &binds).await.context("updating media")?;
+        exec.execute(&sql, &binds).await.context("updating media")?;
     }
     let mut touched: Vec<i64> = edit
         .fresh
@@ -323,34 +363,20 @@ async fn write(lc: &Lc, edit: &mut MediaEdit, changes: &[(&'static str, Bind)]) 
             sets.join(", "),
             binds.len()
         );
-        db.execute(&sql, &binds)
+        exec.execute(&sql, &binds)
             .await
             .context("updating a season")?;
         touched.push(season.id);
     }
-    if changes.is_empty() && touched.is_empty() {
-        return Ok(());
+    for id in orphans {
+        exec.execute(
+            r#"UPDATE "season" SET "mediaId" = NULL, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?1"#,
+            &[Bind::Int(*id)],
+        )
+        .await
+        .context("detaching a season")?;
     }
-    let Some(fresh_row) = db.media_by_ids(&[media_id], true).await?.pop() else {
-        return Ok(());
-    };
-    if !changes.is_empty() {
-        edit.after.updated_at.clone_from(&fresh_row.updated_at);
-    }
-    for season in &mut edit.after.seasons {
-        if !touched.contains(&season.id) {
-            continue;
-        }
-        if let Some(stored) = fresh_row.seasons.iter().find(|s| s.id == season.id) {
-            season.updated_at.clone_from(&stored.updated_at);
-            if season.created_at.is_none() {
-                season.created_at.clone_from(&stored.created_at);
-                season.status = stored.status;
-                season.status4k = stored.status4k;
-            }
-        }
-    }
-    Ok(())
+    Ok(touched)
 }
 
 /// The ids of a media's requests matching `filter` (SQL over `r`), in
@@ -573,6 +599,9 @@ pub(super) fn lc_of(ctx: &super::Ready<'_>) -> Lc {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Context;
+
+    use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
 
     #[test]
     fn fresh_seasons_and_resets() {
@@ -628,5 +657,45 @@ mod tests {
         assert_eq!(edit.after.rating_key4k.as_deref(), Some("k"), "4k kept");
         let changes = media_changes(&edit.before, &edit.after);
         assert_eq!(changes.len(), 1, "only serviceId changed");
+    }
+
+    #[tokio::test]
+    async fn a_failed_media_update_keeps_no_new_season() -> Result<()> {
+        let scratch = scratch::sqlite("mediasave").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[r#"CREATE TRIGGER "refuse_media" BEFORE UPDATE ON "media" BEGIN SELECT RAISE(ABORT, 'media update refused'); END"#],
+        )
+        .await?;
+        let media = db
+            .media_by_ids(&[1], true)
+            .await?
+            .pop()
+            .context("media 1")?;
+        let mut edit = MediaEdit::new(media);
+        edit.after.status = M_PARTIAL;
+        edit.set_season_status(1, false, M_AVAILABLE);
+        edit.set_season_status(2, false, M_AVAILABLE);
+        let changes = media_changes(&edit.before, &edit.after);
+        assert!(
+            write(db, &mut edit.clone(), &changes, &[]).await.is_err(),
+            "the media update fails"
+        );
+        let seasons =
+            r#"SELECT "status" FROM "season" WHERE "mediaId" = 1 ORDER BY "seasonNumber""#;
+        assert_eq!(ints(db, seasons).await?, [M_PENDING], "nothing written");
+
+        scratch::run(db, &[r#"DROP TRIGGER "refuse_media""#]).await?;
+        write(db, &mut edit, &changes, &[]).await?;
+        assert_eq!(
+            ints(db, seasons).await?,
+            [M_AVAILABLE, M_AVAILABLE],
+            "both seasons"
+        );
+        let status = r#"SELECT "status" FROM "media" WHERE "id" = 1"#;
+        assert_eq!(ints(db, status).await?, [M_PARTIAL], "and the media");
+        Ok(())
     }
 }

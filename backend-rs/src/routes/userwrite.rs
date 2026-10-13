@@ -11,6 +11,7 @@ use axum::http::Method;
 use base64::prelude::*;
 use serde_json::{Map, Value};
 
+use super::draft::fail_on_err;
 use super::{Outcome, Ready, Table};
 use crate::auth::CurrentUser;
 use crate::db::{Bind, UserRecord, UserSettingsRecord};
@@ -347,7 +348,10 @@ fn create<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         .await
         {
             Ok(id) => id,
-            Err(e) => return Outcome::forward(format!("creating the user failed: {e:#}")),
+            Err(e) => {
+                tracing::error!("creating the user failed: {e:#}");
+                return ctx.error(500, &format!("{e:#}"));
+            }
         };
         let mut out = Map::new();
         out.insert(String::from("warnings"), Value::Array(Vec::new()));
@@ -500,9 +504,13 @@ fn bulk_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 user.permissions = n;
             }
             if dirty {
-                let update = try_forward!(changes
-                    .update_sql("user", user.id, true)
-                    .map_err(|e| format!("{e:#}")));
+                // Earlier users may be saved already: no forwarding now.
+                let update = fail_on_err!(
+                    ctx,
+                    changes
+                        .update_sql("user", user.id, true)
+                        .map_err(|e| format!("{e:#}"))
+                );
                 if let Err(e) = typeorm::run(&ctx.state.db, update).await {
                     tracing::error!("updating user {} failed: {e:#}", user.id);
                     return ctx.error(500, &format!("{e:#}"));
@@ -666,7 +674,8 @@ fn delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             )
             .await
         {
-            return Outcome::forward(format!("deleting the user failed: {e:#}"));
+            tracing::error!("Something went wrong deleting a user: {e:#}");
+            return ctx.error(500, "Something went wrong deleting the user");
         }
         let count = json
             .shift_remove("requestCount")
@@ -678,7 +687,7 @@ fn delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 }
 
 /// `requestRepository.remove(user.requests)`: every request of the user
-/// deleted, then each one's `afterRemove`.
+/// deleted, then each one's `afterRemove`, all in one transaction.
 ///
 /// The requests come back as the response prints them: loaded with their
 /// eager relations, without the ids `remove()` drops.
@@ -721,6 +730,11 @@ async fn remove_requests(ctx: &Ready<'_>, user_id: i64) -> anyhow::Result<Vec<Va
         printed.push(Value::Object(json));
         entities.push(e);
     }
+    let removed: Vec<i64> = entities.iter().map(|e| e.row.id).collect();
+    let mut hooks = Vec::new();
+    for e in &entities {
+        hooks.extend(crate::lifecycle::after_remove(&ctx.state.db, e, &removed).await?);
+    }
     let mut tx = crate::jobs::syncutil::Tx::begin(&ctx.state.db).await?;
     for e in &entities {
         tx.execute(
@@ -729,15 +743,10 @@ async fn remove_requests(ctx: &Ready<'_>, user_id: i64) -> anyhow::Result<Vec<Va
         )
         .await?;
     }
-    tx.commit().await?;
-    for e in &entities {
-        if let Err(err) = lc.after_remove(e).await {
-            tracing::error!(
-                "updating the media after removing request {} failed: {err:#}",
-                e.row.id
-            );
-        }
+    for (sql, binds) in &hooks {
+        tx.execute(sql, binds).await?;
     }
+    tx.commit().await?;
     Ok(printed)
 }
 

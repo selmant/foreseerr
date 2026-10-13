@@ -12,7 +12,9 @@ use serde_json::{Map, Value};
 use super::draft::{body_object, downloads_for, forward_on_err, known_keys, opt_text, user_json};
 use super::requestcreate::has_all;
 use super::{Outcome, Ready, Table};
-use crate::db::{Bind, SeasonRequestRow};
+use crate::db::{Bind, Db, SeasonRequestRow};
+use crate::dbtx::Exec;
+use crate::jobs::syncutil::Tx;
 use crate::lifecycle::{Entity, Lc, UserRel, COMPLETED, DECLINED, PENDING};
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
@@ -325,7 +327,7 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if unchanged {
             return ctx.json(&edited_json(loaded_json, &e, &body, tv, seasons.as_ref()));
         }
-        if let Err(err) = save(ctx, &mut e, &sets, seasons.as_ref()).await {
+        if let Err(err) = save(&ctx.state.db, &mut e, &sets, seasons.as_ref()).await {
             tracing::error!("editing request {id} failed: {err:#}");
             return ctx.error(500, &format!("{err:#}"));
         }
@@ -369,24 +371,47 @@ pub(super) async fn loaded_json(
     Ok(out)
 }
 
-/// The writes of the save: new seasons, the row, orphaned seasons.
+/// The writes of the save: new seasons, the row, orphaned seasons, in
+/// one transaction as the cascaded `requestRepository.save` runs them.
 async fn save(
-    ctx: &Ready<'_>,
+    db: &Db,
     e: &mut Entity,
     sets: &[(&'static str, Bind)],
     seasons: Option<&SeasonEdit>,
 ) -> anyhow::Result<()> {
-    let db = &ctx.state.db;
+    let mut tx = Tx::begin(db).await?;
+    let added = save_rows(&mut Exec::Tx(&mut tx), e.row.id, sets, seasons).await?;
+    tx.commit().await?;
+    if let Some(fresh) = db.request_by_id(e.row.id).await? {
+        if !sets.is_empty() {
+            e.row.updated_at = fresh.updated_at;
+        }
+        e.row.seasons = fresh
+            .seasons
+            .into_iter()
+            .filter(|s| added.contains(&s.id))
+            .collect();
+    }
+    Ok(())
+}
+
+/// The statements of [`save`]; the ids of the added seasons.
+async fn save_rows(
+    exec: &mut Exec<'_>,
+    request_id: i64,
+    sets: &[(&'static str, Bind)],
+    seasons: Option<&SeasonEdit>,
+) -> anyhow::Result<Vec<i64>> {
     let mut added = Vec::new();
     if let Some(edit) = seasons {
         for number in &edit.add {
-            let sid = db
+            let sid = exec
                 .scalar(
                     &format!(
                         r#"INSERT INTO "season_request" ("seasonNumber", "status", "createdAt", "updatedAt", "requestId") VALUES (?1, ?2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?3){}"#,
                         super::draft::RETURNING_ID
                     ),
-                    &[Bind::Int(*number), Bind::Int(PENDING), Bind::Int(e.row.id)],
+                    &[Bind::Int(*number), Bind::Int(PENDING), Bind::Int(request_id)],
                 )
                 .await?;
             added.push(sid);
@@ -399,8 +424,8 @@ async fn save(
             .enumerate()
             .map(|(i, (column, _))| format!(r#""{column}" = ?{}"#, i + 1))
             .collect();
-        binds.push(Bind::Int(e.row.id));
-        db.execute(
+        binds.push(Bind::Int(request_id));
+        exec.execute(
             &format!(
                 r#"UPDATE "media_request" SET {}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?{}"#,
                 assignments.join(", "),
@@ -412,24 +437,14 @@ async fn save(
     }
     if let Some(edit) = seasons {
         for sid in &edit.orphaned {
-            db.execute(
+            exec.execute(
                 r#"UPDATE "season_request" SET "requestId" = NULL, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?1"#,
                 &[Bind::Int(*sid)],
             )
             .await?;
         }
     }
-    if let Some(fresh) = db.request_by_id(e.row.id).await? {
-        if !sets.is_empty() {
-            e.row.updated_at = fresh.updated_at;
-        }
-        e.row.seasons = fresh
-            .seasons
-            .into_iter()
-            .filter(|s| added.contains(&s.id))
-            .collect();
-    }
-    Ok(())
+    Ok(added)
 }
 
 /// The loaded JSON after the handler's assignments and the save.
@@ -514,32 +529,123 @@ fn remove<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if e.media.is_none() {
             return ctx.error(404, "Request not found.");
         }
-        let deleted = ctx
-            .state
-            .db
-            .execute(
-                r#"DELETE FROM "media_request" WHERE "id" = ?1"#,
-                &[Bind::Int(id)],
-            )
-            .await;
-        if let Err(err) = deleted {
+        // `remove` runs the subscriber's `afterRemove` in its transaction:
+        // when the media can't be updated, the request stays.
+        if let Err(err) = remove_with_hook(&ctx.state.db, &e).await {
             tracing::error!("Something went wrong deleting a request: {err:#}");
             return ctx.error(404, "Request not found.");
         }
-        if let Err(err) = lc.after_remove(&e).await {
-            tracing::error!("updating the media after deleting request {id} failed: {err:#}");
-        }
         Ready::no_content()
     })
+}
+
+/// The request's delete and `afterRemove`'s writes, in one transaction.
+async fn remove_with_hook(db: &Db, e: &Entity) -> anyhow::Result<()> {
+    let hook = crate::lifecycle::after_remove(db, e, &[e.row.id]).await?;
+    let mut tx = Tx::begin(db).await?;
+    tx.execute(
+        r#"DELETE FROM "media_request" WHERE "id" = ?1"#,
+        &[Bind::Int(e.row.id)],
+    )
+    .await?;
+    for (sql, binds) in &hook {
+        tx.execute(sql, binds).await?;
+    }
+    tx.commit().await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use anyhow::Context;
+
+    use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
+
     #[test]
     fn tags_transformer() {
         assert_eq!(tags_column(&[]), "none", "empty list");
         assert_eq!(tags_column(&[1, 2]), "1,2", "joined");
+    }
+
+    async fn entity(db: &Db) -> anyhow::Result<Entity> {
+        Ok(Entity {
+            row: db.request_by_id(1).await?.context("request 1")?,
+            media: None,
+            requested_by: None,
+            modified_by: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn a_failed_parent_update_keeps_no_added_season() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("requestedit-save").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[r#"CREATE TRIGGER "refuse_parent" BEFORE UPDATE ON "media_request" BEGIN SELECT RAISE(ABORT, 'parent update refused'); END"#],
+        )
+        .await?;
+        // Season 1 becomes seasons 1 and 2.
+        let mut e = entity(db).await?;
+        let edit = SeasonEdit {
+            keep: e.row.seasons.clone(),
+            add: vec![2],
+            orphaned: Vec::new(),
+            units: 2,
+        };
+        let sets = [("tvQuotaUnits", Bind::Int(2))];
+        assert!(
+            save(db, &mut e, &sets, Some(&edit)).await.is_err(),
+            "the parent update fails"
+        );
+        let seasons = r#"SELECT "seasonNumber" FROM "season_request" WHERE "requestId" = 1 ORDER BY "seasonNumber""#;
+        assert_eq!(ints(db, seasons).await?, [1], "season 2 rolled back");
+        let units = r#"SELECT "tvQuotaUnits" FROM "media_request" WHERE "id" = 1"#;
+        assert_eq!(ints(db, units).await?, [1], "the row as it was");
+
+        scratch::run(db, &[r#"DROP TRIGGER "refuse_parent""#]).await?;
+        save(db, &mut e, &sets, Some(&edit)).await?;
+        assert_eq!(ints(db, seasons).await?, [1, 2], "saved together");
+        assert_eq!(ints(db, units).await?, [2], "two units");
+        assert_eq!(
+            e.row
+                .seasons
+                .iter()
+                .map(|s| s.season_number)
+                .collect::<Vec<_>>(),
+            [2],
+            "the added season read back"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_failed_after_remove_keeps_the_request() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("requestedit-remove").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[r#"CREATE TRIGGER "refuse_media" BEFORE UPDATE ON "media" BEGIN SELECT RAISE(ABORT, 'media update refused'); END"#],
+        )
+        .await?;
+        let e = entity(db).await?;
+        assert!(
+            remove_with_hook(db, &e).await.is_err(),
+            "the media update fails"
+        );
+        let requests = r#"SELECT "id" FROM "media_request""#;
+        assert_eq!(ints(db, requests).await?, [1], "the delete rolled back");
+
+        scratch::run(db, &[r#"DROP TRIGGER "refuse_media""#]).await?;
+        remove_with_hook(db, &e).await?;
+        assert!(ints(db, requests).await?.is_empty(), "deleted");
+        let status = r#"SELECT "status" FROM "media" WHERE "id" = 1"#;
+        assert_eq!(ints(db, status).await?, [1], "the media fell back");
+        let season = r#"SELECT "status" FROM "season" WHERE "mediaId" = 1"#;
+        assert_eq!(ints(db, season).await?, [1], "and its season");
+        Ok(())
     }
 }

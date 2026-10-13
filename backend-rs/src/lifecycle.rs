@@ -17,7 +17,9 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 
 use crate::arr::{Arr, MovieOptions, SeriesOptions};
-use crate::db::{Bind, MediaRow, RequestRow, UserRecord, UserSettingsRecord};
+use crate::db::{Bind, Db, MediaRow, RequestRow, UserRecord, UserSettingsRecord};
+use crate::dbtx::Exec;
+use crate::jobs::syncutil::Tx;
 use crate::media::js_string;
 use crate::notify::{self, Kind, Payload, Person, RequestInfo};
 use crate::settings::public::truthy;
@@ -156,67 +158,10 @@ impl Lc {
         })
     }
 
-    /// The writes of a save; whether the request row changed. Without
-    /// `with_row` only the seasons and episodes are saved (their own
-    /// repositories' `save`), leaving the request row as it is.
+    /// The writes of a save ([`write_request`]); whether the request row
+    /// changed.
     async fn write(&self, e: &mut Entity, with_row: bool) -> Result<bool> {
-        let db = &self.state.db;
-        let Some(current) = db.request_by_id(e.row.id).await? else {
-            return Ok(false);
-        };
-        let row_changed = with_row
-            && (current.status != e.row.status || current.modified_by_id != e.row.modified_by_id);
-        if row_changed {
-            db.execute(
-                r#"UPDATE "media_request" SET "status" = ?1, "modifiedById" = ?2, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3"#,
-                &[Bind::Int(e.row.status), Bind::OptInt(e.row.modified_by_id), Bind::Int(e.row.id)],
-            )
-            .await?;
-        }
-        for season in &mut e.row.seasons {
-            let before = current.seasons.iter().find(|s| s.id == season.id);
-            if before.is_some_and(|b| b.status != season.status) {
-                db.execute(
-                    r#"UPDATE "season_request" SET "status" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
-                    &[Bind::Int(season.status), Bind::Int(season.id)],
-                )
-                .await?;
-            }
-        }
-        for episode in &mut e.row.episodes {
-            let before = current.episodes.iter().find(|x| x.id == episode.id);
-            if before.is_some_and(|b| {
-                b.status != episode.status || b.search_triggered_at != episode.search_triggered_at
-            }) {
-                db.execute(
-                    &format!(
-                        r#"UPDATE "episode_request" SET "status" = ?1, "searchTriggeredAt" = {}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
-                        if episode.search_triggered_at.is_some() { "CURRENT_TIMESTAMP" } else { "NULL" }
-                    ),
-                    &[Bind::Int(episode.status), Bind::Int(episode.id)],
-                )
-                .await?;
-            }
-        }
-        if let Some(fresh) = db.request_by_id(e.row.id).await? {
-            if with_row {
-                e.row.updated_at = fresh.updated_at;
-            }
-            for season in &mut e.row.seasons {
-                if let Some(f) = fresh.seasons.iter().find(|s| s.id == season.id) {
-                    season.updated_at.clone_from(&f.updated_at);
-                }
-            }
-            for episode in &mut e.row.episodes {
-                if let Some(f) = fresh.episodes.iter().find(|x| x.id == episode.id) {
-                    episode.updated_at.clone_from(&f.updated_at);
-                    episode
-                        .search_triggered_at
-                        .clone_from(&f.search_triggered_at);
-                }
-            }
-        }
-        Ok(row_changed)
+        write_request(&self.state.db, e, with_row).await
     }
 
     /// `@AfterUpdate` listener, then the subscriber's `afterUpdate`.
@@ -281,81 +226,6 @@ impl Lc {
                 "Error while updating parent status in afterInsert subscriber: {err:#}"
             );
         }
-    }
-
-    /// The subscriber's `afterRemove` (`handleRemoveParentUpdate`) for a
-    /// request that was just deleted: the media's status in that quality
-    /// falls back when no active request is left (`DELETED` when one had
-    /// completed), and seasons only this request asked for go back to
-    /// `UNKNOWN`.
-    ///
-    /// # Errors
-    ///
-    /// Fails on database errors or when the media row is gone.
-    pub async fn after_remove(&self, e: &Entity) -> Result<()> {
-        let db = &self.state.db;
-        let media_id = e.row.media_id.context("Media data not found")?;
-        let media = db
-            .media_by_ids(&[media_id], true)
-            .await?
-            .pop()
-            .context("Media data not found")?;
-        let requests = db.requests_of_media(media_id).await?;
-        let active = |r: &RequestRow| r.status != COMPLETED && r.status != DECLINED;
-        let fallback = |four_k: bool, current: i64| -> Option<i64> {
-            let has_active = requests.iter().any(|r| r.is4k == four_k && active(r));
-            if has_active || current == M_AVAILABLE || current == M_PARTIAL {
-                return None;
-            }
-            let had_completed = requests
-                .iter()
-                .any(|r| r.is4k == four_k && r.status == COMPLETED);
-            Some(if had_completed { M_DELETED } else { M_UNKNOWN })
-        };
-        let status = fallback(false, media.status).filter(|s| *s != media.status);
-        let status4k = fallback(true, media.status4k).filter(|s| *s != media.status4k);
-        if status.is_some() || status4k.is_some() {
-            db.execute(
-                r#"UPDATE "media" SET "status" = COALESCE(?1, "status"), "status4k" = COALESCE(?2, "status4k"), "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3"#,
-                &[Bind::OptInt(status), Bind::OptInt(status4k), Bind::Int(media_id)],
-            )
-            .await?;
-        }
-        if media.media_type == "tv" {
-            let four = e.row.is4k;
-            let removed: Vec<i64> = e
-                .row
-                .seasons
-                .iter()
-                .map(|s| s.season_number)
-                .chain(e.row.episodes.iter().map(|x| x.season_number))
-                .collect();
-            let still_active: Vec<i64> = requests
-                .iter()
-                .filter(|r| r.is4k == four && active(r))
-                .flat_map(|r| {
-                    r.seasons
-                        .iter()
-                        .map(|s| s.season_number)
-                        .chain(r.episodes.iter().map(|x| x.season_number))
-                })
-                .collect();
-            let column = if four { "status4k" } else { "status" };
-            for season in &media.seasons {
-                let current = if four { season.status4k } else { season.status };
-                if removed.contains(&season.season_number)
-                    && !still_active.contains(&season.season_number)
-                    && (current == M_PENDING || current == M_PROCESSING)
-                {
-                    db.execute(
-                        &format!(r#"UPDATE "season" SET "{column}" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#),
-                        &[Bind::Int(M_UNKNOWN), Bind::Int(season.id)],
-                    )
-                    .await?;
-                }
-            }
-        }
-        Ok(())
     }
 
     /// `notifyApprovedOrDeclined`.
@@ -574,89 +444,9 @@ impl Lc {
         Ok(())
     }
 
-    /// Save a media row's status column.
-    async fn set_media_status(&self, media_id: i64, four_k: bool, status: i64) -> Result<()> {
-        let column = if four_k { "status4k" } else { "status" };
-        self.state
-            .db
-            .execute(
-                &format!(r#"UPDATE "media" SET "{column}" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#),
-                &[Bind::Int(status), Bind::Int(media_id)],
-            )
-            .await?;
-        Ok(())
-    }
-
-    /// `updateParentStatus`.
+    /// `updateParentStatus`: [`update_parent_status`].
     async fn update_parent_status(&self, e: &mut Entity) -> Result<()> {
-        let db = &self.state.db;
-        let Some(media_id) = e.row.media_id else {
-            return Ok(());
-        };
-        let Some(media) = db.media_by_ids(&[media_id], true).await?.pop() else {
-            tracing::error!("Media data not found");
-            return Ok(());
-        };
-        let four = e.row.is4k;
-        let column = if four { "status4k" } else { "status" };
-        let current = status_of(&media, four);
-        if e.row.status == APPROVED && !matches!(current, M_AVAILABLE | M_PARTIAL | M_PROCESSING) {
-            self.set_media_status(media_id, four, M_PROCESSING).await?;
-        }
-        if media.media_type == "movie" && e.row.status == DECLINED && current != M_DELETED {
-            self.set_media_status(media_id, four, M_UNKNOWN).await?;
-        }
-        if media.media_type == "tv" && e.row.status == DECLINED {
-            if current == M_PENDING {
-                let others = db
-                    .scalar(
-                        r#"SELECT COUNT(*) FROM "media_request" WHERE "mediaId" = ?1 AND "status" = ?2 AND "is4k" = ?3 AND "id" != ?4"#,
-                        &[Bind::Int(media_id), Bind::Int(PENDING), Bind::Bool(four), Bind::Int(e.row.id)],
-                    )
-                    .await?;
-                if others == 0 {
-                    self.set_media_status(media_id, four, M_UNKNOWN).await?;
-                }
-            }
-            for season in &mut e.row.seasons {
-                season.status = DECLINED;
-                let actual = media
-                    .seasons
-                    .iter()
-                    .find(|s| s.season_number == season.season_number);
-                if let Some(actual) = actual {
-                    if (if four { actual.status4k } else { actual.status }) == M_PENDING {
-                        let others = db
-                            .scalar(
-                                r#"SELECT COUNT(DISTINCT r."id") FROM "media_request" r LEFT JOIN "season_request" s ON s."requestId" = r."id" WHERE r."mediaId" = ?1 AND r."id" != ?2 AND r."is4k" = ?3 AND r."status" NOT IN (3, 5) AND s."seasonNumber" = ?4"#,
-                                &[Bind::Int(media_id), Bind::Int(e.row.id), Bind::Bool(four), Bind::Int(season.season_number)],
-                            )
-                            .await?;
-                        if others == 0 {
-                            db.execute(
-                                &format!(r#"UPDATE "season" SET "{column}" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#),
-                                &[Bind::Int(M_UNKNOWN), Bind::Int(actual.id)],
-                            )
-                            .await?;
-                        }
-                    }
-                }
-            }
-            for episode in &mut e.row.episodes {
-                episode.status = DECLINED;
-            }
-            self.write(e, false).await?;
-        }
-        if media.media_type == "tv" && e.row.status == APPROVED {
-            for season in &mut e.row.seasons {
-                season.status = APPROVED;
-            }
-            for episode in &mut e.row.episodes {
-                episode.status = APPROVED;
-            }
-            self.write(e, false).await?;
-        }
-        Ok(())
+        update_parent_status(&self.state.db, e).await
     }
 
     /// The configured server for a request: the default for its quality,
@@ -957,16 +747,19 @@ impl Lc {
             .and_then(Value::as_i64)
             .or(media.tvdb_id);
         let Some(tvdb_id) = tvdb_id else {
-            db.execute(
+            // Both removes run in the save's transaction in Node.
+            let mut tx = Tx::begin(db).await?;
+            tx.execute(
                 r#"DELETE FROM "media" WHERE "id" = ?1"#,
                 &[Bind::Int(media_id)],
             )
             .await?;
-            db.execute(
+            tx.execute(
                 r#"DELETE FROM "media_request" WHERE "id" = ?1"#,
                 &[Bind::Int(e.row.id)],
             )
             .await?;
+            tx.commit().await?;
             anyhow::bail!("TVDB ID not found");
         };
         let anime = crate::routes::tv::is_anime(&series);
@@ -1135,6 +928,280 @@ impl Lc {
     }
 }
 
+/// The writes of a save, in one transaction as `TypeORM`'s cascaded
+/// save runs them; whether the request row changed. Without
+/// `with_row` only the seasons and episodes are saved (their own
+/// repositories' `save`), leaving the request row as it is.
+async fn write_request(db: &Db, e: &mut Entity, with_row: bool) -> Result<bool> {
+    let Some(current) = db.request_by_id(e.row.id).await? else {
+        return Ok(false);
+    };
+    let mut tx = Tx::begin(db).await?;
+    let row_changed = write_rows(&mut Exec::Tx(&mut tx), e, &current, with_row).await?;
+    tx.commit().await?;
+    reload_dates(db, e, with_row).await?;
+    Ok(row_changed)
+}
+
+/// The dates `TypeORM` reads back after a save.
+async fn reload_dates(db: &Db, e: &mut Entity, with_row: bool) -> Result<()> {
+    if let Some(fresh) = db.request_by_id(e.row.id).await? {
+        if with_row {
+            e.row.updated_at = fresh.updated_at;
+        }
+        for season in &mut e.row.seasons {
+            if let Some(f) = fresh.seasons.iter().find(|s| s.id == season.id) {
+                season.updated_at.clone_from(&f.updated_at);
+            }
+        }
+        for episode in &mut e.row.episodes {
+            if let Some(f) = fresh.episodes.iter().find(|x| x.id == episode.id) {
+                episode.updated_at.clone_from(&f.updated_at);
+                episode
+                    .search_triggered_at
+                    .clone_from(&f.search_triggered_at);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `updateParentStatus`, in one transaction as Node's nested one
+/// (`withNestedTransaction`): a failure leaves none of its writes.
+async fn update_parent_status(db: &Db, e: &mut Entity) -> Result<()> {
+    let Some(media_id) = e.row.media_id else {
+        return Ok(());
+    };
+    let Some(media) = db.media_by_ids(&[media_id], true).await?.pop() else {
+        tracing::error!("Media data not found");
+        return Ok(());
+    };
+    let four = e.row.is4k;
+    let column = if four { "status4k" } else { "status" };
+    let current = status_of(&media, four);
+    let cascades = media.media_type == "tv" && matches!(e.row.status, DECLINED | APPROVED);
+    let stored = if cascades {
+        db.request_by_id(e.row.id).await?
+    } else {
+        None
+    };
+    let mut tx = Tx::begin(db).await?;
+    let exec = &mut Exec::Tx(&mut tx);
+    if e.row.status == APPROVED && !matches!(current, M_AVAILABLE | M_PARTIAL | M_PROCESSING) {
+        set_media_status(exec, media_id, four, M_PROCESSING).await?;
+    }
+    if media.media_type == "movie" && e.row.status == DECLINED && current != M_DELETED {
+        set_media_status(exec, media_id, four, M_UNKNOWN).await?;
+    }
+    if media.media_type == "tv" && e.row.status == DECLINED {
+        if current == M_PENDING {
+            let others = exec
+                .scalar(
+                    r#"SELECT COUNT(*) FROM "media_request" WHERE "mediaId" = ?1 AND "status" = ?2 AND "is4k" = ?3 AND "id" != ?4"#,
+                    &[Bind::Int(media_id), Bind::Int(PENDING), Bind::Bool(four), Bind::Int(e.row.id)],
+                )
+                .await?;
+            if others == 0 {
+                set_media_status(exec, media_id, four, M_UNKNOWN).await?;
+            }
+        }
+        for season in &mut e.row.seasons {
+            season.status = DECLINED;
+            let actual = media
+                .seasons
+                .iter()
+                .find(|s| s.season_number == season.season_number);
+            if let Some(actual) = actual {
+                if (if four { actual.status4k } else { actual.status }) == M_PENDING {
+                    let others = exec
+                        .scalar(
+                            r#"SELECT COUNT(DISTINCT r."id") FROM "media_request" r LEFT JOIN "season_request" s ON s."requestId" = r."id" WHERE r."mediaId" = ?1 AND r."id" != ?2 AND r."is4k" = ?3 AND r."status" NOT IN (3, 5) AND s."seasonNumber" = ?4"#,
+                            &[Bind::Int(media_id), Bind::Int(e.row.id), Bind::Bool(four), Bind::Int(season.season_number)],
+                        )
+                        .await?;
+                    if others == 0 {
+                        exec.execute(
+                            &format!(r#"UPDATE "season" SET "{column}" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#),
+                            &[Bind::Int(M_UNKNOWN), Bind::Int(actual.id)],
+                        )
+                        .await?;
+                    }
+                }
+            }
+        }
+        for episode in &mut e.row.episodes {
+            episode.status = DECLINED;
+        }
+    }
+    if media.media_type == "tv" && e.row.status == APPROVED {
+        for season in &mut e.row.seasons {
+            season.status = APPROVED;
+        }
+        for episode in &mut e.row.episodes {
+            episode.status = APPROVED;
+        }
+    }
+    if let Some(stored) = &stored {
+        write_rows(exec, e, stored, false).await?;
+    }
+    tx.commit().await?;
+    if stored.is_some() {
+        reload_dates(db, e, false).await?;
+    }
+    Ok(())
+}
+
+/// The subscriber's `afterRemove` (`handleRemoveParentUpdate`) for a
+/// request that was just deleted.
+///
+/// The media's status in that quality falls back when no active request
+/// is left (`DELETED` when one had completed), and seasons only this
+/// request asked for go back to `UNKNOWN`.
+///
+/// Node runs the hook inside `remove`'s transaction, so this only reads
+/// (before that transaction opens, leaving out the requests the remove
+/// deletes, `removed` by id) and returns the statements for the caller
+/// to run in it after the delete.
+///
+/// # Errors
+///
+/// Fails on database errors or when the media row is gone.
+pub async fn after_remove(
+    db: &Db,
+    e: &Entity,
+    removed: &[i64],
+) -> Result<Vec<(String, Vec<Bind>)>> {
+    let media_id = e.row.media_id.context("Media data not found")?;
+    let media = db
+        .media_by_ids(&[media_id], true)
+        .await?
+        .pop()
+        .context("Media data not found")?;
+    let mut requests = db.requests_of_media(media_id).await?;
+    requests.retain(|r| r.id != e.row.id && !removed.contains(&r.id));
+    let active = |r: &RequestRow| r.status != COMPLETED && r.status != DECLINED;
+    let fallback = |four_k: bool, current: i64| -> Option<i64> {
+        let has_active = requests.iter().any(|r| r.is4k == four_k && active(r));
+        if has_active || current == M_AVAILABLE || current == M_PARTIAL {
+            return None;
+        }
+        let had_completed = requests
+            .iter()
+            .any(|r| r.is4k == four_k && r.status == COMPLETED);
+        Some(if had_completed { M_DELETED } else { M_UNKNOWN })
+    };
+    let mut writes = Vec::new();
+    let status = fallback(false, media.status).filter(|s| *s != media.status);
+    let status4k = fallback(true, media.status4k).filter(|s| *s != media.status4k);
+    if status.is_some() || status4k.is_some() {
+        writes.push((
+            String::from(
+                r#"UPDATE "media" SET "status" = COALESCE(?1, "status"), "status4k" = COALESCE(?2, "status4k"), "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3"#,
+            ),
+            vec![Bind::OptInt(status), Bind::OptInt(status4k), Bind::Int(media_id)],
+        ));
+    }
+    if media.media_type == "tv" {
+        let four = e.row.is4k;
+        let numbers: Vec<i64> = e
+            .row
+            .seasons
+            .iter()
+            .map(|s| s.season_number)
+            .chain(e.row.episodes.iter().map(|x| x.season_number))
+            .collect();
+        let still_active: Vec<i64> = requests
+            .iter()
+            .filter(|r| r.is4k == four && active(r))
+            .flat_map(|r| {
+                r.seasons
+                    .iter()
+                    .map(|s| s.season_number)
+                    .chain(r.episodes.iter().map(|x| x.season_number))
+            })
+            .collect();
+        let column = if four { "status4k" } else { "status" };
+        for season in &media.seasons {
+            let current = if four { season.status4k } else { season.status };
+            if numbers.contains(&season.season_number)
+                && !still_active.contains(&season.season_number)
+                && (current == M_PENDING || current == M_PROCESSING)
+            {
+                writes.push((
+                    format!(r#"UPDATE "season" SET "{column}" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#),
+                    vec![Bind::Int(M_UNKNOWN), Bind::Int(season.id)],
+                ));
+            }
+        }
+    }
+    Ok(writes)
+}
+
+/// The statements of a request save against the row as stored
+/// (`current`): the row when its status or modifier changed (and
+/// `with_row`), then the seasons and episodes whose status changed;
+/// whether the row was written.
+async fn write_rows(
+    exec: &mut Exec<'_>,
+    e: &Entity,
+    current: &RequestRow,
+    with_row: bool,
+) -> Result<bool> {
+    let row_changed = with_row
+        && (current.status != e.row.status || current.modified_by_id != e.row.modified_by_id);
+    if row_changed {
+        exec.execute(
+            r#"UPDATE "media_request" SET "status" = ?1, "modifiedById" = ?2, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3"#,
+            &[Bind::Int(e.row.status), Bind::OptInt(e.row.modified_by_id), Bind::Int(e.row.id)],
+        )
+        .await?;
+    }
+    for season in &e.row.seasons {
+        let before = current.seasons.iter().find(|s| s.id == season.id);
+        if before.is_some_and(|b| b.status != season.status) {
+            exec.execute(
+                r#"UPDATE "season_request" SET "status" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
+                &[Bind::Int(season.status), Bind::Int(season.id)],
+            )
+            .await?;
+        }
+    }
+    for episode in &e.row.episodes {
+        let before = current.episodes.iter().find(|x| x.id == episode.id);
+        if before.is_some_and(|b| {
+            b.status != episode.status || b.search_triggered_at != episode.search_triggered_at
+        }) {
+            exec.execute(
+                &format!(
+                    r#"UPDATE "episode_request" SET "status" = ?1, "searchTriggeredAt" = {}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
+                    if episode.search_triggered_at.is_some() { "CURRENT_TIMESTAMP" } else { "NULL" }
+                ),
+                &[Bind::Int(episode.status), Bind::Int(episode.id)],
+            )
+            .await?;
+        }
+    }
+    Ok(row_changed)
+}
+
+/// Save a media row's status column.
+async fn set_media_status(
+    exec: &mut Exec<'_>,
+    media_id: i64,
+    four_k: bool,
+    status: i64,
+) -> Result<()> {
+    let column = if four_k { "status4k" } else { "status" };
+    exec.execute(
+        &format!(
+            r#"UPDATE "media" SET "{column}" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#
+        ),
+        &[Bind::Int(status), Bind::Int(media_id)],
+    )
+    .await?;
+    Ok(())
+}
+
 /// `Number(date.slice(0, 4))`.
 fn js_year(date: &str) -> Value {
     let head: String = date.chars().take(4).collect();
@@ -1252,6 +1319,7 @@ fn requested_extra(row: &RequestRow) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
 
     #[test]
     fn helpers() {
@@ -1274,5 +1342,79 @@ mod tests {
             "truncated at a space"
         );
         assert_eq!(truncate("short"), "short", "short text");
+    }
+
+    async fn entity(db: &Db) -> Result<Entity> {
+        Ok(Entity {
+            row: db.request_by_id(1).await?.context("request 1")?,
+            media: None,
+            requested_by: None,
+            modified_by: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn a_failed_season_write_keeps_the_request_row() -> Result<()> {
+        let scratch = scratch::sqlite("lifecycle-save").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[r#"CREATE TRIGGER "refuse_season" BEFORE UPDATE ON "season_request" BEGIN SELECT RAISE(ABORT, 'season update refused'); END"#],
+        )
+        .await?;
+        let mut e = entity(db).await?;
+        e.row.status = APPROVED;
+        for season in &mut e.row.seasons {
+            season.status = APPROVED;
+        }
+        assert!(
+            write_request(db, &mut e, true).await.is_err(),
+            "the season update fails"
+        );
+        let status = r#"SELECT "status" FROM "media_request" WHERE "id" = 1"#;
+        assert_eq!(ints(db, status).await?, [PENDING], "the row rolled back");
+
+        scratch::run(db, &[r#"DROP TRIGGER "refuse_season""#]).await?;
+        assert!(write_request(db, &mut e, true).await?, "the row changed");
+        assert_eq!(ints(db, status).await?, [APPROVED], "saved");
+        let seasons = r#"SELECT "status" FROM "season_request" WHERE "requestId" = 1"#;
+        assert_eq!(ints(db, seasons).await?, [APPROVED], "with its season");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_failed_parent_status_update_writes_nothing() -> Result<()> {
+        let scratch = scratch::sqlite("lifecycle-parent").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[
+                r#"UPDATE "media_request" SET "status" = 3 WHERE "id" = 1"#,
+                r#"CREATE TRIGGER "refuse_season" BEFORE UPDATE ON "season_request" BEGIN SELECT RAISE(ABORT, 'season update refused'); END"#,
+            ],
+        )
+        .await?;
+        // A declined series request: the media and its season fall back
+        // to unknown, and the request's season is declined.
+        let mut e = entity(db).await?;
+        assert!(
+            update_parent_status(db, &mut e).await.is_err(),
+            "the season request update fails"
+        );
+        let media = r#"SELECT "status" FROM "media" WHERE "id" = 1"#;
+        assert_eq!(ints(db, media).await?, [M_PENDING], "media rolled back");
+        let season = r#"SELECT "status" FROM "season" WHERE "mediaId" = 1"#;
+        assert_eq!(ints(db, season).await?, [M_PENDING], "season rolled back");
+
+        scratch::run(db, &[r#"DROP TRIGGER "refuse_season""#]).await?;
+        let mut e = entity(db).await?;
+        update_parent_status(db, &mut e).await?;
+        assert_eq!(ints(db, media).await?, [M_UNKNOWN], "media updated");
+        assert_eq!(ints(db, season).await?, [M_UNKNOWN], "season updated");
+        let requested = r#"SELECT "status" FROM "season_request" WHERE "requestId" = 1"#;
+        assert_eq!(ints(db, requested).await?, [DECLINED], "declined");
+        Ok(())
     }
 }
