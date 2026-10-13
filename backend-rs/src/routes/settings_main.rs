@@ -433,6 +433,7 @@ async fn tautulli_check(ctx: &Ready<'_>, url: &str) -> bool {
         .send()
         .await
         .and_then(reqwest::Response::error_for_status)
+        .map_err(crate::outbound::redact)
     {
         Ok(response) => response,
         Err(e) => {

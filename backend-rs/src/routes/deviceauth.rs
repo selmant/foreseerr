@@ -227,14 +227,20 @@ async fn trakt_send(
     if let Some(body) = body {
         req = req.body(serde_json::to_vec(body).unwrap_or_default());
     }
-    let res = req.send().await.map_err(|e| format!("{e:#}"))?;
+    let res = req
+        .send()
+        .await
+        .map_err(|e| crate::outbound::describe(&e))?;
     let status = res.status().as_u16();
     let retry_after = res
         .headers()
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    let bytes = res.bytes().await.map_err(|e| format!("{e:#}"))?;
+    let bytes = res
+        .bytes()
+        .await
+        .map_err(|e| crate::outbound::describe(&e))?;
     Ok((status, retry_after, axios_data(&bytes)))
 }
 

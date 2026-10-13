@@ -235,11 +235,14 @@ impl Ratings {
                 .body(body.to_string())
                 .send()
                 .await
+                .map_err(crate::outbound::redact)
                 .context("[RT API] search")?
                 .error_for_status()
+                .map_err(crate::outbound::redact)
                 .context("[RT API] search")?
                 .json()
                 .await
+                .map_err(crate::outbound::redact)
                 .context("[RT API] search: not JSON")?;
             let data = crate::tmdb::js_numbers(data);
             memcache::set(CacheId::Rt, key, data.clone(), DEFAULT_TTL);

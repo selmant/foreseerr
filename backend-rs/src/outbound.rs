@@ -17,6 +17,10 @@ use crate::version::AppVersion;
 /// A failed outgoing call in plain words, for logs and error messages:
 /// the status a server refused it with, a timeout, or the error and its
 /// causes.
+///
+/// The URL reqwest prints after its own message is left out, as axios'
+/// message leaves it out: `*arr` and Tautulli URLs carry the API key and
+/// others carry tokens.
 #[must_use]
 pub fn describe(e: &reqwest::Error) -> String {
     if let Some(status) = e.status() {
@@ -26,6 +30,11 @@ pub fn describe(e: &reqwest::Error) -> String {
         return String::from("The request timed out");
     }
     let mut message = e.to_string();
+    if e.url().is_some() {
+        if let Some(at) = message.find(" for url (") {
+            message.truncate(at);
+        }
+    }
     let mut source = std::error::Error::source(e);
     while let Some(cause) = source {
         message.push_str(": ");
@@ -33,6 +42,38 @@ pub fn describe(e: &reqwest::Error) -> String {
         source = cause.source();
     }
     message
+}
+
+/// A failed call's error with the credentials taken out of its URL (see
+/// [`redact_url`]), for calls whose URL carries a key or token, so the
+/// error can go into an `anyhow` chain that is logged or answered.
+#[must_use]
+pub fn redact(mut e: reqwest::Error) -> reqwest::Error {
+    if let Some(url) = e.url_mut() {
+        strip_credentials(url);
+    }
+    e
+}
+
+/// `url` for messages: the scheme, host, port and path, without the
+/// query (`apikey`, `token`), user info or fragment.
+#[must_use]
+pub fn redact_url(url: &str) -> String {
+    reqwest::Url::parse(url).map_or_else(
+        |_| String::from("(an invalid URL)"),
+        |mut url| {
+            strip_credentials(&mut url);
+            url.to_string()
+        },
+    )
+}
+
+fn strip_credentials(url: &mut reqwest::Url) {
+    url.set_query(None);
+    url.set_fragment(None);
+    // Both fail only for URLs that can't have user info at all.
+    url.set_username("").ok();
+    url.set_password(None).ok();
 }
 
 /// [`describe`] for the first outgoing-call failure in an `anyhow` chain.
@@ -202,6 +243,119 @@ mod tests {
         ] {
             assert!(!is_local_address(host), "{host} is not local");
         }
+    }
+
+    #[test]
+    fn urls_without_credentials() {
+        assert_eq!(
+            redact_url("http://user:pass@127.0.0.1:7878/radarr/api/v3/tag?apikey=secret#x"),
+            "http://127.0.0.1:7878/radarr/api/v3/tag",
+            "query, user info and fragment left out"
+        );
+        assert_eq!(redact_url("not a url"), "(an invalid URL)", "unparseable");
+    }
+
+    #[tokio::test]
+    async fn described_failures_leave_the_url_out() -> Result<(), Box<dyn std::error::Error>> {
+        let port = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            listener.local_addr()?.port()
+        };
+        let url = format!("http://u:p@127.0.0.1:{port}/api/v3/tag?apikey=secret-key");
+        let e = reqwest::Client::new()
+            .get(&url)
+            .send()
+            .await
+            .err()
+            .ok_or("nothing listens on the port")?;
+        assert!(e.to_string().contains("secret-key"), "reqwest prints it");
+        let described = describe(&e);
+        assert!(!described.contains("secret-key"), "{described}");
+        let redacted = redact(e);
+        for text in [format!("{redacted}"), format!("{redacted:?}")] {
+            assert!(!text.contains("secret-key"), "{text}");
+            assert!(!text.contains("u:p@"), "{text}");
+        }
+        Ok(())
+    }
+
+    /// Answer every connection with `body`, sent with `encoding`, and
+    /// report the `Accept-Encoding` each request came with.
+    async fn compressing(
+        encoding: &'static str,
+        body: Vec<u8>,
+    ) -> std::io::Result<(u16, tokio::sync::mpsc::UnboundedReceiver<String>)> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let port = listener.local_addr()?.port();
+        let (sent, received) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut request = vec![0_u8; 4096];
+                let n = stream.read(&mut request).await.unwrap_or(0);
+                let request = String::from_utf8_lossy(request.get(..n).unwrap_or_default());
+                let accepted = request
+                    .lines()
+                    .find_map(|l| {
+                        l.to_ascii_lowercase()
+                            .strip_prefix("accept-encoding:")
+                            .map(|v| v.trim().to_owned())
+                    })
+                    .unwrap_or_default();
+                sent.send(accepted).ok();
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Encoding: {encoding}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                stream.write_all(head.as_bytes()).await.ok();
+                stream.write_all(&body).await.ok();
+            }
+        });
+        Ok((port, received))
+    }
+
+    #[tokio::test]
+    async fn decodes_compressed_answers() -> Result<(), Box<dyn std::error::Error>> {
+        use std::io::Write;
+        let json = br#"{"version":"4.0.0","appName":"Sonarr"}"#;
+        let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gzip.write_all(json)?;
+        let mut deflate =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        deflate.write_all(json)?;
+        let settings = Settings::from_file_value(serde_json::json!({}), None)?;
+        let version = AppVersion {
+            version: String::from("0.0.0"),
+            commit_tag: String::from("local"),
+        };
+        let client = client(&settings, &version, None)?;
+        for (encoding, body) in [("gzip", gzip.finish()?), ("deflate", deflate.finish()?)] {
+            let (port, mut accepted) = compressing(encoding, body).await?;
+            let response = client
+                .get(format!("http://127.0.0.1:{port}/api/v3/system/status"))
+                .send()
+                .await?;
+            for stale in [
+                reqwest::header::CONTENT_ENCODING,
+                reqwest::header::CONTENT_LENGTH,
+            ] {
+                assert!(
+                    response.headers().get(&stale).is_none(),
+                    "{encoding}: no {stale} for the decoded body"
+                );
+            }
+            let value: Value = response.json().await?;
+            assert_eq!(
+                value.get("appName"),
+                Some(&Value::from("Sonarr")),
+                "{encoding}"
+            );
+            let accepted = accepted.recv().await.unwrap_or_default();
+            for offered in ["gzip", "deflate", "br"] {
+                assert!(accepted.contains(offered), "{offered} offered: {accepted}");
+            }
+        }
+        Ok(())
     }
 
     #[test]

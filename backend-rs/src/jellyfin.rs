@@ -450,7 +450,7 @@ impl JellyfinClient {
         let bytes = response
             .bytes()
             .await
-            .map_err(|e| failed(None, e.to_string()))?;
+            .map_err(|e| failed(None, crate::outbound::describe(&e)))?;
         match serde_json::from_slice::<Value>(&bytes) {
             Ok(Value::Object(body)) => Ok(body),
             Ok(_) | Err(_) => Err(JfError::unsure("an answer that isn't a JSON object")),
@@ -912,7 +912,7 @@ impl JellyfinClient {
         let bytes = response
             .bytes()
             .await
-            .map_err(|e| failed(None, e.to_string()))?;
+            .map_err(|e| failed(None, crate::outbound::describe(&e)))?;
         Ok(Some((bytes, content_type)))
     }
 }

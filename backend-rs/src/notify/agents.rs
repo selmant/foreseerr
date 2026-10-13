@@ -98,12 +98,20 @@ async fn post(env: &Env, url: &str, body: &Value, headers: &[(String, String)]) 
     for (name, value) in headers {
         request = request.header(name.as_str(), value.as_str());
     }
+    // Webhook paths and queries carry tokens (Telegram's bot token,
+    // Gotify's `?token=`), so errors name the host only.
+    let origin = reqwest::Url::parse(url).map_or_else(
+        |_| String::from("(an invalid URL)"),
+        |u| u.origin().ascii_serialization(),
+    );
     request
         .send()
         .await
-        .with_context(|| format!("POST {url}"))?
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("POST {origin}"))?
         .error_for_status()
-        .with_context(|| format!("POST {url}"))?;
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("POST {origin}"))?;
     Ok(())
 }
 

@@ -133,13 +133,12 @@ async fn tautulli(ctx: &Ready<'_>, params: &[(&str, &str)]) -> Result<Value, Sto
         .header(reqwest::header::ACCEPT, "application/json, text/plain, */*")
         .send()
         .await
-        .map_err(|e| Stop::Failed(format!("{e}")))?
-        .error_for_status()
-        .map_err(|e| Stop::Failed(format!("{e}")))?;
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|e| Stop::Failed(crate::outbound::describe(&e)))?;
     let bytes = response
         .bytes()
         .await
-        .map_err(|e| Stop::Failed(format!("{e}")))?;
+        .map_err(|e| Stop::Failed(crate::outbound::describe(&e)))?;
     // axios hands back text that isn't JSON; reading `.response` off a
     // string gives undefined, and the next read throws.
     Ok(serde_json::from_slice::<Value>(&bytes).map_or(Value::Null, crate::tmdb::js_numbers))

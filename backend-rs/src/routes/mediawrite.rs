@@ -405,10 +405,12 @@ async fn tautulli(ctx: &Ready<'_>, cmd: &str, rating_key: &str) -> Result<Value,
         .header(reqwest::header::ACCEPT, "application/json, text/plain, */*")
         .send()
         .await
-        .map_err(|e| format!("{e}"))?
-        .error_for_status()
-        .map_err(|e| format!("{e}"))?;
-    let data: Value = response.json().await.map_err(|e| format!("{e}"))?;
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|e| crate::outbound::describe(&e))?;
+    let data: Value = response
+        .json()
+        .await
+        .map_err(|e| crate::outbound::describe(&e))?;
     data.pointer("/response/data")
         .cloned()
         .map(crate::tmdb::js_numbers)

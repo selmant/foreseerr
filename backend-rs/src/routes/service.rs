@@ -217,11 +217,13 @@ pub(super) fn sonarr_detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 /// A failed `*arr` call through the error handler:
 /// `[{apiName}] Failed to retrieve {what}: {axios message}`.
 fn arr_failed(ctx: &Ready<'_>, api: &str, what: &str, e: &anyhow::Error) -> Outcome {
+    ctx.error(500, &arr_failure(api, what, e))
+}
+
+/// The message of [`arr_failed`], which any signed-in user can read.
+fn arr_failure(api: &str, what: &str, e: &anyhow::Error) -> String {
     let message = crate::outbound::failure_in(e).unwrap_or_else(|| format!("{e:#}"));
-    ctx.error(
-        500,
-        &format!("[{api}] Failed to retrieve {what}: {message}"),
-    )
+    format!("[{api}] Failed to retrieve {what}: {message}")
 }
 
 fn find_server(ctx: &Ready<'_>, section: &str) -> Result<Option<Value>, super::Fallback> {
@@ -280,5 +282,78 @@ mod tests {
             json!({"id": 3, "name": "x", "is4k": null}),
             "declared order, nulls kept, missing left out"
         );
+    }
+
+    /// One plain HTTP answer with `status` to every connection.
+    async fn answering(status: u16) -> std::io::Result<u16> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let port = listener.local_addr()?.port();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut request = [0_u8; 4096];
+                // One read takes the whole small request; its length isn't needed.
+                let _read = stream.read(&mut request).await.ok();
+                let answer = format!(
+                    "HTTP/1.1 {status} Oops\r\nContent-Type: text/plain\r\nContent-Length: 4\r\nConnection: close\r\n\r\noops"
+                );
+                stream.write_all(answer.as_bytes()).await.ok();
+            }
+        });
+        Ok(port)
+    }
+
+    #[tokio::test]
+    async fn failures_leave_the_api_key_out() -> Result<(), Box<dyn std::error::Error>> {
+        const KEY: &str = "review-sensitive-service-key";
+        let closed = {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            listener.local_addr()?.port()
+        };
+        let refusing = answering(500).await?;
+        let client = crate::servarr::ServarrClient::new(reqwest::Client::new());
+        for port in [closed, refusing] {
+            let server = json!({"id": 0, "hostname": "127.0.0.1", "port": port, "useSsl": false, "baseUrl": "/radarr", "apiKey": KEY});
+            let failures = [
+                client.tags(&server, None).await.err(),
+                client.system_status(&server, None).await.err(),
+                client
+                    .call(
+                        &server,
+                        reqwest::Method::GET,
+                        "/movie",
+                        &[("term", String::from("x"))],
+                        None,
+                        None,
+                    )
+                    .await
+                    .err(),
+            ];
+            for e in failures {
+                let e = e.ok_or("the call should fail")?;
+                for text in [
+                    arr_failure("Radarr", "tags", &e),
+                    format!("{e:#}"),
+                    format!("{e:?}"),
+                ] {
+                    assert!(!text.contains(KEY), "port {port}: {text}");
+                    assert!(!text.contains("apikey"), "port {port}: {text}");
+                }
+            }
+        }
+        let refused = client
+            .tags(
+                &json!({"hostname": "127.0.0.1", "port": refusing, "apiKey": KEY}),
+                None,
+            )
+            .await
+            .err()
+            .ok_or("the call should fail")?;
+        assert_eq!(
+            arr_failure("Radarr", "tags", &refused),
+            "[Radarr] Failed to retrieve tags: Request failed with status code 500",
+            "axios' message"
+        );
+        Ok(())
     }
 }

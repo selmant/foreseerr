@@ -660,12 +660,12 @@ pub(super) async fn axios_send(req: reqwest::RequestBuilder) -> Result<Value, Ca
     let res = req
         .send()
         .await
-        .map_err(|e| CallError::NoResponse(format!("{e:#}")))?;
+        .map_err(|e| CallError::NoResponse(crate::outbound::describe(&e)))?;
     let status = res.status();
     let bytes = res
         .bytes()
         .await
-        .map_err(|e| CallError::NoResponse(format!("{e:#}")))?;
+        .map_err(|e| CallError::NoResponse(crate::outbound::describe(&e)))?;
     if !status.is_success() {
         return Err(CallError::Status(status.as_u16()));
     }

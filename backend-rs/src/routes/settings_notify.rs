@@ -703,7 +703,8 @@ fn pushover_sounds<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .send()
             .await
-            .and_then(reqwest::Response::error_for_status);
+            .and_then(reqwest::Response::error_for_status)
+            .map_err(crate::outbound::redact);
         let body = match response {
             Ok(response) => response.json::<Value>().await.ok(),
             Err(e) => {

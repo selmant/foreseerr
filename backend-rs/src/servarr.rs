@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::media::js_string;
 use crate::memcache::{self, CacheId};
+use crate::outbound;
 use crate::settings::public::truthy;
 use crate::tmdb::axios_encode;
 
@@ -191,10 +192,12 @@ impl ServarrClient {
             .send()
             .await
             .and_then(reqwest::Response::error_for_status)
+            .map_err(outbound::redact)
             .with_context(|| format!("{method} {path}"))?;
         let bytes = response
             .bytes()
             .await
+            .map_err(outbound::redact)
             .with_context(|| format!("{method} {path}"))?;
         if bytes.is_empty() {
             return Ok(Value::Null);
@@ -212,14 +215,17 @@ impl ServarrClient {
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
         }
+        // The URL carries the API key.
         let value = request
             .send()
             .await
             .and_then(reqwest::Response::error_for_status)
-            .with_context(|| format!("GET {url}"))?
+            .map_err(outbound::redact)
+            .with_context(|| format!("GET {}", outbound::redact_url(url)))?
             .bytes()
             .await
-            .with_context(|| format!("GET {url}"))
+            .map_err(outbound::redact)
+            .with_context(|| format!("GET {}", outbound::redact_url(url)))
             .map(|bytes| axios_data(&bytes))?;
         Ok(value)
     }

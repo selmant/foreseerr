@@ -500,11 +500,14 @@ impl TmdbClient {
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .send()
             .await
+            .map_err(crate::outbound::redact)
             .with_context(|| format!("GET {path}"))?
             .error_for_status()
+            .map_err(crate::outbound::redact)
             .with_context(|| format!("GET {path}"))?
             .json()
             .await
+            .map_err(crate::outbound::redact)
             .with_context(|| format!("GET {path}: not JSON"))?;
         let value = js_numbers(value);
         memcache::set(cache, key, value.clone(), ttl);
