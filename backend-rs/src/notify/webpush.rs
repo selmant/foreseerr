@@ -166,6 +166,10 @@ fn push_payload(env: &Env, kind: Kind, payload: &Payload, locale: Option<&str>) 
     });
     let mut out = Map::new();
     out.insert(String::from("notificationType"), Value::from(kind.name()));
+    out.insert(
+        String::from("subject"),
+        Value::from(payload.subject.as_str()),
+    );
     if let Some(message) = message {
         out.insert(String::from("message"), Value::from(message));
     }
@@ -240,6 +244,7 @@ pub async fn send(env: Env, kind: Kind, payload: Arc<Payload>) -> Result<()> {
             if let Some(email) = &main_email {
                 for (sub, locale) in subs {
                     let badge = Payload {
+                        subject: payload.subject.clone(),
                         notify_admin: true,
                         is_admin: Some(true),
                         pending_requests_count: Some(pending),
