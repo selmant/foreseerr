@@ -5,8 +5,11 @@
 //!
 //! Node's per-instance rate limiter (one request a second) never delays
 //! these routes: each request builds its own client and makes one call.
+//! A 429 holds every client back for its `Retry-After`; a short one is
+//! waited out and the request goes once more.
 
-use std::time::Duration;
+use std::future::Future;
+use std::time::{Duration, Instant};
 
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{Map, Value};
@@ -19,6 +22,13 @@ const GRAPHQL_URL: &str = "https://graphql.anilist.co";
 const PAGE_SIZE: i64 = 20;
 /// `PUBLIC_PAGE_CACHE_TTL_SECONDS`.
 pub const PAGE_TTL: Duration = Duration::from_secs(300);
+/// `ANILIST_RATE_LIMIT_MAX_WAIT_SECONDS`: the longest a request waits out
+/// `AniList`'s rate limit before failing.
+const RATE_LIMIT_MAX_WAIT: Duration = Duration::from_secs(10);
+
+/// `anilistRateLimitedUntilMs`. Every client shares it: one 429 means the
+/// rest would get one too.
+static GATE: RateGate = RateGate::new(RATE_LIMIT_MAX_WAIT);
 
 macro_rules! media_fields {
     () => {
@@ -163,7 +173,7 @@ pub struct Anilist {
 /// that reach the network go out at most one a second; answers from the
 /// cache never pass the limiter.
 #[derive(Debug)]
-pub struct Pace(tokio::sync::Mutex<Option<std::time::Instant>>);
+pub struct Pace(tokio::sync::Mutex<Option<Instant>>);
 
 impl Pace {
     /// A limiter that hasn't let anything through yet.
@@ -180,13 +190,107 @@ impl Pace {
                 tokio::time::sleep(wait).await;
             }
         }
-        *last = Some(std::time::Instant::now());
+        *last = Some(Instant::now());
     }
 }
 
 impl Default for Pace {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// When `AniList` takes requests again after a 429, held against every
+/// request that reaches the network.
+#[derive(Debug)]
+struct RateGate {
+    until: std::sync::Mutex<Option<Instant>>,
+    max_wait: Duration,
+}
+
+impl RateGate {
+    const fn new(max_wait: Duration) -> Self {
+        Self {
+            until: std::sync::Mutex::new(None),
+            max_wait,
+        }
+    }
+
+    /// `waitForAnilistGate()`: wait for the gate, or fail when it opens
+    /// later than a request waits.
+    async fn wait(&self) -> Result<(), AnilistError> {
+        let until = *crate::sync::lock(&self.until);
+        let Some(left) = until.and_then(|at| at.checked_duration_since(Instant::now())) else {
+            return Ok(());
+        };
+        if left > self.max_wait {
+            return Err(AnilistError::RateLimited(left.as_secs_f64().ceil()));
+        }
+        tokio::time::sleep(left).await;
+        Ok(())
+    }
+
+    /// `closeAnilistGate(seconds)`: hold requests back for a 429's
+    /// `Retry-After`.
+    fn close(&self, seconds: f64) {
+        // No Retry-After AniList sends is past every deadline.
+        let Some(until) = Duration::try_from_secs_f64(seconds)
+            .ok()
+            .and_then(|wait| Instant::now().checked_add(wait))
+        else {
+            return;
+        };
+        let mut current = crate::sync::lock(&self.until);
+        let was_open = current.is_none_or(|at| at <= Instant::now());
+        if current.is_none_or(|at| until > at) {
+            *current = Some(until);
+        }
+        drop(current);
+        if was_open {
+            tracing::warn!(
+                label = "AniList API",
+                retryAfterSeconds = seconds,
+                "AniList rate limited; holding requests back"
+            );
+        }
+    }
+
+    /// Whether the request a 429 answered waits it out and goes again.
+    fn retries(&self, seconds: f64) -> bool {
+        Duration::try_from_secs_f64(seconds).is_ok_and(|wait| wait <= self.max_wait)
+    }
+}
+
+/// `graphql`'s fetch: the cache, else `send` behind `gate`. A 429 closes
+/// the gate; when its `Retry-After` is short (`AniList`'s per-minute
+/// window rolling over) the request waits it out and goes round once
+/// more, cache first.
+async fn fetch<C, S, F>(
+    gate: &RateGate,
+    cached: C,
+    mut send: S,
+) -> Result<std::sync::Arc<Value>, AnilistError>
+where
+    C: Fn() -> Option<std::sync::Arc<Value>>,
+    S: FnMut() -> F,
+    F: Future<Output = Result<std::sync::Arc<Value>, AnilistError>>,
+{
+    let mut retried = false;
+    loop {
+        if let Some(hit) = cached() {
+            return Ok(hit);
+        }
+        gate.wait().await?;
+        match send().await {
+            Err(AnilistError::RateLimited(seconds)) => {
+                gate.close(seconds);
+                if retried || !gate.retries(seconds) {
+                    return Err(AnilistError::RateLimited(seconds));
+                }
+                retried = true;
+            }
+            done => return done,
+        }
     }
 }
 
@@ -328,21 +432,31 @@ impl Anilist {
         // `ExternalAPI.post` consults the cache whatever the TTL; a TTL
         // of 0 only skips storing.
         // Keyed by the query and its variables; the token isn't part of it.
-        let key = format!("{GRAPHQL_URL} {body}");
-        let cached = memcache::get(CacheId::Anilist, &key)
-            .filter(|v| crate::settings::public::truthy(Some(v)));
-        let response = if let Some(cached) = cached {
-            cached
-        } else {
-            if let Some(pace) = self.pace {
-                pace.wait().await;
-            }
-            let response = std::sync::Arc::new(self.post(&body).await?);
-            if let Some(ttl) = ttl {
-                memcache::set(CacheId::Anilist, key, std::sync::Arc::clone(&response), ttl);
-            }
-            response
-        };
+        let key = &format!("{GRAPHQL_URL} {body}");
+        let body = &body;
+        let response = fetch(
+            &GATE,
+            || {
+                memcache::get(CacheId::Anilist, key)
+                    .filter(|v| crate::settings::public::truthy(Some(v)))
+            },
+            move || async move {
+                if let Some(pace) = self.pace {
+                    pace.wait().await;
+                }
+                let response = std::sync::Arc::new(self.post(body).await?);
+                if let Some(ttl) = ttl {
+                    memcache::set(
+                        CacheId::Anilist,
+                        key.clone(),
+                        std::sync::Arc::clone(&response),
+                        ttl,
+                    );
+                }
+                Ok(response)
+            },
+        )
+        .await?;
         if let Some(failure) = classify_body(&response, None)? {
             return Err(failure);
         }
@@ -702,5 +816,83 @@ mod tests {
             "AniList API rate limited; retry after 1.5s",
             "rate message"
         );
+    }
+
+    /// `fetch` through `gate` with nothing cached, each send answered by
+    /// the next of `answers`; the result and how many sends there were.
+    async fn fetch_answers(
+        gate: &RateGate,
+        answers: Vec<Result<Value, AnilistError>>,
+    ) -> (Result<std::sync::Arc<Value>, AnilistError>, usize) {
+        let answers = std::sync::Mutex::new(answers.into_iter());
+        let sends = std::sync::atomic::AtomicUsize::new(0);
+        let (answers_ref, sends_ref) = (&answers, &sends);
+        let result = fetch(
+            gate,
+            || None,
+            move || async move {
+                sends_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let answer = crate::sync::lock(answers_ref).next();
+                answer
+                    .unwrap_or_else(|| Err(AnilistError::Forward(String::from("no answer left"))))
+                    .map(std::sync::Arc::new)
+            },
+        )
+        .await;
+        (result, sends.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    #[tokio::test]
+    async fn waits_out_a_short_rate_limit_once() {
+        let gate = RateGate::new(Duration::from_millis(500));
+        let started = Instant::now();
+        let (result, sends) = fetch_answers(
+            &gate,
+            vec![
+                Err(AnilistError::RateLimited(0.05)),
+                Ok(json!({"data": {}})),
+            ],
+        )
+        .await;
+        assert_eq!(
+            result.ok().as_deref(),
+            Some(&json!({"data": {}})),
+            "retried"
+        );
+        assert_eq!(sends, 2, "two sends");
+        assert!(started.elapsed() >= Duration::from_millis(50), "waited");
+
+        let (result, sends) = fetch_answers(
+            &gate,
+            vec![
+                Err(AnilistError::RateLimited(0.01)),
+                Err(AnilistError::RateLimited(0.01)),
+            ],
+        )
+        .await;
+        assert_eq!(result, Err(AnilistError::RateLimited(0.01)), "retries once");
+        assert_eq!(sends, 2, "no third send");
+    }
+
+    #[tokio::test]
+    async fn a_long_rate_limit_holds_every_request_back() {
+        let gate = RateGate::new(Duration::from_millis(500));
+        let (result, sends) =
+            fetch_answers(&gate, vec![Err(AnilistError::RateLimited(30.0))]).await;
+        assert_eq!(result, Err(AnilistError::RateLimited(30.0)), "no retry");
+        assert_eq!(sends, 1, "one send");
+
+        let (result, sends) = fetch_answers(&gate, vec![Ok(json!({}))]).await;
+        assert_eq!(result, Err(AnilistError::RateLimited(30.0)), "held back");
+        assert_eq!(sends, 0, "never sent");
+
+        let hit = std::sync::Arc::new(json!({"data": {}}));
+        let cached = fetch(
+            &gate,
+            || Some(std::sync::Arc::clone(&hit)),
+            || async { Err(AnilistError::Forward(String::from("sent"))) },
+        )
+        .await;
+        assert_eq!(cached, Ok(hit), "the cache still answers");
     }
 }
