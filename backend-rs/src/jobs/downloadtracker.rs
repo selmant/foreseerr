@@ -123,28 +123,33 @@ async fn update_server(
 ) {
     let key = js_string(server.get("id")).into_owned();
     let name = js_string(server.get("name")).into_owned();
-    if let Ok(queue) = poll_server(&state, &settings, service, &server, &matching).await {
-        let items: Vec<Value> = queue
-            .iter()
-            .map(|item| downloading_item(service, item))
-            .collect();
-        crate::sync::write(&TRACKER)
-            .servers(service)
-            .insert(key.clone(), Value::Array(items));
-        if !queue.is_empty() {
-            tracing::debug!(
-                label = "Download Tracker",
-                "Found {} item(s) in progress on {} server: {name}",
-                queue.len(),
-                service.api_name()
-            );
+    match poll_server(&state, &settings, service, &server, &matching).await {
+        Ok(queue) => {
+            let items: Vec<Value> = queue
+                .iter()
+                .map(|item| downloading_item(service, item))
+                .collect();
+            crate::sync::write(&TRACKER)
+                .servers(service)
+                .insert(key.clone(), Value::Array(items));
+            if !queue.is_empty() {
+                tracing::debug!(
+                    label = "Download Tracker",
+                    "Found {} item(s) in progress on {} server: {name}",
+                    queue.len(),
+                    service.api_name()
+                );
+            }
         }
-    } else {
-        tracing::error!(
+        // Node logs no cause. Neither the Arr call's message
+        // (`outbound::describe` leaves the URL out) nor a database
+        // failure carries the API key.
+        Err(e) => tracing::error!(
             label = "Download Tracker",
+            errorMessage = %format!("{e:#}"),
             "Unable to get queue from {} server: {name}",
             service.api_name()
-        );
+        ),
     }
     if !matching.is_empty() {
         tracing::debug!(
