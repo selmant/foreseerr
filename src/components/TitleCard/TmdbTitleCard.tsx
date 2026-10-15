@@ -203,7 +203,10 @@ const TmdbTitleCard = ({
 
   if (paintFromRow && resolvedTmdbId && type) {
     // A failed details load leaves the confirmed tile as it is, without the
-    // overview, rather than turning it into an unmapped card on hover.
+    // overview, rather than turning it into an unmapped card on hover. The
+    // row title stays the label after details load: a provider title (AniList,
+    // Trakt, ...) can differ from the TMDB one, and the card must not rename
+    // itself on hover.
     return (
       <TitleCard
         id={resolvedTmdbId}
@@ -213,13 +216,7 @@ const TmdbTitleCard = ({
         image={rowPosterPath}
         status={title?.mediaInfo?.status ?? mediaInfo?.status}
         summary={title?.overview}
-        title={
-          title
-            ? isMovie(title)
-              ? title.title
-              : title.name
-            : (originalTitle ?? '')
-        }
+        title={originalTitle ?? ''}
         userScore={title?.voteAverage ?? voteAverage}
         ratings={ratings ?? title?.ratings}
         year={

@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { IntlProvider } from 'react-intl';
 import { MemoryRouter } from 'react-router';
+import type { Middleware } from 'swr';
 import { SWRConfig } from 'swr';
 import TmdbTitleCard, { watchlistTitleCardProps } from './TmdbTitleCard';
 
@@ -26,18 +27,72 @@ const traktTile: WatchlistItem = {
   },
 };
 
-/** Details the card would show if it had subscribed to `/api/v1/tv/:id`. */
+const anilistTile: WatchlistItem = {
+  id: 1429,
+  ratingKey: 'anilist-16498',
+  tmdbId: 1429,
+  mediaType: 'tv',
+  title: 'Shingeki no Kyojin',
+  source: 'anilist',
+  sourceId: '16498',
+  posterPath: '/hTP1DtLGFamjfu8WqjnuQdP1n4i.jpg',
+  firstAirDate: '2013-04-07',
+};
+
+const anilistMovieTile: WatchlistItem = {
+  id: 372058,
+  ratingKey: 'anilist-21519',
+  tmdbId: 372058,
+  mediaType: 'movie',
+  title: 'Kimi no Na wa.',
+  source: 'anilist',
+  sourceId: '21519',
+  posterPath: '/q719jXXEzOoYaps6babgKnONONX.jpg',
+  releaseDate: '2016-08-26',
+};
+
+/** Details the card would show if it had subscribed to `/api/v1/{movie,tv}/:id`. */
 const cachedDetails = {
   '/api/v1/tv/1396': {
     id: 1396,
     name: 'Details Title',
     overview: 'Details overview',
+    voteAverage: 9.1,
     posterPath: '/details.jpg',
     firstAirDate: '1999-01-01',
   },
+  '/api/v1/tv/1429': {
+    id: 1429,
+    name: 'Attack on Titan',
+    overview: 'Titan overview',
+    voteAverage: 8.6,
+    posterPath: '/details.jpg',
+    firstAirDate: '2013-04-07',
+  },
+  '/api/v1/movie/372058': {
+    id: 372058,
+    title: 'Your Name.',
+    overview: 'Comet overview',
+    voteAverage: 8.5,
+    posterPath: '/details.jpg',
+    releaseDate: '2016-08-26',
+  },
 };
 
-const render = (item: WatchlistItem) =>
+/**
+ * Stands in for an opened card: hover, focus, or tap only enables the details
+ * key after the intent delay, so this enables it on first render instead.
+ */
+const detailsOpened =
+  (detailsKey: string): Middleware =>
+  (useSWRNext) =>
+  (key, fetcher, config) =>
+    useSWRNext(key ?? detailsKey, fetcher, config);
+
+const render = (
+  item: WatchlistItem,
+  { opened = false }: { opened?: boolean } = {}
+) =>
   renderToStaticMarkup(
     <SWRConfig
       value={{
@@ -46,6 +101,9 @@ const render = (item: WatchlistItem) =>
           '/api/v1/auth/me': { id: 1, permissions: 0 },
           ...cachedDetails,
         },
+        use: opened
+          ? [detailsOpened(`/api/v1/${item.mediaType}/${item.tmdbId}`)]
+          : [],
       }}
     >
       <IntlProvider locale="en">
@@ -98,5 +156,58 @@ describe('Provider row title cards', () => {
     const markup = render({ ...traktTile, mediaType: undefined });
 
     assert.equal(markup.includes('data-testid="title-card"'), false);
+  });
+});
+
+describe('Mapped provider title cards after details load', () => {
+  for (const [name, item, providerTitle, tmdbTitle, detailsScore] of [
+    [
+      'AniList series',
+      anilistTile,
+      'Shingeki no Kyojin',
+      'Attack on Titan',
+      '>86%<',
+    ],
+    [
+      'AniList movie',
+      anilistMovieTile,
+      'Kimi no Na wa.',
+      'Your Name.',
+      '>85%<',
+    ],
+    ['Trakt series', traktTile, 'Breaking Bad', 'Details Title', '>91%<'],
+  ] as const) {
+    it(`keeps the provider title on a mapped ${name}`, () => {
+      const closed = render(item);
+      const opened = render(item, { opened: true });
+
+      assert.ok(closed.includes(providerTitle));
+      assert.equal(closed.includes(tmdbTitle), false);
+      // Details did arrive: the score is TMDB's, the label is not.
+      assert.equal(closed.includes(detailsScore), false);
+      assert.ok(opened.includes(detailsScore));
+      assert.ok(opened.includes(providerTitle));
+      assert.equal(opened.includes(tmdbTitle), false);
+    });
+  }
+
+  it('keeps the row title when cached details are present on remount', () => {
+    // A second render with the same cache contents is a remounted card.
+    const first = render(anilistTile, { opened: true });
+    const second = render(anilistTile, { opened: true });
+
+    assert.equal(first, second);
+    assert.equal(second.includes('Attack on Titan'), false);
+  });
+
+  it('keeps the provider title on unmapped cards', () => {
+    const markup = render(
+      { ...anilistTile, tmdbId: undefined, posterPath: undefined },
+      { opened: true }
+    );
+
+    assert.ok(markup.includes('data-testid="unmapped-title-card"'));
+    assert.ok(markup.includes('Shingeki no Kyojin'));
+    assert.equal(markup.includes('Attack on Titan'), false);
   });
 });
