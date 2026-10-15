@@ -14,9 +14,7 @@
 .prettierignore
 .vscode
 charts
-config/db/*
-config/logs/*
-config/*.json
+config
 cypress
 dist
 Dockerfile*
@@ -29,3 +27,6 @@ public/os_logo_filled.png
 public/preview.jpg
 stylelint.config.js
 backend-rs/target
+**/target
+**/__pycache__
+report*.xml

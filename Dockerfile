@@ -1,59 +1,53 @@
-FROM oven/bun:1.4.1-alpine AS base
+FROM oven/bun:1.4.1-alpine AS web
 USER root
-ARG SOURCE_DATE_EPOCH
-ARG TARGETPLATFORM
-ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
+ARG COMMIT_TAG
+ENV COMMIT_TAG=${COMMIT_TAG}
 
 WORKDIR /app
 COPY . .
 
-FROM base AS prod-deps
-
-RUN --mount=type=cache,id=bun,target=/root/.bun/install/cache \
-  CI=true bun install --production --frozen-lockfile
-
-RUN if [ -d node_modules ]; then \
-  find node_modules -type d \( \
-  -path "*ace-builds/src-noconflict" -o \
-  -path "*ace-builds/src" -o \
-  -path "*ace-builds/src-min" -o \
-  -path "*country-flag-icons/react" -o \
-  -path "*country-flag-icons/string" -o \
-  -path "*country-flag-icons/1x1" -o \
-  -path "*@heroicons/react/16" \
-  \) -exec rm -rf {} + || true; \
-  fi
-
-FROM base AS build
-
-ARG COMMIT_TAG
-ENV COMMIT_TAG=${COMMIT_TAG}
-
 RUN --mount=type=cache,id=bun,target=/root/.bun/install/cache \
   CYPRESS_INSTALL_BINARY=0 bun install --frozen-lockfile
 
-RUN bun run build
+RUN bun run build:web
 
-FROM oven/bun:1.4.1-alpine
-USER root
-ARG SOURCE_DATE_EPOCH
+FROM rust:1.97.1-alpine AS backend
+RUN apk add --no-cache build-base
+
+WORKDIR /app
+COPY package.json seerr-api.yml ./
+COPY server/i18n/locale ./server/i18n/locale
+COPY backend-rs ./backend-rs
+
+WORKDIR /app/backend-rs
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+  --mount=type=cache,id=cargo-target,target=/app/backend-rs/target \
+  cargo build --release --locked && \
+  cp target/release/foreseerr /usr/local/bin/foreseerr
+
+FROM alpine:3.23
 ARG COMMIT_TAG
 ENV NODE_ENV=production
 ENV COMMIT_TAG=${COMMIT_TAG}
+ENV FORESEERR_STANDALONE=1
+ENV FORESEERR_APP_ROOT=/app
+ENV PORT=5055
 
-RUN apk add --no-cache tzdata
-
-USER bun:bun
+RUN apk add --no-cache ca-certificates tzdata && \
+  addgroup -S -g 1000 foreseerr && adduser -S -u 1000 -G foreseerr foreseerr
 
 WORKDIR /app
 
-COPY --chown=bun:bun . .
-COPY --chown=bun:bun --from=prod-deps /app/node_modules ./node_modules
-COPY --chown=bun:bun --from=build /app/dist ./dist
+COPY --chown=foreseerr:foreseerr seerr-api.yml ./
+COPY --chown=foreseerr:foreseerr --from=web /app/dist/public ./dist/public
+COPY --from=backend /usr/local/bin/foreseerr /usr/local/bin/foreseerr
 
-RUN touch config/DOCKER && \
-  echo "{\"commitTag\": \"${COMMIT_TAG}\"}" > committag.json
+RUN mkdir -p config && touch config/DOCKER && \
+  echo "{\"commitTag\": \"${COMMIT_TAG}\"}" > committag.json && \
+  chown foreseerr:foreseerr committag.json config config/DOCKER
+
+USER foreseerr:foreseerr
 
 EXPOSE 5055
 
-CMD [ "bun", "dist/launcher.js" ]
+CMD [ "foreseerr" ]

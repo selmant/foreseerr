@@ -9,6 +9,17 @@ in one of two modes:
   back because it can't answer exactly as Node would;
 - standalone (below): no Node; this binary is the whole backend.
 
+The default production `Dockerfile` now runs standalone Rust. Bun and Vite
+are used to build the frontend; the final image contains neither Bun/Node
+nor `node_modules`. `Dockerfile.rust` builds the same image.
+
+From the repository root, `bun run dev:rust` runs Rust with the Vite dev
+server; `bun run build:rust` builds the frontend and release binary, and
+`bun run start:rust` starts that binary in production. The Rust commands
+use `backend-rs/rust-toolchain.toml`. The legacy package scripts and Bun
+release binaries still exist; [AUDIT.md](AUDIT.md) lists the remaining
+migration work.
+
 ```text
 clients ──► foreseerr (Rust) :5055 ──► Node :5056   (FORESEERR_NODE_URL)
                  │
@@ -291,7 +302,8 @@ the whole backend (`src/standalone/`):
   the SPA fallback: `index.html` with `Cache-Control: no-store`,
   `/assets/*` with `public, max-age=31536000, immutable`, everything else
   `public, max-age=0`, with `ETag`/`Last-Modified`, 304s and byte ranges.
-  `/api-docs` is Swagger UI from `node_modules/swagger-ui-dist`
+  `/api-docs` is Swagger UI from the browser assets packaged into
+  `dist/public/api-docs` by the frontend build
   (`src/standalone/apidocs.rs`).
 - Node's `/internal` calls are answered in-process
   (`src/standalone/internal.rs`): the mapping layer (`src/mappinglayer/`)
@@ -305,7 +317,7 @@ the whole backend (`src/standalone/`):
   them, to `seerr-YYYY-MM-DD.log` and `.machinelogs-YYYY-MM-DD.json` under
   `LOG_DIRECTORY` (default `<config>/logs`) at `LOG_LEVEL` (default
   `debug`), which the log viewer reads (`src/logfile.rs`).
-- `Dockerfile.rust` builds an image that runs this binary standalone.
+- `Dockerfile` and `Dockerfile.rust` build an image that runs this binary standalone.
 - The Jellyfin plugin sidecar and the desktop child run standalone too
   (below).
 
@@ -324,7 +336,7 @@ launchers set to the directory of what they start):
 
 | File               | Needed for                                                           |
 | ------------------ | -------------------------------------------------------------------- |
-| `seerr-api.yml`    | the `OpenAPI` validator (without it requests aren't validated)        |
+| `seerr-api.yml`    | the `OpenAPI` validator (standalone refuses to start without it)      |
 | `dist/public/`     | the frontend in production (`FORESEERR_PUBLIC_PATH` overrides); the plugin refuses to start in production without its `index.html` |
 | `committag.json`   | the commit tag in `/status` (optional, `local` without it)           |
 

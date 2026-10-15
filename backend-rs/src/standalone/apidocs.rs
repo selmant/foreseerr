@@ -8,7 +8,7 @@
 //!    `yaml.load`ed with js-yaml's default schema, as `JSON.stringify(...,
 //!    2)` in swagger-ui-express's template), `application/javascript`;
 //! 2. GET and HEAD go to `express.static(swagger-ui-dist, { index: false
-//!    })`: the files of `node_modules/swagger-ui-dist` under the app root
+//!    })`: the browser assets built into `dist/public/api-docs`
 //!    (`FORESEERR_SWAGGER_UI_PATH` overrides it), the redirect of
 //!    `/api-docs` to `/api-docs/`;
 //! 3. everything else is the Swagger UI page, `res.send(html)`.
@@ -74,33 +74,13 @@ pub(super) async fn answer(app_root: &Path, parts: &Parts) -> Option<Response<Bo
     ))
 }
 
-/// `require('swagger-ui-dist/absolute-path')()` from swagger-ui-express:
-/// Node's module lookup from that package's real directory (each
-/// ancestor's `node_modules`), then `node_modules/swagger-ui-dist` under
-/// the app root. `FORESEERR_SWAGGER_UI_PATH` overrides it.
+/// Swagger's browser assets, packaged by Vite with the frontend.
+/// `FORESEERR_SWAGGER_UI_PATH` overrides the packaged directory.
 fn dist_root(app_root: &Path) -> PathBuf {
     if let Some(path) = std::env::var_os("FORESEERR_SWAGGER_UI_PATH").filter(|p| !p.is_empty()) {
         return PathBuf::from(path);
     }
-    let fallback = app_root.join("node_modules").join("swagger-ui-dist");
-    let Ok(express) =
-        std::fs::canonicalize(app_root.join("node_modules").join("swagger-ui-express"))
-    else {
-        return fallback;
-    };
-    let nested = express.join("node_modules").join("swagger-ui-dist");
-    let lookup = std::iter::once(nested).chain(express.ancestors().skip(1).map(|dir| {
-        if dir.file_name().is_some_and(|n| n == "node_modules") {
-            dir.join("swagger-ui-dist")
-        } else {
-            dir.join("node_modules").join("swagger-ui-dist")
-        }
-    }));
-    lookup
-        .into_iter()
-        .find(|candidate| candidate.join("package.json").is_file())
-        .and_then(|found| std::fs::canonicalize(found).ok())
-        .unwrap_or(fallback)
+    super::public_path(app_root).join("api-docs")
 }
 
 /// The part of `path` below a mount (`/` when nothing is left), when the

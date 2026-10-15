@@ -6,6 +6,10 @@ on:
   pull_request:
     paths:
       - 'backend-rs/**'
+      - 'Dockerfile'
+      - 'Dockerfile.rust'
+      - '.dockerignore'
+      - 'vite.config.ts'
       # Compiled or read in from outside the crate.
       - 'package.json'
       - 'seerr-api.yml'
@@ -22,6 +26,10 @@ on:
       - develop
     paths:
       - 'backend-rs/**'
+      - 'Dockerfile'
+      - 'Dockerfile.rust'
+      - '.dockerignore'
+      - 'vite.config.ts'
       # Compiled or read in from outside the crate.
       - 'package.json'
       - 'seerr-api.yml'
@@ -190,6 +198,17 @@ jobs:
           DB_USE_SSL: 'false'
         run: python3 scripts/ci-smoke.py --bin target/debug/foreseerr
 
+      - name: Standalone regressions
+        env:
+          DB_TYPE: postgres
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: foreseerr
+          DB_PASS: ci-password
+          DB_NAME: foreseerr
+          DB_USE_SSL: 'false'
+        run: python3 scripts/ci-standalone.py --bin target/debug/foreseerr
+
   compare:
     name: Node and Rust answer alike
     runs-on: ubuntu-24.04
@@ -222,3 +241,9 @@ jobs:
       # concurrency cases (KNOWN_GAPS in the script lists the open ones).
       - name: Compare
         run: python3 backend-rs/scripts/ci-compare.py --bin backend-rs/target/debug/foreseerr
+
+      - name: Build the frontend and API docs assets
+        run: bun run build:web
+
+      - name: Standalone regressions without node_modules in the app root
+        run: python3 backend-rs/scripts/ci-standalone.py --bin backend-rs/target/debug/foreseerr --require-web

@@ -39,14 +39,12 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 
 COPY --chown=foreseerr:foreseerr seerr-api.yml ./
-COPY --chown=foreseerr:foreseerr config ./config
 COPY --chown=foreseerr:foreseerr --from=web /app/dist/public ./dist/public
-COPY --chown=foreseerr:foreseerr --from=web /app/node_modules/swagger-ui-dist ./node_modules/swagger-ui-dist
 COPY --from=backend /usr/local/bin/foreseerr /usr/local/bin/foreseerr
 
-RUN touch config/DOCKER && \
+RUN mkdir -p config && touch config/DOCKER && \
   echo "{\"commitTag\": \"${COMMIT_TAG}\"}" > committag.json && \
-  chown foreseerr:foreseerr committag.json config/DOCKER
+  chown foreseerr:foreseerr committag.json config config/DOCKER
 
 USER foreseerr:foreseerr
 
