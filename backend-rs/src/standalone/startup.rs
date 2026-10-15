@@ -67,6 +67,11 @@ pub async fn before_state() -> Result<Boot> {
     };
     let settings_path = env.config_dir.join("settings.json");
     let merge = overseerr::check(&settings_path, &db, ctx).await?;
+    // Refuse a newer database before migrations or development-mode
+    // synchronization can change it. Keep the check after migration too.
+    dbmigrate::assert_supported_schema(&db, &merge.migrations)
+        .await
+        .map_err(crate::runtime::process::schema_error)?;
     // server/datasource.ts: production runs the migrations; development
     // runs them on Postgres (`migrationsRun`) and synchronizes `SQLite`.
     if super::production() || db.is_postgres() {

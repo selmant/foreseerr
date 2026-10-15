@@ -2443,17 +2443,12 @@ fn postgres_options() -> Result<PgConnectOptions> {
             );
         }
     }
-    if std::env::var("DB_USE_SSL").is_ok_and(|v| v.eq_ignore_ascii_case("true")) {
-        // Node's boolFromEnv: once set, only "true" is true.
-        let reject_unauthorized = std::env::var("DB_SSL_REJECT_UNAUTHORIZED")
-            .ok()
-            .filter(|v| !v.is_empty())
-            .is_none_or(|v| v.eq_ignore_ascii_case("true"));
-        o = o.ssl_mode(if reject_unauthorized {
-            PgSslMode::VerifyFull
-        } else {
-            PgSslMode::Require
-        });
+    let use_ssl = std::env::var("DB_USE_SSL").is_ok_and(|v| v.eq_ignore_ascii_case("true"));
+    o = o.ssl_mode(postgres_ssl_mode(
+        use_ssl,
+        std::env::var("DB_SSL_REJECT_UNAUTHORIZED").ok().as_deref(),
+    ));
+    if use_ssl {
         if let Some(ca) = env_or_file("DB_SSL_CA")? {
             o = o.ssl_root_cert_from_pem(ca);
         }
@@ -2465,6 +2460,22 @@ fn postgres_options() -> Result<PgConnectOptions> {
         }
     }
     Ok(o)
+}
+
+/// Node disables TLS unless `DB_USE_SSL` is true. `SQLx` otherwise defaults
+/// to Prefer, which attempts TLS even when the operator turned it off.
+fn postgres_ssl_mode(enabled: bool, reject_unauthorized: Option<&str>) -> PgSslMode {
+    if !enabled {
+        return PgSslMode::Disable;
+    }
+    if reject_unauthorized
+        .filter(|v| !v.is_empty())
+        .is_none_or(|v| v.eq_ignore_ascii_case("true"))
+    {
+        PgSslMode::VerifyFull
+    } else {
+        PgSslMode::Require
+    }
 }
 
 /// Every selectable `user` column, as `User.filter` exposes them.
@@ -3954,6 +3965,28 @@ pub(crate) fn pg_json_row(
 #[cfg(test)]
 mod failure_tests {
     use super::*;
+
+    #[test]
+    fn postgres_tls_only_runs_when_enabled() {
+        assert!(
+            matches!(postgres_ssl_mode(false, None), PgSslMode::Disable),
+            "an unset or false DB_USE_SSL does not negotiate TLS"
+        );
+        assert!(
+            matches!(postgres_ssl_mode(false, Some("true")), PgSslMode::Disable),
+            "certificate options cannot turn TLS on"
+        );
+        for reject in [None, Some(""), Some("true"), Some("TRUE")] {
+            assert!(
+                matches!(postgres_ssl_mode(true, reject), PgSslMode::VerifyFull),
+                "TLS verifies the certificate and host by default: {reject:?}"
+            );
+        }
+        assert!(
+            matches!(postgres_ssl_mode(true, Some("false")), PgSslMode::Require),
+            "the explicit certificate-verification override is honored"
+        );
+    }
 
     #[tokio::test]
     async fn database_messages_are_sqlx_own() -> Result<()> {

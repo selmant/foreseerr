@@ -154,7 +154,10 @@ async fn reset_route(ctx: &Ready<'_>) -> Step {
         r#"SELECT CAST("id" AS BIGINT) AS "id", {} AS "expires" FROM "user" WHERE "resetPasswordGuid" = ?1 ORDER BY "id" ASC LIMIT 1"#,
         db.iso_sql(r#""recoveryLinkExpirationDate""#)
     );
-    let rows = db.rows(&sql, &[Bind::Text(guid)]).await.map_err(db_err)?;
+    let rows = db
+        .rows(&sql, &[Bind::Text(guid.clone())])
+        .await
+        .map_err(db_err)?;
     let Some(row) = rows.first() else {
         tracing::warn!("Failed password reset attempt using invalid recovery link");
         return Ok(ctx.error(500, "Invalid password reset link."));
@@ -178,23 +181,115 @@ async fn reset_route(ctx: &Ready<'_>) -> Step {
         return Ok(ctx.error(500, "Invalid password reset link."));
     }
     let hash = hash_password(password.to_owned()).await?;
-    if let Err(e) = db
-        .execute(
-            r#"UPDATE "user" SET "recoveryLinkExpirationDate" = NULL, "password" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
-            &[Bind::Text(hash), Bind::Int(id)],
-        )
-        .await
-    {
-        tracing::error!("saving the new password failed: {e:#}");
-        return Ok(ctx.error(500, "Unable to save the new password."));
+    // Hashing yields for long enough for another reset or recovery email
+    // to replace the link. Consume exactly the link we verified, once.
+    match consume_link(db, id, &guid, hash, crate::clock::now_millis()).await {
+        Ok(true) => {}
+        Ok(false) => return Ok(ctx.error(500, "Invalid password reset link.")),
+        Err(e) => {
+            tracing::error!("saving the new password failed: {e:#}");
+            return Ok(ctx.error(500, "Unable to save the new password."));
+        }
     }
     tracing::info!("Successfully reset password");
     Ok(ok(ctx))
 }
 
+/// Verify and consume the recovery link in the same database statement.
+async fn consume_link(
+    db: &crate::db::Db,
+    id: i64,
+    guid: &str,
+    hash: String,
+    now: i64,
+) -> anyhow::Result<bool> {
+    let sql = format!(
+        r#"UPDATE "user" SET "resetPasswordGuid" = NULL, "recoveryLinkExpirationDate" = NULL, "password" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2 AND "resetPasswordGuid" = ?3 AND "recoveryLinkExpirationDate" > {}"#,
+        date_param(db, 4)
+    );
+    let written = db
+        .execute(
+            &sql,
+            &[
+                Bind::Text(hash),
+                Bind::Int(id),
+                Bind::Text(guid.to_owned()),
+                date_bind(db, now),
+            ],
+        )
+        .await?;
+    Ok(written == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dbtx::scratch;
+
+    #[tokio::test]
+    async fn a_recovery_link_can_only_change_the_password_once() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("reset-once").await?;
+        scratch::run(
+            &scratch.db,
+            &[
+                r#"INSERT INTO "user" ("id", "email", "avatar", "password", "resetPasswordGuid", "recoveryLinkExpirationDate") VALUES (1, 'reset@example.test', '', 'old', 'first', '2099-01-01 00:00:00.000')"#,
+            ],
+        )
+        .await?;
+        let now = crate::clock::now_millis();
+        let (a, b) = tokio::join!(
+            consume_link(&scratch.db, 1, "first", String::from("a"), now),
+            consume_link(&scratch.db, 1, "first", String::from("b"), now),
+        );
+        assert_ne!(a?, b?, "exactly one concurrent reset succeeds");
+        let rows = scratch
+            .db
+            .rows(
+                r#"SELECT "resetPasswordGuid", "recoveryLinkExpirationDate" FROM "user" WHERE "id" = 1"#,
+                &[],
+            )
+            .await?;
+        let row = rows.first().ok_or_else(|| anyhow::anyhow!("no user"))?;
+        assert_eq!(row.get("resetPasswordGuid"), Some(&Value::Null), "consumed");
+        assert_eq!(
+            row.get("recoveryLinkExpirationDate"),
+            Some(&Value::Null),
+            "consumed"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn replaced_or_expired_links_do_not_change_the_password() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("reset-stale").await?;
+        scratch::run(
+            &scratch.db,
+            &[
+                r#"INSERT INTO "user" ("id", "email", "avatar", "password", "resetPasswordGuid", "recoveryLinkExpirationDate") VALUES (1, 'reset@example.test', '', 'old', 'replacement', '2099-01-01 00:00:00.000')"#,
+            ],
+        )
+        .await?;
+        assert!(
+            !consume_link(&scratch.db, 1, "first", String::from("bad"), 0).await?,
+            "a replaced link cannot overwrite the new one"
+        );
+        let expiry = crate::clock::parse_date_millis("2099-01-01T00:00:00Z")
+            .ok_or_else(|| anyhow::anyhow!("invalid fixture expiry"))?;
+        assert!(
+            !consume_link(&scratch.db, 1, "replacement", String::from("bad"), expiry).await?,
+            "a link that expired during hashing is refused"
+        );
+        let rows = scratch
+            .db
+            .rows(r#"SELECT "password" FROM "user" WHERE "id" = 1"#, &[])
+            .await?;
+        assert_eq!(
+            rows.first().and_then(|row| row.get("password")),
+            Some(&Value::from("old")),
+            "failed resets leave the password intact"
+        );
+        Ok(())
+    }
 
     #[test]
     fn uuids_are_version_four() {

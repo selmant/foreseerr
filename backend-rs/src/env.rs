@@ -62,10 +62,10 @@ impl Env {
         Ok(Self {
             listen: SocketAddr::new(host, port),
             config_dir,
-            node_url: std::env::var("FORESEERR_NODE_URL")
-                .unwrap_or_else(|_| String::from("http://127.0.0.1:5056"))
-                .trim_end_matches('/')
-                .to_owned(),
+            node_url: node_url(
+                std::env::var("FORESEERR_NODE_URL").ok().as_deref(),
+                crate::standalone::enabled(),
+            ),
             app_root,
             plugin_mode,
             desktop_runtime: std::env::var("FORESEERR_RUNTIME").is_ok_and(|v| v == "desktop"),
@@ -82,5 +82,45 @@ impl Env {
     #[must_use]
     pub fn native_routes(&self) -> bool {
         crate::standalone::enabled() || (!self.plugin_mode && !self.desktop_runtime)
+    }
+}
+
+/// Standalone never contacts Node, so an unused URL must not stop startup.
+fn node_url(configured: Option<&str>, standalone: bool) -> String {
+    const DEFAULT: &str = "http://127.0.0.1:5056";
+    if standalone {
+        return DEFAULT.to_owned();
+    }
+    configured
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .unwrap_or(DEFAULT)
+        .trim_end_matches('/')
+        .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::node_url;
+
+    #[test]
+    fn unused_node_urls_do_not_block_standalone() {
+        for configured in [None, Some(""), Some("  "), Some("https://unused.example")] {
+            assert_eq!(
+                node_url(configured, true),
+                "http://127.0.0.1:5056",
+                "standalone ignores {configured:?}"
+            );
+        }
+        assert_eq!(
+            node_url(Some(" http://127.0.0.1:6000/ "), false),
+            "http://127.0.0.1:6000",
+            "hybrid keeps its configured backend"
+        );
+        assert_eq!(
+            node_url(Some(""), false),
+            "http://127.0.0.1:5056",
+            "forced hybrid uses the default for an empty URL"
+        );
     }
 }

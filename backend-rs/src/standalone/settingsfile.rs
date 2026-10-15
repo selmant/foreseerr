@@ -138,7 +138,11 @@ fn private_scalar(der: &[u8]) -> Option<&[u8]> {
 /// can't be written.
 pub(crate) async fn load(path: &Path, raw: bool, ctx: MigrationCtx<'_>) -> Result<Value> {
     let mut data = constructor_defaults()?;
-    let text = tokio::fs::read_to_string(path).await.ok();
+    let text = match tokio::fs::read_to_string(path).await {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
     if text.is_none() {
         save(path, &data).await?;
     }
@@ -203,6 +207,35 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[tokio::test]
+    async fn unreadable_settings_are_not_replaced() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!("foreseerr-unreadable-{}", uuid_v4()?));
+        let path = dir.join("settings.json");
+        // A directory gives a read error even when tests run as root.
+        tokio::fs::create_dir_all(&path).await?;
+        let db = crate::db::Db::Sqlite(
+            sqlx::sqlite::SqlitePoolOptions::new().connect_lazy("sqlite::memory:")?,
+        );
+        let http = reqwest::Client::new();
+        let ctx = MigrationCtx {
+            db: &db,
+            http: &http,
+            version: "test",
+        };
+        let result = load(&path, false, ctx).await;
+        assert!(
+            result.is_err_and(|e| e.to_string().starts_with("reading ")),
+            "startup fails on the original read error"
+        );
+        assert!(path.is_dir(), "the original path is untouched");
+        assert!(
+            !dir.join("settings.json.tmp").exists(),
+            "no replacement was attempted"
+        );
+        tokio::fs::remove_dir_all(dir).await?;
+        Ok(())
+    }
 
     #[test]
     fn generated_values() -> Result<()> {

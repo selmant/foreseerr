@@ -71,9 +71,13 @@ pub enum Identity {
 /// Fails on database errors.
 pub async fn check_user(db: &Db, settings: &Settings, headers: &HeaderMap) -> Result<Identity> {
     if let Some(key) = headers.get("x-api-key") {
-        if bool::from(key.as_bytes().ct_eq(settings.api_key().as_bytes())) {
+        if api_key_matches(key.as_bytes(), settings.api_key()) {
             // Work on the original administrator account unless told otherwise.
-            let user_id = match headers.get("x-api-user") {
+            // Node tests the header's truthiness before calling Number().
+            let user_id = match headers
+                .get("x-api-user")
+                .filter(|v| !v.as_bytes().is_empty())
+            {
                 None => 1,
                 Some(v) => match api_user_id(v) {
                     Some(id) => id,
@@ -95,6 +99,10 @@ pub async fn check_user(db: &Db, settings: &Settings, headers: &HeaderMap) -> Re
         Some(id) if id != 0 => load(db, id).await,
         Some(_) | None => Ok(Identity::Anonymous),
     }
+}
+
+fn api_key_matches(given: &[u8], expected: &str) -> bool {
+    !expected.is_empty() && bool::from(given.ct_eq(expected.as_bytes()))
 }
 
 /// The user `id` as a request signed in as them would see it.
@@ -169,6 +177,9 @@ pub fn now_ms() -> i64 {
 /// The session id from a valid `connect.sid` cookie.
 #[must_use]
 pub fn session_id(headers: &HeaderMap, secret: &str) -> Option<String> {
+    if secret.is_empty() {
+        return None;
+    }
     let raw = cookie_value(headers, SESSION_COOKIE)?;
     let signed = raw.strip_prefix("s:")?;
     unsign(signed, secret)
@@ -260,6 +271,23 @@ mod tests {
             "wrong secret"
         );
         assert_eq!(unsign("abc", "secret"), None, "no signature");
+    }
+
+    #[test]
+    fn empty_secrets_never_authenticate() {
+        assert!(!api_key_matches(b"", ""), "empty keys are not credentials");
+        assert!(!api_key_matches(b"", "key"), "a key is required");
+        assert!(api_key_matches(b"key", "key"), "the configured key works");
+        let mut headers = HeaderMap::new();
+        let signed = sign("known-session", "").unwrap_or_default();
+        if let Ok(cookie) = HeaderValue::from_str(&format!("connect.sid=s:{signed}")) {
+            headers.insert(header::COOKIE, cookie);
+        }
+        assert_eq!(
+            session_id(&headers, ""),
+            None,
+            "cookies cannot be authenticated with a missing secret"
+        );
     }
 
     #[test]

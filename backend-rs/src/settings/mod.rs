@@ -327,11 +327,64 @@ impl SettingsStore {
         let file = match tokio::fs::read_to_string(&self.path).await {
             Ok(text) => serde_json::from_str(&text)
                 .with_context(|| format!("parsing {}", self.path.display()))?,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && read(&self.cached).is_none() => {
                 Value::Object(serde_json::Map::new())
             }
             Err(e) => return Err(e).with_context(|| format!("reading {}", self.path.display())),
         };
+        anyhow::ensure!(file.is_object(), "settings.json must contain an object");
         Settings::from_file_value(file, self.api_key_override.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn missing_or_invalid_settings_keep_the_last_valid_secrets() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "foreseerr-settings-{}",
+            crate::standalone::settingsfile::uuid_v4()?
+        ));
+        tokio::fs::create_dir_all(&dir).await?;
+        let store = SettingsStore {
+            api_key_override: None,
+            ..SettingsStore::new(&dir)
+        };
+        let doc = json!({"main": {"apiKey": "valid-key"}, "sessionSecret": "valid-secret"});
+        tokio::fs::write(&store.path, doc.to_string()).await?;
+        let first = store.current().await?;
+        assert_eq!(first.api_key(), "valid-key", "fixture key");
+        tokio::fs::remove_file(&store.path).await?;
+        let missing = store.current().await?;
+        assert_eq!(missing.api_key(), "valid-key", "missing file keeps the key");
+        assert_eq!(
+            missing.session_secret(),
+            "valid-secret",
+            "missing file keeps the cookie secret"
+        );
+        for invalid in ["null", "[]", "42", "{broken"] {
+            tokio::fs::write(&store.path, invalid).await?;
+            assert_eq!(
+                store.current().await?.api_key(),
+                "valid-key",
+                "invalid document {invalid:?} keeps the key"
+            );
+        }
+        tokio::fs::write(
+            &store.path,
+            json!({"main": {"apiKey": "replacement-key"}, "sessionSecret": "replacement-secret"})
+                .to_string(),
+        )
+        .await?;
+        assert_eq!(
+            store.current().await?.api_key(),
+            "replacement-key",
+            "a valid replacement is loaded"
+        );
+        tokio::fs::remove_dir_all(&dir).await?;
+        Ok(())
     }
 }
