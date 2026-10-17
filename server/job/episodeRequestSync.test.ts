@@ -526,4 +526,126 @@ describe('episode request synchronization', () => {
     assert.deepEqual(monitor.mock.calls[0].arguments[0], [2]);
     assert.deepEqual(search.mock.calls[0].arguments[0], [2]);
   });
+
+  it('does not search a completed episode that is still monitored after its file was deleted', async (t: TestContext) => {
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'admin@seerr.dev' },
+    });
+    const media = await getRepository(Media).save(
+      new Media({
+        tmdbId: 9005,
+        tvdbId: 8005,
+        mediaType: MediaType.TV,
+        status: MediaStatus.PROCESSING,
+        status4k: MediaStatus.UNKNOWN,
+        serviceId: 0,
+        externalServiceId: 55,
+        jellyfinMediaId: 'series-3',
+      })
+    );
+    const created = await getRepository(MediaRequest).save(
+      new MediaRequest({
+        media,
+        requestedBy: user,
+        type: MediaType.TV,
+        status: MediaRequestStatus.APPROVED,
+        is4k: false,
+        seasons: [],
+        episodeSelectionType: 'watchAhead',
+        watchAheadCount: 1,
+        tvQuotaUnits: 1,
+        episodes: [
+          new EpisodeRequest({
+            tvdbId: 101,
+            seasonNumber: 1,
+            episodeNumber: 1,
+            status: MediaRequestStatus.APPROVED,
+          }),
+          new EpisodeRequest({
+            tvdbId: 102,
+            seasonNumber: 1,
+            episodeNumber: 2,
+            status: MediaRequestStatus.APPROVED,
+          }),
+        ],
+      })
+    );
+    // Episode 1 was downloaded earlier, so its child is already completed.
+    await getRepository(EpisodeRequest).update(
+      { request: { id: created.id }, tvdbId: 101 },
+      { status: MediaRequestStatus.COMPLETED }
+    );
+
+    getSettings().sonarr = [
+      {
+        id: 0,
+        name: 'Test Sonarr',
+        hostname: '127.0.0.1',
+        port: 8989,
+        apiKey: 'test',
+        useSsl: false,
+        activeProfileId: 1,
+        activeProfileName: 'Any',
+        activeDirectory: '/tv',
+        tags: [],
+        is4k: false,
+        isDefault: true,
+        syncEnabled: true,
+        preventSearch: false,
+        tagRequests: false,
+        overrideRule: [],
+        enableSeasonFolders: true,
+        monitorNewItems: 'all',
+        seriesType: 'standard',
+        animeSeriesType: 'anime',
+      },
+    ];
+
+    t.mock.method(Tvdb, 'getInstance', async () => ({
+      getEpisodeCatalog: async () => ({
+        tvdbSeriesId: 8005,
+        episodes: [
+          { tvdbId: 101, seasonNumber: 1, episodeNumber: 1, title: 'One' },
+          { tvdbId: 102, seasonNumber: 1, episodeNumber: 2, title: 'Two' },
+        ],
+      }),
+    }));
+    t.mock.method(
+      watchAheadFns,
+      'loadPlayedTvdbIdsForSeries',
+      async () => new Set([101])
+    );
+    t.mock.method(
+      SonarrAPI.prototype,
+      'getSeriesById',
+      async () => ({ id: 55, status: 'continuing' }) as SonarrSeries
+    );
+    // Episode 1's file was deleted, but Sonarr still monitors it.
+    t.mock.method(SonarrAPI.prototype, 'getEpisodes', async () => [
+      { ...sonarrEpisode(1, 101, 1, false), monitored: true },
+      sonarrEpisode(2, 102, 2, false),
+    ]);
+    const monitor = t.mock.method(
+      SonarrAPI.prototype,
+      'monitorEpisodes',
+      async () => undefined
+    );
+    const search = t.mock.method(
+      SonarrAPI.prototype,
+      'searchEpisodes',
+      async () => undefined
+    );
+
+    await episodeRequestSync.run();
+    const updated = await getRepository(MediaRequest).findOneByOrFail({
+      id: created.id,
+    });
+    assert.equal(updated.status, MediaRequestStatus.APPROVED);
+    assert.equal(
+      updated.episodes.find((episode) => episode.tvdbId === 101)?.status,
+      MediaRequestStatus.COMPLETED
+    );
+    assert.deepEqual(monitor.mock.calls[0].arguments[0], [2]);
+    assert.deepEqual(search.mock.calls[0].arguments[0], [2]);
+  });
 });

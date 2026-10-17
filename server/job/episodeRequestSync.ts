@@ -237,8 +237,11 @@ class EpisodeRequestSync {
         }
         continue;
       }
+      // A completed child lost its file on purpose, so do not search for it
+      // even when Sonarr still monitors it.
       if (
         (isNewFutureEpisode || episode.monitored || keepWatchAheadMonitored) &&
+        child.status !== MediaRequestStatus.COMPLETED &&
         !context.preventSearch &&
         !child.searchTriggeredAt &&
         (!episode.airDateUtc || new Date(episode.airDateUtc).getTime() <= now)
