@@ -155,12 +155,16 @@ const DeviceCodePanel = ({
           </p>
           <div
             role="status"
-            className="flex items-center space-x-2 text-sm text-gray-400"
+            className="flex items-center space-x-1.5 text-sm text-gray-400"
           >
-            <ArrowPathIcon
+            {/* Clip the rotating box so it cannot overflow the modal's scroll
+                area and toggle its scrollbar on every turn. */}
+            <span
               aria-hidden
-              className="h-4 w-4 animate-spin motion-reduce:animate-none"
-            />
+              className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden"
+            >
+              <ArrowPathIcon className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+            </span>
             <span>{waitingText}</span>
           </div>
         </>
