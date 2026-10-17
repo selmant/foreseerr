@@ -3,9 +3,10 @@ import Slider from '@app/components/Slider';
 import TmdbTitleCard, {
   watchlistTitleCardProps,
 } from '@app/components/TitleCard/TmdbTitleCard';
+import useSeeMorePosters from '@app/hooks/useSeeMorePosters';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
 import { useEffect } from 'react';
 import useSWR from 'swr';
 
@@ -45,13 +46,17 @@ const TraktSlider = ({
     settings.currentSettings.traktConfigured &&
     endpoint &&
     (!requiresLinkedAccount || traktStatus?.connected === true);
-  const { data, error } = useSWR<{ results: WatchlistItem[] }>(
-    canLoad ? endpoint : null,
-    { revalidateOnMount: true }
-  );
+  const { data, error } = useSWR<WatchlistResponse>(canLoad ? endpoint : null, {
+    revalidateOnMount: true,
+  });
   const titles = settings.currentSettings.hideRequested
     ? data?.results.filter((item) => !item.hasActiveRequest)
     : data?.results;
+  const seeMorePosters = useSeeMorePosters(
+    canLoad ? endpoint : null,
+    data,
+    settings.currentSettings.hideRequested
+  );
 
   useEffect(() => {
     onNewTitles?.(titles?.length ?? 0);
@@ -78,9 +83,7 @@ const TraktSlider = ({
         ariaLabel={title}
         seeMore={{
           url: href,
-          posters: titles
-            ?.slice(-4)
-            .map((item) => item.image || item.posterPath),
+          posters: seeMorePosters,
         }}
         isLoading={!data}
         isEmpty={!!data && titles?.length === 0}

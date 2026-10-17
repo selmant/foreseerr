@@ -13,7 +13,9 @@ import TmdbTitleCard, {
   watchlistTitleCardProps,
 } from '@app/components/TitleCard/TmdbTitleCard';
 import ProfileHeader from '@app/components/UserProfile/ProfileHeader';
+import useRequestSeeMorePosters from '@app/hooks/useRequestSeeMorePosters';
 import useRouteQuery from '@app/hooks/useRouteQuery';
+import useSeeMorePosters from '@app/hooks/useSeeMorePosters';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -60,15 +62,21 @@ const UserProfile = () => {
     Record<number, MediaTitle>
   >({});
 
-  const { data: requests, error: requestError } = useSWR<UserRequestsResponse>(
+  const requestsEndpoint =
     user &&
-      (user.id === currentUser?.id ||
-        currentHasPermission(
-          [Permission.MANAGE_REQUESTS, Permission.REQUEST_VIEW],
-          { type: 'or' }
-        ))
-      ? `/api/v1/user/${user?.id}/requests?take=10&skip=0`
-      : null
+    (user.id === currentUser?.id ||
+      currentHasPermission(
+        [Permission.MANAGE_REQUESTS, Permission.REQUEST_VIEW],
+        { type: 'or' }
+      ))
+      ? `/api/v1/user/${user.id}/requests`
+      : null;
+  const { data: requests, error: requestError } = useSWR<UserRequestsResponse>(
+    requestsEndpoint ? `${requestsEndpoint}?take=10&skip=0` : null
+  );
+  const requestsSeeMorePosters = useRequestSeeMorePosters(
+    requestsEndpoint,
+    requests
   );
   const { data: quota } = useSWR<QuotaResponse>(
     user &&
@@ -88,21 +96,24 @@ const UserProfile = () => {
         : null
     );
 
-  const { data: watchlistItems, error: watchlistError } =
-    useSWR<WatchlistResponse>(
-      user?.id === currentUser?.id ||
-        currentHasPermission(
-          [Permission.MANAGE_REQUESTS, Permission.WATCHLIST_VIEW],
-          {
-            type: 'or',
-          }
-        )
-        ? `/api/v1/user/${user?.id}/watchlist`
-        : null,
+  const watchlistEndpoint =
+    user?.id === currentUser?.id ||
+    currentHasPermission(
+      [Permission.MANAGE_REQUESTS, Permission.WATCHLIST_VIEW],
       {
-        revalidateOnMount: true,
+        type: 'or',
       }
-    );
+    )
+      ? `/api/v1/user/${user?.id}/watchlist`
+      : null;
+  const { data: watchlistItems, error: watchlistError } =
+    useSWR<WatchlistResponse>(watchlistEndpoint, {
+      revalidateOnMount: true,
+    });
+  const watchlistSeeMorePosters = useSeeMorePosters(
+    watchlistEndpoint,
+    watchlistItems
+  );
 
   const updateAvailableTitles = useCallback(
     (requestId: number, mediaTitle: MediaTitle) => {
@@ -327,10 +338,7 @@ const UserProfile = () => {
                   ? `/users/${user.id}/requests?filter=all`
                   : '/requests',
                 layout: 'request',
-                posters: requests?.results
-                  .map((request) => availableTitles[request.id]?.posterPath)
-                  .filter(Boolean)
-                  .slice(-4),
+                posters: requestsSeeMorePosters,
               }}
               isLoading={!requests}
               items={(requests?.results ?? []).map((request) => (
@@ -377,9 +385,7 @@ const UserProfile = () => {
                   user.id === currentUser?.id
                     ? '/profile/watchlist'
                     : `/users/${user.id}/watchlist`,
-                posters: watchlistItems?.results
-                  .slice(-4)
-                  .map((item) => item.image || item.posterPath),
+                posters: watchlistSeeMorePosters,
               }}
               isLoading={!watchlistItems}
               isEmpty={!!watchlistItems && watchlistItems.results.length === 0}

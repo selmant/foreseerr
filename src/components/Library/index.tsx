@@ -8,6 +8,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import LibraryInspector from '@app/components/Library/LibraryInspector';
 import LibraryPlayCard from '@app/components/Library/LibraryPlayCard';
 import { libraryMediaActionRefs } from '@app/components/Library/libraryPosterWatchMark';
+import useLibrarySeeMorePosters from '@app/components/Library/useLibrarySeeMorePosters';
 import ManageSlideOver from '@app/components/ManageSlideOver';
 import Slider from '@app/components/Slider';
 import { TitleCardBatchProvider } from '@app/components/TitleCard/TitleCardBatchContext';
@@ -75,6 +76,47 @@ const messages = defineMessages('components.Library', {
   jumpEpisodes: 'New episodes',
   jumpReady: 'Your requests',
 });
+
+/** One shelf's slider; a component so its See More preview can use hooks. */
+const LibraryShelfSlider = ({
+  shelf,
+  copy,
+  onOpen,
+}: {
+  shelf: LibraryShelf;
+  copy: { title: string; href?: string; endLabel?: string };
+  onOpen: (item: LibraryTitle) => void;
+}) => {
+  const seeMorePosters = useLibrarySeeMorePosters(copy.href, shelf.items);
+
+  return (
+    <Slider
+      sliderKey={`library-${shelf.id}`}
+      ariaLabel={copy.title}
+      isLoading={false}
+      seeMore={
+        copy.href
+          ? {
+              url: copy.href,
+              posters: seeMorePosters,
+              imageType: 'library',
+              label: copy.endLabel,
+              layout: shelf.id === 'continue' ? 'resume' : 'poster',
+            }
+          : undefined
+      }
+      items={shelf.items.map((item) => (
+        <LibraryPlayCard
+          key={`${shelf.id}-${item.jellyfinItemId}`}
+          item={item}
+          variant={shelf.id === 'continue' ? 'resume' : 'poster'}
+          surface="overview"
+          onOpen={onOpen}
+        />
+      ))}
+    />
+  );
+};
 
 const Library = () => {
   const intl = useIntl();
@@ -353,32 +395,10 @@ const Library = () => {
                     </p>
                   </div>
                 </div>
-                <Slider
-                  sliderKey={`library-${shelf.id}`}
-                  ariaLabel={shelfCopy[shelf.id].title}
-                  isLoading={false}
-                  seeMore={
-                    shelfCopy[shelf.id].href
-                      ? {
-                          url: shelfCopy[shelf.id].href!,
-                          posters: shelf.items
-                            .slice(-4)
-                            .map((item) => item.posterUrl),
-                          imageType: 'library',
-                          label: shelfCopy[shelf.id].endLabel,
-                          layout: shelf.id === 'continue' ? 'resume' : 'poster',
-                        }
-                      : undefined
-                  }
-                  items={shelf.items.map((item) => (
-                    <LibraryPlayCard
-                      key={`${shelf.id}-${item.jellyfinItemId}`}
-                      item={item}
-                      variant={shelf.id === 'continue' ? 'resume' : 'poster'}
-                      surface="overview"
-                      onOpen={setInspectorItem}
-                    />
-                  ))}
+                <LibraryShelfSlider
+                  shelf={shelf}
+                  copy={shelfCopy[shelf.id]}
+                  onOpen={setInspectorItem}
                 />
               </section>
             ))}

@@ -4,8 +4,9 @@ import Slider from '@app/components/Slider';
 import TmdbTitleCard, {
   watchlistTitleCardProps,
 } from '@app/components/TitleCard/TmdbTitleCard';
+import useSeeMorePosters from '@app/hooks/useSeeMorePosters';
 import useSettings from '@app/hooks/useSettings';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
 import { useEffect } from 'react';
 import useSWR from 'swr';
 
@@ -37,13 +38,18 @@ const DiscoverProviderSlider = ({
   onNewTitles,
 }: DiscoverProviderSliderProps) => {
   const settings = useSettings();
-  const { data, error } = useSWR<{ results: WatchlistItem[] }>(
+  const { data, error } = useSWR<WatchlistResponse>(
     configured ? endpoint : null,
     { revalidateOnMount: true }
   );
   const titles = settings.currentSettings.hideRequested
     ? data?.results.filter((item) => !item.hasActiveRequest)
     : data?.results;
+  const seeMorePosters = useSeeMorePosters(
+    configured ? endpoint : null,
+    data,
+    settings.currentSettings.hideRequested
+  );
 
   useEffect(() => {
     onNewTitles?.(titles?.length ?? 0);
@@ -69,9 +75,7 @@ const DiscoverProviderSlider = ({
         ariaLabel={title}
         seeMore={{
           url: linkUrl,
-          posters: titles
-            ?.slice(-4)
-            .map((item) => item.image || item.posterPath),
+          posters: seeMorePosters,
         }}
         isLoading={!data}
         isEmpty={!!data && titles?.length === 0}
