@@ -441,6 +441,13 @@ fn sonarr_text(e: &Value, key: &str) -> Option<String> {
     e.get(key).and_then(Value::as_str).map(str::to_owned)
 }
 
+/// `keepWatchAheadMonitored`. A completed child already had its file, so a
+/// missing one was deleted on purpose (watched, cleaned up) and stays
+/// unmonitored.
+const fn keeps_watch_ahead_monitored(watch_ahead: bool, has_file: bool, status: i64) -> bool {
+    watch_ahead && !has_file && status != COMPLETED
+}
+
 /// `reconcileRequest`.
 async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Context) -> Result<()> {
     let mut by_tvdb: HashMap<i64, &Value> = HashMap::new();
@@ -509,7 +516,7 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         let is_new = additions.contains(&child.tvdb_id);
         let has_file = truthy(episode.get("hasFile"));
         let monitored = truthy(episode.get("monitored"));
-        let keep_monitored = watch_ahead && !has_file;
+        let keep_monitored = keeps_watch_ahead_monitored(watch_ahead, has_file, child.status);
         if (is_new || keep_monitored) && !monitored {
             unmonitored.push(episode.get("id").cloned().unwrap_or(Value::Null));
         }
@@ -900,5 +907,25 @@ mod tests {
             .collect();
         ids.sort_unstable();
         assert_eq!(ids, vec![11, 12, 21], "provider ids, then numbers");
+    }
+
+    #[test]
+    fn deleted_watch_ahead_episodes_stay_unmonitored() {
+        assert!(
+            keeps_watch_ahead_monitored(true, false, APPROVED),
+            "missing and never downloaded"
+        );
+        assert!(
+            !keeps_watch_ahead_monitored(true, false, COMPLETED),
+            "downloaded, then deleted"
+        );
+        assert!(
+            !keeps_watch_ahead_monitored(true, true, APPROVED),
+            "already has its file"
+        );
+        assert!(
+            !keeps_watch_ahead_monitored(false, false, APPROVED),
+            "not a watch-ahead request"
+        );
     }
 }
