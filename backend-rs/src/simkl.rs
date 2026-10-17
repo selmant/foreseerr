@@ -70,15 +70,21 @@ impl Simkl {
         })
     }
 
-    /// `pace()`: 100 ms between GETs of one client.
+    /// `pace()`: 100 ms between GETs of one client. The slot is reserved under
+    /// the lock before sleeping, so concurrent callers queue behind each other
+    /// instead of all waking at the same instant.
     async fn pace(&self) {
-        let wait = lock(&self.next_request_at)
-            .map(|at| at.saturating_duration_since(Instant::now()))
-            .unwrap_or_default();
+        let at = {
+            let mut next = lock(&self.next_request_at);
+            let now = Instant::now();
+            let at = next.map_or(now, |next| next.max(now));
+            *next = Some(at + Duration::from_millis(100));
+            at
+        };
+        let wait = at.saturating_duration_since(Instant::now());
         if !wait.is_zero() {
             tokio::time::sleep(wait).await;
         }
-        *lock(&self.next_request_at) = Some(Instant::now() + Duration::from_millis(100));
     }
 
     fn required_parameters(&self) -> String {
@@ -819,6 +825,35 @@ pub async fn hydrate(simkl: &Simkl, candidates: Vec<Value>) -> Vec<Value> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn concurrent_requests_are_spaced() -> anyhow::Result<()> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let settings = Settings::from_file_value(json!({"simkl": {"clientId": "id"}}), None)?;
+        let simkl = Simkl::new(&reqwest::Client::new(), &settings, "1.0.0")
+            .ok_or_else(|| anyhow::anyhow!("configured"))?;
+        let start = Instant::now();
+        let paced = || async {
+            simkl.pace().await;
+            start.elapsed()
+        };
+        let mut times: [Duration; 3] = tokio::join!(paced(), paced(), paced()).into();
+        times.sort();
+        assert!(
+            times[1] >= Duration::from_millis(100),
+            "second waits one slot"
+        );
+        assert!(
+            times[2] >= Duration::from_millis(200),
+            "third waits two slots"
+        );
+        Ok(())
+    }
 
     #[test]
     fn film_titles() {

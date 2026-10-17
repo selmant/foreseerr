@@ -391,7 +391,13 @@ fn blocklist_add<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             tracing::warn!("Something wrong with data blocklist");
             return ctx.error(409, "Something wrong");
         }
-        let entry = db
+        // The entry and its media row commit together, so a failed media save
+        // never leaves an orphaned blocklist entry behind.
+        let mut tx = match crate::jobs::syncutil::Tx::begin(db).await {
+            Ok(tx) => tx,
+            Err(e) => return Outcome::forward(format!("database: {e:#}")),
+        };
+        let entry = crate::dbtx::Exec::Tx(&mut tx)
             .scalar(
                 &format!(
                     r#"INSERT INTO "blocklist" ("mediaType", "title", "tmdbId", "blocklistedTags", "createdAt", "userId") VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP, ?5){RETURNING_ID}"#
@@ -412,7 +418,7 @@ fn blocklist_add<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 return ctx.error(409, "Something wrong");
             }
         };
-        let mut exec = crate::dbtx::Exec::Db(db);
+        let mut exec = crate::dbtx::Exec::Tx(&mut tx);
         if let Err(e) = blocklist_media(
             &mut exec,
             entry,
@@ -422,6 +428,10 @@ fn blocklist_add<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         )
         .await
         {
+            tracing::error!("blocklisting the media failed: {e:#}");
+            return ctx.error(500, &format!("{e:#}"));
+        }
+        if let Err(e) = tx.commit().await {
             tracing::error!("blocklisting the media failed: {e:#}");
             return ctx.error(500, &format!("{e:#}"));
         }

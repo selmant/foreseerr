@@ -842,7 +842,7 @@ class JellyfinAPI extends ExternalAPI {
 
   public async markPlayed(itemId: string): Promise<void> {
     try {
-      const userSegment = this.userId ?? 'Me';
+      const userSegment = encodeURIComponent(this.userId ?? 'Me');
       await this.post(
         `/Users/${userSegment}/PlayedItems/${encodeURIComponent(itemId)}`,
         {}
@@ -858,7 +858,7 @@ class JellyfinAPI extends ExternalAPI {
 
   public async markUnplayed(itemId: string): Promise<void> {
     try {
-      const userSegment = this.userId ?? 'Me';
+      const userSegment = encodeURIComponent(this.userId ?? 'Me');
       await this.axios.delete(
         `/Users/${userSegment}/PlayedItems/${encodeURIComponent(itemId)}`
       );

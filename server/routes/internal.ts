@@ -11,14 +11,14 @@ import {
 } from '@server/job/schedule';
 import { disconnectAllAnilistLinks } from '@server/lib/anilist';
 import { mapAnilistMediaList } from '@server/lib/anilist/discover';
-import {
-  PROVIDER_ROW_CONCURRENCY,
-  mapWithConcurrency,
-} from '@server/lib/concurrency';
 import cacheManager, {
   getMemoryCacheStats,
   type AvailableCacheIds,
 } from '@server/lib/cache';
+import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import { withTmdbPosters } from '@server/lib/discover/posters';
 import { resolveDiscoverItems } from '@server/lib/discover/resolveItems';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
@@ -153,13 +153,13 @@ internalRoutes.post('/settings/effects', async (req, res) => {
         clearAnilistSyncCache();
         break;
       case 'disconnectAllTraktLinks':
-        results[effect] = await disconnectAllTraktLinks();
+        results.disconnectAllTraktLinks = await disconnectAllTraktLinks();
         break;
       case 'disconnectAllSimklLinks':
-        results[effect] = await disconnectAllSimklLinks();
+        results.disconnectAllSimklLinks = await disconnectAllSimklLinks();
         break;
       case 'disconnectAllAnilistLinks':
-        results[effect] = await disconnectAllAnilistLinks();
+        results.disconnectAllAnilistLinks = await disconnectAllAnilistLinks();
         break;
       default:
         res.status(400).json({ message: `Unknown effect: ${String(effect)}` });
@@ -270,7 +270,6 @@ const internalJobNextExecutionIso = (next: unknown): string | null => {
   if (next instanceof Date) return next.toISOString();
   if (
     typeof next === 'object' &&
-    next !== null &&
     'toJSDate' in next &&
     typeof (next as { toJSDate: () => Date }).toJSDate === 'function'
   ) {
@@ -278,7 +277,6 @@ const internalJobNextExecutionIso = (next: unknown): string | null => {
   }
   if (
     typeof next === 'object' &&
-    next !== null &&
     'toISO' in next &&
     typeof (next as { toISO: () => string | null }).toISO === 'function'
   ) {
