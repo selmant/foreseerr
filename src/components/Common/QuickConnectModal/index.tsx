@@ -1,10 +1,10 @@
 import Alert from '@app/components/Common/Alert';
-import DeviceCodePanel from '@app/components/Common/DeviceCodePanel';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import { useQuickConnect } from '@app/hooks/useQuickConnect';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
+import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Common.QuickConnectModal', {
@@ -110,11 +110,32 @@ const QuickConnectModal = ({
         )}
 
         {!isLoading && !hasError && !isExpired && (
-          <DeviceCodePanel
-            instructions={instructionsMessage}
-            code={code}
-            waitingText={intl.formatMessage(messages.waitingForAuth)}
-          />
+          <div className="flex flex-col items-center space-y-4">
+            <p className="text-center text-gray-300">{instructionsMessage}</p>
+
+            <div className="flex flex-col items-center space-y-2">
+              <div className="rounded-lg bg-gray-700 px-8 py-4">
+                <span className="select-all text-4xl font-bold tracking-wider text-white">
+                  {code}
+                </span>
+              </div>
+            </div>
+
+            <div
+              role="status"
+              className="flex items-center space-x-2 text-sm text-gray-400"
+            >
+              {/* Clip the rotating box so it cannot overflow the modal's scroll
+                  area and toggle its scrollbar on every turn. */}
+              <span
+                aria-hidden
+                className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden"
+              >
+                <ArrowPathIcon className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              </span>
+              <span>{intl.formatMessage(messages.waitingForAuth)}</span>
+            </div>
+          </div>
         )}
 
         {hasError && (
