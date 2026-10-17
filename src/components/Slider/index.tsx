@@ -16,7 +16,7 @@ import {
   type JSX,
 } from 'react';
 import { useIntl } from 'react-intl';
-import { sliderTarget } from './sliderNavigation';
+import { sliderTarget, titlesOverflow } from './sliderNavigation';
 
 const messages = defineMessages('components.Slider', {
   titles: 'Titles',
@@ -35,7 +35,10 @@ interface SliderProps {
   emptyMessage?: React.ReactNode;
   placeholder?: React.ReactNode;
   ariaLabel?: string;
-  /** End-of-shelf navigation to a complete browse page. Hidden for empty/loading shelves. */
+  /**
+   * End-of-shelf navigation to a complete browse page. Only shown when the
+   * titles overflow the shelf; hidden for empty/loading shelves.
+   */
   seeMore?: Omit<ShowMoreCardProps, 'title'> & { title?: string };
 }
 
@@ -58,7 +61,9 @@ const Slider = ({
   const instructionsId = useId();
   const shelfLabel = ariaLabel ?? intl.formatMessage(messages.titles);
   const containerRef = useRef<HTMLDivElement>(null);
+  const seeMoreRef = useRef<HTMLDivElement>(null);
   const [scrollPos, setScrollPos] = useState({ isStart: true, isEnd: false });
+  const [overflows, setOverflows] = useState(false);
 
   const handleScroll = useCallback(() => {
     const margin = 5;
@@ -66,6 +71,14 @@ const Slider = ({
     const clientWidth =
       containerRef.current?.getBoundingClientRect().width ?? 0;
     const scrollPosition = containerRef.current?.scrollLeft ?? 0;
+    setOverflows(
+      titlesOverflow({
+        scrollWidth,
+        viewportWidth: clientWidth,
+        seeMoreWidth: seeMoreRef.current?.getBoundingClientRect().width ?? 0,
+        margin,
+      })
+    );
 
     if (!items || items?.length === 0) {
       setScrollPos({ isStart: true, isEnd: true });
@@ -227,11 +240,19 @@ const Slider = ({
             {item}
           </div>
         ))}
-        {seeMore && !isLoading && !isEmpty && Boolean(items?.length) && (
-          <div className="flex shrink-0 px-2" role="listitem">
-            <ShowMoreCard {...seeMore} title={seeMore.title ?? shelfLabel} />
-          </div>
-        )}
+        {seeMore &&
+          overflows &&
+          !isLoading &&
+          !isEmpty &&
+          Boolean(items?.length) && (
+            <div
+              ref={seeMoreRef}
+              className="flex shrink-0 px-2"
+              role="listitem"
+            >
+              <ShowMoreCard {...seeMore} title={seeMore.title ?? shelfLabel} />
+            </div>
+          )}
         {isLoading &&
           [...Array(10)].map((_item, i) => (
             <div key={`placeholder-${i}`} className="shrink-0 px-2">

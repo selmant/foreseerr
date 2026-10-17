@@ -57,6 +57,7 @@ import routes from '@server/routes';
 import avatarproxy from '@server/routes/avatarproxy';
 import { bindDesktopSessionStore } from '@server/routes/desktop';
 import imageproxy from '@server/routes/imageproxy';
+import internalRoutes from '@server/routes/internal';
 import { appDataPermissions } from '@server/utils/appDataVolume';
 import { getAppVersion } from '@server/utils/appVersion';
 import createCustomProxyAgent, {
@@ -545,6 +546,8 @@ const startForeseerrInternal = async (
 
   // Do not set cookies so CDNs can cache them
   server.use('/imageproxy', clearCookies, imageproxy);
+  // Process state for the Rust backend in front of this server.
+  server.use('/internal', internalRoutes);
   server.use('/avatarproxy', clearCookies, avatarproxy);
 
   if (!dev) {

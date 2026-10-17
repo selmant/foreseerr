@@ -842,8 +842,11 @@ class JellyfinAPI extends ExternalAPI {
 
   public async markPlayed(itemId: string): Promise<void> {
     try {
-      const userSegment = this.userId ?? 'Me';
-      await this.post(`/Users/${userSegment}/PlayedItems/${itemId}`, {});
+      const userSegment = encodeURIComponent(this.userId ?? 'Me');
+      await this.post(
+        `/Users/${userSegment}/PlayedItems/${encodeURIComponent(itemId)}`,
+        {}
+      );
     } catch (e) {
       logger.error(
         `Something went wrong while marking item as played on Jellyfin: ${e.message}`,
@@ -855,8 +858,10 @@ class JellyfinAPI extends ExternalAPI {
 
   public async markUnplayed(itemId: string): Promise<void> {
     try {
-      const userSegment = this.userId ?? 'Me';
-      await this.axios.delete(`/Users/${userSegment}/PlayedItems/${itemId}`);
+      const userSegment = encodeURIComponent(this.userId ?? 'Me');
+      await this.axios.delete(
+        `/Users/${userSegment}/PlayedItems/${encodeURIComponent(itemId)}`
+      );
     } catch (e) {
       logger.error(
         `Something went wrong while marking item as unplayed on Jellyfin: ${e.message}`,

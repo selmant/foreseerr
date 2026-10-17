@@ -6,6 +6,10 @@ import type {
   AnilistMediaListStatus,
 } from '@server/api/anilist/interfaces';
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import anilistIdMapping, {
   anilistFormatToMediaType,
 } from '@server/lib/anilist/mapping';
@@ -71,13 +75,16 @@ export async function mapAnilistMedia(
   };
 }
 
-export async function mapAnilistMediaList(
-  mediaList: AnilistMedia[]
-): Promise<AnilistDiscoverItem[]> {
-  const mapped: AnilistDiscoverItem[] = [];
-  const seen = new Set<string>();
-  for (const media of mediaList) {
-    const item = await mapAnilistMedia(media);
+/**
+ * Append mapped entries in order, skipping a repeat of an AniList id or of a
+ * TMDB id (two AniList seasons often share one TMDB show).
+ */
+function appendUnique(
+  out: AnilistDiscoverItem[],
+  seen: Set<string>,
+  items: (AnilistDiscoverItem | null)[]
+): void {
+  for (const item of items) {
     if (!item) {
       continue;
     }
@@ -93,8 +100,21 @@ export async function mapAnilistMediaList(
       }
       seen.add(tmdbKey);
     }
-    mapped.push(item);
+    out.push(item);
   }
+}
+
+export async function mapAnilistMediaList(
+  mediaList: AnilistMedia[]
+): Promise<AnilistDiscoverItem[]> {
+  const mapped: AnilistDiscoverItem[] = [];
+  appendUnique(
+    mapped,
+    new Set<string>(),
+    await mapWithConcurrency(mediaList, PROVIDER_ROW_CONCURRENCY, (media) =>
+      mapAnilistMedia(media)
+    )
+  );
   return mapped;
 }
 
@@ -114,21 +134,56 @@ export function toWatchlistItems(
   }));
 }
 
-export function paginateItems<T>(
-  items: T[],
+/** Tiles per page of an AniList list row. */
+export const ANILIST_LIST_PAGE_SIZE = 20;
+
+/**
+ * One page of a whole list, mapped: the same page `mapAnilistMediaList` over
+ * every entry, then cut to `page`, would give, but only the entries up to the
+ * end of that page (and one more, for `hasMore`) are mapped.
+ *
+ * Mapping drops entries (music, no id) and repeats (two AniList seasons on one
+ * TMDB show), so where a page starts in the raw list is not known up front.
+ * Entries are therefore mapped in order, a batch at a time, until the page
+ * plus one tile is filled or the list runs out. Each batch is no larger than
+ * the tiles still missing, as an entry yields at most one tile.
+ */
+export async function mapAnilistMediaPage(
+  media: AnilistMedia[],
   page: number,
-  itemsPerPage = 20
-): { results: T[]; hasMore: boolean; page: number } {
+  {
+    itemsPerPage = ANILIST_LIST_PAGE_SIZE,
+    mapMedia = mapAnilistMedia,
+  }: {
+    itemsPerPage?: number;
+    /** Test seam. */
+    mapMedia?: (media: AnilistMedia) => Promise<AnilistDiscoverItem | null>;
+  } = {}
+): Promise<{ results: AnilistDiscoverItem[]; hasMore: boolean; page: number }> {
   const safePage = Number.isFinite(page) && page > 0 ? page : 1;
   const start = (safePage - 1) * itemsPerPage;
+  const wanted = start + itemsPerPage + 1;
+  const mapped: AnilistDiscoverItem[] = [];
+  const seen = new Set<string>();
+  let next = 0;
+  while (mapped.length < wanted && next < media.length) {
+    const batch = media.slice(next, next + (wanted - mapped.length));
+    next += batch.length;
+    appendUnique(
+      mapped,
+      seen,
+      await mapWithConcurrency(batch, PROVIDER_ROW_CONCURRENCY, mapMedia)
+    );
+  }
   return {
     page: safePage,
-    results: items.slice(start, start + itemsPerPage),
-    hasMore: start + itemsPerPage < items.length,
+    results: mapped.slice(start, start + itemsPerPage),
+    hasMore: start + itemsPerPage < mapped.length,
   };
 }
 
-export async function collectUserListItems(
+/** The matching lists' media, each entry once, in list order. */
+export async function collectUserListMedia(
   client: AnilistAPI,
   anilistUser: number | string,
   matcher: (list: {
@@ -136,7 +191,7 @@ export async function collectUserListItems(
     status: AnilistMediaListStatus | null;
     isCustomList: boolean;
   }) => boolean
-): Promise<AnilistDiscoverItem[]> {
+): Promise<AnilistMedia[]> {
   const collection = await client.getMediaListCollection(anilistUser);
   const media: AnilistMedia[] = [];
   const seenMedia = new Set<number>();
@@ -160,7 +215,7 @@ export async function collectUserListItems(
     }
   }
 
-  return mapAnilistMediaList(media);
+  return media;
 }
 
 export async function listUserAniListLists(

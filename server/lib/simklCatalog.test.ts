@@ -856,6 +856,39 @@ describe('simkl TMDB resolution never infers media type', () => {
     assert.deepEqual(asked, [], 'tvdb_id is unsupported for TMDB movies');
   });
 
+  it('asks TVDB only when the IMDB answer left the outcome open', async () => {
+    const asked: string[] = [];
+    const resolvers: SimklTmdbResolvers = {
+      findByExternalId: async (source, externalId) => {
+        asked.push(`${source}:${externalId}`);
+        if (externalId === 'tt-agrees') return [1429];
+        if (externalId === 'tt-one') return [500];
+        if (externalId === 'tt-other') return [600];
+        if (externalId === '81797') return [1429];
+        return [];
+      },
+      confirm: async () => true,
+    };
+    const agrees = await resolveSimklTmdbId(
+      animeCandidate({ tmdb: 1429, imdb: 'tt-agrees', tvdb: 81797 }),
+      resolvers
+    );
+    assert.equal(agrees.sourceKey, 'simkl:tmdb+tmdb-find:imdb');
+    const single = await resolveSimklTmdbId(
+      animeCandidate({ imdb: 'tt-one', tvdb: 81797 }),
+      resolvers
+    );
+    assert.equal(single.tmdbId, 500);
+    assert.deepEqual(asked, ['imdb:tt-agrees', 'imdb:tt-one']);
+    // IMDB names another record, so TVDB may still agree with Simkl's id.
+    const open = await resolveSimklTmdbId(
+      animeCandidate({ tmdb: 1429, imdb: 'tt-other', tvdb: 81797 }),
+      resolvers
+    );
+    assert.equal(open.sourceKey, 'simkl:tmdb+tmdb-find:tvdb');
+    assert.deepEqual(asked.slice(2), ['imdb:tt-other', 'tvdb:81797']);
+  });
+
   it('raises confidence when Simkl and /find agree, and treats a split as ambiguous', async () => {
     const [agreed, split] = await resolveSimklCandidates(
       [

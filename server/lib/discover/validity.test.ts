@@ -29,13 +29,15 @@ const fakeTmdb = (
   find: Record<string, { movie?: number[]; tv?: number[] }> = {}
 ) =>
   ({
-    getMovie: async ({ movieId }: { movieId: number }) => {
-      if (DEAD.has(`movie:${movieId}`)) throw http404();
-      return { id: movieId };
-    },
-    getTvShow: async ({ tvId }: { tvId: number }) => {
-      if (DEAD.has(`tv:${tvId}`)) throw http404();
-      return { id: tvId };
+    getTitleSummary: async ({
+      mediaType,
+      tmdbId,
+    }: {
+      mediaType: 'movie' | 'tv';
+      tmdbId: number;
+    }) => {
+      if (DEAD.has(`${mediaType}:${tmdbId}`)) throw http404();
+      return { id: tmdbId };
     },
     getByExternalId: async ({
       externalId,
@@ -205,9 +207,9 @@ describe('phantom TMDB ids', () => {
   it('does not re-probe a confirmed id on the next render', async () => {
     let calls = 0;
     const counting = {
-      getMovie: async ({ movieId }: { movieId: number }) => {
+      getTitleSummary: async ({ tmdbId }: { tmdbId: number }) => {
         calls += 1;
-        return { id: movieId };
+        return { id: tmdbId };
       },
     } as unknown as TheMovieDb;
 

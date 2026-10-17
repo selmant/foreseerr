@@ -10,10 +10,12 @@ import type {
   DiscoverItemSource,
   DiscoverMappingInfo,
   WatchlistItem,
+  WatchlistItemMediaInfo,
 } from '@server/interfaces/api/discoverInterfaces';
 import { hasServarrMapping } from '@server/lib/servarrMapping';
 import type { MovieDetails } from '@server/models/Movie';
 import type { TvDetails } from '@server/models/Tv';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import useSWR from 'swr';
 
@@ -42,6 +44,15 @@ export interface TmdbTitleCardProps {
   sourceImage?: string;
   ratingKey?: string;
   mappingState?: DiscoverMappingInfo;
+  /**
+   * Row payload from a provider list. With a TMDB poster the card paints from
+   * these and loads `/movie/:id` or `/tv/:id` only once its details are opened.
+   */
+  posterPath?: string;
+  releaseDate?: string;
+  firstAirDate?: string;
+  voteAverage?: number;
+  mediaInfo?: WatchlistItemMediaInfo;
 }
 
 export function watchlistTitleCardProps(
@@ -59,6 +70,11 @@ export function watchlistTitleCardProps(
   | 'sourceImage'
   | 'ratingKey'
   | 'mappingState'
+  | 'posterPath'
+  | 'releaseDate'
+  | 'firstAirDate'
+  | 'voteAverage'
+  | 'mediaInfo'
 > {
   return {
     id: item.tmdbId ?? item.id ?? 0,
@@ -72,6 +88,11 @@ export function watchlistTitleCardProps(
     sourceImage: item.image,
     ratingKey: item.ratingKey,
     mappingState: item.mappingState,
+    posterPath: item.posterPath,
+    releaseDate: item.releaseDate,
+    firstAirDate: item.firstAirDate,
+    voteAverage: item.voteAverage,
+    mediaInfo: item.mediaInfo,
   };
 }
 
@@ -81,6 +102,13 @@ const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
 
 const hasTmdbId = (tmdbId?: number): tmdbId is number =>
   typeof tmdbId === 'number' && Number.isFinite(tmdbId) && tmdbId > 0;
+
+/** Bare TMDB path (`/abc.jpg`), which the server only sends for a confirmed id. */
+const tmdbPosterPath = (posterPath?: string): string | undefined =>
+  posterPath?.startsWith('/') ? posterPath : undefined;
+
+/** Brief hover intent, so sweeping the pointer across a row loads nothing. */
+const DETAILS_FETCH_DELAY_MS = 150;
 
 const TmdbTitleCard = ({
   id,
@@ -107,26 +135,52 @@ const TmdbTitleCard = ({
   sourceImage,
   ratingKey,
   mappingState,
+  posterPath,
+  releaseDate,
+  firstAirDate,
+  voteAverage,
+  mediaInfo,
 }: TmdbTitleCardProps) => {
   const { hasPermission } = useUser();
   const { isHidden, hide, hideAllUnmapped } = useHiddenUnmappedTitles();
   const hideKey = unmappedHideKey(source, sourceId, ratingKey);
   const resolvedTmdbId = hasTmdbId(tmdbId) ? tmdbId : undefined;
+  const rowPosterPath = tmdbPosterPath(posterPath);
+  // The row already carries everything the closed card shows; details only
+  // add the overview of the open card, and the TMDB score when the row has none.
+  const paintFromRow = Boolean(
+    resolvedTmdbId && type && originalTitle && rowPosterPath && !libraryMode
+  );
 
   const { ref, inView } = useInView({
     triggerOnce: true,
+    skip: paintFromRow,
   });
+  const [detailsWanted, setDetailsWanted] = useState(false);
+  const detailsTimer = useRef<number | undefined>(undefined);
+  const onShowDetailChange = useCallback((shown: boolean) => {
+    window.clearTimeout(detailsTimer.current);
+    if (shown) {
+      detailsTimer.current = window.setTimeout(
+        () => setDetailsWanted(true),
+        DETAILS_FETCH_DELAY_MS
+      );
+    }
+  }, []);
+  useEffect(() => () => window.clearTimeout(detailsTimer.current), []);
+
   const url = resolvedTmdbId
     ? type === 'movie'
       ? `/api/v1/movie/${resolvedTmdbId}`
       : `/api/v1/tv/${resolvedTmdbId}`
     : null;
   const { data: title, error } = useSWR<MovieDetails | TvDetails>(
-    inView && url ? url : null
+    (paintFromRow ? detailsWanted : inView) && url ? url : null
   );
 
   const showUnmapped =
-    Boolean(source) && (!resolvedTmdbId || (Boolean(error) && !title));
+    Boolean(source) &&
+    (!resolvedTmdbId || (!paintFromRow && Boolean(error) && !title));
 
   if (showUnmapped && (hideAllUnmapped || isHidden(hideKey))) {
     return null;
@@ -143,6 +197,40 @@ const TmdbTitleCard = ({
         canExpand={canExpand}
         mappingState={mappingState}
         onHide={() => hide(hideKey)}
+      />
+    );
+  }
+
+  if (paintFromRow && resolvedTmdbId && type) {
+    // A failed details load leaves the confirmed tile as it is, without the
+    // overview, rather than turning it into an unmapped card on hover. The
+    // row title stays the label after details load: a provider title (AniList,
+    // Trakt, ...) can differ from the TMDB one, and the card must not rename
+    // itself on hover.
+    return (
+      <TitleCard
+        id={resolvedTmdbId}
+        isAddedToWatchlist={
+          title?.mediaInfo?.watchlists?.length || isAddedToWatchlist
+        }
+        image={rowPosterPath}
+        status={title?.mediaInfo?.status ?? mediaInfo?.status}
+        summary={title?.overview}
+        title={originalTitle ?? ''}
+        userScore={title?.voteAverage ?? voteAverage}
+        ratings={ratings ?? title?.ratings}
+        year={
+          (type === 'movie' ? releaseDate : firstAirDate) ??
+          (title
+            ? isMovie(title)
+              ? title.releaseDate
+              : title.firstAirDate
+            : undefined)
+        }
+        mediaType={type}
+        canExpand={canExpand}
+        mutateParent={mutateParent}
+        onShowDetailChange={onShowDetailChange}
       />
     );
   }

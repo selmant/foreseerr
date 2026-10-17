@@ -40,7 +40,47 @@ export {
 
 const ANILIST_PAGE_SIZE = 20;
 const ANILIST_TOKEN_TTL_FALLBACK_SECONDS = 365 * 24 * 60 * 60;
-const PUBLIC_PAGE_CACHE_TTL_SECONDS = 300;
+export const PUBLIC_PAGE_CACHE_TTL_SECONDS = 300;
+/** The longest a request waits out AniList's rate limit before failing. */
+const ANILIST_RATE_LIMIT_MAX_WAIT_SECONDS = 10;
+
+/**
+ * When AniList takes requests again after a 429. Every client shares it:
+ * one 429 means the rest would get one too.
+ */
+let anilistRateLimitedUntilMs = 0;
+
+/** Test helper — reopen the AniList rate-limit gate. */
+export const resetAnilistRateLimitState = (): void => {
+  anilistRateLimitedUntilMs = 0;
+};
+
+/** Hold every request that reaches the network back for a 429's Retry-After. */
+const closeAnilistGate = (retryAfterSeconds: number): void => {
+  const now = Date.now();
+  if (anilistRateLimitedUntilMs <= now) {
+    logger.warn('AniList rate limited; holding requests back', {
+      label: 'AniList API',
+      retryAfterSeconds,
+    });
+  }
+  anilistRateLimitedUntilMs = Math.max(
+    anilistRateLimitedUntilMs,
+    now + retryAfterSeconds * 1000
+  );
+};
+
+/** Wait for the gate, or fail when it opens later than a request waits. */
+const waitForAnilistGate = async (): Promise<void> => {
+  const left = anilistRateLimitedUntilMs - Date.now();
+  if (left <= 0) {
+    return;
+  }
+  if (left > ANILIST_RATE_LIMIT_MAX_WAIT_SECONDS * 1000) {
+    throw new AnilistRateLimitedError(Math.ceil(left / 1000));
+  }
+  await new Promise((resolve) => setTimeout(resolve, left));
+};
 
 const MEDIA_FIELDS = `
   id
@@ -185,6 +225,14 @@ class AnilistAPI extends ExternalAPI {
         },
       }
     );
+
+    // Only requests the cache doesn't answer reach the interceptors.
+    // Interceptors run last-added first, so this one runs before the
+    // one-a-second limiter.
+    this.axios.interceptors.request.use(async (config) => {
+      await waitForAnilistGate();
+      return config;
+    });
 
     this.accessToken = options.accessToken;
   }
@@ -454,7 +502,8 @@ class AnilistAPI extends ExternalAPI {
   private async graphql<T>(
     query: string,
     variables: Record<string, unknown>,
-    ttl: number
+    ttl: number,
+    retried = false
   ): Promise<T> {
     try {
       const response = await this.post<GraphQLResponse<T>>(
@@ -500,9 +549,15 @@ class AnilistAPI extends ExternalAPI {
                 e.response?.headers?.['Retry-After'])
             : 60
         );
-        throw new AnilistRateLimitedError(
-          Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60
-        );
+        const seconds =
+          Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60;
+        closeAnilistGate(seconds);
+        // A short Retry-After is AniList's per-minute window rolling
+        // over: wait it out (the gate does) and go once more.
+        if (!retried && seconds <= ANILIST_RATE_LIMIT_MAX_WAIT_SECONDS) {
+          return this.graphql<T>(query, variables, ttl, true);
+        }
+        throw new AnilistRateLimitedError(seconds);
       }
       const graphQlError = firstAnilistGraphQlError(
         axios.isAxiosError(e) ? e.response?.data : undefined

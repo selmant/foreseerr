@@ -1,0 +1,107 @@
+[package]
+name = "shadow"
+version = "0.1.0"
+edition = "2021"
+description = "Record real Foreseerr traffic, replay it against several backends, and compare what they did"
+publish = false
+license = "MIT"
+repository = "https://github.com/selmant/SeerrSuggestArr"
+readme = "README.md"
+keywords = ["http", "proxy", "replay", "testing", "diff"]
+categories = ["development-tools::testing", "command-line-utilities"]
+rust-version = "1.85"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+brotli = "7"
+bytes = "1"
+clap = { version = "4", features = ["derive", "env"] }
+flate2 = "1"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "client-legacy", "http1"] }
+rcgen = { version = "0.13", features = ["pem", "x509-parser"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "json"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = "0.7"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+toml = "0.8"
+url = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+future_incompatible = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+let_underscore_drop = "deny"
+meta_variable_misuse = "deny"
+missing_debug_implementations = "deny"
+redundant_lifetimes = "deny"
+single_use_lifetimes = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unit_bindings = "deny"
+unreachable_pub = "deny"
+unused_import_braces = "deny"
+unused_lifetimes = "deny"
+unused_macro_rules = "deny"
+unused_qualifications = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+# cargo group
+cargo_common_metadata = "deny"
+negative_feature_names = "deny"
+redundant_feature_names = "deny"
+wildcard_dependencies = "deny"
+# The duplicates are transitive (hyper-util pulls base64 0.23, postgres-protocol
+# digest/sha2 0.11 and fallible-iterator 0.2, x509-parser syn 2/thiserror 1, ...)
+# and can't be unified from here.
+multiple_crate_versions = "allow"
+# restriction picks
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+as_conversions = "deny"
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+empty_structs_with_brackets = "deny"
+exit = "deny"
+expect_used = "deny"
+float_cmp_const = "deny"
+format_push_string = "deny"
+if_then_some_else_none = "deny"
+indexing_slicing = "deny"
+let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+lossy_float_literal = "deny"
+mem_forget = "deny"
+missing_assert_message = "deny"
+multiple_inherent_impl = "deny"
+panic = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+str_to_string = "deny"
+string_slice = "deny"
+tests_outside_test_module = "deny"
+todo = "deny"
+unimplemented = "deny"
+unneeded_field_pattern = "deny"
+unreachable = "deny"
+unwrap_in_result = "deny"
+unwrap_used = "deny"
+verbose_file_reads = "deny"
+wildcard_enum_match_arm = "deny"

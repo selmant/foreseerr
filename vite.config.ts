@@ -1,4 +1,6 @@
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import svgr from 'vite-plugin-svgr';
@@ -6,6 +8,12 @@ import svgr from 'vite-plugin-svgr';
 const API_PORT = process.env.PORT || '5055';
 const API_HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_BASE = process.env.FORESEERR_BASE_PATH ? './' : '/';
+// Resolve through swagger-ui-express so the docs use its pinned distribution.
+// These browser assets are packaged at build time; Rust needs no node_modules.
+const swaggerRequire = createRequire(
+  createRequire(import.meta.url).resolve('swagger-ui-express')
+);
+const swaggerDist: string = swaggerRequire('swagger-ui-dist/absolute-path')();
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -13,6 +21,24 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      {
+        name: 'package-api-docs',
+        generateBundle() {
+          for (const name of [
+            'swagger-ui-bundle.js',
+            'swagger-ui-standalone-preset.js',
+            'swagger-ui.css',
+            'favicon-16x16.png',
+            'favicon-32x32.png',
+          ]) {
+            this.emitFile({
+              type: 'asset',
+              fileName: `api-docs/${name}`,
+              source: readFileSync(path.join(swaggerDist, name)),
+            });
+          }
+        },
+      },
       react(),
       svgr({
         include: '**/*.svg',

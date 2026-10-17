@@ -56,6 +56,8 @@ export interface WatchlistItem {
   releaseDate?: string;
   /** Series first air date (`YYYY-MM-DD`) from TMDB. */
   firstAirDate?: string;
+  /** TMDB `vote_average`, from the same confirm probe as `posterPath`. */
+  voteAverage?: number;
   /** Library/request status when Foreseerr already tracks the title. */
   mediaInfo?: WatchlistItemMediaInfo;
   hasActiveRequest?: boolean;

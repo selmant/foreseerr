@@ -2,7 +2,8 @@ import type TheMovieDb from '@server/api/themoviedb';
 import { clearTmdbNegativeCache } from '@server/lib/mapping/tmdb';
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-import { withTmdbPoster } from './posters';
+import { PROVIDER_ROW_CONCURRENCY } from '@server/lib/concurrency';
+import { withTmdbPoster, withTmdbPosters } from './posters';
 import { resetTmdbValidityCache } from './validity';
 
 beforeEach(() => {
@@ -14,22 +15,28 @@ afterEach(() => {
   resetTmdbValidityCache();
 });
 
-const fakeTmdb = {
-  getMovie: async ({ movieId }: { movieId: number }) => ({
-    id: movieId,
-    title: 'Mad Max: Fury Road',
-    poster_path: '/madmax.jpg',
-    backdrop_path: '/madmax-backdrop.jpg',
-    release_date: '2015-05-13',
-  }),
-  getTvShow: async ({ tvId }: { tvId: number }) => ({
-    id: tvId,
-    name: 'Frieren',
-    poster_path: '/frieren.jpg',
-    backdrop_path: '/frieren-backdrop.jpg',
-    first_air_date: '2023-09-29',
-  }),
-} as unknown as TheMovieDb;
+type SummaryArgs = { mediaType: 'movie' | 'tv'; tmdbId: number };
+
+const summary = async ({ mediaType, tmdbId }: SummaryArgs) =>
+  mediaType === 'movie'
+    ? {
+        id: tmdbId,
+        title: 'Mad Max: Fury Road',
+        poster_path: '/madmax.jpg',
+        backdrop_path: '/madmax-backdrop.jpg',
+        release_date: '2015-05-13',
+        vote_average: 7.6,
+      }
+    : {
+        id: tmdbId,
+        name: 'Frieren',
+        poster_path: '/frieren.jpg',
+        backdrop_path: '/frieren-backdrop.jpg',
+        first_air_date: '2023-09-29',
+        vote_average: 8.8,
+      };
+
+const fakeTmdb = { getTitleSummary: summary } as unknown as TheMovieDb;
 
 describe('withTmdbPoster', () => {
   it('copies the poster the confirm probe already fetched', async () => {
@@ -50,9 +57,9 @@ describe('withTmdbPoster', () => {
   it('adds the backdrop and release date from the same probe', async () => {
     let calls = 0;
     const tmdb = {
-      getMovie: async (args: { movieId: number }) => {
+      getTitleSummary: async (args: SummaryArgs) => {
         calls += 1;
-        return fakeTmdb.getMovie(args);
+        return summary(args);
       },
     } as unknown as TheMovieDb;
     const tile = {
@@ -70,6 +77,7 @@ describe('withTmdbPoster', () => {
       posterPath: '/madmax.jpg',
       backdropPath: '/madmax-backdrop.jpg',
       releaseDate: '2015-05-13',
+      voteAverage: 7.6,
     });
     // A second tile for the same id reuses the cached probe.
     await withTmdbPoster({ ...tile, ratingKey: 'again' }, tmdb);
@@ -92,6 +100,31 @@ describe('withTmdbPoster', () => {
     assert.equal(item.backdropPath, '/frieren-backdrop.jpg');
     assert.equal(item.firstAirDate, '2023-09-29');
     assert.equal(item.releaseDate, undefined);
+    assert.equal(item.voteAverage, 8.8);
+  });
+
+  it('keeps a zero score and omits a missing one', async () => {
+    const scored = (vote_average?: number) =>
+      ({
+        getTitleSummary: async ({ tmdbId }: SummaryArgs) => ({
+          id: tmdbId,
+          title: 'Unrated',
+          poster_path: '/unrated.jpg',
+          ...(vote_average === undefined ? {} : { vote_average }),
+        }),
+      }) as unknown as TheMovieDb;
+    const tile = (tmdbId: number) => ({
+      id: tmdbId,
+      ratingKey: `mdblist-movie-${tmdbId}`,
+      tmdbId,
+      mediaType: 'movie' as const,
+      title: 'Unrated',
+    });
+    const zero = await withTmdbPoster(tile(900010), scored(0));
+    assert.equal(zero.voteAverage, 0);
+    const missing = await withTmdbPoster(tile(900011), scored());
+    assert.equal(missing.posterPath, '/unrated.jpg');
+    assert.equal('voteAverage' in missing, false);
   });
 
   it('leaves unmapped tiles alone', async () => {
@@ -107,7 +140,7 @@ describe('withTmdbPoster', () => {
   it('leaves an existing poster alone', async () => {
     let calls = 0;
     const tmdb = {
-      getMovie: async () => {
+      getTitleSummary: async () => {
         calls += 1;
         return { poster_path: '/other.jpg' };
       },
@@ -125,5 +158,32 @@ describe('withTmdbPoster', () => {
     );
     assert.equal(item.posterPath, '/already.jpg');
     assert.equal(calls, 0);
+  });
+
+  it('probes a page a few tiles at a time, in order', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const tmdb = {
+      getTitleSummary: async ({ tmdbId }: SummaryArgs) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        inFlight -= 1;
+        return { id: tmdbId, title: 'T', poster_path: `/${tmdbId}.jpg` };
+      },
+    } as unknown as TheMovieDb;
+    const tiles = Array.from({ length: 20 }, (_, n) => ({
+      id: 900100 + n,
+      ratingKey: `mdblist-movie-${900100 + n}`,
+      tmdbId: 900100 + n,
+      mediaType: 'movie' as const,
+      title: 'T',
+    }));
+    const out = await withTmdbPosters(tiles, tmdb);
+    assert.deepEqual(
+      out.map((tile) => tile.posterPath),
+      tiles.map((tile) => `/${tile.tmdbId}.jpg`)
+    );
+    assert.equal(peak, PROVIDER_ROW_CONCURRENCY);
   });
 });
