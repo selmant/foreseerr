@@ -448,6 +448,12 @@ const fn keeps_watch_ahead_monitored(watch_ahead: bool, has_file: bool, status: 
     watch_ahead && !has_file && status != COMPLETED
 }
 
+/// Whether a missing episode is a search candidate. A completed child lost
+/// its file on purpose, so it is skipped even when Sonarr still monitors it.
+const fn wants_search(is_new: bool, monitored: bool, keep_monitored: bool, status: i64) -> bool {
+    (is_new || monitored || keep_monitored) && status != COMPLETED
+}
+
 /// `reconcileRequest`.
 async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Context) -> Result<()> {
     let mut by_tvdb: HashMap<i64, &Value> = HashMap::new();
@@ -539,7 +545,7 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
                     .and_then(parse_js_date)
                     .is_some_and(|at| at <= now)
             });
-        if (is_new || monitored || keep_monitored)
+        if wants_search(is_new, monitored, keep_monitored, child.status)
             && !context.prevent_search
             && child.search_triggered_at.is_none()
             && aired
@@ -926,6 +932,26 @@ mod tests {
         assert!(
             !keeps_watch_ahead_monitored(false, false, APPROVED),
             "not a watch-ahead request"
+        );
+    }
+
+    #[test]
+    fn completed_episodes_are_not_searched_after_deletion() {
+        assert!(
+            wants_search(false, true, false, APPROVED),
+            "monitored, never downloaded"
+        );
+        assert!(
+            !wants_search(false, true, false, COMPLETED),
+            "still monitored after its file was deleted"
+        );
+        assert!(
+            !wants_search(true, false, true, COMPLETED),
+            "completed children are never searched"
+        );
+        assert!(
+            !wants_search(false, false, false, APPROVED),
+            "unmonitored and not kept"
         );
     }
 }
