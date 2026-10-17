@@ -218,8 +218,12 @@ class EpisodeRequestSync {
         continue;
       }
       const isNewFutureEpisode = additionTvdbIds.has(child.tvdbId);
+      // A completed child already had its file. Once it is gone, it was
+      // deleted on purpose (watched, cleaned up), so leave it unmonitored.
       const keepWatchAheadMonitored =
-        request.episodeSelectionType === 'watchAhead' && !episode.hasFile;
+        request.episodeSelectionType === 'watchAhead' &&
+        !episode.hasFile &&
+        child.status !== MediaRequestStatus.COMPLETED;
       if (
         (isNewFutureEpisode || keepWatchAheadMonitored) &&
         !episode.monitored
