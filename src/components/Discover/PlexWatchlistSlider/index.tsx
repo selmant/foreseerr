@@ -2,6 +2,7 @@ import Slider from '@app/components/Slider';
 import TmdbTitleCard, {
   watchlistTitleCardProps,
 } from '@app/components/TitleCard/TmdbTitleCard';
+import useSeeMorePosters from '@app/hooks/useSeeMorePosters';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
@@ -33,6 +34,11 @@ const PlexWatchlistSlider = () => {
   const titles = settings.currentSettings.hideRequested
     ? watchlistItems?.results.filter((item) => !item.hasActiveRequest)
     : watchlistItems?.results;
+  const seeMorePosters = useSeeMorePosters(
+    '/api/v1/discover/watchlist',
+    watchlistItems,
+    settings.currentSettings.hideRequested
+  );
 
   if (
     (watchlistItems &&
@@ -57,9 +63,7 @@ const PlexWatchlistSlider = () => {
         ariaLabel={intl.formatMessage(messages.plexwatchlist)}
         seeMore={{
           url: '/discover/watchlist',
-          posters: titles
-            ?.slice(-4)
-            .map((item) => item.image || item.posterPath),
+          posters: seeMorePosters,
         }}
         isLoading={!watchlistItems}
         isEmpty={!!watchlistItems && titles?.length === 0}

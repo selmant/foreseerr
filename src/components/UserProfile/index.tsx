@@ -14,6 +14,7 @@ import TmdbTitleCard, {
 } from '@app/components/TitleCard/TmdbTitleCard';
 import ProfileHeader from '@app/components/UserProfile/ProfileHeader';
 import useRouteQuery from '@app/hooks/useRouteQuery';
+import useSeeMorePosters from '@app/hooks/useSeeMorePosters';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -88,21 +89,24 @@ const UserProfile = () => {
         : null
     );
 
-  const { data: watchlistItems, error: watchlistError } =
-    useSWR<WatchlistResponse>(
-      user?.id === currentUser?.id ||
-        currentHasPermission(
-          [Permission.MANAGE_REQUESTS, Permission.WATCHLIST_VIEW],
-          {
-            type: 'or',
-          }
-        )
-        ? `/api/v1/user/${user?.id}/watchlist`
-        : null,
+  const watchlistEndpoint =
+    user?.id === currentUser?.id ||
+    currentHasPermission(
+      [Permission.MANAGE_REQUESTS, Permission.WATCHLIST_VIEW],
       {
-        revalidateOnMount: true,
+        type: 'or',
       }
-    );
+    )
+      ? `/api/v1/user/${user?.id}/watchlist`
+      : null;
+  const { data: watchlistItems, error: watchlistError } =
+    useSWR<WatchlistResponse>(watchlistEndpoint, {
+      revalidateOnMount: true,
+    });
+  const watchlistSeeMorePosters = useSeeMorePosters(
+    watchlistEndpoint,
+    watchlistItems
+  );
 
   const updateAvailableTitles = useCallback(
     (requestId: number, mediaTitle: MediaTitle) => {
@@ -377,9 +381,7 @@ const UserProfile = () => {
                   user.id === currentUser?.id
                     ? '/profile/watchlist'
                     : `/users/${user.id}/watchlist`,
-                posters: watchlistItems?.results
-                  .slice(-4)
-                  .map((item) => item.image || item.posterPath),
+                posters: watchlistSeeMorePosters,
               }}
               isLoading={!watchlistItems}
               isEmpty={!!watchlistItems && watchlistItems.results.length === 0}
