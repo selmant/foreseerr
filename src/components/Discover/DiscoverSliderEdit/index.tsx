@@ -235,6 +235,18 @@ const DiscoverSliderEdit = ({
         return slider.title || intl.formatMessage(sliderTitles.anilistlist);
       case DiscoverSliderType.MDBLIST_LIST:
         return slider.title || intl.formatMessage(sliderTitles.mdblistlist);
+      case DiscoverSliderType.SIMKL_TRENDING:
+        return intl.formatMessage(sliderTitles.simkltrending);
+      case DiscoverSliderType.SIMKL_PLAN_TO_WATCH:
+        return intl.formatMessage(sliderTitles.simklplantowatch);
+      case DiscoverSliderType.SIMKL_WATCHING:
+        return intl.formatMessage(sliderTitles.simklwatching);
+      case DiscoverSliderType.SIMKL_ON_HOLD:
+        return intl.formatMessage(sliderTitles.simklonhold);
+      case DiscoverSliderType.SIMKL_COMPLETED:
+        return intl.formatMessage(sliderTitles.simklcompleted);
+      case DiscoverSliderType.SIMKL_DROPPED:
+        return intl.formatMessage(sliderTitles.simkldropped);
       default:
         return 'Unknown Slider';
     }
