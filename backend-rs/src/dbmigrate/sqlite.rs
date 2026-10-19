@@ -1261,6 +1261,14 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "ALTER TABLE \"media_request\" ADD \"watchAheadInactiveAt\" datetime",
         ],
     },
+    Migration {
+        timestamp: 1_789_500_000_000,
+        name: "AddSimklRefreshToken1789500000000",
+        queries: &[
+            "ALTER TABLE \"user_settings\" ADD \"simklRefreshToken\" varchar",
+            "ALTER TABLE \"user_settings\" ADD \"simklTokenExpiresAt\" bigint",
+        ],
+    },
 ];
 
 /// `SeerrMigration1759769291608` from `server/lib/overseerrMerge.ts`,

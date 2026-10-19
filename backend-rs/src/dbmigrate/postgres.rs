@@ -639,4 +639,12 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "ALTER TABLE \"media_request\" ADD \"watchAheadInactiveAt\" TIMESTAMP WITH TIME ZONE",
         ],
     },
+    Migration {
+        timestamp: 1_789_500_000_000,
+        name: "AddSimklRefreshToken1789500000000",
+        queries: &[
+            "ALTER TABLE \"user_settings\" ADD \"simklRefreshToken\" character varying",
+            "ALTER TABLE \"user_settings\" ADD \"simklTokenExpiresAt\" bigint",
+        ],
+    },
 ];

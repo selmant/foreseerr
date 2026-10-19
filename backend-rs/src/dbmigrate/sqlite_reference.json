@@ -442,7 +442,7 @@
       "type": "table",
       "name": "user_settings",
       "tbl_name": "user_settings",
-      "sql": "CREATE TABLE \"user_settings\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"locale\" varchar NOT NULL DEFAULT (''), \"discoverRegion\" varchar, \"streamingRegion\" varchar, \"originalLanguage\" varchar, \"pgpKey\" varchar, \"discordIds\" text, \"pushbulletAccessToken\" varchar, \"pushoverApplicationToken\" varchar, \"pushoverUserKey\" varchar, \"pushoverSound\" varchar, \"telegramChatId\" varchar, \"telegramSendSilently\" boolean, \"watchlistSyncMovies\" boolean, \"watchlistSyncTv\" boolean, \"notificationTypes\" text, \"userId\" integer, \"telegramMessageThreadId\" varchar, \"traktAccessToken\" varchar, \"traktRefreshToken\" varchar, \"traktTokenExpiresAt\" bigint, \"traktUsername\" varchar, \"discoverFilterDefaults\" text, \"traktUserId\" varchar, \"anilistAccessToken\" varchar, \"anilistTokenExpiresAt\" bigint, \"anilistUsername\" varchar, \"anilistUserId\" varchar, \"mediaActionsTraktEnabled\" boolean, \"mediaActionsAnilistEnabled\" boolean, \"autoCompleteSkippedEpisodeEndings\" boolean, \"autoCompleteSkippedEpisodeThreshold\" integer, \"servarrInterventionsSeenAt\" datetime, \"simklAccessToken\" varchar, \"simklUsername\" varchar, \"simklUserId\" varchar, \"mediaActionsSimklEnabled\" boolean, \"watchAheadEpisodeCount\" integer, CONSTRAINT \"REL_986a2b6d3c05eb4091bb8066f7\" UNIQUE (\"userId\"), CONSTRAINT \"FK_986a2b6d3c05eb4091bb8066f78\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+      "sql": "CREATE TABLE \"user_settings\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"locale\" varchar NOT NULL DEFAULT (''), \"discoverRegion\" varchar, \"streamingRegion\" varchar, \"originalLanguage\" varchar, \"pgpKey\" varchar, \"discordIds\" text, \"pushbulletAccessToken\" varchar, \"pushoverApplicationToken\" varchar, \"pushoverUserKey\" varchar, \"pushoverSound\" varchar, \"telegramChatId\" varchar, \"telegramSendSilently\" boolean, \"watchlistSyncMovies\" boolean, \"watchlistSyncTv\" boolean, \"notificationTypes\" text, \"userId\" integer, \"telegramMessageThreadId\" varchar, \"traktAccessToken\" varchar, \"traktRefreshToken\" varchar, \"traktTokenExpiresAt\" bigint, \"traktUsername\" varchar, \"discoverFilterDefaults\" text, \"traktUserId\" varchar, \"anilistAccessToken\" varchar, \"anilistTokenExpiresAt\" bigint, \"anilistUsername\" varchar, \"anilistUserId\" varchar, \"mediaActionsTraktEnabled\" boolean, \"mediaActionsAnilistEnabled\" boolean, \"autoCompleteSkippedEpisodeEndings\" boolean, \"autoCompleteSkippedEpisodeThreshold\" integer, \"servarrInterventionsSeenAt\" datetime, \"simklAccessToken\" varchar, \"simklUsername\" varchar, \"simklUserId\" varchar, \"mediaActionsSimklEnabled\" boolean, \"watchAheadEpisodeCount\" integer, \"simklRefreshToken\" varchar, \"simklTokenExpiresAt\" bigint, CONSTRAINT \"REL_986a2b6d3c05eb4091bb8066f7\" UNIQUE (\"userId\"), CONSTRAINT \"FK_986a2b6d3c05eb4091bb8066f78\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
     },
     {
       "type": "table",
@@ -871,6 +871,11 @@
       "id": 84,
       "timestamp": 1789400000000,
       "name": "AddWatchAheadMonitorTracking1789400000000"
+    },
+    {
+      "id": 85,
+      "timestamp": 1789500000000,
+      "name": "AddSimklRefreshToken1789500000000"
     }
   ]
 }

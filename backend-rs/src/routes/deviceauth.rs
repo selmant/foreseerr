@@ -56,7 +56,6 @@ macro_rules! try_outcome {
 }
 
 const TRAKT_BASE_URL: &str = "https://api.trakt.tv";
-const SIMKL_BASE_URL: &str = "https://api.simkl.com";
 /// The user agent of Trakt's bare `axios.create()` client.
 const AXIOS_USER_AGENT: &str = "axios/1.18.0";
 const TRAKT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -105,9 +104,20 @@ struct TraktThrottle {
     poll_buckets: HashMap<String, Bucket>,
 }
 
+/// AUTH V2 device flow, or the V1 PIN flow for apps registered before V2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PinFlow {
+    Device,
+    Pin,
+}
+
 /// `simklPinSessions`' entries.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct PinSession {
+    flow: PinFlow,
+    /// V2's secret `device_code`, or V1's user code; never sent to the
+    /// browser.
+    poll_code: String,
     expires_at: f64,
     interval_seconds: f64,
     last_poll_at: f64,
@@ -755,196 +765,223 @@ fn trakt_token<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 // Simkl
 // ---------------------------------------------------------------------------
 
-/// A `SimklAPI` instance: client id, optional token, timeout.
-#[derive(Debug, Clone)]
-struct SimklClient {
-    client_id: String,
-    access_token: Option<String>,
-    version: String,
-    timeout: Option<Duration>,
+/// `new SimklAPI()`: `None` for `SimklNotConfiguredError`.
+fn simkl_config(ctx: &Ready<'_>) -> Result<Option<crate::simklapi::Config>, Box<Outcome>> {
+    let client_id = match ctx.settings.get("/simkl/clientId") {
+        Some(Value::String(s)) => crate::jsval::trim(s).to_owned(),
+        _ => return Err(Box::new(forward("a simkl.clientId that isn't a string"))),
+    };
+    if client_id.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(crate::simklapi::Config::new(
+        &ctx.state.outbound,
+        &client_id,
+        &ctx.state.version.version,
+        crate::simklapi::timeout_of(&ctx.settings),
+    )))
 }
 
-impl SimklClient {
-    /// `new SimklAPI({ accessToken })`, or `None` for
-    /// `SimklNotConfiguredError`.
-    fn new(ctx: &Ready<'_>, access_token: Option<String>) -> Result<Option<Self>, Box<Outcome>> {
-        let client_id = match ctx.settings.get("/simkl/clientId") {
-            Some(Value::String(s)) => crate::jsval::trim(s).to_owned(),
-            _ => return Err(Box::new(forward("a simkl.clientId that isn't a string"))),
-        };
-        if client_id.is_empty() {
-            return Ok(None);
-        }
-        let timeout = ctx
-            .settings
-            .get("/network/apiRequestTimeout")
-            .and_then(Value::as_u64)
-            .filter(|ms| *ms > 0)
-            .map(Duration::from_millis);
-        Ok(Some(Self {
-            client_id,
-            access_token,
-            version: ctx.state.version.version.clone(),
-            timeout,
-        }))
-    }
+/// A code to show the user, from either flow.
+struct StartedPin {
+    flow: PinFlow,
+    poll_code: Option<String>,
+    user_code: Option<Value>,
+    verification_uri: Value,
+    expires_in: Value,
+    interval: Value,
+}
 
-    /// `request(method, path, body)`: the required parameters appended,
-    /// one retry for a GET that got no answer or a 5xx. `Err` carries the
-    /// thrown error's message.
-    async fn request(&self, ctx: &Ready<'_>, post: bool, path: &str) -> Result<Value, String> {
-        let separator = if path.contains('?') { '&' } else { '?' };
-        let url = format!(
-            "{SIMKL_BASE_URL}{path}{separator}client_id={}&app-name=foreseerr&app-version={}",
-            crate::jsval::form_encode(&self.client_id),
-            crate::jsval::form_encode(&self.version)
-        );
-        let mut attempt = 0;
-        loop {
-            let method = if post { Method::POST } else { Method::GET };
-            let mut req = ctx
-                .state
-                .outbound
-                .request(method, &url)
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json")
-                .header("simkl-api-key", &self.client_id)
-                .header("app-name", "foreseerr")
-                .header("app-version", &self.version)
-                .header(
-                    "User-Agent",
-                    format!("Foreseerr/{} (Simkl integration)", self.version),
-                );
-            if let Some(token) = &self.access_token {
-                req = req.header("Authorization", format!("Bearer {token}"));
-            }
-            if post {
-                req = req.body("{}");
-            }
-            if let Some(timeout) = self.timeout {
-                req = req.timeout(timeout);
-            }
-            let status = match req.send().await {
-                Ok(res) if res.status().is_success() => match res.bytes().await {
-                    Ok(bytes) => return Ok(axios_data(&bytes)),
-                    Err(_) => None,
-                },
-                Ok(res) => {
-                    let status = res.status().as_u16();
-                    if status == 429 {
-                        let header = res
-                            .headers()
-                            .get("retry-after")
-                            .and_then(|v| v.to_str().ok())
-                            .map_or(f64::NAN, crate::jsval::number_of_str);
-                        let seconds = if header.is_nan() || header == 0.0 {
-                            1.0
-                        } else {
-                            header
-                        };
-                        return Err(format!(
-                            "Simkl API rate limited; retry after {}s",
-                            jsnum::to_string(js_max(1.0, seconds))
-                        ));
-                    }
-                    Some(status)
-                }
-                Err(_) => None,
-            };
-            if status == Some(401) {
-                return Err(String::from(
-                    "Simkl authorization was rejected; reconnect the linked account",
-                ));
-            }
-            let unavailable = status.is_none_or(|s| s >= 500);
-            if !post && attempt == 0 && unavailable {
-                attempt += 1;
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                continue;
-            }
-            return Err(match status {
-                Some(s) if s < 500 => format!("Request failed with status code {s}"),
-                Some(_) | None => String::from("Simkl is temporarily unavailable"),
-            });
+/// `value ?? fallback`.
+fn or_default(value: Option<&Value>, fallback: Value) -> Value {
+    value.filter(|v| !v.is_null()).cloned().unwrap_or(fallback)
+}
+
+/// The device flow, falling back to the V1 PIN flow when Simkl answers
+/// `invalid_client` (Simkl retires AUTH V1 around April 2027; until then
+/// apps registered before V2 keep linking through it).
+async fn start_pin(
+    config: &crate::simklapi::Config,
+) -> Result<Option<StartedPin>, crate::simklapi::Failure> {
+    let client = config.anonymous();
+    match client.request_device_code().await {
+        Ok(device) => {
+            let device = Some(&device);
+            let user_code = prop(device, "user_code").filter(|v| !v.is_null()).cloned();
+            let poll_code = prop(device, "device_code")
+                .filter(|v| truthy(Some(v)))
+                .map(|v| jsnum::value_string(Some(v)));
+            // The complete URI pre-fills the code; the user still has to
+            // approve.
+            let verification_uri = or_default(
+                nullish_or(
+                    prop(device, "verification_uri_complete"),
+                    prop(device, "verification_uri"),
+                ),
+                Value::from("https://simkl.com/pin"),
+            );
+            Ok(Some(StartedPin {
+                flow: PinFlow::Device,
+                poll_code,
+                user_code,
+                verification_uri,
+                expires_in: or_default(prop(device, "expires_in"), Value::from(900)),
+                interval: or_default(prop(device, "interval"), Value::from(5)),
+            }))
         }
+        Err(e) if crate::simklapi::is_v1_client_error(&e) => {
+            let pin = client.request_pin_code().await?;
+            if pin.is_null() {
+                return Ok(None);
+            }
+            let pin = Some(&pin);
+            let user_code = nullish_or(prop(pin, "user_code"), prop(pin, "code"))
+                .filter(|v| !v.is_null())
+                .cloned();
+            Ok(Some(StartedPin {
+                flow: PinFlow::Pin,
+                poll_code: user_code
+                    .as_ref()
+                    .filter(|v| truthy(Some(v)))
+                    .map(|v| jsnum::value_string(Some(v))),
+                user_code,
+                verification_uri: or_default(
+                    prop(pin, "url"),
+                    Value::from("https://simkl.com/pin/"),
+                ),
+                expires_in: or_default(
+                    nullish_or(prop(pin, "expires_in"), prop(pin, "expires")),
+                    Value::from(600),
+                ),
+                interval: or_default(prop(pin, "interval"), Value::from(5)),
+            }))
+        }
+        Err(e) => Err(e),
     }
+}
+
+/// `randomUUID()` for the browser's opaque session id.
+fn session_id() -> String {
+    let n: u128 = rand::random();
+    let hex = format!("{n:032x}");
+    let mut out = String::with_capacity(36);
+    for (i, c) in hex.chars().enumerate() {
+        if matches!(i, 8 | 12 | 16 | 20) {
+            out.push('-');
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn simkl_code<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         try_outcome!(standalone_only());
         let (_, param) = try_outcome!(guard(ctx, Guard::Own));
-        let Some(simkl) = try_outcome!(SimklClient::new(ctx, None)) else {
+        let Some(config) = try_outcome!(simkl_config(ctx)) else {
             return message(ctx, 400, SIMKL_NOT_CONFIGURED);
         };
-        let pin = match simkl.request(ctx, false, "/oauth/pin").await {
-            Ok(pin) => pin,
-            Err(e) => return message(ctx, 500, &e),
+        let started = match start_pin(&config).await {
+            Ok(Some(started)) => started,
+            Ok(None) => {
+                return Outcome::forward(String::from(
+                    "Simkl answered the PIN request with nothing",
+                ))
+            }
+            Err(e) => {
+                tracing::error!("Failed to start Simkl PIN authorization: {}", e.message());
+                return message(ctx, 500, &e.message());
+            }
         };
-        if pin.is_null() {
-            return Outcome::forward(String::from("Simkl answered the PIN request with nothing"));
-        }
-        let pin = Some(&pin);
-        let user_code = nullish_or(prop(pin, "user_code"), prop(pin, "code"));
-        if !truthy(user_code) {
+        let (Some(user_code), Some(poll_code)) = (
+            started.user_code.filter(|v| truthy(Some(v))),
+            started.poll_code,
+        ) else {
             return message(ctx, 502, "Simkl returned an invalid PIN response.");
-        }
-        let expires = nullish_or(prop(pin, "expires_in"), prop(pin, "expires"));
-        let expires_value = expires
-            .filter(|v| !v.is_null())
-            .cloned()
-            .unwrap_or_else(|| Value::from(600));
-        let interval_value = prop(pin, "interval")
-            .filter(|v| !v.is_null())
-            .cloned()
-            .unwrap_or_else(|| Value::from(5));
+        };
+        let session_id = session_id();
         let now = jsnum::now();
-        lock(&SIMKL_PINS).insert(
-            session_key(param.number, &jsnum::value_string(user_code)),
-            PinSession {
-                expires_at: now + js_max(1.0, jsnum::value_number(Some(&expires_value))) * 1000.0,
-                interval_seconds: js_max(1.0, jsnum::value_number(Some(&interval_value))),
-                last_poll_at: 0.0,
-            },
-        );
-        let url = prop(pin, "url")
-            .filter(|v| !v.is_null())
-            .cloned()
-            .unwrap_or_else(|| Value::from("https://simkl.com/pin/"));
-        let user_code = user_code.cloned().unwrap_or(Value::Null);
+        {
+            let mut pins = lock(&SIMKL_PINS);
+            pins.retain(|_, session| session.expires_at > now);
+            pins.insert(
+                session_key(param.number, &session_id),
+                PinSession {
+                    flow: started.flow,
+                    poll_code,
+                    expires_at: now
+                        + js_max(1.0, jsnum::value_number(Some(&started.expires_in))) * 1000.0,
+                    interval_seconds: js_max(1.0, jsnum::value_number(Some(&started.interval))),
+                    last_poll_at: 0.0,
+                },
+            );
+        }
         let mut out = Map::new();
-        out.insert(String::from("userCode"), user_code.clone());
-        out.insert(String::from("verificationUri"), url);
-        out.insert(String::from("expiresIn"), expires_value);
-        out.insert(String::from("interval"), interval_value);
-        out.insert(String::from("deviceCode"), user_code);
+        out.insert(String::from("userCode"), user_code);
+        out.insert(String::from("verificationUri"), started.verification_uri);
+        out.insert(String::from("expiresIn"), started.expires_in);
+        out.insert(String::from("interval"), started.interval);
+        // Opaque value only consumed by the server on the token endpoint.
+        out.insert(String::from("deviceCode"), Value::from(session_id));
         ctx.json(&crate::tmdb::js_numbers(Value::Object(out)))
     })
 }
 
-/// The token poll after the session checks; `Err` is the route's catch
-/// (`message`, with whether it is `SimklNotConfiguredError`).
-async fn poll_simkl(
+/// The token poll's answer before the account lookup: tokens, or the
+/// route's reply.
+async fn poll_tokens(
     ctx: &Ready<'_>,
     id: i64,
     key: &str,
-    device_code: &str,
-) -> Result<Outcome, (String, bool)> {
-    let simkl = SimklClient::new(ctx, None)
-        .map_err(|_| (String::from("a simkl.clientId that isn't a string"), false))?
-        .ok_or_else(|| (String::from(SIMKL_NOT_CONFIGURED), true))?;
-    let path = format!(
-        "/oauth/pin/{}",
-        crate::ratings::encode_uri_component(device_code)
-    );
-    let result = simkl
-        .request(ctx, false, &path)
-        .await
-        .map_err(|e| (e, false))?;
+    session: &PinSession,
+    config: &crate::simklapi::Config,
+) -> Result<Result<Value, Outcome>, crate::simklapi::Failure> {
+    let client = config.anonymous();
+    if session.flow == PinFlow::Device {
+        let tokens = match client.poll_device_token(&session.poll_code).await {
+            Ok(tokens) => tokens,
+            // V2 has no deny signal: a declined request stays pending until
+            // the session runs out.
+            Err(e) => {
+                return match e.oauth_code() {
+                    Some("authorization_pending") => {
+                        Ok(Err(ctx.json_with(202, &json!({ "status": "pending" }))))
+                    }
+                    Some("slow_down") => {
+                        let interval = lock(&SIMKL_PINS).get_mut(key).map_or(
+                            session.interval_seconds + 5.0,
+                            |entry| {
+                                entry.interval_seconds += 5.0;
+                                entry.interval_seconds
+                            },
+                        );
+                        Ok(Err(ctx.json_with(
+                            429,
+                            &json!({ "status": "pending", "retryAfterSeconds": jsnum::json(interval) }),
+                        )))
+                    }
+                    Some("expired_token" | "invalid_grant") => {
+                        lock(&SIMKL_PINS).remove(key);
+                        Ok(Err(ctx.json_with(410, &json!({ "status": "expired" }))))
+                    }
+                    _ => Err(e),
+                };
+            }
+        };
+        let scope = tokens.get("scope").and_then(Value::as_str);
+        if !scope.is_some_and(|s| s.split(' ').any(|part| part == "media:write")) {
+            tracing::warn!(
+                "Simkl granted read-only access; Simkl actions will fail (user {id}, scope {})",
+                scope.unwrap_or("null")
+            );
+        }
+        return Ok(Ok(tokens));
+    }
+    let result = client.poll_pin_token(&session.poll_code).await?;
     if result.is_null() {
-        return Ok(Outcome::forward(String::from(
+        return Ok(Err(Outcome::forward(String::from(
             "Simkl answered the token request with nothing",
-        )));
+        ))));
     }
     let result = Some(&result);
     let access = nullish_or(prop(result, "access_token"), prop(result, "token"));
@@ -957,18 +994,46 @@ async fn poll_simkl(
         };
         if let Some((status, text)) = answer {
             lock(&SIMKL_PINS).remove(key);
-            return Ok(ctx.json_with(status, &json!({ "status": text })));
+            return Ok(Err(ctx.json_with(status, &json!({ "status": text }))));
         }
-        return Ok(ctx.json_with(202, &json!({ "status": "pending" })));
+        return Ok(Err(ctx.json_with(202, &json!({ "status": "pending" }))));
     }
-    let access = access.cloned().unwrap_or(Value::Null);
-    let client = SimklClient::new(ctx, Some(jsnum::value_string(Some(&access))))
+    Ok(Ok(
+        json!({ "access_token": access.cloned().unwrap_or(Value::Null) }),
+    ))
+}
+
+/// The token poll after the session checks; `Err` is the route's catch
+/// (`message`, with whether it is `SimklNotConfiguredError`).
+async fn poll_simkl(
+    ctx: &Ready<'_>,
+    id: i64,
+    key: &str,
+    session: &PinSession,
+) -> Result<Outcome, (String, bool)> {
+    let config = simkl_config(ctx)
         .map_err(|_| (String::from("a simkl.clientId that isn't a string"), false))?
         .ok_or_else(|| (String::from(SIMKL_NOT_CONFIGURED), true))?;
-    let profile = client
-        .request(ctx, true, "/users/settings")
+    let failure = |e: crate::simklapi::Failure| (e.message(), false);
+    let tokens = match poll_tokens(ctx, id, key, session, &config)
         .await
-        .map_err(|e| (e, false))?;
+        .map_err(failure)?
+    {
+        Ok(tokens) => tokens,
+        Err(outcome) => return Ok(outcome),
+    };
+    let (access, refresh, expires_at) = crate::simklapi::token_columns(&tokens);
+    let Some(access_text) = access.as_str().filter(|t| !t.is_empty()).map(str::to_owned) else {
+        return Err((
+            String::from("Simkl answered the token request without an access token"),
+            false,
+        ));
+    };
+    let profile = config
+        .with_token(&access_text)
+        .user_settings()
+        .await
+        .map_err(failure)?;
     if profile.is_null() {
         return Ok(Outcome::forward(String::from(
             "Simkl answered the settings request with nothing",
@@ -1011,6 +1076,8 @@ async fn poll_simkl(
     let username = nullish_or(prop(user, "username"), prop(user, "name")).filter(|v| !v.is_null());
     let mut changes = Changes::default();
     changes.set("simklAccessToken", crate::tmdb::js_numbers(access));
+    changes.set("simklRefreshToken", refresh);
+    changes.set("simklTokenExpiresAt", expires_at);
     changes.set("simklUserId", Value::from(simkl_user_id));
     let username = match username {
         Some(name) => {
@@ -1043,7 +1110,7 @@ fn simkl_token<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let body = try_outcome!(validated_body(ctx));
         let device_code = body_device_code(body);
         let key = session_key(param.number, &device_code);
-        let session = lock(&SIMKL_PINS).get(&key).copied();
+        let session = lock(&SIMKL_PINS).get(&key).cloned();
         let Some(session) = session.filter(|_| !device_code.is_empty()) else {
             return message(ctx, 400, "Invalid or missing PIN session.");
         };
@@ -1064,9 +1131,10 @@ fn simkl_token<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if let Some(entry) = lock(&SIMKL_PINS).get_mut(&key) {
             entry.last_poll_at = jsnum::now();
         }
-        match poll_simkl(ctx, viewer.id, &key, &device_code).await {
+        match poll_simkl(ctx, viewer.id, &key, &session).await {
             Ok(outcome) => outcome,
             Err((text, not_configured)) => {
+                tracing::error!("Failed to complete Simkl PIN authorization: {text}");
                 message(ctx, if not_configured { 400 } else { 500 }, &text)
             }
         }

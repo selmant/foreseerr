@@ -9,7 +9,6 @@
 //! helpers here have none, so the same statements run one after another.
 
 use std::sync::LazyLock;
-use std::time::Duration;
 
 use serde_json::{Map, Value};
 
@@ -24,12 +23,9 @@ use crate::state::AppState;
 
 /// `AUTO_SYNC_MIN_INTERVAL_MS`.
 const MIN_INTERVAL_MS: i64 = 15 * 60 * 1000;
-const BASE_URL: &str = "https://api.simkl.com";
 /// `TYPES`: upstream bucket and local type.
 const TYPES: [(&str, &str); 3] = [("shows", "show"), ("movies", "movie"), ("anime", "anime")];
 const STATUSES: [&str; 5] = ["watching", "plantowatch", "hold", "completed", "dropped"];
-/// Simkl's pacing between GETs.
-const GET_INTERVAL: Duration = Duration::from_millis(100);
 
 /// `syncLock`.
 static LOCKS: LazyLock<KeyLock> = LazyLock::new(KeyLock::default);
@@ -183,7 +179,7 @@ async fn attempt(
     previous: Option<&Previous>,
 ) -> Result<Value, String> {
     let client = user_client(state, user_id).await?;
-    let activities = client.get(state, "/sync/activities").await?;
+    let activities = get(&client, "/sync/activities").await?;
     let snapshot = super::js_stringify(&activities);
     let next_watermark = watermark(&activities);
     let old_activities = match previous.and_then(|p| p.activities.as_deref()) {
@@ -222,13 +218,11 @@ async fn attempt(
                 "/sync/all-items?date_from={}",
                 crate::jsval::form_encode(from)
             );
-            batches.push((None, client.get(state, &path).await?));
+            batches.push((None, get(&client, &path).await?));
         }
         _ => {
             for (upstream, local) in TYPES {
-                let data = client
-                    .get(state, &format!("/sync/all-items/{upstream}"))
-                    .await?;
+                let data = get(&client, &format!("/sync/all-items/{upstream}")).await?;
                 batches.push((Some(local), data));
             }
         }
@@ -244,7 +238,7 @@ async fn attempt(
         let mut ids = std::collections::HashSet::new();
         for (upstream, local) in TYPES {
             let path = format!("/sync/all-items/{upstream}?extended=simkl_ids_only");
-            let data = client.get(state, &path).await?;
+            let data = get(&client, &path).await?;
             for (item, kind) in sync_entries(&data, Some(local)) {
                 let item_ids = item
                     .get("ids")
@@ -282,191 +276,33 @@ async fn attempt(
 }
 
 /// `createSimklUserClient(userId)`.
-async fn user_client(state: &AppState, user_id: Option<i64>) -> Result<SimklUser, String> {
+async fn user_client(
+    state: &AppState,
+    user_id: Option<i64>,
+) -> Result<crate::simklapi::Client, String> {
     let settings = super::settings(state).await.map_err(|e| format!("{e:#}"))?;
     let Some(client_id) = settings.get("/simkl/clientId").and_then(Value::as_str) else {
         return Err(String::from("simkl.clientId is not text"));
     };
     let client_id = crate::jsval::trim(client_id).to_owned();
     if client_id.is_empty() {
-        return Err(String::from(
-            "Simkl application Client ID is not configured",
-        ));
+        return Err(String::from(crate::simklapi::NOT_CONFIGURED));
     }
-    let row = match user_id {
-        Some(id) => state
-            .db
-            .rows(
-                r#"SELECT CAST("id" AS BIGINT) AS "id", "simklAccessToken" FROM "user_settings"
-                   WHERE "userId" = ?1 LIMIT 1"#,
-                &[Bind::Int(id)],
-            )
-            .await
-            .map_err(|e| format!("{e:#}"))?
-            .into_iter()
-            .next(),
-        None => None,
+    let Some(user_id) = user_id else {
+        return Err(String::from(crate::simklapi::NOT_LINKED));
     };
-    let token = row
-        .as_ref()
-        .and_then(|r| r.get("simklAccessToken"))
-        .and_then(Value::as_str)
-        .filter(|t| !t.is_empty());
-    let (Some(row), Some(token), Some(user_id)) = (row.as_ref(), token, user_id) else {
-        return Err(String::from("User has not linked a Simkl account"));
-    };
-    let timeout = settings
-        .get("/network/apiRequestTimeout")
-        .and_then(Value::as_u64)
-        .filter(|ms| *ms > 0)
-        .map(Duration::from_millis);
-    Ok(SimklUser {
-        http: state.outbound.clone(),
-        client_id,
-        token: token.to_owned(),
-        version: state.version.version.clone(),
-        timeout,
-        settings_id: row.get("id").and_then(Value::as_i64).unwrap_or(0),
-        user_id,
-        unauthorized_handled: std::sync::atomic::AtomicBool::new(false),
-        next_at: tokio::sync::Mutex::new(None),
-    })
+    let config = crate::simklapi::Config::new(
+        &state.outbound,
+        &client_id,
+        &state.version.version,
+        crate::simklapi::timeout_of(&settings),
+    );
+    crate::simklapi::user_client(&state.db, &config, user_id).await
 }
 
-/// `new SimklAPI({ accessToken, onUnauthorized })` for the GETs a sync
-/// makes.
-#[derive(Debug)]
-struct SimklUser {
-    http: reqwest::Client,
-    client_id: String,
-    token: String,
-    version: String,
-    timeout: Option<Duration>,
-    settings_id: i64,
-    user_id: i64,
-    unauthorized_handled: std::sync::atomic::AtomicBool,
-    next_at: tokio::sync::Mutex<Option<tokio::time::Instant>>,
-}
-
-impl SimklUser {
-    /// `pace()`: GETs at least 100 ms apart.
-    async fn pace(&self) {
-        let mut next = self.next_at.lock().await;
-        if let Some(at) = *next {
-            tokio::time::sleep_until(at).await;
-        }
-        *next = Some(tokio::time::Instant::now() + GET_INTERVAL);
-    }
-
-    /// `request('get', path)`, with one retry after a network or 5xx
-    /// failure.
-    async fn get(&self, state: &AppState, path: &str) -> Result<Value, String> {
-        self.pace().await;
-        let separator = if path.contains('?') { '&' } else { '?' };
-        let url = format!(
-            "{BASE_URL}{path}{separator}client_id={}&app-name=foreseerr&app-version={}",
-            crate::jsval::form_encode(&self.client_id),
-            crate::jsval::form_encode(&self.version)
-        );
-        let mut first = true;
-        loop {
-            let mut req = self
-                .http
-                .get(&url)
-                .header(reqwest::header::ACCEPT, "application/json")
-                .header(reqwest::header::CONTENT_TYPE, "application/json")
-                .header("simkl-api-key", &self.client_id)
-                .header("app-name", "foreseerr")
-                .header("app-version", &self.version)
-                .header(
-                    reqwest::header::USER_AGENT,
-                    format!("Foreseerr/{} (Simkl integration)", self.version),
-                )
-                .header(
-                    reqwest::header::AUTHORIZATION,
-                    format!("Bearer {}", self.token),
-                );
-            if let Some(timeout) = self.timeout {
-                req = req.timeout(timeout);
-            }
-            let status = match req.send().await {
-                Ok(res) if res.status().is_success() => {
-                    let text = res.text().await.unwrap_or_default();
-                    return Ok(serde_json::from_str::<Value>(&text)
-                        .map_or(Value::String(text), crate::tmdb::js_numbers));
-                }
-                Ok(res) => {
-                    let status = res.status().as_u16();
-                    if status == 429 {
-                        let after = res
-                            .headers()
-                            .get("retry-after")
-                            .and_then(|v| v.to_str().ok())
-                            .map_or(f64::NAN, crate::jsval::number_of_str);
-                        let after = if after.is_nan() || after == 0.0 {
-                            1.0
-                        } else {
-                            after
-                        };
-                        return Err(format!(
-                            "Simkl API rate limited; retry after {}s",
-                            crate::jsnum::to_string(after.max(1.0))
-                        ));
-                    }
-                    Some(status)
-                }
-                Err(_) => None,
-            };
-            if status == Some(401) {
-                self.unauthorized(state).await;
-                return Err(String::from(
-                    "Simkl authorization was rejected; reconnect the linked account",
-                ));
-            }
-            let temporary = status.is_none_or(|s| s >= 500);
-            if first && temporary {
-                first = false;
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                continue;
-            }
-            return Err(match status {
-                Some(s) if !temporary => format!("Request failed with status code {s}"),
-                _ => String::from("Simkl is temporarily unavailable"),
-            });
-        }
-    }
-
-    /// `onUnauthorized`, once: drop the link and the user's synced rows.
-    async fn unauthorized(&self, state: &AppState) {
-        if self
-            .unauthorized_handled
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
-            return;
-        }
-        let db = &state.db;
-        let cleared = async {
-            db.execute(
-                r#"UPDATE "user_settings" SET "simklAccessToken" = NULL, "simklUsername" = NULL,
-                   "simklUserId" = NULL WHERE "id" = ?1"#,
-                &[Bind::Int(self.settings_id)],
-            )
-            .await?;
-            db.execute(
-                r#"DELETE FROM "simkl_sync_item" WHERE "userId" = ?1"#,
-                &[Bind::Int(self.user_id)],
-            )
-            .await?;
-            db.execute(
-                r#"DELETE FROM "simkl_sync_state" WHERE "userId" = ?1"#,
-                &[Bind::Int(self.user_id)],
-            )
-            .await
-        };
-        if let Err(e) = cleared.await {
-            tracing::error!("clearing the rejected Simkl link failed: {e:#}");
-        }
-    }
+/// `request('get', path)` as the sync's error text.
+async fn get(client: &crate::simklapi::Client, path: &str) -> Result<Value, String> {
+    client.request(path, None).await.map_err(|e| e.message())
 }
 
 /// `scalar(activities.all)`.

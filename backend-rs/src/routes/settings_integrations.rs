@@ -7,7 +7,6 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
 
 use axum::http::Method;
 use serde_json::{json, Map, Value};
@@ -294,78 +293,17 @@ fn trakt<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// `SimklAPI.validateClientId()`: a CDN catalogue only a real client id
-/// may read.
-async fn simkl_valid(ctx: &Ready<'_>, client_id: &str) -> bool {
-    let version = &ctx.state.version.version;
-    let query = [
-        ("client_id", client_id),
-        ("app-name", "foreseerr"),
-        ("app-version", version.as_str()),
-    ];
-    let query: Vec<String> = query
-        .iter()
-        .map(|(k, v)| format!("{k}={}", url_search_param(v)))
-        .collect();
-    let url = format!(
-        "https://data.simkl.in/discover/trending/tv/week_100.json?{}",
-        query.join("&")
-    );
-    let mut request = ctx
-        .state
-        .outbound
-        .get(url)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .header("simkl-api-key", client_id)
-        .header("app-name", "foreseerr")
-        .header("app-version", version.as_str())
-        .header(
-            reqwest::header::USER_AGENT,
-            format!("Foreseerr/{version} (Simkl integration)"),
-        );
-    if let Some(ms) = ctx
-        .settings
-        .get("/network/apiRequestTimeout")
-        .and_then(Value::as_u64)
-        .filter(|ms| *ms > 0)
-    {
-        request = request.timeout(Duration::from_millis(ms));
-    }
-    match request
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-    {
-        Ok(_) => true,
-        Err(e) => {
-            tracing::error!("Unable to save Simkl settings: {e:#}");
-            false
-        }
-    }
-}
-
-/// `URLSearchParams` value encoding (`application/x-www-form-urlencoded`).
-fn url_search_param(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'*' | b'-' | b'.' | b'_' => {
-                out.push(char::from(byte));
-            }
-            b' ' => out.push('+'),
-            other => {
-                out.push('%');
-                out.push(hex(other >> 4));
-                out.push(hex(other & 0xf));
-            }
-        }
-    }
-    out
-}
-
-/// An upper-case hex digit.
-fn hex(nibble: u8) -> char {
-    char::from_digit(u32::from(nibble), 16).map_or('0', |c| c.to_ascii_uppercase())
+/// `new SimklAPI({ clientId }).validateClientId()`.
+async fn simkl_valid(ctx: &Ready<'_>, client_id: &str) -> Result<(), crate::simklapi::Failure> {
+    crate::simklapi::Config::new(
+        &ctx.state.outbound,
+        client_id,
+        &ctx.state.version.version,
+        crate::simklapi::timeout_of(&ctx.settings),
+    )
+    .anonymous()
+    .validate_client_id()
+    .await
 }
 
 /// `POST /settings/simkl`.
@@ -397,8 +335,14 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 "linkedAccountCount": count,
             }));
         }
-        if !client_id.is_empty() && !simkl_valid(ctx, &client_id).await {
-            return ctx.error(500, "Unable to save Simkl settings.");
+        if !client_id.is_empty() {
+            if let Err(e) = simkl_valid(ctx, &client_id).await {
+                tracing::error!("Unable to save Simkl settings: {}", e.message());
+                if e.is_request_error() {
+                    return ctx.error(400, &e.message());
+                }
+                return ctx.error(500, "Unable to save Simkl settings.");
+            }
         }
         let show = not_false(body, "showCommunityRating");
         let poster = is_true(body, "posterCommunityRating");
@@ -721,10 +665,5 @@ mod tests {
             Some(&json!(false)),
             "kept"
         );
-    }
-
-    #[test]
-    fn encodes_search_params() {
-        assert_eq!(url_search_param("a b/c~"), "a+b%2Fc%7E", "form encoding");
     }
 }

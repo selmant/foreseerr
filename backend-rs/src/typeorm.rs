@@ -70,13 +70,15 @@ pub const USER_HIDDEN_COLUMNS: [&str; 5] = [
 ];
 
 /// The same for `user_settings`.
-pub const SETTINGS_HIDDEN_COLUMNS: [&str; 6] = [
+pub const SETTINGS_HIDDEN_COLUMNS: [&str; 8] = [
     "traktAccessToken",
     "traktRefreshToken",
     "traktTokenExpiresAt",
     "anilistAccessToken",
     "anilistTokenExpiresAt",
     "simklAccessToken",
+    "simklRefreshToken",
+    "simklTokenExpiresAt",
 ];
 
 /// JavaScript `===` between two JSON scalars. Objects and arrays are never

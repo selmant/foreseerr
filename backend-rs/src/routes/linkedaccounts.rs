@@ -335,10 +335,21 @@ fn simkl_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         try_forward!(ctx.no_query());
         let id = try_forward!(linked_id(ctx));
         try_forward!(own_or_admin(ctx, id));
+        match crate::simklapi::stored_refresh_token(&ctx.state.db, id).await {
+            Ok(Some(refresh_token)) => revoke_simkl(ctx, &refresh_token).await,
+            Ok(None) => {}
+            Err(e) => return ctx.error(500, &format!("{e:#}")),
+        }
         let cleared = match clear_settings(
             ctx,
             id,
-            &["simklAccessToken", "simklUsername", "simklUserId"],
+            &[
+                "simklAccessToken",
+                "simklRefreshToken",
+                "simklTokenExpiresAt",
+                "simklUsername",
+                "simklUserId",
+            ],
         )
         .await
         {
@@ -355,6 +366,33 @@ fn simkl_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         Ready::no_content()
     })
+}
+
+/// Ends a V2 grant on Simkl's side too, best-effort; V1 tokens cannot be
+/// revoked.
+async fn revoke_simkl(ctx: &Ready<'_>, refresh_token: &str) {
+    let client_id = ctx
+        .settings
+        .get("/simkl/clientId")
+        .and_then(Value::as_str)
+        .map_or("", crate::jsval::trim);
+    let revoked = if client_id.is_empty() {
+        Err(String::from(crate::simklapi::NOT_CONFIGURED))
+    } else {
+        crate::simklapi::Config::new(
+            &ctx.state.outbound,
+            client_id,
+            &ctx.state.version.version,
+            crate::simklapi::timeout_of(&ctx.settings),
+        )
+        .anonymous()
+        .revoke_token(refresh_token)
+        .await
+        .map_err(|e| e.message())
+    };
+    if let Err(e) = revoked {
+        tracing::warn!("Failed to revoke Simkl token on unlink: {e}");
+    }
 }
 
 /// The media server unlink checks shared by Plex and Jellyfin: the user

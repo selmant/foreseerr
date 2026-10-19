@@ -477,19 +477,21 @@ async fn check_simkl(state: &AppState, settings: &Settings) -> Result<Map<String
     if crate::jsval::trim(client_id).is_empty() {
         return Ok(not_configured("Simkl Client ID is not configured."));
     }
-    let Some(simkl) = crate::simkl::Simkl::new(&state.outbound, settings, &state.version.version)
-    else {
-        return Ok(not_configured("Simkl Client ID is not configured."));
-    };
-    Ok(
-        match simkl
-            .cdn_catalog("/discover/trending/tv/week_100.json")
-            .await
-        {
-            Ok(_) => healthy("Simkl is reachable and the Client ID was accepted."),
-            Err(_) => degraded("Simkl could not accept the saved Client ID."),
-        },
+    let client_id = crate::jsval::trim(client_id);
+    let client = crate::simklapi::Config::new(
+        &state.outbound,
+        client_id,
+        &state.version.version,
+        crate::simklapi::timeout_of(settings),
     )
+    .anonymous();
+    Ok(match client.validate_client_id().await {
+        Ok(()) => healthy("Simkl is reachable and the Client ID was accepted."),
+        Err(e) => {
+            tracing::warn!("Simkl health check failed: {}", e.message());
+            degraded("Simkl could not accept the saved Client ID.")
+        }
+    })
 }
 
 #[cfg(test)]

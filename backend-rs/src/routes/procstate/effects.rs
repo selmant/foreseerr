@@ -164,8 +164,9 @@ pub async fn disconnect_simkl(state: &AppState) -> anyhow::Result<i64> {
     state
         .db
         .execute(
-            r#"UPDATE "user_settings" SET "simklAccessToken" = NULL, "simklUsername" = NULL,
-               "simklUserId" = NULL WHERE "simklUserId" IS NOT NULL"#,
+            r#"UPDATE "user_settings" SET "simklAccessToken" = NULL, "simklRefreshToken" = NULL,
+               "simklTokenExpiresAt" = NULL, "simklUsername" = NULL, "simklUserId" = NULL
+               WHERE "simklUserId" IS NOT NULL"#,
             &[],
         )
         .await?;
