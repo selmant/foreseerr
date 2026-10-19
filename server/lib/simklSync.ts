@@ -243,16 +243,20 @@ export async function syncSimklUser(
       // Everything still on Simkl; local items missing from it were removed.
       let upstreamIds: Set<string> | undefined;
 
-      const moved = fullPull
-        ? undefined
-        : movedActivities(activities, oldActivities);
+      const moved =
+        fullPull || !oldWatermark
+          ? undefined
+          : {
+              since: oldWatermark,
+              ...movedActivities(activities, oldActivities),
+            };
       let delta: { data: unknown } | undefined;
       let pullAll = fullPull;
       if (moved?.statuses) {
         try {
           delta = {
             data: await client.getAllItems(undefined, {
-              date_from: oldWatermark,
+              date_from: moved.since,
               ...EPISODE_PARAMS,
             }),
           };
@@ -288,7 +292,7 @@ export async function syncSimklUser(
       } else {
         if (delta) collect(delta.data, undefined, true);
         // A rating change on a listed item moves only `rated_at`.
-        if (moved.ratings) collect(await client.getRatings(oldWatermark));
+        if (moved.ratings) collect(await client.getRatings(moved.since));
         if (moved.removals) {
           upstreamIds = new Set();
           for (const { item, type } of syncEntries(
