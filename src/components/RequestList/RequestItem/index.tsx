@@ -5,6 +5,10 @@ import CachedImage from '@app/components/Common/CachedImage';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import RequestModal from '@app/components/RequestModal';
 import StatusBadge from '@app/components/StatusBadge';
+import {
+  RemovedEpisodesBadge,
+  WatchAheadInactiveBadge,
+} from '@app/components/WatchAheadBadges';
 import useDeepLinks from '@app/hooks/useDeepLinks';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -542,6 +546,10 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                         watchAheadCount: request.watchAheadCount,
                       })}
                     </Badge>
+                    <RemovedEpisodesBadge
+                      episodes={requestData.episodes}
+                      className="ml-2"
+                    />
                   </div>
                 )}
             </div>
@@ -595,6 +603,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
                   }
                 />
               )}
+              <WatchAheadInactiveBadge request={requestData} className="ml-2" />
             </div>
             <div className="card-field">
               {hasPermission(

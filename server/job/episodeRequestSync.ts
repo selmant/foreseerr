@@ -160,6 +160,7 @@ class EpisodeRequestSync {
     const additionTvdbIds = new Set<number>();
     let watchAheadCatalogReady = true;
     let watchAheadCaughtUp = false;
+    let watchAheadWindow: Set<number> | undefined;
     if (request.episodeSelectionType === 'after') {
       const boundary = byTvdbId.get(request.episodeStartTvdbId ?? -1);
       if (!boundary) {
@@ -206,10 +207,14 @@ class EpisodeRequestSync {
       );
       watchAheadCatalogReady = result.ready;
       watchAheadCaughtUp = result.caughtUp;
+      watchAheadWindow = result.window;
     }
 
     const unmonitored: number[] = [];
+    const newlyMonitored: EpisodeRequest[] = [];
     const searchable: { child: EpisodeRequest; sonarrId: number }[] = [];
+    const removedFlagChanged: EpisodeRequest[] = [];
+    const removedTvdbIds = new Set<number>();
     const now = Date.now();
 
     for (const child of request.episodes) {
@@ -218,17 +223,37 @@ class EpisodeRequestSync {
         continue;
       }
       const isNewFutureEpisode = additionTvdbIds.has(child.tvdbId);
-      // A completed child already had its file. Once it is gone, it was
-      // deleted on purpose (watched, cleaned up), so leave it unmonitored.
-      const keepWatchAheadMonitored =
+      // Watch-ahead children are monitored once. After that Sonarr's flag
+      // wins: an episode someone else unmonitored, or a completed child
+      // whose file was deleted on purpose, stays unmonitored.
+      const awaitingMonitor =
         request.episodeSelectionType === 'watchAhead' &&
         !episode.hasFile &&
-        child.status !== MediaRequestStatus.COMPLETED;
-      if (
-        (isNewFutureEpisode || keepWatchAheadMonitored) &&
-        !episode.monitored
-      ) {
+        child.status !== MediaRequestStatus.COMPLETED &&
+        !child.monitoredAt;
+      if ((isNewFutureEpisode || awaitingMonitor) && !episode.monitored) {
         unmonitored.push(episode.id);
+      }
+      if (awaitingMonitor) {
+        newlyMonitored.push(child);
+      }
+      if (watchAheadWindow) {
+        // An episode in the window that Foreseerr already monitored (or that
+        // was downloaded) and that is now unmonitored without a file was
+        // removed by someone else. Show it instead of fetching it again.
+        const removed =
+          watchAheadWindow.has(child.tvdbId) &&
+          !episode.hasFile &&
+          !episode.monitored &&
+          (child.status === MediaRequestStatus.COMPLETED ||
+            !!child.monitoredAt);
+        if (removed) {
+          removedTvdbIds.add(child.tvdbId);
+        }
+        if (removed !== !!child.unmonitoredAt) {
+          child.unmonitoredAt = removed ? new Date() : null;
+          removedFlagChanged.push(child);
+        }
       }
       if (episode.hasFile) {
         if (child.status !== MediaRequestStatus.COMPLETED) {
@@ -240,7 +265,7 @@ class EpisodeRequestSync {
       // A completed child lost its file on purpose, so do not search for it
       // even when Sonarr still monitors it.
       if (
-        (isNewFutureEpisode || episode.monitored || keepWatchAheadMonitored) &&
+        (isNewFutureEpisode || episode.monitored || awaitingMonitor) &&
         child.status !== MediaRequestStatus.COMPLETED &&
         !context.preventSearch &&
         !child.searchTriggeredAt &&
@@ -250,7 +275,36 @@ class EpisodeRequestSync {
       }
     }
 
+    if (removedFlagChanged.length > 0) {
+      await episodeRepository.save(removedFlagChanged);
+    }
+    if (watchAheadWindow) {
+      const inactive =
+        watchAheadWindow.size > 0 &&
+        [...watchAheadWindow].every((tvdbId) => removedTvdbIds.has(tvdbId));
+      if (inactive !== !!request.watchAheadInactiveAt) {
+        const watchAheadInactiveAt = inactive ? new Date() : null;
+        // Update the column alone: saving the request would run the request
+        // subscriber, which sends the request to Sonarr again.
+        await requestRepository
+          .createQueryBuilder()
+          .update()
+          .set({ watchAheadInactiveAt })
+          .where('id = :id', { id: request.id })
+          .callListeners(false)
+          .execute();
+        request.watchAheadInactiveAt = watchAheadInactiveAt;
+      }
+    }
+
     await context.api.monitorEpisodes(unmonitored);
+    if (newlyMonitored.length > 0) {
+      const monitoredAt = new Date();
+      for (const child of newlyMonitored) {
+        child.monitoredAt = monitoredAt;
+      }
+      await episodeRepository.save(newlyMonitored);
+    }
     if (searchable.length > 0) {
       await context.api.searchEpisodes(searchable.map((item) => item.sonarrId));
       const searchedAt = new Date();
@@ -283,7 +337,7 @@ class EpisodeRequestSync {
       episodes: EpisodeResult[];
     },
     additionTvdbIds: Set<number>
-  ): Promise<{ ready: boolean; caughtUp: boolean }> {
+  ): Promise<{ ready: boolean; caughtUp: boolean; window?: Set<number> }> {
     const media = request.media;
     if (!media.tmdbId) {
       return { ready: false, caughtUp: false };
@@ -310,6 +364,9 @@ class EpisodeRequestSync {
         : media.jellyfinMediaId,
       catalog,
     });
+    if (!playedTvdbIds) {
+      return { ready: false, caughtUp: false };
+    }
     const window = resolveWatchAheadWindow({
       catalog,
       count: watchAheadEpisodeCount(request.watchAheadCount),
@@ -319,14 +376,20 @@ class EpisodeRequestSync {
     const bySonarrTvdbId = new Map(
       context.episodes.map((episode) => [episode.tvdbId, episode])
     );
-    const additions = window.desired.filter((episode) => {
-      if (knownIds.has(episode.tvdbId)) {
-        return false;
-      }
-      return !bySonarrTvdbId.get(episode.tvdbId)?.hasFile;
-    });
+    const desiredTvdbIds = new Set(
+      window.desired.map((episode) => episode.tvdbId)
+    );
+    // Downloaded window episodes are tracked too, as completed children, so a
+    // file deleted before it was watched is not requested again later.
+    const additions = window.desired.filter(
+      (episode) => !knownIds.has(episode.tvdbId)
+    );
     if (additions.length === 0) {
-      return { ready: true, caughtUp: window.desired.length === 0 };
+      return {
+        ready: true,
+        caughtUp: window.desired.length === 0,
+        window: desiredTvdbIds,
+      };
     }
 
     const episodeRepository = getRepository(EpisodeRequest);
@@ -348,9 +411,11 @@ class EpisodeRequestSync {
     );
     request.episodes.push(...saved);
     for (const episode of additions) {
-      additionTvdbIds.add(episode.tvdbId);
+      if (!bySonarrTvdbId.get(episode.tvdbId)?.hasFile) {
+        additionTvdbIds.add(episode.tvdbId);
+      }
     }
-    return { ready: true, caughtUp: false };
+    return { ready: true, caughtUp: false, window: desiredTvdbIds };
   }
 }
 

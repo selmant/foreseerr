@@ -1048,6 +1048,11 @@ export class MediaRequest {
   @Column({ nullable: true })
   public watchAheadCount?: number;
 
+  // Set while every episode in the watch-ahead window was removed from
+  // Sonarr's monitoring, so the request is no longer downloading anything.
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public watchAheadInactiveAt?: Date | null;
+
   /**
    * Logical series/quality key protected by the active-ongoing partial index.
    */

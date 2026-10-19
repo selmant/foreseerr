@@ -142,7 +142,7 @@ export const watchAheadFns = {
     userId: number;
     jellyfinSeriesId?: string | null;
     catalog: TvdbEpisodeCatalog;
-  }): Promise<Set<number>> => {
+  }): Promise<Set<number> | undefined> => {
     if (!jellyfinSeriesId) {
       return new Set();
     }
@@ -164,11 +164,14 @@ export const watchAheadFns = {
         jellyfinSeriesId,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
-      return new Set();
+      // Unknown progress is not "nothing watched": an empty set would move
+      // the window back to the first episodes and download them again.
+      return undefined;
     }
   },
 };
 
 export const loadPlayedTvdbIdsForSeries = (
   args: Parameters<(typeof watchAheadFns)['loadPlayedTvdbIdsForSeries']>[0]
-): Promise<Set<number>> => watchAheadFns.loadPlayedTvdbIdsForSeries(args);
+): Promise<Set<number> | undefined> =>
+  watchAheadFns.loadPlayedTvdbIdsForSeries(args);
