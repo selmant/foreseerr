@@ -290,9 +290,11 @@ pub fn unwrap_item(item: &Map<String, Value>) -> Map<String, Value> {
         }
     };
     set("status", item.get("status"));
+    // `null` is a removed rating, not a missing one.
     set(
         "user_rating",
-        coalesce(&[item.get("user_rating"), nested.get("user_rating")]),
+        item.get("user_rating")
+            .or_else(|| nested.get("user_rating")),
     );
     set(
         "added_to_list_at",

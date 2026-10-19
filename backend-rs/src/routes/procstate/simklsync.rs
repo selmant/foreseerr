@@ -8,6 +8,7 @@
 //! Node writes the items and the state in one transaction; the database
 //! helpers here have none, so the same statements run one after another.
 
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use serde_json::{Map, Value};
@@ -26,6 +27,11 @@ const MIN_INTERVAL_MS: i64 = 15 * 60 * 1000;
 /// `TYPES`: upstream bucket and local type.
 const TYPES: [(&str, &str); 3] = [("shows", "show"), ("movies", "movie"), ("anime", "anime")];
 const STATUSES: [&str; 5] = ["watching", "plantowatch", "hold", "completed", "dropped"];
+/// `MEDIA_ACTIVITIES`: the activity buckets per media type.
+const MEDIA_ACTIVITIES: [&str; 3] = ["tv_shows", "anime", "movies"];
+/// `EPISODE_PARAMS`: shows and anime carry their watched episodes; movies
+/// have none.
+const EPISODE_PARAMS: &str = "extended=full&include_all_episodes=yes";
 
 /// `syncLock`.
 static LOCKS: LazyLock<KeyLock> = LazyLock::new(KeyLock::default);
@@ -113,16 +119,27 @@ async fn sync(state: &AppState, user_id: f64, force: bool) -> anyhow::Result<Val
             return Ok(result(false, false, previous.last_success.as_deref(), None));
         }
     }
-    match attempt(state, id, previous.as_ref()).await {
+    let outcome = attempt(state, id, previous.as_ref()).await;
+    settle(&state.db, previous.as_ref(), outcome).await
+}
+
+/// The `catch` block: a failure is saved on the state row and answered
+/// as stale.
+async fn settle(
+    db: &Db,
+    previous: Option<&Previous>,
+    outcome: Result<Value, String>,
+) -> anyhow::Result<Value> {
+    match outcome {
         Ok(value) => Ok(value),
         Err(message) => {
-            if let Some(previous) = &previous {
-                save_failure(&state.db, previous, &message).await?;
+            if let Some(previous) = previous {
+                save_failure(db, previous, &message).await?;
             }
             Ok(result(
                 true,
                 true,
-                previous.as_ref().and_then(|p| p.last_success.as_deref()),
+                previous.and_then(|p| p.last_success.as_deref()),
                 Some(&message),
             ))
         }
@@ -179,18 +196,39 @@ async fn attempt(
     previous: Option<&Previous>,
 ) -> Result<Value, String> {
     let client = user_client(state, user_id).await?;
-    let activities = get(&client, "/sync/activities").await?;
+    let Some(user_id) = user_id else {
+        return Err(String::from(crate::simklapi::NOT_LINKED));
+    };
+    pull(&state.db, &client, user_id, previous).await
+}
+
+/// The two phases of Simkl's sync guide: `/sync/activities`, then only
+/// what moved since the saved snapshot (everything on the first run).
+async fn pull(
+    db: &Db,
+    client: &crate::simklapi::Client,
+    user_id: i64,
+    previous: Option<&Previous>,
+) -> Result<Value, String> {
+    // Read before pulling, so a change made meanwhile is in the next delta.
+    let activities = get(client, "/sync/activities").await?;
     let snapshot = super::js_stringify(&activities);
-    let next_watermark = watermark(&activities);
-    let old_activities = match previous.and_then(|p| p.activities.as_deref()) {
+    let old_activities = match previous
+        .and_then(|p| p.activities.as_deref())
+        .filter(|text| !text.is_empty())
+    {
         Some(text) => Some(serde_json::from_str::<Value>(text).map_err(|e| e.to_string())?),
         None => None,
     };
-    if let Some(previous) = previous {
-        if previous.initial_sync_complete
-            && previous.activities.as_deref() == Some(snapshot.as_str())
-        {
-            let db = &state.db;
+    let old_watermark = old_activities.as_ref().and_then(watermark);
+    let delta = match (previous, &old_activities, &old_watermark) {
+        (Some(previous), Some(old), Some(from)) if previous.initial_sync_complete => {
+            Some((previous, old, from.as_str()))
+        }
+        _ => None,
+    };
+    if let Some((previous, _, from)) = delta {
+        if watermark(&activities).as_deref() == Some(from) {
             let sql = format!(
                 "UPDATE \"simkl_sync_state\" SET \"lastCheckedAt\" = {} WHERE \"id\" = ?2",
                 date_param(db, 1)
@@ -207,39 +245,26 @@ async fn attempt(
             return Ok(result(true, false, previous.last_success.as_deref(), None));
         }
     }
-    let empty = Value::Object(Map::new());
-    let old = old_activities.as_ref().unwrap_or(&empty);
-    let old_watermark = watermark(old);
-    let mut batches: Vec<(Option<&str>, Value)> = Vec::new();
-    let initial = previous.is_none_or(|p| !p.initial_sync_complete);
-    match (initial, &old_watermark, &next_watermark) {
-        (false, Some(from), Some(_)) => {
-            let path = format!(
-                "/sync/all-items?date_from={}",
-                crate::jsval::form_encode(from)
-            );
-            batches.push((None, get(&client, &path).await?));
+
+    let mut items: Vec<Item> = Vec::new();
+    // Everything still on Simkl; local items missing from it were removed.
+    let mut upstream: Option<HashSet<String>> = None;
+    if let Some((_, old, from)) = delta {
+        let moved = moved_activities(&activities, old);
+        let from = crate::jsval::form_encode(from);
+        if moved.statuses {
+            let path = format!("/sync/all-items?date_from={from}&{EPISODE_PARAMS}");
+            collect(&mut items, &get(client, &path).await?, None, true);
         }
-        _ => {
-            for (upstream, local) in TYPES {
-                let data = get(&client, &format!("/sync/all-items/{upstream}")).await?;
-                batches.push((Some(local), data));
-            }
+        // A rating change on a listed item moves only `rated_at`.
+        if moved.ratings {
+            let path = format!("/sync/ratings?date_from={from}");
+            collect(&mut items, &get(client, &path).await?, None, false);
         }
-    }
-    let items: Vec<Item> = batches
-        .iter()
-        .flat_map(|(kind, data)| sync_entries(data, *kind))
-        .filter_map(|(item, kind)| normalize_item(&item, Some(kind.as_str())))
-        .collect();
-    let upstream = if removal_watermark(&activities) == removal_watermark(old) {
-        None
-    } else {
-        let mut ids = std::collections::HashSet::new();
-        for (upstream, local) in TYPES {
-            let path = format!("/sync/all-items/{upstream}?extended=simkl_ids_only");
-            let data = get(&client, &path).await?;
-            for (item, kind) in sync_entries(&data, Some(local)) {
+        if moved.removals {
+            let data = get(client, "/sync/all-items?extended=simkl_ids_only").await?;
+            let mut ids = HashSet::new();
+            for (item, kind) in sync_entries(&data, None) {
                 let item_ids = item
                     .get("ids")
                     .and_then(Value::as_object)
@@ -249,15 +274,33 @@ async fn attempt(
                     ids.insert(format!("{kind}:{id}"));
                 }
             }
+            upstream = Some(ids);
         }
-        Some(ids)
-    };
-    let Some(user_id) = user_id else {
-        return Err(String::from("User has not linked a Simkl account"));
-    };
+    } else {
+        // One type after another, never in parallel.
+        for (kind, local) in TYPES {
+            let episodes = local != "movie";
+            let params = if episodes { EPISODE_PARAMS } else { "" };
+            let batches = match client.request(&all_items(kind, None, params), None).await {
+                Ok(data) => vec![data],
+                Err(failure) if is_max_items(&failure) => {
+                    let mut batches = Vec::with_capacity(STATUSES.len());
+                    for status in STATUSES {
+                        batches.push(get(client, &all_items(kind, Some(status), params)).await?);
+                    }
+                    batches
+                }
+                Err(failure) => return Err(failure.message()),
+            };
+            for data in &batches {
+                collect(&mut items, data, Some(local), episodes);
+            }
+        }
+        upstream = Some(items.iter().map(item_key).collect());
+    }
     let now = crate::clock::now_millis();
     write(
-        &state.db,
+        db,
         user_id,
         &items,
         upstream.as_ref(),
@@ -273,6 +316,44 @@ async fn attempt(
         Some(&crate::clock::Utc::from_unix_millis(now).iso_string()),
         None,
     ))
+}
+
+/// `collect(data, type, withEpisodes)`.
+fn collect(items: &mut Vec<Item>, data: &Value, fallback: Option<&str>, episodes: bool) {
+    items.extend(
+        sync_entries(data, fallback)
+            .into_iter()
+            .filter_map(|(item, kind)| normalize_item(&item, Some(kind.as_str()), episodes)),
+    );
+}
+
+/// `getAllItems(type, params, status)`'s path.
+fn all_items(kind: &str, status: Option<&str>, params: &str) -> String {
+    let status = status.map(|s| format!("/{s}")).unwrap_or_default();
+    let query = if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{params}")
+    };
+    format!("/sync/all-items/{kind}{status}{query}")
+}
+
+/// `isMaxItemsError`: Simkl wants this type fetched per status.
+fn is_max_items(failure: &crate::simklapi::Failure) -> bool {
+    static PATTERN: LazyLock<Option<regex::Regex>> =
+        LazyLock::new(|| regex::Regex::new(r"(?i)max_items|too many").ok());
+    let status = match failure {
+        crate::simklapi::Failure::Rejected { status, .. }
+        | crate::simklapi::Failure::OAuth { status, .. } => *status,
+        crate::simklapi::Failure::RateLimited(_)
+        | crate::simklapi::Failure::Unauthorized
+        | crate::simklapi::Failure::Unavailable
+        | crate::simklapi::Failure::Other(_) => return false,
+    };
+    status == 400
+        && PATTERN
+            .as_ref()
+            .is_some_and(|pattern| pattern.is_match(&failure.message()))
 }
 
 /// `createSimklUserClient(userId)`.
@@ -309,35 +390,44 @@ fn watermark(activities: &Value) -> Option<String> {
     crate::simkl::scalar(activities.get("all"))
 }
 
-/// The newest `removed_from_list` stamp anywhere in the activities.
-fn removal_watermark(activities: &Value) -> Option<String> {
-    fn walk(value: &Value, out: &mut Vec<String>) {
-        let entries: Vec<(String, &Value)> = match value {
-            Value::Object(map) => crate::jsval::object_entries(map)
-                .into_iter()
-                .map(|(k, v)| (k.clone(), v))
-                .collect(),
-            Value::Array(items) => items
-                .iter()
-                .enumerate()
-                .map(|(i, v)| (i.to_string(), v))
-                .collect(),
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => return,
-        };
-        for (key, child) in entries {
-            if key == "removed_from_list" {
-                if let Some(stamp) = crate::simkl::scalar(Some(child)) {
-                    out.push(stamp);
-                }
-            } else {
-                walk(child, out);
+/// What `movedActivities` found moved.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Moved {
+    statuses: bool,
+    removals: bool,
+    ratings: bool,
+}
+
+/// `movedActivities(now, before)`: which parts of the library moved
+/// between two snapshots. Every other key of a media bucket is a list
+/// status (`watching`, `plantowatch`, …); `all` only summarizes them, and
+/// `playback`, `settings` and `custom_lists` are unused.
+fn moved_activities(now: &Value, before: &Value) -> Moved {
+    let mut moved = Moved::default();
+    for media in MEDIA_ACTIVITIES {
+        let current = now.get(media).and_then(Value::as_object);
+        let previous = before.get(media).and_then(Value::as_object);
+        let keys: HashSet<&String> = current
+            .into_iter()
+            .chain(previous)
+            .flat_map(Map::keys)
+            .collect();
+        for key in keys {
+            let value = |bucket: Option<&Map<String, Value>>| {
+                crate::simkl::scalar(bucket.and_then(|b| b.get(key)))
+            };
+            if value(current) == value(previous) {
+                continue;
+            }
+            match key.as_str() {
+                "removed_from_list" => moved.removals = true,
+                "rated_at" => moved.ratings = true,
+                "all" | "playback" => {}
+                _ => moved.statuses = true,
             }
         }
     }
-    let mut values = Vec::new();
-    walk(activities, &mut values);
-    values.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
-    values.pop()
+    moved
 }
 
 /// `SYNC_BUCKETS`.
@@ -454,6 +544,8 @@ fn js_date_parse(text: &str) -> Option<i64> {
 /// A `simkl_sync_item` column value.
 #[derive(Debug, Clone, PartialEq)]
 enum Cell {
+    /// `null`: clears the column.
+    Null,
     Text(String),
     Number(f64),
     Date(i64),
@@ -463,7 +555,59 @@ enum Cell {
 /// `undefined` is).
 type Item = Vec<(&'static str, Cell)>;
 
-fn normalize_item(raw: &Map<String, Value>, fallback: Option<&str>) -> Option<Item> {
+/// A text column of an item.
+fn item_text(item: &Item, column: &str) -> Option<String> {
+    item.iter().find_map(|(c, cell)| match cell {
+        Cell::Text(t) if *c == column => Some(t.clone()),
+        Cell::Null | Cell::Text(_) | Cell::Number(_) | Cell::Date(_) => None,
+    })
+}
+
+/// `${simklType}:${simklId}`.
+fn item_key(item: &Item) -> String {
+    format!(
+        "{}:{}",
+        item_text(item, "simklType").unwrap_or_default(),
+        item_text(item, "simklId").unwrap_or_default()
+    )
+}
+
+/// `episodeCoordinates(raw)`: watched episodes from an `extended=full`
+/// row, in Simkl's numbering.
+fn episode_coordinates(raw: &Map<String, Value>) -> Vec<(i64, i64)> {
+    let int = |value: Option<&Value>| crate::mappinglayer::int_of(crate::jsval::number_of(value));
+    let mut out = Vec::new();
+    for season in raw
+        .get("seasons")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(number) = int(season.get("number")).filter(|n| *n >= 0) else {
+            continue;
+        };
+        for episode in season
+            .get("episodes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(episode) = int(episode.get("number")).filter(|n| *n > 0) {
+                out.push((number, episode));
+            }
+        }
+    }
+    out
+}
+
+/// `normalizeItem(raw, fallbackType, withEpisodes)`. `episodes`: the row
+/// came from an `extended=full` request, so a show without `seasons` has
+/// no watched episodes; other rows leave them alone.
+fn normalize_item(
+    raw: &Map<String, Value>,
+    fallback: Option<&str>,
+    episodes: bool,
+) -> Option<Item> {
     let empty = Map::new();
     let ids = raw.get("ids").and_then(Value::as_object).unwrap_or(&empty);
     let simkl_id = record_id(raw, ids)?;
@@ -474,6 +618,7 @@ fn normalize_item(raw: &Map<String, Value>, fallback: Option<&str>) -> Option<It
     };
     let title = string_value(coalesce(&[raw.get("title"), raw.get("name")]))?;
     let status = string_value(raw.get("status")).filter(|s| STATUSES.contains(&s.as_str()))?;
+    let movie = kind == "movie";
     let mut item: Item = vec![
         ("simklId", Cell::Text(simkl_id)),
         ("simklType", Cell::Text(kind)),
@@ -506,11 +651,16 @@ fn normalize_item(raw: &Map<String, Value>, fallback: Option<&str>) -> Option<It
         item.push(("animeType", Cell::Text(anime)));
     }
     item.push(("status", Cell::Text(status)));
-    number(
-        &mut item,
-        "userRating",
-        coalesce(&[raw.get("user_rating"), raw.get("rating")]),
-    );
+    // `null` clears a removed rating; a missing one leaves the cache alone.
+    if raw.get("user_rating").is_some_and(Value::is_null) {
+        item.push(("userRating", Cell::Null));
+    } else {
+        number(
+            &mut item,
+            "userRating",
+            coalesce(&[raw.get("user_rating"), raw.get("rating")]),
+        );
+    }
     let added = to_date(coalesce(&[
         raw.get("added_to_list_at"),
         raw.get("added_to_watchlist_at"),
@@ -535,12 +685,23 @@ fn normalize_item(raw: &Map<String, Value>, fallback: Option<&str>) -> Option<It
         "totalEpisodeCount",
         raw.get("total_episodes_count"),
     );
+    if episodes && !movie {
+        let pairs: Vec<Value> = episode_coordinates(raw)
+            .into_iter()
+            .map(|(season, episode)| Value::from(vec![season, episode]))
+            .collect();
+        item.push((
+            "watchedEpisodes",
+            Cell::Text(Value::Array(pairs).to_string()),
+        ));
+    }
     Some(item)
 }
 
 /// A cell as SQL and its bind (placeholder `n`).
 fn cell_sql(db: &Db, cell: &Cell, n: usize, binds: &mut Vec<Bind>) -> String {
     match cell {
+        Cell::Null => String::from("NULL"),
         Cell::Text(text) => {
             binds.push(Bind::Text(text.clone()));
             format!("?{n}")
@@ -570,7 +731,7 @@ async fn write(
     db: &Db,
     user_id: i64,
     items: &[Item],
-    upstream: Option<&std::collections::HashSet<String>>,
+    upstream: Option<&HashSet<String>>,
     previous: Option<&Previous>,
     snapshot: &str,
     now: i64,
@@ -647,15 +808,7 @@ async fn write(
 
 /// `itemRepository.save(create({ ...existing, ...item, user }))`.
 async fn save_item(db: &Db, tx: &mut Tx, user_id: i64, item: &Item) -> anyhow::Result<()> {
-    let text = |column: &str| {
-        item.iter().find_map(|(c, cell)| {
-            if let Cell::Text(t) = cell {
-                (*c == column).then(|| t.clone())
-            } else {
-                None
-            }
-        })
-    };
+    let text = |column: &str| item_text(item, column);
     let existing = tx
         .rows(
             r#"SELECT CAST("id" AS BIGINT) AS "id" FROM "simkl_sync_item"
@@ -702,94 +855,4 @@ async fn save_item(db: &Db, tx: &mut Tx, user_id: i64, item: &Item) -> anyhow::R
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn object(v: &Value) -> Map<String, Value> {
-        v.as_object().cloned().unwrap_or_default()
-    }
-
-    #[test]
-    fn normalizes_library_items() {
-        let raw = json!({
-            "status": "watching", "user_rating": 8, "added_to_watchlist_at": "2024-01-02T03:04:05Z",
-            "last_watched_at": 1_700_000_000, "watched_episodes_count": "3",
-            "show": {"title": "Show", "year": 2020, "poster": "ab/cd", "ids": {"simkl": 42, "tmdb": "7", "slug": "show"}}
-        });
-        let item = sync_entries(&json!({"shows": [raw]}), None);
-        assert_eq!(item.len(), 1, "one show");
-        let (raw, kind) = item.into_iter().next().unwrap_or_default();
-        assert_eq!(kind, "show", "bucket type");
-        let normalized = normalize_item(&raw, Some(kind.as_str()));
-        assert_eq!(
-            normalized,
-            Some(vec![
-                ("simklId", Cell::Text(String::from("42"))),
-                ("simklType", Cell::Text(String::from("show"))),
-                ("tmdbId", Cell::Number(7.0)),
-                ("slug", Cell::Text(String::from("show"))),
-                ("title", Cell::Text(String::from("Show"))),
-                ("year", Cell::Number(2020.0)),
-                (
-                    "posterPath",
-                    Cell::Text(String::from(
-                        "https://wsrv.nl/?url=https://simkl.in/posters/ab/cd_w.webp&q=90"
-                    ))
-                ),
-                ("status", Cell::Text(String::from("watching"))),
-                ("userRating", Cell::Number(8.0)),
-                ("addedAt", Cell::Date(1_704_164_645_000)),
-                ("lastWatchedAt", Cell::Date(1_700_000_000_000)),
-                ("watchedEpisodeCount", Cell::Number(3.0)),
-            ]),
-            "columns"
-        );
-        let unknown = object(&json!({"title": "x", "status": "liked", "ids": {"simkl": 1}}));
-        assert!(
-            normalize_item(&unknown, Some("movie")).is_none(),
-            "unknown status"
-        );
-        let untyped = object(&json!({"title": "x", "status": "hold", "ids": {"simkl": 1}}));
-        assert!(normalize_item(&untyped, None).is_none(), "no type");
-    }
-
-    #[test]
-    fn watermarks() {
-        let activities = json!({
-            "all": "2024-05-01T00:00:00Z",
-            "tv_shows": {"removed_from_list": "2024-03-01T00:00:00Z", "x": {"removed_from_list": "2024-04-01T00:00:00Z"}},
-            "movies": [{"removed_from_list": "2023-01-01T00:00:00Z"}]
-        });
-        assert_eq!(
-            watermark(&activities).as_deref(),
-            Some("2024-05-01T00:00:00Z"),
-            "all"
-        );
-        assert_eq!(
-            removal_watermark(&activities).as_deref(),
-            Some("2024-04-01T00:00:00Z"),
-            "the newest removal"
-        );
-        assert_eq!(removal_watermark(&json!({})), None, "none");
-    }
-
-    #[test]
-    fn dates_and_buckets() {
-        assert_eq!(
-            js_date_parse("2024-01-01T02:00:00+02:00"),
-            Some(1_704_067_200_000),
-            "offset"
-        );
-        assert_eq!(to_date(Some(&json!(1.5))), Some(1500), "seconds");
-        assert_eq!(to_date(Some(&json!("nope"))), None, "invalid");
-        let flat = sync_entries(&json!([{"title": "a"}]), Some("movie"));
-        assert_eq!(flat.len(), 1, "a bare array takes the fallback type");
-        assert!(
-            sync_entries(&json!([{"title": "a"}]), None).is_empty(),
-            "no type, no entries"
-        );
-        assert_eq!(whole(3.0), Some(3), "whole");
-        assert_eq!(whole(3.5), None, "fraction");
-    }
-}
+mod tests;

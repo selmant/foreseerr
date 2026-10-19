@@ -418,7 +418,7 @@
       "type": "table",
       "name": "simkl_sync_item",
       "tbl_name": "simkl_sync_item",
-      "sql": "CREATE TABLE \"simkl_sync_item\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"simklId\" varchar NOT NULL, \"simklType\" varchar NOT NULL, \"tmdbId\" integer, \"tvdbId\" integer, \"slug\" varchar, \"title\" varchar NOT NULL, \"year\" integer, \"posterPath\" varchar, \"animeType\" varchar, \"status\" varchar NOT NULL, \"userRating\" float, \"addedAt\" datetime, \"lastWatchedAt\" datetime, \"watchedEpisodeCount\" integer, \"totalEpisodeCount\" integer, \"userId\" integer, CONSTRAINT \"FK_simkl_sync_item_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+      "sql": "CREATE TABLE \"simkl_sync_item\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"simklId\" varchar NOT NULL, \"simklType\" varchar NOT NULL, \"tmdbId\" integer, \"tvdbId\" integer, \"slug\" varchar, \"title\" varchar NOT NULL, \"year\" integer, \"posterPath\" varchar, \"animeType\" varchar, \"status\" varchar NOT NULL, \"userRating\" float, \"addedAt\" datetime, \"lastWatchedAt\" datetime, \"watchedEpisodeCount\" integer, \"totalEpisodeCount\" integer, \"userId\" integer, \"watchedEpisodes\" text, CONSTRAINT \"FK_simkl_sync_item_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
     },
     {
       "type": "table",
@@ -876,6 +876,11 @@
       "id": 85,
       "timestamp": 1789500000000,
       "name": "AddSimklRefreshToken1789500000000"
+    },
+    {
+      "id": 86,
+      "timestamp": 1789600000000,
+      "name": "AddSimklWatchedEpisodes1789600000000"
     }
   ]
 }

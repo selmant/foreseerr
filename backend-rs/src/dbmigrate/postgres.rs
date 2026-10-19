@@ -647,4 +647,12 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "ALTER TABLE \"user_settings\" ADD \"simklTokenExpiresAt\" bigint",
         ],
     },
+    Migration {
+        timestamp: 1_789_600_000_000,
+        name: "AddSimklWatchedEpisodes1789600000000",
+        queries: &[
+            "ALTER TABLE \"simkl_sync_item\" ADD \"watchedEpisodes\" text",
+            "UPDATE \"simkl_sync_state\" SET \"initialSyncComplete\" = false",
+        ],
+    },
 ];

@@ -400,7 +400,7 @@
       "type": "table",
       "name": "simkl_sync_item",
       "tbl_name": "simkl_sync_item",
-      "sql": "CREATE TABLE \"simkl_sync_item\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"simklId\" varchar NOT NULL, \"simklType\" varchar NOT NULL, \"tmdbId\" integer, \"tvdbId\" integer, \"slug\" varchar, \"title\" varchar NOT NULL, \"year\" integer, \"posterPath\" varchar, \"animeType\" varchar, \"status\" varchar NOT NULL, \"userRating\" float, \"addedAt\" datetime, \"lastWatchedAt\" datetime, \"watchedEpisodeCount\" integer, \"totalEpisodeCount\" integer, \"userId\" integer, CONSTRAINT \"FK_1c7c24ca88f711e0ef39c821bff\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+      "sql": "CREATE TABLE \"simkl_sync_item\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"simklId\" varchar NOT NULL, \"simklType\" varchar NOT NULL, \"tmdbId\" integer, \"tvdbId\" integer, \"slug\" varchar, \"title\" varchar NOT NULL, \"year\" integer, \"posterPath\" varchar, \"animeType\" varchar, \"status\" varchar NOT NULL, \"userRating\" float, \"addedAt\" datetime, \"lastWatchedAt\" datetime, \"watchedEpisodeCount\" integer, \"totalEpisodeCount\" integer, \"watchedEpisodes\" text, \"userId\" integer, CONSTRAINT \"FK_1c7c24ca88f711e0ef39c821bff\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
     },
     {
       "type": "table",

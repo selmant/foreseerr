@@ -883,4 +883,6 @@ pub async fn stored_refresh_token(db: &Db, user_id: i64) -> anyhow::Result<Optio
 }
 
 #[cfg(test)]
+pub mod stub;
+#[cfg(test)]
 mod tests;

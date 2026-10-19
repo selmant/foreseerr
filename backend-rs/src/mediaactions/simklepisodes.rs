@@ -84,55 +84,45 @@ fn history_body(c: &Coordinates) -> Value {
     })
 }
 
-/// `watchedCoordinates(payload, tmdbId)`: every watched `(season,
-/// episode)` Simkl reports for the show.
-#[must_use]
-pub fn watched_coordinates(payload: &Value, tmdb_id: i64) -> Vec<(i64, i64)> {
-    let values: Vec<&Value> = match payload {
-        Value::Object(map) => map.values().collect(),
-        Value::Array(items) => items.iter().collect(),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => return Vec::new(),
-    };
-    let show = values
-        .into_iter()
-        .filter_map(Value::as_array)
-        .flatten()
-        .find(|v| {
-            v.is_object()
-                && crate::jsval::same(
-                    crate::jsval::number_of(v.get("ids").and_then(|i| i.get("tmdb"))),
-                    crate::jsnum::from_i64(tmdb_id),
-                )
-        });
+/// `cachedWatchedCoordinates(userId, tmdbId)`: every watched `(season,
+/// episode)` Simkl reports for the show, in Simkl's own numbering, from
+/// the synced library rather than a fresh download.
+///
+/// # Errors
+///
+/// Database failures.
+pub async fn cached_watched_coordinates(
+    db: &crate::db::Db,
+    user_id: i64,
+    tmdb_id: i64,
+) -> anyhow::Result<Vec<(i64, i64)>> {
+    let rows = db
+        .rows(
+            r#"SELECT "watchedEpisodes" FROM "simkl_sync_item"
+               WHERE "userId" = ?1 AND "tmdbId" = ?2 AND "simklType" IN ('show', 'anime')"#,
+            &[crate::db::Bind::Int(user_id), crate::db::Bind::Int(tmdb_id)],
+        )
+        .await?;
     let int = |v: Option<&Value>| {
-        let n = crate::jsval::number_of(v);
-        crate::mappinglayer::int_of(n)
+        v.and_then(Value::as_f64)
+            .and_then(crate::mappinglayer::int_of)
     };
     let mut out = Vec::new();
-    for season in show
-        .and_then(|s| s.get("seasons"))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let Some(number) = int(season.get("number")).filter(|n| *n >= 0) else {
+    for row in rows {
+        let text = row
+            .get("watchedEpisodes")
+            .and_then(Value::as_str)
+            .unwrap_or("[]");
+        let Ok(Value::Array(pairs)) = serde_json::from_str::<Value>(text) else {
             continue;
         };
-        for episode in season
-            .get("episodes")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            if episode.get("watched_at").is_none() {
-                continue;
-            }
-            if let Some(e) = int(episode.get("number")).filter(|n| *n > 0) {
-                out.push((number, e));
+        for pair in pairs.iter().filter_map(Value::as_array) {
+            if let (Some(season), Some(episode)) = (int(pair.first()), int(pair.get(1))) {
+                out.push((season, episode));
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// `tmdbEpisodeNumbers(tmdbId, seasonNumber, coordinates)`.
@@ -196,11 +186,11 @@ pub async fn season_status(
     if !available(env).await? {
         return Ok((false, Vec::new()));
     }
-    let client = user_client(env).await?;
-    let payload = client
-        .request(env, "/sync/watched?extended=episodes", None)
-        .await?;
-    let coordinates = watched_coordinates(&payload, tmdb_id);
+    // Activities first; the library delta carries each show's episodes.
+    sync(env, false).await?;
+    let coordinates = cached_watched_coordinates(&env.state.db, env.user, tmdb_id)
+        .await
+        .map_err(|e| db_error(&e))?;
     let numbers = tmdb_episode_numbers(env, tmdb_id, season, &coordinates).await?;
     Ok((
         true,
@@ -241,32 +231,6 @@ pub async fn set_watched(
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn reads_watched_coordinates() {
-        let payload = json!({
-            "shows": [
-                {"ids": {"tmdb": 5}, "seasons": [{"number": 1, "episodes": [{"number": 1, "watched_at": "x"}]}]},
-                {"ids": {"tmdb": "42"}, "seasons": [
-                    {"number": 2, "episodes": [
-                        {"number": 1, "watched_at": "2026-01-01"},
-                        {"number": 2},
-                        {"number": 0, "watched_at": null}
-                    ]},
-                    {"number": -1, "episodes": [{"number": 1, "watched_at": "x"}]}
-                ]}
-            ]
-        });
-        assert_eq!(
-            watched_coordinates(&payload, 42),
-            vec![(2, 1)],
-            "watched only"
-        );
-        assert!(
-            watched_coordinates(&Value::Null, 42).is_empty(),
-            "empty history"
-        );
-    }
 
     #[test]
     fn history_body_ids_in_order() {
