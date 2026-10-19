@@ -1,3 +1,5 @@
+import { getRepository } from '@server/datasource';
+import { SimklSyncItem } from '@server/entity/SimklSyncItem';
 import { ensureMappingLayer } from '@server/lib/mapping/datasets';
 import {
   applyEpisodeRule,
@@ -6,6 +8,7 @@ import {
 } from '@server/lib/mapping/episodes';
 import { createSimklUserClient } from '@server/lib/simkl';
 import { syncSimklUser } from '@server/lib/simklSync';
+import { In } from 'typeorm';
 import { SimklMediaActionProvider } from './simkl';
 
 const provider = new SimklMediaActionProvider();
@@ -59,36 +62,32 @@ export interface WatchedCoordinate {
   episode: number;
 }
 
-/** Every watched episode Simkl reports for a show, in Simkl's own numbering. */
-export const watchedCoordinates = (
-  payload: Record<string, unknown> | null | undefined,
+/**
+ * Every watched episode Simkl reports for a show, in Simkl's own numbering,
+ * from the synced library rather than a fresh download.
+ */
+export const cachedWatchedCoordinates = async (
+  userId: number,
   tmdbId: number
-): WatchedCoordinate[] => {
-  if (!payload || typeof payload !== 'object') return [];
-  const shows = Object.values(payload).flatMap((value) =>
-    Array.isArray(value) ? value : []
-  );
-  const show = shows.find((value) => {
-    if (!value || typeof value !== 'object') return false;
-    const ids = (value as { ids?: { tmdb?: unknown } }).ids;
-    return Number(ids?.tmdb) === tmdbId;
-  }) as
-    | {
-        seasons?: {
-          number?: unknown;
-          episodes?: { number?: unknown; watched_at?: unknown }[];
-        }[];
-      }
-    | undefined;
-
-  return (show?.seasons ?? []).flatMap((season) => {
-    const seasonNumber = Number(season.number);
-    if (!Number.isInteger(seasonNumber) || seasonNumber < 0) return [];
-    return (season.episodes ?? [])
-      .filter((episode) => episode.watched_at !== undefined)
-      .map((episode) => Number(episode.number))
-      .filter((number) => Number.isInteger(number) && number > 0)
-      .map((episode) => ({ season: seasonNumber, episode }));
+): Promise<WatchedCoordinate[]> => {
+  const items = await getRepository(SimklSyncItem).find({
+    where: { user: { id: userId }, tmdbId, simklType: In(['show', 'anime']) },
+  });
+  return items.flatMap((item) => {
+    let coordinates: unknown;
+    try {
+      coordinates = JSON.parse(item.watchedEpisodes ?? '[]');
+    } catch {
+      return [];
+    }
+    return (Array.isArray(coordinates) ? coordinates : []).flatMap(
+      (pair: unknown) =>
+        Array.isArray(pair) &&
+        Number.isInteger(pair[0]) &&
+        Number.isInteger(pair[1])
+          ? [{ season: pair[0] as number, episode: pair[1] as number }]
+          : []
+    );
   });
 };
 
@@ -141,11 +140,9 @@ export const simklEpisodeActions = {
   async getSeasonStatus(userId: number, tmdbId: number, seasonNumber: number) {
     if (!(await provider.isAvailable(userId)))
       return { available: false, watchedEpisodeNumbers: [] };
-    const client = await createSimklUserClient(userId);
-    const coordinates = watchedCoordinates(
-      await client.getWatchedEpisodes(),
-      tmdbId
-    );
+    // Activities first; the library delta carries each show's episodes.
+    await syncSimklUser(userId);
+    const coordinates = await cachedWatchedCoordinates(userId, tmdbId);
     return {
       available: true,
       watchedEpisodeNumbers: await tmdbEpisodeNumbers(

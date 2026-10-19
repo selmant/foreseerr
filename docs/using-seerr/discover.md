@@ -125,10 +125,10 @@ See [Integrations](settings/integrations.md#anilist).
 
 ## Simkl
 
-Requires a Simkl Client ID in **Settings → Integrations**. Public catalog rows
-need only that Client ID. Personal library rows need a PIN-linked account.
+Requires **Enable Simkl** in **Settings → Integrations → Simkl**. Public
+catalog rows need nothing else. Personal library rows need a PIN-linked account.
 
-Public rows (hidden until Simkl is configured):
+Public rows (hidden while Simkl is off):
 
 - Trending (movies, TV, and anime from Simkl's trending JSON files)
 

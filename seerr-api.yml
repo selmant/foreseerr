@@ -12497,7 +12497,10 @@ paths:
             schema:
               type: object
               properties:
-                clientId: { type: string }
+                enabled: { type: boolean }
+                clientId:
+                  type: string
+                  description: Only `''`, to drop an install's legacy Client ID for Foreseerr's own Simkl app, or that legacy ID unchanged. Custom Client IDs can no longer be set.
                 actionsEnabled: { type: boolean }
                 showCommunityRating: { type: boolean }
                 posterCommunityRating: { type: boolean }

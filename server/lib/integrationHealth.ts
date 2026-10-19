@@ -1,6 +1,7 @@
 import AnilistAPI from '@server/api/anilist';
 import MdblistAPI from '@server/api/mdblist';
 import SimklAPI from '@server/api/simkl';
+import { effectiveSimklClientId } from '@server/constants/simkl';
 import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
@@ -231,8 +232,8 @@ const checkAnilist = async (): Promise<IntegrationHealth> => {
 };
 
 const checkSimkl = async (): Promise<IntegrationHealth> => {
-  if (!getSettings().simkl.clientId.trim()) {
-    return notConfigured('Simkl Client ID is not configured.');
+  if (!effectiveSimklClientId(getSettings().simkl)) {
+    return notConfigured('Simkl is turned off.');
   }
   try {
     await new SimklAPI().validateClientId();

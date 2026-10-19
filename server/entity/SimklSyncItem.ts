@@ -59,7 +59,7 @@ export class SimklSyncItem {
   public status: SimklItemStatus;
 
   @Column({ type: 'float', nullable: true })
-  public userRating?: number;
+  public userRating?: number | null;
 
   @DbAwareColumn({ type: 'datetime', nullable: true })
   public addedAt?: Date;
@@ -72,4 +72,12 @@ export class SimklSyncItem {
 
   @Column({ type: 'integer', nullable: true })
   public totalEpisodeCount?: number;
+
+  /**
+   * Watched episodes as JSON `[[season, episode], …]` in Simkl's numbering,
+   * from `all-items?extended=full`. Episode status reads this instead of
+   * downloading the user's history on every request.
+   */
+  @Column({ type: 'text', nullable: true })
+  public watchedEpisodes?: string | null;
 }

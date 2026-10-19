@@ -1,6 +1,7 @@
 import AnilistAPI from '@server/api/anilist';
 import JellyfinAPI from '@server/api/jellyfin';
 import MdblistAPI from '@server/api/mdblist';
+import SimklAPI from '@server/api/simkl';
 import TraktAPI from '@server/api/trakt';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
@@ -97,8 +98,9 @@ async function loginAsAdmin() {
 }
 
 describe('Trakt settings credential safety', () => {
-  // Keep these stubs for the whole file: integration health swallows Trakt/AniList
-  // failures, and a prototype mock restored mid-file can leave a later health
+  // Keep these stubs for the whole file: integration health swallows
+  // Trakt/AniList/Simkl failures (Simkl is on by default, with Foreseerr's
+  // app), and a prototype mock restored mid-file can leave a later health
   // check hitting the network block (CI after-hook flake).
   const pingAnilist = mock.method(AnilistAPI.prototype, 'ping', async () => {
     return undefined;
@@ -108,10 +110,16 @@ describe('Trakt settings credential safety', () => {
     'validateApplicationCredentials',
     async () => undefined
   );
+  const validateSimkl = mock.method(
+    SimklAPI.prototype,
+    'validateClientId',
+    async () => undefined
+  );
 
   after(() => {
     pingAnilist.mock.restore();
     validateTrakt.mock.restore();
+    validateSimkl.mock.restore();
   });
 
   beforeEach(() => {

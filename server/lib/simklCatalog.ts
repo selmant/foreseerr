@@ -101,7 +101,9 @@ export const unwrapSimklLibraryItem = (
     ...item,
     ...nested,
     status: item.status,
-    user_rating: item.user_rating ?? nested.user_rating,
+    // `null` is a removed rating, not a missing one.
+    user_rating:
+      item.user_rating !== undefined ? item.user_rating : nested.user_rating,
     added_to_list_at:
       item.added_to_watchlist_at ?? item.added_to_list_at ?? nested.added_at,
     last_watched_at: item.last_watched_at ?? nested.last_watched_at,
