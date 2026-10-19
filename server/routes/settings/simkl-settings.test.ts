@@ -85,14 +85,17 @@ after(() => {
   validateClientId.mock.restore();
 });
 
+/** Settings outlive each test file; start and leave Simkl as a fresh install has it. */
+const resetSimkl = () => {
+  getSettings().simkl = { enabled: true, clientId: '' } as never;
+};
+
 beforeEach(() => {
   validated.length = 0;
+  resetSimkl();
 });
 
-afterEach(() => {
-  // Settings outlive this file; leave Simkl as a fresh install has it.
-  getSettings().simkl = { enabled: true, clientId: '' } as never;
-});
+afterEach(resetSimkl);
 
 async function loginAsAdmin() {
   const settings = getSettings();
