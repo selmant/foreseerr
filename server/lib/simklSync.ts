@@ -6,6 +6,7 @@ import {
   type SimklItemType,
 } from '@server/entity/SimklSyncItem';
 import { SimklSyncState } from '@server/entity/SimklSyncState';
+import { SimklRequestError } from '@server/api/simkl';
 import { createSimklUserClient } from '@server/lib/simkl';
 import {
   simklPosterUrl,
@@ -64,9 +65,38 @@ const numberValue = (value: unknown): number | undefined => {
   return Number.isFinite(number) ? number : undefined;
 };
 
+/** Watched episodes from an `extended=full` row, in Simkl's numbering. */
+export const episodeCoordinates = (raw: RawItem): [number, number][] => {
+  const seasons = Array.isArray(raw.seasons) ? raw.seasons : [];
+  return seasons.flatMap((season: unknown) => {
+    if (!season || typeof season !== 'object') return [];
+    const { number, episodes } = season as {
+      number?: unknown;
+      episodes?: unknown;
+    };
+    const seasonNumber = Number(number);
+    if (!Number.isInteger(seasonNumber) || seasonNumber < 0) return [];
+    return (Array.isArray(episodes) ? episodes : []).flatMap(
+      (episode: unknown) => {
+        const episodeNumber = Number(
+          (episode as { number?: unknown } | null)?.number
+        );
+        return Number.isInteger(episodeNumber) && episodeNumber > 0
+          ? [[seasonNumber, episodeNumber] as [number, number]]
+          : [];
+      }
+    );
+  });
+};
+
+/**
+ * `withEpisodes`: the row came from an `extended=full` request, so a show
+ * without `seasons` has no watched episodes. Other rows leave them alone.
+ */
 function normalizeItem(
   raw: RawItem,
-  fallbackType?: SimklItemType
+  fallbackType?: SimklItemType,
+  withEpisodes = false
 ): Omit<SimklSyncItem, 'id' | 'user'> | null {
   const ids = (raw.ids && typeof raw.ids === 'object' ? raw.ids : {}) as Record<
     string,
@@ -100,36 +130,62 @@ function normalizeItem(
     ),
     animeType: stringValue(raw.anime_type),
     status,
-    userRating: numberValue(raw.user_rating ?? raw.rating),
+    // `null` clears a removed rating; a missing one leaves the cache alone.
+    userRating:
+      raw.user_rating === null
+        ? null
+        : numberValue(raw.user_rating ?? raw.rating),
     addedAt: toDate(
       raw.added_to_list_at ?? raw.added_to_watchlist_at ?? raw.added_at
     ),
     lastWatchedAt: toDate(raw.last_watched_at ?? raw.last_watched),
     watchedEpisodeCount: numberValue(raw.watched_episodes_count),
     totalEpisodeCount: numberValue(raw.total_episodes_count),
+    ...(withEpisodes && simklType !== 'movie'
+      ? { watchedEpisodes: JSON.stringify(episodeCoordinates(raw)) }
+      : {}),
   };
 }
 
 const watermark = (activities: SimklActivities): string | undefined =>
   scalarValue(activities.all);
-const activityFingerprint = (activities: SimklActivities): string =>
-  JSON.stringify(activities);
-const removalWatermark = (activities: SimklActivities): string | undefined => {
-  const values: string[] = [];
-  const walk = (value: unknown): void => {
-    if (!value || typeof value !== 'object') return;
-    for (const [key, child] of Object.entries(
-      value as Record<string, unknown>
-    )) {
-      if (key === 'removed_from_list') {
-        const value = scalarValue(child);
-        if (value) values.push(value);
-      } else walk(child);
+
+/** Activity buckets per media type; `custom_lists` and `settings` are unused. */
+const MEDIA_ACTIVITIES = ['tv_shows', 'anime', 'movies'] as const;
+
+/**
+ * Which parts of the library moved between two `/sync/activities` snapshots.
+ * Every other key of a media bucket is a list status (`watching`,
+ * `plantowatch`, …); `all` only summarizes them, and `playback` is unused.
+ */
+export const movedActivities = (
+  now: SimklActivities,
+  before: SimklActivities
+): { statuses: boolean; removals: boolean; ratings: boolean } => {
+  const moved = { statuses: false, removals: false, ratings: false };
+  for (const media of MEDIA_ACTIVITIES) {
+    const current = (now[media] ?? {}) as Record<string, unknown>;
+    const previous = (before[media] ?? {}) as Record<string, unknown>;
+    for (const key of new Set([
+      ...Object.keys(current),
+      ...Object.keys(previous),
+    ])) {
+      if (scalarValue(current[key]) === scalarValue(previous[key])) continue;
+      if (key === 'removed_from_list') moved.removals = true;
+      else if (key === 'rated_at') moved.ratings = true;
+      else if (key !== 'all' && key !== 'playback') moved.statuses = true;
     }
-  };
-  walk(activities);
-  return values.sort().at(-1);
+  }
+  return moved;
 };
+
+/** Shows and anime carry their watched episodes; movies have none. */
+const EPISODE_PARAMS = { extended: 'full', include_all_episodes: 'yes' };
+
+const isMaxItemsError = (error: unknown): boolean =>
+  error instanceof SimklRequestError &&
+  error.status === 400 &&
+  /max_items|too many/i.test(error.message);
 
 export async function syncSimklUser(
   userId: number,
@@ -153,16 +209,16 @@ export async function syncSimklUser(
     }
     try {
       const client = await createSimklUserClient(userId);
+      // Read before pulling, so a change made meanwhile is in the next delta.
       const activities = await client.getActivities();
-      const activitiesSnapshot = activityFingerprint(activities);
-      const nextWatermark = watermark(activities);
+      const activitiesSnapshot = JSON.stringify(activities);
       const oldActivities = previous?.activities
         ? (JSON.parse(previous.activities) as SimklActivities)
         : undefined;
-      if (
-        previous?.initialSyncComplete &&
-        previous.activities === activitiesSnapshot
-      ) {
+      const oldWatermark = oldActivities ? watermark(oldActivities) : undefined;
+      const fullPull =
+        !previous?.initialSyncComplete || !oldActivities || !oldWatermark;
+      if (!fullPull && watermark(activities) === oldWatermark) {
         previous.lastCheckedAt = new Date();
         previous.lastError = undefined;
         await stateRepository.save(previous);
@@ -172,48 +228,67 @@ export async function syncSimklUser(
           lastSuccessfulSyncAt: previous.lastSuccessfulSyncAt?.toISOString(),
         };
       }
-      const batches: {
-        type?: SimklItemType;
-        data: Record<string, unknown>;
-      }[] = [];
-      const oldWatermark = watermark(oldActivities ?? {});
-      if (!previous?.initialSyncComplete || !oldWatermark || !nextWatermark) {
-        for (const type of TYPES)
-          batches.push({
-            type: type.local,
-            data: await client.getAllItems(type.upstream),
-          });
-      } else {
-        batches.push({
-          data: await client.getAllItems(undefined, {
-            date_from: oldWatermark,
-          }),
-        });
-      }
-      const items = batches.flatMap(({ type, data }) =>
-        syncEntries(data, type)
-          .map(({ item, type: entryType }) => normalizeItem(item, entryType))
-          .filter((item): item is Omit<SimklSyncItem, 'id' | 'user'> =>
-            Boolean(item)
-          )
-      );
-      const mustReconcile =
-        removalWatermark(activities) !== removalWatermark(oldActivities ?? {});
+
+      const items: Omit<SimklSyncItem, 'id' | 'user'>[] = [];
+      const collect = (
+        data: unknown,
+        type?: SimklItemType,
+        withEpisodes = false
+      ) => {
+        for (const { item, type: entryType } of syncEntries(data, type)) {
+          const normalized = normalizeItem(item, entryType, withEpisodes);
+          if (normalized) items.push(normalized);
+        }
+      };
+      // Everything still on Simkl; local items missing from it were removed.
       let upstreamIds: Set<string> | undefined;
-      if (mustReconcile) {
-        upstreamIds = new Set();
+
+      if (fullPull) {
+        // One type after another, never in parallel.
         for (const type of TYPES) {
-          for (const { item, type: entryType } of syncEntries(
-            await client.getAllItems(type.upstream, {
-              extended: 'simkl_ids_only',
+          const params = type.local === 'movie' ? {} : EPISODE_PARAMS;
+          let batches: unknown[];
+          try {
+            batches = [await client.getAllItems(type.upstream, params)];
+          } catch (error) {
+            if (!isMaxItemsError(error)) throw error;
+            batches = [];
+            for (const status of STATUSES)
+              batches.push(
+                await client.getAllItems(type.upstream, params, status)
+              );
+          }
+          for (const data of batches)
+            collect(data, type.local, type.local !== 'movie');
+        }
+        upstreamIds = new Set(
+          items.map((item) => `${item.simklType}:${item.simklId}`)
+        );
+      } else {
+        const moved = movedActivities(activities, oldActivities);
+        if (moved.statuses)
+          collect(
+            await client.getAllItems(undefined, {
+              date_from: oldWatermark,
+              ...EPISODE_PARAMS,
             }),
-            type.local
+            undefined,
+            true
+          );
+        // A rating change on a listed item moves only `rated_at`.
+        if (moved.ratings) collect(await client.getRatings(oldWatermark));
+        if (moved.removals) {
+          upstreamIds = new Set();
+          for (const { item, type } of syncEntries(
+            await client.getAllItems(undefined, {
+              extended: 'simkl_ids_only',
+            })
           )) {
             const ids = (
               item.ids && typeof item.ids === 'object' ? item.ids : {}
             ) as Record<string, unknown>;
             const id = simklRecordId(item, ids);
-            if (id) upstreamIds.add(`${entryType}:${id}`);
+            if (id) upstreamIds.add(`${type}:${id}`);
           }
         }
       }

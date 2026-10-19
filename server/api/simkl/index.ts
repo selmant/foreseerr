@@ -383,14 +383,27 @@ export default class SimklAPI extends ExternalAPI {
 
   public async getAllItems(
     type?: 'shows' | 'movies' | 'anime',
-    params: Record<string, string | number | boolean> = {}
+    params: Record<string, string | number | boolean> = {},
+    status?: string
   ): Promise<SimklSyncResponse> {
     const query = new URLSearchParams(
       Object.entries(params).map(([key, value]) => [key, String(value)])
     );
+    const segments = type ? `/${type}${status ? `/${status}` : ''}` : '';
     return this.request(
       'get',
-      `/sync/all-items${type ? `/${type}` : ''}${query.size ? `?${query}` : ''}`
+      `/sync/all-items${segments}${query.size ? `?${query}` : ''}`
+    );
+  }
+
+  /**
+   * Ratings changed since `dateFrom`, all types at once. Never with a rating
+   * segment: that drops the `user_rating: null` rows, which are removals.
+   */
+  public async getRatings(dateFrom: string): Promise<SimklSyncResponse> {
+    return this.request(
+      'get',
+      `/sync/ratings?${new URLSearchParams({ date_from: dateFrom })}`
     );
   }
 
@@ -477,11 +490,6 @@ export default class SimklAPI extends ExternalAPI {
       }
       throw new SimklTemporarilyUnavailableError(error);
     }
-  }
-
-  /** Simkl answers `null` instead of an empty object for an empty history. */
-  public async getWatchedEpisodes(): Promise<Record<string, unknown> | null> {
-    return this.request('get', '/sync/watched?extended=episodes');
   }
 
   /**
