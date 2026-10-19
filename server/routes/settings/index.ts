@@ -3,12 +3,12 @@ import type { JellyfinLibrary } from '@server/api/jellyfin';
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexAPI from '@server/api/plexapi';
 import PlexTvAPI from '@server/api/plextv';
-import SimklAPI, { SimklRequestError } from '@server/api/simkl';
 import TautulliAPI from '@server/api/tautulli';
 import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
 import {
   effectiveSimklClientId,
+  legacySimklClientId,
   simklClientIdFor,
 } from '@server/constants/simkl';
 import { getRepository } from '@server/datasource';
@@ -625,7 +625,7 @@ settingsRoutes.get('/simkl', async (_req, res) => {
   const settings = getSettings();
   return res.status(200).json({
     enabled: settings.simkl.enabled !== false,
-    clientId: settings.simkl.clientId,
+    clientId: legacySimklClientId(settings.simkl.clientId),
     configured: Boolean(effectiveSimklClientId(settings.simkl)),
     actionsEnabled: settings.mediaActions.providers.simkl !== false,
     showCommunityRating: settings.simkl.showCommunityRating,
@@ -712,7 +712,18 @@ settingsRoutes.post('/simkl/actions', async (req, res, next) => {
 settingsRoutes.post('/simkl', async (req, res, next) => {
   try {
     const settings = getSettings();
-    const clientId = String(req.body.clientId ?? '').trim();
+    // Foreseerr ships its own Simkl app. The only Client ID change left is
+    // dropping an install's legacy one (`''`) for it.
+    const current = legacySimklClientId(settings.simkl.clientId);
+    const clientId =
+      req.body.clientId === undefined
+        ? current
+        : legacySimklClientId(String(req.body.clientId));
+    if (clientId && clientId !== current)
+      return res.status(400).json({
+        message:
+          "Foreseerr uses its own Simkl app; a custom Client ID can't be set.",
+      });
     const enabled =
       typeof req.body.enabled === 'boolean'
         ? req.body.enabled
@@ -733,8 +744,6 @@ settingsRoutes.post('/simkl', async (req, res, next) => {
         linkedAccountCount,
       });
     }
-    if (enabled && clientId)
-      await new SimklAPI({ clientId }).validateClientId();
     settings.simkl = {
       enabled,
       clientId,
@@ -764,8 +773,6 @@ settingsRoutes.post('/simkl', async (req, res, next) => {
       label: 'Settings',
       errorMessage: e instanceof Error ? e.message : 'unknown error',
     });
-    if (e instanceof SimklRequestError)
-      return next({ status: 400, message: e.message });
     return next({ status: 500, message: 'Unable to save Simkl settings.' });
   }
 });

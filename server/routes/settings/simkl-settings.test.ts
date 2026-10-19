@@ -151,42 +151,65 @@ describe('Simkl settings with the built-in app', () => {
     assert.deepEqual(validated, []);
   });
 
-  it('checks a custom Client ID, never the built-in one', async () => {
+  it('refuses a new custom Client ID', async () => {
     const agent = await loginAsAdmin();
-    await agent.post('/api/v1/settings/simkl').send({ clientId: '' });
-    assert.deepEqual(validated, []);
     const res = await agent
       .post('/api/v1/settings/simkl')
       .send({ clientId: ' own-client ' });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.deepEqual(validated, ['own-client']);
-    assert.equal(getSettings().simkl.clientId, 'own-client');
+    assert.equal(res.status, 400);
+    assert.equal(getSettings().simkl.clientId, '');
+    assert.deepEqual(validated, []);
   });
 
-  it('asks before switching apps, either way', async () => {
+  it('keeps a legacy Client ID, and its links, across saves', async () => {
     await linkSimklAccount();
-    const agent = await loginAsAdmin();
-    const toCustom = await agent
-      .post('/api/v1/settings/simkl')
-      .send({ clientId: 'own-client' });
-    assert.equal(toCustom.status, 400);
-    assert.equal(toCustom.body.linkedAccountCount, 1);
-
     getSettings().simkl = { ...getSettings().simkl, clientId: 'own-client' };
-    const toBuiltin = await agent
+    const agent = await loginAsAdmin();
+    assert.equal(
+      (await agent.get('/api/v1/settings/simkl')).body.clientId,
+      'own-client'
+    );
+    const res = await agent
+      .post('/api/v1/settings/simkl')
+      .send({ enabled: true, showCommunityRating: false });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(getSettings().simkl.clientId, 'own-client');
+    assert.equal(await linkedCount(), 1);
+    assert.deepEqual(validated, [], 'an unchanged ID is not re-checked');
+  });
+
+  it('asks before switching a legacy install to the built-in app', async () => {
+    await linkSimklAccount();
+    getSettings().simkl = { ...getSettings().simkl, clientId: 'own-client' };
+    const agent = await loginAsAdmin();
+    const unconfirmed = await agent
+      .post('/api/v1/settings/simkl')
+      .send({ clientId: '' });
+    assert.equal(unconfirmed.status, 400);
+    assert.equal(unconfirmed.body.linkedAccountCount, 1);
+
+    const confirmed = await agent
       .post('/api/v1/settings/simkl')
       .send({ clientId: '', confirmDisconnectLinkedAccounts: true });
-    assert.equal(toBuiltin.status, 200, JSON.stringify(toBuiltin.body));
+    assert.equal(confirmed.status, 200, JSON.stringify(confirmed.body));
+    assert.equal(confirmed.body.clientId, '');
+    assert.equal(getSettings().simkl.clientId, '');
     assert.equal(await linkedCount(), 0);
   });
 
-  it('keeps links when the custom ID is just the built-in one', async () => {
+  it('treats the built-in ID entered as a custom one as no custom ID', async () => {
     await linkSimklAccount();
+    getSettings().simkl = {
+      ...getSettings().simkl,
+      clientId: SIMKL_BUILTIN_CLIENT_ID,
+    };
     const agent = await loginAsAdmin();
+    assert.equal((await agent.get('/api/v1/settings/simkl')).body.clientId, '');
     const res = await agent
       .post('/api/v1/settings/simkl')
       .send({ clientId: SIMKL_BUILTIN_CLIENT_ID });
     assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(getSettings().simkl.clientId, '');
     assert.equal(await linkedCount(), 1);
   });
 });

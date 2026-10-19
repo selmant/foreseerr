@@ -12500,7 +12500,7 @@ paths:
                 enabled: { type: boolean }
                 clientId:
                   type: string
-                  description: The administrator's own Simkl app; empty uses Foreseerr's built-in Client ID.
+                  description: Only `''`, to drop an install's legacy Client ID for Foreseerr's own Simkl app, or that legacy ID unchanged. Custom Client IDs can no longer be set.
                 actionsEnabled: { type: boolean }
                 showCommunityRating: { type: boolean }
                 posterCommunityRating: { type: boolean }
