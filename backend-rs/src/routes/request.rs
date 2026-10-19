@@ -450,6 +450,10 @@ pub(super) fn columns(out: &mut Map<String, Value>, r: &RequestRow) {
     );
     out.insert(String::from("watchAheadCount"), number(r.watch_ahead_count));
     out.insert(
+        String::from("watchAheadInactiveAt"),
+        text(&r.watch_ahead_inactive_at),
+    );
+    out.insert(
         String::from("ongoingEpisodeRequestKey"),
         text(&r.ongoing_episode_request_key),
     );
@@ -532,6 +536,8 @@ pub(super) fn episodes_json(episodes: &[EpisodeRequestRow]) -> Value {
                     String::from("searchTriggeredAt"),
                     text(&e.search_triggered_at),
                 );
+                out.insert(String::from("monitoredAt"), text(&e.monitored_at));
+                out.insert(String::from("unmonitoredAt"), text(&e.unmonitored_at));
                 out.insert(String::from("createdAt"), text(&e.created_at));
                 out.insert(String::from("updatedAt"), text(&e.updated_at));
                 Value::Object(out)

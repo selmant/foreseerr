@@ -7,7 +7,9 @@
 //! their window past what the requester has played in Jellyfin, episodes
 //! with files complete, missing ones are monitored and searched, and a
 //! request whose episodes are all done completes (through
-//! `crate::lifecycle`, which runs the request hooks).
+//! `crate::lifecycle`, which runs the request hooks). Watch-ahead episodes
+//! are monitored once; one that is unmonitored again before it has a file
+//! was removed by someone else, so it is marked instead of fetched again.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,9 +19,9 @@ use anyhow::{anyhow, Result};
 use reqwest::Method;
 use serde_json::{Map, Value};
 
-use super::syncutil::{axios_message, date_bind, date_ph, int, now_ms, parse_js_date, Tx};
+use super::syncutil::{axios_message, date_ph, int, iso, now_ms, opt_date_bind, parse_js_date, Tx};
 use super::JobCtx;
-use crate::db::Bind;
+use crate::db::{Bind, Db};
 use crate::library::{Lib, Link};
 use crate::lifecycle::{Entity, Lc, APPROVED, COMPLETED};
 use crate::settings::public::truthy;
@@ -441,17 +443,39 @@ fn sonarr_text(e: &Value, key: &str) -> Option<String> {
     e.get(key).and_then(Value::as_str).map(str::to_owned)
 }
 
-/// `keepWatchAheadMonitored`. A completed child already had its file, so a
-/// missing one was deleted on purpose (watched, cleaned up) and stays
-/// unmonitored.
-const fn keeps_watch_ahead_monitored(watch_ahead: bool, has_file: bool, status: i64) -> bool {
-    watch_ahead && !has_file && status != COMPLETED
+/// `awaitingMonitor`. Watch-ahead children are monitored once. After that
+/// Sonarr's flag wins: an episode someone else unmonitored, or a completed
+/// child whose file was deleted on purpose, stays unmonitored.
+const fn awaits_monitor(
+    watch_ahead: bool,
+    has_file: bool,
+    status: i64,
+    monitored_at: bool,
+) -> bool {
+    watch_ahead && !has_file && status != COMPLETED && !monitored_at
 }
 
 /// Whether a missing episode is a search candidate. A completed child lost
 /// its file on purpose, so it is skipped even when Sonarr still monitors it.
-const fn wants_search(is_new: bool, monitored: bool, keep_monitored: bool, status: i64) -> bool {
-    (is_new || monitored || keep_monitored) && status != COMPLETED
+const fn wants_search(is_new: bool, monitored: bool, awaiting: bool, status: i64) -> bool {
+    (is_new || monitored || awaiting) && status != COMPLETED
+}
+
+/// Whether a window child was removed by someone else: Foreseerr already
+/// monitored it (or it was downloaded) and it is now unmonitored without a
+/// file. It is shown instead of fetched again.
+const fn removed_externally(
+    has_file: bool,
+    monitored: bool,
+    status: i64,
+    monitored_at: bool,
+) -> bool {
+    !has_file && !monitored && (status == COMPLETED || monitored_at)
+}
+
+/// Whether every episode of a non-empty watch-ahead window was removed.
+fn window_inactive(window: &HashSet<i64>, removed: &HashSet<i64>) -> bool {
+    !window.is_empty() && window.iter().all(|t| removed.contains(t))
 }
 
 /// `reconcileRequest`.
@@ -464,8 +488,10 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
     }
     let selection = request.row.episode_selection_type.clone();
     let mut additions: HashSet<i64> = HashSet::new();
+    let mut inserted = false;
     let mut catalog_ready = true;
     let mut caught_up = false;
+    let mut window: Option<HashSet<i64>> = None;
     if selection.as_deref() == Some("after") {
         let boundary = by_tvdb
             .get(&request.row.episode_start_tvdb_id.unwrap_or(-1))
@@ -499,13 +525,16 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
             })
             .collect();
         insert_episodes(job, request.row.id, &fresh).await?;
+        inserted = !fresh.is_empty();
         additions.extend(fresh.iter().map(|e| e.tvdb_id));
     } else if selection.as_deref() == Some("watchAhead") {
-        let (ready, done) = expand_watch_ahead(job, request, &by_tvdb, &mut additions).await?;
-        catalog_ready = ready;
-        caught_up = done;
+        let expansion = expand_watch_ahead(job, request, &by_tvdb, &mut additions).await?;
+        catalog_ready = expansion.ready;
+        caught_up = expansion.caught_up;
+        inserted = expansion.inserted;
+        window = expansion.window;
     }
-    if !additions.is_empty() {
+    if inserted {
         if let Some(fresh) = lc.load(request.row.id).await? {
             *request = fresh;
         }
@@ -513,7 +542,10 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
     let watch_ahead = selection.as_deref() == Some("watchAhead");
     let now = now_ms();
     let mut unmonitored: Vec<Value> = Vec::new();
+    let mut newly_monitored: Vec<i64> = Vec::new();
     let mut searchable: Vec<(i64, Value)> = Vec::new();
+    let mut removed_changed: Vec<(i64, Option<i64>)> = Vec::new();
+    let mut removed: HashSet<i64> = HashSet::new();
     let db = &job.state.db;
     for child in &mut request.row.episodes {
         let Some(episode) = by_tvdb.get(&child.tvdb_id) else {
@@ -522,9 +554,25 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         let is_new = additions.contains(&child.tvdb_id);
         let has_file = truthy(episode.get("hasFile"));
         let monitored = truthy(episode.get("monitored"));
-        let keep_monitored = keeps_watch_ahead_monitored(watch_ahead, has_file, child.status);
-        if (is_new || keep_monitored) && !monitored {
+        let monitored_at = child.monitored_at.is_some();
+        let awaiting = awaits_monitor(watch_ahead, has_file, child.status, monitored_at);
+        if (is_new || awaiting) && !monitored {
             unmonitored.push(episode.get("id").cloned().unwrap_or(Value::Null));
+        }
+        if awaiting {
+            newly_monitored.push(child.id);
+        }
+        if let Some(window) = &window {
+            let gone = window.contains(&child.tvdb_id)
+                && removed_externally(has_file, monitored, child.status, monitored_at);
+            if gone {
+                removed.insert(child.tvdb_id);
+            }
+            if gone != child.unmonitored_at.is_some() {
+                let at = gone.then_some(now);
+                child.unmonitored_at = at.map(iso);
+                removed_changed.push((child.id, at));
+            }
         }
         if has_file {
             if child.status != COMPLETED {
@@ -545,7 +593,7 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
                     .and_then(parse_js_date)
                     .is_some_and(|at| at <= now)
             });
-        if wants_search(is_new, monitored, keep_monitored, child.status)
+        if wants_search(is_new, monitored, awaiting, child.status)
             && !context.prevent_search
             && child.search_triggered_at.is_none()
             && aired
@@ -553,7 +601,16 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
             searchable.push((child.id, episode.get("id").cloned().unwrap_or(Value::Null)));
         }
     }
-    monitor_and_search(job, context, unmonitored, &searchable).await?;
+    save_child_dates(db, "unmonitoredAt", &removed_changed).await?;
+    if let Some(window) = &window {
+        let inactive = window_inactive(window, &removed);
+        if inactive != request.row.watch_ahead_inactive_at.is_some() {
+            let at = inactive.then_some(now);
+            save_inactive_at(db, request.row.id, at).await?;
+            request.row.watch_ahead_inactive_at = at.map(iso);
+        }
+    }
+    monitor_and_search(job, context, unmonitored, &newly_monitored, &searchable).await?;
     let complete = request.row.episodes.iter().all(|e| e.status == COMPLETED);
     let reads_status = match selection.as_deref() {
         Some("after") => true,
@@ -581,12 +638,13 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
     Ok(())
 }
 
-/// `monitorEpisodes`, then `searchEpisodes` and the `searchTriggeredAt`
-/// stamps.
+/// `monitorEpisodes` and the `monitoredAt` stamps, then `searchEpisodes`
+/// and the `searchTriggeredAt` stamps.
 async fn monitor_and_search(
     job: &JobCtx,
     context: &Context,
     unmonitored: Vec<Value>,
+    newly_monitored: &[i64],
     searchable: &[(i64, Value)],
 ) -> Result<()> {
     let timeout = crate::servarr::api_timeout(&job.settings);
@@ -619,6 +677,10 @@ async fn monitor_and_search(
             return Err(anyhow!("Failed to monitor episodes"));
         }
     }
+    let monitored_at = Some(now_ms());
+    let monitored: Vec<(i64, Option<i64>)> =
+        newly_monitored.iter().map(|c| (*c, monitored_at)).collect();
+    save_child_dates(&job.state.db, "monitoredAt", &monitored).await?;
     if searchable.is_empty() {
         return Ok(());
     }
@@ -639,31 +701,70 @@ async fn monitor_and_search(
         )
         .await
         .map_err(|e| anyhow!("[Sonarr] Failed to run command: {}", axios_message(&e)))?;
-    let pg = job.state.db.is_postgres();
-    let at = now_ms();
-    let mut tx = Tx::begin(&job.state.db).await?;
-    for (child, _) in searchable {
+    let searched_at = Some(now_ms());
+    let searched: Vec<(i64, Option<i64>)> =
+        searchable.iter().map(|(c, _)| (*c, searched_at)).collect();
+    save_child_dates(&job.state.db, "searchTriggeredAt", &searched).await
+}
+
+/// Set a date column of episode children (`None` clears it), in one
+/// transaction as `episodeRepository.save([...])` writes them.
+async fn save_child_dates(db: &Db, column: &str, dates: &[(i64, Option<i64>)]) -> Result<()> {
+    if dates.is_empty() {
+        return Ok(());
+    }
+    let pg = db.is_postgres();
+    let mut tx = Tx::begin(db).await?;
+    for (child, at) in dates {
         tx.execute(
             &format!(
-                r#"UPDATE "episode_request" SET "searchTriggeredAt" = {}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
+                r#"UPDATE "episode_request" SET "{column}" = {}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
                 date_ph(pg, 1)
             ),
-            &[date_bind(pg, at), Bind::Int(*child)],
+            &[opt_date_bind(pg, *at), Bind::Int(*child)],
         )
         .await?;
     }
     tx.commit().await
 }
 
-/// `expandWatchAhead`: `(ready, caughtUp)`.
+/// `watchAheadInactiveAt` alone, outside `crate::lifecycle`: saving the
+/// request would run its hooks and send it to Sonarr again.
+async fn save_inactive_at(db: &Db, request_id: i64, at: Option<i64>) -> Result<()> {
+    let pg = db.is_postgres();
+    db.execute(
+        &format!(
+            r#"UPDATE "media_request" SET "watchAheadInactiveAt" = {}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
+            date_ph(pg, 1)
+        ),
+        &[opt_date_bind(pg, at), Bind::Int(request_id)],
+    )
+    .await?;
+    Ok(())
+}
+
+/// What `expandWatchAhead` found.
+#[derive(Default)]
+struct Expansion {
+    /// `ready`: the catalog and the play history were read.
+    ready: bool,
+    /// `caughtUp`: nothing is left to watch ahead.
+    caught_up: bool,
+    /// Whether children were added.
+    inserted: bool,
+    /// `window`: the tvdb ids of the desired window, once ready.
+    window: Option<HashSet<i64>>,
+}
+
+/// `expandWatchAhead`.
 async fn expand_watch_ahead(
     job: &JobCtx,
     request: &Entity,
     by_tvdb: &HashMap<i64, &Value>,
     additions: &mut HashSet<i64>,
-) -> Result<(bool, bool)> {
+) -> Result<Expansion> {
     let Some(media) = request.media.as_ref().filter(|m| m.tmdb_id != 0) else {
-        return Ok((false, false));
+        return Ok(Expansion::default());
     };
     let catalog = match episode_catalog(job, media.tmdb_id).await {
         Ok(catalog) => catalog,
@@ -675,7 +776,7 @@ async fn expand_watch_ahead(
                 error_message = %format!("{e:#}"),
                 "Failed to load TVDB catalog for watch-ahead sync"
             );
-            return Ok((false, false));
+            return Ok(Expansion::default());
         }
     };
     let series_id = if request.row.is4k {
@@ -684,21 +785,21 @@ async fn expand_watch_ahead(
         media.jellyfin_media_id.clone()
     };
     let user_id = request.row.requested_by_id.unwrap_or(0);
-    let played = played_for_series(job, user_id, series_id.as_deref(), &catalog).await;
+    let Some(played) = played_for_series(job, user_id, series_id.as_deref(), &catalog).await else {
+        return Ok(Expansion::default());
+    };
     let desired = watch_ahead_window(
         &catalog,
         watch_ahead_count(request.row.watch_ahead_count),
         &played,
     );
+    let window: HashSet<i64> = desired.iter().map(|e| e.tvdb_id).collect();
     let known: HashSet<i64> = request.row.episodes.iter().map(|e| e.tvdb_id).collect();
+    // Downloaded window episodes are tracked too, as completed children, so
+    // a file deleted before it was watched is not requested again later.
     let fresh: Vec<NewEpisode> = desired
         .iter()
         .filter(|e| !known.contains(&e.tvdb_id))
-        .filter(|e| {
-            !by_tvdb
-                .get(&e.tvdb_id)
-                .is_some_and(|s| truthy(s.get("hasFile")))
-        })
         .map(|e| {
             let sonarr = by_tvdb.get(&e.tvdb_id);
             NewEpisode {
@@ -719,22 +820,39 @@ async fn expand_watch_ahead(
         })
         .collect();
     if fresh.is_empty() {
-        return Ok((true, desired.is_empty()));
+        return Ok(Expansion {
+            ready: true,
+            caught_up: desired.is_empty(),
+            inserted: false,
+            window: Some(window),
+        });
     }
     insert_episodes(job, request.row.id, &fresh).await?;
-    additions.extend(fresh.iter().map(|e| e.tvdb_id));
-    Ok((true, false))
+    additions.extend(
+        fresh
+            .iter()
+            .filter(|e| e.status != COMPLETED)
+            .map(|e| e.tvdb_id),
+    );
+    Ok(Expansion {
+        ready: true,
+        caught_up: false,
+        inserted: true,
+        window: Some(window),
+    })
 }
 
-/// `loadPlayedTvdbIdsForSeries`.
+/// `loadPlayedTvdbIdsForSeries`: `None` when the play history couldn't be
+/// read. Unknown progress is not "nothing watched": an empty set would move
+/// the window back to the first episodes and download them again.
 async fn played_for_series(
     job: &JobCtx,
     user_id: i64,
     series_id: Option<&str>,
     catalog: &[CatalogEpisode],
-) -> HashSet<i64> {
+) -> Option<HashSet<i64>> {
     let Some(series_id) = series_id.filter(|s| !s.is_empty()) else {
-        return HashSet::new();
+        return Some(HashSet::new());
     };
     let lib = Lib {
         state: &job.state,
@@ -747,7 +865,7 @@ async fn played_for_series(
             .series_episodes(series_id)
             .await
             .map_err(|e| format!("{e:?}")),
-        Ok(Link::Code(_)) => return HashSet::new(),
+        Ok(Link::Code(_)) => return Some(HashSet::new()),
         Err(why) => Err(why),
     };
     match items {
@@ -761,7 +879,7 @@ async fn played_for_series(
                     played: i.played(),
                 })
                 .collect();
-            played_tvdb_ids(catalog, &items)
+            Some(played_tvdb_ids(catalog, &items))
         }
         Err(why) => {
             tracing::warn!(
@@ -771,7 +889,7 @@ async fn played_for_series(
                 error_message = %why,
                 "Failed to load Jellyfin watch progress for watch-ahead"
             );
-            HashSet::new()
+            None
         }
     }
 }
@@ -918,19 +1036,23 @@ mod tests {
     #[test]
     fn deleted_watch_ahead_episodes_stay_unmonitored() {
         assert!(
-            keeps_watch_ahead_monitored(true, false, APPROVED),
-            "missing and never downloaded"
+            awaits_monitor(true, false, APPROVED, false),
+            "missing and never monitored"
         );
         assert!(
-            !keeps_watch_ahead_monitored(true, false, COMPLETED),
+            !awaits_monitor(true, false, APPROVED, true),
+            "monitored once, then unmonitored by someone else"
+        );
+        assert!(
+            !awaits_monitor(true, false, COMPLETED, false),
             "downloaded, then deleted"
         );
         assert!(
-            !keeps_watch_ahead_monitored(true, true, APPROVED),
+            !awaits_monitor(true, true, APPROVED, false),
             "already has its file"
         );
         assert!(
-            !keeps_watch_ahead_monitored(false, false, APPROVED),
+            !awaits_monitor(false, false, APPROVED, false),
             "not a watch-ahead request"
         );
     }
@@ -953,5 +1075,79 @@ mod tests {
             !wants_search(false, false, false, APPROVED),
             "unmonitored and not kept"
         );
+    }
+
+    #[test]
+    fn removed_window_episodes() {
+        assert!(
+            removed_externally(false, false, APPROVED, true),
+            "monitored by Foreseerr, then unmonitored without a file"
+        );
+        assert!(
+            removed_externally(false, false, COMPLETED, false),
+            "downloaded, then deleted and unmonitored"
+        );
+        assert!(
+            !removed_externally(false, false, APPROVED, false),
+            "not monitored yet, so not removed"
+        );
+        assert!(
+            !removed_externally(false, true, APPROVED, true),
+            "monitored again in Sonarr"
+        );
+        assert!(
+            !removed_externally(true, false, COMPLETED, true),
+            "still has its file"
+        );
+    }
+
+    #[test]
+    fn inactive_when_the_whole_window_was_removed() {
+        let set = |ids: &[i64]| ids.iter().copied().collect::<HashSet<i64>>();
+        assert!(window_inactive(&set(&[1, 2]), &set(&[1, 2])), "all removed");
+        assert!(!window_inactive(&set(&[1, 2]), &set(&[1])), "one left");
+        assert!(!window_inactive(&set(&[]), &set(&[])), "empty window");
+    }
+
+    #[tokio::test]
+    async fn watch_ahead_dates_read_back() -> Result<()> {
+        use crate::dbtx::scratch::{self, PENDING_SEASON_ONE};
+        use anyhow::Context;
+
+        let scratch = scratch::sqlite("episode-sync-dates").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[r#"INSERT INTO "episode_request" ("id", "tvdbId", "seasonNumber", "episodeNumber", "status", "requestId") VALUES (1, 101, 1, 1, 2, 1), (2, 102, 1, 2, 2, 1)"#],
+        )
+        .await?;
+        let at = 1_790_000_000_123;
+        save_child_dates(db, "monitoredAt", &[(1, Some(at)), (2, Some(at))]).await?;
+        save_child_dates(db, "unmonitoredAt", &[(1, Some(at))]).await?;
+        save_inactive_at(db, 1, Some(at)).await?;
+        let row = db.request_by_id(1).await?.context("request 1")?;
+        let stamped = Some(iso(at));
+        assert_eq!(row.watch_ahead_inactive_at, stamped, "request marked");
+        let dates: Vec<_> = row
+            .episodes
+            .iter()
+            .map(|e| (e.monitored_at.clone(), e.unmonitored_at.clone()))
+            .collect();
+        assert_eq!(
+            dates,
+            [(stamped.clone(), stamped.clone()), (stamped.clone(), None)],
+            "both monitored, the first removed"
+        );
+
+        save_child_dates(db, "unmonitoredAt", &[(1, None)]).await?;
+        save_inactive_at(db, 1, None).await?;
+        let row = db.request_by_id(1).await?.context("request 1")?;
+        assert_eq!(row.watch_ahead_inactive_at, None, "request cleared");
+        assert!(
+            row.episodes.iter().all(|e| e.unmonitored_at.is_none()),
+            "episode cleared"
+        );
+        Ok(())
     }
 }

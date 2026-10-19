@@ -68,7 +68,7 @@ static CREATE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 pub(super) const ROUTES: &Table = &[("/api/v1/request", Method::POST, create)];
 
 /// `MediaRequest`'s columns in declaration order.
-pub(super) const REQUEST_COLUMNS: [Column; 19] = [
+pub(super) const REQUEST_COLUMNS: [Column; 20] = [
     ("id", false, true),
     ("status", false, false),
     ("createdAt", false, true),
@@ -78,6 +78,7 @@ pub(super) const REQUEST_COLUMNS: [Column; 19] = [
     ("episodeStartTvdbId", true, false),
     ("episodeEndTvdbId", true, false),
     ("watchAheadCount", true, false),
+    ("watchAheadInactiveAt", true, false),
     ("ongoingEpisodeRequestKey", true, false),
     ("tvQuotaUnits", false, true),
     ("is4k", false, true),

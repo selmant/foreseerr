@@ -630,4 +630,13 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "DROP TABLE \"mapping_gap\"",
         ],
     },
+    Migration {
+        timestamp: 1_789_400_000_000,
+        name: "AddWatchAheadMonitorTracking1789400000000",
+        queries: &[
+            "ALTER TABLE \"episode_request\" ADD \"monitoredAt\" TIMESTAMP WITH TIME ZONE",
+            "ALTER TABLE \"episode_request\" ADD \"unmonitoredAt\" TIMESTAMP WITH TIME ZONE",
+            "ALTER TABLE \"media_request\" ADD \"watchAheadInactiveAt\" TIMESTAMP WITH TIME ZONE",
+        ],
+    },
 ];

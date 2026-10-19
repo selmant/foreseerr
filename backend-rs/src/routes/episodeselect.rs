@@ -517,7 +517,7 @@ pub(super) async fn insert_episodes(
 }
 
 /// The new episode entities as the response prints them after the
-/// insert: the assigned fields, then `searchTriggeredAt`, `id` and the
+/// insert: the assigned fields, then the unset nullable dates, `id` and the
 /// dates read back. `rows` are the stored rows of the request.
 pub(super) fn episodes_json(
     episodes: &[CatalogEpisode],
@@ -541,6 +541,8 @@ pub(super) fn episodes_json(
                 );
                 d.put("status", Value::from(status));
                 d.put("searchTriggeredAt", Value::Null);
+                d.put("monitoredAt", Value::Null);
+                d.put("unmonitoredAt", Value::Null);
                 d.put("id", row.map_or(Value::Null, |r| Value::from(r.id)));
                 d.put(
                     "createdAt",

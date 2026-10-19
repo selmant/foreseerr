@@ -1252,6 +1252,15 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "DROP TABLE \"mapping_gap\"",
         ],
     },
+    Migration {
+        timestamp: 1_789_400_000_000,
+        name: "AddWatchAheadMonitorTracking1789400000000",
+        queries: &[
+            "ALTER TABLE \"episode_request\" ADD \"monitoredAt\" datetime",
+            "ALTER TABLE \"episode_request\" ADD \"unmonitoredAt\" datetime",
+            "ALTER TABLE \"media_request\" ADD \"watchAheadInactiveAt\" datetime",
+        ],
+    },
 ];
 
 /// `SeerrMigration1759769291608` from `server/lib/overseerrMerge.ts`,

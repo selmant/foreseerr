@@ -310,7 +310,7 @@
       "type": "table",
       "name": "episode_request",
       "tbl_name": "episode_request",
-      "sql": "CREATE TABLE \"episode_request\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"tvdbId\" integer NOT NULL, \"seasonNumber\" integer NOT NULL, \"episodeNumber\" integer NOT NULL, \"title\" varchar, \"airDate\" varchar, \"status\" integer NOT NULL DEFAULT (1), \"searchTriggeredAt\" datetime, \"requestId\" integer, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), CONSTRAINT \"UQ_episode_request_request_tvdb\" UNIQUE (\"requestId\", \"tvdbId\"), CONSTRAINT \"FK_episode_request_request\" FOREIGN KEY (\"requestId\") REFERENCES \"media_request\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+      "sql": "CREATE TABLE \"episode_request\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"tvdbId\" integer NOT NULL, \"seasonNumber\" integer NOT NULL, \"episodeNumber\" integer NOT NULL, \"title\" varchar, \"airDate\" varchar, \"status\" integer NOT NULL DEFAULT (1), \"searchTriggeredAt\" datetime, \"requestId\" integer, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"monitoredAt\" datetime, \"unmonitoredAt\" datetime, CONSTRAINT \"UQ_episode_request_request_tvdb\" UNIQUE (\"requestId\", \"tvdbId\"), CONSTRAINT \"FK_episode_request_request\" FOREIGN KEY (\"requestId\") REFERENCES \"media_request\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
     },
     {
       "type": "table",
@@ -358,7 +358,7 @@
       "type": "table",
       "name": "media_request",
       "tbl_name": "media_request",
-      "sql": "CREATE TABLE \"media_request\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"status\" integer NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"type\" varchar NOT NULL, \"mediaId\" integer, \"requestedById\" integer, \"modifiedById\" integer, \"is4k\" boolean NOT NULL DEFAULT (0), \"serverId\" integer, \"profileId\" integer, \"rootFolder\" varchar, \"languageProfileId\" integer, \"tags\" text, \"isAutoRequest\" boolean NOT NULL DEFAULT (0), \"ignoreQuota\" boolean NOT NULL DEFAULT (0), \"episodeSelectionType\" varchar, \"episodeStartTvdbId\" integer, \"episodeEndTvdbId\" integer, \"tvQuotaUnits\" integer NOT NULL DEFAULT (0), \"ongoingEpisodeRequestKey\" varchar, \"watchAheadCount\" integer, CONSTRAINT \"FK_a1aa713f41c99e9d10c48da75a0\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_6997bee94720f1ecb7f31137095\" FOREIGN KEY (\"requestedById\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_f4fc4efa14c3ba2b29c4525fa15\" FOREIGN KEY (\"modifiedById\") REFERENCES \"user\" (\"id\") ON DELETE SET NULL ON UPDATE NO ACTION)"
+      "sql": "CREATE TABLE \"media_request\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"status\" integer NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"type\" varchar NOT NULL, \"mediaId\" integer, \"requestedById\" integer, \"modifiedById\" integer, \"is4k\" boolean NOT NULL DEFAULT (0), \"serverId\" integer, \"profileId\" integer, \"rootFolder\" varchar, \"languageProfileId\" integer, \"tags\" text, \"isAutoRequest\" boolean NOT NULL DEFAULT (0), \"ignoreQuota\" boolean NOT NULL DEFAULT (0), \"episodeSelectionType\" varchar, \"episodeStartTvdbId\" integer, \"episodeEndTvdbId\" integer, \"tvQuotaUnits\" integer NOT NULL DEFAULT (0), \"ongoingEpisodeRequestKey\" varchar, \"watchAheadCount\" integer, \"watchAheadInactiveAt\" datetime, CONSTRAINT \"FK_a1aa713f41c99e9d10c48da75a0\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_6997bee94720f1ecb7f31137095\" FOREIGN KEY (\"requestedById\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_f4fc4efa14c3ba2b29c4525fa15\" FOREIGN KEY (\"modifiedById\") REFERENCES \"user\" (\"id\") ON DELETE SET NULL ON UPDATE NO ACTION)"
     },
     {
       "type": "table",
@@ -866,6 +866,11 @@
       "id": 83,
       "timestamp": 1789300000000,
       "name": "RebuildMappingTables1789300000000"
+    },
+    {
+      "id": 84,
+      "timestamp": 1789400000000,
+      "name": "AddWatchAheadMonitorTracking1789400000000"
     }
   ]
 }

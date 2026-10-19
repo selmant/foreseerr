@@ -878,7 +878,7 @@ impl Db {
                     r#"SELECT "id", "seasonNumber", "status", "createdAt", "updatedAt", "requestId" FROM "season_request" WHERE "requestId" IN ({ids}) ORDER BY "id" ASC"#
                 );
                 let episodes = format!(
-                    r#"SELECT "id", "tvdbId", "seasonNumber", "episodeNumber", "title", "airDate", "status", "searchTriggeredAt", "createdAt", "updatedAt", "requestId" FROM "episode_request" WHERE "requestId" IN ({ids}) ORDER BY "seasonNumber" ASC, "episodeNumber" ASC, "id" ASC"#
+                    r#"SELECT "id", "tvdbId", "seasonNumber", "episodeNumber", "title", "airDate", "status", "searchTriggeredAt", "monitoredAt", "unmonitoredAt", "createdAt", "updatedAt", "requestId" FROM "episode_request" WHERE "requestId" IN ({ids}) ORDER BY "seasonNumber" ASC, "episodeNumber" ASC, "id" ASC"#
                 );
                 (
                     sqlx::query(AssertSqlSafe(seasons))
@@ -902,8 +902,10 @@ impl Db {
                     pg_iso("\"updatedAt\"")
                 );
                 let episodes = format!(
-                    r#"SELECT "id"::bigint AS "id", "tvdbId"::bigint AS "tvdbId", "seasonNumber"::bigint AS "seasonNumber", "episodeNumber"::bigint AS "episodeNumber", "title", "airDate", "status"::bigint AS "status", {} AS "searchTriggeredAt", {} AS "createdAt", {} AS "updatedAt", "requestId"::bigint AS "requestId" FROM "episode_request" WHERE "requestId" IN ({ids}) ORDER BY "seasonNumber" ASC, "episodeNumber" ASC, "id" ASC"#,
+                    r#"SELECT "id"::bigint AS "id", "tvdbId"::bigint AS "tvdbId", "seasonNumber"::bigint AS "seasonNumber", "episodeNumber"::bigint AS "episodeNumber", "title", "airDate", "status"::bigint AS "status", {} AS "searchTriggeredAt", {} AS "monitoredAt", {} AS "unmonitoredAt", {} AS "createdAt", {} AS "updatedAt", "requestId"::bigint AS "requestId" FROM "episode_request" WHERE "requestId" IN ({ids}) ORDER BY "seasonNumber" ASC, "episodeNumber" ASC, "id" ASC"#,
                     pg_iso("\"searchTriggeredAt\""),
+                    pg_iso("\"monitoredAt\""),
+                    pg_iso("\"unmonitoredAt\""),
                     pg_iso("\"createdAt\""),
                     pg_iso("\"updatedAt\"")
                 );
@@ -3387,6 +3389,10 @@ pub struct EpisodeRequestRow {
     pub status: i64,
     /// `searchTriggeredAt` as ISO 8601 UTC.
     pub search_triggered_at: Option<String>,
+    /// `monitoredAt` as ISO 8601 UTC.
+    pub monitored_at: Option<String>,
+    /// `unmonitoredAt` as ISO 8601 UTC.
+    pub unmonitored_at: Option<String>,
     /// `createdAt` as ISO 8601 UTC.
     pub created_at: Option<String>,
     /// `updatedAt` as ISO 8601 UTC.
@@ -3417,6 +3423,8 @@ pub struct RequestRow {
     pub episode_end_tvdb_id: Option<i64>,
     /// `watchAheadCount`.
     pub watch_ahead_count: Option<i64>,
+    /// `watchAheadInactiveAt` as ISO 8601 UTC.
+    pub watch_ahead_inactive_at: Option<String>,
     /// `ongoingEpisodeRequestKey`.
     pub ongoing_episode_request_key: Option<String>,
     /// `tvQuotaUnits`.
@@ -3450,7 +3458,7 @@ pub struct RequestRow {
 }
 
 const REQUEST_COLUMNS_SQLITE: &str = r#"r."id", r."status", r."createdAt", r."updatedAt", r."type", r."episodeSelectionType",
-    r."episodeStartTvdbId", r."episodeEndTvdbId", r."watchAheadCount", r."ongoingEpisodeRequestKey", r."tvQuotaUnits", r."is4k",
+    r."episodeStartTvdbId", r."episodeEndTvdbId", r."watchAheadCount", r."watchAheadInactiveAt", r."ongoingEpisodeRequestKey", r."tvQuotaUnits", r."is4k",
     r."serverId", r."profileId", r."rootFolder", r."languageProfileId", r."tags", r."isAutoRequest", r."ignoreQuota",
     r."mediaId", r."requestedById", r."modifiedById""#;
 
@@ -3459,6 +3467,7 @@ const REQUEST_COLUMNS_PG: &str = r#"r."id"::bigint AS "id", r."status"::bigint A
     to_char(r."updatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",
     r."type", r."episodeSelectionType", r."episodeStartTvdbId"::bigint AS "episodeStartTvdbId",
     r."episodeEndTvdbId"::bigint AS "episodeEndTvdbId", r."watchAheadCount"::bigint AS "watchAheadCount",
+    to_char(r."watchAheadInactiveAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "watchAheadInactiveAt",
     r."ongoingEpisodeRequestKey", r."tvQuotaUnits"::bigint AS "tvQuotaUnits", r."is4k",
     r."serverId"::bigint AS "serverId", r."profileId"::bigint AS "profileId", r."rootFolder",
     r."languageProfileId"::bigint AS "languageProfileId", r."tags", r."isAutoRequest", r."ignoreQuota",
@@ -3487,6 +3496,7 @@ where
         episode_start_tvdb_id: r.try_get("episodeStartTvdbId")?,
         episode_end_tvdb_id: r.try_get("episodeEndTvdbId")?,
         watch_ahead_count: r.try_get("watchAheadCount")?,
+        watch_ahead_inactive_at: date("watchAheadInactiveAt")?,
         ongoing_episode_request_key: r.try_get("ongoingEpisodeRequestKey")?,
         tv_quota_units: r.try_get("tvQuotaUnits")?,
         is4k: r.try_get("is4k")?,
@@ -3538,6 +3548,8 @@ where
         air_date: r.try_get("airDate")?,
         status: r.try_get("status")?,
         search_triggered_at: date("searchTriggeredAt")?,
+        monitored_at: date("monitoredAt")?,
+        unmonitored_at: date("unmonitoredAt")?,
         created_at: date("createdAt")?,
         updated_at: date("updatedAt")?,
         request_id: r.try_get("requestId")?,
