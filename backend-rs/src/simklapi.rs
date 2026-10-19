@@ -189,6 +189,19 @@ pub fn client_id_for(client_id: &str) -> String {
     }
 }
 
+/// `legacySimklClientId(clientId)`: an install's own Client ID from before
+/// Foreseerr shipped its own app, or `""`. New ones can't be set; an
+/// existing one keeps its linked accounts.
+#[must_use]
+pub fn legacy_client_id(client_id: &str) -> String {
+    let trimmed = crate::jsval::trim(client_id);
+    if trimmed == BUILTIN_CLIENT_ID {
+        String::new()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
 /// `effectiveSimklClientId(settings.simkl)` over the `simkl` object: the
 /// Client ID Simkl calls use, or `""` while Simkl is turned off. `None`
 /// for a `clientId` that isn't text (Node's `trim()` throws).

@@ -293,17 +293,13 @@ fn trakt<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// `new SimklAPI({ clientId }).validateClientId()`.
-async fn simkl_valid(ctx: &Ready<'_>, client_id: &str) -> Result<(), crate::simklapi::Failure> {
-    crate::simklapi::Config::new(
-        &ctx.state.outbound,
-        client_id,
-        &ctx.state.version.version,
-        crate::simklapi::timeout_of(&ctx.settings),
-    )
-    .anonymous()
-    .validate_client_id()
-    .await
+/// The Client ID a save asks for: the install's legacy one when the body
+/// has none, else the body's. `None` for a new custom one: Foreseerr ships
+/// its own Simkl app, so the only change left is dropping a legacy ID
+/// (`""`) for it.
+fn requested_simkl_client_id(body: Option<&str>, current: &str) -> Option<String> {
+    let client_id = body.map_or_else(|| current.to_owned(), crate::simklapi::legacy_client_id);
+    (client_id.is_empty() || client_id == current).then_some(client_id)
 }
 
 /// `POST /settings/simkl`.
@@ -327,17 +323,30 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return Outcome::forward(String::from("a body the validator may reject"));
         }
         let data = node_memory(ctx);
-        let client_id = body_text(body, "clientId");
+        // `settings.simkl.clientId?.trim()` throws on anything but a string
+        // or nothing.
+        let old_client_id = match data.pointer("/simkl/clientId") {
+            None | Some(Value::Null) => "",
+            Some(Value::String(own)) => own.as_str(),
+            Some(_) => {
+                tracing::error!("Unable to save Simkl settings: clientId is not a string");
+                return ctx.error(500, "Unable to save Simkl settings.");
+            }
+        };
+        let current = crate::simklapi::legacy_client_id(old_client_id);
+        let requested = body.get("clientId").and_then(Value::as_str);
+        let Some(client_id) = requested_simkl_client_id(requested, &current) else {
+            return ctx.json_with(
+                400,
+                &json!({ "message": "Foreseerr uses its own Simkl app; a custom Client ID can't be set." }),
+            );
+        };
         let enabled = match body.get("enabled") {
             Some(Value::Bool(enabled)) => *enabled,
             _ => data.pointer("/simkl/enabled") != Some(&Value::Bool(false)),
         };
         // Links belong to the app that issued them, so only a different app
         // disconnects them; turning Simkl off keeps them for later.
-        let old_client_id = data
-            .pointer("/simkl/clientId")
-            .and_then(Value::as_str)
-            .unwrap_or("");
         let changing = crate::simklapi::client_id_for(&client_id)
             != crate::simklapi::client_id_for(old_client_id);
         let count = try_forward!(linked(ctx, LinkedAccounts::Simkl).await);
@@ -346,15 +355,6 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 "message": "Changing Simkl credentials disconnects linked user accounts. Set confirmDisconnectLinkedAccounts to true to proceed.",
                 "linkedAccountCount": count,
             }));
-        }
-        if enabled && !client_id.is_empty() {
-            if let Err(e) = simkl_valid(ctx, &client_id).await {
-                tracing::error!("Unable to save Simkl settings: {}", e.message());
-                if e.is_request_error() {
-                    return ctx.error(400, &e.message());
-                }
-                return ctx.error(500, "Unable to save Simkl settings.");
-            }
         }
         let show = not_false(body, "showCommunityRating");
         let poster = is_true(body, "posterCommunityRating");
@@ -659,6 +659,41 @@ fn mdblist<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn simkl_saves_refuse_a_new_custom_client_id() {
+        let builtin = crate::simklapi::BUILTIN_CLIENT_ID;
+        assert_eq!(
+            requested_simkl_client_id(Some(" own-client "), ""),
+            None,
+            "a new custom ID"
+        );
+        assert_eq!(
+            requested_simkl_client_id(None, "own-client").as_deref(),
+            Some("own-client"),
+            "a legacy ID kept across saves"
+        );
+        assert_eq!(
+            requested_simkl_client_id(Some(" own-client"), "own-client").as_deref(),
+            Some("own-client"),
+            "the legacy ID unchanged"
+        );
+        assert_eq!(
+            requested_simkl_client_id(Some("other"), "own-client"),
+            None,
+            "another custom ID"
+        );
+        assert_eq!(
+            requested_simkl_client_id(Some(""), "own-client").as_deref(),
+            Some(""),
+            "switching to the built-in app"
+        );
+        assert_eq!(
+            requested_simkl_client_id(Some(builtin), "").as_deref(),
+            Some(""),
+            "the built-in ID entered as a custom one"
+        );
+    }
 
     #[test]
     fn backfills_mdblist_like_the_getter() {

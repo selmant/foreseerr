@@ -235,9 +235,13 @@ pub(super) fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return Outcome::forward(why);
         }
         let s = &ctx.settings;
-        // `clientId.trim()` throws on anything but a string.
-        let Some(client_id) = s.get("/simkl/clientId").and_then(Value::as_str) else {
-            return Outcome::forward(String::from("simkl clientId is not a string"));
+        // `clientId?.trim()` throws on anything but a string or nothing.
+        let client_id = match s.get("/simkl/clientId") {
+            None | Some(Value::Null) => String::new(),
+            Some(Value::String(own)) => crate::simklapi::legacy_client_id(own),
+            Some(_) => {
+                return Outcome::forward(String::from("simkl clientId is not a string"));
+            }
         };
         let count = match ctx
             .state

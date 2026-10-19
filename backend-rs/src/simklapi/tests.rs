@@ -505,3 +505,14 @@ fn effective_client_id_follows_effective_simkl_client_id() {
         "no simkl settings"
     );
 }
+
+#[test]
+fn legacy_client_id_follows_legacy_simkl_client_id() {
+    assert_eq!(legacy_client_id(" own-client "), "own-client", "trimmed");
+    assert_eq!(legacy_client_id("  "), "", "empty");
+    assert_eq!(
+        legacy_client_id(&format!(" {BUILTIN_CLIENT_ID} ")),
+        "",
+        "the built-in ID is none"
+    );
+}
