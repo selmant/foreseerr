@@ -7,6 +7,10 @@ import SimklAPI, { SimklRequestError } from '@server/api/simkl';
 import TautulliAPI from '@server/api/tautulli';
 import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
+import {
+  effectiveSimklClientId,
+  simklClientIdFor,
+} from '@server/constants/simkl';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
@@ -620,8 +624,9 @@ settingsRoutes.get('/trakt', async (_req, res) => {
 settingsRoutes.get('/simkl', async (_req, res) => {
   const settings = getSettings();
   return res.status(200).json({
+    enabled: settings.simkl.enabled !== false,
     clientId: settings.simkl.clientId,
-    configured: Boolean(settings.simkl.clientId.trim()),
+    configured: Boolean(effectiveSimklClientId(settings.simkl)),
     actionsEnabled: settings.mediaActions.providers.simkl !== false,
     showCommunityRating: settings.simkl.showCommunityRating,
     posterCommunityRating: settings.simkl.posterCommunityRating,
@@ -708,7 +713,14 @@ settingsRoutes.post('/simkl', async (req, res, next) => {
   try {
     const settings = getSettings();
     const clientId = String(req.body.clientId ?? '').trim();
-    const changing = clientId !== settings.simkl.clientId;
+    const enabled =
+      typeof req.body.enabled === 'boolean'
+        ? req.body.enabled
+        : settings.simkl.enabled !== false;
+    // Links belong to the app that issued them, so only a different app
+    // disconnects them; turning Simkl off keeps them for later.
+    const changing =
+      simklClientIdFor(clientId) !== simklClientIdFor(settings.simkl.clientId);
     const linkedAccountCount = await countLinkedSimklAccounts();
     if (
       changing &&
@@ -721,8 +733,10 @@ settingsRoutes.post('/simkl', async (req, res, next) => {
         linkedAccountCount,
       });
     }
-    if (clientId) await new SimklAPI({ clientId }).validateClientId();
+    if (enabled && clientId)
+      await new SimklAPI({ clientId }).validateClientId();
     settings.simkl = {
+      enabled,
       clientId,
       showCommunityRating: req.body.showCommunityRating !== false,
       posterCommunityRating: req.body.posterCommunityRating === true,
@@ -737,8 +751,9 @@ settingsRoutes.post('/simkl', async (req, res, next) => {
     clearIntegrationHealthCache();
     if (changing && linkedAccountCount) await disconnectAllSimklLinks();
     return res.status(200).json({
+      enabled,
       clientId,
-      configured: Boolean(clientId),
+      configured: Boolean(effectiveSimklClientId(settings.simkl)),
       actionsEnabled: settings.mediaActions.providers.simkl !== false,
       showCommunityRating: settings.simkl.showCommunityRating,
       posterCommunityRating: settings.simkl.posterCommunityRating,

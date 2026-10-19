@@ -8,6 +8,7 @@ import type {
   SimklSyncResponse,
   SimklUserSettingsResponse,
 } from '@server/api/simkl/interfaces';
+import { effectiveSimklClientId } from '@server/constants/simkl';
 import { getSettings } from '@server/lib/settings';
 import { getAppVersion } from '@server/utils/appVersion';
 import { proxyRequestInterceptor } from '@server/utils/customProxyAgent';
@@ -17,7 +18,7 @@ const SIMKL_BASE_URL = 'https://api.simkl.com';
 
 export class SimklNotConfiguredError extends Error {
   constructor() {
-    super('Simkl application Client ID is not configured');
+    super('Simkl is turned off');
     this.name = 'SimklNotConfiguredError';
   }
 }
@@ -147,7 +148,9 @@ export default class SimklAPI extends ExternalAPI {
   private nextRequestAt = 0;
 
   constructor(options: SimklOptions = {}) {
-    const clientId = (options.clientId ?? getSettings().simkl.clientId).trim();
+    const clientId = (
+      options.clientId ?? effectiveSimklClientId(getSettings().simkl)
+    ).trim();
     if (!clientId) throw new SimklNotConfiguredError();
     const headers: Record<string, string> = {
       Accept: 'application/json',
