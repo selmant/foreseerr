@@ -1,6 +1,7 @@
 import type { RatingBadgeSettings } from '@server/constants/ratingBadges';
 import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
 import { MediaServerType } from '@server/constants/server';
+import { effectiveSimklClientId } from '@server/constants/simkl';
 import {
   effectiveApplicationUrl,
   isDesktopRuntime,
@@ -100,6 +101,9 @@ export interface AniListSettings {
 
 /** Simkl PIN applications use a public client id only. */
 export interface SimklSettings {
+  /** Off: no Simkl calls at all, though linked accounts are kept. */
+  enabled: boolean;
+  /** The administrator's own app; empty uses Foreseerr's built-in one. */
   clientId: string;
   showCommunityRating: boolean;
   posterCommunityRating: boolean;
@@ -564,6 +568,7 @@ class Settings {
         clientSecret: '',
       },
       simkl: {
+        enabled: true,
         clientId: '',
         showCommunityRating: true,
         posterCommunityRating: false,
@@ -893,6 +898,7 @@ class Settings {
   get simkl(): SimklSettings {
     if (!this.data.simkl) {
       this.data.simkl = {
+        enabled: true,
         clientId: '',
         showCommunityRating: true,
         posterCommunityRating: false,
@@ -904,6 +910,7 @@ class Settings {
   set simkl(data: SimklSettings) {
     this.data.simkl = mergeSettings(
       this.data.simkl ?? {
+        enabled: true,
         clientId: '',
         showCommunityRating: true,
         posterCommunityRating: false,
@@ -1097,7 +1104,7 @@ class Settings {
       anilistConfigured: Boolean(
         this.data.anilist?.clientId && this.data.anilist?.clientSecret
       ),
-      simklConfigured: Boolean(this.data.simkl?.clientId?.trim()),
+      simklConfigured: Boolean(effectiveSimklClientId(this.data.simkl)),
       mediaActionsTraktEnabled:
         this.data.mediaActions?.providers?.trakt !== false,
       mediaActionsJellyfinEnabled:

@@ -11,6 +11,7 @@ import migrateReleaseCalendarSyncInterval from '@server/lib/settings/migrations/
 import restoreReleaseCalendarSyncInterval from '@server/lib/settings/migrations/0012_restore_release_calendar_sync_interval';
 import increaseArrRequestTimeout from '@server/lib/settings/migrations/0013_increase_arr_request_timeout';
 import migrateArrScanInterval from '@server/lib/settings/migrations/0014_arr_scan_15m';
+import migrateSimklBuiltinClient from '@server/lib/settings/migrations/0015_simkl_builtin_client';
 
 export const SETTINGS_MIGRATIONS: {
   name: string;
@@ -37,4 +38,5 @@ export const SETTINGS_MIGRATIONS: {
   },
   { name: '0013_increase_arr_request_timeout', run: increaseArrRequestTimeout },
   { name: '0014_arr_scan_15m', run: migrateArrScanInterval },
+  { name: '0015_simkl_builtin_client', run: migrateSimklBuiltinClient },
 ];

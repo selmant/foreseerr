@@ -1,10 +1,13 @@
 import SimklAPI, {
+  SimklNotConfiguredError,
   SimklOAuthError,
   SimklRequestError,
   SimklTemporarilyUnavailableError,
   SimklUnauthorizedError,
   simklErrorDetail,
 } from '@server/api/simkl';
+import { SIMKL_BUILTIN_CLIENT_ID } from '@server/constants/simkl';
+import { getSettings } from '@server/lib/settings';
 import axios, {
   AxiosError,
   type AxiosAdapter,
@@ -160,6 +163,24 @@ describe('SimklAPI errors', () => {
 });
 
 describe('SimklAPI AUTH V2', () => {
+  it('uses Foreseerr’s app unless a custom Client ID is set', async () => {
+    const calls = stubSimkl(() => ({ status: 200, data: {} }));
+    const settings = getSettings();
+    settings.simkl = { ...settings.simkl, enabled: true, clientId: '' };
+    await new SimklAPI().getActivities();
+    settings.simkl = { ...settings.simkl, clientId: ' own-client ' };
+    await new SimklAPI().getActivities();
+    settings.simkl = { ...settings.simkl, enabled: false };
+    assert.throws(() => new SimklAPI(), SimklNotConfiguredError);
+    settings.simkl = { ...settings.simkl, enabled: true, clientId: '' };
+    assert.deepEqual(
+      calls.map((call) =>
+        new URL(call.url, 'http://x').searchParams.get('client_id')
+      ),
+      [SIMKL_BUILTIN_CLIENT_ID, 'own-client']
+    );
+  });
+
   it('requests a device code with both scopes as a form', async () => {
     const calls = stubSimkl(() => ({
       status: 200,

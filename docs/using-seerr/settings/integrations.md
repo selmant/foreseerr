@@ -84,15 +84,15 @@ MDBList “My Lists” and personalized recommendation lists are not supported y
 
 ## Simkl
 
-Create an **AUTH V2** application at [Simkl Developer Settings](https://simkl.com/settings/developer), choose the **TV, devices & command line** type, and copy its public Client ID into **Settings → Integrations → Simkl**. No client secret is stored or required.
+Foreseerr ships its own Simkl app, so nothing needs to be registered on Simkl: turn on **Enable Simkl** in **Settings → Integrations → Simkl**. New installs start with Simkl on. Installs that never configured Simkl before this version keep it off until an administrator turns it on.
 
-Each user then opens **Profile → Linked Accounts**, starts the PIN flow, and authorizes the displayed code on Simkl. Tokens are stored per user. Simkl's V2 access tokens last seven days; Foreseerr renews them automatically, and unlinking revokes them on Simkl too.
+Each user then opens **Profile → Linked Accounts**, starts the PIN flow, and authorizes the displayed code on Simkl. Tokens are stored per user, and each user's requests count against their own Simkl allowance. Simkl's V2 access tokens last seven days; Foreseerr renews them automatically, and unlinking revokes them on Simkl too. Turning Simkl off stops every Simkl call but keeps linked accounts for when it is turned back on.
 
-Applications registered before AUTH V2 still link through Simkl's older PIN flow, which Simkl plans to retire around April 2027. A V1 Client ID cannot be upgraded: to move to V2, register a new application and replace the Client ID, which disconnects linked users until they link again.
+**Custom Client ID** is optional. To use your own Simkl app instead, register an **AUTH V2** application at [Simkl Developer Settings](https://simkl.com/settings/developer) with the **TV, devices & command line** type and paste its Client ID; no client secret is stored or required. Applications registered before AUTH V2 still link through Simkl's older PIN flow, which Simkl plans to retire around April 2027. Tokens only work with the app that issued them, so switching between apps, including back to Foreseerr's by clearing the field, disconnects linked users until they link again.
 
-Public Trending rows work with the Client ID only. Plan to Watch and other personal statuses need a linked account. Foreseerr synchronizes the Simkl library only while a user is viewing a Simkl-backed surface or explicitly refreshes it. Cached results remain available when Simkl is temporarily unavailable and are marked stale. Simkl provides tracking and attribution; TMDB/TVDB remain Foreseerr's canonical metadata sources.
+Public Trending rows need no linked account. Plan to Watch and other personal statuses need a linked account. Foreseerr synchronizes the Simkl library only while a user is viewing a Simkl-backed surface or explicitly refreshes it. Cached results remain available when Simkl is temporarily unavailable and are marked stale. Simkl provides tracking and attribution; TMDB/TVDB remain Foreseerr's canonical metadata sources.
 
-Every Simkl-sourced title must link to its Simkl page. Changing the Client ID disconnects linked users after confirmation.
+Every Simkl-sourced title must link to its Simkl page.
 
 Current exclusions are custom lists, Best/Premieres catalog endpoints, automatic requests, scrobbling, calendar ingestion, and playback-resume synchronization.
 

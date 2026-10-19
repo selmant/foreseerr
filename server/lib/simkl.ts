@@ -6,6 +6,7 @@ import SimklAPI, {
   type SimklTokenState,
 } from '@server/api/simkl';
 import type { SimklOAuthTokenResponse } from '@server/api/simkl/interfaces';
+import { effectiveSimklClientId } from '@server/constants/simkl';
 import { getRepository } from '@server/datasource';
 import { SimklSyncItem } from '@server/entity/SimklSyncItem';
 import { SimklSyncState } from '@server/entity/SimklSyncState';
@@ -51,7 +52,8 @@ export const simklTokenColumns = (
 });
 
 export async function createSimklUserClient(userId: number): Promise<SimklAPI> {
-  if (!getSettings().simkl.clientId.trim()) throw new SimklNotConfiguredError();
+  if (!effectiveSimklClientId(getSettings().simkl))
+    throw new SimklNotConfiguredError();
   const settings = await getUserSimklSettings(userId);
   if (!settings?.simklAccessToken) throw new SimklNotLinkedError();
   return new SimklAPI({

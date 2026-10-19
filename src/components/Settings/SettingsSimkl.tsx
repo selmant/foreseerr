@@ -13,10 +13,13 @@ import useSWR, { mutate as globalMutate } from 'swr';
 const messages = defineMessages('components.Settings.SettingsSimkl', {
   configureSimkl: 'Configure Simkl',
   description:
-    'Simkl links each user with a PIN, so only the public Client ID is needed.',
+    'Each user links their own Simkl account with a code, through Foreseerr’s Simkl app. Nothing needs to be registered on Simkl.',
+  enabled: 'Enable Simkl',
+  enabledTip:
+    'Simkl Discover rows, linked accounts, and watched and rating actions',
+  clientId: 'Custom Client ID',
   createAppTip:
-    'Create an AUTH V2 application of type “TV, devices & command line” at <SimklAppLink>simkl.com/settings/developer</SimklAppLink>. AUTH V1 applications keep working until Simkl retires them.',
-  clientId: 'Client ID',
+    'Optional. Leave empty to use Foreseerr’s app. To use your own, create an AUTH V2 application of type “TV, devices & command line” at <SimklAppLink>simkl.com/settings/developer</SimklAppLink>. AUTH V1 applications keep working until Simkl retires them.',
   actionsEnabled: 'Allow Simkl Watched and Rating Actions',
   actionsEnabledTip:
     'Marking titles watched or rated in Foreseerr also updates the linked Simkl account',
@@ -32,6 +35,7 @@ const messages = defineMessages('components.Settings.SettingsSimkl', {
 });
 
 type SimklSettings = {
+  enabled: boolean;
   clientId: string;
   configured: boolean;
   actionsEnabled: boolean;
@@ -42,6 +46,7 @@ type SimklSettings = {
 
 type SimklFormValues = Pick<
   SimklSettings,
+  | 'enabled'
   | 'clientId'
   | 'actionsEnabled'
   | 'showCommunityRating'
@@ -90,6 +95,7 @@ const SettingsSimkl = forwardRef<HTMLDivElement, SettingsSimklProps>(
     return (
       <Formik<SimklFormValues>
         initialValues={{
+          enabled: data?.enabled ?? true,
           clientId: data?.clientId ?? '',
           actionsEnabled: data?.actionsEnabled ?? true,
           showCommunityRating: data?.showCommunityRating ?? true,
@@ -129,23 +135,36 @@ const SettingsSimkl = forwardRef<HTMLDivElement, SettingsSimklProps>(
             ) : (
               <form onSubmit={handleSubmit}>
                 <p className="description">
-                  {intl.formatMessage(messages.description)}{' '}
-                  {intl.formatMessage(messages.createAppTip, {
-                    SimklAppLink: (msg: ReactNode) => (
-                      <a
-                        href="https://simkl.com/settings/developer/"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-white underline transition hover:text-gray-200"
-                      >
-                        {msg}
-                      </a>
-                    ),
-                  })}
+                  {intl.formatMessage(messages.description)}
                 </p>
+                <div className="form-row">
+                  <label htmlFor="simklEnabled" className="checkbox-label">
+                    {intl.formatMessage(messages.enabled)}
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.enabledTip)}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <Field type="checkbox" id="simklEnabled" name="enabled" />
+                  </div>
+                </div>
                 <div className="form-row">
                   <label htmlFor="simklClientId" className="text-label">
                     {intl.formatMessage(messages.clientId)}
+                    <span className="label-tip">
+                      {intl.formatMessage(messages.createAppTip, {
+                        SimklAppLink: (msg: ReactNode) => (
+                          <a
+                            href="https://simkl.com/settings/developer/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-white underline transition hover:text-gray-200"
+                          >
+                            {msg}
+                          </a>
+                        ),
+                      })}
+                    </span>
                   </label>
                   <div className="form-input-area">
                     <div className="form-input-field">
