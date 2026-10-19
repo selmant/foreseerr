@@ -214,6 +214,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   delete (TheMovieDb.prototype as { get?: unknown }).get;
+  // Settings outlive this file; leave Simkl as a fresh install has it.
+  getSettings().simkl = { ...getSettings().simkl, clientId: '' };
 });
 
 const page = async (endpoint: string): Promise<WatchlistResponse> => {
