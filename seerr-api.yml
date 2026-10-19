@@ -2025,6 +2025,16 @@ components:
           type: string
           nullable: true
           readOnly: true
+        monitoredAt:
+          type: string
+          nullable: true
+          readOnly: true
+          description: When Foreseerr made Sonarr monitor this watch-ahead episode.
+        unmonitoredAt:
+          type: string
+          nullable: true
+          readOnly: true
+          description: Set while this watch-ahead episode has no file and was unmonitored outside Foreseerr.
     MediaRequest:
       type: object
       properties:
@@ -2086,6 +2096,11 @@ components:
           nullable: true
           minimum: 1
           maximum: 50
+        watchAheadInactiveAt:
+          type: string
+          nullable: true
+          readOnly: true
+          description: Set while every episode in the watch-ahead window was unmonitored outside Foreseerr.
         tvQuotaUnits:
           type: number
           readOnly: true

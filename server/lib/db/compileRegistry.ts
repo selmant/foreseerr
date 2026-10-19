@@ -73,6 +73,7 @@ import { AddWatchAheadEpisodeRequests1787500000000 as pg_1787500000000_AddWatchA
 import { RemapDiscoverSliderTypes1787510000000 as pg_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000 } from '@server/migration/postgres/1787510000000-RemapDiscoverSliderTypes';
 import { RemapOverseerrDeletedStatus1789257612345 as pg_1789254652580_RemapOverseerrDeletedStatus_RemapOverseerrDeletedStatus1789257612345 } from '@server/migration/postgres/1789254652580-RemapOverseerrDeletedStatus';
 import { RebuildMappingTables1789300000000 as pg_1789300000000_RebuildMappingTables_RebuildMappingTables1789300000000 } from '@server/migration/postgres/1789300000000-RebuildMappingTables';
+import { AddWatchAheadMonitorTracking1789400000000 as pg_1789400000000_AddWatchAheadMonitorTracking_AddWatchAheadMonitorTracking1789400000000 } from '@server/migration/postgres/1789400000000-AddWatchAheadMonitorTracking';
 import { InitialMigration1603944374840 as sqlite_1603944374840_InitialMigration_InitialMigration1603944374840 } from '@server/migration/sqlite/1603944374840-InitialMigration';
 import { SeasonStatus1605085519544 as sqlite_1605085519544_SeasonStatus_SeasonStatus1605085519544 } from '@server/migration/sqlite/1605085519544-SeasonStatus';
 import { CascadeMigration1606730060700 as sqlite_1606730060700_CascadeMigration_CascadeMigration1606730060700 } from '@server/migration/sqlite/1606730060700-CascadeMigration';
@@ -156,6 +157,7 @@ import { AddWatchAheadEpisodeRequests1787500000000 as sqlite_1787500000000_AddWa
 import { RemapDiscoverSliderTypes1787510000000 as sqlite_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000 } from '@server/migration/sqlite/1787510000000-RemapDiscoverSliderTypes';
 import { RemapOverseerrDeletedStatus1789257612345 as sqlite_1789254652493_RemapOverseerrDeletedStatus_RemapOverseerrDeletedStatus1789257612345 } from '@server/migration/sqlite/1789254652493-RemapOverseerrDeletedStatus';
 import { RebuildMappingTables1789300000000 as sqlite_1789300000000_RebuildMappingTables_RebuildMappingTables1789300000000 } from '@server/migration/sqlite/1789300000000-RebuildMappingTables';
+import { AddWatchAheadMonitorTracking1789400000000 as sqlite_1789400000000_AddWatchAheadMonitorTracking_AddWatchAheadMonitorTracking1789400000000 } from '@server/migration/sqlite/1789400000000-AddWatchAheadMonitorTracking';
 import { IssueCommentSubscriber as sub_IssueCommentSubscriber_IssueCommentSubscriber } from '@server/subscriber/IssueCommentSubscriber';
 import { IssueSubscriber as sub_IssueSubscriber_IssueSubscriber } from '@server/subscriber/IssueSubscriber';
 import { MediaRequestSubscriber as sub_MediaRequestSubscriber_MediaRequestSubscriber } from '@server/subscriber/MediaRequestSubscriber';
@@ -286,6 +288,7 @@ export const compileSqliteMigrations = [
   sqlite_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000,
   sqlite_1789254652493_RemapOverseerrDeletedStatus_RemapOverseerrDeletedStatus1789257612345,
   sqlite_1789300000000_RebuildMappingTables_RebuildMappingTables1789300000000,
+  sqlite_1789400000000_AddWatchAheadMonitorTracking_AddWatchAheadMonitorTracking1789400000000,
 ] as const;
 
 export const compilePostgresMigrations = [
@@ -337,4 +340,5 @@ export const compilePostgresMigrations = [
   pg_1787510000000_RemapDiscoverSliderTypes_RemapDiscoverSliderTypes1787510000000,
   pg_1789254652580_RemapOverseerrDeletedStatus_RemapOverseerrDeletedStatus1789257612345,
   pg_1789300000000_RebuildMappingTables_RebuildMappingTables1789300000000,
+  pg_1789400000000_AddWatchAheadMonitorTracking_AddWatchAheadMonitorTracking1789400000000,
 ] as const;

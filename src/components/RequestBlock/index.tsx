@@ -4,6 +4,10 @@ import CachedImage from '@app/components/Common/CachedImage';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import Tooltip from '@app/components/Common/Tooltip';
 import RequestModal from '@app/components/RequestModal';
+import {
+  RemovedEpisodesBadge,
+  WatchAheadInactiveBadge,
+} from '@app/components/WatchAheadBadges';
 import useRequestOverride from '@app/hooks/useRequestOverride';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
@@ -46,6 +50,7 @@ const messages = defineMessages('components.RequestBlock', {
   scope: 'Requested content',
   seasonNumber: 'Season {seasonNumber}',
   viewEpisodes: 'View requested episodes ({count})',
+  removedEpisode: 'Removed',
   watchAheadHint:
     'Keeps a buffer of {count} unwatched episodes requested as you watch in Jellyfin.',
 });
@@ -142,6 +147,7 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
                 {intl.formatMessage(currentStatus.message)}
               </Badge>
             )}
+            <WatchAheadInactiveBadge request={request} />
           </div>
           <Tooltip
             content={intl.formatDate(request.createdAt, {
@@ -223,13 +229,16 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
               )}
               {(episodes.length > 0 ||
                 request.episodeSelectionType === 'watchAhead') && (
-                <Badge className="whitespace-normal">
-                  {episodeRequestSummary(intl, {
-                    episodes,
-                    type: request.episodeSelectionType,
-                    watchAheadCount: request.watchAheadCount,
-                  })}
-                </Badge>
+                <div className="flex flex-wrap gap-2">
+                  <Badge className="whitespace-normal">
+                    {episodeRequestSummary(intl, {
+                      episodes,
+                      type: request.episodeSelectionType,
+                      watchAheadCount: request.watchAheadCount,
+                    })}
+                  </Badge>
+                  <RemovedEpisodesBadge episodes={episodes} />
+                </div>
               )}
               {request.episodeSelectionType === 'watchAhead' && (
                 <p className="text-xs leading-relaxed text-gray-400">
@@ -263,6 +272,11 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
                           <span className="ml-1 break-words">
                             — {episode.title}
                           </span>
+                        )}
+                        {episode.unmonitoredAt && (
+                          <Badge badgeType="warning" className="ml-2">
+                            {intl.formatMessage(messages.removedEpisode)}
+                          </Badge>
                         )}
                       </li>
                     ))}

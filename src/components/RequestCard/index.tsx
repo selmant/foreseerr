@@ -5,6 +5,10 @@ import CachedImage from '@app/components/Common/CachedImage';
 import Tooltip from '@app/components/Common/Tooltip';
 import RequestModal from '@app/components/RequestModal';
 import StatusBadge from '@app/components/StatusBadge';
+import {
+  RemovedEpisodesBadge,
+  WatchAheadInactiveBadge,
+} from '@app/components/WatchAheadBadges';
 import useDeepLinks from '@app/hooks/useDeepLinks';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -464,6 +468,10 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
                     watchAheadCount: request.watchAheadCount,
                   })}
                 </Badge>
+                <RemovedEpisodesBadge
+                  episodes={requestData.episodes}
+                  className="ml-2"
+                />
               </div>
             )}
           <div className="mt-2 flex items-center text-sm sm:mt-1">
@@ -514,6 +522,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
                 }
               />
             )}
+            <WatchAheadInactiveBadge request={requestData} className="ml-2" />
           </div>
           <div className="flex flex-1 items-end space-x-2">
             {requestData.status === MediaRequestStatus.FAILED &&
