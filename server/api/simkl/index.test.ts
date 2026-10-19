@@ -1,8 +1,14 @@
 import SimklAPI, {
+  SimklOAuthError,
   SimklRequestError,
+  SimklUnauthorizedError,
   simklErrorDetail,
 } from '@server/api/simkl';
-import axios, { AxiosError, type AxiosAdapter } from 'axios';
+import axios, {
+  AxiosError,
+  type AxiosAdapter,
+  type InternalAxiosRequestConfig,
+} from 'axios';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
@@ -34,6 +40,42 @@ const clientAnswering = (status: number, data: unknown) => {
     );
   }) as AxiosAdapter;
   return { client: new SimklAPI({ clientId: 'test-client' }), urls };
+};
+
+type Call = { url: string; body: string; authorization?: string };
+
+/** Answers each request from `route`, keyed on the path without its query. */
+const stubSimkl = (
+  route: (path: string, call: Call) => { status: number; data: unknown }
+) => {
+  const calls: Call[] = [];
+  axios.defaults.adapter = (async (config: InternalAxiosRequestConfig) => {
+    const call = {
+      url: String(config.url),
+      body: String(config.data ?? ''),
+      authorization: config.headers?.Authorization as string | undefined,
+    };
+    calls.push(call);
+    const { status, data } = route(call.url.split('?')[0], call);
+    const response = { status, statusText: '', headers: {}, config, data };
+    if (status < 400) return response;
+    throw new AxiosError(
+      `Request failed with status code ${status}`,
+      AxiosError.ERR_BAD_REQUEST,
+      config,
+      undefined,
+      response
+    );
+  }) as AxiosAdapter;
+  return calls;
+};
+
+const V1_CLIENT = {
+  status: 401,
+  data: {
+    error: 'invalid_client',
+    error_description: 'This client_id is not enabled for OAuth 2.0',
+  },
 };
 
 describe('SimklAPI errors', () => {
@@ -72,13 +114,137 @@ describe('SimklAPI errors', () => {
     );
   });
 
-  it('validates the Client ID against the PIN endpoint', async () => {
-    const { client, urls } = clientAnswering(200, {
-      result: 'OK',
-      user_code: 'ABCDE',
+  it('validates an AUTH V2 Client ID against the device endpoint', async () => {
+    const calls = stubSimkl(() => ({
+      status: 200,
+      data: { device_code: 'secret', user_code: 'BDWP-HQPK' },
+    }));
+    await new SimklAPI({ clientId: 'test-client' }).validateClientId();
+    assert.deepEqual(
+      calls.map((call) => call.url.split('?')[0]),
+      ['/oauth2/device']
+    );
+  });
+
+  it('validates a V1 Client ID against the PIN endpoint', async () => {
+    const calls = stubSimkl((path) =>
+      path === '/oauth2/device'
+        ? V1_CLIENT
+        : { status: 200, data: { result: 'OK', user_code: 'ABCDE' } }
+    );
+    await new SimklAPI({ clientId: 'test-client' }).validateClientId();
+    assert.deepEqual(
+      calls.map((call) => call.url.split('?')[0]),
+      ['/oauth2/device', '/oauth/pin']
+    );
+  });
+
+  it('reports an unknown Client ID with the V1 endpoint’s reason', async () => {
+    stubSimkl((path) =>
+      path === '/oauth2/device'
+        ? V1_CLIENT
+        : {
+            status: 412,
+            data: {
+              error: 'client_id_failed',
+              message: 'Your client_id is wrong',
+            },
+          }
+    );
+    await assert.rejects(
+      new SimklAPI({ clientId: 'test-client' }).validateClientId(),
+      /HTTP 412\): client_id_failed — Your client_id is wrong/
+    );
+  });
+});
+
+describe('SimklAPI AUTH V2', () => {
+  it('requests a device code with both scopes as a form', async () => {
+    const calls = stubSimkl(() => ({
+      status: 200,
+      data: { device_code: 'secret', user_code: 'BDWP-HQPK' },
+    }));
+    await new SimklAPI({ clientId: 'test-client' }).requestDeviceCode();
+    const body = new URLSearchParams(calls[0].body);
+    assert.equal(body.get('client_id'), 'test-client');
+    assert.equal(body.get('scope'), 'media:read media:write');
+  });
+
+  it('exposes the OAuth error code and never treats it as a user 401', async () => {
+    let unauthorized = 0;
+    stubSimkl(() => V1_CLIENT);
+    const client = new SimklAPI({
+      clientId: 'test-client',
+      onUnauthorized: async () => {
+        unauthorized++;
+      },
     });
-    await client.validateClientId();
-    assert.equal(urls.length, 1);
-    assert.match(urls[0], /^\/oauth\/pin\?client_id=test-client&/);
+    await assert.rejects(client.pollDeviceToken('secret'), (error: unknown) => {
+      assert.ok(error instanceof SimklOAuthError);
+      assert.equal(error.code, 'invalid_client');
+      assert.equal(error.status, 401);
+      return true;
+    });
+    assert.equal(unauthorized, 0);
+  });
+
+  it('refreshes a token about to expire before using it', async () => {
+    const calls = stubSimkl(() => ({ status: 200, data: {} }));
+    const stale: string[] = [];
+    const client = new SimklAPI({
+      clientId: 'test-client',
+      accessToken: 'old',
+      tokenExpiresAt: Math.floor(Date.now() / 1000) + 60,
+      refreshTokens: async (token) => {
+        stale.push(token);
+        return {
+          accessToken: 'new',
+          expiresAt: Math.floor(Date.now() / 1000) + 604800,
+        };
+      },
+    });
+    await client.getActivities();
+    await client.getActivities();
+    assert.deepEqual(stale, ['old']);
+    assert.deepEqual(
+      calls.map((call) => call.authorization),
+      ['Bearer new', 'Bearer new']
+    );
+  });
+
+  it('refreshes once after a 401 and repeats the request', async () => {
+    const calls = stubSimkl((_, call) =>
+      call.authorization === 'Bearer new'
+        ? { status: 200, data: { all: 1 } }
+        : { status: 401, data: {} }
+    );
+    let unauthorized = 0;
+    const client = new SimklAPI({
+      clientId: 'test-client',
+      accessToken: 'old',
+      refreshTokens: async () => ({ accessToken: 'new' }),
+      onUnauthorized: async () => {
+        unauthorized++;
+      },
+    });
+    assert.deepEqual(await client.getActivities(), { all: 1 });
+    assert.equal(calls.length, 2);
+    assert.equal(unauthorized, 0);
+  });
+
+  it('gives up when the refreshed token is rejected too', async () => {
+    const calls = stubSimkl(() => ({ status: 401, data: {} }));
+    let unauthorized = 0;
+    const client = new SimklAPI({
+      clientId: 'test-client',
+      accessToken: 'old',
+      refreshTokens: async () => ({ accessToken: 'new' }),
+      onUnauthorized: async () => {
+        unauthorized++;
+      },
+    });
+    await assert.rejects(client.getActivities(), SimklUnauthorizedError);
+    assert.equal(calls.length, 2);
+    assert.equal(unauthorized, 1);
   });
 });

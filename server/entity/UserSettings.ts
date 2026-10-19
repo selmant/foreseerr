@@ -130,6 +130,13 @@ export class UserSettings {
   @Column({ type: 'varchar', nullable: true, select: false })
   public simklAccessToken?: string;
 
+  /** AUTH V2 only; V1 tokens neither expire nor refresh. */
+  @Column({ type: 'varchar', nullable: true, select: false })
+  public simklRefreshToken?: string | null;
+
+  @Column({ type: 'bigint', nullable: true, select: false })
+  public simklTokenExpiresAt?: string | null;
+
   @Column({ type: 'varchar', nullable: true })
   public simklUsername?: string;
 

@@ -14,6 +14,25 @@ export interface SimklPinTokenResponse {
   error?: string;
 }
 
+/** AUTH V2 device authorization (RFC 8628). `device_code` is a secret. */
+export interface SimklDeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri?: string;
+  verification_uri_complete?: string;
+  expires_in?: number;
+  interval?: number;
+}
+
+/** AUTH V2 token response, identical for the device and refresh grants. */
+export interface SimklOAuthTokenResponse {
+  access_token: string;
+  token_type?: string;
+  expires_in?: number;
+  refresh_token?: string;
+  scope?: string;
+}
+
 export type SimklActivities = Record<string, unknown> & {
   all?: string | number | null;
 };
