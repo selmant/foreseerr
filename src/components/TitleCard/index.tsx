@@ -158,16 +158,23 @@ const TitleCard = ({
     setCurrentStatus(status);
   }, [status]);
 
-  /** An open card stays open while its menu or a modal is up, or it has focus. */
+  /**
+   * An open card stays open while its menu or a modal is up, or it has keyboard
+   * focus. Focus left by a click (a button, or the rating button the popover
+   * hands focus back to after saving) does not hold it open for the mouse.
+   */
   const keepDetailOpen = useCallback(
-    (surface: HTMLElement) =>
-      showTvMenu ||
-      showRequestModal ||
-      showBlocklistModal ||
-      Boolean(
-        document.activeElement?.closest('[role="dialog"], [role="menu"]')
-      ) ||
-      surface.contains(document.activeElement),
+    (surface: HTMLElement) => {
+      const focused = document.activeElement;
+      return (
+        showTvMenu ||
+        showRequestModal ||
+        showBlocklistModal ||
+        Boolean(focused?.closest('[role="dialog"], [role="menu"]')) ||
+        (surface.contains(focused) &&
+          Boolean(focused?.matches(':focus-visible')))
+      );
+    },
     [showTvMenu, showRequestModal, showBlocklistModal]
   );
 
