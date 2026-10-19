@@ -1,6 +1,8 @@
 import ExternalAPI from '@server/api/externalapi';
 import type {
   SimklActivities,
+  SimklDeviceCodeResponse,
+  SimklOAuthTokenResponse,
   SimklPinCodeResponse,
   SimklPinTokenResponse,
   SimklSyncResponse,
@@ -64,14 +66,37 @@ export class SimklRequestError extends Error {
   }
 }
 
+/**
+ * An AUTH V2 (`/oauth2/*`) endpoint answered an RFC 6749 error. Callers branch
+ * on `code` only; Simkl documents `error_description` as free to change.
+ */
+export class SimklOAuthError extends SimklRequestError {
+  constructor(
+    status: number,
+    public readonly code: string,
+    detail?: string,
+    cause?: unknown
+  ) {
+    super(status, detail, cause);
+    this.name = 'SimklOAuthError';
+  }
+}
+
 const SIMKL_ERROR_DETAIL_LIMIT = 200;
 
-/** Simkl answers `{ error, message }`; proxies tend to answer HTML or text. */
+/**
+ * Simkl answers `{ error, message }` (V1) or `{ error, error_description }`
+ * (V2); proxies tend to answer HTML or text.
+ */
 export const simklErrorDetail = (data: unknown): string | undefined => {
   let text = '';
   if (data && typeof data === 'object') {
-    const { message, error } = data as { message?: unknown; error?: unknown };
-    text = [error, message]
+    const { message, error, error_description } = data as {
+      message?: unknown;
+      error?: unknown;
+      error_description?: unknown;
+    };
+    text = [error, error_description ?? message]
       .filter(
         (part): part is string => typeof part === 'string' && part.length > 0
       )
@@ -85,9 +110,28 @@ export const simklErrorDetail = (data: unknown): string | undefined => {
   return text ? text.slice(0, SIMKL_ERROR_DETAIL_LIMIT) : undefined;
 };
 
+/** AUTH V2 grants both scopes; Foreseerr writes history and ratings. */
+const SIMKL_OAUTH2_SCOPE = 'media:read media:write';
+const SIMKL_DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+/** V2 access tokens last 7 days; Simkl suggests refreshing a day early. */
+const SIMKL_REFRESH_WINDOW_SECONDS = 24 * 60 * 60;
+
+export type SimklTokenState = {
+  accessToken: string;
+  /** Unix seconds; absent for V1 tokens, which do not expire. */
+  expiresAt?: number;
+};
+
+/** V2 rejects a V1 Client ID (and an unknown one) as `invalid_client`. */
+export const isSimklV1ClientError = (error: unknown): boolean =>
+  error instanceof SimklOAuthError && error.code === 'invalid_client';
+
 type SimklOptions = {
   clientId?: string;
   accessToken?: string;
+  tokenExpiresAt?: number;
+  /** Only set for V2 links, which carry a refresh token. */
+  refreshTokens?: (staleAccessToken: string) => Promise<SimklTokenState>;
   onUnauthorized?: () => Promise<void>;
 };
 
@@ -96,6 +140,9 @@ export default class SimklAPI extends ExternalAPI {
   private readonly clientId: string;
   private readonly rawAxios: AxiosInstance;
   private readonly onUnauthorized?: () => Promise<void>;
+  private readonly refreshTokens?: SimklOptions['refreshTokens'];
+  private accessToken?: string;
+  private tokenExpiresAt?: number;
   private unauthorizedHandled = false;
   private nextRequestAt = 0;
 
@@ -110,17 +157,41 @@ export default class SimklAPI extends ExternalAPI {
       'app-version': getAppVersion(),
       'User-Agent': `Foreseerr/${getAppVersion()} (Simkl integration)`,
     };
-    if (options.accessToken)
-      headers.Authorization = `Bearer ${options.accessToken}`;
     super(SIMKL_BASE_URL, {}, { headers });
     this.clientId = clientId;
+    this.accessToken = options.accessToken;
+    this.tokenExpiresAt = options.tokenExpiresAt;
+    this.refreshTokens = options.refreshTokens;
     this.onUnauthorized = options.onUnauthorized;
     this.rawAxios = axios.create({
       baseURL: SIMKL_BASE_URL,
       timeout: getSettings().network.apiRequestTimeout,
       headers,
     });
+    // Read per request: a refresh replaces the token mid-session.
+    this.rawAxios.interceptors.request.use((config) => {
+      if (this.accessToken)
+        config.headers.Authorization = `Bearer ${this.accessToken}`;
+      return config;
+    });
     this.rawAxios.interceptors.request.use(proxyRequestInterceptor);
+  }
+
+  private async refresh(): Promise<void> {
+    if (!this.refreshTokens || !this.accessToken) return;
+    const tokens = await this.refreshTokens(this.accessToken);
+    this.accessToken = tokens.accessToken;
+    this.tokenExpiresAt = tokens.expiresAt;
+  }
+
+  private async ensureFreshToken(): Promise<void> {
+    if (
+      this.refreshTokens &&
+      this.tokenExpiresAt &&
+      this.tokenExpiresAt <=
+        Math.floor(Date.now() / 1000) + SIMKL_REFRESH_WINDOW_SECONDS
+    )
+      await this.refresh();
   }
 
   private async pace(post = false): Promise<void> {
@@ -143,6 +214,8 @@ export default class SimklAPI extends ExternalAPI {
       'app-version': getAppVersion(),
     });
     const requestPath = `${path}${separator}${requiredParameters}`;
+    await this.ensureFreshToken();
+    let refreshedAfterUnauthorized = false;
     for (let attempt = 0; ; attempt++) {
       try {
         const response =
@@ -154,6 +227,17 @@ export default class SimklAPI extends ExternalAPI {
         const status = axios.isAxiosError(error)
           ? error.response?.status
           : undefined;
+        // A 401 rejected the request before applying it, so even a write is
+        // safe to repeat once with a refreshed token.
+        if (
+          status === 401 &&
+          this.refreshTokens &&
+          !refreshedAfterUnauthorized
+        ) {
+          refreshedAfterUnauthorized = true;
+          await this.refresh();
+          continue;
+        }
         if (status === 401) {
           if (this.onUnauthorized && !this.unauthorizedHandled) {
             this.unauthorizedHandled = true;
@@ -184,12 +268,90 @@ export default class SimklAPI extends ExternalAPI {
   }
 
   /**
-   * The PIN endpoint is the only one found to check the Client ID (412
-   * `client_id_failed`); catalogs and title lookups accept any value. The
-   * code it issues just expires unused.
+   * Form-encoded POST to an AUTH V2 endpoint. These answer RFC 6749 errors and
+   * must never reach `onUnauthorized`: their 401 is about the app, not a user.
+   */
+  private async oauth2Post<T>(
+    path: string,
+    params: Record<string, string>
+  ): Promise<T> {
+    await this.pace(true);
+    const query = new URLSearchParams({
+      client_id: this.clientId,
+      'app-name': 'foreseerr',
+      'app-version': getAppVersion(),
+    });
+    try {
+      const response = await this.rawAxios.post<T>(
+        `${path}?${query}`,
+        new URLSearchParams({ client_id: this.clientId, ...params }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
+      return response.data;
+    } catch (error) {
+      const status = axios.isAxiosError(error)
+        ? error.response?.status
+        : undefined;
+      if (status === 429) {
+        const retryAfter = Number(error.response?.headers['retry-after']) || 1;
+        throw new SimklRateLimitedError(Math.max(1, retryAfter));
+      }
+      const data = axios.isAxiosError(error) ? error.response?.data : undefined;
+      const code =
+        data && typeof data === 'object'
+          ? (data as { error?: unknown }).error
+          : undefined;
+      if (status && typeof code === 'string' && code)
+        throw new SimklOAuthError(status, code, simklErrorDetail(data), error);
+      if (!status || status >= 500)
+        throw new SimklTemporarilyUnavailableError(error);
+      throw new SimklRequestError(status, simklErrorDetail(data), error);
+    }
+  }
+
+  /**
+   * Both PIN endpoints check the Client ID; catalogs and title lookups accept
+   * any value. V2 answers `invalid_client` for V1 apps and unknown IDs alike,
+   * so the V1 endpoint (412 `client_id_failed`) settles which one it is. The
+   * code either issues just expires unused.
    */
   public async validateClientId(): Promise<void> {
-    await this.requestPinCode();
+    try {
+      await this.requestDeviceCode();
+    } catch (e) {
+      if (!isSimklV1ClientError(e)) throw e;
+      await this.requestPinCode();
+    }
+  }
+
+  /** AUTH V2 device flow. Throws `invalid_client` for a V1 Client ID. */
+  public async requestDeviceCode(): Promise<SimklDeviceCodeResponse> {
+    return this.oauth2Post('/oauth2/device', { scope: SIMKL_OAUTH2_SCOPE });
+  }
+
+  /** Throws `authorization_pending`, `slow_down` or `expired_token` until done. */
+  public async pollDeviceToken(
+    deviceCode: string
+  ): Promise<SimklOAuthTokenResponse> {
+    return this.oauth2Post('/oauth2/token', {
+      grant_type: SIMKL_DEVICE_GRANT,
+      device_code: deviceCode,
+    });
+  }
+
+  /** Non-rotating: Simkl returns the same refresh token with a new access token. */
+  public async refreshAccessToken(
+    refreshToken: string
+  ): Promise<SimklOAuthTokenResponse> {
+    return this.oauth2Post('/oauth2/token', {
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    });
+  }
+
+  /** Revokes the whole grant. Simkl always answers 200 (RFC 7009). */
+  public async revokeToken(token: string): Promise<void> {
+    await this.oauth2Post('/oauth2/revoke', { token });
   }
 
   public async requestPinCode(): Promise<SimklPinCodeResponse> {

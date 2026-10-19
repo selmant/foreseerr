@@ -15,7 +15,7 @@ const messages = defineMessages('components.Settings.SettingsSimkl', {
   description:
     'Simkl links each user with a PIN, so only the public Client ID is needed.',
   createAppTip:
-    'Create an application at <SimklAppLink>simkl.com/settings/developer</SimklAppLink>.',
+    'Create an AUTH V2 application of type “TV, devices & command line” at <SimklAppLink>simkl.com/settings/developer</SimklAppLink>. AUTH V1 applications keep working until Simkl retires them.',
   clientId: 'Client ID',
   actionsEnabled: 'Allow Simkl Watched and Rating Actions',
   actionsEnabledTip:

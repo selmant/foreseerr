@@ -1,7 +1,12 @@
 import AnilistAPI from '@server/api/anilist';
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
-import SimklAPI, { SimklNotConfiguredError } from '@server/api/simkl';
+import SimklAPI, {
+  SimklNotConfiguredError,
+  SimklOAuthError,
+  isSimklV1ClientError,
+} from '@server/api/simkl';
+import type { SimklOAuthTokenResponse } from '@server/api/simkl/interfaces';
 import TraktAPI from '@server/api/trakt';
 import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
@@ -36,6 +41,7 @@ import {
   clearUserSimklCredentials,
   clearUserSimklSyncCache,
   getUserSimklSettings,
+  simklTokenColumns,
 } from '@server/lib/simkl';
 import { syncSimklUser } from '@server/lib/simklSync';
 import {
@@ -76,6 +82,7 @@ import {
   isOwnProfile,
   isOwnProfileOrAdmin,
 } from '@server/utils/profileMiddleware';
+import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import net from 'net';
 import { Not } from 'typeorm';
@@ -84,13 +91,17 @@ import { canMakePermissionsChange } from '.';
 const userSettingsRoutes = Router({ mergeParams: true });
 
 type SimklPinSession = {
+  /** AUTH V2 device flow, or the V1 PIN flow for apps registered before V2. */
+  flow: 'device' | 'pin';
+  /** V2's secret `device_code`, or V1's user code; never sent to the browser. */
+  pollCode: string;
   expiresAt: number;
   intervalSeconds: number;
   lastPollAt: number;
 };
 const simklPinSessions = new Map<string, SimklPinSession>();
-const simklPinKey = (userId: number, deviceCode: string) =>
-  `${userId}:${deviceCode}`;
+const simklPinKey = (userId: number, sessionId: string) =>
+  `${userId}:${sessionId}`;
 
 function userActionsEnabled(value?: boolean | null): boolean {
   return value !== false;
@@ -1125,27 +1136,59 @@ userSettingsRoutes.post<{ id: string }>(
   isOwnProfile(),
   async (req, res) => {
     try {
-      const pin = await new SimklAPI().requestPinCode();
-      const userCode = pin.user_code ?? pin.code;
-      if (!userCode) {
+      const client = new SimklAPI();
+      let flow: SimklPinSession['flow'] = 'device';
+      let pollCode: string | undefined;
+      let userCode: string | undefined;
+      let verificationUri: string;
+      let expiresIn: number;
+      let interval: number;
+      try {
+        const device = await client.requestDeviceCode();
+        pollCode = device.device_code;
+        userCode = device.user_code;
+        // The complete URI pre-fills the code; the user still has to approve.
+        verificationUri =
+          device.verification_uri_complete ??
+          device.verification_uri ??
+          'https://simkl.com/pin';
+        expiresIn = device.expires_in ?? 900;
+        interval = device.interval ?? 5;
+      } catch (e) {
+        // Simkl retires AUTH V1 around April 2027; until then apps registered
+        // before V2 keep linking through the PIN flow.
+        if (!isSimklV1ClientError(e)) throw e;
+        const pin = await client.requestPinCode();
+        flow = 'pin';
+        userCode = pin.user_code ?? pin.code;
+        pollCode = userCode;
+        verificationUri = pin.url ?? 'https://simkl.com/pin/';
+        expiresIn = pin.expires_in ?? pin.expires ?? 600;
+        interval = pin.interval ?? 5;
+      }
+      if (!userCode || !pollCode) {
         return res.status(502).json({
           message: 'Simkl returned an invalid PIN response.',
         });
       }
       const userId = Number(req.params.id);
-      simklPinSessions.set(simklPinKey(userId, userCode), {
-        expiresAt:
-          Date.now() + Math.max(1, pin.expires_in ?? pin.expires ?? 600) * 1000,
-        intervalSeconds: Math.max(1, pin.interval ?? 5),
+      const sessionId = randomUUID();
+      for (const [key, session] of simklPinSessions)
+        if (session.expiresAt <= Date.now()) simklPinSessions.delete(key);
+      simklPinSessions.set(simklPinKey(userId, sessionId), {
+        flow,
+        pollCode,
+        expiresAt: Date.now() + Math.max(1, expiresIn) * 1000,
+        intervalSeconds: Math.max(1, interval),
         lastPollAt: 0,
       });
       return res.status(200).json({
         userCode,
-        verificationUri: pin.url ?? 'https://simkl.com/pin/',
-        expiresIn: pin.expires_in ?? pin.expires ?? 600,
-        interval: pin.interval ?? 5,
+        verificationUri,
+        expiresIn,
+        interval,
         // Opaque value only consumed by the server on the token endpoint.
-        deviceCode: userCode,
+        deviceCode: sessionId,
       });
     } catch (e) {
       logger.error('Failed to start Simkl PIN authorization', {
@@ -1189,20 +1232,55 @@ userSettingsRoutes.post<{ id: string }>(
     }
     session.lastPollAt = Date.now();
     try {
-      const result = await new SimklAPI().pollPinToken(deviceCode);
-      const accessToken = result.access_token ?? result.token;
-      if (!accessToken) {
-        if (result.error === 'expired_token') {
-          simklPinSessions.delete(key);
-          return res.status(410).json({ status: 'expired' });
+      let tokens: SimklOAuthTokenResponse;
+      if (session.flow === 'device') {
+        try {
+          tokens = await new SimklAPI().pollDeviceToken(session.pollCode);
+        } catch (e) {
+          if (!(e instanceof SimklOAuthError)) throw e;
+          // V2 has no deny signal: a declined request stays pending until the
+          // session runs out.
+          if (e.code === 'authorization_pending')
+            return res.status(202).json({ status: 'pending' });
+          if (e.code === 'slow_down') {
+            session.intervalSeconds += 5;
+            return res.status(429).json({
+              status: 'pending',
+              retryAfterSeconds: session.intervalSeconds,
+            });
+          }
+          if (e.code === 'expired_token' || e.code === 'invalid_grant') {
+            simklPinSessions.delete(key);
+            return res.status(410).json({ status: 'expired' });
+          }
+          throw e;
         }
-        if (result.error === 'access_denied') {
-          simklPinSessions.delete(key);
-          return res.status(409).json({ status: 'denied' });
+        if (!tokens.scope?.split(' ').includes('media:write'))
+          logger.warn(
+            'Simkl granted read-only access; Simkl actions will fail',
+            {
+              label: 'API',
+              userId,
+              scope: tokens.scope ?? null,
+            }
+          );
+      } else {
+        const result = await new SimklAPI().pollPinToken(session.pollCode);
+        const accessToken = result.access_token ?? result.token;
+        if (!accessToken) {
+          if (result.error === 'expired_token') {
+            simklPinSessions.delete(key);
+            return res.status(410).json({ status: 'expired' });
+          }
+          if (result.error === 'access_denied') {
+            simklPinSessions.delete(key);
+            return res.status(409).json({ status: 'denied' });
+          }
+          return res.status(202).json({ status: 'pending' });
         }
-        return res.status(202).json({ status: 'pending' });
+        tokens = { access_token: accessToken };
       }
-      const client = new SimklAPI({ accessToken });
+      const client = new SimklAPI({ accessToken: tokens.access_token });
       const profile = await client.getUserSettings();
       // Simkl returns presentation fields under `user`, but the canonical,
       // stable account ID under `account.id`.
@@ -1214,7 +1292,7 @@ userSettingsRoutes.post<{ id: string }>(
           .json({ message: 'Simkl returned an invalid account response.' });
       await assertSimklAccountAvailable(simklUserId, userId);
       const userSettings = await ensureUserSettings(userId);
-      userSettings.simklAccessToken = accessToken;
+      Object.assign(userSettings, simklTokenColumns(tokens));
       userSettings.simklUserId = simklUserId;
       userSettings.simklUsername =
         profile.user?.username ?? profile.user?.name ?? undefined;
@@ -1247,6 +1325,17 @@ userSettingsRoutes.delete<{ id: string }>(
   async (req, res, next) => {
     try {
       const settings = await getUserSimklSettings(Number(req.params.id));
+      if (settings?.simklRefreshToken) {
+        // Ends the grant on Simkl's side too; V1 tokens cannot be revoked.
+        try {
+          await new SimklAPI().revokeToken(settings.simklRefreshToken);
+        } catch (e) {
+          logger.warn('Failed to revoke Simkl token on unlink', {
+            label: 'API',
+            errorMessage: e instanceof Error ? e.message : 'unknown error',
+          });
+        }
+      }
       if (settings) {
         await clearUserSimklCredentials(settings.id);
         await clearUserSimklSyncCache(Number(req.params.id));

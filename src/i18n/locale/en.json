@@ -2244,7 +2244,7 @@
   "components.Settings.SettingsSimkl.clientId": "Client ID",
   "components.Settings.SettingsSimkl.configureSimkl": "Configure Simkl",
   "components.Settings.SettingsSimkl.confirmReplace": "Replace Client ID",
-  "components.Settings.SettingsSimkl.createAppTip": "Create an application at <SimklAppLink>simkl.com/settings/developer</SimklAppLink>.",
+  "components.Settings.SettingsSimkl.createAppTip": "Create an AUTH V2 application of type “TV, devices & command line” at <SimklAppLink>simkl.com/settings/developer</SimklAppLink>. AUTH V1 applications keep working until Simkl retires them.",
   "components.Settings.SettingsSimkl.description": "Simkl links each user with a PIN, so only the public Client ID is needed.",
   "components.Settings.SettingsSimkl.disconnectConfirmDescription": "Changing the Client ID will disconnect {count, plural, one {# linked Simkl account} other {# linked Simkl accounts}}. Those users must link Simkl again.",
   "components.Settings.SettingsSimkl.disconnectConfirmTitle": "Replace Simkl Client ID?",
