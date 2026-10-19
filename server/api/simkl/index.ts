@@ -185,13 +185,21 @@ export default class SimklAPI extends ExternalAPI {
   }
 
   private async ensureFreshToken(): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
     if (
-      this.refreshTokens &&
-      this.tokenExpiresAt &&
-      this.tokenExpiresAt <=
-        Math.floor(Date.now() / 1000) + SIMKL_REFRESH_WINDOW_SECONDS
+      !this.refreshTokens ||
+      !this.tokenExpiresAt ||
+      this.tokenExpiresAt > now + SIMKL_REFRESH_WINDOW_SECONDS
     )
+      return;
+    try {
       await this.refresh();
+    } catch (e) {
+      // Refreshing early is a courtesy: until it expires, the current token
+      // still serves the request. A rejected grant has already unlinked.
+      if (e instanceof SimklUnauthorizedError || this.tokenExpiresAt <= now)
+        throw e;
+    }
   }
 
   private async pace(post = false): Promise<void> {

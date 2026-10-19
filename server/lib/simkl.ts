@@ -105,8 +105,9 @@ export async function refreshUserSimklTokens(
           userId,
           error: e.code,
         });
-        await clearUserSimklCredentials(settings.id);
-        await clearUserSimklSyncCache(userId);
+        // Unless the user relinked meanwhile: the new link is not affected.
+        if (await clearUserSimklCredentials(settings.id, staleAccessToken))
+          await clearUserSimklSyncCache(userId);
         throw new SimklUnauthorizedError();
       }
       throw e;
@@ -117,7 +118,13 @@ export async function refreshUserSimklTokens(
       // Non-rotating, but keep ours should a response ever omit it.
       refresh_token: tokens.refresh_token ?? settings.simklRefreshToken,
     });
-    await getRepository(UserSettings).update(settings.id, columns);
+    // Link and unlink do not take the lock; neither may be undone by a
+    // refresh that was already in flight.
+    const result = await getRepository(UserSettings).update(
+      { id: settings.id, simklAccessToken: staleAccessToken },
+      columns
+    );
+    if (!result.affected) throw new SimklUnauthorizedError();
     return {
       accessToken: tokens.access_token,
       expiresAt: columns.simklTokenExpiresAt
@@ -146,16 +153,24 @@ export const countLinkedSimklAccounts = () =>
     .where('settings.simklUserId IS NOT NULL')
     .getCount();
 
+/** With `accessToken`, only clears while that token is still the stored one. */
 export async function clearUserSimklCredentials(
-  settingsId: number
-): Promise<void> {
-  await getRepository(UserSettings).update(settingsId, {
-    simklAccessToken: () => 'NULL',
-    simklRefreshToken: () => 'NULL',
-    simklTokenExpiresAt: () => 'NULL',
-    simklUsername: () => 'NULL',
-    simklUserId: () => 'NULL',
-  });
+  settingsId: number,
+  accessToken?: string
+): Promise<boolean> {
+  const result = await getRepository(UserSettings).update(
+    accessToken
+      ? { id: settingsId, simklAccessToken: accessToken }
+      : settingsId,
+    {
+      simklAccessToken: () => 'NULL',
+      simklRefreshToken: () => 'NULL',
+      simklTokenExpiresAt: () => 'NULL',
+      simklUsername: () => 'NULL',
+      simklUserId: () => 'NULL',
+    }
+  );
+  return Boolean(result.affected);
 }
 
 export async function clearUserSimklSyncCache(userId: number): Promise<void> {
