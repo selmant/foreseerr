@@ -33,7 +33,7 @@ type Answer = { status: number; data: unknown };
 type Call = { path: string; body: URLSearchParams };
 
 /** Stubs Simkl's HTTP API; `route` sees the path without its query. */
-const stubSimkl = (route: (call: Call) => Answer) => {
+const stubSimkl = (route: (call: Call) => Answer | Promise<Answer>) => {
   const calls: Call[] = [];
   axios.defaults.adapter = (async (config: InternalAxiosRequestConfig) => {
     const call = {
@@ -43,7 +43,7 @@ const stubSimkl = (route: (call: Call) => Answer) => {
       ),
     };
     calls.push(call);
-    const { status, data } = route(call);
+    const { status, data } = await route(call);
     const response = { status, statusText: '', headers: {}, config, data };
     if (status < 400) return response;
     throw new AxiosError(
@@ -325,6 +325,45 @@ describe('Simkl token refresh', () => {
     assert.equal(settings?.simklAccessToken, null);
     assert.equal(settings?.simklRefreshToken, null);
     assert.equal(settings?.simklUserId, null);
+  });
+
+  it('does not restore a link removed while the refresh was in flight', async () => {
+    const userId = await linkV2();
+    const settingsId = (await getUserSimklSettings(userId))?.id;
+    stubSimkl(async () => {
+      await getRepository(UserSettings).update(settingsId as number, {
+        simklAccessToken: () => 'NULL',
+        simklRefreshToken: () => 'NULL',
+        simklUserId: () => 'NULL',
+      });
+      return V2_TOKENS;
+    });
+    await assert.rejects(
+      refreshUserSimklTokens(userId, 'simkl_at_old'),
+      SimklUnauthorizedError
+    );
+    const settings = await getUserSimklSettings(userId);
+    assert.equal(settings?.simklAccessToken, null);
+    assert.equal(settings?.simklRefreshToken, null);
+  });
+
+  it('leaves a newer link alone when the old grant is rejected', async () => {
+    const userId = await linkV2();
+    const settingsId = (await getUserSimklSettings(userId))?.id;
+    stubSimkl(async () => {
+      await getRepository(UserSettings).update(settingsId as number, {
+        simklAccessToken: 'simkl_at_relinked',
+        simklRefreshToken: 'simkl_rt_relinked',
+      });
+      return oauthError(400, 'invalid_grant');
+    });
+    await assert.rejects(
+      refreshUserSimklTokens(userId, 'simkl_at_old'),
+      SimklUnauthorizedError
+    );
+    const settings = await getUserSimklSettings(userId);
+    assert.equal(settings?.simklAccessToken, 'simkl_at_relinked');
+    assert.equal(settings?.simklUserId, '4242');
   });
 
   it('keeps the link through a temporary failure', async () => {

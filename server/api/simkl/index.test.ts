@@ -1,6 +1,7 @@
 import SimklAPI, {
   SimklOAuthError,
   SimklRequestError,
+  SimklTemporarilyUnavailableError,
   SimklUnauthorizedError,
   simklErrorDetail,
 } from '@server/api/simkl';
@@ -209,6 +210,36 @@ describe('SimklAPI AUTH V2', () => {
     assert.deepEqual(
       calls.map((call) => call.authorization),
       ['Bearer new', 'Bearer new']
+    );
+  });
+
+  it('keeps using a still-valid token when an early refresh fails', async () => {
+    const calls = stubSimkl(() => ({ status: 200, data: { all: 1 } }));
+    const client = new SimklAPI({
+      clientId: 'test-client',
+      accessToken: 'current',
+      tokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+      refreshTokens: async () => {
+        throw new SimklTemporarilyUnavailableError();
+      },
+    });
+    assert.deepEqual(await client.getActivities(), { all: 1 });
+    assert.equal(calls[0].authorization, 'Bearer current');
+  });
+
+  it('fails when an expired token cannot be refreshed', async () => {
+    stubSimkl(() => ({ status: 200, data: {} }));
+    const client = new SimklAPI({
+      clientId: 'test-client',
+      accessToken: 'expired',
+      tokenExpiresAt: Math.floor(Date.now() / 1000) - 60,
+      refreshTokens: async () => {
+        throw new SimklTemporarilyUnavailableError();
+      },
+    });
+    await assert.rejects(
+      client.getActivities(),
+      SimklTemporarilyUnavailableError
     );
   });
 
