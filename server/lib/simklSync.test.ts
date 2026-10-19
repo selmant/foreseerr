@@ -294,6 +294,38 @@ describe('Simkl sync (two-phase, per the Simkl sync guide)', () => {
     );
   });
 
+  it('pulls everything again when a delta answers max_items', async () => {
+    const userId = await linkedUser();
+    await initialSync(userId);
+    const later = activities('2026-05-06T00:00:00Z');
+    (later.tv_shows as Record<string, unknown>).watching =
+      '2026-05-06T00:00:00Z';
+    const calls = stubSimkl((path) => {
+      if (path === '/sync/activities') return { status: 200, data: later };
+      if (path === '/sync/all-items')
+        return {
+          status: 400,
+          data: { error: 'max_items', message: 'Too many episodes' },
+        };
+      if (path === '/sync/all-items/shows')
+        return { status: 200, data: { shows: [show(3)] } };
+      return { status: 200, data: {} };
+    });
+    assert.equal((await syncSimklUser(userId, true)).stale, false);
+    assert.deepEqual(calls, [
+      '/sync/activities',
+      '/sync/all-items?date_from=2026-05-01T00%3A00%3A00Z&extended=full&include_all_episodes=yes',
+      '/sync/all-items/shows?extended=full&include_all_episodes=yes',
+      '/sync/all-items/movies',
+      '/sync/all-items/anime?extended=full&include_all_episodes=yes',
+    ]);
+    assert.deepEqual(
+      await cached(userId),
+      ['show:3:watching'],
+      'the full pull also drops what left Simkl'
+    );
+  });
+
   it('splits a type by status when Simkl answers max_items', async () => {
     const userId = await linkedUser();
     const calls = stubSimkl((path) => {
