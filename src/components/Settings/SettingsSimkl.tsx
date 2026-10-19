@@ -6,7 +6,7 @@ import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
-import { Fragment, forwardRef, useState, type ReactNode } from 'react';
+import { Fragment, forwardRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate as globalMutate } from 'swr';
 
@@ -17,9 +17,9 @@ const messages = defineMessages('components.Settings.SettingsSimkl', {
   enabled: 'Enable Simkl',
   enabledTip:
     'Simkl Discover rows, linked accounts, and watched and rating actions',
-  clientId: 'Custom Client ID',
-  createAppTip:
-    'Optional. Leave empty to use Foreseerr’s app. To use your own, create an AUTH V2 application of type “TV, devices & command line” at <SimklAppLink>simkl.com/settings/developer</SimklAppLink>. AUTH V1 applications keep working until Simkl retires them.',
+  switchToBuiltin: 'Switch to Foreseerr’s Simkl App',
+  switchToBuiltinTip:
+    'This install still links through its own Simkl app (Client ID {clientId}). Foreseerr now ships its own, and Simkl retires AUTH V1 apps around April 2027. Linked users must link Simkl again after switching.',
   actionsEnabled: 'Allow Simkl Watched and Rating Actions',
   actionsEnabledTip:
     'Marking titles watched or rated in Foreseerr also updates the linked Simkl account',
@@ -28,10 +28,10 @@ const messages = defineMessages('components.Settings.SettingsSimkl', {
   loadFailed: 'Unable to load Simkl settings.',
   toastSettingsSuccess: 'Simkl settings saved successfully!',
   toastSettingsFailure: 'Something went wrong while saving Simkl settings.',
-  disconnectConfirmTitle: 'Replace Simkl Client ID?',
+  disconnectConfirmTitle: 'Switch to Foreseerr’s Simkl App?',
   disconnectConfirmDescription:
-    'Changing the Client ID will disconnect {count, plural, one {# linked Simkl account} other {# linked Simkl accounts}}. Those users must link Simkl again.',
-  confirmReplace: 'Replace Client ID',
+    'Switching apps will disconnect {count, plural, one {# linked Simkl account} other {# linked Simkl accounts}}. Those users must link Simkl again.',
+  confirmReplace: 'Switch Apps',
 });
 
 type SimklSettings = {
@@ -46,12 +46,11 @@ type SimklSettings = {
 
 type SimklFormValues = Pick<
   SimklSettings,
-  | 'enabled'
-  | 'clientId'
-  | 'actionsEnabled'
-  | 'showCommunityRating'
-  | 'posterCommunityRating'
->;
+  'enabled' | 'actionsEnabled' | 'showCommunityRating' | 'posterCommunityRating'
+> & {
+  /** Drop the install's legacy Client ID for Foreseerr's own app. */
+  switchToBuiltin: boolean;
+};
 
 type SettingsSimklProps = {
   onClose: () => void;
@@ -66,11 +65,14 @@ const SettingsSimkl = forwardRef<HTMLDivElement, SettingsSimklProps>(
     );
     const [pendingValues, setPendingValues] = useState<SimklFormValues>();
 
-    const save = async (values: SimklFormValues, confirmed = false) => {
+    const save = async (
+      { switchToBuiltin, ...values }: SimklFormValues,
+      confirmed = false
+    ) => {
       try {
         await axios.post('/api/v1/settings/simkl', {
           ...values,
-          clientId: values.clientId.trim(),
+          ...(switchToBuiltin ? { clientId: '' } : {}),
           ...(confirmed ? { confirmDisconnectLinkedAccounts: true } : {}),
         });
         addToast(intl.formatMessage(messages.toastSettingsSuccess), {
@@ -96,18 +98,14 @@ const SettingsSimkl = forwardRef<HTMLDivElement, SettingsSimklProps>(
       <Formik<SimklFormValues>
         initialValues={{
           enabled: data?.enabled ?? true,
-          clientId: data?.clientId ?? '',
+          switchToBuiltin: false,
           actionsEnabled: data?.actionsEnabled ?? true,
           showCommunityRating: data?.showCommunityRating ?? true,
           posterCommunityRating: data?.posterCommunityRating ?? false,
         }}
         enableReinitialize
         onSubmit={async (values) => {
-          if (
-            data &&
-            data.linkedAccountCount > 0 &&
-            values.clientId.trim() !== data.clientId
-          ) {
+          if (data && data.linkedAccountCount > 0 && values.switchToBuiltin) {
             setPendingValues(values);
             return;
           }
@@ -148,35 +146,28 @@ const SettingsSimkl = forwardRef<HTMLDivElement, SettingsSimklProps>(
                     <Field type="checkbox" id="simklEnabled" name="enabled" />
                   </div>
                 </div>
-                <div className="form-row">
-                  <label htmlFor="simklClientId" className="text-label">
-                    {intl.formatMessage(messages.clientId)}
-                    <span className="label-tip">
-                      {intl.formatMessage(messages.createAppTip, {
-                        SimklAppLink: (msg: ReactNode) => (
-                          <a
-                            href="https://simkl.com/settings/developer/"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-white underline transition hover:text-gray-200"
-                          >
-                            {msg}
-                          </a>
-                        ),
-                      })}
-                    </span>
-                  </label>
-                  <div className="form-input-area">
-                    <div className="form-input-field">
+                {data?.clientId ? (
+                  <div className="form-row">
+                    <label
+                      htmlFor="simklSwitchToBuiltin"
+                      className="checkbox-label"
+                    >
+                      {intl.formatMessage(messages.switchToBuiltin)}
+                      <span className="label-tip">
+                        {intl.formatMessage(messages.switchToBuiltinTip, {
+                          clientId: `${data.clientId.slice(0, 8)}…`,
+                        })}
+                      </span>
+                    </label>
+                    <div className="form-input-area">
                       <Field
-                        id="simklClientId"
-                        name="clientId"
-                        type="text"
-                        autoComplete="off"
+                        type="checkbox"
+                        id="simklSwitchToBuiltin"
+                        name="switchToBuiltin"
                       />
                     </div>
                   </div>
-                </div>
+                ) : null}
                 <div className="form-row">
                   <label
                     htmlFor="simklActionsEnabled"
