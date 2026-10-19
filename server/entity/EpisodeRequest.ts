@@ -39,6 +39,17 @@ class EpisodeRequest {
   @DbAwareColumn({ type: 'datetime', nullable: true })
   public searchTriggeredAt?: Date;
 
+  // Set once the sync has made Sonarr monitor this watch-ahead episode.
+  // After that, Sonarr's monitored flag wins, so an episode someone else
+  // unmonitored stays unmonitored.
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public monitoredAt?: Date;
+
+  // Set while a watch-ahead episode without a file is unmonitored after
+  // Foreseerr monitored it, for example because a cleanup tool removed it.
+  @DbAwareColumn({ type: 'datetime', nullable: true })
+  public unmonitoredAt?: Date | null;
+
   @ManyToOne('MediaRequest', 'episodes', {
     onDelete: 'CASCADE',
     orphanedRowAction: 'delete',
