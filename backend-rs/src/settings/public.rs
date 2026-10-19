@@ -197,7 +197,9 @@ fn integration_fields(settings: &Settings, plugin_mode: bool) -> Vec<(&'static s
         ),
         (
             "simklConfigured",
-            Value::Bool(non_blank(settings.get("/simkl/clientId"))),
+            Value::Bool(
+                crate::simklapi::effective_client_id(settings).is_some_and(|id| !id.is_empty()),
+            ),
         ),
         ("mediaActionsTraktEnabled", provider_enabled("trakt")),
         ("mediaActionsJellyfinEnabled", provider_enabled("jellyfin")),

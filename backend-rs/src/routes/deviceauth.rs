@@ -71,7 +71,7 @@ const JELLYFIN_PROVIDER: &str =
     "Trakt is provided by Better Trakt through Jellyfin. Link Trakt in Jellyfin instead.";
 const TRAKT_START_FAILED: &str = "Unable to start Trakt device authorization.";
 const TRAKT_FINISH_FAILED: &str = "Unable to complete Trakt device authorization.";
-const SIMKL_NOT_CONFIGURED: &str = "Simkl application Client ID is not configured";
+const SIMKL_NOT_CONFIGURED: &str = crate::simklapi::NOT_CONFIGURED;
 
 // ---------------------------------------------------------------------------
 // Process state
@@ -767,9 +767,8 @@ fn trakt_token<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 
 /// `new SimklAPI()`: `None` for `SimklNotConfiguredError`.
 fn simkl_config(ctx: &Ready<'_>) -> Result<Option<crate::simklapi::Config>, Box<Outcome>> {
-    let client_id = match ctx.settings.get("/simkl/clientId") {
-        Some(Value::String(s)) => crate::jsval::trim(s).to_owned(),
-        _ => return Err(Box::new(forward("a simkl.clientId that isn't a string"))),
+    let Some(client_id) = crate::simklapi::effective_client_id(&ctx.settings) else {
+        return Err(Box::new(forward("a simkl.clientId that isn't a string")));
     };
     if client_id.is_empty() {
         return Ok(None);

@@ -468,19 +468,18 @@ async fn check_anilist(state: &AppState, settings: &Settings) -> Map<String, Val
 ///
 /// # Errors
 ///
-/// When `simkl.clientId` isn't a string: Node's `trim()` throws and the
-/// whole check fails.
+/// When Simkl is on and `simkl.clientId` isn't a string: Node's `trim()`
+/// throws and the whole check fails.
 async fn check_simkl(state: &AppState, settings: &Settings) -> Result<Map<String, Value>, String> {
-    let Some(client_id) = settings.get("/simkl/clientId").and_then(Value::as_str) else {
+    let Some(client_id) = crate::simklapi::effective_client_id(settings) else {
         return Err(String::from("simkl.clientId is not text"));
     };
-    if crate::jsval::trim(client_id).is_empty() {
-        return Ok(not_configured("Simkl Client ID is not configured."));
+    if client_id.is_empty() {
+        return Ok(not_configured("Simkl is turned off."));
     }
-    let client_id = crate::jsval::trim(client_id);
     let client = crate::simklapi::Config::new(
         &state.outbound,
-        client_id,
+        &client_id,
         &state.version.version,
         crate::simklapi::timeout_of(settings),
     )

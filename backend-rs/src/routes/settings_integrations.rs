@@ -316,6 +316,7 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         let body = try_forward!(json_body(ctx));
         let schema = [
+            ("enabled", Ty::Bool),
             ("clientId", Ty::Str),
             ("actionsEnabled", Ty::Bool),
             ("showCommunityRating", Ty::Bool),
@@ -327,7 +328,18 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         let data = node_memory(ctx);
         let client_id = body_text(body, "clientId");
-        let changing = data.pointer("/simkl/clientId").and_then(Value::as_str) != Some(&client_id);
+        let enabled = match body.get("enabled") {
+            Some(Value::Bool(enabled)) => *enabled,
+            _ => data.pointer("/simkl/enabled") != Some(&Value::Bool(false)),
+        };
+        // Links belong to the app that issued them, so only a different app
+        // disconnects them; turning Simkl off keeps them for later.
+        let old_client_id = data
+            .pointer("/simkl/clientId")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let changing = crate::simklapi::client_id_for(&client_id)
+            != crate::simklapi::client_id_for(old_client_id);
         let count = try_forward!(linked(ctx, LinkedAccounts::Simkl).await);
         if changing && count > 0 && !is_true(body, "confirmDisconnectLinkedAccounts") {
             return ctx.json_with(400, &json!({
@@ -335,7 +347,7 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 "linkedAccountCount": count,
             }));
         }
-        if !client_id.is_empty() {
+        if enabled && !client_id.is_empty() {
             if let Err(e) = simkl_valid(ctx, &client_id).await {
                 tracing::error!("Unable to save Simkl settings: {}", e.message());
                 if e.is_request_error() {
@@ -351,7 +363,7 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 assign_merged(
                     doc,
                     "simkl",
-                    json!({ "clientId": client_id, "showCommunityRating": show, "posterCommunityRating": poster }),
+                    json!({ "enabled": enabled, "clientId": client_id, "showCommunityRating": show, "posterCommunityRating": poster }),
                 );
                 set_provider(doc, "simkl", not_false(body, "actionsEnabled"));
                 Ok(doc.clone())
@@ -374,10 +386,14 @@ fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
         };
         let mut out = Map::new();
+        out.insert(String::from("enabled"), Value::Bool(enabled));
         out.insert(String::from("clientId"), Value::from(client_id.as_str()));
         out.insert(
             String::from("configured"),
-            Value::Bool(!client_id.is_empty()),
+            Value::Bool(
+                crate::simklapi::effective_client_id_of(data.pointer("/simkl"))
+                    .is_some_and(|id| !id.is_empty()),
+            ),
         );
         out.insert(
             String::from("actionsEnabled"),

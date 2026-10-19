@@ -63,6 +63,7 @@
     "clientSecret": ""
   },
   "simkl": {
+    "enabled": true,
     "clientId": "",
     "showCommunityRating": true,
     "posterCommunityRating": false

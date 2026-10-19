@@ -27,7 +27,7 @@ pub(crate) struct MigrationCtx<'a> {
 }
 
 /// `SETTINGS_MIGRATIONS`, in order.
-pub(crate) const NAMES: [&str; 12] = [
+pub(crate) const NAMES: [&str; 13] = [
     "0001_migrate_hostname",
     "0002_migrate_apitokens",
     "0003_emby_media_server_type",
@@ -40,6 +40,7 @@ pub(crate) const NAMES: [&str; 12] = [
     "0012_restore_release_calendar_sync_interval",
     "0013_increase_arr_request_timeout",
     "0014_arr_scan_15m",
+    "0015_simkl_builtin_client",
 ];
 
 /// `JSON.stringify(value)`.
@@ -564,6 +565,35 @@ fn arr_scan_interval(settings: &mut Map<String, Value>) -> Result<()> {
     Ok(())
 }
 
+/// 0015: Foreseerr ships its own Simkl Client ID, so Simkl defaults to on.
+/// An install that never set Simkl up keeps it off until an administrator
+/// turns it on; one with a Client ID keeps using it, and its links.
+fn simkl_builtin_client(settings: &mut Map<String, Value>) -> Result<()> {
+    const NAME: &str = "0015_simkl_builtin_client";
+    if has_migration(settings, NAME) {
+        return Ok(());
+    }
+    let simkl = settings
+        .entry("simkl")
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !truthy(Some(simkl)) {
+        *simkl = Value::Object(Map::new());
+    }
+    let simkl = simkl
+        .as_object_mut()
+        .ok_or_else(|| type_error("an object at settings.simkl"))?;
+    if !simkl.get("enabled").is_some_and(Value::is_boolean) {
+        let configured = match simkl.get("clientId") {
+            None | Some(Value::Null) => false,
+            Some(Value::String(id)) => !crate::jsval::trim(id).is_empty(),
+            Some(_) => return Err(anyhow!("settings.simkl.clientId.trim is not a function")),
+        };
+        simkl.insert(String::from("enabled"), Value::Bool(configured));
+    }
+    record(settings, NAME);
+    Ok(())
+}
+
 /// One migration by name.
 async fn apply(name: &str, settings: &mut Map<String, Value>, ctx: MigrationCtx<'_>) -> Result<()> {
     match name {
@@ -589,6 +619,7 @@ async fn apply(name: &str, settings: &mut Map<String, Value>, ctx: MigrationCtx<
             Ok(())
         }
         "0014_arr_scan_15m" => arr_scan_interval(settings),
+        "0015_simkl_builtin_client" => simkl_builtin_client(settings),
         other => bail!("unknown settings migration {other}"),
     }
 }
@@ -855,6 +886,46 @@ mod tests {
         let again = s.clone();
         assert!(arr_scan_interval(&mut s).is_ok(), "0014 twice");
         assert_eq!(s, again, "recorded migrations are skipped");
+    }
+
+    #[test]
+    fn simkl_builtin_client_follows_the_configured_client_id() {
+        // Ported from 0015_simkl_builtin_client.test.ts.
+        let mut own = obj(json!({
+            "simkl": {"clientId": "own-client", "showCommunityRating": true, "posterCommunityRating": false},
+            "migrations": []
+        }));
+        assert!(simkl_builtin_client(&mut own).is_ok(), "0015");
+        assert_eq!(
+            Value::Object(own),
+            json!({
+                "simkl": {"clientId": "own-client", "showCommunityRating": true, "posterCommunityRating": false, "enabled": true},
+                "migrations": ["0015_simkl_builtin_client"]
+            }),
+            "an install with its own Client ID keeps Simkl on"
+        );
+        for start in [
+            json!({"simkl": {"clientId": "  "}, "migrations": []}),
+            json!({"migrations": []}),
+        ] {
+            let mut never = obj(start);
+            assert!(simkl_builtin_client(&mut never).is_ok(), "0015");
+            assert_eq!(
+                never.get("simkl").and_then(|s| s.get("enabled")),
+                Some(&Value::Bool(false)),
+                "an install that never set Simkl up keeps it off"
+            );
+        }
+        let mut chosen = obj(json!({"simkl": {"clientId": "", "enabled": true}, "migrations": []}));
+        assert!(simkl_builtin_client(&mut chosen).is_ok(), "0015");
+        assert_eq!(
+            chosen.get("simkl").and_then(|s| s.get("enabled")),
+            Some(&Value::Bool(true)),
+            "a choice already made stays"
+        );
+        let again = chosen.clone();
+        assert!(simkl_builtin_client(&mut chosen).is_ok(), "0015 twice");
+        assert_eq!(chosen, again, "recorded migrations are skipped");
     }
 
     #[test]

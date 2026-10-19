@@ -281,10 +281,9 @@ async fn user_client(
     user_id: Option<i64>,
 ) -> Result<crate::simklapi::Client, String> {
     let settings = super::settings(state).await.map_err(|e| format!("{e:#}"))?;
-    let Some(client_id) = settings.get("/simkl/clientId").and_then(Value::as_str) else {
+    let Some(client_id) = crate::simklapi::effective_client_id(&settings) else {
         return Err(String::from("simkl.clientId is not text"));
     };
-    let client_id = crate::jsval::trim(client_id).to_owned();
     if client_id.is_empty() {
         return Err(String::from(crate::simklapi::NOT_CONFIGURED));
     }

@@ -52,7 +52,7 @@ impl Simkl {
     /// `SimklNotConfiguredError`.
     #[must_use]
     pub fn new(client: &reqwest::Client, settings: &Settings, version: &str) -> Option<Self> {
-        let client_id = jsval::trim(settings.str("/simkl/clientId")).to_owned();
+        let client_id = crate::simklapi::effective_client_id(settings).unwrap_or_default();
         if client_id.is_empty() {
             return None;
         }

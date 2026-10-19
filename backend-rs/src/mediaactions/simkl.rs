@@ -37,7 +37,7 @@ pub struct SimklUser(crate::simklapi::Client);
 ///
 /// Not configured, not linked, database failures.
 pub async fn user_client(env: &Env<'_>) -> Result<SimklUser, Thrown> {
-    let client_id = crate::jsval::trim(env.settings.str("/simkl/clientId")).to_owned();
+    let client_id = crate::simklapi::effective_client_id(&env.settings).unwrap_or_default();
     if client_id.is_empty() {
         return Err(String::from(crate::simklapi::NOT_CONFIGURED));
     }

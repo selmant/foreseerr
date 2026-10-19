@@ -249,10 +249,14 @@ pub(super) fn simkl<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Err(e) => return Outcome::forward(format!("counting Simkl accounts failed: {e:#}")),
         };
         let mut out = Map::new();
+        out.insert(
+            String::from("enabled"),
+            Value::Bool(s.get("/simkl/enabled") != Some(&Value::Bool(false))),
+        );
         out.insert(String::from("clientId"), Value::from(client_id));
         out.insert(
             String::from("configured"),
-            Value::Bool(!client_id.trim().is_empty()),
+            Value::Bool(crate::simklapi::effective_client_id(s).is_some_and(|id| !id.is_empty())),
         );
         out.insert(
             String::from("actionsEnabled"),

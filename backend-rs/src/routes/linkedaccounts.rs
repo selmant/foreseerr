@@ -371,17 +371,13 @@ fn simkl_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 /// Ends a V2 grant on Simkl's side too, best-effort; V1 tokens cannot be
 /// revoked.
 async fn revoke_simkl(ctx: &Ready<'_>, refresh_token: &str) {
-    let client_id = ctx
-        .settings
-        .get("/simkl/clientId")
-        .and_then(Value::as_str)
-        .map_or("", crate::jsval::trim);
+    let client_id = crate::simklapi::effective_client_id(&ctx.settings).unwrap_or_default();
     let revoked = if client_id.is_empty() {
         Err(String::from(crate::simklapi::NOT_CONFIGURED))
     } else {
         crate::simklapi::Config::new(
             &ctx.state.outbound,
-            client_id,
+            &client_id,
             &ctx.state.version.version,
             crate::simklapi::timeout_of(&ctx.settings),
         )

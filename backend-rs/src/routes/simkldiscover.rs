@@ -305,7 +305,7 @@ fn trending<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             &ctx.settings,
             &ctx.state.version.version,
         ) else {
-            return unavailable("Simkl application Client ID is not configured");
+            return unavailable(crate::simklapi::NOT_CONFIGURED);
         };
         let source = format!("simkl/trending/{media_type}");
         if crate::mappinglayer::owned() {
@@ -410,7 +410,7 @@ fn refresh_trending<'a>(
             &ctx.settings,
             &ctx.state.version.version,
         )
-        .ok_or_else(|| String::from("Simkl application Client ID is not configured"))?;
+        .ok_or_else(|| String::from(crate::simklapi::NOT_CONFIGURED))?;
         let media_type = query.str("mediaType").unwrap_or("all");
         let period = query.str("period").unwrap_or("week");
         let page = super::providerkit::page(&query).max(1);

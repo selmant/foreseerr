@@ -595,3 +595,38 @@ async fn a_v1_link_never_refreshes() -> anyhow::Result<()> {
     assert_eq!(stored(&db).await?.0, Value::Null, "the 401 unlinked it");
     Ok(())
 }
+
+#[test]
+fn effective_client_id_follows_effective_simkl_client_id() {
+    assert_eq!(client_id_for("  own  "), "own", "the administrator's own");
+    assert_eq!(
+        client_id_for(" "),
+        BUILTIN_CLIENT_ID,
+        "blank uses the built-in app"
+    );
+    for (simkl, expected) in [
+        (json!({"enabled": false, "clientId": "own"}), Some("")),
+        (
+            json!({"enabled": true, "clientId": ""}),
+            Some(BUILTIN_CLIENT_ID),
+        ),
+        (json!({"clientId": "own"}), Some("own")),
+        (json!({}), Some(BUILTIN_CLIENT_ID)),
+        (
+            json!({"enabled": "no", "clientId": null}),
+            Some(BUILTIN_CLIENT_ID),
+        ),
+        (json!({"clientId": 5}), None),
+    ] {
+        assert_eq!(
+            effective_client_id_of(Some(&simkl)).as_deref(),
+            expected,
+            "{simkl}"
+        );
+    }
+    assert_eq!(
+        effective_client_id_of(None).as_deref(),
+        Some(BUILTIN_CLIENT_ID),
+        "no simkl settings"
+    );
+}

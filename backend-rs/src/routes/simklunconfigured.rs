@@ -1,4 +1,4 @@
-//! `syncSimklUser` without a Simkl Client ID (`server/lib/simklSync.ts`):
+//! `syncSimklUser` while Simkl is turned off (`server/lib/simklSync.ts`):
 //! `createSimklUserClient` throws `SimklNotConfiguredError`, and the catch
 //! stamps an existing sync state with the time and the error unless it was
 //! checked in the last 15 minutes (no `refresh` reaches the library route).
@@ -9,7 +9,7 @@ use super::Ready;
 use crate::db::Bind;
 
 /// `SimklNotConfiguredError`'s message.
-pub(super) const NOT_CONFIGURED: &str = "Simkl application Client ID is not configured";
+pub(super) const NOT_CONFIGURED: &str = crate::simklapi::NOT_CONFIGURED;
 /// `AUTO_SYNC_MIN_INTERVAL_MS`.
 const AUTO_SYNC_MIN_INTERVAL_MS: i64 = 15 * 60 * 1000;
 

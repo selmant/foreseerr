@@ -27,7 +27,16 @@ const REFRESH_WINDOW_SECONDS: i64 = 24 * 60 * 60;
 /// `SIMKL_ERROR_DETAIL_LIMIT`.
 const DETAIL_LIMIT: usize = 200;
 
-pub const NOT_CONFIGURED: &str = "Simkl application Client ID is not configured";
+/// `SimklNotConfiguredError`'s message.
+pub const NOT_CONFIGURED: &str = "Simkl is turned off";
+
+/// `SIMKL_BUILTIN_CLIENT_ID`: Foreseerr's own Simkl AUTH V2 app.
+///
+/// "TV, devices & command line", no secret. Simkl wants one Client ID per
+/// app rather than one per install: AUTH V2 counts quota per user, and a
+/// public client ID is meant to ship.
+pub const BUILTIN_CLIENT_ID: &str =
+    "7bb0499fc59c9bbd0f6112270b389aa2500efd1b0c2d47ee7167358c9c056b38";
 pub const NOT_LINKED: &str = "User has not linked a Simkl account";
 
 /// `simklRefreshLock`.
@@ -166,6 +175,39 @@ fn retry_after(res: &reqwest::Response) -> f64 {
     } else {
         after.max(1.0)
     }
+}
+
+/// `simklClientIdFor(clientId)`: the administrator's own Client ID, else
+/// the built-in one.
+#[must_use]
+pub fn client_id_for(client_id: &str) -> String {
+    let own = crate::jsval::trim(client_id);
+    if own.is_empty() {
+        String::from(BUILTIN_CLIENT_ID)
+    } else {
+        own.to_owned()
+    }
+}
+
+/// `effectiveSimklClientId(settings.simkl)` over the `simkl` object: the
+/// Client ID Simkl calls use, or `""` while Simkl is turned off. `None`
+/// for a `clientId` that isn't text (Node's `trim()` throws).
+#[must_use]
+pub fn effective_client_id_of(simkl: Option<&Value>) -> Option<String> {
+    if simkl.and_then(|s| s.get("enabled")) == Some(&Value::Bool(false)) {
+        return Some(String::new());
+    }
+    match simkl.and_then(|s| s.get("clientId")) {
+        None | Some(Value::Null) => Some(String::from(BUILTIN_CLIENT_ID)),
+        Some(Value::String(own)) => Some(client_id_for(own)),
+        Some(_) => None,
+    }
+}
+
+/// [`effective_client_id_of`] for the loaded settings.
+#[must_use]
+pub fn effective_client_id(settings: &Settings) -> Option<String> {
+    effective_client_id_of(settings.get("/simkl"))
 }
 
 /// The `network.apiRequestTimeout` setting.
