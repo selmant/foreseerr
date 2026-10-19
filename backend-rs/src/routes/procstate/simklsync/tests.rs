@@ -538,6 +538,46 @@ async fn keeps_the_saved_snapshot_when_a_delta_fails() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn pulls_everything_again_when_a_delta_answers_max_items() -> anyhow::Result<()> {
+    let db = linked_db().await?;
+    initial_sync(&db).await?;
+    let mut later = activities("2026-05-06T00:00:00Z");
+    set(
+        &mut later,
+        &["tv_shows", "watching"],
+        json!("2026-05-06T00:00:00Z"),
+    );
+    let (result, calls) = sync_routed(&db, move |path| match path {
+        "/sync/activities" => (200, later.clone()),
+        "/sync/all-items" => (
+            400,
+            json!({"error": "max_items", "message": "Too many episodes"}),
+        ),
+        "/sync/all-items/shows" => (200, json!({"shows": [show(3, &json!({}))]})),
+        _ => (200, json!({})),
+    })
+    .await?;
+    assert_eq!(result.get("stale"), Some(&Value::Bool(false)), "synced");
+    assert_eq!(
+        calls,
+        [
+            "/sync/activities",
+            "/sync/all-items?date_from=2026-05-01T00%3A00%3A00Z&extended=full&include_all_episodes=yes",
+            "/sync/all-items/shows?extended=full&include_all_episodes=yes",
+            "/sync/all-items/movies",
+            "/sync/all-items/anime?extended=full&include_all_episodes=yes",
+        ],
+        "requests"
+    );
+    assert_eq!(
+        cached(&db).await?,
+        ["show:3:watching"],
+        "the full pull also drops what left Simkl"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn splits_a_type_by_status_when_simkl_answers_max_items() -> anyhow::Result<()> {
     let db = linked_db().await?;
     let (result, calls) = sync_routed(&db, |path| match path {

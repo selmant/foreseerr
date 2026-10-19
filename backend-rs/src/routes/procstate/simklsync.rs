@@ -249,54 +249,73 @@ async fn pull(
     let mut items: Vec<Item> = Vec::new();
     // Everything still on Simkl; local items missing from it were removed.
     let mut upstream: Option<HashSet<String>> = None;
-    if let Some((_, old, from)) = delta {
-        let moved = moved_activities(&activities, old);
-        let from = crate::jsval::form_encode(from);
-        if moved.statuses {
-            let path = format!("/sync/all-items?date_from={from}&{EPISODE_PARAMS}");
-            collect(&mut items, &get(client, &path).await?, None, true);
+    let moved = delta.map(|(_, old, from)| {
+        (
+            moved_activities(&activities, old),
+            crate::jsval::form_encode(from),
+        )
+    });
+    let mut changed = None;
+    let mut pull_all = moved.is_none();
+    if let Some((Moved { statuses: true, .. }, from)) = &moved {
+        let path = format!("/sync/all-items?date_from={from}&{EPISODE_PARAMS}");
+        match client.request(&path, None).await {
+            Ok(data) => changed = Some(data),
+            // Too much changed for one call: pull everything again, split
+            // as the initial import is.
+            Err(failure) if is_max_items(&failure) => pull_all = true,
+            Err(failure) => return Err(failure.message()),
         }
-        // A rating change on a listed item moves only `rated_at`.
-        if moved.ratings {
-            let path = format!("/sync/ratings?date_from={from}");
-            collect(&mut items, &get(client, &path).await?, None, false);
-        }
-        if moved.removals {
-            let data = get(client, "/sync/all-items?extended=simkl_ids_only").await?;
-            let mut ids = HashSet::new();
-            for (item, kind) in sync_entries(&data, None) {
-                let item_ids = item
-                    .get("ids")
-                    .and_then(Value::as_object)
-                    .cloned()
-                    .unwrap_or_default();
-                if let Some(id) = record_id(&item, &item_ids) {
-                    ids.insert(format!("{kind}:{id}"));
-                }
+    }
+    match moved {
+        Some((moved, from)) if !pull_all => {
+            if let Some(data) = &changed {
+                collect(&mut items, data, None, true);
             }
-            upstream = Some(ids);
-        }
-    } else {
-        // One type after another, never in parallel.
-        for (kind, local) in TYPES {
-            let episodes = local != "movie";
-            let params = if episodes { EPISODE_PARAMS } else { "" };
-            let batches = match client.request(&all_items(kind, None, params), None).await {
-                Ok(data) => vec![data],
-                Err(failure) if is_max_items(&failure) => {
-                    let mut batches = Vec::with_capacity(STATUSES.len());
-                    for status in STATUSES {
-                        batches.push(get(client, &all_items(kind, Some(status), params)).await?);
+            // A rating change on a listed item moves only `rated_at`.
+            if moved.ratings {
+                let path = format!("/sync/ratings?date_from={from}");
+                collect(&mut items, &get(client, &path).await?, None, false);
+            }
+            if moved.removals {
+                let data = get(client, "/sync/all-items?extended=simkl_ids_only").await?;
+                let mut ids = HashSet::new();
+                for (item, kind) in sync_entries(&data, None) {
+                    let item_ids = item
+                        .get("ids")
+                        .and_then(Value::as_object)
+                        .cloned()
+                        .unwrap_or_default();
+                    if let Some(id) = record_id(&item, &item_ids) {
+                        ids.insert(format!("{kind}:{id}"));
                     }
-                    batches
                 }
-                Err(failure) => return Err(failure.message()),
-            };
-            for data in &batches {
-                collect(&mut items, data, Some(local), episodes);
+                upstream = Some(ids);
             }
         }
-        upstream = Some(items.iter().map(item_key).collect());
+        _ => {
+            // One type after another, never in parallel.
+            for (kind, local) in TYPES {
+                let episodes = local != "movie";
+                let params = if episodes { EPISODE_PARAMS } else { "" };
+                let batches = match client.request(&all_items(kind, None, params), None).await {
+                    Ok(data) => vec![data],
+                    Err(failure) if is_max_items(&failure) => {
+                        let mut batches = Vec::with_capacity(STATUSES.len());
+                        for status in STATUSES {
+                            batches
+                                .push(get(client, &all_items(kind, Some(status), params)).await?);
+                        }
+                        batches
+                    }
+                    Err(failure) => return Err(failure.message()),
+                };
+                for data in &batches {
+                    collect(&mut items, data, Some(local), episodes);
+                }
+            }
+            upstream = Some(items.iter().map(item_key).collect());
+        }
     }
     let now = crate::clock::now_millis();
     write(
