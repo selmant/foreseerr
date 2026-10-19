@@ -1,5 +1,5 @@
 ---
-title: Foreseerr v0.13.5 release notes
+title: Foreseerr v0.14.0 release notes
 ---
 
 ## Simkl
@@ -45,16 +45,16 @@ title: Foreseerr v0.13.5 release notes
   `AddSimklRefreshToken` and `AddSimklWatchedEpisodes`. The last one makes
   each user's Simkl library resync once. Settings migration
   `0015_simkl_builtin_client` sets the new Simkl switch.
-- Image: `ghcr.io/selmant/foreseerr:v0.13.5` (also published to Docker Hub as
-  `selmantr/foreseerr:v0.13.5`).
+- Image: `ghcr.io/selmant/foreseerr:v0.14.0` (also published to Docker Hub as
+  `selmantr/foreseerr:v0.14.0`).
 - Helm chart: `oci://ghcr.io/selmant/foreseerr/foreseerr-chart` (`version` /
-  `appVersion` `0.13.5` / `v0.13.5`).
+  `appVersion` `0.14.0` / `v0.14.0`).
 
 ## Compatibility
 
-- `GET /api/v1/settings/simkl` adds `enabled`. `POST /api/v1/settings/simkl`
-  accepts `enabled`, and refuses a new custom `clientId` with `400`; only
-  `''` (switch to Foreseerr's app) or the install's existing ID are accepted.
+- **Breaking:** `POST /api/v1/settings/simkl` refuses a new custom `clientId`
+  with `400`; only `''` (switch to Foreseerr's app) or the install's existing
+  ID are accepted. It also accepts `enabled`, which `GET` now returns.
 - Request responses add the read-only `monitoredAt`, `unmonitoredAt` and
   `watchAheadInactiveAt` fields.
 - Downgrades are not supported.
