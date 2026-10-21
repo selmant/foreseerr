@@ -77,9 +77,9 @@ if (
 
 if (
   !isMaintainer &&
-  !/- \[x\] Disclosed any use of AI/i.test(checklistContent)
+  !/- \[x\] I tested this change manually/i.test(checklistContent)
 ) {
-  issues.push('The **AI disclosure** checkbox has not been checked.');
+  issues.push('The **manual testing** checkbox has not been checked.');
 }
 
 if (/-\s*Fixes\s*`?#XXXX`?/i.test(body)) {

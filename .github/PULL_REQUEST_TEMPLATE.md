@@ -25,7 +25,7 @@
 <!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
 
 - [ ] I have read and followed the contribution [guidelines](https://github.com/selmant/foreseerr/blob/develop/CONTRIBUTING.md).
-- [ ] Disclosed any use of AI (see our [policy](https://github.com/selmant/foreseerr/blob/develop/CONTRIBUTING.md#ai-assistance-notice))
+- [ ] I tested this change manually (see our [AI policy](https://github.com/selmant/foreseerr/blob/develop/CONTRIBUTING.md#ai-policy))
 - [ ] I have updated the documentation accordingly.
 - [ ] All new and existing tests passed.
 - [ ] Successful build `bun run build`
