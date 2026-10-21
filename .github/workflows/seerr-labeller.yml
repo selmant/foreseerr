@@ -35,12 +35,10 @@ jobs:
               BODY: >
                 :wave: @${{ env.PR_AUTHOR }}, thank you for your contribution!
 
-                However, this pull request has been closed because it appears to contain a significant amount of AI-generated code without sufficient human review or supervision.
+                However, this pull request has been closed because it appears to be AI output from a low-quality model, or AI output that was not tested manually.
 
-                AI-generated code can often introduce subtle bugs, poor design patterns, or inconsistent styles that make long-term maintenance difficult and reduce overall code quality. For the sake of the project's future stability and readability, we require that all contributions meet our established coding standards and demonstrate clear developer oversight.
-
-                Please read our [AI Assistance Notice](https://github.com/selmant/foreseerr/blob/develop/CONTRIBUTING.md#ai-assistance-notice) for what we expect from AI-assisted contributions.
-                If you'd like to revise and resubmit your changes with genuine review, testing, and an accurate disclosure, we'd be happy to take another look.
+                Please read our [AI Policy](https://github.com/selmant/foreseerr/blob/develop/CONTRIBUTING.md#ai-policy).
+                If you'd like to resubmit after testing the change yourself, we'd be happy to take another look.
             run: |
               retry() { n=0; until "$@"; do n=$((n+1)); [ $n -ge 3 ] && break; echo "retry $n: $*" >&2; sleep 2; done; }
               retry gh pr comment "$NUMBER" -R "$GH_REPO" -b "$BODY" || true
