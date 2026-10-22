@@ -1046,6 +1046,12 @@ async fn pushover_payload(
 
 const PUSHOVER: &str = "https://api.pushover.net/1/messages.json";
 
+/// A user's own Pushover keys reach someone the system send did not: they
+/// are skipped only when both the app token and the user key match it.
+fn pushover_distinct(ua: &str, uk: &str, app: &str, key: &str) -> bool {
+    ua != app || uk != key
+}
+
 async fn pushover(env: Env, kind: Kind, payload: Arc<Payload>, gated: bool) -> Result<()> {
     let agent = env.agent("pushover");
     let (app, key) = (
@@ -1075,7 +1081,7 @@ async fn pushover(env: Env, kind: Kind, payload: Arc<Payload>, gated: bool) -> R
                 s.pushover_app.as_deref().filter(|v| !v.is_empty()),
                 s.pushover_key.as_deref().filter(|v| !v.is_empty()),
             ) {
-                if ua != app || uk != key {
+                if pushover_distinct(ua, uk, &app, &key) {
                     let mut body = pushover_payload(&env, kind, &payload, user.locale()).await;
                     body.insert(String::from("token"), Value::from(ua));
                     body.insert(String::from("user"), Value::from(uk));
@@ -1100,7 +1106,7 @@ async fn pushover(env: Env, kind: Kind, payload: Arc<Payload>, gated: bool) -> R
                 s.pushover_app.as_deref().filter(|v| !v.is_empty()),
                 s.pushover_key.as_deref().filter(|v| !v.is_empty()),
             ) {
-                if ua != app && uk != key {
+                if pushover_distinct(ua, uk, &app, &key) {
                     let mut body = pushover_payload(&env, kind, &payload, user.locale()).await;
                     body.insert(String::from("token"), Value::from(ua));
                     body.insert(String::from("user"), Value::from(uk));
@@ -1749,5 +1755,16 @@ mod tests {
         assert!(snowflake("123456789012345678"), "18 digits");
         assert!(!snowflake("12345"), "short");
         assert_eq!(telegram_escape("a.b-c!"), "a\\.b\\-c\\!", "markdown v2");
+    }
+
+    #[test]
+    fn pushover_dedupes_only_the_system_recipient() {
+        assert!(!pushover_distinct("app", "key", "app", "key"), "same keys");
+        assert!(
+            pushover_distinct("app", "other", "app", "key"),
+            "shared app"
+        );
+        assert!(pushover_distinct("own", "key", "app", "key"), "own app");
+        assert!(pushover_distinct("own", "other", "app", "key"), "both own");
     }
 }
