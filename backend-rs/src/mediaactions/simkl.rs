@@ -79,6 +79,19 @@ fn typed_body(media_type: MediaType, entry: Value) -> Value {
     Value::Object(out)
 }
 
+/// The `simkl_sync_item` rows of a TMDB media type: sync keeps anime in
+/// its own `anime` type, films among them with `animeType` `movie`.
+const fn type_filter(media_type: MediaType) -> &'static str {
+    match media_type {
+        MediaType::Movie => {
+            r#"("simklType" = 'movie' OR ("simklType" = 'anime' AND "animeType" = 'movie'))"#
+        }
+        MediaType::Tv => {
+            r#"("simklType" = 'show' OR ("simklType" = 'anime' AND ("animeType" IS NULL OR "animeType" <> 'movie')))"#
+        }
+    }
+}
+
 fn ids_entry(tmdb_id: i64, rating: Option<f64>) -> Value {
     let mut entry = Map::new();
     entry.insert(String::from("ids"), json!({ "tmdb": tmdb_id }));
@@ -122,23 +135,13 @@ impl<'a> SimklProvider<'a> {
     async fn read(&self, item: Item) -> Result<Status, Thrown> {
         sync(self.env, false).await?;
         let db = &self.env.state.db;
-        let simkl_type = match item.media_type {
-            MediaType::Movie => "movie",
-            MediaType::Tv => "show",
-        };
         let sql = format!(
-            r#"SELECT {} AS "lastWatchedAt", "userRating" FROM "simkl_sync_item" WHERE "userId" = ?1 AND "tmdbId" = ?2 AND "simklType" = ?3 ORDER BY "lastWatchedAt" DESC LIMIT 1"#,
-            crate::naivetime::select(db, "\"lastWatchedAt\"")
+            r#"SELECT {} AS "lastWatchedAt", "userRating" FROM "simkl_sync_item" WHERE "userId" = ?1 AND "tmdbId" = ?2 AND {} ORDER BY "lastWatchedAt" DESC LIMIT 1"#,
+            crate::naivetime::select(db, "\"lastWatchedAt\""),
+            type_filter(item.media_type)
         );
         let rows = db
-            .rows(
-                &sql,
-                &[
-                    Bind::Int(self.env.user),
-                    Bind::Int(item.tmdb_id),
-                    Bind::Text(simkl_type.to_owned()),
-                ],
-            )
+            .rows(&sql, &[Bind::Int(self.env.user), Bind::Int(item.tmdb_id)])
             .await
             .map_err(|e| format!("{e:#}"))?;
         let row = rows.first();
@@ -252,5 +255,53 @@ mod tests {
             json!({"movies": [{"ids": {"tmdb": 550}}]}),
             "history body"
         );
+    }
+
+    #[tokio::test]
+    async fn reads_anime_rows_by_their_media_type() -> anyhow::Result<()> {
+        let db = crate::db::Db::Sqlite(
+            sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect("sqlite::memory:")
+                .await?,
+        );
+        db.execute(
+            r#"CREATE TABLE "simkl_sync_item" ("simklId" varchar, "simklType" varchar, "tmdbId" integer, "animeType" varchar)"#,
+            &[],
+        )
+        .await?;
+        db.execute(
+            r#"INSERT INTO "simkl_sync_item" VALUES ('show', 'show', 1, NULL), ('anime-tv', 'anime', 2, 'tv'),
+               ('anime-ova', 'anime', 3, NULL), ('anime-film', 'anime', 4, 'movie'), ('film', 'movie', 5, NULL)"#,
+            &[],
+        )
+        .await?;
+        let ids = |media_type| {
+            let db = db.clone();
+            async move {
+                let sql = format!(
+                    r#"SELECT "simklId" FROM "simkl_sync_item" WHERE {} ORDER BY "tmdbId""#,
+                    type_filter(media_type)
+                );
+                let rows = db.rows(&sql, &[]).await?;
+                anyhow::Ok(
+                    rows.iter()
+                        .filter_map(|r| r.get("simklId").and_then(Value::as_str))
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>(),
+                )
+            }
+        };
+        assert_eq!(
+            ids(MediaType::Tv).await?,
+            ["show", "anime-tv", "anime-ova"],
+            "tv"
+        );
+        assert_eq!(
+            ids(MediaType::Movie).await?,
+            ["anime-film", "film"],
+            "movie"
+        );
+        Ok(())
     }
 }
