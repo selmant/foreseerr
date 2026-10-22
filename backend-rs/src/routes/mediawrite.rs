@@ -194,8 +194,9 @@ fn is4k_query(raw: Option<&str>) -> Result<bool, String> {
 }
 
 /// The Radarr or Sonarr server a media item's files are deleted from: the
-/// default for the quality, or the item's own server when it names
-/// another one.
+/// item's own server when it has one (server 0 included), else the default
+/// for the quality. A recorded server that no longer exists gives `None`
+/// rather than falling back to another server's copy.
 fn file_server(
     settings: &crate::settings::Settings,
     media: &MediaRow,
@@ -215,7 +216,7 @@ fn file_server(
     } else {
         media.service_id
     };
-    if let Some(specific) = specific.filter(|id| *id > 0) {
+    if let Some(specific) = specific.filter(|id| *id >= 0) {
         if server.and_then(|s| s.get("id")).and_then(Value::as_i64) != Some(specific) {
             server = servers
                 .iter()
@@ -574,8 +575,70 @@ mod tests {
         assert_eq!(
             file_server(&settings, &on_default, false).and_then(|s| s.get("id").cloned()),
             Some(json!(0)),
-            "server 0 is falsy, so the default stays"
+            "stored on the default"
         );
+        let unrecorded = MediaRow {
+            media_type: String::from("tv"),
+            ..MediaRow::default()
+        };
+        assert_eq!(
+            file_server(&settings, &unrecorded, false).and_then(|s| s.get("id").cloned()),
+            Some(json!(0)),
+            "no recorded server falls back to the default"
+        );
+        let gone = MediaRow {
+            media_type: String::from("tv"),
+            service_id: Some(5),
+            ..MediaRow::default()
+        };
+        assert_eq!(
+            file_server(&settings, &gone, false),
+            None,
+            "a removed server is not swapped for the default"
+        );
+    }
+
+    #[test]
+    fn files_on_server_zero_stay_on_server_zero() {
+        let settings = crate::settings::Settings::from_file_value(
+            json!({
+                "radarr": [
+                    {"id": 0, "isDefault": false, "is4k": false},
+                    {"id": 1, "isDefault": true, "is4k": false},
+                    {"id": 2, "isDefault": false, "is4k": true},
+                    {"id": 3, "isDefault": true, "is4k": true}
+                ],
+                "sonarr": [
+                    {"id": 0, "isDefault": false, "is4k": true},
+                    {"id": 1, "isDefault": true, "is4k": true},
+                    {"id": 2, "isDefault": false, "is4k": false},
+                    {"id": 3, "isDefault": true, "is4k": false}
+                ]
+            }),
+            None,
+        );
+        let Ok(settings) = settings else {
+            return;
+        };
+        let movie = MediaRow {
+            media_type: String::from("movie"),
+            service_id: Some(0),
+            service_id4k: Some(2),
+            ..MediaRow::default()
+        };
+        let series = MediaRow {
+            media_type: String::from("tv"),
+            service_id: Some(2),
+            service_id4k: Some(0),
+            ..MediaRow::default()
+        };
+        let id = |media: &MediaRow, is4k: bool| {
+            file_server(&settings, media, is4k).and_then(|s| s.get("id").cloned())
+        };
+        assert_eq!(id(&movie, false), Some(json!(0)), "movie, standard");
+        assert_eq!(id(&movie, true), Some(json!(2)), "movie, 4K");
+        assert_eq!(id(&series, false), Some(json!(2)), "series, standard");
+        assert_eq!(id(&series, true), Some(json!(0)), "series, 4K");
     }
 
     #[tokio::test]
