@@ -453,17 +453,27 @@ impl Sync<'_> {
             }
             out
         };
+        let (server_seasons, server_seasons4k) = if self.uses_plex() {
+            (plex_seasons, plex_seasons4k)
+        } else {
+            (jf_seasons, jf_seasons4k)
+        };
+        // A media server or Sonarr lookup that failed leaves the seasons
+        // unknown, so that quality's seasons keep their availability.
+        let unknown = server_seasons.is_none() || sonarr_seasons.is_none();
+        let unknown4k = server_seasons4k.is_none() || sonarr_seasons4k.is_none();
         let mut finals = filtered(false);
         let mut finals4k = filtered(true);
-        if self.uses_plex() {
-            merge(&mut finals, &plex_seasons);
-            merge(&mut finals4k, &plex_seasons4k);
-        } else {
-            merge(&mut finals, &jf_seasons);
-            merge(&mut finals4k, &jf_seasons4k);
-        }
-        merge(&mut finals, &sonarr_seasons);
-        merge(&mut finals4k, &sonarr_seasons4k);
+        merge(&mut finals, server_seasons.as_deref().unwrap_or_default());
+        merge(
+            &mut finals4k,
+            server_seasons4k.as_deref().unwrap_or_default(),
+        );
+        merge(&mut finals, sonarr_seasons.as_deref().unwrap_or_default());
+        merge(
+            &mut finals4k,
+            sonarr_seasons4k.as_deref().unwrap_or_default(),
+        );
         if let Some(show) = self.tmdb_show(&media).await {
             for season in media.seasons.iter().filter(|s| s.season_number != 0) {
                 let has_episodes = show
@@ -502,12 +512,12 @@ impl Sync<'_> {
                 media = self.media_updater(media, four_k, &mut detach).await;
             }
         }
-        if finals.iter().any(|(_, e)| !e) {
+        if !unknown && finals.iter().any(|(_, e)| !e) {
             media = self
                 .season_updater(media, &finals, false, &mut detach)
                 .await;
         }
-        if finals4k.iter().any(|(_, e)| !e) {
+        if !unknown4k && finals4k.iter().any(|(_, e)| !e) {
             self.season_updater(media, &finals4k, true, &mut detach)
                 .await;
         }
@@ -770,12 +780,12 @@ impl Sync<'_> {
     }
 
     /// `mediaExistsInSonarr`: whether the show exists and which of its
-    /// seasons do.
+    /// seasons do, `None` when they couldn't be checked.
     async fn exists_in_sonarr(
         &mut self,
         media: &MediaRow,
         four_k: bool,
-    ) -> (bool, Vec<(i64, bool)>) {
+    ) -> (bool, Option<Vec<(i64, bool)>>) {
         let timeout = crate::servarr::api_timeout(&self.job.settings);
         let external = if four_k {
             media.external_service_id4k
@@ -846,19 +856,20 @@ impl Sync<'_> {
                 }
             }
         }
+        if prevent {
+            return (exists, None);
+        }
         let mut seasons = Vec::new();
-        if !prevent {
-            for season in media
-                .seasons
-                .iter()
-                .filter(|s| available_or_partial(season_status(s, four_k)))
-            {
-                if self.season_in_sonarr(&servers, external, season.season_number) {
-                    merge(&mut seasons, &[(season.season_number, true)]);
-                }
+        for season in media
+            .seasons
+            .iter()
+            .filter(|s| available_or_partial(season_status(s, four_k)))
+        {
+            if self.season_in_sonarr(&servers, external, season.season_number) {
+                merge(&mut seasons, &[(season.season_number, true)]);
             }
         }
-        (exists, seasons)
+        (exists, Some(seasons))
     }
 
     fn season_in_sonarr(&self, servers: &[Value], external: Option<i64>, number: i64) -> bool {
@@ -881,8 +892,13 @@ impl Sync<'_> {
         })
     }
 
-    /// `mediaExistsInPlex`.
-    async fn exists_in_plex(&mut self, media: &MediaRow, four_k: bool) -> (bool, Vec<(i64, bool)>) {
+    /// `mediaExistsInPlex`: the seasons are `None` when they couldn't be
+    /// checked.
+    async fn exists_in_plex(
+        &mut self,
+        media: &MediaRow,
+        four_k: bool,
+    ) -> (bool, Option<Vec<(i64, bool)>>) {
         let (exists, prevent) = match self.plex_lookup(media, four_k).await {
             Ok(found) => (found, false),
             Err(e) if e.not_found => (false, false),
@@ -898,8 +914,11 @@ impl Sync<'_> {
                 (true, true)
             }
         };
+        if prevent {
+            return (exists, None);
+        }
         let mut seasons = Vec::new();
-        if media.media_type == "tv" && !prevent {
+        if media.media_type == "tv" {
             for season in media
                 .seasons
                 .iter()
@@ -913,7 +932,7 @@ impl Sync<'_> {
                 }
             }
         }
-        (exists, seasons)
+        (exists, Some(seasons))
     }
 
     async fn plex_lookup(&mut self, media: &MediaRow, four_k: bool) -> Result<bool, CallError> {
@@ -1048,12 +1067,13 @@ impl Sync<'_> {
         exists
     }
 
-    /// `mediaExistsInJellyfin`.
+    /// `mediaExistsInJellyfin`: the seasons are `None` when they couldn't
+    /// be checked.
     async fn exists_in_jellyfin(
         &mut self,
         media: &MediaRow,
         four_k: bool,
-    ) -> (bool, Vec<(i64, bool)>) {
+    ) -> (bool, Option<Vec<(i64, bool)>>) {
         let (exists, prevent) = match self.jellyfin_lookup(media, four_k).await {
             Ok(found) => (found, false),
             Err(e) => {
@@ -1068,8 +1088,11 @@ impl Sync<'_> {
                 (true, true)
             }
         };
+        if prevent {
+            return (exists, None);
+        }
         let mut seasons = Vec::new();
-        if media.media_type == "tv" && !prevent {
+        if media.media_type == "tv" {
             for season in media
                 .seasons
                 .iter()
@@ -1083,7 +1106,7 @@ impl Sync<'_> {
                 }
             }
         }
-        (exists, seasons)
+        (exists, Some(seasons))
     }
 
     async fn jellyfin_lookup(&mut self, media: &MediaRow, four_k: bool) -> Result<bool, String> {
@@ -1193,5 +1216,192 @@ mod tests {
         let item = json!({"Media": [{"width": 3840}, {}]});
         assert_eq!(widths(&item), vec![3840.0, 0.0], "missing width is 0");
         assert!(widths(&json!({})).is_empty(), "no versions");
+    }
+
+    use crate::dbtx::scratch::{self, ints, Scratch};
+
+    /// A run over a scratch database, with settings.json beside it.
+    struct Harness {
+        scratch: Scratch,
+        job: JobCtx,
+        dir: std::path::PathBuf,
+    }
+
+    impl Drop for Harness {
+        fn drop(&mut self) {
+            if let Err(e) = std::fs::remove_dir_all(&self.dir) {
+                tracing::warn!("removing {} failed: {e}", self.dir.display());
+            }
+        }
+    }
+
+    async fn harness(tag: &str, settings: Value, seed: &[&str]) -> Result<Harness> {
+        let scratch = scratch::sqlite(tag).await?;
+        scratch::run(&scratch.db, seed).await?;
+        let dir = std::env::temp_dir().join(format!(
+            "foreseerr-availability-{tag}-{}-{}",
+            std::process::id(),
+            crate::clock::now_millis()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(dir.join("settings.json"), settings.to_string())?;
+        let state = crate::state::AppState::for_tests(scratch.db.clone(), &dir)?;
+        let settings = crate::settings::Settings::from_file_value(settings, None)?;
+        let job = JobCtx::new(Arc::new(state), Arc::new(settings));
+        Ok(Harness { scratch, job, dir })
+    }
+
+    /// Answer each request with the first route whose text is in its
+    /// target, 404 otherwise; the port.
+    async fn serve(routes: Vec<(&'static str, u16, &'static str)>) -> Result<u16> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let port = listener.local_addr()?.port();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut request = Vec::new();
+                let mut buf = [0_u8; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match socket.read(&mut buf).await {
+                        Ok(n) if n > 0 => request.extend_from_slice(buf.get(..n).unwrap_or(&[])),
+                        _ => break,
+                    }
+                }
+                let request = String::from_utf8_lossy(&request);
+                let target = request.split(' ').nth(1).unwrap_or_default();
+                let (status, body) = routes
+                    .iter()
+                    .find(|(needle, _, _)| target.contains(needle))
+                    .map_or((404, "{}"), |(_, status, body)| (*status, *body));
+                let answer = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                if socket.write_all(answer.as_bytes()).await.is_err() {
+                    continue;
+                }
+                if let Err(e) = socket.shutdown().await {
+                    tracing::trace!("{e}");
+                }
+            }
+        });
+        Ok(port)
+    }
+
+    const ADMIN: &str = r#"INSERT INTO "user" ("id", "email", "avatar", "permissions", "plexToken", "jellyfinUserId", "jellyfinDeviceId") VALUES (1, 'owner@example.test', '', 2, 'token', 'admin', 'device')"#;
+
+    /// Show 1 (standard and 4K) fails to be looked up; show 2, the
+    /// control, is gone from Plex and Jellyfin and has no Sonarr link.
+    const SHOWS: [&str; 5] = [
+        ADMIN,
+        r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "tvdbId", "status", "status4k", "ratingKey", "ratingKey4k", "jellyfinMediaId", "jellyfinMediaId4k", "externalServiceId", "externalServiceId4k", "lastSeasonChange") VALUES (1, 'tv', 1399, 121361, 5, 5, 'rk-fail', 'rk-fail', 'jf-fail', 'jf-fail', 10, 10, '2020-01-01 00:00:00')"#,
+        r#"INSERT INTO "season" ("seasonNumber", "status", "status4k", "mediaId") VALUES (1, 5, 5, 1), (2, 5, 5, 1)"#,
+        r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status", "ratingKey", "jellyfinMediaId") VALUES (2, 'tv', 1400, 5, 'rk-gone', 'jf-gone')"#,
+        r#"INSERT INTO "season" ("seasonNumber", "status", "mediaId") VALUES (1, 5, 2), (2, 5, 2)"#,
+    ];
+
+    fn tmdb_shows() {
+        for id in [1399, 1400] {
+            crate::tmdb::remember_for_tests(
+                &format!("/tv/{id}"),
+                &[
+                    ("language", "en"),
+                    ("append_to_response", "keywords,external_ids"),
+                ],
+                json!({
+                    "id": id,
+                    "seasons": [
+                        { "season_number": 1, "episode_count": 10 },
+                        { "season_number": 2, "episode_count": 10 },
+                    ],
+                }),
+            );
+        }
+    }
+
+    fn sonarr(port: u16, id: i64, is4k: bool) -> Value {
+        json!({
+            "id": id, "name": "Sonarr", "hostname": "127.0.0.1", "port": port,
+            "apiKey": "key", "useSsl": false, "baseUrl": "", "is4k": is4k,
+        })
+    }
+
+    async fn sync_shows(tag: &str, settings: Value) -> Result<()> {
+        tmdb_shows();
+        let h = harness(tag, settings, &SHOWS).await?;
+        sync(&h.job).await?;
+        let db = &h.scratch.db;
+        let failed = r#"SELECT "status" FROM "season" WHERE "mediaId" = 1 ORDER BY "seasonNumber""#;
+        let failed4k =
+            r#"SELECT "status4k" FROM "season" WHERE "mediaId" = 1 ORDER BY "seasonNumber""#;
+        assert_eq!(
+            ints(db, failed).await?,
+            [AVAILABLE, AVAILABLE],
+            "{tag}: kept"
+        );
+        assert_eq!(
+            ints(db, failed4k).await?,
+            [AVAILABLE, AVAILABLE],
+            "{tag}: 4K kept"
+        );
+        let show = r#"SELECT "status", "status4k" FROM "media" WHERE "id" = 1 AND "lastSeasonChange" = '2020-01-01 00:00:00'"#;
+        let row = db.rows(show, &[]).await?;
+        assert_eq!(
+            row.first().map(|r| (int(r, "status"), int(r, "status4k"))),
+            Some((Some(AVAILABLE), Some(AVAILABLE))),
+            "{tag}: the show is untouched"
+        );
+        let gone = r#"SELECT "status" FROM "season" WHERE "mediaId" = 2 ORDER BY "seasonNumber""#;
+        assert_eq!(
+            ints(db, gone).await?,
+            [DELETED, DELETED],
+            "{tag}: control removed"
+        );
+        let gone = r#"SELECT "status" FROM "media" WHERE "id" = 2"#;
+        assert_eq!(
+            ints(db, gone).await?,
+            [DELETED],
+            "{tag}: control show removed"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_failed_plex_lookup_keeps_the_seasons() -> Result<()> {
+        let port = serve(vec![("/library/metadata/rk-fail", 503, "{}")]).await?;
+        let settings = json!({
+            "main": { "mediaServerType": PLEX },
+            "plex": { "ip": "127.0.0.1", "port": port, "useSsl": false },
+            "sonarr": [], "radarr": [],
+        });
+        sync_shows("plex-503", settings).await
+    }
+
+    #[tokio::test]
+    async fn a_failed_sonarr_lookup_keeps_the_seasons() -> Result<()> {
+        let port = serve(vec![("/api/v3/series/10", 503, "{}")]).await?;
+        let settings = json!({
+            "main": { "mediaServerType": PLEX },
+            "plex": { "ip": "127.0.0.1", "port": port, "useSsl": false },
+            "sonarr": [sonarr(port, 0, false), sonarr(port, 1, true)], "radarr": [],
+        });
+        sync_shows("sonarr-503", settings).await
+    }
+
+    #[tokio::test]
+    async fn a_failed_jellyfin_lookup_keeps_the_seasons() -> Result<()> {
+        let port = serve(vec![
+            ("/System/Info", 200, r#"{"Id":"server"}"#),
+            ("ids=jf-fail", 503, "{}"),
+            ("ids=jf-gone", 200, r#"{"Items":[]}"#),
+        ])
+        .await?;
+        let settings = json!({
+            "main": { "mediaServerType": JELLYFIN },
+            "jellyfin": { "ip": "127.0.0.1", "port": port, "useSsl": false, "urlBase": "", "apiKey": "key" },
+            "sonarr": [], "radarr": [],
+        });
+        sync_shows("jellyfin-503", settings).await
     }
 }

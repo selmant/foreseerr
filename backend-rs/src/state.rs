@@ -104,6 +104,51 @@ impl AppState {
         })
     }
 
+    /// A state over `db` for tests of the jobs: settings.json is read from
+    /// `config_dir`, and no Node server listens behind it.
+    ///
+    /// # Errors
+    ///
+    /// Fails when a client can't be built.
+    #[cfg(test)]
+    pub fn for_tests(db: Db, config_dir: &std::path::Path) -> Result<Self> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let env = Env {
+            listen: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+            config_dir: config_dir.to_owned(),
+            node_url: String::from("http://127.0.0.1:9"),
+            app_root: config_dir.to_owned(),
+            plugin_mode: false,
+            desktop_runtime: false,
+            extra_ca_file: None,
+        };
+        let version = AppVersion {
+            version: String::from("0.0.0"),
+            commit_tag: String::from("local"),
+        };
+        let current = Settings::from_file_value(Value::Object(serde_json::Map::new()), None)?;
+        let outbound = crate::outbound::client(&current, &version, None)?;
+        Ok(Self {
+            settings: SettingsStore::new(config_dir),
+            db,
+            node: NodeProxy::new(&env.node_url)?,
+            github: GithubApi::new(outbound.clone()),
+            tmdb: TmdbClient::new(outbound.clone()),
+            servarr: ServarrClient::new(outbound.clone()),
+            ratings: Ratings::new(outbound.clone()),
+            outbound,
+            internal: reqwest::Client::builder().no_proxy().build()?,
+            startup_network: NetworkSnapshot::of(&current),
+            env,
+            version,
+        })
+    }
+
     /// `settings.network.csrfProtection` as Node read it when it mounted
     /// csurf at startup.
     #[must_use]

@@ -1257,6 +1257,147 @@ describe('AvailabilitySync', () => {
     });
   });
 
+  describe('TV season availability - failed lookups', () => {
+    const lastSeasonChange = new Date('2020-01-01T00:00:00.000Z');
+
+    // Show 3001 (non-4K and 4K) fails to be looked up; show 3002, the
+    // control, is gone from the media server and has no Sonarr link
+    async function saveShows(): Promise<void> {
+      const mediaRepository = getRepository(Media);
+
+      const failing = new Media();
+      failing.tmdbId = 3001;
+      failing.tvdbId = 30010;
+      failing.mediaType = MediaType.TV;
+      failing.status = MediaStatus.AVAILABLE;
+      failing.status4k = MediaStatus.AVAILABLE;
+      failing.ratingKey = 'plex-fail-rk';
+      failing.ratingKey4k = 'plex-fail-rk';
+      failing.jellyfinMediaId = 'jellyfin-fail-id';
+      failing.jellyfinMediaId4k = 'jellyfin-fail-id';
+      failing.externalServiceId = 301;
+      failing.externalServiceId4k = 301;
+      failing.lastSeasonChange = lastSeasonChange;
+      failing.seasons = [1, 2].map(
+        (seasonNumber) =>
+          new Season({
+            seasonNumber,
+            status: MediaStatus.AVAILABLE,
+            status4k: MediaStatus.AVAILABLE,
+          })
+      );
+
+      const gone = new Media();
+      gone.tmdbId = 3002;
+      gone.mediaType = MediaType.TV;
+      gone.status = MediaStatus.AVAILABLE;
+      gone.ratingKey = 'plex-gone-rk';
+      gone.jellyfinMediaId = 'jellyfin-gone-id';
+      gone.seasons = [1, 2].map(
+        (seasonNumber) =>
+          new Season({
+            seasonNumber,
+            status: MediaStatus.AVAILABLE,
+            status4k: MediaStatus.UNKNOWN,
+          })
+      );
+
+      await mediaRepository.save([failing, gone]);
+    }
+
+    async function assertFailingShowKept(): Promise<void> {
+      const mediaRepository = getRepository(Media);
+
+      const failing = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 3001 },
+        relations: ['seasons'],
+      });
+      for (const season of failing.seasons) {
+        assert.strictEqual(
+          season.status,
+          MediaStatus.AVAILABLE,
+          `Season ${season.seasonNumber} should stay AVAILABLE`
+        );
+        assert.strictEqual(
+          season.status4k,
+          MediaStatus.AVAILABLE,
+          `4K season ${season.seasonNumber} should stay AVAILABLE`
+        );
+      }
+      assert.strictEqual(failing.status, MediaStatus.AVAILABLE);
+      assert.strictEqual(failing.status4k, MediaStatus.AVAILABLE);
+      assert.strictEqual(
+        failing.lastSeasonChange.getTime(),
+        lastSeasonChange.getTime(),
+        'No season change should be recorded'
+      );
+
+      const gone = await mediaRepository.findOneOrFail({
+        where: { tmdbId: 3002 },
+        relations: ['seasons'],
+      });
+      assert.strictEqual(gone.status, MediaStatus.DELETED);
+      for (const season of gone.seasons) {
+        assert.strictEqual(
+          season.status,
+          MediaStatus.DELETED,
+          `Control season ${season.seasonNumber} should be DELETED`
+        );
+      }
+    }
+
+    it('should keep season availability when Plex fails with a non-404 error', async () => {
+      configurePlex();
+      configureSonarr([]);
+      await saveShows();
+
+      getMetadataImpl = async (key: string) => {
+        if (key === 'plex-fail-rk') {
+          throw new Error('Request failed with status code 503');
+        }
+        throw new Error('404');
+      };
+
+      await availabilitySync.run();
+
+      await assertFailingShowKept();
+    });
+
+    it('should keep season availability when Sonarr fails with a non-404 error', async () => {
+      configurePlex();
+      configureSonarr([{ is4k: false }, { is4k: true }]);
+      await saveShows();
+
+      getSeriesByIdImpl = async (id: number) => {
+        if (id === 301) {
+          throw new Error('Request failed with status code 503');
+        }
+        throw new Error('404');
+      };
+
+      await availabilitySync.run();
+
+      await assertFailingShowKept();
+    });
+
+    it('should keep season availability when Jellyfin fails with a non-404 error', async () => {
+      configureJellyfin();
+      configureSonarr([]);
+      await saveShows();
+
+      getItemDataImpl = async (id: string) => {
+        if (id === 'jellyfin-fail-id') {
+          throw new Error('Request failed with status code 503');
+        }
+        return undefined;
+      };
+
+      await availabilitySync.run();
+
+      await assertFailingShowKept();
+    });
+  });
+
   describe('movie availability - Radarr', () => {
     it('should mark a deleted movie as DELETED when a second standard Radarr instance has a colliding externalServiceId', async () => {
       configurePlex();

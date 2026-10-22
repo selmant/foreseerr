@@ -229,29 +229,52 @@ class AvailabilitySync {
 
           //plex
 
-          const { existsInPlex, seasonsMap: plexSeasonsMap = new Map() } =
-            await this.mediaExistsInPlex(media, false);
+          const {
+            existsInPlex,
+            seasonsMap: plexSeasonsMap = new Map(),
+            seasonsUnknown: plexSeasonsUnknown,
+          } = await this.mediaExistsInPlex(media, false);
           const {
             existsInPlex: existsInPlex4k,
             seasonsMap: plexSeasonsMap4k = new Map(),
+            seasonsUnknown: plexSeasonsUnknown4k,
           } = await this.mediaExistsInPlex(media, true);
 
           //jellyfin
           const {
             existsInJellyfin,
             seasonsMap: jellyfinSeasonsMap = new Map(),
+            seasonsUnknown: jellyfinSeasonsUnknown,
           } = await this.mediaExistsInJellyfin(media, false);
           const {
             existsInJellyfin: existsInJellyfin4k,
             seasonsMap: jellyfinSeasonsMap4k = new Map(),
+            seasonsUnknown: jellyfinSeasonsUnknown4k,
           } = await this.mediaExistsInJellyfin(media, true);
 
-          const { existsInSonarr, seasonsMap: sonarrSeasonsMap } =
-            await this.mediaExistsInSonarr(media, false);
+          const {
+            existsInSonarr,
+            seasonsMap: sonarrSeasonsMap,
+            seasonsUnknown: sonarrSeasonsUnknown,
+          } = await this.mediaExistsInSonarr(media, false);
           const {
             existsInSonarr: existsInSonarr4k,
             seasonsMap: sonarrSeasonsMap4k,
+            seasonsUnknown: sonarrSeasonsUnknown4k,
           } = await this.mediaExistsInSonarr(media, true);
+
+          // A media server or Sonarr lookup that failed leaves the seasons
+          // unknown, so that version's seasons keep their availability
+          const seasonsUnknown =
+            sonarrSeasonsUnknown ||
+            (mediaServerType === MediaServerType.PLEX
+              ? plexSeasonsUnknown
+              : jellyfinSeasonsUnknown);
+          const seasonsUnknown4k =
+            sonarrSeasonsUnknown4k ||
+            (mediaServerType === MediaServerType.PLEX
+              ? plexSeasonsUnknown4k
+              : jellyfinSeasonsUnknown4k);
 
           //plex
           if (mediaServerType === MediaServerType.PLEX) {
@@ -440,7 +463,7 @@ class AvailabilitySync {
 
           // TODO: Figure out how to run seasonUpdater for each season
 
-          if ([...finalSeasons.values()].includes(false)) {
+          if (!seasonsUnknown && [...finalSeasons.values()].includes(false)) {
             await this.seasonUpdater(
               media,
               finalSeasons,
@@ -449,7 +472,10 @@ class AvailabilitySync {
             );
           }
 
-          if ([...finalSeasons4k.values()].includes(false)) {
+          if (
+            !seasonsUnknown4k &&
+            [...finalSeasons4k.values()].includes(false)
+          ) {
             await this.seasonUpdater(
               media,
               finalSeasons4k,
@@ -741,7 +767,11 @@ class AvailabilitySync {
   private async mediaExistsInSonarr(
     media: Media,
     is4k: boolean
-  ): Promise<{ existsInSonarr: boolean; seasonsMap: Map<number, boolean> }> {
+  ): Promise<{
+    existsInSonarr: boolean;
+    seasonsMap: Map<number, boolean>;
+    seasonsUnknown: boolean;
+  }> {
     let existsInSonarr = false;
     let preventSeasonSearch = false;
 
@@ -824,7 +854,11 @@ class AvailabilitySync {
       }
     }
 
-    return { existsInSonarr, seasonsMap };
+    return {
+      existsInSonarr,
+      seasonsMap,
+      seasonsUnknown: preventSeasonSearch,
+    };
   }
 
   private async seasonExistsInSonarr(
@@ -871,7 +905,11 @@ class AvailabilitySync {
   private async mediaExistsInPlex(
     media: Media,
     is4k: boolean
-  ): Promise<{ existsInPlex: boolean; seasonsMap?: Map<number, boolean> }> {
+  ): Promise<{
+    existsInPlex: boolean;
+    seasonsMap?: Map<number, boolean>;
+    seasonsUnknown?: boolean;
+  }> {
     const ratingKey = media.ratingKey;
     const ratingKey4k = media.ratingKey4k;
     let existsInPlex = false;
@@ -1000,7 +1038,11 @@ class AvailabilitySync {
         }
       }
 
-      return { existsInPlex, seasonsMap };
+      return {
+        existsInPlex,
+        seasonsMap,
+        seasonsUnknown: preventSeasonSearch,
+      };
     }
 
     return { existsInPlex };
@@ -1073,7 +1115,11 @@ class AvailabilitySync {
   private async mediaExistsInJellyfin(
     media: Media,
     is4k: boolean
-  ): Promise<{ existsInJellyfin: boolean; seasonsMap?: Map<number, boolean> }> {
+  ): Promise<{
+    existsInJellyfin: boolean;
+    seasonsMap?: Map<number, boolean>;
+    seasonsUnknown?: boolean;
+  }> {
     const ratingKey = media.jellyfinMediaId;
     const ratingKey4k = media.jellyfinMediaId4k;
     let existsInJellyfin = false;
@@ -1149,7 +1195,11 @@ class AvailabilitySync {
         }
       }
 
-      return { existsInJellyfin, seasonsMap };
+      return {
+        existsInJellyfin,
+        seasonsMap,
+        seasonsUnknown: preventSeasonSearch,
+      };
     }
 
     return { existsInJellyfin };
