@@ -72,8 +72,13 @@ pub fn install() {
     }
     tokio::spawn(stopper(rx));
     tokio::spawn(signals());
-    // stdin blocks; a plain thread ends with the process.
-    drop(std::thread::spawn(read_stdin));
+    drop(spawn_reader(
+        std::io::BufReader::new(std::io::stdin()),
+        handle,
+        || {
+            request(DEFAULT_DEADLINE_MS);
+        },
+    ));
 }
 
 /// Hand the stop task the state whose database it closes.
@@ -229,24 +234,32 @@ async fn signals() {
 }
 
 /// `process.stdin.on('data' | 'end')`: complete lines are handled, a
-/// partial last line is dropped at the end.
-fn read_stdin() {
-    let stdin = std::io::stdin();
-    let mut lock = stdin.lock();
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        match lock.read_until(b'\n', &mut line) {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {
-                if line.last() == Some(&b'\n') {
-                    line.pop();
-                    handle(&String::from_utf8_lossy(&line));
+/// partial last line is dropped at the end. Reading blocks, so it runs on
+/// a plain thread that ends with the process; the thread enters the
+/// runtime, since handlers spawn tasks (`startDesktopCatchUp`).
+fn spawn_reader<R: BufRead + Send + 'static>(
+    mut input: R,
+    mut on_line: impl FnMut(&str) + Send + 'static,
+    on_end: impl FnOnce() + Send + 'static,
+) -> std::thread::JoinHandle<()> {
+    let runtime = tokio::runtime::Handle::current();
+    std::thread::spawn(move || {
+        let _runtime = runtime.enter();
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            match input.read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if line.last() == Some(&b'\n') {
+                        line.pop();
+                        on_line(&String::from_utf8_lossy(&line));
+                    }
                 }
             }
         }
-    }
-    request(DEFAULT_DEADLINE_MS);
+        on_end();
+    })
 }
 
 /// What one control line asks for.
@@ -358,5 +371,30 @@ mod tests {
         assert_eq!(parse("null"), Message::Malformed, "null throws");
         assert_eq!(parse("garbage"), Message::Malformed, "not JSON");
         assert_eq!(parse(""), Message::Malformed, "empty line");
+    }
+
+    #[tokio::test]
+    async fn the_reader_thread_can_spawn_tasks() -> anyhow::Result<()> {
+        let (lines, mut seen) = mpsc::unbounded_channel();
+        let input = std::io::Cursor::new(b"first\nsecond\npartial".to_vec());
+        let reader = spawn_reader(
+            input,
+            move |line| {
+                let lines = lines.clone();
+                let line = line.to_owned();
+                // What `set_playback(false)` does: a panic here would end
+                // the thread before the next line.
+                drop(tokio::spawn(async move { lines.send(line).ok() }));
+            },
+            || {},
+        );
+        let joined = tokio::task::spawn_blocking(move || reader.join()).await?;
+        assert!(joined.is_ok(), "the reader thread did not panic");
+        let mut got = Vec::new();
+        while let Some(line) = seen.recv().await {
+            got.push(line);
+        }
+        assert_eq!(got, ["first", "second"], "every complete line handled");
+        Ok(())
     }
 }
