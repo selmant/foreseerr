@@ -340,12 +340,16 @@ pub fn reset_password(frame: &Frame, link: &str) -> Rendered {
     }
 }
 
-/// The plain-text part `email-templates` derives from the HTML.
+/// The plain-text part `email-templates` derives from the HTML. Images
+/// are skipped; a link is written as html-to-text does: `text [href]`, or
+/// the bare href when it has no text.
 fn text_part(html: &str) -> String {
     let body = html.split_once("</head>").map_or(html, |(_, b)| b);
     let mut out = String::new();
     let mut in_tag = false;
     let mut tag = String::new();
+    // The open link's href and where its text starts in `out`.
+    let mut link: Option<(String, usize)> = None;
     for c in body.chars() {
         if in_tag {
             if c == '>' {
@@ -356,6 +360,22 @@ fn text_part(html: &str) -> String {
                     .next()
                     .unwrap_or("")
                     .to_ascii_lowercase();
+                if name == "a" {
+                    if tag.starts_with('/') {
+                        if let Some((href, start)) = link.take() {
+                            let end = out.trim_end().len().max(start);
+                            let text = out.get(start..end).unwrap_or("").trim();
+                            let shown = if text.is_empty() {
+                                href
+                            } else {
+                                format!(" [{href}]")
+                            };
+                            out.insert_str(end, &shown);
+                        }
+                    } else {
+                        link = anchor_href(&tag).map(|href| (href, out.len()));
+                    }
+                }
                 if matches!(name.as_str(), "tr" | "div" | "span" | "br") && !out.ends_with('\n') {
                     out.push('\n');
                 }
@@ -380,6 +400,15 @@ fn text_part(html: &str) -> String {
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// An anchor tag's `href` as html-to-text links it: none when it is
+/// missing, empty or a `#fragment`, without a `mailto:` prefix.
+fn anchor_href(tag: &str) -> Option<String> {
+    let (_, rest) = tag.split_once(" href=\"")?;
+    let (href, _) = rest.split_once('"')?;
+    let href = href.strip_prefix("mailto:").unwrap_or(href);
+    (!href.is_empty() && !href.starts_with('#')).then(|| href.to_owned())
 }
 
 /// `validator.isEmail(address, { require_tld: false })`, near enough.
@@ -710,6 +739,20 @@ mod tests {
         assert!(r.html.contains("Hello &lt;world&gt;"), "escaped body");
         assert!(r.html.contains("Hi, ann.\u{feff}b!"), "unlinked name");
         assert!(text_part(&r.html).contains("Hello <world>"), "text part");
+        let reset = reset_password(&frame, "https://example.test/resetpassword/TOKEN?a=1&b=2");
+        assert!(
+            text_part(&reset.html)
+                .contains("Reset Password [https://example.test/resetpassword/TOKEN?a=1&b=2]"),
+            "the reset link in the text part: {}",
+            text_part(&reset.html)
+        );
+        assert_eq!(
+            text_part(
+                r##"<a href="https://x.test"><img src="y"></a> <a href="mailto:a@b.c">mail</a> <a href="#top">top</a> <a>none</a>"##
+            ),
+            "https://x.test mail [a@b.c] top none",
+            "bare, mailto, fragment and missing hrefs"
+        );
         assert!(is_email("a@b"), "no tld needed");
         assert!(!is_email("nope"), "not an address");
     }
