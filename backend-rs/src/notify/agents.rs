@@ -558,9 +558,18 @@ async fn slack(env: Env, kind: Kind, payload: Arc<Payload>) -> Result<()> {
 
 /// `escapeText`: the reserved characters of Telegram's `MarkdownV2`.
 fn telegram_escape(text: &str) -> String {
+    telegram_escape_chars(text, "_*[]()~`>#+=|{}.!-\\")
+}
+
+/// `escapeUrl`: inside a link's `(...)`, only `)` and `\` are reserved.
+fn telegram_escape_url(url: &str) -> String {
+    telegram_escape_chars(url, ")\\")
+}
+
+fn telegram_escape_chars(text: &str, reserved: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
-        if "_*[]()~>#+=|{}.!-".contains(c) {
+        if reserved.contains(c) {
             out.push('\\');
         }
         out.push(c);
@@ -654,8 +663,9 @@ fn telegram_payload(
         push(
             &mut message,
             format_args!(
-                "\n\n[{}]({url})",
-                telegram_escape(&view_label(&intl, payload, title))
+                "\n\n[{}]({})",
+                telegram_escape(&view_label(&intl, payload, title)),
+                telegram_escape_url(&url)
             ),
         );
     }
@@ -1755,6 +1765,16 @@ mod tests {
         assert!(snowflake("123456789012345678"), "18 digits");
         assert!(!snowflake("12345"), "short");
         assert_eq!(telegram_escape("a.b-c!"), "a\\.b\\-c\\!", "markdown v2");
+    }
+
+    #[test]
+    fn telegram_escapes_backticks_and_backslashes() {
+        assert_eq!(telegram_escape("`a\\b`"), "\\`a\\\\b\\`", "markdown v2");
+        assert_eq!(
+            telegram_escape_url("http://x/a_(b)\\c"),
+            "http://x/a_(b\\)\\\\c",
+            "link url"
+        );
     }
 
     #[test]
