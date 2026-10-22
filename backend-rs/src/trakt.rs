@@ -664,7 +664,9 @@ impl TraktClient {
     }
 
     /// `TraktAPI.get` (`ExternalAPI.get` behind the circuit check), with a
-    /// TTL of 300 seconds as every caller here passes.
+    /// TTL of 300 seconds as every caller here passes. App key only: the
+    /// cache key has no token scope, so a response fetched with a user's
+    /// token (a private list) would reach every other user.
     async fn external_get(
         &self,
         endpoint: &str,
@@ -675,18 +677,12 @@ impl TraktClient {
         if let Some(cached) = cache_get(&key).filter(|v| truthy(Some(v))) {
             return Ok(Arc::unwrap_or_clone(cached));
         }
-        let mut req = self
-            .http
-            .get(request_url(endpoint, params))
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .header(reqwest::header::ACCEPT, "application/json")
-            .header("trakt-api-version", "2")
-            .header("trakt-api-key", &self.client_id);
-        if let Some(token) = self.access() {
-            req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"));
-        }
         let failed = |e: reqwest::Error| other(format!("{e}"));
-        let res = req.send().await.map_err(failed)?;
+        let res = self
+            .public_request(endpoint, params)
+            .send()
+            .await
+            .map_err(failed)?;
         let status = res.status().as_u16();
         if status == 429 {
             let retry_after = parse_retry_after(
@@ -704,8 +700,18 @@ impl TraktClient {
         Ok(value)
     }
 
+    /// The app-key-only GET `external_get` sends.
+    fn public_request(&self, endpoint: &str, params: &[(&str, Value)]) -> reqwest::RequestBuilder {
+        self.http
+            .get(request_url(endpoint, params))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header(reqwest::header::ACCEPT, "application/json")
+            .header("trakt-api-version", "2")
+            .header("trakt-api-key", &self.client_id)
+    }
+
     /// `getAuthenticatedOrPublic`: the user's request, falling back to the
-    /// plain cached GET on any failure but a rate limit.
+    /// plain cached, app-key-only GET on any failure but a rate limit.
     async fn authed_or_public(
         &self,
         endpoint: &str,
@@ -1223,5 +1229,37 @@ mod tests {
         assert_eq!(circuit_key(None, ""), "client:public", "app circuit");
         assert_eq!(circuit_key(None, "id"), "client:id", "app id circuit");
         assert_eq!(scope(None), "public", "public scope");
+    }
+
+    #[test]
+    fn public_gets_never_carry_the_user_token() -> Result<(), reqwest::Error> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let client = TraktClient::with_tokens(
+            reqwest::Client::new(),
+            String::from("id"),
+            String::from("owner-access"),
+            String::from("owner-refresh"),
+            0.0,
+        );
+        let req = client
+            .public_request("/users/alice/lists/private", &[])
+            .build()?;
+        assert!(
+            req.headers().get(reqwest::header::AUTHORIZATION).is_none(),
+            "the shared-cache GET is app key only"
+        );
+        assert_eq!(
+            req.headers()
+                .get("trakt-api-key")
+                .and_then(|v| v.to_str().ok()),
+            Some("id"),
+            "app key"
+        );
+        Ok(())
     }
 }

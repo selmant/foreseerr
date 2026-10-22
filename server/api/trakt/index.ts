@@ -160,16 +160,15 @@ class TraktAPI extends ExternalAPI {
   private rawAxios: AxiosInstance;
 
   constructor(options: TraktAPIOptions) {
+    // App key only: this client's cache keys carry no token scope, so a
+    // response fetched with a user's token (a private list) would reach
+    // every other user. Authenticated calls go through requestWithRetry.
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'trakt-api-version': '2',
       'trakt-api-key': options.clientId,
     };
-
-    if (options.accessToken) {
-      headers.Authorization = `Bearer ${options.accessToken}`;
-    }
 
     super(
       TRAKT_BASE_URL,
@@ -1092,8 +1091,6 @@ class TraktAPI extends ExternalAPI {
           : Math.floor(Date.now() / 1000)) + expiresIn;
     }
 
-    this.syncAuthorizationHeaders();
-
     return {
       ...payload,
       expiresAt: this.expiresAt,
@@ -1104,14 +1101,6 @@ class TraktAPI extends ExternalAPI {
     this.accessToken = tokens.accessToken;
     this.refreshToken = tokens.refreshToken;
     this.expiresAt = tokens.expiresAt;
-    this.syncAuthorizationHeaders();
-  }
-
-  private syncAuthorizationHeaders(): void {
-    // Keep the cached/public client in sync for authenticated public-list calls.
-    (this as unknown as { axios: AxiosInstance }).axios.defaults.headers.common[
-      'Authorization'
-    ] = `Bearer ${this.accessToken}`;
   }
 
   private async ensureFreshToken(): Promise<void> {
