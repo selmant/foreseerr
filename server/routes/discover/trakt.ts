@@ -240,7 +240,7 @@ async function resolveTraktDiscoverPage(options: {
 
   if (options.mediaType === 'anime') {
     return fetchPaginatedTraktAnimeItems(
-      (traktPage) => traktPageItems(fetchUpstreamPage(traktPage)),
+      fetchUpstreamPage,
       options.page,
       options.itemsPerPage,
       options.tmdb,
@@ -250,7 +250,7 @@ async function resolveTraktDiscoverPage(options: {
 
   if (options.mediaType === 'tv') {
     return fetchPaginatedTraktNonAnimeItems(
-      (traktPage) => traktPageItems(fetchUpstreamPage(traktPage)),
+      fetchUpstreamPage,
       options.page,
       options.itemsPerPage,
       options.tmdb,
@@ -281,13 +281,6 @@ function toTraktFetchMediaType(
     return 'all';
   }
   return mediaType;
-}
-
-/** Adapter for anime/non-anime page fillers that still expect a bare item array. */
-async function traktPageItems(
-  page: Promise<{ items: TraktMediaItem[]; hasMore: boolean }>
-): Promise<TraktMediaItem[]> {
-  return (await page).items;
 }
 
 async function loadTraktMediaTypeFilteredPage(

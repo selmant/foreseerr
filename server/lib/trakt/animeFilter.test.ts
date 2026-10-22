@@ -5,6 +5,7 @@ import type { TraktMediaItem } from '@server/api/trakt/interfaces';
 import {
   applyTraktMediaTypeFilter,
   excludeTraktAnimeItems,
+  fetchPaginatedTraktNonAnimeItems,
   filterTraktAnimeItems,
 } from '@server/lib/trakt/animeFilter';
 import assert from 'node:assert/strict';
@@ -152,5 +153,52 @@ describe('Trakt anime filters', () => {
       () => excludeTraktAnimeItems([uncached], failing),
       /Failed to fetch keywords/
     );
+  });
+});
+
+describe('fetchPaginatedTraktNonAnimeItems', () => {
+  const show = (id: number): TraktMediaItem => ({
+    mediaType: 'tv',
+    tmdbId: 9_800_000 + id,
+    title: `Show ${id}`,
+  });
+
+  it('keeps paging past a page the anime filter already shortened', async () => {
+    const requested: number[] = [];
+    const page = await fetchPaginatedTraktNonAnimeItems(
+      async (traktPage) => {
+        requested.push(traktPage);
+        // Page 1 was a full raw page of 20 with one anime title removed.
+        const count = traktPage === 1 ? 19 : 5;
+        return {
+          items: Array.from({ length: count }, (_, i) =>
+            show(traktPage * 100 + i)
+          ),
+          hasMore: traktPage < 2,
+        };
+      },
+      1,
+      20,
+      createTmdbStub(new Set())
+    );
+
+    assert.deepEqual(requested, [1, 2]);
+    assert.equal(page.items.length, 20);
+    assert.equal(page.hasMore, true);
+  });
+
+  it('keeps paging past a page the anime filter emptied', async () => {
+    const page = await fetchPaginatedTraktNonAnimeItems(
+      async (traktPage) => ({
+        items: traktPage === 1 ? [] : [show(traktPage)],
+        hasMore: traktPage < 2,
+      }),
+      1,
+      20,
+      createTmdbStub(new Set())
+    );
+
+    assert.equal(page.items.length, 1);
+    assert.equal(page.hasMore, false);
   });
 });

@@ -168,28 +168,52 @@ async fn filtered_pages(
     sort_by: Option<SortBy>,
 ) -> Result<Paged, Fail> {
     let needed = usize::try_from(page.saturating_mul(per_page)).unwrap_or(usize::MAX);
-    let per = usize::try_from(per_page).unwrap_or(usize::MAX);
-    let mut filtered: Vec<Value> = Vec::new();
-    let mut trakt_page = 1;
-    let mut last_full = false;
-    while trakt_page <= MAX_UPSTREAM_PAGES {
-        let batch = upstream_page(run, upstream, trakt_page).await?.items;
-        if batch.is_empty() {
-            last_full = false;
-            break;
-        }
-        last_full = batch.len() >= per;
-        filtered.extend(anime_filter(run, batch, keep_anime).await?);
-        if !last_full {
-            break;
-        }
-        if sort_by.is_none() && filtered.len() >= needed {
-            break;
-        }
-        trakt_page += 1;
-    }
-    let extra = last_full && trakt_page <= MAX_UPSTREAM_PAGES;
+    let (filtered, has_more, trakt_page) = fill_pages(
+        needed,
+        sort_by.is_none(),
+        |n| upstream_page(run, upstream, n),
+        |batch| anime_filter(run, batch, keep_anime),
+    )
+    .await?;
+    let extra = has_more && trakt_page <= MAX_UPSTREAM_PAGES;
     Ok(page_of(&filtered, page, per_page, sort_by, extra))
+}
+
+/// The loop both page fillers share: upstream pages through `filter` until
+/// the upstream's own `hasMore` runs out, the page cap, or (`stop_when_full`)
+/// `needed` items. A page the media-type or post filters shortened or
+/// emptied is not the end of the upstream. Gives the items, the last
+/// `hasMore` and the page number the loop stopped on.
+async fn fill_pages<F, FFut, G, GFut>(
+    needed: usize,
+    stop_when_full: bool,
+    mut fetch: F,
+    mut filter: G,
+) -> Result<(Vec<Value>, bool, i64), Fail>
+where
+    F: FnMut(i64) -> FFut,
+    FFut: Future<Output = Result<Paged, Fail>>,
+    G: FnMut(Vec<Value>) -> GFut,
+    GFut: Future<Output = Result<Vec<Value>, Fail>>,
+{
+    let mut filtered: Vec<Value> = Vec::new();
+    let mut number = 1;
+    let mut has_more = false;
+    while number <= MAX_UPSTREAM_PAGES {
+        let fetched = fetch(number).await?;
+        has_more = fetched.has_more;
+        if !fetched.items.is_empty() {
+            filtered.extend(filter(fetched.items).await?);
+        }
+        if !has_more {
+            break;
+        }
+        if stop_when_full && filtered.len() >= needed {
+            break;
+        }
+        number += 1;
+    }
+    Ok((filtered, has_more, number))
 }
 
 /// The requested page of collected items, sorted first when asked.
@@ -218,25 +242,13 @@ pub(super) async fn post_filtered(
     let page = page.max(1);
     let per_page = per_page.max(1);
     let needed = usize::try_from(page.saturating_mul(per_page)).unwrap_or(usize::MAX);
-    let mut filtered: Vec<Value> = Vec::new();
-    let mut upstream_number = 1;
-    let mut has_more = false;
-    while upstream_number <= MAX_UPSTREAM_PAGES {
-        let fetched = upstream_page(run, upstream, upstream_number).await?;
-        if fetched.items.is_empty() {
-            has_more = false;
-            break;
-        }
-        has_more = fetched.has_more;
-        filtered.extend(filter_page_items(run, fetched.items, skip_watched).await?);
-        if !has_more {
-            break;
-        }
-        if sort_by.is_none() && filtered.len() >= needed {
-            break;
-        }
-        upstream_number += 1;
-    }
+    let (filtered, has_more, upstream_number) = fill_pages(
+        needed,
+        sort_by.is_none(),
+        |n| upstream_page(run, upstream, n),
+        |items| filter_page_items(run, items, skip_watched),
+    )
+    .await?;
     let extra = has_more && upstream_number < MAX_UPSTREAM_PAGES;
     Ok(page_of(&filtered, page, per_page, sort_by, extra))
 }
@@ -628,6 +640,57 @@ mod tests {
             kept.len(),
             2,
             "the watched movie goes, the show and unmapped stay"
+        );
+    }
+
+    /// `fill_pages` over raw pages of `20` items each, `has_more` on all but
+    /// the last, the filter keeping `kept[n - 1]` items of page `n`.
+    async fn fill(kept: &[usize], needed: usize) -> (usize, bool, i64) {
+        let last = i64::try_from(kept.len()).unwrap_or(i64::MAX);
+        let (items, has_more, number) = fill_pages(
+            needed,
+            true,
+            |n| async move {
+                let index = usize::try_from(n - 1).unwrap_or(usize::MAX);
+                let keep = kept.get(index).copied().unwrap_or(0);
+                Ok(Paged {
+                    items: (0..20).map(|i| json!({ "keep": i < keep })).collect(),
+                    has_more: n < last,
+                })
+            },
+            |batch: Vec<Value>| async move {
+                Ok(batch
+                    .into_iter()
+                    .filter(|item| item.get("keep") == Some(&Value::Bool(true)))
+                    .collect())
+            },
+        )
+        .await
+        .unwrap_or_default();
+        (items.len(), has_more, number)
+    }
+
+    #[tokio::test]
+    async fn short_filtered_pages_are_not_the_upstream_end() {
+        assert_eq!(
+            fill(&[19, 20], 20).await,
+            (39, false, 2),
+            "a page the filter shortened goes on to the next"
+        );
+        assert_eq!(
+            fill(&[0, 0, 5], 20).await,
+            (5, false, 3),
+            "pages the filter emptied go on too"
+        );
+        assert_eq!(
+            fill(&[20, 20, 20], 20).await,
+            (20, true, 1),
+            "enough items stop early with more to come"
+        );
+        assert_eq!(
+            fill(&[0; 12], 20).await,
+            (0, true, MAX_UPSTREAM_PAGES + 1),
+            "the page cap still holds"
         );
     }
 
