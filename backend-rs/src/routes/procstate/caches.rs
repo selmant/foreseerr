@@ -1,6 +1,10 @@
-//! `GET /internal/cache`, `POST /internal/cache/:cacheId/flush` and
-//! `POST /internal/cache/dns/:dnsEntry/flush`: the response caches
+//! Node's cache routes under `/internal/cache`.
+//!
+//! `GET /internal/cache` and `POST /internal/cache/{:cacheId,images,all}/flush`
+//! and `/internal/cache/dns/:dnsEntry/flush`: the response caches
 //! ([`crate::memcache`]), the image cache and the DNS cache.
+
+use std::path::Path;
 
 use serde_json::{Map, Value};
 
@@ -50,6 +54,22 @@ pub fn flush(id: &str) -> Answer {
     )
 }
 
+/// `ImageProxy.clearAll()` and `resetLibraryImageCache()`.
+pub async fn flush_images(config_dir: &Path) -> Answer {
+    match crate::imagecache::flush_images(config_dir).await {
+        Ok(()) => Answer::no_content(),
+        Err(e) => Answer::message(500, &format!("{e:#}")),
+    }
+}
+
+/// Every `cacheManager` cache flushed, then [`flush_images`].
+pub async fn flush_all(config_dir: &Path) -> Answer {
+    for id in CacheId::ALL {
+        memcache::flush(id);
+    }
+    flush_images(config_dir).await
+}
+
 /// `dnsCache.clear(entry)`.
 #[must_use]
 pub fn flush_dns(entry: &str) -> Answer {
@@ -73,5 +93,40 @@ mod tests {
             "prototype keys aren't caches"
         );
         assert_eq!(flush("plexguid").status, 404, "not one of Node's");
+    }
+
+    #[tokio::test]
+    async fn flushing_images_clears_the_directory_and_library_artwork() -> anyhow::Result<()> {
+        if std::env::var_os("CACHE_DIRECTORY").is_some() {
+            // The cache would be that directory's, not this test's.
+            return Ok(());
+        }
+        let config =
+            std::env::temp_dir().join(format!("foreseerr-flush-images-{}", std::process::id()));
+        let group = crate::imagecache::cache_root(&config).join("tmdb");
+        tokio::fs::create_dir_all(&group).await?;
+        tokio::fs::write(group.join("poster.jpg"), b"image").await?;
+        let item = "flush-images-test";
+        crate::libraryimagecache::set(
+            1,
+            item,
+            true,
+            bytes::Bytes::from_static(b"art"),
+            "image/jpeg",
+        );
+
+        assert_eq!(flush_images(&config).await.status, 204, "flushed");
+        assert!(!group.exists(), "the image directory is removed");
+        assert!(
+            crate::libraryimagecache::get(1, item, true).is_none(),
+            "library artwork is dropped"
+        );
+        assert_eq!(
+            flush_images(&config).await.status,
+            204,
+            "nothing left to remove"
+        );
+        tokio::fs::remove_dir_all(&config).await?;
+        Ok(())
     }
 }

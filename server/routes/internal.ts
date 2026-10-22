@@ -35,6 +35,7 @@ import {
   getIntegrationHealth,
 } from '@server/lib/integrationHealth';
 import { jsonSafeClone } from '@server/lib/jsonSafe';
+import { resetLibraryImageCache } from '@server/lib/libraryImageCache';
 import {
   datasetDefinition,
   listDatasets,
@@ -425,6 +426,30 @@ internalRoutes.get('/cache', async (_req, res) => {
         },
       })
     );
+  } catch (e) {
+    res.status(500).json({ message: internalErrorMessage(e) });
+  }
+});
+
+// Node's half of POST /settings/cache/images/flush and /cache/all/flush;
+// registered before `/cache/:cacheId/flush`, which would otherwise match them.
+internalRoutes.post('/cache/images/flush', async (_req, res) => {
+  try {
+    await ImageProxy.clearAll();
+    resetLibraryImageCache();
+    res.status(204).end();
+  } catch (e) {
+    res.status(500).json({ message: internalErrorMessage(e) });
+  }
+});
+
+internalRoutes.post('/cache/all/flush', async (_req, res) => {
+  try {
+    for (const cache of Object.values(cacheManager.getAllCaches()))
+      cache.flush();
+    await ImageProxy.clearAll();
+    resetLibraryImageCache();
+    res.status(204).end();
   } catch (e) {
     res.status(500).json({ message: internalErrorMessage(e) });
   }

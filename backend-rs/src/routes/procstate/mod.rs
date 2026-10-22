@@ -79,6 +79,8 @@ pub async fn call(state: &AppState, method: &Method, path: &str, body: Option<&V
     match segments.as_slice() {
         ["cache"] if get => caches::stats(state).await,
         ["cache", "dns", entry, "flush"] if post => caches::flush_dns(entry),
+        ["cache", "images", "flush"] if post => caches::flush_images(&state.env.config_dir).await,
+        ["cache", "all", "flush"] if post => caches::flush_all(&state.env.config_dir).await,
         ["cache", id, "flush"] if post => caches::flush(id),
         ["integrations", "health"] if get => health::answer(state, false).await,
         ["integrations", "health", "refresh"] if post => health::answer(state, true).await,

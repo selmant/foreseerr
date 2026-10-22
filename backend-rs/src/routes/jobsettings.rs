@@ -44,6 +44,12 @@ pub(super) const ROUTES: &Table = &[
     ),
     ("/api/v1/settings/cache", Method::GET, cache),
     (
+        "/api/v1/settings/cache/images/flush",
+        Method::POST,
+        images_flush,
+    ),
+    ("/api/v1/settings/cache/all/flush", Method::POST, all_flush),
+    (
         "/api/v1/settings/cache/{id}/flush",
         Method::POST,
         cache_flush,
@@ -480,6 +486,46 @@ fn cache_flush<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             Err(e) => acted_failed(ctx, &format!("{e:#}"), "Unable to flush the cache."),
         }
     })
+}
+
+/// `POST /settings/cache/images/flush`: the image cache directory and
+/// library artwork. Validated as `/settings/cache/{cacheId}/flush`.
+fn images_flush<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
+    Box::pin(whole_flush(ctx, "/cache/images/flush"))
+}
+
+/// `POST /settings/cache/all/flush`: every API cache, then what
+/// [`images_flush`] clears. Validated as `/settings/cache/{cacheId}/flush`.
+fn all_flush<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
+    Box::pin(whole_flush(ctx, "/cache/all/flush"))
+}
+
+/// The image and full flushes: the owner of the caches flushes them (this
+/// process when it runs the jobs, Node's `/internal` otherwise). With Node
+/// owning them, this process still serves `/imageproxy` and library
+/// artwork from its own memory, so it drops those as well. A failure is
+/// Node's `next({ status: 500, message })`.
+async fn whole_flush(ctx: &Ready<'_>, path: &str) -> Outcome {
+    if let Err(why) = admin(ctx) {
+        return Outcome::forward(why);
+    }
+    match node_call(ctx, Method::POST, path, None).await {
+        Ok((204, _)) => {}
+        Ok((status, answer)) => {
+            let message = answer.get("message").and_then(Value::as_str);
+            tracing::error!("{path} answered {status}: {message:?}");
+            return ctx.error(500, message.unwrap_or("Unable to flush the cache."));
+        }
+        Err(e) => return acted_failed(ctx, &format!("{e:#}"), "Unable to flush the cache."),
+    }
+    if !super::procstate::in_process(path) {
+        if let Err(e) = crate::imagecache::flush_images(&ctx.state.env.config_dir).await {
+            let message = format!("{e:#}");
+            tracing::error!("flushing the image cache: {message}");
+            return ctx.error(500, &message);
+        }
+    }
+    Ready::no_content()
 }
 
 /// `POST /settings/cache/dns/{entry}/flush`.
