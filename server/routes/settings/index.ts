@@ -1481,6 +1481,29 @@ settingsRoutes.get(
   }
 );
 
+// Registered before `/cache/:cacheId/flush`, which would otherwise match it
+// first and answer 404.
+settingsRoutes.post(
+  '/cache/browser/flush',
+  isAuthenticated(Permission.ADMIN),
+  (req, res, next) => {
+    if (!req.user || !req.sessionID) {
+      return next({ status: 401, message: 'Session required.' });
+    }
+    // Remote/browser deployments cannot and must not ask a native runtime to
+    // clear a profile they do not own.
+    if (process.env.FORESEERR_RUNTIME !== 'desktop') {
+      return next({
+        status: 409,
+        message: 'Browser cache is managed by the desktop runtime only.',
+      });
+    }
+    return res
+      .status(201)
+      .json(issueBrowserCacheTicket(req.user.id, req.sessionID));
+  }
+);
+
 settingsRoutes.post<{ cacheId: AvailableCacheIds }>(
   '/cache/:cacheId/flush',
   isAuthenticated(Permission.ADMIN),
@@ -1507,27 +1530,6 @@ settingsRoutes.post(
     } catch (error) {
       return next({ status: 500, message: (error as Error).message });
     }
-  }
-);
-
-settingsRoutes.post(
-  '/cache/browser/flush',
-  isAuthenticated(Permission.ADMIN),
-  (req, res, next) => {
-    if (!req.user || !req.sessionID) {
-      return next({ status: 401, message: 'Session required.' });
-    }
-    // Remote/browser deployments cannot and must not ask a native runtime to
-    // clear a profile they do not own.
-    if (process.env.FORESEERR_RUNTIME !== 'desktop') {
-      return next({
-        status: 409,
-        message: 'Browser cache is managed by the desktop runtime only.',
-      });
-    }
-    return res
-      .status(201)
-      .json(issueBrowserCacheTicket(req.user.id, req.sessionID));
   }
 );
 

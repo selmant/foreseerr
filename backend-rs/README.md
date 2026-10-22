@@ -53,7 +53,9 @@ Node, so they can be recorded and replayed too.
 ## Ported routes
 
 Every path and method `seerr-api.yml` documents has a native handler, plus
-`POST /api/v1/desktop/browser-cache/redeem` (not in the spec) and
+`POST /api/v1/desktop/browser-cache/redeem` (not in the spec),
+`POST /api/v1/settings/cache/browser/flush` (validated as
+`/settings/cache/{cacheId}/flush`) and
 `/imageproxy`, `/avatarproxy` outside `/api`. Grouped by area:
 
 | Route                              | Answered here when                                               |

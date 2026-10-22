@@ -91,7 +91,7 @@ fn no_store(mut outcome: Outcome) -> Outcome {
 }
 
 /// `createHash('sha256').update(value).digest('hex')`.
-fn digest(value: &str) -> String {
+pub(super) fn digest(value: &str) -> String {
     hex(&Sha256::digest(value.as_bytes()))
 }
 
