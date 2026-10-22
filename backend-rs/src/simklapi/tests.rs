@@ -471,6 +471,47 @@ async fn a_v1_link_never_refreshes() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn a_401_leaves_a_link_made_meanwhile_alone() -> anyhow::Result<()> {
+    let db = memory_db().await?;
+    db.execute(
+        r#"INSERT INTO "user_settings" VALUES (3, 7, 'v1-token', NULL, NULL, 'name', '4242')"#,
+        &[],
+    )
+    .await?;
+    db.execute(r#"INSERT INTO "simkl_sync_item" VALUES (1, 7)"#, &[])
+        .await?;
+    let relink = db.clone();
+    let stub = Stub::start(Arc::new(move |_| {
+        let db = relink.clone();
+        Box::pin(async move {
+            db.execute(
+                r#"UPDATE "user_settings" SET "simklAccessToken" = 'v1-relinked' WHERE "id" = 3"#,
+                &[],
+            )
+            .await
+            .ok();
+            (401, json!({}))
+        })
+    }))
+    .await?;
+    let client = user_client(&db, &config(&stub), 7)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    assert_eq!(
+        client.request("/sync/activities", None).await,
+        Err(Failure::Unauthorized)
+    );
+    let (access, _, user) = stored(&db).await?;
+    assert_eq!(access, Value::from("v1-relinked"));
+    assert_eq!(user, Value::from("4242"));
+    let items = db
+        .rows(r#"SELECT "id" FROM "simkl_sync_item""#, &[])
+        .await?;
+    assert_eq!(items.len(), 1, "synced rows kept");
+    Ok(())
+}
+
 #[test]
 fn effective_client_id_follows_effective_simkl_client_id() {
     assert_eq!(client_id_for("  own  "), "own", "the administrator's own");

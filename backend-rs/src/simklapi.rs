@@ -411,8 +411,9 @@ impl Client {
         }
     }
 
-    /// `onUnauthorized`, once: drop the link and the user's synced rows.
-    async fn unauthorized(&self) {
+    /// `onUnauthorized(sent)`, once: drop the link and the user's synced
+    /// rows, unless the user relinked since `sent` (the rejected token).
+    async fn unauthorized(&self, sent: Option<&str>) {
         let Some(link) = &self.link else {
             return;
         };
@@ -420,8 +421,10 @@ impl Client {
             return;
         }
         let cleared = async {
-            clear_credentials(&link.db, link.settings_id, None).await?;
-            clear_sync_cache(&link.db, link.user_id).await
+            if clear_credentials(&link.db, link.settings_id, sent).await? {
+                clear_sync_cache(&link.db, link.user_id).await?;
+            }
+            anyhow::Ok(())
         };
         if let Err(e) = cleared.await {
             tracing::error!("clearing the rejected Simkl link failed: {e:#}");
@@ -458,7 +461,8 @@ impl Client {
                 .config
                 .builder(method, &url)
                 .header(reqwest::header::CONTENT_TYPE, "application/json");
-            if let Some(token) = self.access_token() {
+            let sent = self.access_token();
+            if let Some(token) = &sent {
                 req = req.header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"));
             }
             if let Some(body) = body {
@@ -487,7 +491,7 @@ impl Client {
                     self.refresh().await?;
                     continue;
                 }
-                self.unauthorized().await;
+                self.unauthorized(sent.as_deref()).await;
                 return Err(Failure::Unauthorized);
             }
             let temporary = status.is_none_or(|s| s >= 500);
