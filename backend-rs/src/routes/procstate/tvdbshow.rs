@@ -257,6 +257,7 @@ fn empty_season(tv_id: i64) -> Value {
     let mut ids = Map::new();
     ids.insert(String::from("tvdb_id"), Value::from(tv_id));
     season_value(
+        0,
         Vec::new(),
         Value::Object(ids),
         Some(Value::from(0)),
@@ -265,12 +266,12 @@ fn empty_season(tv_id: i64) -> Value {
 }
 
 fn season_value(
+    season_number: i64,
     episodes: Vec<Value>,
     external_ids: Value,
     id: Option<Value>,
     air_date: Option<Value>,
 ) -> Value {
-    let count = episodes.len();
     let mut out = Map::new();
     out.insert(String::from("episodes"), Value::Array(episodes));
     out.insert(String::from("external_ids"), external_ids);
@@ -282,7 +283,7 @@ fn season_value(
     if let Some(air_date) = air_date {
         out.insert(String::from("air_date"), air_date);
     }
-    out.insert(String::from("season_number"), Value::from(count));
+    out.insert(String::from("season_number"), Value::from(season_number));
     Value::Object(out)
 }
 
@@ -347,6 +348,7 @@ async fn season_data(
     let mut ids = Map::new();
     ids.insert(String::from("tvdb_id"), tvdb_id.clone());
     Ok(season_value(
+        season_number,
         mapped,
         Value::Object(ids),
         season.get("id").cloned(),
@@ -490,6 +492,23 @@ mod tests {
             empty_season(5),
             json!({"episodes": [], "external_ids": {"tvdb_id": 5}, "name": "", "overview": "", "id": 0, "air_date": "", "season_number": 0}),
             "empty season"
+        );
+    }
+
+    #[test]
+    fn season_number_is_the_requested_season() {
+        let episodes = vec![json!({"id": 1}), json!({"id": 2}), json!({"id": 3})];
+        let season = season_value(
+            1,
+            episodes,
+            json!({"tvdb_id": 81189}),
+            Some(json!(42)),
+            Some(json!("2020-01-01")),
+        );
+        assert_eq!(
+            season.get("season_number"),
+            Some(&json!(1)),
+            "not the episode count"
         );
     }
 }
