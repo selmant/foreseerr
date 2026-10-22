@@ -255,7 +255,7 @@ fn utf16_lt(a: &str, b: &str) -> bool {
 /// `filterDiscoverResults`: mapped TMDB results (movies and series)
 /// checked against the query's filters; people and collections pass.
 pub(super) fn filter_discover_results(results: Vec<Value>, query: &Query) -> Vec<Value> {
-    let f = BrowseFilters::parse(query);
+    let f = BrowseFilters::parse_tmdb_discover(query);
     if !f.any() || results.is_empty() {
         return results;
     }
@@ -359,11 +359,11 @@ mod tests {
             .filter_map(|r| r.get("id").and_then(Value::as_i64))
             .collect();
         assert_eq!(ids, vec![3, 4], "movie dates only bind movies");
-        let q = query(&json!({"withRuntimeGte": 60, "includeNoRating": true}));
+        let q = query(&json!({"withRuntimeGte": 60, "status": "3", "includeNoRating": true}));
         assert_eq!(
             filter_discover_results(results, &q).len(),
-            1,
-            "list results carry no runtime"
+            4,
+            "runtime and status are TMDB's to apply upstream"
         );
     }
 

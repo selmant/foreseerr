@@ -478,7 +478,7 @@ async fn fetch_mapped_page(
 
 /// `needsDiscoverPostFilters`.
 fn needs_post_filters(pre: &Prelude) -> bool {
-    BrowseFilters::parse(&pre.query).any() || pre.query.truthy("ignoreWatched")
+    BrowseFilters::parse_tmdb_discover(&pre.query).any() || pre.query.truthy("ignoreWatched")
 }
 
 /// `filterDiscoverPageResults`: ratings when needed, the browse filters,

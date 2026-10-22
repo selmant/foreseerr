@@ -688,6 +688,19 @@ impl BrowseFilters {
         }
     }
 
+    /// `parseTmdbDiscoverQueryFilters`: the filters for passes over TMDB
+    /// Discover summary rows. Those carry no runtime or series status;
+    /// TMDB applies `with_runtime` and `with_status` upstream, so checking
+    /// them here would reject every title.
+    pub(super) fn parse_tmdb_discover(query: &Query) -> Self {
+        Self {
+            runtime_gte: None,
+            runtime_lte: None,
+            series_status_ids: Vec::new(),
+            ..Self::parse(query)
+        }
+    }
+
     /// `needsMdblistBrowseFilters`.
     pub(super) fn needs_mdblist(&self) -> bool {
         self.external.iter().any(Option::is_some)
@@ -1018,6 +1031,24 @@ mod tests {
         );
         assert!(!f.needs_trakt_rating(), "no trakt gate");
         assert!(f.any(), "filters on");
+    }
+
+    #[test]
+    fn tmdb_discover_filters_leave_runtime_and_status_upstream() {
+        let q = Query::from_map(
+            json!({"withRuntimeGte": "60", "withRuntimeLte": "120", "status": "3"})
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+        );
+        assert!(BrowseFilters::parse(&q).any(), "browse lists still gate");
+        let f = BrowseFilters::parse_tmdb_discover(&q);
+        assert_eq!(
+            (f.runtime_gte, f.runtime_lte, f.series_status_ids.len()),
+            (None, None, 0),
+            "dropped"
+        );
+        assert!(!f.any(), "no post-filter pass");
     }
 
     #[test]
