@@ -306,10 +306,16 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                     "Missing seasons. If you want to cancel a series request, use the DELETE method.",
                 );
             };
-            match forward_on_err!(season_edit(ctx, &e, &requested).await) {
-                Ok(edit) => Some(edit),
+            let edit = match forward_on_err!(season_edit(ctx, &e, &requested).await) {
+                Ok(edit) => edit,
                 Err(answer) => return answer,
+            };
+            let (_, tv_quota) =
+                forward_on_err!(super::requestcreate::quotas(ctx, &request_user).await);
+            if tv_quota.edit_exceeds(e.row.ignore_quota, edit.units, e.row.tv_quota_units) {
+                return ctx.error(403, "Series Quota exceeded.");
             }
+            Some(edit)
         } else {
             None
         };

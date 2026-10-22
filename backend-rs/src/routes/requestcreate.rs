@@ -228,6 +228,14 @@ pub(super) struct Quota {
     restricted: bool,
 }
 
+impl Quota {
+    /// Whether an edit of a request that already counts `held` units, to
+    /// `units`, goes past the quota; the edits' `Series Quota exceeded.`.
+    pub(super) fn edit_exceeds(&self, ignore_quota: bool, units: i64, held: i64) -> bool {
+        !ignore_quota && self.limit != 0 && units > self.remaining.unwrap_or(0) + held
+    }
+}
+
 /// A `defaultQuotas` value: a whole number or nothing.
 fn default_quota(ctx: &Ready<'_>, path: &str) -> Result<Option<i64>, String> {
     match ctx.settings.get(&format!("/main/defaultQuotas/{path}")) {
@@ -1633,6 +1641,29 @@ async fn write(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_edit_may_reuse_its_own_units() {
+        let tv = Quota {
+            limit: 2,
+            remaining: Some(1),
+            restricted: false,
+        };
+        assert!(!tv.edit_exceeds(false, 2, 1), "one more season fits");
+        assert!(tv.edit_exceeds(false, 3, 1), "two more do not");
+        assert!(!tv.edit_exceeds(true, 3, 1), "ignoreQuota");
+        let spent = Quota {
+            limit: 1,
+            remaining: Some(0),
+            restricted: true,
+        };
+        assert!(!spent.edit_exceeds(false, 1, 1), "keeping its own season");
+        assert!(
+            spent.edit_exceeds(false, 2, 1),
+            "growing past a spent quota"
+        );
+        assert!(!Quota::default().edit_exceeds(false, 9, 0), "no limit");
+    }
 
     #[test]
     fn rule_numbers_read_like_number() {
