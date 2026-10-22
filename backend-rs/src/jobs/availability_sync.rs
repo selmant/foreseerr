@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 
 use super::syncutil::{http_status, int, text};
 use super::JobCtx;
-use crate::db::{Bind, MediaRow, SeasonRow};
+use crate::db::{Bind, Db, MediaRow, SeasonRow};
 use crate::jellyfin::{hostname, Item, JellyfinClient, JfError};
 use crate::lifecycle::{Lc, APPROVED};
 use crate::routes::mediasave::{self, MediaEdit};
@@ -227,12 +227,13 @@ async fn sync(job: &JobCtx) -> Result<()> {
     if !s.connect().await? {
         return Ok(());
     }
-    let mut offset = 0;
+    let mut after = 0;
     loop {
-        let page = load_page(job, offset).await?;
-        if page.is_empty() {
+        let (last, page) = load_page(&job.state.db, after).await?;
+        let Some(last) = last else {
             break;
-        }
+        };
+        after = last;
         for (media, detach) in page {
             if job.cancelled() {
                 return Err(anyhow!("Job aborted"));
@@ -243,28 +244,29 @@ async fn sync(job: &JobCtx) -> Result<()> {
                 s.check_show(media, detach).await;
             }
         }
-        offset += PAGE_SIZE;
     }
     Ok(())
 }
 
-/// One page of `loadAvailableMediaPaginated`: each title with the seasons
-/// its `find` loads, and the ids of the stored seasons it leaves out.
-async fn load_page(job: &JobCtx, offset: i64) -> Result<Vec<(MediaRow, Vec<i64>)>> {
-    let db = &job.state.db;
+/// One page of `loadAvailableMediaPaginated`, the titles after id `after`
+/// (keyset paging: the sync's own writes take titles out of the filter,
+/// which would shift an offset past ones not checked yet): the last id,
+/// `None` when there are no more, and each title with the seasons its
+/// `find` loads and the ids of the stored seasons it leaves out.
+async fn load_page(db: &Db, after: i64) -> Result<(Option<i64>, Vec<(MediaRow, Vec<i64>)>)> {
     let rows = db
         .rows(
-            r#"SELECT DISTINCT CAST("m"."id" AS BIGINT) AS "id" FROM "media" "m" LEFT JOIN "season" "s" ON "s"."mediaId" = "m"."id" WHERE "m"."status" IN (5, 4) OR "m"."status4k" IN (5, 4) OR "s"."status" IN (5, 4) OR "s"."status4k" IN (5, 4) ORDER BY 1 ASC LIMIT ?1 OFFSET ?2"#,
-            &[Bind::Int(PAGE_SIZE), Bind::Int(offset)],
+            r#"SELECT DISTINCT CAST("m"."id" AS BIGINT) AS "id" FROM "media" "m" LEFT JOIN "season" "s" ON "s"."mediaId" = "m"."id" WHERE "m"."id" > ?2 AND ("m"."status" IN (5, 4) OR "m"."status4k" IN (5, 4) OR "s"."status" IN (5, 4) OR "s"."status4k" IN (5, 4)) ORDER BY 1 ASC LIMIT ?1"#,
+            &[Bind::Int(PAGE_SIZE), Bind::Int(after)],
         )
         .await?;
     let ids: Vec<i64> = rows.iter().filter_map(|r| int(r, "id")).collect();
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
+    let Some(last) = ids.iter().copied().max() else {
+        return Ok((None, Vec::new()));
+    };
     let mut media = db.media_by_ids(&ids, true).await?;
     media.sort_by_key(|m| m.id);
-    Ok(media
+    let page = media
         .into_iter()
         .map(|mut m| {
             let whole = available_or_partial(m.status) || available_or_partial(m.status4k);
@@ -280,7 +282,8 @@ async fn load_page(job: &JobCtx, offset: i64) -> Result<Vec<(MediaRow, Vec<i64>)
             m.seasons.sort_by_key(|s| s.id);
             (m, detach)
         })
-        .collect())
+        .collect();
+    Ok((Some(last), page))
 }
 
 impl Sync<'_> {
@@ -1403,5 +1406,28 @@ mod tests {
             "sonarr": [], "radarr": [],
         });
         sync_shows("jellyfin-503", settings).await
+    }
+
+    #[tokio::test]
+    async fn pages_past_titles_the_sync_removed() -> Result<()> {
+        let port = serve(Vec::new()).await?;
+        let settings = json!({
+            "main": { "mediaServerType": PLEX },
+            "plex": { "ip": "127.0.0.1", "port": port, "useSsl": false },
+            "sonarr": [], "radarr": [],
+        });
+        // More than a page of movies that are no longer anywhere.
+        let movies = format!(
+            r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status") VALUES {}"#,
+            (1..=120)
+                .map(|id| format!("({id}, 'movie', {}, 5)", 1000 + id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let h = harness("paging", settings, &[ADMIN, &movies]).await?;
+        sync(&h.job).await?;
+        let left = r#"SELECT COUNT(*) FROM "media" WHERE "status" <> 7"#;
+        assert_eq!(ints(&h.scratch.db, left).await?, [0], "every title checked");
+        Ok(())
     }
 }

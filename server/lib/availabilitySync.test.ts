@@ -1398,6 +1398,33 @@ describe('AvailabilitySync', () => {
     });
   });
 
+  describe('pagination', () => {
+    it('should check every title when earlier pages lose their availability', async () => {
+      configurePlex();
+      configureRadarr([]);
+
+      const mediaRepository = getRepository(Media);
+
+      // More than two pages of movies that are no longer anywhere
+      await mediaRepository.save(
+        Array.from({ length: 120 }, (_, i) => {
+          const media = new Media();
+          media.tmdbId = 7000 + i;
+          media.mediaType = MediaType.MOVIE;
+          media.status = MediaStatus.AVAILABLE;
+          return media;
+        })
+      );
+
+      await availabilitySync.run();
+
+      const remaining = await mediaRepository.count({
+        where: { status: MediaStatus.AVAILABLE },
+      });
+      assert.strictEqual(remaining, 0, 'Every movie should be checked');
+    });
+  });
+
   describe('movie availability - Radarr', () => {
     it('should mark a deleted movie as DELETED when a second standard Radarr instance has a colliding externalServiceId', async () => {
       configurePlex();

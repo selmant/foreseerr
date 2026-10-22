@@ -21,6 +21,7 @@ import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { getHostname } from '@server/utils/getHostname';
+import { MoreThan } from 'typeorm';
 
 class AvailabilitySync {
   public running = false;
@@ -502,8 +503,10 @@ class AvailabilitySync {
     this.running = false;
   }
 
+  // Pages by id: the sync's own writes take titles out of the filter,
+  // which would shift an offset past titles not checked yet
   private async *loadAvailableMediaPaginated(pageSize: number) {
-    let offset = 0;
+    let lastId = 0;
     const mediaRepository = getRepository(Media);
     const whereOptions = [
       { status: MediaStatus.AVAILABLE },
@@ -520,11 +523,14 @@ class AvailabilitySync {
 
     do {
       yield* (mediaPage = await mediaRepository.find({
-        where: whereOptions,
-        skip: offset,
+        where: whereOptions.map((where) => ({
+          ...where,
+          id: MoreThan(lastId),
+        })),
+        order: { id: 'ASC' },
         take: pageSize,
       }));
-      offset += pageSize;
+      lastId = mediaPage[mediaPage.length - 1]?.id ?? lastId;
     } while (mediaPage.length > 0);
   }
 
