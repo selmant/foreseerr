@@ -77,7 +77,12 @@ export const anilistFns = {
         label: 'AniList',
         userId,
       });
-      await clearUserAnilistCredentials(settings.id, userId);
+      // Unless the user relinked since the expired token was read.
+      await clearUserAnilistCredentials(
+        settings.id,
+        userId,
+        settings.anilistAccessToken
+      );
       throw new AnilistNotLinkedError(
         'AniList authorization expired; reconnect your account'
       );
@@ -158,11 +163,13 @@ export function isAnilistTokenExpired(expiresAt?: string | null): boolean {
   return expires <= Math.floor(Date.now() / 1000) + 60;
 }
 
+/** With `accessToken`, only clears while that token is still the stored one. */
 export async function clearUserAnilistCredentials(
   settingsId: number,
-  userId?: number
-): Promise<void> {
-  await getRepository(UserSettings)
+  userId?: number,
+  accessToken?: string
+): Promise<boolean> {
+  const query = getRepository(UserSettings)
     .createQueryBuilder()
     .update(UserSettings)
     .set({
@@ -171,12 +178,17 @@ export async function clearUserAnilistCredentials(
       anilistUsername: () => 'NULL',
       anilistUserId: () => 'NULL',
     })
-    .where('id = :id', { id: settingsId })
-    .execute();
+    .where('id = :id', { id: settingsId });
+  if (accessToken) {
+    query.andWhere('anilistAccessToken = :accessToken', { accessToken });
+  }
+  const result = await query.execute();
+  const cleared = !accessToken || Boolean(result.affected);
 
-  if (userId != null) {
+  if (cleared && userId != null) {
     invalidateUserAnilistSyncCache(userId);
   }
+  return cleared;
 }
 
 export async function disconnectAllAnilistLinks(): Promise<number> {

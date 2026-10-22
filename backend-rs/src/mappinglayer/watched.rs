@@ -220,17 +220,16 @@ async fn anilist_client(
     let Some(row) = rows.first() else {
         return Err(AnilistLoad::Unavailable);
     };
-    let token = row
-        .get("token")
-        .and_then(Value::as_str)
+    let stored = row.get("token").and_then(Value::as_str);
+    let token = stored
         .map(crate::jsval::trim)
         .filter(|t| !t.is_empty())
         .map(str::to_owned);
-    let Some(token) = token else {
+    let (Some(stored), Some(token)) = (stored, token) else {
         return Err(AnilistLoad::Unavailable);
     };
     if crate::mediaactions::anilist::token_expired(row.get("expires").and_then(Value::as_str)) {
-        crate::mediaactions::anilist::clear_expired_link(state, row, user)
+        crate::mediaactions::anilist::clear_expired_link(state, stored, user)
             .await
             .map_err(AnilistLoad::Failed)?;
         return Err(AnilistLoad::Unavailable);

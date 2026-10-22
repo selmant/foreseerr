@@ -90,18 +90,19 @@ pub async fn user_client(env: &Env<'_>) -> Result<Anilist, ClientError> {
         return Err(ClientError::NotConfigured);
     }
     let row = link_row(env).await?;
-    let token = row
+    let stored = row
         .as_ref()
         .and_then(|r| r.get("anilistAccessToken"))
-        .and_then(Value::as_str)
+        .and_then(Value::as_str);
+    let token = stored
         .map(crate::jsval::trim)
         .filter(|t| !t.is_empty())
         .map(str::to_owned);
-    let (Some(row), Some(token)) = (row, token) else {
+    let (Some(row), Some(stored), Some(token)) = (&row, stored, token) else {
         return Err(ClientError::NotLinked(NOT_LINKED));
     };
     if token_expired(row.get("expires").and_then(Value::as_str)) {
-        clear_expired_link(env.state, &row, env.user)
+        clear_expired_link(env.state, stored, env.user)
             .await
             .map_err(ClientError::Other)?;
         return Err(ClientError::NotLinked(EXPIRED));
@@ -109,15 +110,15 @@ pub async fn user_client(env: &Env<'_>) -> Result<Anilist, ClientError> {
     Ok(Anilist::new(&env.state.outbound, Some(token)))
 }
 
-/// `createAnilistUserClient`'s answer to an expired token: the link
-/// (`row` is its `user_settings` row, with `id`) is cleared.
+/// `createAnilistUserClient`'s answer to an expired token: the link is
+/// cleared (`token` is the stored token found expired).
 ///
 /// # Errors
 ///
 /// Database failures, as their message.
 pub(crate) async fn clear_expired_link(
     state: &crate::state::AppState,
-    row: &serde_json::Map<String, Value>,
+    token: &str,
     user: i64,
 ) -> Result<(), String> {
     tracing::info!(
@@ -125,17 +126,35 @@ pub(crate) async fn clear_expired_link(
         user,
         "AniList token expired; clearing linked account"
     );
-    let id = row.get("id").and_then(Value::as_i64).unwrap_or(0);
-    state
-        .db
-        .execute(
-            r#"UPDATE "user_settings" SET "anilistAccessToken" = NULL, "anilistTokenExpiresAt" = NULL, "anilistUsername" = NULL, "anilistUserId" = NULL WHERE "id" = ?1"#,
-            &[Bind::Int(id)],
-        )
+    clear_link_while(&state.db, user, token)
         .await
-        .map_err(|e| format!("{e:#}"))?;
-    synccache::invalidate_user_anilist_sync_cache(user);
-    Ok(())
+        .map(drop)
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// `clearUserAnilistCredentials(settings.id, userId, accessToken)`: the
+/// user's link is cleared only while `token` is still the stored one (a
+/// relink meanwhile is kept), and the sync cache dropped only then.
+/// Whether it was cleared.
+///
+/// # Errors
+///
+/// Database failures.
+pub(crate) async fn clear_link_while(
+    db: &crate::db::Db,
+    user: i64,
+    token: &str,
+) -> anyhow::Result<bool> {
+    let changed = db
+        .execute(
+            r#"UPDATE "user_settings" SET "anilistAccessToken" = NULL, "anilistTokenExpiresAt" = NULL, "anilistUsername" = NULL, "anilistUserId" = NULL WHERE "userId" = ?1 AND "anilistAccessToken" = ?2"#,
+            &[Bind::Int(user), Bind::Text(token.to_owned())],
+        )
+        .await?;
+    if changed > 0 {
+        synccache::invalidate_user_anilist_sync_cache(user);
+    }
+    Ok(changed > 0)
 }
 
 /// `getAnilistUserContext(userId)`: the client and the account id.
@@ -440,6 +459,41 @@ mod tests {
         assert!(!token_expired(Some("x")), "not a number");
         assert!(!token_expired(None), "none");
         assert!(!token_expired(Some("99999999999")), "far future");
+    }
+
+    #[tokio::test]
+    async fn expiry_cleanup_keeps_a_relinked_account() -> anyhow::Result<()> {
+        let db = crate::db::Db::Sqlite(
+            sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect("sqlite::memory:")
+                .await?,
+        );
+        db.execute(
+            r#"CREATE TABLE "user_settings" ("id" integer PRIMARY KEY, "userId" integer, "anilistAccessToken" varchar, "anilistTokenExpiresAt" varchar, "anilistUsername" varchar, "anilistUserId" varchar)"#,
+            &[],
+        )
+        .await?;
+        db.execute(
+            r#"INSERT INTO "user_settings" VALUES (3, 7, 'relinked', '99999999999', 'name', '42')"#,
+            &[],
+        )
+        .await?;
+        let token = || async {
+            let rows = db
+                .rows(r#"SELECT "anilistAccessToken" FROM "user_settings""#, &[])
+                .await?;
+            anyhow::Ok(
+                rows.first()
+                    .and_then(|r| r.get("anilistAccessToken"))
+                    .cloned(),
+            )
+        };
+        assert!(!clear_link_while(&db, 7, "expired").await?, "stale token");
+        assert_eq!(token().await?, Some(Value::from("relinked")), "kept");
+        assert!(clear_link_while(&db, 7, "relinked").await?, "current token");
+        assert_eq!(token().await?, Some(Value::Null), "cleared");
+        Ok(())
     }
 
     #[test]

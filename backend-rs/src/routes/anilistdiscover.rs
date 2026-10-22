@@ -113,23 +113,22 @@ fn linked_token(row: &Map<String, Value>) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// `clearUserAnilistCredentials(settings.id, userId)` for an expired token.
+/// `clearUserAnilistCredentials(settings.id, userId, accessToken)` for an
+/// expired token: unless the user relinked since it was read.
 async fn clear_expired(ctx: &Ready<'_>, row: &Map<String, Value>) -> Result<(), String> {
     let user_id = row
         .get("userId")
         .and_then(Value::as_i64)
         .unwrap_or_default();
+    let token = row
+        .get("anilistAccessToken")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     tracing::info!("AniList token expired; clearing linked account");
-    ctx.state
-        .db
-        .execute(
-            r#"UPDATE "user_settings" SET "anilistAccessToken" = NULL, "anilistTokenExpiresAt" = NULL, "anilistUsername" = NULL, "anilistUserId" = NULL WHERE "userId" = ?1"#,
-            &[crate::db::Bind::Int(user_id)],
-        )
+    crate::mediaactions::anilist::clear_link_while(&ctx.state.db, user_id, token)
         .await
-        .map_err(|e| format!("database: {e:#}"))?;
-    crate::mappinglayer::synccache::invalidate_user_anilist_sync_cache(user_id);
-    Ok(())
+        .map(drop)
+        .map_err(|e| format!("database: {e:#}"))
 }
 
 /// The message `createAnilistUserClient` throws for an expired token.
