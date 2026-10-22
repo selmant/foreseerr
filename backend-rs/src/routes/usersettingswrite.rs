@@ -460,9 +460,8 @@ fn main_settings_json(
 // POST /settings/password, /settings/permissions
 // ---------------------------------------------------------------------------
 
-/// `POST /user/{id}/settings/password`. The handler reads `user.password`
-/// from an entity loaded without it, so the current password is never
-/// checked; that is reproduced as is.
+/// `POST /user/{id}/settings/password`. A manager may set another user's
+/// password outright; otherwise a user who has a password must give it.
 fn password<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         try_forward!(ctx.no_query());
@@ -491,6 +490,17 @@ fn password<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 "You do not have permission to modify this user's password.",
             );
         }
+        let overridden = viewer.has_permission(MANAGE_USERS) && viewer.id != user.id;
+        if !overridden
+            && !try_forward!(current_password_matches(&ctx.state.db, user.id, body)
+                .await
+                .map_err(|e| format!("{e:#}")))
+        {
+            tracing::debug!(
+                "Attempt to change password for user failed. Invalid current password provided."
+            );
+            return ctx.error(403, "Current password is invalid.");
+        }
         let hash = try_forward!(typeorm::hash_password(new_password.to_owned())
             .await
             .map_err(|e| format!("{e:#}")));
@@ -500,11 +510,31 @@ fn password<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             tracing::error!("saving the password of user {} failed: {e:#}", user.id);
             return ctx.error(500, &crate::db::failure_message(&e));
         }
-        if viewer.has_permission(MANAGE_USERS) && viewer.id != user.id {
+        if overridden {
             tracing::debug!("Password overriden by user.");
         }
         Ready::no_content()
     })
+}
+
+/// Whether `currentPassword` lets a user change their own password: a
+/// user without one may set it freely, otherwise it must be given and match.
+async fn current_password_matches(
+    db: &Db,
+    user_id: i64,
+    body: &Map<String, Value>,
+) -> anyhow::Result<bool> {
+    let Some(stored) = db.user_password(user_id).await? else {
+        return Ok(true);
+    };
+    match body
+        .get("currentPassword")
+        .and_then(Value::as_str)
+        .filter(|c| !c.is_empty())
+    {
+        Some(current) => typeorm::verify_password(current, stored).await,
+        None => Ok(false),
+    }
 }
 
 /// `POST /user/{id}/settings/permissions`.
@@ -917,6 +947,40 @@ mod tests {
             !filter_schema_ok(&bad.as_object().cloned().unwrap_or_default()),
             "a string for a boolean"
         );
+    }
+
+    #[tokio::test]
+    async fn a_self_password_change_needs_the_current_password() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("password-change").await?;
+        let db = &scratch.db;
+        let hash = typeorm::hash_password(String::from("current-password")).await?;
+        scratch::run(
+            db,
+            &[
+                &format!(
+                    r#"INSERT INTO "user" ("id", "email", "avatar", "password") VALUES (2, 'self@example.test', '', '{hash}')"#
+                ),
+                r#"INSERT INTO "user" ("id", "email", "avatar", "password") VALUES (3, 'plex@example.test', '', NULL)"#,
+            ],
+        )
+        .await?;
+        let check = |user: i64, body: Value| async move {
+            let body = body.as_object().cloned().unwrap_or_default();
+            current_password_matches(db, user, &body).await
+        };
+        assert!(!check(2, json!({})).await?, "missing");
+        assert!(!check(2, json!({"currentPassword": null})).await?, "null");
+        assert!(!check(2, json!({"currentPassword": ""})).await?, "empty");
+        assert!(
+            !check(2, json!({"currentPassword": "wrong-password"})).await?,
+            "wrong"
+        );
+        assert!(
+            check(2, json!({"currentPassword": "current-password"})).await?,
+            "matching"
+        );
+        assert!(check(3, json!({})).await?, "no password set yet");
+        Ok(())
     }
 
     #[tokio::test]

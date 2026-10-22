@@ -315,6 +315,15 @@ impl Db {
     ///
     /// Fails on database errors.
     pub async fn user_has_password(&self, id: i64) -> Result<bool> {
+        Ok(self.user_password(id).await?.is_some())
+    }
+
+    /// The user's local password hash, when one is set.
+    ///
+    /// # Errors
+    ///
+    /// Fails on database errors.
+    pub async fn user_password(&self, id: i64) -> Result<Option<String>> {
         let password: Option<Option<String>> = match self {
             Self::Sqlite(p) => {
                 sqlx::query_scalar(r#"SELECT "password" FROM "user" WHERE "id" = ?1"#)
@@ -329,7 +338,7 @@ impl Db {
                     .await?
             }
         };
-        Ok(password.flatten().is_some_and(|p| !p.is_empty()))
+        Ok(password.flatten().filter(|p| !p.is_empty()))
     }
 
     /// A user's profile for `/auth/me`.

@@ -161,3 +161,58 @@ describe('user general settings skipped episode preference', () => {
     assert.equal(unauthenticated.status, 401);
   });
 });
+
+describe('user password settings', () => {
+  async function storedHash() {
+    const user = await getRepository(User).findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+      select: ['id', 'password'],
+    });
+    return user.password;
+  }
+
+  it('rejects a self change with a missing or wrong current password', async () => {
+    const agent = await authenticatedAgent('friend@seerr.dev');
+    const friend = await getRepository(User).findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+    });
+    const before = await storedHash();
+
+    for (const body of [
+      { newPassword: 'changed-password' },
+      { currentPassword: 'wrong-password', newPassword: 'changed-password' },
+    ]) {
+      const response = await agent
+        .post(`/api/v1/user/${friend.id}/settings/password`)
+        .send(body);
+      assert.equal(response.status, 403, JSON.stringify(response.body));
+      assert.equal(response.body.message, 'Current password is invalid.');
+    }
+    assert.equal(await storedHash(), before);
+
+    const accepted = await agent
+      .post(`/api/v1/user/${friend.id}/settings/password`)
+      .send({ currentPassword: 'test1234', newPassword: 'changed-password' });
+    assert.equal(accepted.status, 204, JSON.stringify(accepted.body));
+    assert.notEqual(await storedHash(), before);
+  });
+
+  it('lets a manager override and a user without a password set one', async () => {
+    const friend = await getRepository(User).findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+    });
+    const agent = await authenticatedAgent('friend@seerr.dev');
+    const admin = await authenticatedAgent('admin@seerr.dev');
+    const overridden = await admin
+      .post(`/api/v1/user/${friend.id}/settings/password`)
+      .send({ newPassword: 'manager-set-password' });
+    assert.equal(overridden.status, 204, JSON.stringify(overridden.body));
+
+    await getRepository(User).update(friend.id, { password: null as never });
+    const set = await agent
+      .post(`/api/v1/user/${friend.id}/settings/password`)
+      .send({ newPassword: 'first-own-password' });
+    assert.equal(set.status, 204, JSON.stringify(set.body));
+    assert.ok(await storedHash());
+  });
+});
