@@ -265,15 +265,34 @@ fn parse_id(digits: &str) -> Option<i64> {
     digits.parse().ok().filter(|n| *n != 0)
 }
 
-/// `media.videoResolution === '4k'` for some media of an item.
-fn has_4k(item: &Value) -> Result<bool> {
+/// The `processMovie` calls for a Plex movie: one per quality it has a
+/// version of, so a title with both a 1080p and a 4K version is saved
+/// as both (a 4K version only counts with a 4K Radarr).
+fn movie_opts(item: &Value, enable4k: bool) -> Result<Vec<MovieOpts>> {
     let media = item
         .get("Media")
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("some is missing"))?;
-    Ok(media
+    let four_k = enable4k
+        && media
+            .iter()
+            .any(|m| str_of(m, "videoResolution") == Some("4k"));
+    let other = media
         .iter()
-        .any(|m| str_of(m, "videoResolution") == Some("4k")))
+        .any(|m| str_of(m, "videoResolution") != Some("4k"));
+    let base = MovieOpts {
+        media_added_at: added_at(item),
+        rating_key: Some(rating_key(item)),
+        ..MovieOpts::new(&js_string(item.get("title")))
+    };
+    let mut out = Vec::new();
+    if other || !four_k {
+        out.push(base.clone());
+    }
+    if four_k {
+        out.push(MovieOpts { is4k: true, ..base });
+    }
+    Ok(out)
 }
 
 fn rating_key(item: &Value) -> String {
@@ -476,14 +495,10 @@ impl Plex<'_> {
 
     /// `processPlexMovieByTmdbId(item, tmdbId)`.
     async fn movie_by_tmdb_id(&self, item: &Value, tmdb_id: i64) -> Result<()> {
-        let four_k = has_4k(item)?;
-        let o = MovieOpts {
-            is4k: four_k && self.scan.enable4k_movie,
-            media_added_at: added_at(item),
-            rating_key: Some(rating_key(item)),
-            ..MovieOpts::new(&js_string(item.get("title")))
-        };
-        self.scan.process_movie(tmdb_id, &o).await
+        for o in movie_opts(item, self.scan.enable4k_movie)? {
+            self.scan.process_movie(tmdb_id, &o).await?;
+        }
+        Ok(())
     }
 
     async fn process_show(&self, item: &Value) -> Result<()> {
@@ -796,5 +811,41 @@ mod tests {
             Some(1_700_000_000_000),
             "ms"
         );
+    }
+
+    #[test]
+    fn movie_versions_per_quality() -> Result<()> {
+        let item = |res: &[&str]| {
+            json!({
+                "ratingKey": "42",
+                "title": "Movie",
+                "Media": res.iter().map(|r| json!({ "videoResolution": r })).collect::<Vec<_>>(),
+            })
+        };
+        let qualities = |item: &Value, enable4k: bool| -> Result<Vec<bool>> {
+            Ok(movie_opts(item, enable4k)?.iter().map(|o| o.is4k).collect())
+        };
+        let both = item(&["1080", "4k"]);
+        assert_eq!(qualities(&both, true)?, [false, true], "both versions");
+        assert_eq!(qualities(&both, false)?, [false], "no 4K Radarr");
+        assert_eq!(qualities(&item(&["4k"]), true)?, [true], "4K only");
+        assert_eq!(qualities(&item(&["4k"]), false)?, [false], "4K as standard");
+        assert_eq!(qualities(&item(&["720"]), true)?, [false], "standard only");
+        assert_eq!(qualities(&item(&[]), true)?, [false], "no versions");
+        assert!(movie_opts(&json!({}), true).is_err(), "no Media");
+
+        let opts = movie_opts(&both, true)?;
+        let (first, second) = (opts.first(), opts.get(1));
+        let row = first
+            .and_then(|o| crate::jobs::scanmedia::new_movie(603, o, true))
+            .context("a new movie")?;
+        let row = crate::jobs::scanmedia::apply_movie(&row, second.context("4K")?).0;
+        assert_eq!((row.status, row.status4k), (5, 5), "both available");
+        assert_eq!(
+            (row.rating_key.as_deref(), row.rating_key4k.as_deref()),
+            (Some("42"), Some("42")),
+            "both rating keys"
+        );
+        Ok(())
     }
 }
