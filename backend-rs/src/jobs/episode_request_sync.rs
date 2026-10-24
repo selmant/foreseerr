@@ -445,14 +445,11 @@ fn sonarr_text(e: &Value, key: &str) -> Option<String> {
 
 /// `awaitingMonitor`. Watch-ahead children are monitored once. After that
 /// Sonarr's flag wins: an episode someone else unmonitored, or a completed
-/// child whose file was deleted on purpose, stays unmonitored.
-const fn awaits_monitor(
-    watch_ahead: bool,
-    has_file: bool,
-    status: i64,
-    monitored_at: bool,
-) -> bool {
-    watch_ahead && !has_file && status != COMPLETED && !monitored_at
+/// child whose file was deleted on purpose, stays unmonitored. Only
+/// children in the current window are monitored: older ones are behind the
+/// viewer and may have been cleaned up already.
+const fn awaits_monitor(in_window: bool, has_file: bool, status: i64, monitored_at: bool) -> bool {
+    in_window && !has_file && status != COMPLETED && !monitored_at
 }
 
 /// Whether a missing episode is a search candidate. A completed child lost
@@ -539,7 +536,6 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
             *request = fresh;
         }
     }
-    let watch_ahead = selection.as_deref() == Some("watchAhead");
     let now = now_ms();
     let mut unmonitored: Vec<Value> = Vec::new();
     let mut newly_monitored: Vec<i64> = Vec::new();
@@ -555,7 +551,8 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         let has_file = truthy(episode.get("hasFile"));
         let monitored = truthy(episode.get("monitored"));
         let monitored_at = child.monitored_at.is_some();
-        let awaiting = awaits_monitor(watch_ahead, has_file, child.status, monitored_at);
+        let in_window = window.as_ref().is_some_and(|w| w.contains(&child.tvdb_id));
+        let awaiting = awaits_monitor(in_window, has_file, child.status, monitored_at);
         if (is_new || awaiting) && !monitored {
             unmonitored.push(episode.get("id").cloned().unwrap_or(Value::Null));
         }
@@ -1053,7 +1050,7 @@ mod tests {
         );
         assert!(
             !awaits_monitor(false, false, APPROVED, false),
-            "not a watch-ahead request"
+            "behind the window, or not a watch-ahead request"
         );
     }
 

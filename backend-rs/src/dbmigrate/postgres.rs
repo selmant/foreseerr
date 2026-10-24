@@ -655,4 +655,11 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "UPDATE \"simkl_sync_state\" SET \"initialSyncComplete\" = false",
         ],
     },
+    Migration {
+        timestamp: 1_789_700_000_000,
+        name: "BackfillWatchAheadMonitoredAt1789700000000",
+        queries: &[
+            "UPDATE \"episode_request\" SET \"monitoredAt\" = \"createdAt\" WHERE \"monitoredAt\" IS NULL AND \"requestId\" IN (SELECT \"id\" FROM \"media_request\" WHERE \"episodeSelectionType\" = 'watchAhead')",
+        ],
+    },
 ];

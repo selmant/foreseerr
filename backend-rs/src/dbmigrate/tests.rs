@@ -115,6 +115,57 @@ async fn fresh_sqlite_matches_typeorm() -> Result<()> {
     Ok(())
 }
 
+/// `BackfillWatchAheadMonitoredAt1789700000000`: watch-ahead children from
+/// before `monitoredAt` existed are dated from when they were added.
+#[tokio::test]
+async fn backfills_watch_ahead_monitored_at() -> Result<()> {
+    let (dir, db) = temp_db("backfill")?;
+    let all = super::migrations(&db);
+    let before: Vec<_> = all
+        .iter()
+        .copied()
+        .take_while(|m| m.timestamp != 1_789_700_000_000)
+        .collect();
+    assert!(before.len() < all.len(), "backfill migration exists");
+    run(&db, &before).await?;
+    for sql in [
+        r#"INSERT INTO "media_request" ("id", "status", "type", "episodeSelectionType") VALUES (1, 2, 'tv', 'watchAhead'), (2, 2, 'tv', 'after')"#,
+        r#"INSERT INTO "episode_request" ("requestId", "tvdbId", "seasonNumber", "episodeNumber", "createdAt", "monitoredAt") VALUES
+            (1, 11, 1, 1, '2026-09-01 10:00:00', NULL),
+            (1, 12, 1, 2, '2026-09-01 10:00:00', '2026-10-20 10:00:00'),
+            (2, 21, 1, 1, '2026-09-01 10:00:00', NULL)"#,
+    ] {
+        db.execute(sql, &[]).await?;
+    }
+    run(&db, &all).await?;
+    let rows = db
+        .rows(
+            r#"SELECT "tvdbId", "monitoredAt" FROM "episode_request" ORDER BY "tvdbId""#,
+            &[],
+        )
+        .await?;
+    let dates: Vec<(i64, Value)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r.get("tvdbId").and_then(Value::as_i64).unwrap_or(0),
+                r.get("monitoredAt").cloned().unwrap_or(Value::Null),
+            )
+        })
+        .collect();
+    assert_eq!(
+        dates,
+        vec![
+            (11, Value::from("2026-09-01 10:00:00")),
+            (12, Value::from("2026-10-20 10:00:00")),
+            (21, Value::Null),
+        ],
+        "backfilled from createdAt, real dates kept, other selections untouched"
+    );
+    std::fs::remove_dir_all(&dir).context("cleaning up")?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn missing_table_is_a_fresh_database() -> Result<()> {
     let (dir, db) = temp_db("guard")?;
