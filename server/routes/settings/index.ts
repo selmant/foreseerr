@@ -1481,26 +1481,30 @@ settingsRoutes.get(
   }
 );
 
-settingsRoutes.post<{ cacheId: AvailableCacheIds }>(
-  '/cache/:cacheId/flush',
-  isAuthenticated(Permission.ADMIN),
-  (req, res, next) => {
-    const cache = cacheManager.getCache(req.params.cacheId);
-
-    if (cache) {
-      cache.flush();
-      return res.status(204).send();
-    }
-
-    next({ status: 404, message: 'Cache not found.' });
-  }
-);
-
+// The `browser`, `images` and `all` flushes are registered before
+// `/cache/:cacheId/flush`, which would otherwise match them first and answer
+// 404.
 settingsRoutes.post(
   '/cache/images/flush',
   isAuthenticated(Permission.ADMIN),
   async (_req, res, next) => {
     try {
+      await ImageProxy.clearAll();
+      resetLibraryImageCache();
+      return res.status(204).send();
+    } catch (error) {
+      return next({ status: 500, message: (error as Error).message });
+    }
+  }
+);
+
+settingsRoutes.post(
+  '/cache/all/flush',
+  isAuthenticated(Permission.ADMIN),
+  async (_req, res, next) => {
+    try {
+      for (const cache of Object.values(cacheManager.getAllCaches()))
+        cache.flush();
       await ImageProxy.clearAll();
       resetLibraryImageCache();
       return res.status(204).send();
@@ -1531,19 +1535,18 @@ settingsRoutes.post(
   }
 );
 
-settingsRoutes.post(
-  '/cache/all/flush',
+settingsRoutes.post<{ cacheId: AvailableCacheIds }>(
+  '/cache/:cacheId/flush',
   isAuthenticated(Permission.ADMIN),
-  async (_req, res, next) => {
-    try {
-      for (const cache of Object.values(cacheManager.getAllCaches()))
-        cache.flush();
-      await ImageProxy.clearAll();
-      resetLibraryImageCache();
+  (req, res, next) => {
+    const cache = cacheManager.getCache(req.params.cacheId);
+
+    if (cache) {
+      cache.flush();
       return res.status(204).send();
-    } catch (error) {
-      return next({ status: 500, message: (error as Error).message });
     }
+
+    next({ status: 404, message: 'Cache not found.' });
   }
 );
 

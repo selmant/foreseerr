@@ -893,6 +893,33 @@ describe('watch-ahead monitoring owned by Sonarr', () => {
     assert.equal(updated.watchAheadInactiveAt ?? null, null);
   });
 
+  it('does not monitor children behind the window that a cleanup tool deleted', async (t: TestContext) => {
+    // Children from before monitoredAt existed: watched, then deleted.
+    const created = await createWatchAheadRequest(1, {
+      101: {},
+      102: {},
+      103: {},
+    });
+    const { monitor, search } = mockServices(t, {
+      played: new Set([101, 102, 103]),
+      episodes: [
+        sonarrEpisode(1, 101, 1, false),
+        sonarrEpisode(2, 102, 2, false),
+        sonarrEpisode(3, 103, 3, false),
+        sonarrEpisode(4, 104, 4, false),
+      ],
+    });
+
+    await episodeRequestSync.run();
+    const updated = await loadRequest(created.id);
+    assert.deepEqual(monitor.mock.calls[0].arguments[0], [4]);
+    assert.deepEqual(search.mock.calls[0].arguments[0], [4]);
+    for (const tvdbId of [101, 102, 103]) {
+      assert.equal(child(updated, tvdbId).monitoredAt ?? null, null);
+    }
+    assert.ok(child(updated, 104).monitoredAt);
+  });
+
   it('does not mark episodes as monitored when Sonarr rejects the update', async (t: TestContext) => {
     const created = await createWatchAheadRequest(1, {
       101: { status: MediaRequestStatus.COMPLETED },

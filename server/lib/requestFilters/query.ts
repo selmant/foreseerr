@@ -163,3 +163,17 @@ export const hasBrowseQueryFilters = (filters: BrowseQueryFilters): boolean =>
   needsTmdbBrowseFilters(filters) ||
   needsMdblistBrowseFilters(filters) ||
   filters.includeNoRating === false;
+
+/**
+ * Filters for post-fetch passes over TMDB Discover summary rows. Those rows
+ * carry no runtime or series status; TMDB applies `with_runtime` and
+ * `with_status` upstream, so checking them here would reject every title.
+ */
+export const parseTmdbDiscoverQueryFilters = (
+  query: QueryInput
+): BrowseQueryFilters => ({
+  ...parseBrowseQueryFilters(query),
+  runtimeGte: null,
+  runtimeLte: null,
+  seriesStatusIds: [],
+});

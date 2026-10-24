@@ -1,5 +1,8 @@
 import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
-import { mapWithConcurrency } from '@server/lib/concurrency';
+import {
+  PROVIDER_ROW_CONCURRENCY,
+  mapWithConcurrency,
+} from '@server/lib/concurrency';
 import { hasDiscoverTmdbId } from '@server/lib/discover/unmapped';
 import { correctionFor } from '@server/lib/mapping/resolutions';
 import { resolveTmdb } from '@server/lib/mapping/resolve';
@@ -544,7 +547,13 @@ export async function resolveSimklTmdbId(
       ids: preferredIds,
     });
   }
-  if (tvdb && declaredType === 'tv') {
+  // A TVDB answer can only change the outcome when the IMDB one has not
+  // already settled it: agreeing with Simkl's own id, or (without one) naming
+  // a single record. Skipping it then saves a `/find` per tile.
+  const settledByImdb = corroborating.some(({ ids }) =>
+    tmdb ? ids.includes(tmdb) : ids.length === 1
+  );
+  if (tvdb && declaredType === 'tv' && !settledByImdb) {
     corroborating.push({
       sourceKey: 'tmdb-find:tvdb',
       mediaType: 'tv',
@@ -671,22 +680,26 @@ export async function resolveSimklCandidates(
   candidates: SimklCandidate[],
   resolvers: SimklTmdbResolvers
 ): Promise<ResolvedSimklItem[]> {
-  return mapWithConcurrency(candidates, 2, async (candidate) => {
-    let resolution: SimklTmdbResolution;
-    try {
-      resolution = await resolveSimklTmdbId(candidate, resolvers);
-    } catch {
-      resolution = UNRESOLVED;
+  return mapWithConcurrency(
+    candidates,
+    PROVIDER_ROW_CONCURRENCY,
+    async (candidate) => {
+      let resolution: SimklTmdbResolution;
+      try {
+        resolution = await resolveSimklTmdbId(candidate, resolvers);
+      } catch {
+        resolution = UNRESOLVED;
+      }
+      const tmdbId = resolution.tmdbId;
+      const mediaType = resolution.mediaType ?? candidate.item.mediaType;
+      const item: WatchlistItem = hasDiscoverTmdbId(tmdbId)
+        ? { ...candidate.item, tmdbId, id: tmdbId, mediaType }
+        : {
+            ...candidate.item,
+            id: Number(candidate.item.sourceId) || 0,
+            tmdbId: undefined,
+          };
+      return { item, resolution, candidate };
     }
-    const tmdbId = resolution.tmdbId;
-    const mediaType = resolution.mediaType ?? candidate.item.mediaType;
-    const item: WatchlistItem = hasDiscoverTmdbId(tmdbId)
-      ? { ...candidate.item, tmdbId, id: tmdbId, mediaType }
-      : {
-          ...candidate.item,
-          id: Number(candidate.item.sourceId) || 0,
-          tmdbId: undefined,
-        };
-    return { item, resolution, candidate };
-  });
+  );
 }

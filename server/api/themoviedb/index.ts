@@ -146,8 +146,25 @@ type ExternalIdLookup =
   | { externalId: string; type: 'imdb'; language?: string }
   | { externalId: number; type: 'tvdb'; language?: string };
 
+const MOVIE_DETAILS_APPEND =
+  'credits,external_ids,videos,keywords,release_dates,watch/providers';
+
 const TV_DETAILS_APPEND =
   'aggregate_credits,credits,external_ids,keywords,videos,content_ratings,watch/providers';
+
+/** The title-level fields every `/movie/{id}` or `/tv/{id}` answer carries. */
+export interface TmdbTitleSummary {
+  id: number;
+  title?: string;
+  original_title?: string;
+  release_date?: string;
+  name?: string;
+  original_name?: string;
+  first_air_date?: string;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
+  vote_average?: number;
+}
 
 const stripUnreadTvCredits = <T>(data: T): T => {
   const show = data as {
@@ -404,6 +421,48 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
     }
   };
 
+  /**
+   * The bare `/movie/{id}` or `/tv/{id}` record, without appends: enough for a
+   * list tile (poster, backdrop, date, score) and for an existence check.
+   *
+   * A full `getMovie`/`getTvShow` answer already in the cache is reused, since
+   * it carries the same fields. Otherwise the request shares its cache entry
+   * (and its 12-hour TTL) with `getMovieBrowseMetadata`/`getTvBrowseMetadata`.
+   */
+  public getTitleSummary = async ({
+    mediaType,
+    tmdbId,
+    language = this.locale,
+  }: {
+    mediaType: 'movie' | 'tv';
+    tmdbId: number;
+    language?: string;
+  }): Promise<TmdbTitleSummary> => {
+    const endpoint = `/${mediaType}/${tmdbId}`;
+    const full = this.getCached<TmdbTitleSummary>(endpoint, {
+      params: {
+        language,
+        append_to_response:
+          mediaType === 'movie' ? MOVIE_DETAILS_APPEND : TV_DETAILS_APPEND,
+        include_video_language: language,
+      },
+    });
+    if (full) {
+      return full;
+    }
+    try {
+      return await this.get<TmdbTitleSummary>(
+        endpoint,
+        { params: { language } },
+        43200
+      );
+    } catch (e) {
+      throw new Error(`[TMDB] Failed to fetch title summary: ${e.message}`, {
+        cause: e,
+      });
+    }
+  };
+
   public getMovie = async ({
     movieId,
     language = this.locale,
@@ -417,8 +476,7 @@ class TheMovieDb extends ExternalAPI implements TvShowProvider {
         {
           params: {
             language,
-            append_to_response:
-              'credits,external_ids,videos,keywords,release_dates,watch/providers',
+            append_to_response: MOVIE_DETAILS_APPEND,
             include_video_language: language,
           },
         },

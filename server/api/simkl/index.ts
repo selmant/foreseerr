@@ -133,14 +133,15 @@ type SimklOptions = {
   tokenExpiresAt?: number;
   /** Only set for V2 links, which carry a refresh token. */
   refreshTokens?: (staleAccessToken: string) => Promise<SimklTokenState>;
-  onUnauthorized?: () => Promise<void>;
+  /** Gets the access token the rejected request carried. */
+  onUnauthorized?: (rejectedAccessToken?: string) => Promise<void>;
 };
 
 /** Small client deliberately serializes calls: Simkl limits uncached reads to 10/s. */
 export default class SimklAPI extends ExternalAPI {
   private readonly clientId: string;
   private readonly rawAxios: AxiosInstance;
-  private readonly onUnauthorized?: () => Promise<void>;
+  private readonly onUnauthorized?: SimklOptions['onUnauthorized'];
   private readonly refreshTokens?: SimklOptions['refreshTokens'];
   private accessToken?: string;
   private tokenExpiresAt?: number;
@@ -228,6 +229,7 @@ export default class SimklAPI extends ExternalAPI {
     await this.ensureFreshToken();
     let refreshedAfterUnauthorized = false;
     for (let attempt = 0; ; attempt++) {
+      const sentAccessToken = this.accessToken;
       try {
         const response =
           method === 'get'
@@ -252,7 +254,7 @@ export default class SimklAPI extends ExternalAPI {
         if (status === 401) {
           if (this.onUnauthorized && !this.unauthorizedHandled) {
             this.unauthorizedHandled = true;
-            await this.onUnauthorized();
+            await this.onUnauthorized(sentAccessToken);
           }
           throw new SimklUnauthorizedError();
         }

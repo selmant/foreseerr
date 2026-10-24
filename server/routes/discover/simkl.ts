@@ -11,6 +11,7 @@ import type {
 } from '@server/interfaces/api/discoverInterfaces';
 import { annotateProviderActiveRequests } from '@server/lib/discover/mediaResults';
 import { withTmdbPosters } from '@server/lib/discover/posters';
+import { cachedProviderRow } from '@server/lib/discover/rowCache';
 import { createTmdbWithRegionLanguage } from '@server/lib/discover/tmdb';
 import {
   hasDiscoverTmdbId,
@@ -19,6 +20,7 @@ import {
 } from '@server/lib/discover/unmapped';
 import { confirmTmdbId } from '@server/lib/discover/validity';
 import { recordMiss } from '@server/lib/mapping/resolutions';
+import { tmdbFind } from '@server/lib/mapping/tmdb';
 import {
   catalogCandidates,
   hydrateSimklCandidates,
@@ -85,16 +87,11 @@ export const tmdbResolvers = (tmdb: TheMovieDb): SimklTmdbResolvers => ({
   findByExternalId: async (source, externalId, mediaType) => {
     if (source === 'tvdb' && mediaType === 'movie') return [];
     try {
-      const found =
-        source === 'imdb'
-          ? await tmdb.getByExternalId({ externalId, type: 'imdb' })
-          : await tmdb.getByExternalId({
-              externalId: Number(externalId),
-              type: 'tvdb',
-            });
-      const results =
-        mediaType === 'movie' ? found.movie_results : found.tv_results;
-      return results.map((result) => result.id).filter((id) => id > 0);
+      // Through the mapping layer's `/find`, so an id TMDB does not know is
+      // remembered for hours instead of being asked again on every render.
+      const found = await tmdbFind(source, externalId, tmdb);
+      const results = mediaType === 'movie' ? found.movies : found.shows;
+      return results.filter((id) => id > 0);
     } catch {
       return [];
     }
@@ -153,11 +150,13 @@ function recordSimklGaps(
   }
 }
 
-async function mappedCatalogPage(
+/**
+ * One catalog page resolved and drawn, before anything request-specific: the
+ * gap sightings and `hideUnmapped` run on every serve (`serveCatalogPage`).
+ */
+async function resolveCatalogPage(
   candidates: SimklCandidate[],
   page: number,
-  hideUnmapped: boolean,
-  discoverSource: string,
   tmdb: TheMovieDb = createTmdbWithRegionLanguage()
 ) {
   const paged = paginateWatchlist(candidates, page);
@@ -166,13 +165,36 @@ async function mappedCatalogPage(
     loadSimklTitle(new SimklAPI())
   );
   const resolved = await resolveSimklCandidates(hydrated, tmdbResolvers(tmdb));
-  recordSimklGaps(resolved, discoverSource);
   return {
     page: paged.page,
     hasMore: paged.hasMore,
-    results: await toSimklWatchlistItems(resolved, hideUnmapped, tmdb),
+    resolved,
+    // Art is per tile, so drawing every tile and dropping some afterwards
+    // leaves the same tiles as dropping first.
+    tiles: await withTmdbPosters(withMappingState(resolved), tmdb),
   };
 }
+
+async function serveCatalogPage(
+  stored: Awaited<ReturnType<typeof resolveCatalogPage>>,
+  hideUnmapped: boolean,
+  discoverSource: string
+) {
+  recordSimklGaps(stored.resolved, discoverSource);
+  return {
+    page: stored.page,
+    hasMore: stored.hasMore,
+    results: await annotateProviderActiveRequests(
+      omitUnmappedDiscoverItems(stored.tiles, hideUnmapped)
+    ),
+  };
+}
+
+/**
+ * Nothing in front of the trending catalog caches it, so its row is never
+ * fresh: every view gets the last page at once and refreshes it.
+ */
+const SIMKL_TRENDING_FRESH_SECONDS = 0;
 
 const trendingFile = (mediaType: string, period: string): string => {
   const window = period === 'day' ? 'today' : period;
@@ -264,13 +286,22 @@ simklDiscoverRoutes.get('/trending', async (req, res, next) => {
     const period = ['day', 'week', 'month'].includes(String(req.query.period))
       ? String(req.query.period)
       : 'week';
-    const payload = await new SimklAPI().getCdnCatalog(
-      trendingFile(type, period)
+    const stored = await cachedProviderRow(
+      `simkl/trending|${type}|${period}|page:${page}`,
+      SIMKL_TRENDING_FRESH_SECONDS,
+      async () =>
+        resolveCatalogPage(
+          catalogCandidates(
+            [await new SimklAPI().getCdnCatalog(trendingFile(type, period))],
+            type,
+            'simkl-public'
+          ),
+          page
+        )
     );
     return res.status(200).json({
-      ...(await mappedCatalogPage(
-        catalogCandidates([payload], type, 'simkl-public'),
-        page,
+      ...(await serveCatalogPage(
+        stored,
         shouldHideUnmappedFromQuery(req.query),
         `simkl/trending/${type}`
       )),

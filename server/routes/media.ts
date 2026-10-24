@@ -269,8 +269,9 @@ mediaRoutes.delete(
       }
 
       const specificServiceId = is4k ? media.serviceId4k : media.serviceId;
+      // Server ids start at 0, so a stored 0 is a real server, not "unset".
       if (
-        specificServiceId &&
+        specificServiceId != null &&
         specificServiceId >= 0 &&
         serviceSettings?.id !== specificServiceId
       ) {

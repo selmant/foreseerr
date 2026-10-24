@@ -62,6 +62,9 @@ dist
 # generated test report (bun test, CI=true)
 report.xml
 
+# Python smoke-test imports
+__pycache__/
+
 # sqlite journal
 config/db/db.sqlite3-journal
 

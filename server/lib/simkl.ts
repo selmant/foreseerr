@@ -64,9 +64,10 @@ export async function createSimklUserClient(userId: number): Promise<SimklAPI> {
     refreshTokens: settings.simklRefreshToken
       ? (stale) => refreshUserSimklTokens(userId, stale)
       : undefined,
-    onUnauthorized: async () => {
-      await clearUserSimklCredentials(settings.id);
-      await clearUserSimklSyncCache(userId);
+    // Unless the user relinked since the rejected request was sent.
+    onUnauthorized: async (rejectedAccessToken) => {
+      if (await clearUserSimklCredentials(settings.id, rejectedAccessToken))
+        await clearUserSimklSyncCache(userId);
     },
   });
 }

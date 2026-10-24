@@ -63,6 +63,8 @@ export interface TmdbProbe {
   releaseDate?: string;
   /** `YYYY-MM-DD`; set for series. */
   firstAirDate?: string;
+  /** TMDB `vote_average`, when the record carries one. */
+  voteAverage?: number;
 }
 
 const nonEmpty = (value: unknown): string | undefined =>
@@ -101,10 +103,9 @@ export async function tmdbRecord(
   const request = `exists:${mediaType}:${tmdbId}`;
   if (negative.has(request)) return { alive: false };
   try {
-    const record =
-      mediaType === 'movie'
-        ? await tmdb.getMovie({ movieId: tmdbId })
-        : await tmdb.getTvShow({ tvId: tmdbId });
+    // The bare record: poster, dates, and score need no appends, and a full
+    // details answer already cached is reused by `getTitleSummary`.
+    const record = await tmdb.getTitleSummary({ mediaType, tmdbId });
     const title =
       'title' in record ? record.title : 'name' in record ? record.name : '';
     const originalTitle =
@@ -119,6 +120,11 @@ export async function tmdbRecord(
     const posterPath = nonEmpty(record.poster_path);
     const backdropPath = nonEmpty(record.backdrop_path);
     const date = nonEmpty(released);
+    const voteAverage =
+      typeof record.vote_average === 'number' &&
+      Number.isFinite(record.vote_average)
+        ? record.vote_average
+        : undefined;
     return {
       alive: true,
       title,
@@ -131,6 +137,7 @@ export async function tmdbRecord(
           ? { releaseDate: date }
           : { firstAirDate: date }
         : {}),
+      ...(voteAverage !== undefined ? { voteAverage } : {}),
     };
   } catch (error) {
     // Only a confirmed 404 is a dead id. Timeouts, 429, 5xx, and credential

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { sliderTarget } from './sliderNavigation';
+import { sliderTarget, titlesOverflow } from './sliderNavigation';
 
 describe('shelf navigation', () => {
   it('advances a resume card on a phone narrower than the card', () => {
@@ -49,6 +49,39 @@ describe('shelf navigation', () => {
         direction: 'next',
       }),
       0
+    );
+  });
+});
+
+describe('See More card', () => {
+  it('stays hidden when every title fits on the shelf', () => {
+    assert.equal(
+      titlesOverflow({
+        scrollWidth: 800,
+        viewportWidth: 1000,
+        seeMoreWidth: 0,
+      }),
+      false
+    );
+  });
+  it('appears once the titles overflow the shelf', () => {
+    assert.equal(
+      titlesOverflow({
+        scrollWidth: 1400,
+        viewportWidth: 1000,
+        seeMoreWidth: 0,
+      }),
+      true
+    );
+  });
+  it('does not count its own width as overflow', () => {
+    assert.equal(
+      titlesOverflow({
+        scrollWidth: 1150,
+        viewportWidth: 1000,
+        seeMoreWidth: 200,
+      }),
+      false
     );
   });
 });

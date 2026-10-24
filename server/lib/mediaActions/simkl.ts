@@ -3,6 +3,7 @@ import { SimklSyncItem } from '@server/entity/SimklSyncItem';
 import { getSettings } from '@server/lib/settings';
 import { createSimklUserClient, getUserSimklSettings } from '@server/lib/simkl';
 import { syncSimklUser } from '@server/lib/simklSync';
+import { IsNull, Not } from 'typeorm';
 import { providerRatingToStars, ratingStarsToProvider } from './score';
 import {
   SIMKL_MEDIA_ACTION_CAPABILITIES,
@@ -37,13 +38,22 @@ export class SimklMediaActionProvider implements MediaActionProvider {
     ref: MediaItemRef
   ): Promise<SimklSyncItem | undefined> {
     await syncSimklUser(userId);
+    const title = { user: { id: userId }, tmdbId: ref.tmdbId };
+    // Sync keeps anime in its own type; films among them are `movie` anime.
+    const where =
+      ref.mediaType === 'movie'
+        ? [
+            { ...title, simklType: 'movie' as const },
+            { ...title, simklType: 'anime' as const, animeType: 'movie' },
+          ]
+        : [
+            { ...title, simklType: 'show' as const },
+            { ...title, simklType: 'anime' as const, animeType: IsNull() },
+            { ...title, simklType: 'anime' as const, animeType: Not('movie') },
+          ];
     return (
       (await getRepository(SimklSyncItem).findOne({
-        where: {
-          user: { id: userId },
-          tmdbId: ref.tmdbId,
-          simklType: ref.mediaType === 'movie' ? 'movie' : 'show',
-        },
+        where,
         order: { lastWatchedAt: 'DESC' },
       })) ?? undefined
     );

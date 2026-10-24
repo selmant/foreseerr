@@ -61,7 +61,14 @@ class TelegramAgent
   }
 
   private escapeText(text: string | undefined): string {
-    return text ? text.replace(/[_*[\]()~>#+=|{}.!-]/gi, (x) => '\\' + x) : '';
+    return text
+      ? text.replace(/[_*[\]()~`>#+=|{}.!\\-]/g, (x) => '\\' + x)
+      : '';
+  }
+
+  /** Inside a MarkdownV2 link's `(...)`, only `)` and `\` are reserved. */
+  private escapeUrl(url: string): string {
+    return url.replace(/[)\\]/g, (x) => '\\' + x);
   }
 
   private getNotificationPayload(
@@ -136,7 +143,7 @@ class TelegramAgent
           payload.issue ? globalMessages.viewIssue : globalMessages.viewMedia,
           { applicationTitle }
         )
-      )}\]\(${url}\)`;
+      )}\]\(${this.escapeUrl(url)}\)`;
     }
     /* eslint-enable */
 

@@ -30,6 +30,14 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/**
+ * Per-item work on one page of a provider row (Trakt, AniList, Simkl, MDBList):
+ * mapping lookups, TMDB confirm probes, tile art. TMDB answers in ~70 ms with a
+ * handful of requests in flight and slows sharply past ~20, so a 20-item page
+ * runs in a few waves rather than one burst or one item at a time.
+ */
+export const PROVIDER_ROW_CONCURRENCY = 8;
+
 /** Bound legacy external-provider enrichment when no batch API is available. */
 export const EXTERNAL_ENRICHMENT_CONCURRENCY = 2;
 

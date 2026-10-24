@@ -692,6 +692,16 @@ requestRoutes.put<{ requestId: string }>(
           });
         }
 
+        const quota = await requestUser.getQuota();
+        if (
+          !request.ignoreQuota &&
+          quota.tv.limit &&
+          filteredSeasons.length >
+            (quota.tv.remaining ?? 0) + request.tvQuotaUnits
+        ) {
+          return next({ status: 403, message: 'Series Quota exceeded.' });
+        }
+
         const newSeasons = filteredSeasons.filter(
           (sn) => !request.seasons.map((s) => s.seasonNumber).includes(sn)
         );
