@@ -225,9 +225,11 @@ class EpisodeRequestSync {
       const isNewFutureEpisode = additionTvdbIds.has(child.tvdbId);
       // Watch-ahead children are monitored once. After that Sonarr's flag
       // wins: an episode someone else unmonitored, or a completed child
-      // whose file was deleted on purpose, stays unmonitored.
+      // whose file was deleted on purpose, stays unmonitored. Only episodes
+      // in the current window are monitored: older children are behind the
+      // viewer and may have been cleaned up already.
       const awaitingMonitor =
-        request.episodeSelectionType === 'watchAhead' &&
+        !!watchAheadWindow?.has(child.tvdbId) &&
         !episode.hasFile &&
         child.status !== MediaRequestStatus.COMPLETED &&
         !child.monitoredAt;
