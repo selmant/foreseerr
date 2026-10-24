@@ -24,17 +24,30 @@ describe('BackfillWatchAheadMonitoredAt', () => {
       migration.up(manager.queryRunner as never)
     );
 
-    const rows: { tvdbId: number; monitoredAt: string | null }[] =
-      await dataSource.query(
-        `SELECT "tvdbId", "monitoredAt" FROM "episode_request" WHERE "requestId" IN (9001, 9002) ORDER BY "tvdbId"`
-      );
+    const dates = async () => {
+      const rows: { tvdbId: number; monitoredAt: string | null }[] =
+        await dataSource.query(
+          `SELECT "tvdbId", "monitoredAt" FROM "episode_request" WHERE "requestId" IN (9001, 9002) ORDER BY "tvdbId"`
+        );
+      return rows.map((row) => [row.tvdbId, row.monitoredAt]);
+    };
+    assert.deepEqual(await dates(), [
+      [11, '2026-09-01 10:00:00'],
+      [12, '2026-10-20 10:00:00'],
+      [21, null],
+    ]);
+
+    await dataSource.transaction((manager) =>
+      migration.down(manager.queryRunner as never)
+    );
     assert.deepEqual(
-      rows.map((row) => [row.tvdbId, row.monitoredAt]),
+      await dates(),
       [
-        [11, '2026-09-01 10:00:00'],
+        [11, null],
         [12, '2026-10-20 10:00:00'],
         [21, null],
-      ]
+      ],
+      'down clears only backfilled dates'
     );
   });
 });
