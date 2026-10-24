@@ -1,13 +1,4 @@
-import {
-  MediaRequestStatus,
-  MediaStatus,
-  MediaType,
-} from '@server/constants/media';
-import dataSource, { getRepository } from '@server/datasource';
-import EpisodeRequest from '@server/entity/EpisodeRequest';
-import Media from '@server/entity/Media';
-import { MediaRequest } from '@server/entity/MediaRequest';
-import { User } from '@server/entity/User';
+import dataSource from '@server/datasource';
 import { BackfillWatchAheadMonitoredAt1789700000000 } from '@server/migration/sqlite/1789700000000-BackfillWatchAheadMonitoredAt';
 import { setupTestDb } from '@server/test/db';
 import assert from 'node:assert/strict';
@@ -16,72 +7,34 @@ import { describe, it } from 'node:test';
 setupTestDb();
 
 describe('BackfillWatchAheadMonitoredAt', () => {
-  const createRequest = async (
-    tmdbId: number,
-    episodeSelectionType: 'watchAhead' | 'after'
-  ) => {
-    const user = await getRepository(User).findOneOrFail({
-      where: { email: 'admin@seerr.dev' },
-    });
-    const media = await getRepository(Media).save(
-      new Media({
-        tmdbId,
-        mediaType: MediaType.TV,
-        status: MediaStatus.PROCESSING,
-        status4k: MediaStatus.UNKNOWN,
-      })
-    );
-    return getRepository(MediaRequest).save(
-      new MediaRequest({
-        media,
-        requestedBy: user,
-        type: MediaType.TV,
-        status: MediaRequestStatus.APPROVED,
-        is4k: false,
-        seasons: [],
-        episodeSelectionType,
-        watchAheadCount: 2,
-        tvQuotaUnits: 1,
-        episodes: [1, 2].map(
-          (episodeNumber) =>
-            new EpisodeRequest({
-              tvdbId: tmdbId * 10 + episodeNumber,
-              seasonNumber: 1,
-              episodeNumber,
-              status: MediaRequestStatus.APPROVED,
-            })
-        ),
-      })
-    );
-  };
-
-  const children = (requestId: number) =>
-    getRepository(EpisodeRequest).find({
-      where: { request: { id: requestId } },
-      order: { episodeNumber: 'ASC' },
-    });
-
   it('dates watch-ahead children from when they were added and keeps real dates', async () => {
-    const watchAhead = await createRequest(92001, 'watchAhead');
-    const ongoing = await createRequest(92002, 'after');
-    const [first, second] = await children(watchAhead.id);
-    const monitoredAt = new Date('2026-10-20T10:00:00Z');
-    await getRepository(EpisodeRequest).update(second.id, { monitoredAt });
+    // Raw rows: saving entities would run the request subscriber.
+    await dataSource.query(
+      `INSERT INTO "media_request" ("id", "status", "type", "episodeSelectionType") VALUES (9001, 2, 'tv', 'watchAhead'), (9002, 2, 'tv', 'after')`
+    );
+    await dataSource.query(
+      `INSERT INTO "episode_request" ("requestId", "tvdbId", "seasonNumber", "episodeNumber", "createdAt", "monitoredAt") VALUES
+        (9001, 11, 1, 1, '2026-09-01 10:00:00', NULL),
+        (9001, 12, 1, 2, '2026-09-01 10:00:00', '2026-10-20 10:00:00'),
+        (9002, 21, 1, 1, '2026-09-01 10:00:00', NULL)`
+    );
 
     const migration = new BackfillWatchAheadMonitoredAt1789700000000();
     await dataSource.transaction((manager) =>
       migration.up(manager.queryRunner as never)
     );
 
-    const [backfilled, kept] = await children(watchAhead.id);
-    assert.equal(
-      backfilled.monitoredAt?.getTime(),
-      first.createdAt.getTime(),
-      'backfilled from createdAt'
+    const rows: { tvdbId: number; monitoredAt: string | null }[] =
+      await dataSource.query(
+        `SELECT "tvdbId", "monitoredAt" FROM "episode_request" WHERE "requestId" IN (9001, 9002) ORDER BY "tvdbId"`
+      );
+    assert.deepEqual(
+      rows.map((row) => [row.tvdbId, row.monitoredAt]),
+      [
+        [11, '2026-09-01 10:00:00'],
+        [12, '2026-10-20 10:00:00'],
+        [21, null],
+      ]
     );
-    assert.equal(kept.monitoredAt?.getTime(), monitoredAt.getTime());
-    for (const child of await children(ongoing.id)) {
-      assert.equal(child.monitoredAt ?? null, null, 'only watch-ahead');
-    }
   });
 });
