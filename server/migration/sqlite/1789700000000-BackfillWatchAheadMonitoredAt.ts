@@ -12,7 +12,11 @@ export class BackfillWatchAheadMonitoredAt1789700000000 implements MigrationInte
     );
   }
 
-  public async down(): Promise<void> {
-    // The backfilled dates cannot be told apart from real ones.
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    // A backfilled row is the only kind whose monitoredAt equals createdAt
+    // exactly: the sync writes monitoredAt later, with its own clock.
+    await queryRunner.query(
+      `UPDATE "episode_request" SET "monitoredAt" = NULL WHERE "monitoredAt" = "createdAt" AND "requestId" IN (SELECT "id" FROM "media_request" WHERE "episodeSelectionType" = 'watchAhead')`
+    );
   }
 }
