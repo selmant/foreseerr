@@ -138,11 +138,13 @@ describe('Provider row title cards', () => {
     assert.ok(markup.includes('>89%<'));
   });
 
-  it('leaves the TMDB score to the details load when the row has none', () => {
-    assert.equal(
-      render(traktTile).includes('data-testid="rating-badges"'),
-      false
-    );
+  it('paints a row without a score before its details load fills it', () => {
+    // Such a row is observed and loads its details as it scrolls into view,
+    // not on hover; the tile itself is on screen from the first paint.
+    const markup = render(traktTile);
+
+    assert.ok(markup.includes('data-testid="title-card"'));
+    assert.equal(markup.includes('data-testid="rating-badges"'), false);
   });
 
   it('keeps the placeholder and lazy details load for rows without a TMDB poster', () => {

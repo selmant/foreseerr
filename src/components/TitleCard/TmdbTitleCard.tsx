@@ -4,7 +4,9 @@ import {
   unmappedHideKey,
   useHiddenUnmappedTitles,
 } from '@app/hooks/useHiddenUnmappedTitles';
+import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
+import { rowCoversIdleRatingBadges } from '@app/utils/ratingBadges';
 import type { RatingResponse } from '@server/api/ratings';
 import type {
   DiscoverItemSource,
@@ -46,7 +48,8 @@ export interface TmdbTitleCardProps {
   mappingState?: DiscoverMappingInfo;
   /**
    * Row payload from a provider list. With a TMDB poster the card paints from
-   * these and loads `/movie/:id` or `/tv/:id` only once its details are opened.
+   * these and loads `/movie/:id` or `/tv/:id` once its details are opened, or
+   * as it scrolls into view when the row lacks what the idle badges show.
    */
   posterPath?: string;
   releaseDate?: string;
@@ -142,19 +145,29 @@ const TmdbTitleCard = ({
   mediaInfo,
 }: TmdbTitleCardProps) => {
   const { hasPermission } = useUser();
+  const { currentSettings } = useSettings();
   const { isHidden, hide, hideAllUnmapped } = useHiddenUnmappedTitles();
   const hideKey = unmappedHideKey(source, sourceId, ratingKey);
   const resolvedTmdbId = hasTmdbId(tmdbId) ? tmdbId : undefined;
   const rowPosterPath = tmdbPosterPath(posterPath);
-  // The row already carries everything the closed card shows; details only
-  // add the overview of the open card, and the TMDB score when the row has none.
+  // The row carries everything the closed card shows, so details only add
+  // the overview of the open card. A row without the score or ratings the
+  // idle badges show still paints at once, but gets its details as it scrolls
+  // into view: hovering must not be what makes a poster's ratings appear.
   const paintFromRow = Boolean(
     resolvedTmdbId && type && originalTitle && rowPosterPath && !libraryMode
   );
+  const detailsOnView =
+    !paintFromRow ||
+    !rowCoversIdleRatingBadges(
+      { tmdbRating: voteAverage, ratings },
+      currentSettings.ratingBadges,
+      currentSettings.mdblistConfigured
+    );
 
   const { ref, inView } = useInView({
     triggerOnce: true,
-    skip: paintFromRow,
+    skip: !detailsOnView,
   });
   const [detailsWanted, setDetailsWanted] = useState(false);
   const detailsTimer = useRef<number | undefined>(undefined);
@@ -175,7 +188,7 @@ const TmdbTitleCard = ({
       : `/api/v1/tv/${resolvedTmdbId}`
     : null;
   const { data: title, error } = useSWR<MovieDetails | TvDetails>(
-    (paintFromRow ? detailsWanted : inView) && url ? url : null
+    (detailsWanted || (detailsOnView && inView)) && url ? url : null
   );
 
   const showUnmapped =
@@ -208,30 +221,32 @@ const TmdbTitleCard = ({
     // Trakt, ...) can differ from the TMDB one, and the card must not rename
     // itself on hover.
     return (
-      <TitleCard
-        id={resolvedTmdbId}
-        isAddedToWatchlist={
-          title?.mediaInfo?.watchlists?.length || isAddedToWatchlist
-        }
-        image={rowPosterPath}
-        status={title?.mediaInfo?.status ?? mediaInfo?.status}
-        summary={title?.overview}
-        title={originalTitle ?? ''}
-        userScore={title?.voteAverage ?? voteAverage}
-        ratings={ratings ?? title?.ratings}
-        year={
-          (type === 'movie' ? releaseDate : firstAirDate) ??
-          (title
-            ? isMovie(title)
-              ? title.releaseDate
-              : title.firstAirDate
-            : undefined)
-        }
-        mediaType={type}
-        canExpand={canExpand}
-        mutateParent={mutateParent}
-        onShowDetailChange={onShowDetailChange}
-      />
+      <div ref={ref}>
+        <TitleCard
+          id={resolvedTmdbId}
+          isAddedToWatchlist={
+            title?.mediaInfo?.watchlists?.length || isAddedToWatchlist
+          }
+          image={rowPosterPath}
+          status={title?.mediaInfo?.status ?? mediaInfo?.status}
+          summary={title?.overview}
+          title={originalTitle ?? ''}
+          userScore={title?.voteAverage ?? voteAverage}
+          ratings={ratings ?? title?.ratings}
+          year={
+            (type === 'movie' ? releaseDate : firstAirDate) ??
+            (title
+              ? isMovie(title)
+                ? title.releaseDate
+                : title.firstAirDate
+              : undefined)
+          }
+          mediaType={type}
+          canExpand={canExpand}
+          mutateParent={mutateParent}
+          onShowDetailChange={onShowDetailChange}
+        />
+      </div>
     );
   }
 
