@@ -1,13 +1,9 @@
-//! The two managed runtimes, for a standalone process.
+//! The two managed runtimes.
 //!
 //! They are the Jellyfin plugin sidecar (`FORESEERR_PLUGIN`,
 //! `server/lib/pluginMode.ts`, `server/lib/jellyfinHostBootstrap.ts`) and
 //! the desktop child (`FORESEERR_RUNTIME=desktop`,
 //! `server/lib/desktopRuntime.ts`, `desktopState.ts`, `desktopLogin.ts`).
-//!
-//! With Node behind this server both modes stay with Node (every route is
-//! forwarded, see [`crate::env::Env::native_routes`]); everything here only
-//! acts in standalone mode.
 //!
 //! - [`process`]: the listener (exact IPv4 loopback), the readiness records
 //!   on stdout, the desktop control channel on stdin, signals and the exit
@@ -83,10 +79,10 @@ pub fn desktop_runtime() -> bool {
     MODE.desktop
 }
 
-/// Either managed runtime, answered by this process (standalone only).
+/// Either managed runtime.
 #[must_use]
 pub fn active() -> bool {
-    crate::standalone::enabled() && (MODE.plugin || MODE.desktop)
+    MODE.plugin || MODE.desktop
 }
 
 /// `pluginPublicBasePath()`: where the plugin mounts the app, `""`

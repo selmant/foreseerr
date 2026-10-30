@@ -5,13 +5,13 @@
 //! `OpenAPI` validator, no cookies on the answer.
 //!
 //! Paths Express would decode (`%`), normalise (`.`/`..`, empty segments,
-//! a trailing slash) or route elsewhere go to Node, as does `HEAD`.
+//! a trailing slash) or route elsewhere get the fallback answer, as do
+//! methods other than `GET` and `HEAD`.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{Request, State};
 use axum::http::request::Parts;
 use axum::http::{header, HeaderMap, HeaderValue, Response, StatusCode};
 use axum::routing::get;
@@ -37,76 +37,24 @@ pub(super) fn routes(router: Router<Shared>) -> Router<Shared> {
         )
 }
 
-/// What a handler decided: an answer, or why Node has to give it.
+/// What a handler decided: an answer, or the fallback's.
 type Decided = Result<Response<Body>, super::Fallback>;
 
-async fn imageproxy(
-    State(state): State<Shared>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    req: Request,
-) -> Response<Body> {
-    let (parts, body) = req.into_parts();
-    let decided = match ready(&state) {
-        Ok(()) => image(&state, &parts).await,
-        Err(why) => Err(why),
-    };
-    finish(&state, peer, parts, body, decided).await
+async fn imageproxy(State(state): State<Shared>, req: Request) -> Response<Body> {
+    let (parts, _) = req.into_parts();
+    finish(&parts, image(&state, &parts).await)
 }
 
-async fn avatarproxy(
-    State(state): State<Shared>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    req: Request,
-) -> Response<Body> {
-    let (parts, body) = req.into_parts();
-    let decided = match ready(&state) {
-        Ok(()) => avatar(&state, &parts).await,
-        Err(why) => Err(why),
-    };
-    finish(&state, peer, parts, body, decided).await
+async fn avatarproxy(State(state): State<Shared>, req: Request) -> Response<Body> {
+    let (parts, _) = req.into_parts();
+    finish(&parts, avatar(&state, &parts).await)
 }
 
-async fn finish(
-    state: &AppState,
-    peer: SocketAddr,
-    parts: Parts,
-    body: Body,
-    decided: Decided,
-) -> Response<Body> {
+fn finish(parts: &Parts, decided: Decided) -> Response<Body> {
     match decided {
         Ok(response) => response,
-        Err(fallback) => {
-            if crate::standalone::enabled() {
-                return fallback.respond(&parts);
-            }
-            tracing::debug!(
-                "{} {} goes to Node: {}",
-                parts.method,
-                parts.uri,
-                fallback.why
-            );
-            state
-                .node
-                .forward(Request::from_parts(parts, body), peer.ip())
-                .await
-        }
+        Err(fallback) => fallback.respond(parts),
     }
-}
-
-fn ready(state: &AppState) -> Result<(), super::Fallback> {
-    if !state.env.native_routes() {
-        return Err(super::Fallback::status(
-            500,
-            "plugin and desktop modes are not ported",
-        ));
-    }
-    if !state.node.is_ready() {
-        return Err(super::Fallback::status(
-            503,
-            "The server is still starting.",
-        ));
-    }
-    Ok(())
 }
 
 /// A path segment Express passes through as it is: no percent-decoding,

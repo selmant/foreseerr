@@ -1,5 +1,4 @@
-//! The log files `server/logger.ts` writes, for standalone mode (with Node
-//! behind this server, Node keeps writing them).
+//! The log files `server/logger.ts` wrote.
 //!
 //! Two daily files under `LOG_DIRECTORY` (default `<config>/logs`):
 //! `seerr-YYYY-MM-DD.log` in winston's `hformat`

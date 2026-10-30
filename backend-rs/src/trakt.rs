@@ -3,8 +3,8 @@
 //! Like Node it keeps `ExternalAPI`'s `trakt` response cache (five minutes)
 //! and the per-token rate-limit circuit in process-wide state; a token
 //! refresh runs `refreshUserTraktTokens` with its per-user lock, database
-//! write and sync-cache invalidation: in Node, or in
-//! [`crate::routes::procstate::traktrefresh`] when this process owns it.
+//! write and sync-cache invalidation
+//! ([`crate::routes::procstate::traktrefresh`]).
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -252,15 +252,9 @@ struct Tokens {
     expires_at: f64,
 }
 
-/// How to reach Node's `refreshUserTraktTokens` for one user.
+/// Whose tokens `refreshUserTraktTokens` refreshes.
 #[derive(Debug, Clone)]
-pub struct NodeRefresh {
-    /// The loopback client for Node's internal routes.
-    pub client: reqwest::Client,
-    /// `{node_url}/internal/trakt/refresh`.
-    pub url: String,
-    /// Node's API key.
-    pub api_key: String,
+pub struct UserRefresh {
     /// The user whose tokens these are.
     pub user_id: i64,
 }
@@ -269,7 +263,7 @@ pub struct NodeRefresh {
 #[derive(Debug, Clone)]
 enum Refresher {
     /// `refreshUserTraktTokens`.
-    Node(NodeRefresh),
+    User(UserRefresh),
     /// The Better Trakt token bridge (`getJellyfinTraktToken`).
     Jellyfin(crate::traktbridge::Bridge),
 }
@@ -436,7 +430,7 @@ impl TraktClient {
         access: String,
         refresh: String,
         expires_at: f64,
-        node: NodeRefresh,
+        refresher: UserRefresh,
     ) -> Self {
         Self {
             http,
@@ -446,7 +440,7 @@ impl TraktClient {
                 refresh,
                 expires_at,
             })),
-            refresh: Some(Refresher::Node(node)),
+            refresh: Some(Refresher::User(refresher)),
         }
     }
 
@@ -512,8 +506,8 @@ impl TraktClient {
         Ok(())
     }
 
-    /// `refreshAccessToken` through the `refreshTokens` callback, which is
-    /// Node's `refreshUserTraktTokens`.
+    /// `refreshAccessToken` through the `refreshTokens` callback,
+    /// `refreshUserTraktTokens`.
     async fn refresh_tokens(&self) -> Result<(), TraktError> {
         let current = lock(&self.tokens).clone().filter(|t| !t.refresh.is_empty());
         let Some(current) = current else {
@@ -521,8 +515,8 @@ impl TraktClient {
                 "Cannot refresh Trakt token without a refresh token",
             )));
         };
-        let node = match self.refresh.as_ref().filter(|_| !current.access.is_empty()) {
-            Some(Refresher::Node(node)) => node,
+        let refresher = match self.refresh.as_ref().filter(|_| !current.access.is_empty()) {
+            Some(Refresher::User(refresher)) => refresher,
             Some(Refresher::Jellyfin(bridge)) => {
                 let fresh = bridge.token().await?;
                 *lock(&self.tokens) = Some(Tokens {
@@ -532,33 +526,19 @@ impl TraktClient {
                 });
                 return Ok(());
             }
-            None => return Err(other(String::from("a refresh without Node's callback"))),
+            None => return Err(other(String::from("a refresh without a callback"))),
         };
         let mut tokens = Map::new();
         tokens.insert(String::from("accessToken"), Value::from(current.access));
         tokens.insert(String::from("refreshToken"), Value::from(current.refresh));
         tokens.insert(String::from("expiresAt"), num_value(current.expires_at));
         let mut body = Map::new();
-        body.insert(String::from("userId"), Value::from(node.user_id));
+        body.insert(String::from("userId"), Value::from(refresher.user_id));
         body.insert(String::from("tokens"), Value::Object(tokens));
-        let answer: Value = if crate::routes::procstate::in_process("/trakt/refresh") {
-            crate::routes::procstate::trakt_refresh(&Value::Object(body))
-                .await
-                .into_result("/trakt/refresh")
-                .map_err(|e| other(format!("Node's Trakt refresh failed: {e:#}")))?
-        } else {
-            node.client
-                .post(&node.url)
-                .header("X-API-Key", &node.api_key)
-                .json(&Value::Object(body))
-                .send()
-                .await
-                .and_then(reqwest::Response::error_for_status)
-                .map_err(|e| other(format!("Node's Trakt refresh failed: {e:#}")))?
-                .json()
-                .await
-                .map_err(|e| other(format!("Node's Trakt refresh answered oddly: {e:#}")))?
-        };
+        let answer = crate::routes::procstate::trakt_refresh(&Value::Object(body))
+            .await
+            .into_result("/trakt/refresh")
+            .map_err(|e| other(format!("The Trakt refresh failed: {e:#}")))?;
         if let Some(error) = answer.get("error") {
             let message = crate::media::js_string(error.get("message")).into_owned();
             return Err(match error.get("name").and_then(Value::as_str) {

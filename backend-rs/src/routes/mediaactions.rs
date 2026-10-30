@@ -3,12 +3,9 @@
 //! (`crate::mediaactions`).
 //!
 //! The provider snapshots these routes read and patch are the mapping
-//! layer's sync caches, which belong to whichever process runs the jobs.
-//! When that is Node ([`crate::mappinglayer::owned`] is false), a request
-//! that would reach a provider goes to Node so its caches stay the ones
-//! the actions patch; only the no-provider answers are given here. Trakt
-//! through the Better Trakt Jellyfin plugin takes its token from the
-//! plugin's bridge (`crate::traktbridge`).
+//! layer's sync caches (`crate::mappinglayer::synccache`). Trakt through
+//! the Better Trakt Jellyfin plugin takes its token from the plugin's
+//! bridge (`crate::traktbridge`).
 
 use std::future::Future;
 use std::pin::Pin;
@@ -17,7 +14,6 @@ use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::{Outcome, Ready, Table};
-use crate::db::Bind;
 use crate::jellyfin::{join_all, Job};
 use crate::mappinglayer::MediaType;
 use crate::mediaactions::anilist::AnilistProvider;
@@ -30,7 +26,6 @@ use crate::mediaactions::types::{
     ProviderResult, Status, FULL, WATCHED_ONLY,
 };
 use crate::mediaactions::{anilist, anilistepisodes, jellyfin, simkl, simklepisodes, trakt, Env};
-use crate::settings::public::truthy;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
@@ -111,79 +106,6 @@ fn dispatcher<'a>(env: &'a Env<'a>) -> Dispatcher<'a> {
     ])
 }
 
-/// Whether Node has to answer: while Node owns the sync caches, any
-/// linked provider.
-async fn node_answers(ctx: &Ready<'_>, user: i64) -> Result<(), String> {
-    if crate::mappinglayer::owned() {
-        return Ok(());
-    }
-    if linked_somewhere(ctx, user).await? {
-        return Err(String::from("this linked provider action is not supported"));
-    }
-    Ok(())
-}
-
-/// `settings.mediaActions.providers[id] === false`.
-fn provider_off(ctx: &Ready<'_>, id: &str) -> bool {
-    ctx.settings.get(&format!("/mediaActions/providers/{id}")) == Some(&Value::Bool(false))
-}
-
-/// A non-blank trimmed setting, as the app-credential checks want.
-fn configured(ctx: &Ready<'_>, pointer: &str) -> bool {
-    ctx.settings
-        .get(pointer)
-        .and_then(Value::as_str)
-        .is_some_and(|s| !s.trim().is_empty())
-}
-
-/// Whether any provider's `isAvailable` might hold, read without side
-/// effects (an expired `AniList` token, which Node clears, counts).
-async fn linked_somewhere(ctx: &Ready<'_>, user_id: i64) -> Result<bool, String> {
-    let db = &ctx.state.db;
-    let settings_rows = db
-        .rows(
-            r#"SELECT "traktAccessToken", "traktRefreshToken", "mediaActionsTraktEnabled", "anilistAccessToken", "mediaActionsAnilistEnabled", "simklAccessToken", "mediaActionsSimklEnabled" FROM "user_settings" WHERE "userId" = ?1"#,
-            &[Bind::Int(user_id)],
-        )
-        .await
-        .map_err(|e| format!("database: {e:#}"))?;
-    let user_rows = db
-        .rows(
-            r#"SELECT "jellyfinUserId", "jellyfinAuthToken", "jellyfinDeviceId" FROM "user" WHERE "id" = ?1"#,
-            &[Bind::Int(user_id)],
-        )
-        .await
-        .map_err(|e| format!("database: {e:#}"))?;
-    let s = settings_rows.first();
-    let field = |key: &str| s.and_then(|r| r.get(key));
-    let off = |key: &str| crate::mediaactions::env::stored_false(s, key);
-    let trakt = !provider_off(ctx, "trakt")
-        && configured(ctx, "/trakt/clientId")
-        && configured(ctx, "/trakt/clientSecret")
-        && !off("mediaActionsTraktEnabled")
-        && truthy(field("traktAccessToken"))
-        && truthy(field("traktRefreshToken"));
-    let anilist = !provider_off(ctx, "anilist")
-        && configured(ctx, "/anilist/clientId")
-        && configured(ctx, "/anilist/clientSecret")
-        && !off("mediaActionsAnilistEnabled")
-        && field("anilistAccessToken")
-            .and_then(Value::as_str)
-            .is_some_and(|t| !t.trim().is_empty());
-    let jellyfin = !provider_off(ctx, "jellyfin")
-        && ctx
-            .settings
-            .get("/main/mediaServerType")
-            .is_some_and(|v| v.is_number() && v.as_i64() == Some(2))
-        && ["jellyfinUserId", "jellyfinAuthToken", "jellyfinDeviceId"]
-            .iter()
-            .all(|k| truthy(user_rows.first().and_then(|r| r.get(*k))));
-    let simkl = !provider_off(ctx, "simkl")
-        && truthy(field("simklAccessToken"))
-        && !off("mediaActionsSimklEnabled");
-    Ok(trakt || anilist || jellyfin || simkl)
-}
-
 /// The signed-in user (any user may act on their own providers).
 fn user_id(ctx: &Ready<'_>) -> Result<i64, super::Fallback> {
     Ok(ctx.authenticated(0)?.id)
@@ -202,7 +124,6 @@ fn capabilities<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         try_forward!(ctx.no_query());
         let user = try_forward!(user_id(ctx));
-        try_forward!(node_answers(ctx, user).await);
         let env = env(ctx, user);
         match capability_body(&env).await {
             Ok(body) => ctx.json(&body),
@@ -300,7 +221,6 @@ fn status<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Ok(item) = try_forward!(title(ctx)) else {
             return ctx.error(400, "tmdbId must be a positive number");
         };
-        try_forward!(node_answers(ctx, user).await);
         let env = env(ctx, user);
         let result = dispatcher(&env).status(item).await;
         match result {
@@ -341,7 +261,6 @@ async fn title_write(ctx: &Ready<'_>, write: Write, fallback: &str) -> Outcome {
     let Ok(item) = try_forward!(title(ctx)) else {
         return ctx.error(400, "tmdbId must be a positive number");
     };
-    try_forward!(node_answers(ctx, user).await);
     let env = env(ctx, user);
     let result = dispatcher(&env).write(item, write).await;
     match result {
@@ -439,9 +358,6 @@ fn status_batch<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 parsed.push(item);
             }
         }
-        if !parsed.is_empty() {
-            try_forward!(node_answers(ctx, user).await);
-        }
         let env = env(ctx, user);
         let results = dispatcher(&env).statuses(&parsed).await;
         match results {
@@ -492,7 +408,6 @@ fn episode_status<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some((tmdb, season, _)) = try_forward!(episode_path(ctx, false)) else {
             return ctx.error(400, "Invalid episode identifiers.");
         };
-        try_forward!(node_answers(ctx, user).await);
         let env = env(ctx, user);
         let env = &env;
         let jobs: Vec<Job<'_, SeasonStatus>> = vec![
@@ -586,7 +501,6 @@ fn episode_watched<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some((tmdb, season, episode)) = try_forward!(episode_path(ctx, true)) else {
             return ctx.error(400, "Invalid episode identifiers.");
         };
-        try_forward!(node_answers(ctx, user).await);
         let watched = marks_watched(ctx);
         let fallback = if watched {
             "Unable to mark episode as watched."
@@ -661,7 +575,6 @@ fn jellyfin_item_watched<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some(item) = jellyfin_item_id(Some(&Value::String(decoded))) else {
             return ctx.error(400, "Invalid Jellyfin item identifier.");
         };
-        try_forward!(node_answers(ctx, user).await);
         let watched = marks_watched(ctx);
         let fallback = if watched {
             "Unable to mark Jellyfin episode as watched."

@@ -1,8 +1,7 @@
 //! `server/job/schedule.ts`: the job scheduler.
 //!
 //! The jobs run on their `settings.jobs[id].schedule` cron strings, run through the managed executor (`execution.rs`), and
-//! what the job settings routes show and do. Active when the process owns
-//! the jobs (`FORESEERR_RUST_JOBS=1`); Node then skips `startJobs()`.
+//! what the job settings routes show and do.
 //!
 //! Timers follow node-schedule: the first run is the cron's next occurrence
 //! after the moment of scheduling, each later one the occurrence after the
@@ -21,18 +20,6 @@ use super::cron::{CronExpr, CronIter};
 use super::execution::{run_recorded, Slots, Weight};
 use super::JobCtx;
 use crate::state::AppState;
-
-static RUST_JOBS: LazyLock<bool> = LazyLock::new(|| {
-    std::env::var("FORESEERR_RUST_JOBS").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        || crate::standalone::enabled()
-});
-
-/// `FORESEERR_RUST_JOBS=1` (or standalone mode): this process schedules and
-/// runs the jobs and owns their state (the download tracker included).
-#[must_use]
-pub fn rust_jobs() -> bool {
-    *RUST_JOBS
-}
 
 /// What `cancelFn` does to the job's `running()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -462,7 +449,7 @@ pub fn scheduled() -> Vec<(&'static JobDef, String)> {
 /// Node's boot: `startJobs()` when there is at least one user (and not in
 /// the desktop runtime).
 pub fn start_at_boot(state: &Arc<AppState>) {
-    if !rust_jobs() || state.env.desktop_runtime {
+    if state.env.desktop_runtime {
         return;
     }
     let state = Arc::clone(state);

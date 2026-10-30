@@ -72,7 +72,7 @@ pub async fn synchronize(db: &Db) -> Result<Outcome> {
     }
     tracing::warn!(
         label = "Database",
-        "The database schema is not the one TypeORM's synchronize builds from the entities. Node would alter it in development mode; this server does not. Start Node once in development mode, or run in production mode."
+        "The database schema is not the one TypeORM's synchronize builds from the entities, and development mode doesn't alter it (Node's did). Start from an empty database, or run in production mode, which runs the migrations."
     );
     Ok(Outcome::Differs)
 }

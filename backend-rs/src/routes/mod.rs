@@ -1,5 +1,6 @@
-//! The routes answered here. Everything else, and anything these routes
-//! can't answer exactly as Node would, is forwarded to Node.
+//! The routes. A request no handler takes, and one a handler hands back
+//! ([`Outcome::Forward`]), gets the standalone fallback answer
+//! (`src/standalone/fallback.rs`).
 
 pub mod accountlink;
 pub mod anilistdiscover;
@@ -90,12 +91,11 @@ pub mod userwrite;
 pub mod writes;
 
 use std::future::Future;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{Request, State};
 use axum::http::request::Parts;
 use axum::http::{Method, Request as HttpRequest, Response};
 use axum::routing::MethodRouter;
@@ -159,12 +159,13 @@ const TABLES: &[&Table] = &[
     requestedit::ROUTES,
 ];
 
-/// The router: native routes first, Node for the rest. HEAD goes to Node
-/// too: its `OpenAPI` validator answers 405 where Express alone would 200.
+/// The router: the handlers first, the fallback for the rest. HEAD goes to
+/// the fallback too: Node's `OpenAPI` validator answered 405 where Express
+/// alone would 200.
 ///
 /// # Errors
 ///
-/// When standalone mode can't load the `OpenAPI` validator.
+/// When the `OpenAPI` validator can't be loaded.
 pub fn router(state: Shared) -> anyhow::Result<Router> {
     let mut paths: Vec<(&'static str, Vec<(Method, Native)>)> = Vec::new();
     let mut add = |path: &'static str, method: Method, native: Native| {
@@ -220,15 +221,15 @@ pub fn router(state: Shared) -> anyhow::Result<Router> {
         )))
 }
 
-/// The native methods of one path; HEAD and every other method go to Node.
+/// The handled methods of one path; HEAD and every other method get the
+/// fallback answer.
 fn method_router(methods: &[(Method, Native)]) -> MethodRouter<Shared> {
     let mut router = MethodRouter::new();
     for (method, native) in methods {
         let native = *native;
-        let handler =
-            move |State(state): State<Shared>,
-                  ConnectInfo(peer): ConnectInfo<SocketAddr>,
-                  req: Request| async move { Ctx::new(state, req).run(peer, native).await };
+        let handler = move |State(state): State<Shared>, req: Request| async move {
+            Ctx::new(state, req).run(native).await
+        };
         router = match axum::routing::MethodFilter::try_from(method.clone()) {
             Ok(filter) => router.on(filter, handler),
             Err(_) => router,
@@ -415,18 +416,12 @@ const SETTINGS_SECTIONS: [(&str, &str); 18] = [
     ),
 ];
 
-async fn forward(
-    State(state): State<Shared>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    req: Request,
-) -> Response<Body> {
+/// A request no handler takes: Node's answer, reproduced from the spec.
+async fn forward(State(state): State<Shared>, req: Request) -> Response<Body> {
     let (mut head, body) = req.into_parts();
     expressroute::restore(&mut head);
     let req = HttpRequest::from_parts(head, body);
-    if crate::standalone::enabled() {
-        return crate::standalone::fallback::answer(&state, req).await;
-    }
-    state.node.forward(req, peer.ip()).await
+    crate::standalone::fallback::answer(&state, req).await
 }
 
 /// `res.status(200).json(undefined)`: a JSON content type and no body.
@@ -448,32 +443,34 @@ pub(super) type Native =
     for<'a> fn(&'a Ready<'a>) -> Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
 /// What a native handler decided.
+///
+/// Comments across the handlers that say a request "goes to Node", "is
+/// left to Node" or is "forwarded" date from when a Node server stood
+/// behind this one: such a request now gets its [`Fallback`] answer.
 pub(super) enum Outcome {
     /// Answered here.
     Done(Response<Body>),
-    /// Not answered by the handler: in proxy mode Node answers it (the
-    /// reason is logged); standalone mode gives the fallback's answer.
+    /// Not answered by the handler: the fallback's answer is given.
     Forward(Fallback),
 }
 
 impl Outcome {
-    /// Hand the request on; standalone mode answers 500 (400 when the
-    /// validator didn't vouch for the request) with `why` as the message.
+    /// Give the fallback answer: 500 (400 when the validator didn't vouch
+    /// for the request) with `why` as the message.
     pub(super) fn forward(why: impl Into<Fallback>) -> Self {
         Self::Forward(why.into())
     }
 
-    /// Hand the request on; standalone mode answers `status` with `why`
-    /// as the message.
+    /// Give the fallback answer: `status` with `why` as the message.
     pub(super) fn fail(status: u16, why: impl Into<String>) -> Self {
         Self::Forward(Fallback::status(status, why))
     }
 }
 
-/// Why a handler didn't answer, and what standalone mode answers instead.
+/// Why a handler didn't answer, and what is answered instead.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Fallback {
-    /// The reason: logged in proxy mode, the message in standalone mode.
+    /// The reason, given as the message.
     pub(super) why: String,
     answer: Answer,
 }
@@ -490,7 +487,7 @@ enum Answer {
 }
 
 impl Fallback {
-    /// Standalone mode answers `status` with `why` as the message.
+    /// Answer `status` with `why` as the message.
     pub(super) fn status(status: u16, why: impl Into<String>) -> Self {
         Self {
             why: why.into(),
@@ -498,7 +495,7 @@ impl Fallback {
         }
     }
 
-    /// Standalone mode answers `status` with `body`.
+    /// Answer `status` with `body`.
     pub(super) fn body(status: u16, why: impl Into<String>, body: Value) -> Self {
         Self {
             why: why.into(),
@@ -526,7 +523,7 @@ impl Fallback {
         )
     }
 
-    /// Standalone mode's answer for `head`.
+    /// The answer for `head`.
     pub(super) fn respond(self, head: &Parts) -> Response<Body> {
         let unvouched = head.extensions.get::<crate::openapi::Validated>().is_none()
             || head.extensions.get::<crate::openapi::Unsure>().is_some();
@@ -619,16 +616,10 @@ impl Ready<'_> {
         })
     }
 
-    /// `isAuthenticated(required)` answering its 403 here once the
-    /// validator ran (it answers first); otherwise Node decides as before.
+    /// `isAuthenticated(required)`: the signed-in user, or its 403.
     pub(super) fn require(&self, required: i64) -> Result<&CurrentUser, Box<Outcome>> {
-        match self.authenticated(required) {
-            Ok(user) => Ok(user),
-            Err(_) if self.judged().is_some() || crate::standalone::enabled() => {
-                Err(Box::new(self.forbidden()))
-            }
-            Err(why) => Err(Box::new(Outcome::forward(why))),
-        }
+        self.authenticated(required)
+            .map_err(|_| Box::new(self.forbidden()))
     }
 
     /// `isAuthenticated`'s answer:
@@ -695,8 +686,7 @@ impl Ready<'_> {
     }
 
     /// [`crate::settings::SettingsStore::mutate`] from a handler: `change`
-    /// runs on the latest settings under the mutation lock, and Node reads
-    /// the file again once it is written.
+    /// runs on the latest settings under the mutation lock.
     ///
     /// # Errors
     ///
@@ -705,35 +695,7 @@ impl Ready<'_> {
         &self,
         change: impl FnOnce(&mut Value) -> std::ops::ControlFlow<B, C>,
     ) -> anyhow::Result<std::ops::ControlFlow<B, C>> {
-        let flow = self.state.settings.mutate(change).await?;
-        if flow.is_continue() {
-            self.reload_node_settings().await;
-        }
-        Ok(flow)
-    }
-
-    /// Tell Node settings.json changed; only logged when it can't be told.
-    async fn reload_node_settings(&self) {
-        if crate::standalone::enabled() {
-            // No Node to tell; the settings store reloads the file itself.
-            return;
-        }
-        let url = format!(
-            "{}/internal/settings/reload",
-            self.state.env.node_url.trim_end_matches('/')
-        );
-        let sent = self
-            .state
-            .internal
-            .post(url)
-            .header("X-API-Key", self.settings.api_key())
-            .send()
-            .await;
-        match sent {
-            Ok(res) if res.status().is_success() => {}
-            Ok(res) => tracing::warn!("Node refused to reload settings: {}", res.status()),
-            Err(e) => tracing::warn!("Node could not be told to reload settings: {e:#}"),
-        }
+        self.state.settings.mutate(change).await
     }
 
     /// A JSON answer with any status.
@@ -778,13 +740,13 @@ impl Ctx {
         Self { state, head, body }
     }
 
-    async fn run(self, peer: SocketAddr, native: Native) -> Response<Body> {
+    async fn run(self, native: Native) -> Response<Body> {
         let Self { state, head, body } = self;
-        let (body, parsed) = if head.method == Method::GET {
-            (body, Ok(None))
+        let parsed = if head.method == Method::GET {
+            Ok(None)
         } else {
             match read_body(&head, body).await {
-                Ok((bytes, parsed)) => (Body::from(bytes), parsed),
+                Ok(parsed) => parsed,
                 Err(response) => return response,
             }
         };
@@ -804,21 +766,7 @@ impl Ctx {
         };
         match outcome {
             Outcome::Done(res) => res,
-            Outcome::Forward(fallback) => {
-                if crate::standalone::enabled() {
-                    return fallback.respond(&head);
-                }
-                let mut head = head;
-                expressroute::restore(&mut head);
-                tracing::debug!(
-                    "{} {} goes to Node: {}",
-                    head.method,
-                    head.uri,
-                    fallback.why
-                );
-                let req = HttpRequest::from_parts(head, body);
-                state.node.forward(req, peer.ip()).await
-            }
+            Outcome::Forward(fallback) => fallback.respond(&head),
         }
     }
 }
@@ -826,12 +774,12 @@ impl Ctx {
 /// `express.json()`'s default limit.
 const BODY_LIMIT: usize = 100 * 1024;
 
-/// Buffer a write's body (so it can still be forwarded) and parse it as
-/// `express.json()` would; anything it would refuse or skip is Node's.
+/// Buffer a write's body and parse it as `express.json()` would; anything
+/// it would refuse or skip gets a fallback answer.
 async fn read_body(
     head: &Parts,
     body: Body,
-) -> Result<(bytes::Bytes, Result<Option<Value>, Fallback>), Response<Body>> {
+) -> Result<Result<Option<Value>, Fallback>, Response<Body>> {
     let bytes = crate::openapi::request::buffer(body)
         .await
         .map_err(|unbuffered| unbuffered.response(&head.method, &head.headers))?;
@@ -863,22 +811,13 @@ async fn read_body(
             Err(e) => Err(Fallback::status(400, format!("Invalid JSON body: {e}"))),
         }
     };
-    Ok((bytes, parsed))
+    Ok(parsed)
 }
 
-/// Everything that happens before a Node route runs, or why it can't be
-/// reproduced here.
+/// Everything that happens before a Node route ran, or why it can't be
+/// done.
 async fn prepare<'a>(shared: &'a Shared, head: &'a Parts) -> Result<Ready<'a>, Fallback> {
     let state: &AppState = shared;
-    if !state.env.native_routes() {
-        return Err(Fallback::status(
-            500,
-            "plugin and desktop modes are not ported",
-        ));
-    }
-    if !state.node.is_ready() {
-        return Err(Fallback::status(503, "The server is still starting."));
-    }
     let settings = state
         .settings
         .current()

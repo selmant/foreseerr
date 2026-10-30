@@ -276,41 +276,17 @@ pub async fn load_active_generations(db: &Db, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// The readable edge set changed: Node reloads its generations and drops
-/// its lookup caches.
-async fn notify_changed(state: &AppState) {
-    // The stored provider rows resolved against the old edge set.
+/// The readable edge set changed: the lookups follow the database, so
+/// their caches and the stored provider rows resolved against the old edge
+/// set are dropped.
+fn notify_changed() {
     crate::rowcache::mark_stale();
-    if crate::mappinglayer::owned() {
-        // This process's lookups follow the database; drop their caches.
-        crate::mappinglayer::datasets_changed();
-        if crate::standalone::enabled() {
-            return;
-        }
-    }
-    let Ok(settings) = state.settings.current().await else {
-        return;
-    };
-    let url = format!(
-        "{}/internal/mapping/datasets/changed",
-        state.env.node_url.trim_end_matches('/')
-    );
-    let sent = state
-        .internal
-        .post(url)
-        .header("X-API-Key", settings.api_key())
-        .send()
-        .await;
-    match sent {
-        Ok(res) if res.status().is_success() => {}
-        Ok(res) => tracing::debug!("Node did not reload the mapping datasets: {}", res.status()),
-        Err(e) => tracing::debug!("Node could not be told the mapping datasets changed: {e}"),
-    }
+    crate::mappinglayer::datasets_changed();
 }
 
 async fn reload(state: &AppState) -> Result<()> {
     load_active_generations(&state.db, true).await?;
-    notify_changed(state).await;
+    notify_changed();
     Ok(())
 }
 

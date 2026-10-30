@@ -200,45 +200,13 @@ pub(super) async fn load_user(
     Ok(loaded.ok_or_else(|| ctx.error(404, "User not found.")))
 }
 
-/// Tell Node to drop a user's in-memory media-action sync cache
+/// Drop a user's in-memory media-action sync cache
 /// (`invalidateUserSyncCache` / `invalidateUserAnilistSyncCache`).
-pub(super) async fn invalidate_sync_cache(ctx: &Ready<'_>, user_id: i64, provider: &str) {
-    if crate::mappinglayer::owned() {
-        match provider {
-            "trakt" => crate::mappinglayer::synccache::invalidate_user_sync_cache(user_id),
-            "anilist" => {
-                crate::mappinglayer::synccache::invalidate_user_anilist_sync_cache(user_id);
-            }
-            _ => {}
-        }
-        if crate::standalone::enabled() {
-            return;
-        }
-        // Node keeps its own copy for the media-action routes it serves.
-    }
-    if crate::standalone::enabled() {
-        let path = format!("/user/{user_id}/sync-cache/{provider}/invalidate");
-        let answer = crate::standalone::internal::call(ctx.state, &Method::POST, &path, None).await;
-        if !answer.is_success() {
-            tracing::warn!("A sync cache could not be invalidated: {}", answer.status);
-        }
-        return;
-    }
-    let url = format!(
-        "{}/internal/user/{user_id}/sync-cache/{provider}/invalidate",
-        ctx.state.env.node_url.trim_end_matches('/')
-    );
-    let sent = ctx
-        .state
-        .internal
-        .post(url)
-        .header("X-API-Key", ctx.settings.api_key())
-        .send()
-        .await;
-    match sent {
-        Ok(res) if res.status().is_success() => {}
-        Ok(res) => tracing::warn!("Node refused to invalidate a sync cache: {}", res.status()),
-        Err(e) => tracing::warn!("Node could not be told to invalidate a sync cache: {e:#}"),
+pub(super) fn invalidate_sync_cache(user_id: i64, provider: &str) {
+    match provider {
+        "trakt" => crate::mappinglayer::synccache::invalidate_user_sync_cache(user_id),
+        "anilist" => crate::mappinglayer::synccache::invalidate_user_anilist_sync_cache(user_id),
+        _ => {}
     }
 }
 

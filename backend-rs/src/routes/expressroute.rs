@@ -11,9 +11,9 @@
 //! what Express gives `req.params`, and those that decode get it back
 //! unchanged.
 //!
-//! The request as it came stays in the extensions ([`Original`]): Node
-//! gets that one when a handler forwards, and handlers that read
-//! `req.originalUrl` or a router's `req.path` use it.
+//! The request as it came stays in the extensions ([`Original`]): the
+//! fallback answers that one, and handlers that read `req.originalUrl` or
+//! a router's `req.path` use it.
 
 use std::sync::Arc;
 
@@ -230,7 +230,8 @@ pub(super) async fn rewrite(State(paths): State<Arc<Paths>>, mut req: Request) -
     req
 }
 
-/// Put back the URI the request arrived with (before it goes to Node).
+/// Put back the URI the request arrived with (before the fallback answers
+/// it).
 pub(super) fn restore(parts: &mut Parts) {
     if let Some(Original(uri)) = parts.extensions.remove::<Original>() {
         parts.uri = uri;

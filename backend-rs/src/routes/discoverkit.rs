@@ -4,8 +4,8 @@
 //! coerced it and filled in its defaults, and after the router applied the
 //! user's saved filter defaults), the error
 //! shape with `Retry-After`, `annotateProviderActiveRequests`, the
-//! unmapped-tile helpers, and the calls into Node's mapping layer, whose
-//! caches, dataset generations and miss buffer live in the Node process.
+//! unmapped-tile helpers, and the calls into the mapping layer
+//! (`src/mappinglayer/`).
 
 use std::collections::HashMap;
 
@@ -756,63 +756,32 @@ pub(super) fn js_number_of_str(text: &str) -> Option<f64> {
     Some(crate::jsval::number_of_str(text)).filter(|n| n.is_finite())
 }
 
-/// Talk to one of Node's `/internal` routes with the API key.
+/// One of the `/internal` routes Node used to serve, answered in-process:
+/// the mapping layer's first, then the rest.
 async fn node_call(
     ctx: &Ready<'_>,
     method: reqwest::Method,
     path: &str,
     body: Option<&Value>,
 ) -> Result<Option<Value>, String> {
-    if crate::mappinglayer::owned() {
-        if let Some(answer) = crate::mappinglayer::answer(ctx.state, &method, path, body).await {
-            return answer
-                .into_result(path)
-                .map(|v| (!v.is_null()).then_some(v))
-                .map_err(|e| format!("{e:#}"));
-        }
-    }
-    if crate::standalone::enabled() {
-        return crate::standalone::internal::call(ctx.state, &method, path, body)
-            .await
-            .into_result(path)
-            .map(|v| (!v.is_null()).then_some(v))
-            .map_err(|e| format!("{e:#}"));
-    }
-    let url = format!(
-        "{}/internal{path}",
-        ctx.state.env.node_url.trim_end_matches('/')
-    );
-    let mut request = ctx
-        .state
-        .internal
-        .request(method, url)
-        .header("X-API-Key", ctx.settings.api_key());
-    if let Some(body) = body {
-        request = request.json(body);
-    }
-    let res = request
-        .send()
-        .await
-        .map_err(|e| format!("the internal {path} could not be reached: {e:#}"))?
-        .error_for_status()
-        .map_err(|e| format!("the internal {path} failed: {e:#}"))?;
-    if res.status() == reqwest::StatusCode::NO_CONTENT {
-        return Ok(None);
-    }
-    res.json::<Value>()
-        .await
-        .map(Some)
-        .map_err(|e| format!("the internal {path} answered something other than JSON: {e:#}"))
+    let answer = match crate::mappinglayer::answer(ctx.state, &method, path, body).await {
+        Some(answer) => answer,
+        None => crate::standalone::internal::call(ctx.state, &method, path, body).await,
+    };
+    answer
+        .into_result(path)
+        .map(|v| (!v.is_null()).then_some(v))
+        .map_err(|e| format!("{e:#}"))
 }
 
-/// POST JSON to a Node internal route and read the JSON answer.
+/// POST JSON to an internal route and read the JSON answer.
 pub(super) async fn node_post(ctx: &Ready<'_>, path: &str, body: &Value) -> Result<Value, String> {
     node_call(ctx, reqwest::Method::POST, path, Some(body))
         .await
         .map(Option::unwrap_or_default)
 }
 
-/// GET a Node internal route.
+/// GET an internal route.
 pub(super) async fn node_get(ctx: &Ready<'_>, path: &str) -> Result<Value, String> {
     node_call(ctx, reqwest::Method::GET, path, None)
         .await

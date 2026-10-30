@@ -1,10 +1,9 @@
-//! Node's in-memory download tracker, read over the internal route so
-//! `downloadStatus` can be serialised exactly as Node would.
+//! The download tracker as `downloadStatus` reads it, so it can be
+//! serialised exactly as Node did.
 
-use anyhow::{Context, Result};
 use serde_json::Value;
 
-/// One fetch of the tracker: `radarr` and `sonarr` maps from server id to
+/// One read of the tracker: `radarr` and `sonarr` maps from server id to
 /// the items being downloaded.
 #[derive(Debug, Clone, Default)]
 pub struct Downloads {
@@ -13,34 +12,10 @@ pub struct Downloads {
 }
 
 impl Downloads {
-    /// Fetch the tracker from Node with the API key.
-    ///
-    /// # Errors
-    ///
-    /// Fails when Node can't be reached, refuses the key or answers
-    /// something that isn't the expected JSON.
-    pub async fn fetch(client: &reqwest::Client, node_url: &str, api_key: &str) -> Result<Self> {
-        if crate::jobs::scheduler::rust_jobs() {
-            return Ok(crate::jobs::downloadtracker::snapshot());
-        }
-        let mut body: Value = client
-            .get(format!(
-                "{}/internal/downloads",
-                node_url.trim_end_matches('/')
-            ))
-            .header("X-API-Key", api_key)
-            .send()
-            .await
-            .context("asking Node for the download tracker")?
-            .error_for_status()
-            .context("Node refused the download tracker request")?
-            .json()
-            .await
-            .context("the download tracker answer is not JSON")?;
-        Ok(Self {
-            radarr: body.get_mut("radarr").map(Value::take).unwrap_or_default(),
-            sonarr: body.get_mut("sonarr").map(Value::take).unwrap_or_default(),
-        })
+    /// The tracker as the download sync job left it.
+    #[must_use]
+    pub fn current() -> Self {
+        crate::jobs::downloadtracker::snapshot()
     }
 
     /// A tracker from its `radarr` and `sonarr` maps.

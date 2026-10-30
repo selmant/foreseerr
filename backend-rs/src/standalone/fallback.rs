@@ -1,5 +1,5 @@
-//! What standalone mode answers for requests no Rust handler takes (the
-//! handlers answer their own failures, see `routes::Fallback`).
+//! What is answered for requests no Rust handler takes (the handlers
+//! answer their own failures, see `routes::Fallback`).
 //!
 //! Under `/api`, the `OpenAPI` validator's answers are reproduced from the
 //! spec ([`super::apiroutes`]): 405 for an undocumented method, 401 for a

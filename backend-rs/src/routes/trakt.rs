@@ -2,9 +2,9 @@
 //!
 //! Everything that would make the answer depend on something not ported
 //! (`MDBList` enrichment while it is a stub,
-//! query strings the `OpenAPI` validator might reject) is forwarded before
-//! the first call into Node's mapping layer; after that, failures are this
-//! route's own error answers.
+//! query strings the `OpenAPI` validator might reject) gets the fallback
+//! answer before the first call into the mapping layer; after that,
+//! failures are this route's own error answers.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -28,7 +28,7 @@ use crate::db::Bind;
 use crate::media::js_string;
 use crate::rowcache::RowCache;
 use crate::settings::public::truthy;
-use crate::trakt::{app_credentials, FetchType, NodeRefresh, TraktClient, TraktError};
+use crate::trakt::{app_credentials, FetchType, TraktClient, TraktError, UserRefresh};
 use crate::traktitems::{js_number_of_text, parse_list_url, ListUrlError, SortBy};
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
@@ -263,22 +263,14 @@ async fn user_client(
         return Ok(Err(TraktError::NotLinked));
     };
     let expires_at = text("expires").map_or(0.0, |t| js_number_of_text(&t));
-    let node = NodeRefresh {
-        client: ctx.state.internal.clone(),
-        url: format!(
-            "{}/internal/trakt/refresh",
-            ctx.state.env.node_url.trim_end_matches('/')
-        ),
-        api_key: ctx.settings.api_key().to_owned(),
-        user_id,
-    };
+    let refresher = UserRefresh { user_id };
     Ok(Ok(TraktClient::user(
         ctx.state.outbound.clone(),
         client_id,
         access,
         refresh,
         expires_at,
-        node,
+        refresher,
     )))
 }
 

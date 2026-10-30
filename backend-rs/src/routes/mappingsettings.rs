@@ -9,7 +9,7 @@ use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::nodestate::{
-    admin, decode_segment, js_trim, node_call, object_body, object_body_or_empty, pick,
+    admin, decode_segment, internal_call, js_trim, object_body, object_body_or_empty, pick,
     raw_segment, NativeFut,
 };
 use super::{Outcome, Ready, Table};
@@ -103,20 +103,17 @@ const LISTS: [(&str, &str); 3] = [
     ("guessed", "'title', 'prequel'"),
 ];
 
-/// Node's mapping-layer `/internal` routes, answered in this process when
-/// it owns the mapping state.
+/// The mapping layer's `/internal` routes, answered in this process.
 async fn mapping_call(
     ctx: &Ready<'_>,
     method: Method,
     path: &str,
     body: Option<&Value>,
-) -> Result<(u16, Value)> {
-    if crate::mappinglayer::owned() {
-        if let Some(answer) = crate::mappinglayer::answer(ctx.state, &method, path, body).await {
-            return Ok((answer.status, answer.body));
-        }
+) -> (u16, Value) {
+    if let Some(answer) = crate::mappinglayer::answer(ctx.state, &method, path, body).await {
+        return (answer.status, answer.body);
     }
-    node_call(ctx, method, path, body).await
+    internal_call(ctx, method, path, body).await
 }
 
 /// `GET /settings/mapping/status`.
@@ -126,12 +123,11 @@ fn status<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             return Outcome::forward(why);
         }
         let state = match mapping_call(ctx, Method::GET, "/mapping/status", None).await {
-            Ok((200, state)) => state,
-            Ok((status, _)) => {
-                tracing::error!("Node's mapping status answered {status}");
+            (200, state) => state,
+            (status, _) => {
+                tracing::error!("The mapping status answered {status}");
                 return ctx.error(500, "Unable to retrieve mapping status.");
             }
-            Err(e) => return Outcome::forward(format!("{e:#}")),
         };
         let empty = Vec::new();
         let refreshes = state
@@ -263,14 +259,9 @@ fn resolutions<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         };
         if name == "unmapped" {
             match mapping_call(ctx, Method::POST, "/mapping/flush", None).await {
-                Ok((204, _)) => {}
-                Ok((status, _)) => {
-                    tracing::error!("Node's mapping flush answered {status}");
-                    return ctx.error(500, "Unable to retrieve mappings.");
-                }
-                // The flush may have written: answered here, never replayed.
-                Err(e) => {
-                    tracing::error!("Node's mapping flush failed: {e:#}");
+                (204, _) => {}
+                (status, _) => {
+                    tracing::error!("The mapping flush answered {status}");
                     return ctx.error(500, "Unable to retrieve mappings.");
                 }
             }
@@ -314,9 +305,8 @@ fn resolutions<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
 async fn invalidate(ctx: &Ready<'_>) {
     crate::rowcache::clear();
     match mapping_call(ctx, Method::POST, "/mapping/invalidate", None).await {
-        Ok((204, _)) => {}
-        Ok((status, _)) => tracing::warn!("Node refused to drop mapping caches: {status}"),
-        Err(e) => tracing::warn!("Node could not be told to drop mapping caches: {e:#}"),
+        (204, _) => {}
+        (status, _) => tracing::warn!("The mapping caches were not dropped: {status}"),
     }
 }
 
@@ -753,18 +743,13 @@ fn dataset_toggle<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         request.insert(String::from("enabled"), Value::Bool(*enabled));
         let path = format!("/mapping/datasets/{key}");
         match mapping_call(ctx, Method::POST, &path, Some(&Value::Object(request))).await {
-            Ok((200, answer)) if answer.get("dataset").is_some_and(Value::is_object) => {
+            (200, answer) if answer.get("dataset").is_some_and(Value::is_object) => {
                 let dataset = answer.get("dataset").unwrap_or(&Value::Null);
                 ctx.json(&Value::Object(pick(dataset, &DATASET_FIELDS)))
             }
-            // Node may have acted by now: answered here, never replayed.
-            Ok((404, _)) => ctx.error(404, "Mapping dataset not found."),
-            Ok((status, _)) => {
+            (404, _) => ctx.error(404, "Mapping dataset not found."),
+            (status, _) => {
                 tracing::error!("the internal dataset toggle answered {status}");
-                ctx.error(500, "Unable to update the mapping dataset.")
-            }
-            Err(e) => {
-                tracing::error!("the internal dataset toggle failed: {e:#}");
                 ctx.error(500, "Unable to update the mapping dataset.")
             }
         }
@@ -785,18 +770,13 @@ fn dataset_refresh<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         };
         let path = format!("/mapping/datasets/{key}/refresh");
         match mapping_call(ctx, Method::POST, &path, None).await {
-            Ok((200, result)) => ctx.json(&Value::Object(pick(
+            (200, result) => ctx.json(&Value::Object(pick(
                 &result,
                 &["key", "status", "edges", "error"],
             ))),
-            // Node may have acted by now: answered here, never replayed.
-            Ok((404, _)) => ctx.error(404, "Mapping dataset not found."),
-            Ok((status, _)) => {
+            (404, _) => ctx.error(404, "Mapping dataset not found."),
+            (status, _) => {
                 tracing::error!("the internal dataset refresh answered {status}");
-                ctx.error(500, "Unable to refresh the mapping dataset.")
-            }
-            Err(e) => {
-                tracing::error!("the internal dataset refresh failed: {e:#}");
                 ctx.error(500, "Unable to refresh the mapping dataset.")
             }
         }

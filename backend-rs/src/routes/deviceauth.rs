@@ -5,8 +5,7 @@
 //! flow (`/simkl/pin/code` and `/token`).
 //!
 //! Both keep sessions, poll intervals and rate-limit buckets in process
-//! memory. With Node behind this server that memory is Node's, so these
-//! routes go to Node; standalone, the state lives here.
+//! memory.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
@@ -194,14 +193,6 @@ fn body_device_code(body: &Map<String, Value>) -> String {
 
 fn message(ctx: &Ready<'_>, status: u16, text: &str) -> Outcome {
     ctx.error(status, text)
-}
-
-fn standalone_only() -> Result<(), Box<Outcome>> {
-    if crate::standalone::enabled() {
-        Ok(())
-    } else {
-        Err(Box::new(forward("device authorization is not available")))
-    }
 }
 
 fn jellyfin_provider(ctx: &Ready<'_>) -> bool {
@@ -516,7 +507,6 @@ fn throttle_key(suffix: &str, param: &UserParam) -> String {
 
 fn trakt_code<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
-        try_outcome!(standalone_only());
         let (_, param) = try_outcome!(guard(ctx, Guard::Own));
         let allowed = consume(
             &mut lock(&TRAKT).code_buckets,
@@ -692,13 +682,12 @@ async fn finish_trakt(
     if let Err(e) = saved {
         return Finish::Failed(format!("{e:#}"));
     }
-    super::userwrite::invalidate_sync_cache(ctx, id, "trakt").await;
+    super::userwrite::invalidate_sync_cache(id, "trakt");
     Finish::Done(ctx.json(&json!({ "status": "authorized", "username": username })))
 }
 
 fn trakt_token<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
-        try_outcome!(standalone_only());
         let (viewer, param) = try_outcome!(guard(ctx, Guard::Own));
         let body = try_outcome!(validated_body(ctx));
         let allowed = consume(
@@ -875,7 +864,6 @@ fn session_id() -> String {
 
 fn simkl_code<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
-        try_outcome!(standalone_only());
         let (_, param) = try_outcome!(guard(ctx, Guard::Own));
         let Some(config) = try_outcome!(simkl_config(ctx)) else {
             return message(ctx, 400, SIMKL_NOT_CONFIGURED);
@@ -1104,7 +1092,6 @@ async fn poll_simkl(
 
 fn simkl_token<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
-        try_outcome!(standalone_only());
         let (viewer, param) = try_outcome!(guard(ctx, Guard::Own));
         let body = try_outcome!(validated_body(ctx));
         let device_code = body_device_code(body);

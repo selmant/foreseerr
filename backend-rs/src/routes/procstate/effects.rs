@@ -2,15 +2,11 @@
 //! saving settings.json, in the order the handler runs them. Counting
 //! effects report their count.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 use super::synccache::{self, Provider};
 use crate::standalone::internal::Answer;
 use crate::state::AppState;
-
-/// The effects Node runs on its own copies while it is still there (its
-/// `MDBList` client serves the routes it still answers).
-const NODE_MEMORY_EFFECTS: [&str; 1] = ["clearMdblistProviderState"];
 
 /// The route.
 pub async fn answer(state: &AppState, body: Option<&Value>) -> Answer {
@@ -33,11 +29,11 @@ pub async fn answer(state: &AppState, body: Option<&Value>) -> Answer {
                 None
             }
             "clearSyncCache" => {
-                synccache::clear_all(state).await;
+                synccache::clear_all();
                 None
             }
             "clearAnilistSyncCache" => {
-                synccache::clear_anilist(state).await;
+                synccache::clear_anilist();
                 None
             }
             "disconnectAllTraktLinks" => Some(disconnect_trakt(state).await.map(Value::from)),
@@ -53,39 +49,7 @@ pub async fn answer(state: &AppState, body: Option<&Value>) -> Answer {
             None => {}
         }
     }
-    tell_node(state, effects).await;
     Answer::json(200, Value::Object(results))
-}
-
-/// While Node runs it keeps its own `MDBList` client; reset that too.
-async fn tell_node(state: &AppState, effects: &[Value]) {
-    if crate::standalone::enabled() {
-        return;
-    }
-    let memory: Vec<&Value> = effects
-        .iter()
-        .filter(|e| e.as_str().is_some_and(|e| NODE_MEMORY_EFFECTS.contains(&e)))
-        .collect();
-    if memory.is_empty() {
-        return;
-    }
-    let Ok(settings) = super::settings(state).await else {
-        return;
-    };
-    let url = format!(
-        "{}/internal/settings/effects",
-        state.env.node_url.trim_end_matches('/')
-    );
-    let sent = state
-        .internal
-        .post(url)
-        .header("X-API-Key", settings.api_key())
-        .json(&json!({ "effects": memory }))
-        .send()
-        .await;
-    if let Err(e) = sent {
-        tracing::warn!("Node's MDBList state could not be reset: {e:#}");
-    }
 }
 
 /// `String(value)` for what an effects array may hold.
@@ -140,7 +104,7 @@ pub async fn disconnect_trakt(state: &AppState) -> anyhow::Result<usize> {
         .await?;
     for row in &linked {
         if let Some(user_id) = row.get("userId").and_then(Value::as_i64) {
-            synccache::invalidate_user(state, user_id, Provider::Trakt).await;
+            synccache::invalidate_user(user_id, Provider::Trakt);
         }
     }
     Ok(linked.len())
@@ -201,6 +165,7 @@ pub async fn disconnect_anilist(state: &AppState) -> anyhow::Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn unknown_effects_print_like_string() {

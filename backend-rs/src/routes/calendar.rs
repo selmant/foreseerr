@@ -750,10 +750,7 @@ fn calendar<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 Err(why) => return Outcome::forward(why),
             }
         };
-        let partial = match partial_sources(ctx, admin).await {
-            Ok(partial) => partial,
-            Err(e) => return Outcome::forward(format!("source statuses: {e:#}")),
-        };
+        let partial = partial_sources(admin);
         match results(ctx, &filters, user.id, admin).await {
             Ok(Ok(results)) => {
                 let mut out = Map::new();
@@ -891,38 +888,10 @@ async fn attach_posters(ctx: &Ready<'_>, items: Vec<(String, Map<String, Value>)
         .collect()
 }
 
-/// The release sync statuses from Node, which runs the jobs.
-async fn node_source_statuses(ctx: &Ready<'_>) -> Result<Value> {
-    ctx.state
-        .internal
-        .get(format!(
-            "{}/internal/calendar/source-statuses",
-            ctx.state.env.node_url.trim_end_matches('/')
-        ))
-        .header("X-API-Key", ctx.settings.api_key())
-        .send()
-        .await
-        .context("asking Node for the release sync statuses")?
-        .error_for_status()
-        .context("Node refused the release sync statuses")?
-        .json::<Value>()
-        .await
-        .context("the release sync statuses are not JSON")
-}
-
-/// `releaseCalendarSync.getSourceStatuses()`, from whichever process runs
-/// the jobs, reduced to the sources whose last sync failed.
-async fn partial_sources(ctx: &Ready<'_>, admin: bool) -> Result<Vec<Value>> {
-    let statuses: Value = if crate::jobs::scheduler::rust_jobs() {
-        Value::Array(crate::jobs::release_calendar::source_statuses())
-    } else {
-        node_source_statuses(ctx).await?
-    };
-
-    let statuses = statuses
-        .as_array()
-        .context("the release sync statuses are not a list")?;
-    Ok(statuses
+/// `releaseCalendarSync.getSourceStatuses()`, reduced to the sources
+/// whose last sync failed.
+fn partial_sources(admin: bool) -> Vec<Value> {
+    crate::jobs::release_calendar::source_statuses()
         .iter()
         .filter(|s| truthy(s.get("lastErrorAt")) && !truthy(s.get("lastSuccessAt")))
         .map(|s| {
@@ -939,7 +908,7 @@ async fn partial_sources(ctx: &Ready<'_>, admin: bool) -> Result<Vec<Value>> {
             }
             Value::Object(out)
         })
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]

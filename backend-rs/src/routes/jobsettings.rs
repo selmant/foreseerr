@@ -1,19 +1,20 @@
-//! Settings routes over Node's process state.
+//! Settings routes over the process state Node kept in memory.
 //!
-//! The job scheduler, the full library scans, the in-memory caches and the
-//! integration health cache live in Node; its `/internal` routes act on
-//! them. Validation, settings.json writes and response shapes are here.
+//! The job scheduler and the full library scans are the Rust scheduler's
+//! (`src/jobs/`); the in-memory caches and the integration health cache
+//! are reached through the in-process `/internal` routes
+//! (`src/routes/procstate/`).
 
 use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::nodestate::{
-    admin, decode_segment, mutate, node_call, object_body, pick, raw_segment, NativeFut,
+    admin, decode_segment, internal_call, mutate, object_body, pick, raw_segment, NativeFut,
 };
 use super::{Outcome, Ready, Table};
 use crate::jobs::execution::Weight;
 use crate::jobs::scanbase::{self, Kind};
-use crate::jobs::scheduler::{self, rust_jobs, JobAnswer};
+use crate::jobs::scheduler::{self, JobAnswer};
 use crate::settings::public::truthy;
 
 /// This module's routes.
@@ -71,17 +72,6 @@ pub(super) const ROUTES: &Table = &[
     ),
 ];
 
-/// The fields of a job in Node's answers.
-const JOB_FIELDS: [&str; 7] = [
-    "id",
-    "name",
-    "type",
-    "interval",
-    "cronSchedule",
-    "nextExecutionTime",
-    "running",
-];
-
 /// The fields of a scanner's `status()`.
 const SCAN_FIELDS: [&str; 5] = [
     "running",
@@ -131,81 +121,52 @@ fn jobs<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         if let Err(why) = admin(ctx) {
             return Outcome::forward(why);
         }
-        if rust_jobs() {
-            return match scheduler::list() {
-                Ok(list) => ctx.json(&Value::Array(list)),
-                Err(message) => ctx.error(500, message),
-            };
-        }
-        match node_call(ctx, Method::GET, "/jobs", None).await {
-            Ok((200, Value::Array(list))) => {
-                let shaped: Vec<Value> = list
-                    .iter()
-                    .map(|job| Value::Object(pick(job, &JOB_FIELDS)))
-                    .collect();
-                ctx.json(&Value::Array(shaped))
-            }
-            Ok((status, _)) => Outcome::forward(format!("the internal job list answered {status}")),
-            Err(e) => Outcome::forward(format!("{e:#}")),
+        match scheduler::list() {
+            Ok(list) => ctx.json(&Value::Array(list)),
+            Err(message) => ctx.error(500, message),
         }
     })
 }
 
-/// `POST /settings/jobs/{id}/run` and `/cancel`: the action happens in
-/// Node; the job as it is afterwards comes back.
-async fn job_action(ctx: &Ready<'_>, action: &str) -> Outcome {
+/// `POST /settings/jobs/{id}/run` and `/cancel`: the job as it is
+/// afterwards.
+fn job_action(ctx: &Ready<'_>, action: &str) -> Outcome {
     if let Err(why) = admin(ctx) {
         return Outcome::forward(why);
     }
-    let raw = raw_segment(ctx, 1);
-    let Some(id) = decode_segment(raw) else {
+    let Some(id) = decode_segment(raw_segment(ctx, 1)) else {
         return Outcome::forward(String::from("a job id Express can't decode"));
     };
-    if rust_jobs() {
-        let answer = if action == "run" {
-            scheduler::run_now(&ctx.shared, &id)
-        } else {
-            scheduler::cancel(&id)
-        };
-        return job_answer(ctx, answer);
-    }
-    let path = format!("/jobs/{raw}/{action}");
-    match node_call(ctx, Method::POST, &path, None).await {
-        Ok((200, job)) => ctx.json(&Value::Object(pick(&job, &JOB_FIELDS))),
-        Ok((404, _)) => ctx.error(404, "Job not found."),
-        Ok((status, _)) => acted_failed(
-            ctx,
-            &format!("the internal job {action} answered {status}"),
-            "Unable to reach the job scheduler.",
-        ),
-        Err(e) => acted_failed(ctx, &format!("{e:#}"), "Unable to reach the job scheduler."),
-    }
+    let answer = if action == "run" {
+        scheduler::run_now(&ctx.shared, &id)
+    } else {
+        scheduler::cancel(&id)
+    };
+    job_answer(ctx, answer)
 }
 
-/// A Node `/internal` POST that failed after it was sent: Node may already
-/// have acted, so the request is answered here (a logged 500) rather than
-/// replayed.
+/// An `/internal` POST that failed after it acted: a logged 500.
 fn acted_failed(ctx: &Ready<'_>, why: &str, message: &str) -> Outcome {
     tracing::error!("{why}");
     ctx.error(500, message)
 }
 
 fn job_run<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
-    Box::pin(job_action(ctx, "run"))
+    Box::pin(std::future::ready(job_action(ctx, "run")))
 }
 
 fn job_cancel<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
-    Box::pin(job_action(ctx, "cancel"))
+    Box::pin(std::future::ready(job_action(ctx, "cancel")))
 }
 
-/// `POST /settings/jobs/{id}/schedule`: Node reschedules; a schedule it
-/// accepts is written to `settings.jobs[id].schedule` here.
+/// `POST /settings/jobs/{id}/schedule`: the scheduler reschedules; a
+/// schedule it accepts is written to `settings.jobs[id].schedule`.
 fn job_schedule<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
     Box::pin(async move {
         if let Err(why) = admin(ctx) {
             return Outcome::forward(why);
         }
-        if rust_jobs() && ctx.body.is_none() {
+        if ctx.body.is_none() {
             // The job is looked up first; then `req.body.schedule` throws.
             let Some(id) = decode_segment(raw_segment(ctx, 1)) else {
                 return Outcome::forward(String::from("a job id Express can't decode"));
@@ -219,55 +180,7 @@ fn job_schedule<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             Ok(body) => body,
             Err(why) => return Outcome::forward(why),
         };
-        if rust_jobs() {
-            return rust_schedule(ctx, body).await;
-        }
-        let Some(Value::String(schedule)) = body.get("schedule") else {
-            return Outcome::forward(String::from("a missing or non-string schedule"));
-        };
-        let raw = raw_segment(ctx, 1);
-        let Some(id) = decode_segment(raw) else {
-            return Outcome::forward(String::from("a job id Express can't decode"));
-        };
-        if !ctx
-            .settings
-            .data()
-            .get("jobs")
-            .and_then(|j| j.get(&id))
-            .is_some_and(Value::is_object)
-        {
-            return Outcome::forward(String::from("no settings for this job"));
-        }
-        let mut request = Map::new();
-        request.insert(String::from("schedule"), Value::from(schedule.as_str()));
-        let path = format!("/jobs/{raw}/schedule");
-        let job = match node_call(ctx, Method::POST, &path, Some(&Value::Object(request))).await {
-            Ok((200, answer)) if answer.get("rescheduled") == Some(&Value::Bool(true)) => {
-                answer.get("job").cloned().unwrap_or(Value::Null)
-            }
-            Ok((200, _)) => return ctx.error(400, "Invalid job schedule."),
-            Ok((404, _)) => return ctx.error(404, "Job not found."),
-            Ok((status, _)) => {
-                return acted_failed(
-                    ctx,
-                    &format!("the internal reschedule answered {status}"),
-                    "Unable to reschedule the job.",
-                )
-            }
-            Err(e) => return acted_failed(ctx, &format!("{e:#}"), "Unable to reschedule the job."),
-        };
-        let saved = mutate(ctx, |doc| {
-            if let Some(Value::Object(settings)) = doc.get_mut("jobs").and_then(|j| j.get_mut(&id))
-            {
-                settings.insert(String::from("schedule"), Value::from(schedule.as_str()));
-            }
-            Ok(())
-        })
-        .await;
-        if let Err(outcome) = saved {
-            return outcome;
-        }
-        ctx.json(&Value::Object(pick(&job, &JOB_FIELDS)))
+        rust_schedule(ctx, body).await
     })
 }
 
@@ -334,26 +247,16 @@ fn rust_scan_status(ctx: &Ready<'_>, server: &str) -> Outcome {
 }
 
 /// `GET /settings/{server}/sync`: the full scanner's status.
-async fn scan_status(ctx: &Ready<'_>, server: &str) -> Outcome {
+fn scan_status(ctx: &Ready<'_>, server: &str) -> Outcome {
     if let Err(why) = admin(ctx) {
         return Outcome::forward(why);
     }
-    if rust_jobs() {
-        return rust_scan_status(ctx, server);
-    }
-    let path = format!("/scanners/{server}");
-    match node_call(ctx, Method::GET, &path, None).await {
-        Ok((200, status)) => ctx.json(&Value::Object(pick(&status, &SCAN_FIELDS))),
-        Ok((status, _)) => {
-            Outcome::forward(format!("the internal scanner status answered {status}"))
-        }
-        Err(e) => Outcome::forward(format!("{e:#}")),
-    }
+    rust_scan_status(ctx, server)
 }
 
 /// `POST /settings/{server}/sync`: `cancel` wins over `start`; either way
 /// the status afterwards.
-async fn scan_control(ctx: &Ready<'_>, server: &str) -> Outcome {
+fn scan_control(ctx: &Ready<'_>, server: &str) -> Outcome {
     if let Err(why) = admin(ctx) {
         return Outcome::forward(why);
     }
@@ -375,70 +278,50 @@ async fn scan_control(ctx: &Ready<'_>, server: &str) -> Outcome {
     } else {
         Value::Null
     };
-    if rust_jobs() {
-        let kind = rust_scanner(server);
-        match action.as_str() {
-            Some("cancel") => scheduler::cancel_managed(kind.id),
-            Some("start") => {
-                let state = std::sync::Arc::clone(&ctx.shared);
-                tokio::spawn(async move {
-                    if let Err(e) = scheduler::execute_managed(state, kind.id, Weight::Heavy).await
-                    {
-                        tracing::error!(label = "Jobs", "Unable to start {}: {e:#}", kind.id);
-                    }
-                });
-            }
-            _ => {}
+    let kind = rust_scanner(server);
+    match action.as_str() {
+        Some("cancel") => scheduler::cancel_managed(kind.id),
+        Some("start") => {
+            let state = std::sync::Arc::clone(&ctx.shared);
+            tokio::spawn(async move {
+                if let Err(e) = scheduler::execute_managed(state, kind.id, Weight::Heavy).await {
+                    tracing::error!(label = "Jobs", "Unable to start {}: {e:#}", kind.id);
+                }
+            });
         }
-        return rust_scan_status(ctx, server);
+        _ => {}
     }
-    let mut request = Map::new();
-    request.insert(String::from("action"), action);
-    let path = format!("/scanners/{server}");
-    match node_call(ctx, Method::POST, &path, Some(&Value::Object(request))).await {
-        Ok((200, status)) => ctx.json(&Value::Object(pick(&status, &SCAN_FIELDS))),
-        Ok((status, _)) => acted_failed(
-            ctx,
-            &format!("the internal scanner control answered {status}"),
-            "Unable to reach the library scanner.",
-        ),
-        Err(e) => acted_failed(
-            ctx,
-            &format!("{e:#}"),
-            "Unable to reach the library scanner.",
-        ),
-    }
+    rust_scan_status(ctx, server)
 }
 
 fn plex_sync_status<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
-    Box::pin(scan_status(ctx, "plex"))
+    Box::pin(std::future::ready(scan_status(ctx, "plex")))
 }
 
 fn plex_sync<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
-    Box::pin(scan_control(ctx, "plex"))
+    Box::pin(std::future::ready(scan_control(ctx, "plex")))
 }
 
 fn jellyfin_sync_status<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
-    Box::pin(scan_status(ctx, "jellyfin"))
+    Box::pin(std::future::ready(scan_status(ctx, "jellyfin")))
 }
 
 fn jellyfin_sync<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
-    Box::pin(scan_control(ctx, "jellyfin"))
+    Box::pin(std::future::ready(scan_control(ctx, "jellyfin")))
 }
 
-/// `GET /settings/cache`: Node's cache, image and DNS statistics, plus the
+/// `GET /settings/cache`: the cache, image and DNS statistics, plus the
 /// browser cache limit.
 fn cache<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
     Box::pin(async move {
         if let Err(why) = admin(ctx) {
             return Outcome::forward(why);
         }
-        let stats = match node_call(ctx, Method::GET, "/cache", None).await {
-            Ok((200, stats)) => stats,
-            Ok((status, _)) => {
+        let stats = match internal_call(ctx, Method::GET, "/cache", None).await {
+            (200, stats) => stats,
+            (status, _) => {
                 return Outcome::forward(format!("the internal cache stats answered {status}"))
             }
-            Err(e) => return Outcome::forward(format!("{e:#}")),
         };
         let mut out = pick(&stats, &["apiCaches", "imageCache", "memory", "images"]);
         let mut browser = Map::new();
@@ -475,15 +358,14 @@ fn cache_flush<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             return ctx.error(404, "Cache not found.");
         }
         let path = format!("/cache/{id}/flush");
-        match node_call(ctx, Method::POST, &path, None).await {
-            Ok((204, _)) => Ready::no_content(),
-            Ok((404, _)) => ctx.error(404, "Cache not found."),
-            Ok((status, _)) => acted_failed(
+        match internal_call(ctx, Method::POST, &path, None).await {
+            (204, _) => Ready::no_content(),
+            (404, _) => ctx.error(404, "Cache not found."),
+            (status, _) => acted_failed(
                 ctx,
                 &format!("the internal cache flush answered {status}"),
                 "Unable to flush the cache.",
             ),
-            Err(e) => acted_failed(ctx, &format!("{e:#}"), "Unable to flush the cache."),
         }
     })
 }
@@ -500,32 +382,20 @@ fn all_flush<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
     Box::pin(whole_flush(ctx, "/cache/all/flush"))
 }
 
-/// The image and full flushes: the owner of the caches flushes them (this
-/// process when it runs the jobs, Node's `/internal` otherwise). With Node
-/// owning them, this process still serves `/imageproxy` and library
-/// artwork from its own memory, so it drops those as well. A failure is
-/// Node's `next({ status: 500, message })`.
+/// The image and full flushes. A failure is Node's
+/// `next({ status: 500, message })`.
 async fn whole_flush(ctx: &Ready<'_>, path: &str) -> Outcome {
     if let Err(why) = admin(ctx) {
         return Outcome::forward(why);
     }
-    match node_call(ctx, Method::POST, path, None).await {
-        Ok((204, _)) => {}
-        Ok((status, answer)) => {
+    match internal_call(ctx, Method::POST, path, None).await {
+        (204, _) => Ready::no_content(),
+        (status, answer) => {
             let message = answer.get("message").and_then(Value::as_str);
             tracing::error!("{path} answered {status}: {message:?}");
-            return ctx.error(500, message.unwrap_or("Unable to flush the cache."));
-        }
-        Err(e) => return acted_failed(ctx, &format!("{e:#}"), "Unable to flush the cache."),
-    }
-    if !super::procstate::in_process(path) {
-        if let Err(e) = crate::imagecache::flush_images(&ctx.state.env.config_dir).await {
-            let message = format!("{e:#}");
-            tracing::error!("flushing the image cache: {message}");
-            return ctx.error(500, &message);
+            ctx.error(500, message.unwrap_or("Unable to flush the cache."))
         }
     }
-    Ready::no_content()
 }
 
 /// `POST /settings/cache/dns/{entry}/flush`.
@@ -539,20 +409,19 @@ fn dns_flush<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             return Outcome::forward(String::from("an entry Express can't decode"));
         }
         let path = format!("/cache/dns/{raw}/flush");
-        match node_call(ctx, Method::POST, &path, None).await {
-            Ok((204, _)) => Ready::no_content(),
-            Ok((404, _)) => ctx.error(404, "Cache not found."),
-            Ok((status, _)) => acted_failed(
+        match internal_call(ctx, Method::POST, &path, None).await {
+            (204, _) => Ready::no_content(),
+            (404, _) => ctx.error(404, "Cache not found."),
+            (status, _) => acted_failed(
                 ctx,
                 &format!("the internal DNS flush answered {status}"),
                 "Unable to flush the DNS cache.",
             ),
-            Err(e) => acted_failed(ctx, &format!("{e:#}"), "Unable to flush the DNS cache."),
         }
     })
 }
 
-/// The integration health from Node's cache (refreshed first when asked).
+/// The integration health from its cache (refreshed first when asked).
 async fn health(ctx: &Ready<'_>, refresh: bool) -> Outcome {
     if let Err(why) = admin(ctx) {
         return Outcome::forward(why);
@@ -570,24 +439,21 @@ async fn health(ctx: &Ready<'_>, refresh: bool) -> Outcome {
             "Unable to check integration health.",
         )
     };
-    match node_call(ctx, method, path, None).await {
-        Ok((200, value)) => ctx.json(&value),
-        Ok((500, answer)) => {
+    match internal_call(ctx, method, path, None).await {
+        (200, value) => ctx.json(&value),
+        (500, answer) => {
             let why = answer.get("message").and_then(Value::as_str).unwrap_or("");
             tracing::error!("{failure} {why}");
             ctx.error(500, failure)
         }
-        // A refresh has made Node act: answered here, never replayed.
-        Ok((status, _)) if refresh => acted_failed(
+        (status, _) if refresh => acted_failed(
             ctx,
             &format!("the internal integration health refresh answered {status}"),
             failure,
         ),
-        Err(e) if refresh => acted_failed(ctx, &format!("{e:#}"), failure),
-        Ok((status, _)) => {
+        (status, _) => {
             Outcome::forward(format!("the internal integration health answered {status}"))
         }
-        Err(e) => Outcome::forward(format!("{e:#}")),
     }
 }
 

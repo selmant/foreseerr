@@ -1,4 +1,4 @@
-//! The database schema at startup when no Node runs behind this server.
+//! The database schema at startup.
 //!
 //! As Node's `server/index.ts` handles it: `TypeORM`'s
 //! `dataSource.runMigrations()` in production (with `PRAGMA

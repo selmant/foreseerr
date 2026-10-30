@@ -1,6 +1,6 @@
-//! Foreseerr's Rust backend. It listens where Node used to, answers the
-//! routes ported so far itself and forwards everything else to Node, which
-//! keeps running behind it on `FORESEERR_NODE_URL`.
+//! Foreseerr's backend: the whole server in one process (see
+//! `src/standalone/`), with the desktop and Jellyfin plugin runtimes in
+//! `src/runtime/`.
 #![recursion_limit = "256"]
 
 pub mod anilist;
@@ -48,7 +48,6 @@ pub mod openapi;
 pub mod outbound;
 pub mod pgorder;
 pub mod plexwatchlist;
-pub mod proxy;
 pub mod ratings;
 pub mod respond;
 pub mod routes;
@@ -82,8 +81,8 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::state::AppState;
 
-/// The console, from `RUST_LOG`; in standalone mode also Node's log files
-/// at `LOG_LEVEL`, for this crate's events.
+/// The console, from `RUST_LOG`, and the log files the log viewer reads at
+/// `LOG_LEVEL`, for this crate's events.
 fn init_logging() {
     // The managed runtimes print winston's console lines (their launchers
     // read them); everything else keeps tracing's format.
@@ -103,12 +102,10 @@ fn init_logging() {
             }),
         )
     });
-    let files = standalone::enabled().then(|| {
-        let config_dir = env::Env::from_env()
-            .map_or_else(|_| std::path::PathBuf::from("config"), |e| e.config_dir);
-        logfile::layer(logfile::directory(&config_dir))
-            .with_filter(Targets::new().with_target("foreseerr", logfile::level_from_env()))
-    });
+    let config_dir =
+        env::Env::from_env().map_or_else(|_| std::path::PathBuf::from("config"), |e| e.config_dir);
+    let files = logfile::layer(logfile::directory(&config_dir))
+        .with_filter(Targets::new().with_target("foreseerr", logfile::level_from_env()));
     tracing_subscriber::registry()
         .with(console)
         .with(runtime_console)
@@ -145,39 +142,30 @@ fn main() -> ExitCode {
 }
 
 async fn run() -> Result<u8> {
-    let boot = if standalone::enabled() {
-        Some(standalone::before_state().await?)
-    } else {
-        None
-    };
+    let boot = standalone::before_state().await?;
     let state = Arc::new(AppState::from_env().await?);
     routes::procstate::register(&state);
     runtime::desktop::attach(&state);
-    if let Some(boot) = boot {
-        standalone::after_state(&state, boot).await?;
-    }
+    standalone::after_state(&state, boot).await?;
     jobs::scheduler::start_at_boot(&state);
-    if jobs::scheduler::rust_jobs() {
-        // Node's `ensureMappingLayer()` at startup; the dataset downloads
-        // belong to whichever process runs the jobs. The desktop runtime
-        // skips it with the other startup jobs.
-        mappinglayer::register(&state);
-        if !runtime::desktop_links_internal() {
-            let mapping = Arc::clone(&state);
-            tokio::spawn(async move {
-                // Node starts it with the jobs: only once a user exists.
-                let users = mapping
-                    .db
-                    .scalar(r#"SELECT CAST(COUNT(*) AS BIGINT) FROM "user""#, &[])
-                    .await;
-                if !matches!(users, Ok(n) if n > 0) {
-                    return;
-                }
-                if let Err(e) = mappingdatasets::ensure_mapping_layer(mapping).await {
-                    tracing::error!(label = "Mapping", "Unable to load the mapping layer: {e:#}");
-                }
-            });
-        }
+    // Node's `ensureMappingLayer()` at startup, with the jobs. The desktop
+    // runtime skips it with the other startup jobs.
+    mappinglayer::register(&state);
+    if !runtime::desktop_links_internal() {
+        let mapping = Arc::clone(&state);
+        tokio::spawn(async move {
+            // Node starts it with the jobs: only once a user exists.
+            let users = mapping
+                .db
+                .scalar(r#"SELECT CAST(COUNT(*) AS BIGINT) FROM "user""#, &[])
+                .await;
+            if !matches!(users, Ok(n) if n > 0) {
+                return;
+            }
+            if let Err(e) = mappingdatasets::ensure_mapping_layer(mapping).await {
+                tracing::error!(label = "Mapping", "Unable to load the mapping layer: {e:#}");
+            }
+        });
     }
     let listener = runtime::process::bind(&state).await?;
     let app = routes::router(Arc::clone(&state))?;

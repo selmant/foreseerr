@@ -192,14 +192,7 @@ pub async fn bind(state: &AppState) -> Result<TcpListener> {
 pub async fn serve(state: Arc<AppState>, listener: TcpListener, app: axum::Router) -> Result<u8> {
     let bound = listener.local_addr().context("reading the bound address")?;
     if !super::active() {
-        if crate::standalone::enabled() {
-            tracing::info!("listening on {bound}, standalone (no Node behind this server)");
-        } else {
-            tracing::info!(
-                "listening on {bound}, forwarding routes not ported yet to {}",
-                state.env.node_url
-            );
-        }
+        tracing::info!("listening on {bound}");
         serve_until(listener, app, shutdown_signal()).await?;
         return Ok(0);
     }

@@ -130,9 +130,8 @@ async fn datasets(
 
 /// `/internal{path}` for the mapping layer, as Node answers it.
 ///
-/// `None` for a path Node has no such route for, or for an answer only
-/// Node can give (the watched titles of a Better Trakt user while Node
-/// runs).
+/// `None` for a path Node had no such route for, or when the watched
+/// titles can't be loaded.
 pub async fn answer(
     state: &AppState,
     method: &Method,

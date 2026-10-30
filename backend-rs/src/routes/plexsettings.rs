@@ -109,7 +109,7 @@ async fn admin_plex_token(ctx: &Ready<'_>) -> Result<String, String> {
 
 /// `POST /settings/plex`: merge the body, test the server and store its
 /// machine id and name. A failed test leaves the merged values in memory,
-/// unsaved (in proxy mode only Node has that memory, so it answers).
+/// unsaved (`mutate_unsaved`).
 fn plex_save<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
     Box::pin(async move {
         if let Err(why) = admin(ctx) {
@@ -145,7 +145,7 @@ fn plex_save<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         let url = format!("{}/", plex_base(&Value::Object(plex)));
         // `Object.assign(settings.plex, req.body)` lands in Node's shared
         // settings before the test; requests in between see it.
-        if !unchanged && crate::standalone::enabled() {
+        if !unchanged {
             let kept = ctx
                 .state
                 .settings
@@ -175,11 +175,7 @@ fn plex_save<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             .and_then(|c| c.get("machineIdentifier"))
             .filter(|m| truthy(Some(m)))
         else {
-            // Node's in-memory settings keep the assigned body unsaved; only
-            // a body that changed nothing leaves them as the file has them.
-            if !unchanged && !crate::standalone::enabled() {
-                return Outcome::forward(String::from("the Plex connection test failed"));
-            }
+            // The assigned body stays in the current settings, unsaved.
             return ctx.error(500, "Unable to connect to Plex.");
         };
         let name = container.and_then(|c| c.get("friendlyName"));

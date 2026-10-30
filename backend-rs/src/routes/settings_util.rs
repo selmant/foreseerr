@@ -2,7 +2,7 @@
 //! rely on, JavaScript string semantics, the settings document as Node
 //! holds it in memory, and Node's in-process side effects.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::{json, Map, Value};
 
 use super::{Outcome, Ready};
@@ -228,42 +228,24 @@ pub(super) fn masked(value: Option<&Value>) -> Value {
     })
 }
 
-/// Run Node-only side effects (cache resets, account disconnects that
-/// also drop in-memory caches) through `POST /internal/settings/effects`,
-/// in order. The answer maps each counting effect to its count.
+/// Run the side effects of a settings write (cache resets, account
+/// disconnects that also drop in-memory caches) through the in-process
+/// `POST /internal/settings/effects`, in order. The answer maps each
+/// counting effect to its count.
 ///
 /// # Errors
 ///
-/// Fails when Node can't be reached or refuses.
+/// Fails when an effect fails or is unknown.
 pub(super) async fn node_effects(ctx: &Ready<'_>, effects: &[&str]) -> Result<Value> {
-    if super::procstate::in_process("/settings/effects") {
-        let body = json!({ "effects": effects });
-        return crate::standalone::internal::call(
-            ctx.state,
-            &reqwest::Method::POST,
-            "/settings/effects",
-            Some(&body),
-        )
-        .await
-        .into_result("/settings/effects");
-    }
-    let url = format!(
-        "{}/internal/settings/effects",
-        ctx.state.env.node_url.trim_end_matches('/')
-    );
-    ctx.state
-        .internal
-        .post(url)
-        .header("X-API-Key", ctx.settings.api_key())
-        .json(&json!({ "effects": effects }))
-        .send()
-        .await
-        .context("asking Node to run settings side effects")?
-        .error_for_status()
-        .context("Node refused the settings side effects")?
-        .json()
-        .await
-        .context("the side effects answer is not JSON")
+    let body = json!({ "effects": effects });
+    crate::standalone::internal::call(
+        ctx.state,
+        &reqwest::Method::POST,
+        "/settings/effects",
+        Some(&body),
+    )
+    .await
+    .into_result("/settings/effects")
 }
 
 /// Count `user_settings` rows with an account linked.

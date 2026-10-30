@@ -1,6 +1,6 @@
 //! `Settings.load()` from `server/lib/settings/index.ts`.
 //!
-//! For a process with no Node behind it: settings.json created from the defaults when missing,
+//! settings.json created from the defaults when missing,
 //! migrated, merged over the defaults, and the keys and ids Node generates
 //! (API key, client id, session secret, VAPID keys) filled in.
 

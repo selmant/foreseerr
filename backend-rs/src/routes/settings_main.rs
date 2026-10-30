@@ -466,8 +466,8 @@ async fn tautulli_check(ctx: &Ready<'_>, url: &str) -> bool {
 
 /// `POST /settings/tautulli`. Node assigns the body into its in-memory
 /// settings before checking the connection and keeps it there unsaved
-/// when there is no hostname or the check fails (in proxy mode only Node
-/// has that memory, so those cases go to Node and the check runs again).
+/// when there is no hostname or the check fails; so does this handler
+/// (`mutate_unsaved`).
 fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         try_forward!(admin(ctx));
@@ -504,7 +504,7 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let unchanged = current == before;
         // `Object.assign(settings.tautulli, req.body)` lands in Node's
         // shared settings before anything else; requests in between see it.
-        if !unchanged && crate::standalone::enabled() {
+        if !unchanged {
             let kept = ctx
                 .state
                 .settings
@@ -519,11 +519,7 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
         }
         if !truthy(current.get("hostname")) {
-            let answer = Value::Object(current.clone());
-            if !unchanged && !crate::standalone::enabled() {
-                return Outcome::forward(String::from("the application URL has no hostname"));
-            }
-            return ctx.json(&answer);
+            return ctx.json(&Value::Object(current));
         }
         let url = match tautulli_url(&current) {
             Some(url) => Some(url),
@@ -538,9 +534,6 @@ fn tautulli<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             None => false,
         };
         if !passed {
-            if !unchanged && !crate::standalone::enabled() {
-                return Outcome::forward(String::from("the Tautulli connection test failed"));
-            }
             return ctx.error(500, "Unable to connect to Tautulli.");
         }
         let saved = try_saved!(

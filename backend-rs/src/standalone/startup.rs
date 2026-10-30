@@ -1,5 +1,4 @@
-//! `startServer()` in `server/index.ts` up to `listen()`, for a process
-//! with no Node behind it.
+//! `startServer()` in `server/index.ts` up to `listen()`.
 //!
 //! Before the application state exists ([`before_state`]): the Overseerr
 //! merge, the database migrations (production only) and the schema guard,
