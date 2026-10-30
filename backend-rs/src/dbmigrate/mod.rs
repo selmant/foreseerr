@@ -364,3 +364,5 @@ pub async fn assert_supported_schema(db: &Db, known: &[&'static Migration]) -> R
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod upgradetests;

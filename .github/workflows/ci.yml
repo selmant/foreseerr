@@ -189,6 +189,13 @@ jobs:
           DB_USE_SSL: 'false'
         run: python3 scripts/ci-smoke.py --bin target/debug/foreseerr
 
+      # Databases from upstream Seerr and earlier Foreseerr releases, with
+      # rows in them, upgraded to this build's schema on both engines.
+      - name: Upgrade matrix
+        env:
+          FORESEERR_UPGRADE_TEST_PG: postgres://foreseerr:ci-password@127.0.0.1:5432/foreseerr
+        run: cargo test --locked dbmigrate::upgradetests
+
   helm-lint:
     name: Helm Lint
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
