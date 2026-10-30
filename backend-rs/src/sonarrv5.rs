@@ -33,6 +33,9 @@ const API_VERSION_TTL: Duration = Duration::from_secs(600);
 /// `API_VERSION_RETRY_MS`: how long the v3 fallback is kept after
 /// `GET /api` failed.
 const API_VERSION_RETRY: Duration = Duration::from_secs(60);
+/// The longest `GET /api` may take, whatever `apiRequestTimeout` says:
+/// every request to the server waits for it.
+const API_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Server root URL → (expiry, version).
 static API_VERSIONS: LazyLock<Mutex<HashMap<String, (Instant, ApiVersion)>>> =
@@ -82,6 +85,7 @@ pub async fn api_version(
     );
     let _probing = probe.lock().await;
     if let Some(version) = cached(root) {
+        release_probe(root, &probe);
         return version;
     }
     let mut url = format!("{root}/api");
@@ -89,12 +93,12 @@ pub async fn api_version(
         url.push_str("?apikey=");
         url.push_str(&crate::tmdb::axios_encode(key));
     }
-    let mut request = client
+    let request = client
         .get(&url)
-        .header(reqwest::header::ACCEPT, "application/json");
-    if let Some(timeout) = timeout {
-        request = request.timeout(timeout);
-    }
+        .header(reqwest::header::ACCEPT, "application/json")
+        .timeout(timeout.map_or(API_VERSION_PROBE_TIMEOUT, |t| {
+            t.min(API_VERSION_PROBE_TIMEOUT)
+        }));
     let answer = match request
         .send()
         .await
@@ -103,11 +107,34 @@ pub async fn api_version(
         Ok(response) => response.json::<Value>().await.ok(),
         Err(_) => None,
     };
-    let (version, ttl) = answer.map_or((ApiVersion::V3, API_VERSION_RETRY), |info| {
-        (api_version_from_info(&info), API_VERSION_TTL)
-    });
-    crate::sync::lock(&API_VERSIONS).insert(root.to_owned(), (Instant::now() + ttl, version));
+    // An answer without the version fields (a proxy's error page served
+    // with 200, say) is a failed probe, not a v3 server.
+    let (version, ttl) = match answer {
+        Some(info) if info.get("current").is_some() || info.get("deprecated").is_some() => {
+            (api_version_from_info(&info), API_VERSION_TTL)
+        }
+        Some(_) | None => (ApiVersion::V3, API_VERSION_RETRY),
+    };
+    let now = Instant::now();
+    {
+        let mut versions = crate::sync::lock(&API_VERSIONS);
+        versions.retain(|_, (expires, _)| *expires > now);
+        versions.insert(root.to_owned(), (now + ttl, version));
+    }
+    release_probe(root, &probe);
     version
+}
+
+/// Callers from now on find the answer cached, so the last one through the
+/// probe lock drops it (only the map's reference and the caller's left).
+fn release_probe(root: &str, probe: &Arc<tokio::sync::Mutex<()>>) {
+    let mut probes = crate::sync::lock(&PROBES);
+    if probes
+        .get(root)
+        .is_some_and(|held| Arc::ptr_eq(held, probe) && Arc::strong_count(held) == 2)
+    {
+        probes.remove(root);
+    }
 }
 
 fn cached(root: &str) -> Option<ApiVersion> {
@@ -480,6 +507,15 @@ mod tests {
     /// Answers `GET /api` as Sonarr 5 does, slowly enough for callers to
     /// overlap; the port and the number of requests served.
     async fn sonarr5() -> std::io::Result<(u16, Arc<std::sync::atomic::AtomicUsize>)> {
+        fake_api("200 OK", r#"{"current":"v5","deprecated":["v3"]}"#).await
+    }
+
+    /// A server answering every request with `status` and `body`, slowly
+    /// enough for concurrent callers to overlap, counting the requests.
+    async fn fake_api(
+        status: &'static str,
+        body: &'static str,
+    ) -> std::io::Result<(u16, Arc<std::sync::atomic::AtomicUsize>)> {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
@@ -495,9 +531,8 @@ mod tests {
                     let _read = stream.read(&mut request).await.ok();
                     count.fetch_add(1, Ordering::SeqCst);
                     tokio::time::sleep(Duration::from_millis(100)).await;
-                    let body = r#"{"current":"v5","deprecated":["v3"]}"#;
                     let answer = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                         body.len()
                     );
                     stream.write_all(answer.as_bytes()).await.ok();
@@ -536,6 +571,48 @@ mod tests {
             1,
             "still once"
         );
+        assert!(
+            !crate::sync::lock(&PROBES).contains_key(&root),
+            "the probe lock is dropped once nobody waits on it"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failed_probes_fall_back_to_v3() -> std::io::Result<()> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let client = reqwest::Client::new();
+        for (status, body, what) in [
+            ("500 Internal Server Error", "{}", "an error status"),
+            (
+                "200 OK",
+                r#"{"error":"bad gateway"}"#,
+                "an answer without versions",
+            ),
+        ] {
+            let (port, served) = fake_api(status, body).await?;
+            let root = format!("http://127.0.0.1:{port}");
+            let ask = || api_version(&client, &root, None, None);
+            assert_eq!(ask().await, ApiVersion::V3, "{what}");
+            assert_eq!(ask().await, ApiVersion::V3, "{what}: kept a while");
+            assert_eq!(
+                served.load(std::sync::atomic::Ordering::SeqCst),
+                1,
+                "{what}: not asked again at once"
+            );
+            let retry = crate::sync::lock(&API_VERSIONS)
+                .get(&root)
+                .map(|(expires, _)| expires.saturating_duration_since(Instant::now()));
+            assert!(
+                retry.is_some_and(|left| left <= API_VERSION_RETRY),
+                "{what}: asked again after the retry delay, not the full TTL"
+            );
+        }
         Ok(())
     }
 

@@ -200,10 +200,15 @@ fn downloading_items(service: Service, item: &Value) -> Vec<Value> {
     if episodes.is_empty() {
         return vec![downloading_item(service, item)];
     }
+    // The record without its episode list, copied once per episode.
+    let mut base = item.clone();
+    if let Some(o) = base.as_object_mut() {
+        o.remove("episodes");
+    }
     episodes
         .into_iter()
         .map(|episode| {
-            let mut one = item.clone();
+            let mut one = base.clone();
             if let Some(o) = one.as_object_mut() {
                 o.insert(String::from("episode"), episode);
             }
@@ -290,6 +295,38 @@ mod tests {
             date_json(Some(&Value::Null)),
             json!("1970-01-01T00:00:00.000Z"),
             "new Date(null)"
+        );
+    }
+
+    #[test]
+    fn expands_grouped_records() {
+        let grouped = json!({
+            "seriesId": 3, "title": "Pack", "episodeIds": [10, 11],
+            "episodes": [
+                {"id": 10, "seasonNumber": 1, "episodeNumber": 2},
+                {"id": 11, "seasonNumber": 1, "episodeNumber": 3}
+            ]
+        });
+        let items = downloading_items(Service::Sonarr, &grouped);
+        assert_eq!(
+            items
+                .iter()
+                .map(|i| i.pointer("/episode/episodeNumber").cloned())
+                .collect::<Vec<_>>(),
+            vec![Some(json!(2)), Some(json!(3))],
+            "one item per episode of a v5 record"
+        );
+        let single = json!({"seriesId": 3, "title": "One", "episode": {"seasonNumber": 1}});
+        assert_eq!(
+            downloading_items(Service::Sonarr, &single).len(),
+            1,
+            "a v4 record"
+        );
+        let movie = json!({"movieId": 12, "title": "A"});
+        assert_eq!(
+            downloading_items(Service::Radarr, &movie).len(),
+            1,
+            "a movie"
         );
     }
 
