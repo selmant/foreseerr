@@ -145,18 +145,25 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        # The Linux binaries link against glibc 2.28 (zigbuild's suffix), so
+        # they run on older distributions than the runner's; Windows builds
+        # natively.
         include:
           - runner: ubuntu-24.04
             target: linux-x64
+            rust_target: x86_64-unknown-linux-gnu.2.28
           - runner: ubuntu-24.04-arm
             target: linux-arm64
+            rust_target: aarch64-unknown-linux-gnu.2.28
           - runner: windows-2025
             target: windows-x64
           - runner: ubuntu-24.04
             target: linux-x64
+            rust_target: x86_64-unknown-linux-gnu.2.28
             flavor: plugin
           - runner: ubuntu-24.04-arm
             target: linux-arm64
+            rust_target: aarch64-unknown-linux-gnu.2.28
             flavor: plugin
           - runner: windows-2025
             target: windows-x64
@@ -192,8 +199,16 @@ jobs:
         working-directory: backend-rs
         run: rustup toolchain install
 
+      - name: Install zig and cargo-zigbuild
+        if: matrix.rust_target
+        run: |
+          pip3 install --user ziglang==0.17.0
+          cargo install --locked cargo-zigbuild@0.24.0
+
       - name: Build the runtime
-        run: scripts/build-runtime.sh "$RUNNER_TEMP/foreseerr"
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: scripts/build-runtime.sh "$RUNNER_TEMP/foreseerr" ${RUST_TARGET:+--target "$RUST_TARGET"}
 
       - name: Package and upload
         env:

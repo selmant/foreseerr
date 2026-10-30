@@ -137,7 +137,8 @@
       "userId",
       "deviceId",
       "accessToken",
-      "bootstrapGeneration"
+      "bootstrapGeneration",
+      "fallbackServerUrl"
     ],
     "nativeOnlyFields": ["accessToken", "deviceId"],
     "redactedFields": ["accessToken", "ticket", "verifier"]

@@ -68,7 +68,7 @@ Foreseerr is currently distributed as a **Docker image** (recommended). Docker a
 
 GitHub Releases also attach standalone server archives plus `SHA256SUMS`:
 
-- **`foreseerr-linux-x64.tar.gz` / `foreseerr-linux-arm64.tar.gz` / `foreseerr-windows-x64.zip`** — the `foreseerr` server binary next to the web app (`dist/public/`), its API spec (`seerr-api.yml`) and `committag.json`. Keep those files together and start the binary from that directory, then open `http://127.0.0.1:5055`. Config defaults to `config/` in that directory (`CONFIG_DIRECTORY` overrides it). The Linux builds need glibc.
+- **`foreseerr-linux-x64.tar.gz` / `foreseerr-linux-arm64.tar.gz` / `foreseerr-windows-x64.zip`** — the `foreseerr` server binary next to the web app (`dist/public/`), its API spec (`seerr-api.yml`) and `committag.json`. Keep those files together and start the binary from that directory, then open `http://127.0.0.1:5055`. Config defaults to `config/` in that directory (`CONFIG_DIRECTORY` overrides it). The Linux builds need glibc 2.28 or newer and the system CA certificates (the `ca-certificates` package).
 - **`foreseerr-plugin-*`** — the same server built for the Jellyfin plugin's `/Foreseerr` sub-path; the plugin downloads these itself.
 
 Those are the Foreseerr **server**, not [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop). Postgres still needs a real Postgres; Windows SmartScreen will warn on the unsigned `.exe`.
