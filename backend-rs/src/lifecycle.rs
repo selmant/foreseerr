@@ -469,6 +469,32 @@ impl Lc {
         server
     }
 
+    /// The TVDB id of a show TMDB has none for, from the request's Sonarr:
+    /// its `tmdb:` lookup, trusting only a series with the same TMDB id.
+    async fn tvdb_from_sonarr(&self, e: &Entity, tmdb_id: i64) -> Option<i64> {
+        let server = self.pick_server("/sonarr", e)?;
+        let arr = Arr {
+            client: &self.state.servarr,
+            server: &server,
+            timeout: crate::servarr::api_timeout(&self.settings),
+        };
+        match crate::sonarrmeta::series_by_tmdb(&arr, tmdb_id).await {
+            Ok(found) => {
+                let found = crate::sonarrmeta::first_tvdb_id(&found);
+                if let Some(id) = found {
+                    tracing::info!(
+                        "TMDB has no TVDB ID for TMDB {tmdb_id}; Sonarr's lookup found TVDB {id}"
+                    );
+                }
+                found
+            }
+            Err(err) => {
+                tracing::warn!("Sonarr's tmdb:{tmdb_id} lookup failed: {err:#}");
+                None
+            }
+        }
+    }
+
     /// The requester's tag on a server with `tagRequests`, created if
     /// missing.
     async fn requester_tag(&self, arr: &Arr<'_>, e: &Entity, tags: &mut Vec<Value>) -> Result<()> {
@@ -746,6 +772,10 @@ impl Lc {
             .pointer("/external_ids/tvdb_id")
             .and_then(Value::as_i64)
             .or(media.tvdb_id);
+        let tvdb_id = match tvdb_id {
+            Some(id) => Some(id),
+            None => self.tvdb_from_sonarr(e, media.tmdb_id).await,
+        };
         let Some(tvdb_id) = tvdb_id else {
             // Both removes run in the save's transaction in Node.
             let mut tx = Tx::begin(db).await?;

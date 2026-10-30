@@ -11844,7 +11844,9 @@ paths:
   /service/sonarr/lookup/{tmdbId}:
     get:
       summary: Get series from Sonarr
-      description: Returns a list of series returned by searching for the name in Sonarr.
+      description: |
+        Returns the series Sonarr's `tmdb:` lookup finds with this TMDB id or,
+        when it finds none, the series found by searching for the show's name.
       tags:
         - service
       parameters:

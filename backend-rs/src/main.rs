@@ -58,6 +58,7 @@ pub mod settings;
 pub mod simkl;
 pub mod simklapi;
 pub mod skippedepisodes;
+pub mod sonarrmeta;
 pub mod sonarrv5;
 pub mod standalone;
 pub mod state;
