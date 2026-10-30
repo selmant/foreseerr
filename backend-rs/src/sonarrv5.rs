@@ -5,7 +5,7 @@
 //! server offers and translate the calls whose v5 shape differs.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value};
@@ -38,6 +38,12 @@ const API_VERSION_RETRY: Duration = Duration::from_secs(60);
 static API_VERSIONS: LazyLock<Mutex<HashMap<String, (Instant, ApiVersion)>>> =
     LazyLock::new(Mutex::default);
 
+/// Server root URL → the lock its `GET /api` runs under: callers arriving
+/// meanwhile wait for that answer instead of asking again, as they share
+/// the pending promise in Node.
+static PROBES: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(Mutex::default);
+
 /// `apiVersionFromInfo`: v5 whenever Sonarr's `GET /api` answer (e.g.
 /// `{"current": "v5", "deprecated": ["v3"]}`) offers it.
 #[must_use]
@@ -66,6 +72,15 @@ pub async fn api_version(
     api_key: Option<&str>,
     timeout: Option<Duration>,
 ) -> ApiVersion {
+    if let Some(version) = cached(root) {
+        return version;
+    }
+    let probe = Arc::clone(
+        crate::sync::lock(&PROBES)
+            .entry(root.to_owned())
+            .or_default(),
+    );
+    let _probing = probe.lock().await;
     if let Some(version) = cached(root) {
         return version;
     }
@@ -460,6 +475,68 @@ mod tests {
             ApiVersion::V3
         );
         assert_eq!(api_version_from_info(&json!("<html>")), ApiVersion::V3);
+    }
+
+    /// Answers `GET /api` as Sonarr 5 does, slowly enough for callers to
+    /// overlap; the port and the number of requests served.
+    async fn sonarr5() -> std::io::Result<(u16, Arc<std::sync::atomic::AtomicUsize>)> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let port = listener.local_addr()?.port();
+        let served = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&served);
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let count = Arc::clone(&count);
+                tokio::spawn(async move {
+                    let mut request = [0_u8; 4096];
+                    // One read takes the whole small request.
+                    let _read = stream.read(&mut request).await.ok();
+                    count.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    let body = r#"{"current":"v5","deprecated":["v3"]}"#;
+                    let answer = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    stream.write_all(answer.as_bytes()).await.ok();
+                });
+            }
+        });
+        Ok((port, served))
+    }
+
+    #[tokio::test]
+    async fn one_probe_for_concurrent_callers() -> std::io::Result<()> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let (port, served) = sonarr5().await?;
+        let client = reqwest::Client::new();
+        let root = format!("http://127.0.0.1:{port}");
+        let ask = || api_version(&client, &root, Some("k"), None);
+        let versions = tokio::join!(ask(), ask(), ask());
+        assert_eq!(
+            versions,
+            (ApiVersion::V5, ApiVersion::V5, ApiVersion::V5),
+            "every caller gets the answer"
+        );
+        assert_eq!(
+            served.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "asked once"
+        );
+        assert_eq!(ask().await, ApiVersion::V5, "cached");
+        assert_eq!(
+            served.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "still once"
+        );
+        Ok(())
     }
 
     #[test]
