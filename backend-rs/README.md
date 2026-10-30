@@ -6,8 +6,7 @@ serves the built frontend, and has a handler for every route in
 `seerr-api.yml`. Where a request has no exact answer the handlers give
 the fallback described under "Fallback answers" below.
 
-The production `Dockerfile` (and `Dockerfile.rust`, which builds the same
-image) runs this binary. Bun and Vite build the frontend; the final image
+The production `Dockerfile` runs this binary. Bun and Vite build the frontend; the final image
 contains neither Bun/Node nor `node_modules`. The package scripts in the
 repository root build the frontend and run this binary; the Rust commands
 use `backend-rs/rust-toolchain.toml`. [AUDIT.md](AUDIT.md) records the

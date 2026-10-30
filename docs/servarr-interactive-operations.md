@@ -1,6 +1,6 @@
 # Servarr interactive operations
 
-Interactive Servarr management (search, release selection, grabs, queue polling, manual import) stores short-lived operation tokens in an in-process `NodeCache` inside [`server/routes/mediaServarr.ts`](../server/routes/mediaServarr.ts).
+Interactive Servarr management (search, release selection, grabs, queue polling, manual import) stores short-lived operation tokens in process memory (`backend-rs/src/routes/mediaservarr.rs`).
 
 ## Deployment constraint
 

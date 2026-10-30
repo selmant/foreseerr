@@ -15,12 +15,9 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "strictPropertyInitialization": false,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
     "useUnknownInCatchVariables": false,
     "incremental": true,
     "paths": {
-      "@server/*": ["./server/*"],
       "@shared/*": ["./shared/*"],
       "@app/*": ["./src/*"]
     }

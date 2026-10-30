@@ -7,7 +7,6 @@ on:
     paths:
       - 'backend-rs/**'
       - 'Dockerfile'
-      - 'Dockerfile.rust'
       - '.dockerignore'
       - 'vite.config.ts'
       # Compiled or read in from outside the crate.
@@ -23,7 +22,6 @@ on:
     paths:
       - 'backend-rs/**'
       - 'Dockerfile'
-      - 'Dockerfile.rust'
       - '.dockerignore'
       - 'vite.config.ts'
       # Compiled or read in from outside the crate.

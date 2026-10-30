@@ -22,3 +22,6 @@ public/*
 
 # Served byte-for-byte by the Rust backend (swagger-ui-express's generated page)
 backend-rs/src/standalone/apidocs.html
+
+# Rust build output
+backend-rs/target/

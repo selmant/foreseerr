@@ -133,42 +133,16 @@ Roughly ~492 Foreseerr-only message keys exist in `src/i18n/locale/en.json` and 
 
 ## Migrations
 
-If you are adding a new feature that requires a database migration, you will need to create 2 migrations: one for SQLite and one for PostgreSQL. Here is how you could do it:
+A database change ships as two migrations, one for SQLite and one for PostgreSQL, in `backend-rs/src/dbmigrate/sqlite.rs` and `postgres.rs`. Each is an entry with a TypeORM-style class name ending in its timestamp (e.g. `AddFooColumn1790000000000`), that timestamp, and the SQL statements to run in order. Startup applies every entry the database's `migrations` table doesn't list yet, in a transaction.
 
-1. Create a PostgreSQL database or use an existing one:
-
-```bash
-sudo docker run --name postgres-seerr -e POSTGRES_PASSWORD=postgres -d -p 127.0.0.1:5432:5432/tcp postgres:latest
-```
-
-2. Reset the SQLite database and the PostgreSQL database:
+1. Add the entry to both files, with the same name and a timestamp later than every existing one. Never edit an entry that has shipped in a release; correct it with a new one.
+2. Update `backend-rs/src/dbmigrate/sqlite_reference.json` (the schema the SQLite migrations leave) and, for development mode, `synchronize.rs` / `synchronize_reference.json`. `cargo test` in `backend-rs/` compares a fresh database against the reference.
+3. Run `cargo test` in `backend-rs/`. It includes the upgrade matrix, which upgrades databases from older releases with rows in them (`src/dbmigrate/upgradetests.rs`). To run its PostgreSQL cases too, set `FORESEERR_UPGRADE_TEST_PG` to a connection URL for a role that may create databases:
 
 ```bash
-rm config/db/db.*
-rm config/settings.*
-PGPASSWORD=postgres sudo docker exec -it postgres-seerr /usr/bin/psql -h 127.0.0.1 -U postgres -c "DROP DATABASE IF EXISTS seerr;"
-PGPASSWORD=postgres sudo docker exec -it postgres-seerr /usr/bin/psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE seerr;"
-```
-
-3. Switch to the `develop` branch and create the original database for SQLite and PostgreSQL so that TypeORM can automatically generate the migrations:
-
-```bash
-git switch develop
-bun install
-rm -r dist/public dist; bun run build
-bun run start
-DB_TYPE="postgres" DB_USER=postgres DB_PASS=postgres bun run start
-```
-
-(You can shutdown the server once the message "Server ready on 5055" appears)
-
-4. Let TypeORM generate the migrations:
-
-```bash
-git switch -c your-feature-branch
-bun install
-bun run migration:generate server/migration/sqlite/YourMigrationName
-DB_TYPE="postgres" DB_USER=postgres DB_PASS=postgres bun run migration:generate server/migration/postgres/YourMigrationName
+sudo docker run --name postgres-foreseerr -e POSTGRES_PASSWORD=postgres -d -p 127.0.0.1:5432:5432/tcp postgres:18
+cd backend-rs
+FORESEERR_UPGRADE_TEST_PG=postgres://postgres:postgres@127.0.0.1:5432/postgres cargo test dbmigrate
 ```
 
 ## Attribution
