@@ -16,7 +16,6 @@ RUN apk add --no-cache build-base
 
 WORKDIR /app
 COPY package.json seerr-api.yml ./
-COPY server/i18n/locale ./server/i18n/locale
 COPY backend-rs ./backend-rs
 
 WORKDIR /app/backend-rs
