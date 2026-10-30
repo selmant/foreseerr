@@ -650,20 +650,35 @@ pub(super) async fn rejection_work(
             String::from("The exact queue warning is no longer mapped and active."),
         ));
     }
-    arr.request(
-        Method::DELETE,
-        &format!("/queue/{}", record.queue_id),
-        &[
-            ("removeFromClient", String::from("true")),
-            ("blocklist", String::from("true")),
-            ("skipRedownload", String::from("false")),
-        ],
-        None,
-        timeout,
-    )
-    .await
-    .map_err(RejectError::Arr)?;
-    Ok(())
+    let removed = arr
+        .request(
+            Method::DELETE,
+            &format!("/queue/{}", record.queue_id),
+            &[
+                ("removeFromClient", String::from("true")),
+                ("blocklist", String::from("true")),
+                ("skipRedownload", String::from("false")),
+            ],
+            None,
+            timeout,
+        )
+        .await;
+    match removed {
+        Ok(_) => Ok(()),
+        // Sonarr 5 has already removed the download from the client when
+        // it finds no grab to blocklist; Sonarr 4 skipped the blocklist.
+        Err(ArrError::Http { status, data })
+            if !radarr && crate::sonarrv5::removed_without_grab(status, &data) =>
+        {
+            tracing::warn!(
+                label = "Sonarr API",
+                queueId = record.queue_id,
+                "Removed Sonarr queue item without a grab to blocklist"
+            );
+            Ok(())
+        }
+        Err(e) => Err(RejectError::Arr(e)),
+    }
 }
 
 /// `mappedToService`.

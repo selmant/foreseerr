@@ -135,13 +135,14 @@ fn has_length(v: Option<&Value>) -> bool {
     }
 }
 
-/// `isCompleteImportCandidate`.
+/// `isCompleteImportCandidate`. A rematched Sonarr 4 candidate names its
+/// series by `seriesId` only.
 fn complete(candidate: &Value, radarr: bool) -> bool {
     let has = |k: &str| truthy(candidate.get(k));
     if radarr {
         has("movie") && has("quality") && has_length(candidate.get("languages"))
     } else {
-        has("series")
+        (has("series") || has("seriesId"))
             && candidate.get("seasonNumber").is_some_and(|v| !v.is_null())
             && has_length(candidate.get("episodes"))
             && has("quality")
@@ -337,6 +338,25 @@ fn dedupe<T: PartialEq + Clone>(ids: &[T]) -> Vec<T> {
     out
 }
 
+/// The rematched candidate Sonarr answered, with the file details it left
+/// out taken from the candidate before the rematch: Sonarr 4 answers only
+/// the match (`seriesId`, episodes, quality…), without the file's name,
+/// path or size, and Sonarr 5 without its folder.
+fn rematched(answer: &Value, before: Option<&Value>) -> Value {
+    let (Value::Object(answer), Some(Value::Object(before))) = (answer, before) else {
+        return answer.clone();
+    };
+    let mut out = answer.clone();
+    for key in ["name", "relativePath", "folderName", "size"] {
+        if out.get(key).is_none_or(Value::is_null) {
+            if let Some(value) = before.get(key) {
+                out.insert(key.to_owned(), value.clone());
+            }
+        }
+    }
+    Value::Object(out)
+}
+
 /// The ids of a series' episodes.
 async fn episode_ids(c: &Context, arr: &ArrServer<'_>) -> Step<Vec<Value>> {
     Ok(arr
@@ -387,8 +407,8 @@ pub(super) fn reprocess<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                     String::from("Every selected episode must belong to this series."),
                 ));
             }
-            let mut file = stored
-                .get("candidate")
+            let before = stored.get("candidate");
+            let mut file = before
                 .and_then(Value::as_object)
                 .cloned()
                 .unwrap_or_default();
@@ -417,7 +437,12 @@ pub(super) fn reprocess<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 ));
             };
             servarrtokens::remove(&token);
-            Ok(candidate_response(first, &c, user, &source))
+            Ok(candidate_response(
+                &rematched(first, before),
+                &c,
+                user,
+                &source,
+            ))
         }
         .await;
         match result {
@@ -830,11 +855,64 @@ mod tests {
         assert!(!complete(&cand, true), "no movie for radarr");
         assert_eq!(dedupe(&[3, 1, 3]), vec![3, 1], "first occurrence kept");
         assert_eq!(js_len("a😀"), 3, "utf-16 length");
+        assert!(
+            complete(
+                &json!({"seriesId": 3, "seasonNumber": 1, "episodes": [{"id": 1}], "quality": {}, "languages": [{"name": "English"}]}),
+                false
+            ),
+            "a rematched Sonarr 4 candidate names its series by id"
+        );
+        assert!(
+            !complete(
+                &json!({"seasonNumber": 1, "episodes": [{"id": 1}], "quality": {}, "languages": [{}]}),
+                false
+            ),
+            "no series at all"
+        );
         let raw = json!({"candidateTokens": ["a"], "importMode": "copy"});
         let parsed = raw.as_object().map(import_body);
         assert!(
             matches!(parsed, Some(Ok(ImportBody { copy: true, .. }))),
             "copy mode"
         );
+    }
+
+    #[test]
+    fn rematch_keeps_file_details() {
+        let before = json!({
+            "path": "/d/S01E02E03.mkv", "name": "S01E02E03", "relativePath": "S01E02E03.mkv",
+            "folderName": "S01E02E03", "size": 20, "series": {"id": 3},
+            "episodes": [{"id": 396}]
+        });
+        // Sonarr 4's answer to `POST /api/v3/manualimport`.
+        let v4 = json!({
+            "path": "/d/S01E02E03.mkv", "seriesId": 3, "seasonNumber": 1,
+            "episodes": [{"id": 396}, {"id": 397}], "rejections": []
+        });
+        assert_eq!(
+            rematched(&v4, Some(&before)),
+            json!({
+                "path": "/d/S01E02E03.mkv", "seriesId": 3, "seasonNumber": 1,
+                "episodes": [{"id": 396}, {"id": 397}], "rejections": [],
+                "name": "S01E02E03", "relativePath": "S01E02E03.mkv",
+                "folderName": "S01E02E03", "size": 20
+            }),
+            "the file details carry over, the match is Sonarr's"
+        );
+        let v5 = json!({"name": "renamed", "size": 21, "series": {"id": 3}});
+        assert_eq!(
+            rematched(&v5, Some(&before)),
+            json!({
+                "name": "renamed", "size": 21, "series": {"id": 3},
+                "relativePath": "S01E02E03.mkv", "folderName": "S01E02E03"
+            }),
+            "what Sonarr answered wins"
+        );
+        assert_eq!(
+            rematched(&json!(5), Some(&before)),
+            json!(5),
+            "not an object"
+        );
+        assert_eq!(rematched(&v4, None), v4, "nothing to carry over");
     }
 }

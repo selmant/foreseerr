@@ -126,7 +126,7 @@ async fn update_server(
         Ok(queue) => {
             let items: Vec<Value> = queue
                 .iter()
-                .map(|item| downloading_item(service, item))
+                .flat_map(|item| downloading_items(service, item))
                 .collect();
             crate::sync::write(&TRACKER)
                 .servers(service)
@@ -187,6 +187,34 @@ fn date_json(value: Option<&Value>) -> Value {
     millis.map_or(Value::Null, |ms| {
         Value::from(crate::clock::Utc::from_unix_millis(ms).iso_string())
     })
+}
+
+/// The `DownloadingItem`s of a queue record: one per episode for Sonarr,
+/// which lists a multi-episode download once on v5 (Sonarr 4 listed it per
+/// episode).
+fn downloading_items(service: Service, item: &Value) -> Vec<Value> {
+    let episodes = match service {
+        Service::Radarr => Vec::new(),
+        Service::Sonarr => crate::sonarrv5::queue_item_episodes(item),
+    };
+    if episodes.is_empty() {
+        return vec![downloading_item(service, item)];
+    }
+    // The record without its episode list, copied once per episode.
+    let mut base = item.clone();
+    if let Some(o) = base.as_object_mut() {
+        o.remove("episodes");
+    }
+    episodes
+        .into_iter()
+        .map(|episode| {
+            let mut one = base.clone();
+            if let Some(o) = one.as_object_mut() {
+                o.insert(String::from("episode"), episode);
+            }
+            downloading_item(service, &one)
+        })
+        .collect()
 }
 
 /// The `DownloadingItem` of a queue record, keys in Node's order, absent
@@ -267,6 +295,38 @@ mod tests {
             date_json(Some(&Value::Null)),
             json!("1970-01-01T00:00:00.000Z"),
             "new Date(null)"
+        );
+    }
+
+    #[test]
+    fn expands_grouped_records() {
+        let grouped = json!({
+            "seriesId": 3, "title": "Pack", "episodeIds": [10, 11],
+            "episodes": [
+                {"id": 10, "seasonNumber": 1, "episodeNumber": 2},
+                {"id": 11, "seasonNumber": 1, "episodeNumber": 3}
+            ]
+        });
+        let items = downloading_items(Service::Sonarr, &grouped);
+        assert_eq!(
+            items
+                .iter()
+                .map(|i| i.pointer("/episode/episodeNumber").cloned())
+                .collect::<Vec<_>>(),
+            vec![Some(json!(2)), Some(json!(3))],
+            "one item per episode of a v5 record"
+        );
+        let single = json!({"seriesId": 3, "title": "One", "episode": {"seasonNumber": 1}});
+        assert_eq!(
+            downloading_items(Service::Sonarr, &single).len(),
+            1,
+            "a v4 record"
+        );
+        let movie = json!({"movieId": 12, "title": "A"});
+        assert_eq!(
+            downloading_items(Service::Radarr, &movie).len(),
+            1,
+            "a movie"
         );
     }
 

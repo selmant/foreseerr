@@ -1,6 +1,8 @@
 //! The Radarr and Sonarr reads ported so far, through `ServarrBase`'s
 //! client: `apikey` as a query parameter and `ExternalAPI`'s response
 //! cache, including `getRolling`'s background refresh.
+//!
+//! A Sonarr that offers API v5 is talked to through it (see `sonarrv5`).
 
 use std::time::Duration;
 
@@ -11,6 +13,7 @@ use crate::media::js_string;
 use crate::memcache::{self, CacheId};
 use crate::outbound;
 use crate::settings::public::truthy;
+use crate::sonarrv5::{self, ApiVersion};
 use crate::tmdb::axios_encode;
 
 /// `getProfiles`, `getRootFolders` and `getLanguageProfiles` cache for an
@@ -25,6 +28,9 @@ const ROLLING_BUFFER: Duration = Duration::from_secs(10);
 #[derive(Debug, Clone)]
 pub struct ServarrClient {
     client: reqwest::Client,
+    /// Every server is a Sonarr: for the Sonarr settings test, whose body
+    /// carries none of Sonarr's settings keys.
+    sonarr: bool,
 }
 
 /// The cache a server's client uses: `sonarr` for a server with Sonarr's
@@ -44,7 +50,38 @@ impl ServarrClient {
     /// A client over the outgoing HTTP client (proxy and CA settings apply).
     #[must_use]
     pub const fn new(client: reqwest::Client) -> Self {
-        Self { client }
+        Self {
+            client,
+            sonarr: false,
+        }
+    }
+
+    /// This client for servers known to be Sonarr.
+    #[must_use]
+    pub fn for_sonarr(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            sonarr: true,
+        }
+    }
+
+    /// The API a server is talked to through: v5 for a Sonarr that offers
+    /// it, v3 otherwise.
+    async fn api(&self, server: &Value, timeout: Option<Duration>) -> ApiVersion {
+        if !self.sonarr && cache_for(server) != CacheId::Sonarr {
+            return ApiVersion::V3;
+        }
+        let api_key = match server.get("apiKey") {
+            None | Some(Value::Null) => None,
+            other => Some(js_string(other)),
+        };
+        sonarrv5::api_version(
+            &self.client,
+            &build_url(server, ""),
+            api_key.as_deref(),
+            timeout,
+        )
+        .await
     }
 
     /// `getProfiles`: the server's quality profiles, through `getRolling`
@@ -96,8 +133,9 @@ impl ServarrClient {
     ///
     /// Fails when the server can't be reached or doesn't answer JSON.
     pub async fn tags(&self, server: &Value, timeout: Option<Duration>) -> Result<Value> {
+        let api = self.api(server, timeout).await.prefix();
         self.fetch(
-            &with_api_key(&build_url(server, "/api/v3/tag"), server),
+            &with_api_key(&build_url(server, &format!("{api}/tag")), server),
             timeout,
         )
         .await
@@ -109,8 +147,9 @@ impl ServarrClient {
     ///
     /// Fails when the server can't be reached or doesn't answer JSON.
     pub async fn system_status(&self, server: &Value, timeout: Option<Duration>) -> Result<Value> {
+        let api = self.api(server, timeout).await.prefix();
         self.fetch(
-            &with_api_key(&build_url(server, "/api/v3/system/status"), server),
+            &with_api_key(&build_url(server, &format!("{api}/system/status")), server),
             timeout,
         )
         .await
@@ -129,7 +168,8 @@ impl ServarrClient {
         endpoint: &str,
         timeout: Option<Duration>,
     ) -> Result<Value> {
-        let base = build_url(server, &format!("/api/v3{endpoint}"));
+        let api = self.api(server, timeout).await.prefix();
+        let base = build_url(server, &format!("{api}{endpoint}"));
         let url = with_api_key(&base, server);
         // Keyed by the URL without the API key.
         let key = base.clone();
@@ -156,7 +196,8 @@ impl ServarrClient {
     }
 
     /// One call to `/api/v3{path}` with `apikey` and `query` (axios order),
-    /// an optional JSON body, and the server's timeout.
+    /// an optional JSON body, and the server's timeout; translated to
+    /// `/api/v5` for a Sonarr that offers it.
     ///
     /// # Errors
     ///
@@ -170,8 +211,20 @@ impl ServarrClient {
         body: Option<&Value>,
         timeout: Option<Duration>,
     ) -> Result<Value> {
-        let mut url = with_api_key(&build_url(server, &format!("/api/v3{path}")), server);
-        for (k, v) in query {
+        let api = self.api(server, timeout).await;
+        let query: Vec<(String, String)> = query
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect();
+        let (query, body) = match api {
+            ApiVersion::V3 => (query, body.cloned()),
+            ApiVersion::V5 => sonarrv5::to_v5_request(method.as_str(), path, query, body.cloned()),
+        };
+        let mut url = with_api_key(
+            &build_url(server, &format!("{}{path}", api.prefix())),
+            server,
+        );
+        for (k, v) in &query {
             url.push(if url.contains('?') { '&' } else { '?' });
             url.push_str(k);
             url.push('=');
@@ -185,7 +238,7 @@ impl ServarrClient {
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
         }
-        if let Some(body) = body {
+        if let Some(body) = &body {
             request = request.body(body.to_string());
         }
         let response = request
@@ -203,7 +256,11 @@ impl ServarrClient {
             return Ok(Value::Null);
         }
         let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        Ok(crate::tmdb::js_numbers(value))
+        let value = crate::tmdb::js_numbers(value);
+        Ok(match api {
+            ApiVersion::V3 => value,
+            ApiVersion::V5 => sonarrv5::from_v5_response(method.as_str(), path, value),
+        })
     }
 
     async fn fetch(&self, url: &str, timeout: Option<Duration>) -> Result<Value> {
