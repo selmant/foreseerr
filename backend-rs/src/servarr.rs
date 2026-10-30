@@ -84,6 +84,12 @@ impl ServarrClient {
         .await
     }
 
+    /// The API [`Self::call`] talks to `server` through, for the calls
+    /// that differ between Sonarr versions beyond what it translates.
+    pub async fn api_version(&self, server: &Value, timeout: Option<Duration>) -> ApiVersion {
+        self.api(server, timeout).await
+    }
+
     /// `getProfiles`: the server's quality profiles, through `getRolling`
     /// with its hour-long cache. `timeout` is `network.apiRequestTimeout`.
     ///

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use reqwest::Method;
 use serde_json::{Map, Value};
 
@@ -829,8 +829,28 @@ impl Sync<'_> {
                         continue;
                     }
                     let key = format!("{}-{id}", crate::media::js_string(server.get("id")));
-                    self.sonarr_seasons
-                        .insert(key, series.get("seasons").cloned().unwrap_or(Value::Null));
+                    let seasons = if crate::episodeorder::other_order(&series).is_some() {
+                        match self.aired_seasons(server, id, &series).await {
+                            Ok(seasons) => Value::Array(seasons),
+                            Err(e) => {
+                                // Sonarr's own seasons are other episodes:
+                                // leave this quality's seasons as they are.
+                                exists = true;
+                                prevent = true;
+                                tracing::debug!(
+                                    label = "AvailabilitySync",
+                                    error_message = %format!("{e:#}"),
+                                    "Failure counting the {} show [TMDB ID {}] by aired season in Sonarr.",
+                                    if four_k { "4K" } else { "non-4K" },
+                                    media.tmdb_id
+                                );
+                                continue;
+                            }
+                        }
+                    } else {
+                        series.get("seasons").cloned().unwrap_or(Value::Null)
+                    };
+                    self.sonarr_seasons.insert(key, seasons);
                     if let Some(Value::Object(stats)) = series.pointer("/statistics") {
                         if stats
                             .get("episodeFileCount")
@@ -873,6 +893,36 @@ impl Sync<'_> {
             }
         }
         (exists, Some(seasons))
+    }
+
+    /// The seasons of a series Sonarr numbers in another order than the
+    /// aired one, counted per aired season (see
+    /// `crate::episodeorder::aired_seasons`).
+    async fn aired_seasons(&self, server: &Value, id: i64, series: &Value) -> Result<Vec<Value>> {
+        let timeout = crate::servarr::api_timeout(&self.job.settings);
+        let episodes = self
+            .job
+            .state
+            .servarr
+            .call(
+                server,
+                Method::GET,
+                "/episode",
+                &[("seriesId", id.to_string())],
+                None,
+                timeout,
+            )
+            .await
+            .context("[Sonarr] Failed to retrieve episodes")?;
+        let tvdb_id = series
+            .get("tvdbId")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| anyhow!("the Sonarr series has no TVDB id"))?;
+        let catalog = crate::episodeorder::aired_catalog(&self.job.state.outbound, tvdb_id)
+            .await
+            .context("[TVDB] Failed to load the aired episode order")?;
+        let episodes = episodes.as_array().map_or(&[][..], Vec::as_slice);
+        Ok(crate::episodeorder::aired_seasons(&catalog, episodes))
     }
 
     fn season_in_sonarr(&self, servers: &[Value], external: Option<i64>, number: i64) -> bool {

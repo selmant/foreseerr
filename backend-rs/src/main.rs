@@ -20,6 +20,7 @@ pub mod dnsresolve;
 pub mod downloads;
 pub mod email;
 pub mod env;
+pub mod episodeorder;
 pub mod github;
 pub mod i18n;
 pub mod imagecache;

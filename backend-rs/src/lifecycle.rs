@@ -17,7 +17,9 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 
 use crate::arr::{Arr, MovieOptions, SeriesOptions};
-use crate::db::{Bind, Db, MediaRow, RequestRow, UserRecord, UserSettingsRecord};
+use crate::db::{
+    Bind, Db, EpisodeRequestRow, MediaRow, RequestRow, UserRecord, UserSettingsRecord,
+};
 use crate::dbtx::Exec;
 use crate::jobs::syncutil::Tx;
 use crate::media::js_string;
@@ -875,7 +877,8 @@ impl Lc {
                 timeout,
             };
             let result = async {
-                let added = arr.add_series(&options).await?;
+                let aired = crate::episodeorder::Tvdb(&lc.state.outbound);
+                let added = arr.add_series(&options, &aired).await?;
                 lc.record_service(&snapshot, &server, &added).await?;
                 let mut entity = snapshot.clone();
                 if !entity.row.episodes.is_empty() && truthy(added.get("id")) {
@@ -884,10 +887,16 @@ impl Lc {
                         .await?;
                     let now = crate::clock::now_millis();
                     let prevent = truthy(server.get("preventSearch"));
+                    let order = crate::episodeorder::other_order(&added);
+                    let mut left_out = Vec::new();
                     for child in &mut entity.row.episodes {
                         let Some(found) = episodes.iter().find(|x| {
                             x.get("tvdbId").and_then(Value::as_i64) == Some(child.tvdb_id)
                         }) else {
+                            if order.is_some() {
+                                child.status = FAILED;
+                                left_out.push(episode_code(child));
+                            }
                             continue;
                         };
                         let has_file = truthy(found.get("hasFile"));
@@ -896,8 +905,10 @@ impl Lc {
                             child.search_triggered_at = Some(crate::clock::Utc::now().iso_string());
                         }
                     }
+                    if let Some(order) = order {
+                        log_out_of_order(entity.row.id, order, &left_out);
+                    }
                     lc.write(&mut entity, false).await?;
-                    let all_complete = entity.row.episodes.iter().all(|x| x.status == COMPLETED);
                     let rolling = matches!(
                         entity.row.episode_selection_type.as_deref(),
                         Some("after" | "watchAhead")
@@ -905,9 +916,16 @@ impl Lc {
                     let ended = js_string(added.get("status")).to_lowercase() == "ended";
                     let may_complete = !rolling
                         || (entity.row.episode_selection_type.as_deref() == Some("after") && ended);
-                    if all_complete && may_complete {
-                        entity.row.status = COMPLETED;
-                        lc.save(&mut entity).await?;
+                    match episodes_done(&entity.row.episodes) {
+                        EpisodesDone::Complete if may_complete => {
+                            entity.row.status = COMPLETED;
+                            lc.save(&mut entity).await?;
+                        }
+                        EpisodesDone::AllFailed if may_complete => anyhow::bail!(
+                            "None of the requested episodes are in the {} episode order the series uses in Sonarr",
+                            order.unwrap_or(crate::episodeorder::OFFICIAL)
+                        ),
+                        EpisodesDone::Complete | EpisodesDone::AllFailed | EpisodesDone::Pending => {}
                     }
                 }
                 anyhow::Ok(())
@@ -926,6 +944,77 @@ impl Lc {
             }
         });
     }
+}
+
+/// Where a request's episodes stand: each one downloaded (`COMPLETED`) or
+/// out of reach (`FAILED`, as an episode the order the series uses in
+/// Sonarr leaves out is).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EpisodesDone {
+    /// Some are still to be downloaded.
+    Pending,
+    /// Each one is downloaded or out of reach, and not all are out of
+    /// reach (no episodes at all count as complete).
+    Complete,
+    /// Every one is out of reach.
+    AllFailed,
+}
+
+/// Where `episodes` stand.
+#[must_use]
+pub fn episodes_done(episodes: &[EpisodeRequestRow]) -> EpisodesDone {
+    if !episodes.is_empty() && episodes.iter().all(|e| e.status == FAILED) {
+        EpisodesDone::AllFailed
+    } else if episodes
+        .iter()
+        .all(|e| e.status == COMPLETED || e.status == FAILED)
+    {
+        EpisodesDone::Complete
+    } else {
+        EpisodesDone::Pending
+    }
+}
+
+/// `S01E02` for a requested episode.
+#[must_use]
+pub fn episode_code(e: &EpisodeRequestRow) -> String {
+    format!("S{:02}E{:02}", e.season_number, e.episode_number)
+}
+
+/// The first few of `codes` for a log line.
+fn listed(codes: &[String]) -> String {
+    const SHOWN: usize = 10;
+    let shown = codes
+        .iter()
+        .take(SHOWN)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    match codes.len() {
+        1 => format!("Episode {shown}"),
+        n if n <= SHOWN => format!("Episodes {shown}"),
+        n => format!("Episodes {shown} and {} more", n - SHOWN),
+    }
+}
+
+/// Log the requested episodes (`codes`) marked `FAILED` in one line.
+///
+/// The `order` the series uses in Sonarr leaves them out, so Sonarr can't
+/// download them and waiting for them would keep the request open for
+/// good.
+pub fn log_out_of_order(request_id: i64, order: &str, codes: &[String]) {
+    if codes.is_empty() {
+        return;
+    }
+    let (verb, them) = if codes.len() == 1 {
+        ("is", "it")
+    } else {
+        ("are", "them")
+    };
+    tracing::warn!(
+        "{} of request {request_id} {verb} not in the {order} episode order the series uses in Sonarr, so Sonarr can't download {them}; marked FAILED",
+        listed(codes)
+    );
 }
 
 /// The writes of a save, in one transaction as `TypeORM`'s cascaded
@@ -1319,6 +1408,52 @@ fn requested_extra(row: &RequestRow) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn episodes_settle_when_downloaded_or_out_of_reach() {
+        let rows = |statuses: &[i64]| -> Vec<EpisodeRequestRow> {
+            statuses
+                .iter()
+                .map(|status| EpisodeRequestRow {
+                    status: *status,
+                    ..EpisodeRequestRow::default()
+                })
+                .collect()
+        };
+        assert_eq!(
+            episodes_done(&rows(&[COMPLETED, FAILED])),
+            EpisodesDone::Complete,
+            "the rest downloaded"
+        );
+        assert_eq!(
+            episodes_done(&rows(&[FAILED, FAILED])),
+            EpisodesDone::AllFailed,
+            "nothing Sonarr can download"
+        );
+        assert_eq!(
+            episodes_done(&rows(&[COMPLETED, APPROVED, FAILED])),
+            EpisodesDone::Pending,
+            "one to come"
+        );
+        assert_eq!(episodes_done(&[]), EpisodesDone::Complete, "none asked for");
+        let child = EpisodeRequestRow {
+            season_number: 21,
+            episode_number: 4,
+            ..EpisodeRequestRow::default()
+        };
+        assert_eq!(episode_code(&child), "S21E04", "code");
+        let codes: Vec<String> = (1..=12).map(|n| format!("S01E{n:02}")).collect();
+        assert_eq!(
+            listed(codes.get(..1).unwrap_or_default()),
+            "Episode S01E01",
+            "one"
+        );
+        assert_eq!(
+            listed(&codes),
+            "Episodes S01E01, S01E02, S01E03, S01E04, S01E05, S01E06, S01E07, S01E08, S01E09, S01E10 and 2 more",
+            "the first ten"
+        );
+    }
     use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
 
     #[test]

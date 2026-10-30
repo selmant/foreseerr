@@ -318,6 +318,7 @@ impl ArrRun<'_> {
     async fn try_series(&self, series: &Value, tvdb_known: Option<i64>) -> Result<()> {
         let job = self.scan.job;
         let tvdb = tvdb_known.ok_or_else(|| anyhow!("a series without a TVDB id"))?;
+        crate::episodeorder::track_order(&self.current, series);
         let known = job
             .state
             .db
@@ -331,8 +332,21 @@ impl ArrRun<'_> {
             .and_then(|r| r.get("tmdbId"))
             .and_then(Value::as_i64)
             .filter(|id| *id != 0);
-        let show = match known {
-            Some(id) => tv_for_scan(job, id).await?,
+        let show = match show_tmdb_id(known, series) {
+            Some(id) if known.is_some() => tv_for_scan(job, id).await?,
+            // Sonarr's id saves TMDB's find by TVDB id, which stays the
+            // fallback should TMDB not know it.
+            Some(id) => match tv_for_scan(job, id).await {
+                Ok(show) => show,
+                Err(e) => {
+                    tracing::debug!(
+                        label = self.scan.kind.label,
+                        errorMessage = %format!("{e:#}"),
+                        "TMDB doesn't know Sonarr's TMDB ID {id} of TVDB ID {tvdb}; finding the show by TVDB ID"
+                    );
+                    show_by_tvdb(job, tvdb).await?
+                }
+            },
             None => show_by_tvdb(job, tvdb).await?,
         };
         let tmdb_id = show
@@ -343,11 +357,14 @@ impl ArrRun<'_> {
         let settings = job.current_settings().await?;
         let specials = js_truthy(settings.get("/main/enableSpecialEpisodes"));
         let four_k = self.server_4k(&self.current);
-        let seasons = sonarr_seasons(
-            &seasons_of(&show, specials),
-            array_of(series, "seasons"),
-            four_k,
-        );
+        let aired;
+        let sonarr = if crate::episodeorder::other_order(series).is_some() {
+            aired = self.aired_seasons(series, tvdb).await?;
+            aired.as_slice()
+        } else {
+            array_of(series, "seasons")
+        };
+        let seasons = sonarr_seasons(&seasons_of(&show, specials), sonarr, four_k);
         let (service_id, external_service_id, external_service_slug) = self.service_opts(series);
         let o = ShowOpts {
             service_id,
@@ -360,6 +377,21 @@ impl ArrRun<'_> {
         self.scan
             .process_show(tmdb_id, Some(tvdb), &seasons, &o)
             .await
+    }
+
+    /// The seasons of a series Sonarr numbers in another order than the
+    /// aired one, counted per aired season: Sonarr's own season N holds
+    /// other episodes than the aired season N the provider lists.
+    async fn aired_seasons(&self, series: &Value, tvdb: i64) -> Result<Vec<Value>> {
+        let id = js_string(series.get("id")).into_owned();
+        let episodes = self
+            .call(&self.current, "/episode", &[("seriesId", id)])
+            .await
+            .context("[Sonarr] Failed to retrieve episodes")?;
+        let catalog = crate::episodeorder::aired_catalog(&self.scan.job.state.outbound, tvdb)
+            .await
+            .context("[TVDB] Failed to load the aired episode order")?;
+        Ok(crate::episodeorder::aired_seasons(&catalog, &episodes))
     }
 
     /// `existsInAnyServer(id, is4k)`.
@@ -509,6 +541,18 @@ fn orphaned(media: &MediaRow, four_k: bool) -> MediaRow {
     after
 }
 
+/// The TMDB show a Sonarr series is: the one a title with its TVDB id
+/// already has, else the `tmdbId` Sonarr knows it by; `None` leaves it to
+/// TMDB's find by TVDB id.
+fn show_tmdb_id(known: Option<i64>, series: &Value) -> Option<i64> {
+    known.or_else(|| {
+        series
+            .get("tmdbId")
+            .and_then(Value::as_i64)
+            .filter(|id| *id > 0)
+    })
+}
+
 /// The seasons `processSonarrSeries` builds from the provider's seasons and
 /// Sonarr's (seasons Sonarr doesn't list count as unmonitored and empty).
 fn sonarr_seasons(
@@ -632,6 +676,72 @@ mod tests {
             after.seasons.iter().map(|s| s.status).collect::<Vec<_>>(),
             vec![UNKNOWN, 5],
             "only processing seasons reset"
+        );
+    }
+
+    #[test]
+    fn tmdb_id_from_sonarr() {
+        let series = json!({ "tvdbId": 81797, "tmdbId": 37854 });
+        assert_eq!(
+            show_tmdb_id(None, &series),
+            Some(37854),
+            "Sonarr's id, no TMDB find"
+        );
+        assert_eq!(
+            show_tmdb_id(Some(1), &series),
+            Some(1),
+            "the title's own id first"
+        );
+        assert_eq!(
+            show_tmdb_id(None, &json!({ "tmdbId": 0 })),
+            None,
+            "0 is none"
+        );
+        assert_eq!(
+            show_tmdb_id(None, &json!({ "tvdbId": 1 })),
+            None,
+            "an older Sonarr"
+        );
+    }
+
+    #[test]
+    fn aired_season_counts_for_another_order() {
+        use crate::jobs::episode_request_sync::CatalogEpisode;
+        let ep = |tvdb_id: i64, season: i64, episode: i64| CatalogEpisode {
+            tvdb_id,
+            season,
+            episode,
+            title: String::new(),
+            air_date: None,
+        };
+        // Aired: S1 = 11, 12; S2 = 21, 22. DVD order: one season of all four,
+        // where Sonarr's season 2 would be an unrelated, empty one.
+        let catalog = [ep(11, 1, 1), ep(12, 1, 2), ep(21, 2, 1), ep(22, 2, 2)];
+        let dvd = [
+            json!({"id": 1, "tvdbId": 12, "seasonNumber": 1, "episodeNumber": 1, "hasFile": true, "monitored": true}),
+            json!({"id": 2, "tvdbId": 11, "seasonNumber": 1, "episodeNumber": 2, "hasFile": true, "monitored": true}),
+            json!({"id": 3, "tvdbId": 21, "seasonNumber": 1, "episodeNumber": 3, "hasFile": false, "monitored": true}),
+            json!({"id": 4, "tvdbId": 22, "seasonNumber": 1, "episodeNumber": 4, "hasFile": false, "monitored": true}),
+        ];
+        let aired = crate::episodeorder::aired_seasons(&catalog, &dvd);
+        let seasons = sonarr_seasons(&[(1, 2), (2, 2)], &aired, false);
+        assert_eq!(
+            seasons,
+            vec![
+                ProcessableSeason {
+                    season_number: 1,
+                    total_episodes: 2,
+                    episodes: 2,
+                    ..ProcessableSeason::default()
+                },
+                ProcessableSeason {
+                    season_number: 2,
+                    total_episodes: 2,
+                    processing: true,
+                    ..ProcessableSeason::default()
+                }
+            ],
+            "aired season 1 is downloaded, season 2 is wanted"
         );
     }
 

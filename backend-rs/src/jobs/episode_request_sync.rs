@@ -23,15 +23,17 @@ use super::syncutil::{axios_message, date_ph, int, iso, now_ms, opt_date_bind, p
 use super::JobCtx;
 use crate::db::{Bind, Db};
 use crate::library::{Lib, Link};
-use crate::lifecycle::{Entity, Lc, APPROVED, COMPLETED};
+use crate::lifecycle::{
+    episode_code, episodes_done, log_out_of_order, Entity, EpisodesDone, Lc, APPROVED, COMPLETED,
+    FAILED,
+};
+use crate::notify::Kind;
 use crate::settings::public::truthy;
 
 /// `DEFAULT_WATCH_AHEAD_EPISODE_COUNT` and its bounds.
 const DEFAULT_WATCH_AHEAD: i64 = 10;
 const MIN_WATCH_AHEAD: i64 = 1;
 const MAX_WATCH_AHEAD: i64 = 50;
-/// `getEpisodeCatalog` reads at most this many pages.
-const MAX_PAGES: u32 = 50;
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -136,71 +138,7 @@ async fn episode_catalog(job: &JobCtx, show_id: i64) -> Result<Vec<CatalogEpisod
         .and_then(Value::as_i64)
         .filter(|id| *id != 0 && *id != -1)
         .ok_or_else(|| anyhow!("[TVDB] TVDB ID not found for series"))?;
-    crate::tvdb::refresh_token(client).await?;
-    let extended = crate::tvdb::get(
-        client,
-        &format!("/series/{tvdb_id}/extended?meta=episodes&short=true"),
-    )
-    .await?;
-    let official: Vec<i64> = extended
-        .pointer("/data/seasons")
-        .and_then(Value::as_array)
-        .map(|seasons| {
-            seasons
-                .iter()
-                .filter(|s| s.pointer("/type/type").and_then(Value::as_str) == Some("official"))
-                .filter_map(|s| s.get("number").and_then(Value::as_i64))
-                .collect()
-        })
-        .unwrap_or_default();
-    let mut raw: Vec<Value> = Vec::new();
-    for page in 0..MAX_PAGES {
-        let response = crate::tvdb::get(
-            client,
-            &format!(
-                "/series/{tvdb_id}/episodes/default/{}?page={page}",
-                crate::tvdb::DEFAULT_LANGUAGE
-            ),
-        )
-        .await?;
-        let episodes = response
-            .pointer("/data/episodes")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let empty = episodes.is_empty();
-        raw.extend(episodes);
-        if !truthy(response.pointer("/links/next")) || empty {
-            break;
-        }
-    }
-    let mut catalog: Vec<CatalogEpisode> = raw
-        .iter()
-        .filter_map(|e| {
-            let season = e.get("seasonNumber").and_then(Value::as_i64)?;
-            if !official.contains(&season) {
-                return None;
-            }
-            let number = e.get("number").and_then(Value::as_i64)?;
-            let title = match e.get("name") {
-                Some(Value::String(s)) if !s.is_empty() => s.clone(),
-                _ => format!("Episode {number}"),
-            };
-            Some(CatalogEpisode {
-                tvdb_id: e.get("id").and_then(Value::as_i64)?,
-                season,
-                episode: number,
-                title,
-                air_date: e
-                    .get("aired")
-                    .and_then(Value::as_str)
-                    .filter(|a| !a.is_empty())
-                    .map(str::to_owned),
-            })
-        })
-        .collect();
-    catalog.sort_by(|a, b| a.season.cmp(&b.season).then(a.episode.cmp(&b.episode)));
-    Ok(catalog)
+    crate::episodeorder::aired_catalog(client, tvdb_id).await
 }
 
 /// A Sonarr series and its episodes for one server.
@@ -489,38 +427,23 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
     let mut catalog_ready = true;
     let mut caught_up = false;
     let mut window: Option<HashSet<i64>> = None;
+    let order = crate::episodeorder::other_order(&context.series);
     if selection.as_deref() == Some("after") {
-        let boundary = by_tvdb
-            .get(&request.row.episode_start_tvdb_id.unwrap_or(-1))
-            .ok_or_else(|| anyhow!("Sonarr does not contain the ongoing request boundary"))?;
-        let (b_season, b_episode) = (
-            episode_int(boundary, "seasonNumber").unwrap_or(0),
-            episode_int(boundary, "episodeNumber").unwrap_or(0),
-        );
+        let start = request.row.episode_start_tvdb_id.unwrap_or(-1);
         let known: HashSet<i64> = request.row.episodes.iter().map(|e| e.tvdb_id).collect();
-        let fresh: Vec<NewEpisode> = context
-            .episodes
-            .iter()
-            .filter_map(|e| {
-                let season = episode_int(e, "seasonNumber")?;
-                let number = episode_int(e, "episodeNumber")?;
-                let tvdb_id = episode_int(e, "tvdbId")?;
-                let after = season > 0
-                    && (season > b_season || (season == b_season && number >= b_episode));
-                (after && !known.contains(&tvdb_id)).then(|| NewEpisode {
-                    tvdb_id,
-                    season,
-                    episode: number,
-                    title: sonarr_text(e, "title"),
-                    air_date: sonarr_text(e, "airDate"),
-                    status: if truthy(e.get("hasFile")) {
-                        COMPLETED
-                    } else {
-                        APPROVED
-                    },
-                })
-            })
-            .collect();
+        let fresh = if order.is_some() {
+            // Sonarr's numbers aren't the aired ones: compare and store in
+            // the aired order, which the request was made in.
+            let tvdb_id = context
+                .series
+                .get("tvdbId")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| anyhow!("the Sonarr series has no TVDB id"))?;
+            let catalog = crate::episodeorder::aired_catalog(&job.state.outbound, tvdb_id).await?;
+            aired_after(&catalog, start, &by_tvdb, &known)?
+        } else {
+            sonarr_after(&context.episodes, start, &by_tvdb, &known)?
+        };
         insert_episodes(job, request.row.id, &fresh).await?;
         inserted = !fresh.is_empty();
         additions.extend(fresh.iter().map(|e| e.tvdb_id));
@@ -543,11 +466,32 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
     let mut removed_changed: Vec<(i64, Option<i64>)> = Vec::new();
     let mut removed: HashSet<i64> = HashSet::new();
     let db = &job.state.db;
+    let mut left_out = Vec::new();
     for child in &mut request.row.episodes {
         let Some(episode) = by_tvdb.get(&child.tvdb_id) else {
+            // Missing from aired order means Sonarr hasn't caught up yet;
+            // another order may never have it.
+            if order.is_some() && child.status == APPROVED {
+                child.status = FAILED;
+                set_child_status(db, child.id, FAILED).await?;
+                left_out.push(episode_code(child));
+            }
             continue;
         };
-        let is_new = additions.contains(&child.tvdb_id);
+        let revived = child.status == FAILED;
+        if revived {
+            tracing::info!(
+                label = "Episode Request Sync",
+                request_id = request.row.id,
+                "Episode S{:02}E{:02} [TVDB ID {}] is in the episode order the series uses in Sonarr again; requesting it",
+                child.season_number,
+                child.episode_number,
+                child.tvdb_id
+            );
+            child.status = APPROVED;
+            set_child_status(db, child.id, APPROVED).await?;
+        }
+        let is_new = additions.contains(&child.tvdb_id) || revived;
         let has_file = truthy(episode.get("hasFile"));
         let monitored = truthy(episode.get("monitored"));
         let monitored_at = child.monitored_at.is_some();
@@ -574,11 +518,7 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         if has_file {
             if child.status != COMPLETED {
                 child.status = COMPLETED;
-                db.execute(
-                    r#"UPDATE "episode_request" SET "status" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
-                    &[Bind::Int(COMPLETED), Bind::Int(child.id)],
-                )
-                .await?;
+                set_child_status(db, child.id, COMPLETED).await?;
             }
             continue;
         }
@@ -598,6 +538,9 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
             searchable.push((child.id, episode.get("id").cloned().unwrap_or(Value::Null)));
         }
     }
+    if let Some(order) = order {
+        log_out_of_order(request.row.id, order, &left_out);
+    }
     save_child_dates(db, "unmonitoredAt", &removed_changed).await?;
     if let Some(window) = &window {
         let inactive = window_inactive(window, &removed);
@@ -608,7 +551,7 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         }
     }
     monitor_and_search(job, context, unmonitored, &newly_monitored, &searchable).await?;
-    let complete = request.row.episodes.iter().all(|e| e.status == COMPLETED);
+    let done = episodes_done(&request.row.episodes);
     let reads_status = match selection.as_deref() {
         Some("after") => true,
         Some("watchAhead") => catalog_ready && caught_up,
@@ -626,12 +569,115 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         Some("after" | "watchAhead") => ended,
         _ => true,
     };
-    if complete && may_complete {
-        if let Some(mut fresh) = lc.load(request.row.id).await? {
-            fresh.row.status = COMPLETED;
-            lc.save(&mut fresh).await?;
-        }
+    if !may_complete {
+        return Ok(());
     }
+    match done {
+        EpisodesDone::Complete => {
+            if let Some(mut fresh) = lc.load(request.row.id).await? {
+                fresh.row.status = COMPLETED;
+                lc.save(&mut fresh).await?;
+            }
+        }
+        EpisodesDone::AllFailed => {
+            if let Some(mut fresh) = lc.load(request.row.id).await? {
+                tracing::warn!(
+                    label = "Episode Request Sync",
+                    request_id = request.row.id,
+                    "None of the requested episodes are in the {} episode order the series uses in Sonarr; marking the request FAILED",
+                    order.unwrap_or(crate::episodeorder::OFFICIAL)
+                );
+                fresh.row.status = FAILED;
+                lc.save(&mut fresh).await?;
+                if let Some(media) = fresh.media.clone() {
+                    lc.send_request_notification(&fresh, media, Kind::MediaFailed);
+                }
+            }
+        }
+        EpisodesDone::Pending => {}
+    }
+    Ok(())
+}
+
+/// `ongoing` additions in Sonarr's numbers, which are the aired ones: the
+/// episodes from the request's start onward that it doesn't have yet.
+fn sonarr_after(
+    episodes: &[Value],
+    start: i64,
+    by_tvdb: &HashMap<i64, &Value>,
+    known: &HashSet<i64>,
+) -> Result<Vec<NewEpisode>> {
+    let boundary = by_tvdb
+        .get(&start)
+        .ok_or_else(|| anyhow!("Sonarr does not contain the ongoing request boundary"))?;
+    let (b_season, b_episode) = (
+        episode_int(boundary, "seasonNumber").unwrap_or(0),
+        episode_int(boundary, "episodeNumber").unwrap_or(0),
+    );
+    Ok(episodes
+        .iter()
+        .filter_map(|e| {
+            let season = episode_int(e, "seasonNumber")?;
+            let number = episode_int(e, "episodeNumber")?;
+            let tvdb_id = episode_int(e, "tvdbId")?;
+            let after =
+                season > 0 && (season > b_season || (season == b_season && number >= b_episode));
+            (after && !known.contains(&tvdb_id)).then(|| NewEpisode {
+                tvdb_id,
+                season,
+                episode: number,
+                title: sonarr_text(e, "title"),
+                air_date: sonarr_text(e, "airDate"),
+                status: if truthy(e.get("hasFile")) {
+                    COMPLETED
+                } else {
+                    APPROVED
+                },
+            })
+        })
+        .collect())
+}
+
+/// `ongoing` additions on a series Sonarr numbers in another order: the
+/// aired-order episodes from the start onward, numbered as aired, that
+/// Sonarr's order has (matched by TVDB id) and the request doesn't.
+fn aired_after(
+    catalog: &[CatalogEpisode],
+    start: i64,
+    by_tvdb: &HashMap<i64, &Value>,
+    known: &HashSet<i64>,
+) -> Result<Vec<NewEpisode>> {
+    Ok(crate::episodeorder::aired_from(catalog, start)?
+        .into_iter()
+        .filter(|e| !known.contains(&e.tvdb_id))
+        .filter_map(|e| {
+            let sonarr = by_tvdb.get(&e.tvdb_id)?;
+            Some(NewEpisode {
+                tvdb_id: e.tvdb_id,
+                season: e.season,
+                episode: e.episode,
+                title: Some(e.title.clone()),
+                air_date: e
+                    .air_date
+                    .clone()
+                    .or_else(|| sonarr_text(sonarr, "airDate")),
+                status: if truthy(sonarr.get("hasFile")) {
+                    COMPLETED
+                } else {
+                    APPROVED
+                },
+            })
+        })
+        .collect())
+}
+
+/// An episode child's `status`.
+async fn set_child_status(db: &Db, child: i64, status: i64) -> Result<()> {
+    db.execute(
+        r#"UPDATE "episode_request" SET "status" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
+        &[Bind::Int(status), Bind::Int(child)],
+    )
+    .await?;
     Ok(())
 }
 
@@ -913,6 +959,55 @@ mod tests {
             ep(103, 1, 3),
             ep(201, 2, 1),
         ]
+    }
+
+    /// The ids, seasons and numbers of new children.
+    fn placed(fresh: &[NewEpisode]) -> Vec<(i64, i64, i64)> {
+        fresh
+            .iter()
+            .map(|e| (e.tvdb_id, e.season, e.episode))
+            .collect()
+    }
+
+    #[test]
+    fn onward_in_another_order_is_aired_order() {
+        use serde_json::json;
+        // Aired: S1 = 11, 12, 13 and S2 = 21. DVD: S1 = 12, 11, 21 and S2 = 13;
+        // 14 (aired S1E4) isn't in the DVD order at all.
+        let catalog = vec![
+            ep(11, 1, 1),
+            ep(12, 1, 2),
+            ep(13, 1, 3),
+            ep(14, 1, 4),
+            ep(21, 2, 1),
+        ];
+        let dvd = vec![
+            json!({"id": 1, "tvdbId": 12, "seasonNumber": 1, "episodeNumber": 1, "hasFile": true}),
+            json!({"id": 2, "tvdbId": 11, "seasonNumber": 1, "episodeNumber": 2}),
+            json!({"id": 3, "tvdbId": 21, "seasonNumber": 1, "episodeNumber": 3}),
+            json!({"id": 4, "tvdbId": 13, "seasonNumber": 2, "episodeNumber": 1}),
+        ];
+        let by_tvdb: HashMap<i64, &Value> = dvd
+            .iter()
+            .filter_map(|e| Some((episode_int(e, "tvdbId")?, e)))
+            .collect();
+        let known: HashSet<i64> = std::iter::once(12).collect();
+        let aired = aired_after(&catalog, 12, &by_tvdb, &known).unwrap_or_default();
+        assert_eq!(
+            placed(&aired),
+            vec![(13, 1, 3), (21, 2, 1)],
+            "from aired S01E02 on, in aired numbers; nothing the DVD order lacks"
+        );
+        let by_dvd = sonarr_after(&dvd, 12, &by_tvdb, &known).unwrap_or_default();
+        assert_eq!(
+            placed(&by_dvd),
+            vec![(11, 1, 2), (21, 1, 3), (13, 2, 1)],
+            "DVD numbers would add aired S01E01 and store DVD numbers"
+        );
+        assert!(
+            aired_after(&catalog, 99, &by_tvdb, &known).is_err(),
+            "an unknown start"
+        );
     }
 
     #[test]
