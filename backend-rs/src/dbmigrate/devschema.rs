@@ -6,8 +6,8 @@
 //! column order).
 //!
 //! On an empty database this sends the statements `synchronize` sends
-//! (`synchronize.rs`, recorded from `TypeORM` by
-//! `scripts/gen-synchronize.ts`), framed as `TypeORM` frames them. A
+//! (`synchronize.rs`, recorded from `TypeORM`), framed as `TypeORM`
+//! frames them. A
 //! database that already has exactly that schema needs nothing, as
 //! `synchronize` then sends nothing. Any other schema `synchronize` would
 //! diff against the entities and alter; that is not reproduced here, only
@@ -19,8 +19,8 @@ use serde_json::{Map, Value};
 use super::{exec_sqlite, sqlite_text, synchronize};
 use crate::db::Db;
 
-/// What `synchronize` leaves in a fresh `SQLite` file
-/// (`scripts/gen-synchronize.ts`).
+/// What `synchronize` leaves in a fresh `SQLite` file, as recorded from
+/// `TypeORM`.
 pub(super) const REFERENCE: &str = include_str!("synchronize_reference.json");
 
 /// The schema rows compared, as in the reference.

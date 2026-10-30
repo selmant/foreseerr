@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Startup and migrations smoke test of the Rust backend, on SQLite or Postgres.
 
-Starts the binary in standalone production mode (so it runs the migrations
-itself) against a fresh, private config directory and checks that:
+Starts the binary in production mode (so it runs the migrations) against a
+fresh, private config directory and checks that:
 
   * it becomes ready, and the migrations table holds exactly the migrations
     this build ships (src/dbmigrate/{sqlite,postgres}.rs), in order;
@@ -132,16 +132,14 @@ class Database:
 
 
 class Server:
-    """One backend process on a private config directory under `root`.
-
-    `command` defaults to the Rust binary in standalone production mode;
-    `env` overrides the environment (ci-compare.py starts Node with it).
+    """One backend process on a private config directory under `root`, in
+    production mode; `env` overrides the environment.
     """
 
-    def __init__(self, binary, root, command=None, env=None):
+    def __init__(self, binary, root, env=None):
         self.binary = binary
         self.root = root
-        self.command = command or [str(binary)]
+        self.command = [str(binary)]
         self.extra_env = env or {}
         self.port = free_port()
         self.proc = None
@@ -159,7 +157,6 @@ class Server:
             'CACHE_DIRECTORY': str(self.root / 'cache'),
             'LOG_DIRECTORY': str(self.root / 'logs'),
             'FORESEERR_APP_ROOT': str(REPO),
-            'FORESEERR_STANDALONE': '1',
             'NODE_ENV': 'production',
             'HOST': '127.0.0.1',
             'PORT': str(self.port),
