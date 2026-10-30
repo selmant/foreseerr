@@ -100,7 +100,7 @@ const STATUS_FIELDS: [&str; 9] = [
 const LISTS: [(&str, &str); 3] = [
     ("unmapped", "'miss'"),
     ("manual", "'manual'"),
-    ("guessed", "'title', 'prequel'"),
+    ("guessed", "'title', 'prequel', 'sonarr'"),
 ];
 
 /// The mapping layer's `/internal` routes, answered in this process.

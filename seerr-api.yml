@@ -125,7 +125,8 @@ components:
           type: string
           description: |
             The resolution step that produced the answer: `manual`, `dataset`,
-            `tmdb-find`, `title` or `prequel`.
+            `tmdb-find`, `sonarr` (Sonarr's AniList/MAL lookup), `title` or
+            `prequel`.
           example: dataset
         confidence:
           type: number
@@ -158,7 +159,7 @@ components:
           enum: [movie, tv, null]
         origin:
           type: string
-          enum: [manual, tmdb-find, title, prequel, miss]
+          enum: [manual, tmdb-find, sonarr, title, prequel, miss]
         title:
           type: string
           nullable: true
@@ -4908,8 +4909,8 @@ paths:
       summary: List stored mappings
       description: |
         Lists stored mappings of one kind: `unmapped` items most-seen first,
-        `manual` corrections, or `guessed` answers from the title and prequel
-        fallback.
+        `manual` corrections, or `guessed` answers from Sonarr's AniList/MAL
+        lookup and the title and prequel fallback.
       tags:
         - settings
       parameters:

@@ -21,7 +21,7 @@ import useSWR from 'swr';
 const messages = defineMessages('components.Settings.SettingsMapping', {
   mapping: 'Mapping',
   mappingDescription:
-    'How items from AniList, Simkl, Trakt and MDBList are matched to TMDB. A match comes from, in order: your corrections, the datasets, TMDB’s own index of IMDb and TVDB ids, and for anime nothing else knows yet, an exact title match or the show of its prequel.',
+    'How items from AniList, Simkl, Trakt and MDBList are matched to TMDB. A match comes from, in order: your corrections, the datasets, TMDB’s own index of IMDb and TVDB ids, and for anime nothing else knows yet, Sonarr’s lookup by AniList or MAL id (for a show’s first TV season), an exact title match or the show of its prequel.',
   noDatasetTitle: 'No mapping dataset is loaded yet',
   noDatasetDescription:
     'Foreseerr matches anime from AniList and Simkl to TMDB with these datasets. They download on their own; until one has finished, anime is matched by title only and more of it stays unmapped.',
@@ -68,6 +68,7 @@ const messages = defineMessages('components.Settings.SettingsMapping', {
   noGuessed: 'No guessed matches.',
   originTitle: 'Exact title match',
   originPrequel: 'Prequel’s show',
+  originSonarr: 'Sonarr lookup',
   correctionsDescription:
     'Your own matches. They win over everything else and nothing changes them but you.',
   export: 'Export',
@@ -90,7 +91,7 @@ interface ResolutionRow {
   mediaType: '' | 'movie' | 'tv';
   tmdbId?: number | null;
   tmdbType?: 'movie' | 'tv' | null;
-  origin: 'manual' | 'tmdb-find' | 'title' | 'prequel' | 'miss';
+  origin: 'manual' | 'tmdb-find' | 'sonarr' | 'title' | 'prequel' | 'miss';
   title?: string | null;
   discoverSource?: string | null;
   detail?: string | null;
@@ -191,7 +192,9 @@ const originLabel = (origin: ResolutionRow['origin'], intl: IntlShape) =>
     ? intl.formatMessage(messages.originTitle)
     : origin === 'prequel'
       ? intl.formatMessage(messages.originPrequel)
-      : origin;
+      : origin === 'sonarr'
+        ? intl.formatMessage(messages.originSonarr)
+        : origin;
 
 const tmdbUrl = (row: ResolutionRow): string =>
   `https://www.themoviedb.org/${row.tmdbType}/${row.tmdbId}`;

@@ -1,12 +1,13 @@
 //! Sonarr reads beyond adding a series: the series lookup by other ids
-//! (`tmdb:` and the like, on Sonarr 4 and 5 alike), and, through API v5
-//! only, the metadata language.
+//! (`tmdb:`, `anilist:`, `mal:`, on Sonarr 4 and 5 alike), and, through
+//! API v5 only, the metadata language.
 
 use anyhow::Result;
 use reqwest::Method;
 use serde_json::{Map, Value};
 
 use crate::arr::Arr;
+use crate::settings::public::truthy;
 use crate::sonarrv5::ApiVersion;
 
 async fn read(arr: &Arr<'_>, path: &str, query: &[(&str, String)]) -> Result<Value> {
@@ -212,6 +213,22 @@ pub fn season_order(series: &Value) -> Option<Value> {
         out.insert(String::from("name"), Value::from(name));
     }
     Some(Value::Object(out))
+}
+
+/// The Sonarr server lookups go to when nothing picks one: the default
+/// non-4K server, else the first non-4K one, else the first.
+#[must_use]
+pub fn lookup_server(settings: &crate::settings::Settings) -> Option<Value> {
+    let servers = settings.get("/sonarr").and_then(Value::as_array)?;
+    let hd = |s: &&Value| s.get("is4k").and_then(Value::as_bool) != Some(true);
+    servers
+        .iter()
+        .filter(hd)
+        .find(|s| truthy(s.get("isDefault")))
+        .or_else(|| servers.iter().find(hd))
+        .or_else(|| servers.first())
+        .filter(|s| s.is_object())
+        .cloned()
 }
 
 #[cfg(test)]
