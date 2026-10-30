@@ -214,6 +214,18 @@ pub fn aired_seasons(catalog: &[CatalogEpisode], episodes: &[Value]) -> Vec<Valu
         .collect()
 }
 
+/// Aired season and episode numbers by episode TVDB id.
+pub type AiredNumbers = HashMap<i64, (i64, i64)>;
+
+/// Each aired episode's aired season and number, by TVDB id.
+#[must_use]
+pub fn aired_numbers(catalog: &[CatalogEpisode]) -> AiredNumbers {
+    catalog
+        .iter()
+        .map(|e| (e.tvdb_id, (e.season, e.episode)))
+        .collect()
+}
+
 /// The aired-order episodes from `start` (its TVDB id) onward, specials
 /// left out, as the catalog orders them.
 ///
@@ -456,6 +468,11 @@ mod tests {
             .collect();
         assert_eq!(from, vec![12, 21], "from the start, no specials");
         assert!(aired_from(&catalog, 99).is_err(), "unknown start");
+        assert_eq!(
+            aired_numbers(&catalog).get(&21),
+            Some(&(2, 1)),
+            "aired numbers by id"
+        );
     }
 
     #[test]

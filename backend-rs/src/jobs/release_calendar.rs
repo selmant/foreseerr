@@ -19,6 +19,7 @@ use super::release_store::{self, Reconcile, SyncResult};
 use super::syncutil::{axios_message, date, int, iso, now_ms, parse_js_date, text};
 use super::JobCtx;
 use crate::db::{Bind, Db};
+use crate::episodeorder::AiredNumbers;
 use crate::settings::public::truthy;
 
 /// `RELEASE_SYNC_LEASE_MS`.
@@ -141,6 +142,21 @@ pub struct Normalized {
     pub source_url: Option<String>,
     /// `rawDates`.
     pub raw_dates: String,
+    /// The episode's aired-order numbers (not persisted).
+    pub aired: Aired,
+}
+
+/// Where a Sonarr episode sits in the aired order, which season premieres
+/// are told in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Aired {
+    /// Sonarr numbers it in aired order (and a movie has no numbers).
+    #[default]
+    AsNumbered,
+    /// Its aired season and episode; Sonarr numbers it in another order.
+    Mapped(i64, i64),
+    /// Sonarr numbers it in another order and its aired place is unknown.
+    Unknown,
 }
 
 impl Normalized {
@@ -272,6 +288,7 @@ pub fn normalize_radarr_movie(movie: &Value, server: &Value) -> Vec<Normalized> 
             },
             source_url: url.clone(),
             raw_dates: raw.clone(),
+            aired: Aired::AsNumbered,
         });
     }
     out
@@ -322,7 +339,57 @@ pub fn normalize_sonarr_episode(episode: &Value, server: &Value) -> Option<Norma
             ),
         ),
         raw_dates: raw_dates(episode, &["airDate", "airDateUtc"]),
+        aired: Aired::AsNumbered,
     })
+}
+
+/// The aired place of each calendar episode of a series Sonarr numbers in
+/// another order than the aired one, from the TVDB catalog of the series
+/// (loaded once per series).
+async fn place_in_aired_order(job: &JobCtx, episodes: &[Value], occurrences: &mut [Normalized]) {
+    let mut catalogs: Vec<(i64, Option<AiredNumbers>)> = Vec::new();
+    for (episode, occurrence) in episodes.iter().zip(occurrences.iter_mut()) {
+        let Some(series) = episode.get("series") else {
+            continue;
+        };
+        if crate::episodeorder::other_order(series).is_none() {
+            continue;
+        }
+        let Some(tvdb_id) = series.get("tvdbId").and_then(Value::as_i64) else {
+            occurrence.aired = Aired::Unknown;
+            continue;
+        };
+        if !catalogs.iter().any(|(id, _)| *id == tvdb_id) {
+            let numbers = match crate::episodeorder::aired_catalog(&job.state.outbound, tvdb_id)
+                .await
+            {
+                Ok(catalog) => Some(crate::episodeorder::aired_numbers(&catalog)),
+                Err(e) => {
+                    tracing::warn!(
+                        label = "Release Calendar Sync",
+                        tvdb_id,
+                        error_message = %format!("{e:#}"),
+                        "Failed to load the aired episode order of a series Sonarr numbers in another order; its season premieres are not announced this time"
+                    );
+                    None
+                }
+            };
+            catalogs.push((tvdb_id, numbers));
+        }
+        let numbers = catalogs
+            .iter()
+            .find(|(id, _)| *id == tvdb_id)
+            .and_then(|(_, numbers)| numbers.as_ref());
+        occurrence.aired = placed(numbers, episode.get("tvdbId").and_then(Value::as_i64));
+    }
+}
+
+/// An episode's aired place from its series' aired numbers, when known.
+fn placed(numbers: Option<&AiredNumbers>, tvdb_id: Option<i64>) -> Aired {
+    match tvdb_id.and_then(|t| numbers?.get(&t)) {
+        Some(&(season, episode)) => Aired::Mapped(season, episode),
+        None => Aired::Unknown,
+    }
 }
 
 /// A held lease: the source row, owner and fence.
@@ -750,10 +817,15 @@ async fn fetch_occurrences(
             .collect());
     }
     let items = enrich_series(job, server, items, timeout).await;
-    Ok(items
-        .iter()
-        .filter_map(|e| normalize_sonarr_episode(e, server))
-        .collect())
+    let (items, mut occurrences): (Vec<Value>, Vec<Normalized>) = items
+        .into_iter()
+        .filter_map(|e| {
+            let occurrence = normalize_sonarr_episode(&e, server)?;
+            Some((e, occurrence))
+        })
+        .unzip();
+    place_in_aired_order(job, &items, &mut occurrences).await;
+    Ok(occurrences)
 }
 
 /// The series of calendar episodes Sonarr sent without one, fetched once
@@ -792,7 +864,7 @@ async fn enrich_series(
                         Some(v) => v.clone(),
                     },
                 );
-                for key in ["title", "tvdbId", "monitored", "titleSlug"] {
+                for key in ["title", "tvdbId", "monitored", "titleSlug", "seasonType"] {
                     if let Some(v) = series.get(key) {
                         s.insert(key.to_owned(), v.clone());
                     }
