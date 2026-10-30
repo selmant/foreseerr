@@ -119,13 +119,13 @@ const formatMdblistListReference = (list: MdblistListOption): string => {
 };
 
 const looksLikeMdblistListReference = (value: string): boolean =>
-  value.includes('mdblist.com') ||
+  /^(?:www\.)?mdblist\.com\//i.test(value) ||
   value.startsWith('http') ||
   /^[\w-]+\/[\w-]+/.test(value) ||
   /^\d+$/.test(value);
 
 const looksLikeTraktListReference = (value: string): boolean =>
-  value.includes('trakt.tv') ||
+  /^(?:www\.)?trakt\.tv\//i.test(value) ||
   value.startsWith('http') ||
   /^[\w-]+\/[\w-]+/.test(value) ||
   /^\d+$/.test(value);

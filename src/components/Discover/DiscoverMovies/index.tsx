@@ -89,7 +89,7 @@ const DiscoverMovies = () => {
 
   if (error) {
     const statusCode =
-      typeof error === 'object' && error !== null && 'response' in error
+      typeof error === 'object' && 'response' in error
         ? Number(
             (error as { response?: { status?: unknown } }).response?.status
           )
