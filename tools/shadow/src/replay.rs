@@ -50,7 +50,7 @@ pub struct ReplayArgs {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
-    /// The reference implementation (today: the Node backend).
+    /// The reference build (for example the release running in production).
     Baseline,
     /// A second copy of the baseline. Whatever differs between the two is
     /// noise (timestamps, random ids) and is ignored when judging candidates.
@@ -707,7 +707,6 @@ async fn spawn_backend(
     let mut c = tokio::process::Command::new(prog);
     c.args(rest)
         .env(&tcfg.config_env, &config_dir)
-        .env("NODE_EXTRA_CA_CERTS", ctx.ca.pem_path())
         .env("SHADOW_CA_FILE", ctx.ca.pem_path())
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
@@ -1190,7 +1189,7 @@ mod tests {
             [compare]
             ignore_paths = ["updatedAt"]
             [[target]]
-            name = "node"
+            name = "release"
             role = "baseline"
             url = "http://127.0.0.1:6101"
             proxy_port = 6201

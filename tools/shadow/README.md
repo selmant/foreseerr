@@ -1,18 +1,19 @@
 # shadow
 
 Record real traffic against the Foreseerr backend, replay it against several
-backends at once, and compare what they did. It exists to check a
-reimplementation of the backend (for example in Rust) against the current
-TypeScript one, without needing hand-written tests for every endpoint.
+builds at once, and compare what they did. It exists to check a new build of
+the backend (a candidate) against a reference build, typically the release
+running in production where the traffic was recorded, without needing
+hand-written tests for every endpoint.
 
 ```text
 record:   clients ──► shadow :5056 ──► backend :5055 ──► shadow :8899 ──► TMDB, Sonarr, Plex, ...
                           │                                  │
                      traffic.jsonl                      upstream.jsonl     + snapshot of config/ and DB
 
-replay:   recording ──► shadow ──► baseline   (Node)        each target has its own copy of the
-                              ├──► noise      (Node again)  snapshot and its own forward proxy that
-                              └──► candidate  (Rust)        answers outgoing calls from the recording
+replay:   recording ──► shadow ──► baseline   (release)        each target has its own copy of the
+                              ├──► noise      (release again)  snapshot and its own forward proxy that
+                              └──► candidate  (new build)      answers outgoing calls from the recording
 
 compare:  responses, outgoing calls and databases, baseline vs candidate,
           minus whatever also differed between baseline and noise
@@ -33,7 +34,8 @@ outgoing calls at it.
    shadow ca --dir shadow-ca        # prints the path of ca.pem
    ```
 
-2. Restart the backend with `NODE_EXTRA_CA_CERTS=/path/to/shadow-ca/ca.pem`.
+2. Restart the backend with `SHADOW_CA_FILE=/path/to/shadow-ca/ca.pem` (it
+   also reads `NODE_EXTRA_CA_CERTS`, which older setups set).
 3. In **Settings → Network → HTTP(S) proxy**, set host `127.0.0.1` (or
    wherever the recorder runs), port `8899`, and turn **off** "bypass local
    addresses" so LAN services like Sonarr and Plex are recorded too. The
@@ -92,31 +94,35 @@ ignore_paths = []                    # e.g. "updatedAt", "$.results[*].media.las
 timestamp_tolerance_ms = 5000
 
 [[target]]
-name = "node"
+name = "release"
 role = "baseline"                    # exactly one
 url = "http://127.0.0.1:6101"
 proxy_port = 6201
-cwd = "/path/to/SeerrSuggestArr"
-command = ["bun", "dist/launcher.js"]
+cwd = "/path/to/release"             # holds seerr-api.yml and dist/public
+command = ["/path/to/release/foreseerr"]
 env = { NODE_ENV = "production", PORT = "6101" }
 
 [[target]]
-name = "node-noise"
+name = "release-noise"
 role = "noise"                       # optional, strongly recommended
 url = "http://127.0.0.1:6102"
 proxy_port = 6202
-cwd = "/path/to/SeerrSuggestArr"
-command = ["bun", "dist/launcher.js"]
+cwd = "/path/to/release"
+command = ["/path/to/release/foreseerr"]
 env = { NODE_ENV = "production", PORT = "6102" }
 
 [[target]]
-name = "rust"
+name = "candidate"
 role = "candidate"
 url = "http://127.0.0.1:6103"
 proxy_port = 6203
-command = ["/path/to/foreseerr-rs"]
-env = { PORT = "6103" }
+cwd = "/path/to/SeerrSuggestArr"
+command = ["backend-rs/target/release/foreseerr"]
+env = { NODE_ENV = "production", PORT = "6103" }
 ```
+
+The backend finds `seerr-api.yml` and `dist/public/` in its working directory
+(or in `FORESEERR_APP_ROOT`).
 
 ```sh
 shadow replay --config replay.toml
@@ -125,9 +131,9 @@ shadow replay --config replay.toml
 Details:
 
 - **Environment.** The config directory is passed in `CONFIG_DIRECTORY`
-  (change it with `config_env`). The CA is passed in both
-  `NODE_EXTRA_CA_CERTS` and `SHADOW_CA_FILE`. A non-Node candidate has to
-  trust that CA and honour `settings.json` `network.proxy`.
+  (change it with `config_env`). The CA is passed in `SHADOW_CA_FILE`. A
+  target has to trust that CA and honour `settings.json` `network.proxy`,
+  as Foreseerr does.
 - **Placeholders.** `{workdir}`, `{config}`, `{snapshot}`, `{recording}` and
   `{proxy_port}` are replaced in `command`, `env`, `prepare` and `db`.
 - **Postgres targets.** Use `prepare` to restore the dump into a per-target
@@ -212,7 +218,7 @@ cargo test --locked
 ```
 
 `cargo test` runs the unit tests. `e2e/run.sh` runs the whole loop against
-the real backend from source:
+the real backend, built from `backend-rs` (or `FORESEERR_BIN`):
 
 1. Record a session: logins, TMDB-backed pages, writes, and a scheduled job.
 2. Replay it against baseline, noise, a faithful candidate and a

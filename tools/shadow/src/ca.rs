@@ -1,6 +1,6 @@
 //! A throwaway certificate authority so the forward proxy can read HTTPS calls.
 //!
-//! The backend has to trust `ca.pem` (for Bun/Node: `NODE_EXTRA_CA_CERTS`).
+//! The backend has to trust `ca.pem` (Foreseerr reads it from `SHADOW_CA_FILE`).
 //! Leaf certificates are minted per host on first use and cached.
 
 use std::collections::HashMap;

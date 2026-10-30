@@ -89,7 +89,7 @@ pub struct RecordArgs {
     #[arg(long)]
     pub insecure_upstream: bool,
     /// Directory holding ca.pem / ca.key (created if missing). The backend
-    /// must trust ca.pem, e.g. `NODE_EXTRA_CA_CERTS=<dir>/ca.pem`.
+    /// must trust ca.pem, e.g. `SHADOW_CA_FILE=<dir>/ca.pem`.
     #[arg(long, default_value = "shadow-ca")]
     pub ca_dir: PathBuf,
 }
