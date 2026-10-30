@@ -1283,12 +1283,17 @@ components:
         activeLanguageProfileId:
           type: number
           example: 1
+          description: |
+            The language profile on Sonarr 3 and older; the metadata language
+            new series are added with on Sonarr 5 (Sonarr's own preferred
+            metadata language when unset). Sonarr 4 ignores it.
         activeAnimeProfileId:
           type: number
           nullable: true
         activeAnimeLanguageProfileId:
           type: number
           nullable: true
+          description: The anime override of `activeLanguageProfileId`.
         activeAnimeProfileName:
           type: string
           example: 720p/1080p
@@ -1330,6 +1335,15 @@ components:
         - is4k
         - enableSeasonFolders
         - isDefault
+    SonarrLanguage:
+      type: object
+      properties:
+        id:
+          type: number
+          example: 1
+        name:
+          type: string
+          example: English
     ServarrTag:
       type: object
       properties:
@@ -4702,6 +4716,24 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ServiceProfile'
+                  languageProfiles:
+                    type: array
+                    nullable: true
+                    description: Language profiles, on Sonarr 3 and older only.
+                    items:
+                      $ref: '#/components/schemas/SonarrLanguage'
+                  metadataLanguages:
+                    type: array
+                    nullable: true
+                    description: |
+                      The metadata languages for the language slots, on Sonarr 5
+                      only.
+                    items:
+                      $ref: '#/components/schemas/SonarrLanguage'
+                  defaultMetadataLanguageId:
+                    type: number
+                    nullable: true
+                    description: Sonarr 5's preferred metadata language.
   /settings/sonarr/{sonarrId}:
     put:
       summary: Update Sonarr instance
@@ -9789,6 +9821,7 @@ paths:
                   type: string
                 languageProfileId:
                   type: number
+                  description: The language profile on Sonarr 3 and older, the metadata language id on Sonarr 5; ignored by Sonarr 4.
                 userId:
                   type: number
                   nullable: true
@@ -9945,6 +9978,7 @@ paths:
                   type: string
                 languageProfileId:
                   type: number
+                  description: The language profile on Sonarr 3 and older, the metadata language id on Sonarr 5; ignored by Sonarr 4.
                 userId:
                   type: number
                   nullable: true
@@ -11841,6 +11875,24 @@ paths:
                     $ref: '#/components/schemas/SonarrSettings'
                   profiles:
                     $ref: '#/components/schemas/ServiceProfile'
+                  languageProfiles:
+                    type: array
+                    nullable: true
+                    description: Language profiles, on Sonarr 3 and older only.
+                    items:
+                      $ref: '#/components/schemas/SonarrLanguage'
+                  metadataLanguages:
+                    type: array
+                    nullable: true
+                    description: |
+                      The metadata languages for the language slots, on Sonarr 5
+                      only.
+                    items:
+                      $ref: '#/components/schemas/SonarrLanguage'
+                  defaultMetadataLanguageId:
+                    type: number
+                    nullable: true
+                    description: Sonarr 5's preferred metadata language.
   /service/sonarr/lookup/{tmdbId}:
     get:
       summary: Get series from Sonarr

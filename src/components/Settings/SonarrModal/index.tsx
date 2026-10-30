@@ -10,6 +10,7 @@ import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { isValidURL } from '@app/utils/urlValidationHelper';
 import { Transition } from '@headlessui/react';
+import type { MetadataLanguage } from '@shared/api/servarr/sonarr';
 import type { SonarrSettings } from '@shared/lib/settings';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
@@ -99,7 +100,49 @@ const messages = defineMessages('components.Settings.SonarrModal', {
     'Scan Sonarr for existing media and request status so users cannot request content already available.',
   enableSearchHelp:
     'Automatically trigger a search in Sonarr when a request is approved.',
+  metadataLanguage: 'Metadata Language',
+  metadataLanguageHelp:
+    'The language Sonarr fetches titles and episode names in for series added from here. Sonarr names the series folder from that title.',
+  animeMetadataLanguage: 'Anime Metadata Language',
+  sonarrDefaultLanguage: 'Sonarr default ({language})',
+  sonarrDefault: 'Sonarr default',
+  sameAsMetadataLanguage: 'Same as Metadata Language',
 });
+
+const MetadataLanguageField = ({
+  id,
+  label,
+  help,
+  emptyLabel,
+  languages,
+  disabled,
+}: {
+  id: 'activeLanguageProfileId' | 'activeAnimeLanguageProfileId';
+  label: string;
+  help?: string;
+  emptyLabel: string;
+  languages: MetadataLanguage[];
+  disabled: boolean;
+}) => (
+  <div className="form-row">
+    <label htmlFor={id} className="text-label">
+      {label}
+      {help && <span className="label-tip">{help}</span>}
+    </label>
+    <div className="form-input-area">
+      <div className="form-input-field">
+        <Field as="select" id={id} name={id} disabled={disabled}>
+          <option value="">{emptyLabel}</option>
+          {languages.map((language) => (
+            <option key={`${id}-${language.id}`} value={language.id}>
+              {language.name}
+            </option>
+          ))}
+        </Field>
+      </div>
+    </div>
+  </div>
+);
 
 interface SonarrModalProps {
   sonarr: SonarrSettings | null;
@@ -215,6 +258,11 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
         (value) => !value || !value.endsWith('/')
       ),
   });
+
+  const metadataLanguages = testResponse.metadataLanguages;
+  const sonarrDefaultLanguage = metadataLanguages?.find(
+    (language) => language.id === testResponse.defaultMetadataLanguageId
+  )?.name;
 
   useEffect(() => {
     if (sonarr) {
@@ -725,6 +773,22 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                     </div>
                   </div>
                 )}
+                {metadataLanguages && (
+                  <MetadataLanguageField
+                    id="activeLanguageProfileId"
+                    label={intl.formatMessage(messages.metadataLanguage)}
+                    help={intl.formatMessage(messages.metadataLanguageHelp)}
+                    emptyLabel={
+                      sonarrDefaultLanguage
+                        ? intl.formatMessage(messages.sonarrDefaultLanguage, {
+                            language: sonarrDefaultLanguage,
+                          })
+                        : intl.formatMessage(messages.sonarrDefault)
+                    }
+                    languages={metadataLanguages}
+                    disabled={!isValidated || isTesting}
+                  />
+                )}
                 <div className="form-row">
                   <label htmlFor="tags" className="text-label">
                     {intl.formatMessage(messages.tags)}
@@ -941,6 +1005,17 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                         )}
                     </div>
                   </div>
+                )}
+                {metadataLanguages && (
+                  <MetadataLanguageField
+                    id="activeAnimeLanguageProfileId"
+                    label={intl.formatMessage(messages.animeMetadataLanguage)}
+                    emptyLabel={intl.formatMessage(
+                      messages.sameAsMetadataLanguage
+                    )}
+                    languages={metadataLanguages}
+                    disabled={!isValidated || isTesting}
+                  />
                 )}
                 <div className="form-row">
                   <label htmlFor="tags" className="text-label">

@@ -16,6 +16,7 @@ import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { PencilIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/solid';
+import type { MetadataLanguage } from '@shared/api/servarr/sonarr';
 import type OverrideRule from '@shared/entity/OverrideRule';
 import type { OverrideRuleResultsResponse } from '@shared/interfaces/api/overrideRuleInterfaces';
 import type { RadarrSettings, SonarrSettings } from '@shared/lib/settings';
@@ -249,6 +250,9 @@ export type SonarrTestResponse = DVRTestResponse & {
         name: string;
       }[]
     | null;
+  /** Sonarr 5 only: the metadata languages for the language slots. */
+  metadataLanguages?: MetadataLanguage[] | null;
+  defaultMetadataLanguageId?: number | null;
 };
 
 const ServerInstance = ({

@@ -1,5 +1,8 @@
 import type { QualityProfile, RootFolder, Tag } from '@shared/api/servarr/base';
-import type { LanguageProfile } from '@shared/api/servarr/sonarr';
+import type {
+  LanguageProfile,
+  MetadataLanguage,
+} from '@shared/api/servarr/sonarr';
 
 export interface ServiceCommonServer {
   id: number;
@@ -20,6 +23,10 @@ export interface ServiceCommonServerWithDetails {
   server: ServiceCommonServer;
   profiles: QualityProfile[];
   rootFolders: Partial<RootFolder>[];
-  languageProfiles?: LanguageProfile[];
+  languageProfiles?: LanguageProfile[] | null;
+  /** Sonarr 5 only: what the language slots choose from. */
+  metadataLanguages?: MetadataLanguage[] | null;
+  /** Sonarr 5's preferred metadata language, used when no slot is set. */
+  defaultMetadataLanguageId?: number | null;
   tags: Tag[];
 }

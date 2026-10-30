@@ -43,6 +43,8 @@ const messages = defineMessages('components.RequestModal.AdvancedRequester', {
   folder: '{path} ({space})',
   requestas: 'Request As',
   languageprofile: 'Language Profile',
+  metadataLanguage: 'Metadata Language',
+  sonarrDefaultLanguage: 'Sonarr default ({language})',
   tags: 'Tags',
   selecttags: 'Select tags',
   notagoptions: 'No tags.',
@@ -214,7 +216,9 @@ const AdvancedRequester = ({
             ? serverData.server.activeAnimeDirectory
             : serverData.server.activeDirectory)
       );
-      const defaultLanguage = serverData.languageProfiles?.find(
+      const defaultLanguage = (
+        serverData.metadataLanguages ?? serverData.languageProfiles
+      )?.find(
         (language) =>
           language.id ===
           (isAnime && serverData.server.activeAnimeLanguageProfileId
@@ -330,6 +334,23 @@ const AdvancedRequester = ({
     isIgnoreQuotaVisible,
   ]);
 
+  // Sonarr 5 has metadata languages where Sonarr 3 had language profiles;
+  // both go in the request's language slot.
+  const metadataLanguages = serverData?.metadataLanguages ?? null;
+  const languageOptions =
+    metadataLanguages ?? serverData?.languageProfiles ?? [];
+  const slotLanguage =
+    isAnime && serverData?.server.activeAnimeLanguageProfileId
+      ? serverData.server.activeAnimeLanguageProfileId
+      : serverData?.server.activeLanguageProfileId;
+  const sonarrDefaultLanguage =
+    metadataLanguages &&
+    !languageOptions.some((language) => language.id === slotLanguage)
+      ? metadataLanguages.find(
+          (language) => language.id === serverData?.defaultMetadataLanguageId
+        )
+      : undefined;
+
   if (!data && !error) {
     return (
       <div className="mb-2 w-full">
@@ -345,7 +366,7 @@ const AdvancedRequester = ({
         (!serverData ||
           (serverData.profiles.length < 2 &&
             serverData.rootFolders.length < 2 &&
-            (serverData.languageProfiles ?? []).length < 2 &&
+            languageOptions.length < 2 &&
             !serverData.tags?.length)))) &&
     (!selectedUser || (filteredUserData ?? []).length < 2)
   ) {
@@ -495,12 +516,14 @@ const AdvancedRequester = ({
               </div>
             )}
             {type === 'tv' &&
-              (isValidating ||
-                !serverData ||
-                (serverData.languageProfiles ?? []).length > 1) && (
+              (isValidating || !serverData || languageOptions.length > 1) && (
                 <div className="mb-3 w-full flex-shrink-0 flex-grow last:pr-0 md:w-1/4 md:pr-4">
                   <label htmlFor="language">
-                    {intl.formatMessage(messages.languageprofile)}
+                    {intl.formatMessage(
+                      metadataLanguages
+                        ? messages.metadataLanguage
+                        : messages.languageprofile
+                    )}
                   </label>
                   <select
                     id="language"
@@ -520,9 +543,16 @@ const AdvancedRequester = ({
                         {intl.formatMessage(globalMessages.loading)}
                       </option>
                     )}
+                    {!isValidating && serverData && sonarrDefaultLanguage && (
+                      <option value={-1}>
+                        {intl.formatMessage(messages.sonarrDefaultLanguage, {
+                          language: sonarrDefaultLanguage.name,
+                        })}
+                      </option>
+                    )}
                     {!isValidating &&
                       serverData &&
-                      serverData.languageProfiles?.map((language) => (
+                      languageOptions.map((language) => (
                         <option
                           key={`folder-list${language.id}`}
                           value={language.id}

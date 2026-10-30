@@ -139,7 +139,8 @@ pub(super) fn radarr_detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 }
 
 /// `GET /service/sonarr/{id}`: like Radarr's, plus language profiles for
-/// Sonarr v3 and older, found through the system status.
+/// Sonarr v3 and older, found through the system status, and the metadata
+/// languages for Sonarr 5.
 pub(super) fn sonarr_detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         let server = match find_server(ctx, "/sonarr") {
@@ -184,6 +185,11 @@ pub(super) fn sonarr_detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         } else {
             Value::Null
         };
+        let metadata_languages = if legacy {
+            None
+        } else {
+            super::arrsettings::sonarr_metadata_languages(client, &server, timeout).await
+        };
         let tags = match client.tags(&server, timeout).await {
             Ok(tags) => tags,
             Err(e) => return arr_failed(ctx, api, "tags", &e),
@@ -206,6 +212,7 @@ pub(super) fn sonarr_detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             picked_list(&folders, &["id", "freeSpace", "path", "totalSpace"]),
         );
         out.insert(String::from("languageProfiles"), languages);
+        crate::sonarrmeta::MetadataLanguages::insert_into(metadata_languages.as_ref(), &mut out);
         out.insert(String::from("tags"), tags);
         ctx.json(&Value::Object(out))
     })

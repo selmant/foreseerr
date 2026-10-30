@@ -421,7 +421,31 @@ fn major_at_most_3(version: &str) -> Option<bool> {
     None
 }
 
-/// `POST /settings/sonarr/test`: also language profiles for Sonarr v3.
+/// Sonarr 5's metadata languages for the language slot; none on an
+/// older Sonarr, or (logged) when they can't be read.
+pub(super) async fn sonarr_metadata_languages(
+    client: &crate::servarr::ServarrClient,
+    server: &Value,
+    timeout: Option<std::time::Duration>,
+) -> Option<crate::sonarrmeta::MetadataLanguages> {
+    let arr = crate::arr::Arr {
+        client,
+        server,
+        timeout,
+    };
+    crate::sonarrmeta::metadata_languages(&arr)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!(
+                label = "Sonarr API",
+                "Could not read Sonarr's metadata languages: {e:#}"
+            );
+            None
+        })
+}
+
+/// `POST /settings/sonarr/test`: also language profiles for Sonarr v3,
+/// and the metadata languages for Sonarr 5.
 fn sonarr_test<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
     Box::pin(async move {
         let server = match test_body(ctx) {
@@ -472,6 +496,11 @@ fn sonarr_test<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         } else {
             Value::Null
         };
+        let metadata_languages = if v3 {
+            None
+        } else {
+            sonarr_metadata_languages(client, &server, timeout).await
+        };
         let tags = match classify(client.tags(&server, timeout).await) {
             Fetched::Failed(why) => return fail(&why),
             Fetched::Ok(v) => v,
@@ -483,6 +512,7 @@ fn sonarr_test<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
         out.insert(String::from("profiles"), profiles);
         out.insert(String::from("rootFolders"), root_folders);
         out.insert(String::from("languageProfiles"), language_profiles);
+        crate::sonarrmeta::MetadataLanguages::insert_into(metadata_languages.as_ref(), &mut out);
         out.insert(String::from("tags"), tags);
         if let Some(url_base) = url_base {
             out.insert(String::from("urlBase"), url_base);
