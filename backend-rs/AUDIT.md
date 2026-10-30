@@ -1,5 +1,13 @@
 # Rust backend audit — 2026-10-13
 
+> Update 2026-10-31: the Node server is being removed. Proxy mode
+> (`FORESEERR_NODE_URL`, `FORESEERR_STANDALONE`), `FORESEERR_RUST_JOBS`,
+> `FORESEERR_OPENAPI_VALIDATOR` and the Node comparison tooling (the
+> generators, the validator differential and `ci-compare.py`) are gone, so
+> the findings and verification below that mention them describe the
+> state at the time of the audit. See [README.md](README.md) for the
+> current setup.
+
 The standalone backend has no Node/Bun runtime dependency. Its production
 container now uses Rust by default and packages the frontend and Swagger
 browser assets without `node_modules`. The repository still has legacy

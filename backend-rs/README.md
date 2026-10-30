@@ -1,58 +1,34 @@
 # backend-rs
 
-The Rust backend for Foreseerr, replacing the Node server. It listens where
-Node used to and has a handler for every route in `seerr-api.yml`. It runs
-in one of two modes:
+The Foreseerr backend. It replaced the Node server: one binary that listens
+where Node did, runs the migrations, the jobs and the settings bootstrap,
+serves the built frontend, and has a handler for every route in
+`seerr-api.yml`. Where a request has no exact answer the handlers give
+the fallback described under "Fallback answers" below.
 
-- hybrid: Node keeps running behind it (`FORESEERR_NODE_URL`), and gets
-  every request no Rust handler takes plus every request a handler hands
-  back because it can't answer exactly as Node would;
-- standalone (below): no Node; this binary is the whole backend.
+The production `Dockerfile` (and `Dockerfile.rust`, which builds the same
+image) runs this binary. Bun and Vite build the frontend; the final image
+contains neither Bun/Node nor `node_modules`. The package scripts in the
+repository root build the frontend and run this binary; the Rust commands
+use `backend-rs/rust-toolchain.toml`. [AUDIT.md](AUDIT.md) records the
+audit of the port.
 
-The default production `Dockerfile` now runs standalone Rust. Bun and Vite
-are used to build the frontend; the final image contains neither Bun/Node
-nor `node_modules`. `Dockerfile.rust` builds the same image.
-
-From the repository root, `bun run dev:rust` runs Rust with the Vite dev
-server; `bun run build:rust` builds the frontend and release binary, and
-`bun run start:rust` starts that binary in production. The Rust commands
-use `backend-rs/rust-toolchain.toml`. The legacy package scripts and Bun
-release binaries still exist; [AUDIT.md](AUDIT.md) lists the remaining
-migration work.
-
-```text
-clients ──► foreseerr (Rust) :5055 ──► Node :5056   (FORESEERR_NODE_URL)
-                 │
-                 └── native routes answered here, reading and writing the
-                     same settings.json and database Node uses
-```
-
-In hybrid mode Node still owns the schema and migrations and, unless
-`FORESEERR_RUST_JOBS` says otherwise, the jobs and the state that lives in
-its memory. The Rust side reads settings.json (reloaded when the file
-changes) and writes it as `getSettings().save()` does, then tells Node to
-read it again (`POST /internal/settings/reload`). Each change runs on the
-latest document under one lock (`SettingsStore::mutate`), so concurrent
-Rust writes don't lose each other; the lock doesn't reach Node, so a Node
-write landing at the same moment as a Rust one can still lose one of them.
-It reads and writes the
-database as the TypeORM handlers do, refreshes session expiry as
-express-session does on every request, and runs the request lifecycle
-(notifications, sending to Radarr/Sonarr). State that lives only in Node's
-memory is read and changed over the `/internal` routes Node serves for this
-purpose (`server/routes/internal.ts`), authenticated with the API key: the
-download tracker (`/internal/downloads`, which `downloadStatus` needs), the
-jobs and scanners, the response caches and integration health, the mapping
+It reads and writes settings.json (reloaded when the file changes) as
+`getSettings().save()` did; each change runs on the latest document under
+one lock (`SettingsStore::mutate`), so concurrent writes don't lose each
+other. It reads and writes the database as the TypeORM handlers did,
+refreshes session expiry as express-session did on every request, and runs
+the request lifecycle (notifications, sending to Radarr/Sonarr). The state
+Node kept in memory lives in this process: the download tracker, the jobs
+and scanners, the response caches and integration health, the mapping
 layer, the Simkl sync and resolution, the Trakt token refresh, the TVDB
-metadata, the calendar source statuses and the login avatar check (see
-"Hybrid forwarding" below for what `FORESEERR_RUST_JOBS` moves here).
-Outgoing calls honour
-`network.proxy` and the `NODE_EXTRA_CA_CERTS` / `SHADOW_CA_FILE` file like
-Node, so they can be recorded and replayed too.
+metadata, the calendar source statuses and the login avatar check.
+Outgoing calls honour `network.proxy` and the `SHADOW_CA_FILE` (or
+`NODE_EXTRA_CA_CERTS`) CA file, so they can be recorded and replayed.
 
-## Ported routes
+## Routes
 
-Every path and method `seerr-api.yml` documents has a native handler, plus
+Every path and method `seerr-api.yml` documents has a handler, plus
 `POST /api/v1/desktop/browser-cache/redeem` (not in the spec),
 `POST /api/v1/settings/cache/{browser,images,all}/flush` (validated as
 `/settings/cache/{cacheId}/flush`) and
@@ -62,22 +38,22 @@ Every path and method `seerr-api.yml` documents has a native handler, plus
 | ---------------------------------- | ---------------------------------------------------------------- |
 | `GET /api/v1/status`, `/status/appdata`, `/settings/public`, `/auth/me` | unless a general case below applies; `/status` includes the update check against GitHub |
 | `/api/v1/auth/`: `local`, `logout`, `plex`, `jellyfin`, `jellyfin/quickconnect/{initiate,check,authenticate}`, `reset-password`, `reset-password/{guid}` | unless a general case below applies |
-| `POST /api/v1/auth/jellyfin/plugin`, `/api/v1/desktop/{auth-tickets,auth-tickets/redeem,browser-cache/redeem}` | the binary runs standalone as the Jellyfin plugin sidecar or the desktop child respectively; with Node behind, both runtimes go to Node whole |
+| `POST /api/v1/auth/jellyfin/plugin`, `/api/v1/desktop/{auth-tickets,auth-tickets/redeem,browser-cache/redeem}` | the binary runs as the Jellyfin plugin sidecar or the desktop child respectively |
 | `/api/v1/user`: list, create, bulk `PUT`, `{id}` (`GET`, `PUT`, `DELETE`), `{id}/requests`, `{id}/watchlist`, `{id}/watch_data`, `{id}/pushSubscriptions`, `{id}/pushSubscription/{endpoint}`, `registerPushSubscription`, `import-from-plex`, `import-from-jellyfin`, `jellyfin/{id}` | unless a general case below applies |
 | `GET`/`POST /api/v1/user/{id}/settings/{main,password,notifications,permissions,discover}` | unless a general case below applies |
 | `GET /api/v1/user/{id}/quota`      | the user themselves or a `MANAGE_USERS` + `MANAGE_REQUESTS` holder |
 | `/api/v1/user/{id}/settings/linked-accounts/`: Plex and Jellyfin (link, Quick Connect, unlink), Trakt and Simkl (`GET`, `PATCH`, `DELETE`), AniList (`GET`, `POST`, `PATCH`, `DELETE`) | unless a general case below applies |
-| `POST .../linked-accounts/trakt/device/{code,token}`, `.../simkl/pin/{code,token}`, `.../simkl/sync` | standalone only: the device and PIN sessions, their throttles and the Simkl sync's per-user lock live in Node's memory, so with Node behind these always go to Node |
-| `/api/v1/settings/` (admin): `main` (+`regenerate`), `initialize`, `network`, `plex` (+libraries, library sync, users, `devices/servers`), `jellyfin` (+libraries, library sync, users), `tautulli`, `radarr`/`sonarr` (+`test`, `{id}`, `{id}/profiles`), `metadatas` (+`test`), `servarr-interventions`, `trakt`/`simkl`/`anilist` (+`actions`), `mdblist`, every notification agent (+`test`, Pushover `sounds`), `discover` (+`add`, `{id}`, `reset`), `jobs`, `plex/sync`, `jellyfin/sync`, `cache`, `integrations/status`, `mapping/*`, `logs`, `about` | unless a general case below applies. Sections Node returns as stored are read from settings.json as they are. `POST /settings/plex` and `/settings/tautulli` go to Node when the body changed the settings and the connection test fails (or Tautulli has no hostname): Node keeps the assigned body unsaved in its memory, which only Node can reproduce |
+| `POST .../linked-accounts/trakt/device/{code,token}`, `.../simkl/pin/{code,token}`, `.../simkl/sync` | unless a general case below applies; the device and PIN sessions, their throttles and the Simkl sync's per-user lock live in this process |
+| `/api/v1/settings/` (admin): `main` (+`regenerate`), `initialize`, `network`, `plex` (+libraries, library sync, users, `devices/servers`), `jellyfin` (+libraries, library sync, users), `tautulli`, `radarr`/`sonarr` (+`test`, `{id}`, `{id}/profiles`), `metadatas` (+`test`), `servarr-interventions`, `trakt`/`simkl`/`anilist` (+`actions`), `mdblist`, every notification agent (+`test`, Pushover `sounds`), `discover` (+`add`, `{id}`, `reset`), `jobs`, `plex/sync`, `jellyfin/sync`, `cache`, `integrations/status`, `mapping/*`, `logs`, `about` | unless a general case below applies. Sections Node returned as stored are read from settings.json as they are. When `POST /settings/plex` or `/settings/tautulli` changed the settings and the connection test fails (or Tautulli has no hostname), the assigned body stays in the current settings unsaved, as it did in Node's memory |
 | `/api/v1/request`: list, `count`, `{id}` (`GET`, `PUT`, `DELETE`), create, `{id}/{approve,decline,retry}` | unless a general case below applies; quality profile names come from every Radarr and Sonarr server through `getRolling`'s cache, failures land in `serviceErrors` as in Node; writes run the request lifecycle (`src/lifecycle.rs`): notifications, sending to Radarr/Sonarr in the background, parent media and season statuses |
 | `/api/v1/issue`: list, `count`, `{id}` (`GET`, `DELETE`), create, `{id}/comment`, `{id}/{open,resolved}`; `/api/v1/issueComment/{id}` | unless a general case below applies |
-| `/api/v1/media`: list, `{id}` `DELETE`, `{id}/{status}`, `{id}/file`, `{id}/watch_data`, `{id}/servarr/*` (context, release search and grab, manual imports, commands) | unless a general case below applies; the download tracker comes from Node unless this process runs the jobs |
-| `/api/v1/media-actions/*`: `capabilities`, `status-batch`, movie, show and episode status, watched, unwatched and rating | while Node owns the mapping layer's sync caches (no `FORESEERR_RUST_JOBS`), a request that would reach one of the user's linked providers (Trakt, Jellyfin, AniList, Simkl) goes to Node; only the no-provider answers are given here |
-| `/api/v1/movie/{id}`, `/tv/{id}` (+`recommendations`, `similar`, `ratings`; TV also `season/{n}` and `episodes`), `/person/{id}` (+`combined_credits`), `/collection/{id}`, `/search` (+`keyword`, `company`), `/genres/*`, `/certifications/*`, `/keyword/{id}`, `/network/{id}`, `/studio/{id}`, `/backdrops`, `/regions`, `/languages`, `/watchproviders/{regions,movies,tv}` | unless a general case below applies; TMDB, TVDB, Rotten Tomatoes, the IMDb proxy and MDBList are called as Node calls them, with the same caches |
-| `/api/v1/discover/`: the TMDB lists (`movies`, `tv`, `trending`, upcoming, by language, genre, studio, network and keyword, `genreslider`), `trakt/*`, `anilist/*`, `simkl/*`, `mdblist/*`, `watchlist` | unless a general case below applies; the mapping layer (TMDB resolution of provider items, the Simkl library sync) is Node's over `/internal` unless this process runs the jobs |
+| `/api/v1/media`: list, `{id}` `DELETE`, `{id}/{status}`, `{id}/file`, `{id}/watch_data`, `{id}/servarr/*` (context, release search and grab, manual imports, commands) | unless a general case below applies |
+| `/api/v1/media-actions/*`: `capabilities`, `status-batch`, movie, show and episode status, watched, unwatched and rating | unless a general case below applies; the linked providers (Trakt, Jellyfin, AniList, Simkl) are called with the mapping layer's sync caches |
+| `/api/v1/movie/{id}`, `/tv/{id}` (+`recommendations`, `similar`, `ratings`; TV also `season/{n}` and `episodes`), `/person/{id}` (+`combined_credits`), `/collection/{id}`, `/search` (+`keyword`, `company`), `/genres/*`, `/certifications/*`, `/keyword/{id}`, `/network/{id}`, `/studio/{id}`, `/backdrops`, `/regions`, `/languages`, `/watchproviders/{regions,movies,tv}` | unless a general case below applies; TMDB, TVDB, Rotten Tomatoes, the IMDb proxy and MDBList are called as Node called them, with the same caches |
+| `/api/v1/discover/`: the TMDB lists (`movies`, `tv`, `trending`, upcoming, by language, genre, studio, network and keyword, `genreslider`), `trakt/*`, `anilist/*`, `simkl/*`, `mdblist/*`, `watchlist` | unless a general case below applies; provider items are resolved to TMDB by the mapping layer (`src/mappinglayer/`) |
 | `/api/v1/library/*`, `/api/v1/calendar`, `/api/v1/service/{radarr,sonarr}` (+`{id}`, `sonarr/lookup/{tmdbId}`), `/api/v1/servarr/interventions` (+`count`, `seen`, `{id}/reject`) | unless a general case below applies |
 | `/api/v1/blocklist` (+`{id}`, `collection/{id}`), `/api/v1/blacklist` (the deprecated alias), `/api/v1/watchlist`, `/api/v1/overrideRule` | unless a general case below applies |
-| `GET /imageproxy/*`, `GET /avatarproxy/*` (`HEAD` runs the `GET` route, as in Express) | the path is one Express wouldn't decode or normalise (no `%` or dot segments, no empty segment first or last; an empty one inside, as in the `...//x.jpg` backdrop URLs the frontend builds, is kept as Express keeps it); other methods go to Node |
+| `GET /imageproxy/*`, `GET /avatarproxy/*` (`HEAD` runs the `GET` route, as in Express) | the path is one Express wouldn't decode or normalise (no `%` or dot segments, no empty segment first or last; an empty one inside, as in the `...//x.jpg` backdrop URLs the frontend builds, is kept as Express keeps it); other methods and paths get the fallback answer |
 
 Routes are registered in `src/routes/mod.rs` from three tables: `ROUTES`
 maps a path to the `GET` handler that answers it, `SETTINGS_SECTIONS` maps
@@ -85,37 +61,31 @@ a path to the settings.json section it returns as it is, and `TABLES` lists
 each module's own `ROUTES` table of path, method and handler (a module adds
 itself there); `imageproxy::routes` adds the two image mounts. Paths are
 matched as Express matches them (case-insensitively, with an optional
-trailing slash and decoded parameters, `src/routes/expressroute.rs`); a
-request that goes to Node is sent with the URI it arrived with. A
-registered path's other methods, and `HEAD`, go to Node, whose validator
-answers 405; so does every path no handler is registered for.
+trailing slash and decoded parameters, `src/routes/expressroute.rs`). A
+registered path's other methods, and `HEAD`, get the fallback answer (the
+validator's 405 under `/api`); so does every path no handler is
+registered for.
 
 The TMDB-backed routes use `src/tmdb.rs`, which carries `ExternalAPI.get`'s
 response cache (a day for these lookups) and axios's query encoding, so the
-outgoing calls match Node's byte for byte in a shadow replay.
+outgoing calls are the ones Node made, byte for byte.
 
 `GET /media` reproduces `TypeORM`'s paging order (sort column descending,
 then id ascending) and leaves `seasons` out of the `mediaAdded` sort, whose
 query builder doesn't load the eager relation. The `Media` entity is printed
-as Node does in `src/media.rs`: the computed links and download progress
-first, in declaration order, then the columns; a Plex `machineId` missing
-from settings.json prints as `undefined`, as the template literal does.
+as Node printed it in `src/media.rs`: the computed links and download
+progress first, in declaration order, then the columns; a Plex `machineId`
+missing from settings.json prints as `undefined`, as the template literal
+did.
 
 Numbers in upstream JSON are re-printed as JavaScript would (`8.0` becomes
-`8`), since Node parses and re-serialises every answer.
+`8`), since Node parsed and re-serialised every answer.
 
-TMDB-backed routes compare equal to Node only against the same upstream
-answers: TMDB orders some arrays (release dates, crew, a cast member's
-roles) differently from one call to the next and vote counts move, so side
-by side against live TMDB the bodies differ in order while an
-order-insensitive comparison is clean.
-The shadow replay, which serves both sides the recorded answers, is the
-reference check.
-
-While Node answers part of the traffic, each process keeps its own
-response cache, so a request Node answers may re-fetch from TMDB what this
-server already holds (the shadow report lists it as an extra outgoing
-call).
+TMDB orders some arrays (release dates, crew, a cast member's roles)
+differently from one call to the next and vote counts move, so two runs
+side by side against live TMDB differ in order while an order-insensitive
+comparison is clean. The shadow replay, which serves every target the
+recorded answers, is the reference check.
 
 Two Node quirks are reproduced on purpose in `GET /user`: the OpenAPI
 validator fills in `sort=created`, so the handler's own default never
@@ -123,142 +93,63 @@ applies, and TypeORM leaves the search `OR` chain unparenthesised, so
 `includeIds` only narrows the last branch of it.
 
 One is deliberately not: `GET /tv/{id}/season/{n}` prefixes the image host
-onto episode stills once per answer. Node writes the prefix onto its cached
-object, so it stacks once more per call within the cache's five minutes;
+onto episode stills once per answer. Node wrote the prefix onto its cached
+object, so it stacked once more per call within the cache's five minutes;
 cached answers here are shared and never changed in place.
 
-A handler that can't be sure of answering as Node would hands the request
-on instead (`Outcome::Forward` in `src/routes/mod.rs`, logged at `debug`
-with the reason, `RUST_LOG=foreseerr=debug`). In hybrid mode it goes to
-Node with the request intact; standalone, the handler's own fallback
-answer is given instead (see "Standalone" below). Forwarding is meant to
-be decided before a handler changes anything, so that Node runs the request
-from the start: once a write handler has written to the database or
-settings.json, or called an upstream that acts, a failure is answered
-here (`try_written!` in `src/routes/writes.rs`), never handed to Node to
-run again. The general cases, on top of the per-route ones in the table:
+## Fallback answers
 
-- plugin mode (`FORESEERR_PLUGIN`) and the desktop runtime with Node
-  behind: nothing is answered here and the OpenAPI gate is skipped, so
-  every request goes to Node unchanged (standalone mode runs both, see
-  "Managed runtimes" below);
+A handler that can't answer as Node would returns `Outcome::Forward` with
+the reason (`src/routes/mod.rs`; the name dates from when such requests
+were forwarded to a Node server behind this one, and comments in the
+handlers still say a request "goes to Node" for this). The request then
+gets the handler's fallback answer: the status it names
+(`isAuthenticated`'s 403, a 400 for an input it refuses, 413 for a body
+over 100 kB…), else 400 when the validator didn't vouch for the request
+and 500 when it did, with `{"message": <the reason>}`; 5xx answers are
+logged at `warn`. The fallback is meant to be decided before a handler
+changes anything: once a write handler has written to the database or
+settings.json, or called an upstream that acts, a failure is answered as
+the handler's own error (`try_written!` in `src/routes/writes.rs`). The
+general cases, on top of the per-route ones in the table:
+
 - `HEAD` on an `/api` route, and a method no handler is registered for
-  on a path (Node's validator answers 405);
-- Node hasn't answered a request yet after startup, so this server is as
-  unavailable as Node while Node boots;
+  on a path (the validator's 405);
 - settings.json can't be read, or the database fails in a way the handler
   doesn't answer itself;
 - `X-API-User` that isn't a whole number, or a `SQLite` datetime not in the
   shape TypeORM writes, which Node would read in the server's local
   timezone;
-- the OpenAPI validator is unsure. With Node behind it runs in `proxy`
-  mode (`FORESEERR_OPENAPI_VALIDATOR`, `src/openapi/gate.rs`): rejections
-  that are certainly Node's (400 for a bad query or body, 401 without a
-  credential, 405) are answered here, anything it isn't sure of goes to
-  Node, and requests that pass reach the handlers with the query and body
-  as the validator left them. A handler still forwards an input the
-  validator didn't vouch for (a query string, a body field, an enum
-  value) rather than judge it itself;
-- `isAuthenticated`'s 403 is answered here once the validator has judged
-  the request; without that the request goes to Node;
+- the OpenAPI validator is unsure (`src/openapi/gate.rs`): requests that
+  pass reach the handlers with the query and body as the validator left
+  them, and a handler gives its fallback for an input the validator didn't
+  vouch for (a query string, a body field, an enum value) rather than
+  judge it itself;
 - a body `express.json()` would refuse or skip (not JSON, over 100 kB,
   neither an object nor an array), or fields the handler would store
   differently from Node;
 - stored data or upstream answers of a shape Node would trip over or print
   differently (a stored `notificationTypes` or GitHub payload that would
   make Node throw, a path segment Express would decode, an odd Arr or
-  Plex answer…), and upstream failures whose message Node words itself;
+  Plex answer…), and upstream failures whose message Node worded itself;
   the reason strings in the handlers say which.
 
-`network.csrfProtection` (read at startup, as Node mounts csurf once) is
-reproduced in `src/csrf.rs` in front of everything: answers made here get
-the `_csrf` and `XSRF-TOKEN` cookies as Node would set them, a request with
-a missing or wrong token (or a body only Node's parsers can judge) goes to
-Node, which refuses it in its own words, and Node's answers pass through
-untouched.
+`network.csrfProtection` (read at startup, as Node mounted csurf once) is
+reproduced in `src/csrf.rs` in front of everything: answers get the
+`_csrf` and `XSRF-TOKEN` cookies as Node set them, and a request with a
+missing or wrong token gets csurf's 403 `{"message":"invalid csrf token"}`.
 
 Writes receive the body as `express.json()` parses it (or as the validator
 left it, once it passed the request); a body it would refuse, or one whose
-fields the handler would store oddly, goes to Node with the request intact.
-They run the statements `TypeORM` would and print the entity as Node
-leaves it: fields the body omitted are `undefined` and drop out, and a
-removed entity loses its id.
+fields the handler would store oddly, gets the fallback answer. They run
+the statements `TypeORM` would and print the entity as Node left it:
+fields the body omitted are `undefined` and drop out, and a removed entity
+loses its id.
 
 Responses match Express's `res.json`: compact JSON with a weak `ETag`, and a
 `304` when `If-None-Match` matches.
 
-## Hybrid forwarding
-
-`scripts/with-node.sh` starts both processes as one tree: Node on
-`$FORESEERR_NODE_PORT` (default `$PORT + 1000`) bound to `127.0.0.1`
-(`FORESEERR_NODE_COMMAND` overrides how; `bun server/launcher.ts` in
-development, `bun dist/launcher.js` otherwise), and Rust on `$PORT` with
-`FORESEERR_NODE_URL=http://127.0.0.1:<node port>` and
-`FORESEERR_APP_ROOT` set to the repository. Every other variable is passed
-to both. When either process exits the other is stopped.
-
-Forwarding (`src/proxy.rs`) sends Node the request as it arrived: the
-method, the original path and query (before the Express-style rewrite),
-the headers (`Host`, cookies and the rest unchanged) with the client's
-address appended to `X-Forwarded-For`, over HTTP/1.1. The request body is
-streamed through, or sent as the bytes the validator, the CSRF layer or
-the handler already buffered. Node's status, headers and body are streamed
-back as they come. Hop-by-hop headers (`Connection`, `Keep-Alive`,
-`Proxy-*`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`) are dropped
-both ways, so a WebSocket upgrade isn't proxied (Node serves none). If
-Node doesn't answer, the client gets 502
-`{"message":"The backend is not available"}`. The first answer from Node
-marks it ready, and from then on the native handlers answer.
-
-Besides the `/api` cases above, everything outside the native routes goes
-to Node: the frontend and its SPA fallback, `/api-docs`, and `/internal`
-requests that arrive from outside. Rust doesn't look at what Node
-answered: no cache is invalidated and nothing runs after a forwarded
-request. Coherence goes the other way. After its own writes Rust tells Node
-what changed, over `/internal` with the API key:
-`POST /internal/settings/reload` after every settings.json save,
-`/internal/settings/effects` for side effects that live in Node's memory
-(its MDBList client, the sync caches),
-`/internal/user/{id}/sync-cache/{provider}/invalidate`,
-`/internal/mapping/datasets/changed`, and `/internal/jobs/start` when the
-first sign-in created the admin. A Node that can't be told is only logged.
-
-`FORESEERR_RUST_JOBS=1` moves the jobs to this process. It has to reach
-both processes (`with-node.sh` passes it on): Node then skips `startJobs()`
-(`server/job/schedule.ts`) and Rust schedules and runs every job. The
-state that comes with them is then read in-process instead of over
-`/internal`: the download tracker, job and scanner state, the calendar
-source statuses, the mapping layer (and with it the media-action provider
-calls and the discover lists' TMDB resolution), and Node's process-state
-routes (response caches, integration health, settings effects, TVDB
-metadata, the Trakt token refresh, the Simkl sync, the login avatar
-check). The per-user sync caches (`/internal/user/{id}/sync-cache/*`) stay
-Node's while Node runs, and Rust keeps telling Node about settings
-reloads, memory effects, dataset changes and sync-cache invalidations so
-the copies behind the requests Node still answers stay current.
-
 ## Running
-
-Build with `cargo build --release`; the binary is `target/release/foreseerr`.
-It reads the same environment as Node (`PORT`, `HOST`, `CONFIG_DIRECTORY`,
-`DB_TYPE` and the `DB_*` Postgres variables, `API_KEY`, `FORESEERR_PLUGIN`,
-`FORESEERR_RUNTIME`) plus:
-
-| Variable             | Meaning                                                    | Default                 |
-| -------------------- | ---------------------------------------------------------- | ----------------------- |
-| `FORESEERR_NODE_URL` | Where Node listens; unset means standalone (below)         | standalone              |
-| `FORESEERR_STANDALONE` | `1` forces standalone, `0` forces forwarding to `http://127.0.0.1:5056` | follows `FORESEERR_NODE_URL` |
-| `FORESEERR_RUST_JOBS` | `1`: this process runs the scheduled jobs (implied by standalone; Node reads it too) | unset |
-| `FORESEERR_OPENAPI_VALIDATOR` | `proxy`: answer the validator's certain rejections, send the uncertain ones to Node; `standalone`: answer all; `off`: don't validate (refused in standalone mode) | `proxy`, `standalone` without Node |
-| `FORESEERR_APP_ROOT` | Directory with package.json, committag.json and `config/`  | current directory       |
-| `FORESEERR_PUBLIC_PATH` | The built frontend served in standalone mode            | `$FORESEERR_APP_ROOT/dist/public` |
-| `RUST_LOG`           | Log filter, e.g. `info,foreseerr=debug` to see what is forwarded and why | `info`    |
-
-`scripts/with-node.sh` starts both processes as one tree (see "Hybrid
-forwarding" above). It is what a shadow replay target or a container can
-run as "the backend".
-
-### Standalone (no Node)
 
 ```sh
 bun run build:web                 # once: the frontend in dist/public
@@ -267,39 +158,45 @@ NODE_ENV=production CONFIG_DIRECTORY=/path/to/config \
   FORESEERR_APP_ROOT=/path/to/repo backend-rs/target/release/foreseerr
 ```
 
-With `FORESEERR_NODE_URL` unset (or `FORESEERR_STANDALONE=1`) the binary is
-the whole backend (`src/standalone/`):
+The binary is `target/release/foreseerr`. It reads the environment Node
+read (`NODE_ENV`, `PORT`, `HOST`, `CONFIG_DIRECTORY`, `DB_TYPE` and the
+`DB_*` Postgres variables, `API_KEY`, `LOG_LEVEL`, `LOG_DIRECTORY`,
+`CACHE_DIRECTORY`, `FORESEERR_PLUGIN`, `FORESEERR_RUNTIME`) plus:
 
-- Startup does what `server/index.ts` does before listening: the Overseerr
-  merge, the TypeORM migrations (`NODE_ENV=production` only, as in Node;
-  development expects an existing schema) with `PRAGMA foreign_keys` around
-  them on SQLite, the newer-schema guard, `Settings.load()` (settings.json
-  created, migrated with a `settings.old.json` backup, keys and VAPID pair
-  generated, `API_KEY` honoured), the Plex library type migration, the
-  discover slider bootstrap and the image cache maintenance. The scheduler
-  runs every job (standalone implies `FORESEERR_RUST_JOBS`).
+| Variable             | Meaning                                                    | Default                 |
+| -------------------- | ---------------------------------------------------------- | ----------------------- |
+| `FORESEERR_APP_ROOT` | Directory with `seerr-api.yml`, `committag.json`, `dist/public/` and `config/` | current directory |
+| `FORESEERR_PUBLIC_PATH` | The built frontend                                      | `$FORESEERR_APP_ROOT/dist/public` |
+| `SHADOW_CA_FILE`     | Extra CA certificates (PEM) to trust for outgoing calls, e.g. a shadow recorder's | `NODE_EXTRA_CA_CERTS` |
+| `RUST_LOG`           | Console log filter, e.g. `info,foreseerr=debug`            | `info`                  |
+
+What it does (`src/standalone/`):
+
+- Startup does what `server/index.ts` did before listening: the Overseerr
+  merge, the TypeORM migrations (in production, and on Postgres in
+  development too, as in Node; development on `SQLite` builds the entity
+  schema on an empty database as `synchronize` did, and otherwise expects
+  that schema) with `PRAGMA foreign_keys` around them on SQLite, the
+  newer-schema guard,
+  `Settings.load()` (settings.json created, migrated with a
+  `settings.old.json` backup, keys and VAPID pair generated, `API_KEY`
+  honoured), the Plex library type migration, the discover slider
+  bootstrap and the image cache maintenance. The scheduler runs every job.
 - `network.forceIpv4First` and `network.dnsCache` apply to every outgoing
   client (`src/dnsresolve.rs`; the system resolver has no TTLs, so cached
   answers live 300 s within `forceMinTtl`/`forceMaxTtl`).
-- Nothing is forwarded, and the OpenAPI validator decides every request
-  itself, uncertain ones included. For a request no handler takes
-  (`src/standalone/fallback.rs`), Node's answers under `/api` are
-  reproduced from `seerr-api.yml` (`src/standalone/apiroutes.rs`,
-  regenerate with
-  `cd <repo> && bun backend-rs/scripts/gen-api-routes.ts . backend-rs && cargo fmt`):
+- The OpenAPI validator (`seerr-api.yml` from the app root; the start
+  fails without it) decides every `/api` request itself, uncertain ones
+  included. For a request no handler takes (`src/standalone/fallback.rs`),
+  Node's answers under `/api` are reproduced from `seerr-api.yml`
+  (`src/standalone/apiroutes.rs`, regenerate with
+  `cd <repo> && bun backend-rs/scripts/gen-api-routes.ts . backend-rs`):
   405 for an undocumented method (`HEAD` included), 401 without a
   credential, the `/api/v1` banner, `isAuthenticated`'s 403 for an
   undocumented path below a guarded mount, Express's HTML 404 for any
   other undocumented path. A documented route no handler answers would be
   a plain 500 `{"message":"Internal Server Error"}`, logged at `error`
   (every documented route has a handler today).
-- Where a handler would have handed the request to Node, it answers its
-  fallback instead: the status it names (`isAuthenticated`'s 403, a 400 for
-  an input it refuses, 413 for a body over 100 kB…), else 400 when the validator
-  didn't vouch for the request and 500 when it did, with
-  `{"message": <the reason>}`; 5xx answers are logged at `warn`. The
-  routes that are standalone-only behind Node (the Trakt device and Simkl
-  PIN flows, the Simkl sync) keep their state in this process.
 - In production the frontend is served like `express.static` +
   the SPA fallback: `index.html` with `Cache-Control: no-store`,
   `/assets/*` with `public, max-age=31536000, immutable`, everything else
@@ -307,29 +204,27 @@ the whole backend (`src/standalone/`):
   `/api-docs` is Swagger UI from the browser assets packaged into
   `dist/public/api-docs` by the frontend build
   (`src/standalone/apidocs.rs`).
-- Node's `/internal` calls are answered in-process
+- The `/internal` routes Node served are answered in-process
   (`src/standalone/internal.rs`): the mapping layer (`src/mappinglayer/`)
-  and the Node process state (`src/routes/procstate/`) run here, the
-  settings reload is a no-op, and the jobs' state is read from the Rust
-  scheduler at the call site. A path no port covers answers its caller 501.
-  `/internal` requests from outside get the same answers behind Node's
-  API-key check (403 `{"message":"Forbidden"}` without the key).
-- `network.csrfProtection` works as csurf does in Node (`src/csrf.rs`).
-- Logs go to the console (`RUST_LOG`) and, as `server/logger.ts` writes
+  and the process state Node kept in memory (`src/routes/procstate/`) run
+  here, the settings reload is a no-op, and the jobs' state is read from
+  the Rust scheduler at the call site. A path no port covers answers its
+  caller 501. `/internal` requests from outside get the same answers
+  behind Node's API-key check (403 `{"message":"Forbidden"}` without the
+  key).
+- `network.csrfProtection` works as csurf did in Node (`src/csrf.rs`).
+- Logs go to the console (`RUST_LOG`) and, as `server/logger.ts` wrote
   them, to `seerr-YYYY-MM-DD.log` and `.machinelogs-YYYY-MM-DD.json` under
   `LOG_DIRECTORY` (default `<config>/logs`) at `LOG_LEVEL` (default
   `debug`), which the log viewer reads (`src/logfile.rs`).
-- `Dockerfile` and `Dockerfile.rust` build an image that runs this binary standalone.
-- The Jellyfin plugin sidecar and the desktop child run standalone too
-  (below).
+- The Jellyfin plugin sidecar and the desktop child are two runtimes of
+  the same binary (below).
 
 ### Managed runtimes: the desktop app and the Jellyfin plugin
 
 The desktop app and the Jellyfin plugin can launch this binary where they
-launch Node today (`node launcher.js` in the desktop bundle, the compiled
-`foreseerr-<os>-<arch>` sidecar in the plugin). It has to run standalone:
-leave `FORESEERR_NODE_URL` unset (or set `FORESEERR_STANDALONE=1`). With
-Node behind it, both modes are forwarded to Node unchanged. The code is in
+launched Node (`node launcher.js` in the desktop bundle, the compiled
+`foreseerr-<os>-<arch>` sidecar in the plugin). The code is in
 `src/runtime/`.
 
 Files the binary reads besides the config directory, from
@@ -338,11 +233,12 @@ launchers set to the directory of what they start):
 
 | File               | Needed for                                                           |
 | ------------------ | -------------------------------------------------------------------- |
-| `seerr-api.yml`    | the `OpenAPI` validator (standalone refuses to start without it)      |
+| `seerr-api.yml`    | the `OpenAPI` validator (the binary refuses to start without it)     |
 | `dist/public/`     | the frontend in production (`FORESEERR_PUBLIC_PATH` overrides); the plugin refuses to start in production without its `index.html` |
 | `committag.json`   | the commit tag in `/status` (optional, `local` without it)           |
 
-`package.json`, the locales and the email templates are compiled in.
+`package.json`, the locales (`locale/`) and the email templates are
+compiled in.
 
 #### Desktop child (`FORESEERR_RUNTIME=desktop`)
 
@@ -463,43 +359,43 @@ Process contract:
   `foreseerr-base-path` meta tag, without the manifest link,
   `Cache-Control: no-store`.
 
-## Checking against Node
+## Shadow replays
 
-`tools/shadow` records real traffic and replays it against Node and this
-binary side by side, comparing responses, outgoing calls and the database.
-A replay target for this crate looks like:
+`tools/shadow` records real traffic and replays it against several builds
+side by side, comparing responses, outgoing calls and the database: a
+candidate build against the release that served the recording. A replay
+target for this crate looks like:
 
 ```toml
 [[target]]
-name = "rust"
+name = "candidate"
 role = "candidate"
 url = "http://127.0.0.1:6113"
 proxy_port = 6213
 cwd = "/path/to/SeerrSuggestArr"
-command = ["backend-rs/scripts/with-node.sh", "backend-rs/target/release/foreseerr"]
-env = { NODE_ENV = "development", PORT = "6113" }
+command = ["backend-rs/target/release/foreseerr"]
+env = { NODE_ENV = "production", PORT = "6113" }
 ```
 
 Two smaller checks need no recording and run in CI (standard-library
 Python, from the repository):
 
 - `scripts/ci-smoke.py [--bin path] [--mapping-db OUT]` starts this binary
-  standalone in production mode on a fresh config directory, on SQLite or,
-  with `DB_TYPE=postgres` and the `DB_*` variables, on an empty Postgres
+  in production mode on a fresh config directory, on SQLite or, with
+  `DB_TYPE=postgres` and the `DB_*` variables, on an empty Postgres
   database (`psql` on `PATH`). It checks that exactly the migrations in
   `src/dbmigrate/` were applied, in order, that a set of authenticated
   reads answers 200, and that a restart applies nothing. With
   `--mapping-db` it also downloads both mapping datasets and copies the
   database to `OUT`, the scratch database `FORESEERR_MAPPING_TEST_DB`
   names for `src/mappinglayer/dbtests.rs`.
-- `scripts/ci-compare.py [--bin path]` runs Node (`bun server/launcher.ts`,
-  development) and this binary (standalone) one after the other, each on
-  its own fresh SQLite database with the same seed rows. It sends both the
-  same scripted requests and compares the status, the 2xx JSON bodies
-  (volatile fields blanked, timestamps compared by format only) and the
-  outcome of the review's failure and concurrency scenarios. Error bodies
-  are not compared. Scenarios listed in its `KNOWN_GAPS` are reported
-  without failing the run, and the run says when one starts to agree.
+- `scripts/ci-standalone.py [--bin path] [--require-web]` starts it from
+  an app root holding only `seerr-api.yml` and the built frontend (no
+  `node_modules`), on SQLite or the same dedicated Postgres database, and
+  exercises the auth failure cases, concurrent password resets, the
+  packaged frontend and Swagger bytes, a restart and the future-schema
+  refusal. It rewrites migration records for a while: never run it
+  against a real installation.
 
 ## Lints and tests
 
@@ -512,27 +408,43 @@ silenced inline. The one exception is `multiple_crate_versions`, which sqlx
 makes unavoidable. The toolchain is pinned in `rust-toolchain.toml`.
 
 `.github/workflows/backend-rs.yml` runs on changes to the crate and to
-`server/**`, since entities, migrations, settings defaults and routes are
-mirrored by hand. It has five jobs:
+what it compiles in or reads from outside it (`package.json`,
+`seerr-api.yml`, the Dockerfiles, the frontend build). It has four jobs:
 
 - format, lint and test: `cargo fmt --check`, `cargo clippy --all-targets
   --locked -- -D warnings`, the SQLite startup smoke that also builds the
   scratch mapping database (`scripts/ci-smoke.py --mapping-db`), then
   `cargo test --locked` with `FORESEERR_MAPPING_TEST_DB` set;
-- generated code: `scripts/gen-api-routes.ts`, `gen-migrations.ts` and
-  `gen-synchronize.ts` run again (`bun <script> <repo> <repo>/backend-rs`
-  from the repository), and the job fails if anything under `backend-rs/`
+- the API route table: `scripts/gen-api-routes.ts` runs again (Bun only,
+  no `node_modules`), and the job fails if `src/standalone/apiroutes.rs`
   changed;
-- the validator differential test, `scripts/openapi-diff.sh`, which runs
-  the ignored `openapi_` tests against express-openapi-validator's answers;
 - startup and migrations on a Postgres 18 service container
-  (`scripts/ci-smoke.py` with `DB_TYPE=postgres`);
-- the Node and Rust comparison, `scripts/ci-compare.py`.
+  (`scripts/ci-smoke.py` and `scripts/ci-standalone.py` with
+  `DB_TYPE=postgres`);
+- the standalone regressions with the built frontend on SQLite
+  (`bun run build:web`, then `scripts/ci-standalone.py --require-web`).
 
-The tests that need an environment (`FORESEERR_MAPPING_TEST_DB` for the
-mapping database test, `OPENAPI_CORPUS` for the ignored validator tests)
-skip without it locally, but fail when `CI` is set, so a CI job can't pass
-them vacuously.
+The mapping database test (`FORESEERR_MAPPING_TEST_DB`) skips without its
+database locally, but fails when `CI` is set, so a CI job can't pass it
+vacuously.
+
+### Hand-maintained mirrors
+
+These were generated from or mirrored the Node sources; with the Node
+server gone they are maintained here:
+
+- `src/dbmigrate/sqlite.rs` and `postgres.rs`: the TypeORM migrations, one
+  entry per migration with its class name, timestamp and statements. A
+  schema change is a new entry with a later timestamp; released entries
+  never change. `src/dbmigrate/sqlite_reference.json` is the schema the
+  `SQLite` migrations leave, which `src/dbmigrate/tests.rs` compares
+  against.
+- `src/dbmigrate/synchronize.rs` and `synchronize_reference.json`: the
+  development schema (`synchronize`) for an empty `SQLite` database.
+- `src/settings/defaults.json`: the settings defaults (Node's
+  `server/lib/settings/index.ts`).
+- `src/standalone/apiroutes.rs` is still generated, from `seerr-api.yml`
+  (`scripts/gen-api-routes.ts`, checked in CI).
 
 ## Layout
 
@@ -542,28 +454,25 @@ them vacuously.
 | `src/env.rs`       | Environment variables                                                 |
 | `src/state.rs`     | Shared state and the restart flag                                     |
 | `src/settings/`    | settings.json over the embedded defaults; `fullPublicSettings`        |
+| `locale/`          | The notification strings in every locale (`src/i18n.rs` compiles them in) |
 | `src/db.rs`        | SQLite or Postgres pool; session and user lookups                     |
 | `src/auth.rs`      | `checkUser`: API key or signed session cookie                         |
 | `src/user.rs`      | `User.toPublicJSON` with its column transformers                      |
 | `src/discover.rs`  | Discover slider responses with their computed endpoints               |
-| `src/media.rs`     | `Media` as Node prints it: servarr, Plex, Jellyfin and Tautulli links, download progress |
-| `src/downloads.rs` | The download tracker: Node's over `/internal/downloads`, or the Rust jobs' (`src/jobs/downloadtracker.rs`) |
-| `src/standalone/`  | Running without Node: startup (migrations, settings bootstrap, Overseerr merge), fallback answers, static frontend, in-process `/internal` |
+| `src/media.rs`     | `Media` as Node printed it: servarr, Plex, Jellyfin and Tautulli links, download progress |
+| `src/downloads.rs` | The download tracker as `downloadStatus` reads it (`src/jobs/downloadtracker.rs`) |
+| `src/standalone/`  | Startup (migrations, settings bootstrap, Overseerr merge), fallback answers, static frontend, in-process `/internal` |
 | `src/runtime/`     | The desktop child and the Jellyfin plugin sidecar: readiness records, control channel, lock, request guards, sessions, host bootstrap |
-| `src/dbmigrate/`   | The TypeORM migrations (generated by `scripts/gen-migrations.ts`), the dev-mode `synchronize` DDL (`scripts/gen-synchronize.ts`) and the schema guard |
+| `src/dbmigrate/`   | The TypeORM migrations, the dev-mode `synchronize` DDL and the schema guard |
 | `src/dnsresolve.rs` | `forceIpv4First` and the DNS cache for outgoing clients              |
 | `src/servarr.rs`   | Radarr and Sonarr calls: `buildUrl`, `apikey`, the rolling response cache |
 | `src/ratings.rs`   | `fetchCombinedRatings`: MDBList, or Rotten Tomatoes (with its Jaro title scoring) and the IMDb proxy |
 | `src/outbound.rs`  | Outgoing HTTP client: proxy settings, CA file, user agent             |
 | `src/github.rs`    | The GitHub update check with its response cache                       |
 | `src/tmdb.rs`      | The TMDB client: regions, languages, watch providers                  |
-| `src/proxy.rs`     | Forwarding to Node                                                    |
 | `src/openapi/`     | The `OpenAPI` validator and its gate in front of the routes           |
 | `src/csrf.rs`      | csurf and the `XSRF-TOKEN` cookie                                     |
-| `src/jobs/`        | The scheduler and the jobs (`FORESEERR_RUST_JOBS`, standalone)         |
+| `src/jobs/`        | The scheduler and the jobs                                            |
 | `src/respond.rs`   | Express-shaped JSON responses                                         |
 | `src/clock.rs`     | UTC calendar fields in the formats `TypeORM` and `Date.toJSON` write |
-| `src/routes/`      | The router and its forwarding (`mod.rs`), Express-style path matching (`expressroute.rs`) and one module per area (`user*.rs`, `settings*.rs`, `request*.rs`, `issue*.rs`, `media*.rs`, `discover.rs` and the provider discover modules, `movie.rs`, `tv.rs`, `library.rs`, `calendar.rs`, `auth*.rs`, `login.rs`, `linkedaccounts.rs`, `writes.rs`, `imageproxy.rs`…); `related.rs` loads the media, users and tracker a page points at, `procstate/` is Node's process state run here |
-
-`src/settings/defaults.json` mirrors the defaults in
-`server/lib/settings/index.ts` and has to be updated when they change.
+| `src/routes/`      | The router and the hand-off to the fallback (`mod.rs`), Express-style path matching (`expressroute.rs`) and one module per area (`user*.rs`, `settings*.rs`, `request*.rs`, `issue*.rs`, `media*.rs`, `discover.rs` and the provider discover modules, `movie.rs`, `tv.rs`, `library.rs`, `calendar.rs`, `auth*.rs`, `login.rs`, `linkedaccounts.rs`, `writes.rs`, `imageproxy.rs`…); `related.rs` loads the media, users and tracker a page points at, `procstate/` is the process state Node kept in memory |
