@@ -6724,6 +6724,62 @@ paths:
                       restricted:
                         type: boolean
                         example: false
+  /user/{userId}/sonarr-storage:
+    get:
+      summary: Get a user's Sonarr storage usage
+      description: |
+        Size on disk and episode counts of the series tagged with the
+        user's requester tag, per Sonarr server that has `tagRequests` on and
+        speaks Sonarr's API v5. Other servers are left out. Requires
+        `MANAGE_USERS` and `MANAGE_REQUESTS` permissions if viewing other
+        users.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Usage per Sonarr server
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: number
+                          example: 0
+                        name:
+                          type: string
+                          example: Sonarr
+                        is4k:
+                          type: boolean
+                          example: false
+                        seriesCount:
+                          type: number
+                          example: 3
+                        episodeCount:
+                          type: number
+                          description: Episodes with a file.
+                          example: 44
+                        episodeFileCount:
+                          type: number
+                          example: 42
+                        sizeOnDisk:
+                          type: number
+                          example: 53687091200
+        '403':
+          description: The viewer may not see this user's usage
+        '404':
+          description: User not found
   /blocklist:
     get:
       summary: Returns blocklisted items

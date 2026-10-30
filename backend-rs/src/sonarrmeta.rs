@@ -1,6 +1,6 @@
 //! Sonarr reads beyond adding a series: the series lookup by other ids
 //! (`tmdb:`, `anilist:`, `mal:`, on Sonarr 4 and 5 alike), and, through
-//! API v5 only, the metadata language.
+//! API v5 only, the metadata language and the per-tag statistics.
 
 use anyhow::Result;
 use reqwest::Method;
@@ -231,6 +231,33 @@ pub fn lookup_server(settings: &crate::settings::Settings) -> Option<Value> {
         .cloned()
 }
 
+/// v5's library statistics for the series carrying `tag_id`.
+///
+/// # Errors
+///
+/// Fails when the call fails.
+pub async fn tag_statistics(arr: &Arr<'_>, tag_id: i64) -> Result<Value> {
+    read(arr, "/statistics", &[("tagIds", tag_id.to_string())]).await
+}
+
+/// The requester tag `tagRequests` puts on a user's series: `{id} - name`
+/// (older) or `{id}-name`, as `sendToSonarr` finds it.
+#[must_use]
+pub fn requester_tag_id(tags: &[Value], user_id: i64) -> Option<i64> {
+    let labelled = |prefix: &str| {
+        tags.iter().find(|t| {
+            t.get("label")
+                .and_then(Value::as_str)
+                .is_some_and(|l| l.starts_with(prefix))
+        })
+    };
+    labelled(&format!("{user_id} - "))
+        .or_else(|| labelled(&format!("{user_id}-")))
+        .and_then(|t| t.get("id"))
+        .filter(|id| truthy(Some(id)))
+        .and_then(Value::as_i64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,5 +331,18 @@ mod tests {
             json!({"metadataLanguages": [{"id": 1, "name": "English"}], "defaultMetadataLanguageId": 1})
         );
         assert_eq!(language_ref(8), json!({"id": 8}));
+    }
+
+    #[test]
+    fn requester_tags() {
+        let tags = vec![
+            json!({"id": 4, "label": "10-other"}),
+            json!({"id": 5, "label": "1-admin"}),
+            json!({"id": 6, "label": "2 - old style"}),
+        ];
+        assert_eq!(requester_tag_id(&tags, 1), Some(5));
+        assert_eq!(requester_tag_id(&tags, 2), Some(6));
+        assert_eq!(requester_tag_id(&tags, 10), Some(4));
+        assert_eq!(requester_tag_id(&tags, 3), None);
     }
 }
