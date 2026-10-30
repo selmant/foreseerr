@@ -100,10 +100,8 @@ async function processMessages(dir: string): Promise<string> {
 }
 
 async function saveMessages() {
-  const targets = [
-    { dir: './src/', output: './src/i18n/locale/en.json' },
-    { dir: './server/', output: './server/i18n/locale/en.json' },
-  ];
+  // The backend's messages live in backend-rs/locale and are kept by hand.
+  const targets = [{ dir: './src/', output: './src/i18n/locale/en.json' }];
 
   for (const { dir, output } of targets) {
     const result = await processMessages(dir);

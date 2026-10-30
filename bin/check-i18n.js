@@ -10,7 +10,6 @@ const path = require('path');
 
 const targets = [
   path.join(__dirname, '..', 'src', 'i18n', 'locale', 'en.json'),
-  path.join(__dirname, '..', 'server', 'i18n', 'locale', 'en.json'),
 ];
 
 const backups = targets.map((p) => `${p}.bak`);

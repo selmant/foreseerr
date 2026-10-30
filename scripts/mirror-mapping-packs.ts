@@ -13,10 +13,6 @@
  * The S3 form shells out to the `aws` CLI, which the homelab runner already
  * has configured against Garage; no SDK dependency is added for a cron script.
  */
-import {
-  DATASETS,
-  type DatasetDefinition,
-} from '@server/lib/mapping/definitions';
 import axios from 'axios';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -26,6 +22,39 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
+
+interface DatasetDefinition {
+  key: string;
+  urls: string[];
+}
+
+/** The datasets backend-rs/src/mappingdatasets.rs reads, upstream first. */
+const DATASETS: DatasetDefinition[] = [
+  {
+    key: 'anibridge',
+    urls: [
+      'https://github.com/anibridge/anibridge-mappings/releases/download/v3/mappings.min.json',
+    ],
+  },
+  {
+    key: 'fribb',
+    urls: [
+      'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json',
+      'https://cdn.jsdelivr.net/gh/Fribb/anime-lists@master/anime-list-full.json',
+    ],
+  },
+];
+
+/** Whether a dataset body is JSON with at least one entry. */
+function hasEntries(body: string): boolean {
+  const parsed: unknown = JSON.parse(body);
+  if (Array.isArray(parsed)) return parsed.length > 0;
+  return (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    Object.keys(parsed).length > 0
+  );
+}
 
 const MIRROR_DIR = process.env.MAPPING_MIRROR_DIR;
 const MIRROR_S3 = process.env.MAPPING_MIRROR_S3;
@@ -42,8 +71,8 @@ async function download(dataset: DatasetDefinition): Promise<string> {
       });
       // Mirroring a truncated body would turn our fallback into the problem it
       // exists to solve.
-      if (!dataset.parse(data).edges.length) {
-        throw new Error('dataset parsed to zero edges');
+      if (!hasEntries(data)) {
+        throw new Error('dataset has no entries');
       }
       return data;
     } catch (error) {
