@@ -16,7 +16,6 @@ RUN apk add --no-cache build-base
 
 WORKDIR /app
 COPY package.json seerr-api.yml ./
-COPY server/i18n/locale ./server/i18n/locale
 COPY backend-rs ./backend-rs
 
 WORKDIR /app/backend-rs
@@ -29,7 +28,6 @@ FROM alpine:3.23
 ARG COMMIT_TAG
 ENV NODE_ENV=production
 ENV COMMIT_TAG=${COMMIT_TAG}
-ENV FORESEERR_STANDALONE=1
 ENV FORESEERR_APP_ROOT=/app
 ENV PORT=5055
 

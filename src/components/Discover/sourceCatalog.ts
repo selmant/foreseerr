@@ -1,5 +1,5 @@
 import defineMessages from '@app/utils/defineMessages';
-import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
+import type { PublicSettingsResponse } from '@shared/interfaces/api/settingsInterfaces';
 
 export const sourceMessages = defineMessages('components.Discover.Sources', {
   title: 'Sources',

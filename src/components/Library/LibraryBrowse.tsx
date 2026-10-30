@@ -33,13 +33,13 @@ import type {
   LibraryBrowseResponse,
   LibraryFacetsResponse,
   LibraryTitle,
-} from '@server/interfaces/api/libraryInterfaces';
+} from '@shared/interfaces/api/libraryInterfaces';
 import {
   countActiveLibraryBrowseFilters,
   type ParsedLibraryBrowseQuery,
-} from '@server/lib/libraryBrowseQuery';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+} from '@shared/lib/libraryBrowseQuery';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { useLocation, useNavigate } from 'react-router';

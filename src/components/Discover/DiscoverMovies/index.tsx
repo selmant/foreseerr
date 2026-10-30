@@ -21,8 +21,8 @@ import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import { BarsArrowDownIcon, FunnelIcon } from '@heroicons/react/24/solid';
-import type { MovieSortOptions as TMDBSortOptions } from '@server/api/themoviedb';
-import type { MovieResult } from '@server/models/Search';
+import type { MovieSortOptions as TMDBSortOptions } from '@shared/api/themoviedb';
+import type { MovieResult } from '@shared/models/Search';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 
@@ -89,7 +89,7 @@ const DiscoverMovies = () => {
 
   if (error) {
     const statusCode =
-      typeof error === 'object' && error !== null && 'response' in error
+      typeof error === 'object' && 'response' in error
         ? Number(
             (error as { response?: { status?: unknown } }).response?.status
           )

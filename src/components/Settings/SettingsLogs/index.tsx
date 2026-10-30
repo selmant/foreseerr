@@ -26,7 +26,7 @@ import {
 import type {
   LogMessage,
   LogsResultsResponse,
-} from '@server/interfaces/api/settingsInterfaces';
+} from '@shared/interfaces/api/settingsInterfaces';
 import copy from 'copy-to-clipboard';
 import { Fragment, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';

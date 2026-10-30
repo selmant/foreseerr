@@ -366,13 +366,9 @@ fn peek(key: &str, now_ms: i64) -> i64 {
 
 /// The limiter's key: `ipKeyGenerator(req.ip)`, with `trust proxy` as
 /// Express set it at startup. Trusted, `req.ip` is the leftmost forwarded
-/// address, else the peer's. With Node behind this server and no trust,
-/// every request reaches Node from here, so all share one key.
+/// address, else the peer's.
 fn limiter_key(ctx: &Ready<'_>) -> Result<String, String> {
     let trusted = ctx.state.trust_proxy_at_startup();
-    if !trusted && !crate::standalone::enabled() {
-        return Ok(String::from("proxy"));
-    }
     let forwarded = ctx
         .req
         .headers

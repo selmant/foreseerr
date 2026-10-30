@@ -13,9 +13,9 @@ import {
   ArrowDownOnSquareIcon,
   ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
-import { ApiErrorCode } from '@server/constants/error';
-import { MediaServerType } from '@server/constants/server';
-import type { JellyfinSettings } from '@server/lib/settings';
+import { ApiErrorCode } from '@shared/constants/error';
+import { MediaServerType } from '@shared/constants/server';
+import type { JellyfinSettings } from '@shared/lib/settings';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { useState } from 'react';

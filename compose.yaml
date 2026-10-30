@@ -1,12 +1,10 @@
+# Builds and runs Foreseerr from this checkout. For development without
+# Docker, run `bun run dev` (Vite on :3000 in front of the backend on :5055).
 services:
   foreseerr:
     build:
       context: .
-      dockerfile: Dockerfile.local
     ports:
-      - 3000:3000
       - 5055:5055
     volumes:
-      - .:/app:rw,cached
-      - /app/node_modules
-      - /app/dist/public
+      - ./config:/app/config

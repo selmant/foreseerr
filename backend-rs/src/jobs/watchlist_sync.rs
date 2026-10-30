@@ -209,7 +209,7 @@ async fn request_item(
             label = "Watchlist Sync",
             user_id,
             media_title = %title,
-            "Skipped a watchlist request this port leaves to Node: {why}"
+            "Skipped a watchlist request: {why}"
         ),
     }
     Ok(())

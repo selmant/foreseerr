@@ -45,10 +45,10 @@ import {
   ChevronDoubleDownIcon,
   ChevronDoubleUpIcon,
 } from '@heroicons/react/24/solid';
-import { IssueStatus } from '@server/constants/issue';
-import { MediaStatus, MediaType } from '@server/constants/media';
-import { MediaServerType } from '@server/constants/server';
-import type { MovieDetails as MovieDetailsType } from '@server/models/Movie';
+import { IssueStatus } from '@shared/constants/issue';
+import { MediaStatus, MediaType } from '@shared/constants/media';
+import { MediaServerType } from '@shared/constants/server';
+import type { MovieDetails as MovieDetailsType } from '@shared/models/Movie';
 import { countries } from 'country-flag-icons';
 import 'country-flag-icons/3x2/flags.css';
 import { uniqBy } from 'lodash';

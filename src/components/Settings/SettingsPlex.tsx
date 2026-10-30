@@ -16,8 +16,8 @@ import {
   MagnifyingGlassIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
-import type { PlexDevice } from '@server/interfaces/api/plexInterfaces';
-import type { PlexSettings, TautulliSettings } from '@server/lib/settings';
+import type { PlexDevice } from '@shared/interfaces/api/plexInterfaces';
+import type { PlexSettings, TautulliSettings } from '@shared/lib/settings';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { orderBy } from 'lodash';

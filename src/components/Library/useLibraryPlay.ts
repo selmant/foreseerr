@@ -7,7 +7,7 @@ import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import type {
   LibraryItemInspectorResponse,
   LibraryTitle,
-} from '@server/interfaces/api/libraryInterfaces';
+} from '@shared/interfaces/api/libraryInterfaces';
 import axios from 'axios';
 import { useCallback } from 'react';
 

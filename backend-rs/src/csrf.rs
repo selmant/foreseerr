@@ -21,24 +21,17 @@
 //!   `/avatarproxy` clear them again (`clearCookies`).
 //!
 //! The setting is read at startup, as Node mounts the middleware once.
-//!
-//! With Node behind this server, Node runs csurf itself for whatever it
-//! answers: responses it produced pass through untouched, refused requests
-//! and bodies only Node's parsers can judge go to Node, and the cookies are
-//! added here only to answers made here.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, Response};
 use axum::middleware::Next;
 use base64::prelude::*;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::proxy::Forwarded;
 use crate::state::AppState;
 
 /// csurf's cookie.
@@ -106,16 +99,10 @@ fn config(state: &AppState) -> Option<Config> {
 }
 
 /// The middleware.
-pub async fn layer(
-    State(state): State<Arc<AppState>>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    req: Request,
-    next: Next,
-) -> Response<Body> {
+pub async fn layer(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response<Body> {
     let Some(config) = config(&state) else {
         return next.run(req).await;
     };
-    let standalone = crate::standalone::enabled();
     let (parts, body) = req.into_parts();
     let (body, body_token) = if crate::openapi::request::has_body(&parts.headers) {
         match crate::openapi::request::buffer(body).await {
@@ -130,14 +117,12 @@ pub async fn layer(
     };
     let req = Request::from_parts(parts, body);
     let body_token = match body_token {
-        BodyToken::Absent => None,
+        // A body the parsers read in a way not reproduced here has no
+        // token csurf could find.
+        BodyToken::Absent | BodyToken::Unsure => None,
         BodyToken::Found(token) => Some(token),
         // Node answers the parser's error before csurf: no cookies.
-        BodyToken::ParserFails if standalone => return next.run(req).await,
-        BodyToken::Unsure if standalone => None,
-        BodyToken::ParserFails | BodyToken::Unsure => {
-            return state.node.forward(req, peer.ip()).await;
-        }
+        BodyToken::ParserFails => return next.run(req).await,
     };
     let (secret, fresh) = if let Some(secret) = request_secret(req.headers()) {
         (secret, None)
@@ -153,9 +138,6 @@ pub async fn layer(
         let token = body_token.or_else(|| query_token(req.uri().query().unwrap_or("")));
         let token = token.or_else(|| header_token(req.headers()));
         if !verify(&secret, token.as_ref()) {
-            if !standalone {
-                return state.node.forward(req, peer.ip()).await;
-            }
             let mut res = error_response(&req, 403, "invalid csrf token");
             prepend_cookies(&mut res, fresh_cookie.into_iter().collect());
             return res;
@@ -163,14 +145,11 @@ pub async fn layer(
     }
     let Secret::Text(secret_text) = &secret else {
         // `req.csrfToken()` throws in the XSRF-TOKEN middleware.
-        if !standalone {
-            return state.node.forward(req, peer.ip()).await;
-        }
         return error_response(&req, 500, "argument secret is required");
     };
     let cleared = under(req.uri().path(), "/imageproxy") || under(req.uri().path(), "/avatarproxy");
     let mut res = next.run(req).await;
-    if res.extensions().get::<Forwarded>().is_some() || cleared {
+    if cleared {
         return res;
     }
     let mut cookies: Vec<String> = fresh_cookie.into_iter().collect();
@@ -478,28 +457,6 @@ fn error_response(req: &Request, status: u16, message: &str) -> Response<Body> {
         res.headers_mut().insert(header::CONTENT_LENGTH, v);
     }
     res
-}
-
-/// Headers that get this server's own calls past Node's csurf.
-///
-/// Node's `/internal` routes sit behind csurf too: a `Cookie` with a
-/// secret and an `X-CSRF-Token` csurf accepts (tokens don't expire).
-/// Harmless when Node doesn't mount csurf.
-#[must_use]
-pub fn internal_headers() -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    let Some(secret) = new_secret() else {
-        return headers;
-    };
-    let token = create_token(&secret);
-    if let (Ok(cookie), Ok(token)) = (
-        HeaderValue::from_str(&format!("{SECRET_COOKIE}={secret}")),
-        HeaderValue::from_str(&token),
-    ) {
-        headers.insert(header::COOKIE, cookie);
-        headers.insert("x-csrf-token", token);
-    }
-    headers
 }
 
 #[cfg(test)]

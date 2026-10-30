@@ -3,7 +3,7 @@ import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { LinkIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { DiscoverSliderType } from '@server/constants/discover';
+import { DiscoverSliderType } from '@shared/constants/discover';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';

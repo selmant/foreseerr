@@ -11,7 +11,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 
-use super::scanbase::{array_of, node_call};
+use super::scanbase::{array_of, internal_call};
 use super::JobCtx;
 
 /// `ANIME_KEYWORD_ID`.
@@ -168,7 +168,7 @@ pub async fn provider_show(job: &JobCtx, show: Value) -> Result<Value> {
     }
     let id = id_of(&show)?;
     let kind = if anime { "anime" } else { "tv" };
-    let answer = node_call(
+    let answer = internal_call(
         job,
         reqwest::Method::GET,
         &format!("/metadata/tv/{kind}/{id}"),

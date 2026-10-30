@@ -5,7 +5,7 @@ import { genreColorMap } from '@app/components/Discover/constants';
 import GenreCard from '@app/components/GenreCard';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { GenreSliderItem } from '@server/interfaces/api/discoverInterfaces';
+import type { GenreSliderItem } from '@shared/interfaces/api/discoverInterfaces';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 

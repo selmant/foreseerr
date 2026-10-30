@@ -43,8 +43,8 @@ import {
   FilmIcon,
   TvIcon,
 } from '@heroicons/react/24/solid';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import axios from 'axios';
 import { Children, useEffect, useId, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';

@@ -22,7 +22,7 @@ import {
   CloudArrowDownIcon,
   CloudArrowUpIcon,
 } from '@heroicons/react/24/solid';
-import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
+import type { UserSettingsNotificationsResponse } from '@shared/interfaces/api/userSettingsInterfaces';
 import axios from 'axios';
 import { Form, Formik } from 'formik';
 import { useEffect, useMemo, useState } from 'react';

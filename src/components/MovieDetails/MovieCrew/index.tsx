@@ -5,7 +5,7 @@ import PersonCard from '@app/components/PersonCard';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { MovieDetails } from '@server/models/Movie';
+import type { MovieDetails } from '@shared/models/Movie';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR from 'swr';

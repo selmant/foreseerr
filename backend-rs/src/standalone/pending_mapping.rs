@@ -1,4 +1,4 @@
-//! The mapping layer's `/internal` routes in standalone mode.
+//! The mapping layer's `/internal` routes.
 //!
 //! `/internal/mapping/*` (confirm, resolve-items, posters, unmapped,
 //! trakt-ids, anilist-media, flush, status, invalidate, datasets),

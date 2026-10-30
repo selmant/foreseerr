@@ -1,7 +1,7 @@
 import useSettings from '@app/hooks/useSettings';
 import type { User } from '@app/hooks/useUser';
 import { Permission } from '@app/hooks/useUser';
-import { hasPermission } from '@server/lib/permissions';
+import { hasPermission } from '@shared/lib/permissions';
 
 export interface PermissionItem {
   id: string;

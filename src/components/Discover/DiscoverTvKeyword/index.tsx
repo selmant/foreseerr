@@ -6,8 +6,8 @@ import useRouteQuery from '@app/hooks/useRouteQuery';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
-import type { TvResult } from '@server/models/Search';
+import type { TmdbKeyword } from '@shared/api/themoviedb/interfaces';
+import type { TvResult } from '@shared/models/Search';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverTvKeyword', {

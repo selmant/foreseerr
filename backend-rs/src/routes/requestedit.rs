@@ -348,7 +348,7 @@ pub(super) async fn loaded_json(
     requested_by: &UserRel,
 ) -> Result<Map<String, Value>, String> {
     let media: Vec<&crate::db::MediaRow> = e.media.iter().collect();
-    let downloads = downloads_for(ctx, &media).await?;
+    let downloads = downloads_for(&media);
     let mut out = Map::new();
     super::request::columns(&mut out, &e.row);
     out.insert(

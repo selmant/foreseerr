@@ -1,8 +1,7 @@
 //! `server/lib/downloadtracker.ts`: the download tracker.
 //!
 //! What each Radarr and Sonarr server is downloading, polled by `download-sync` and cleared by
-//! `download-sync-reset`. When Rust runs the jobs (`FORESEERR_RUST_JOBS=1`)
-//! this is the tracker `downloadStatus` is read from.
+//! `download-sync-reset`; `downloadStatus` is read from it.
 
 use std::sync::{Arc, LazyLock, RwLock};
 

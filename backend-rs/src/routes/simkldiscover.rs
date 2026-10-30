@@ -57,82 +57,39 @@ macro_rules! try_forward {
     };
 }
 
-/// POST to one of Node's internal Simkl routes. A failure carries the
-/// message Node's error handler wrote, which is what the route surfaces.
-async fn node_simkl(ctx: &Ready<'_>, path: &str, body: &Value) -> Result<Value, String> {
-    if super::procstate::in_process(path) {
-        let answer =
-            crate::standalone::internal::call(ctx.state, &Method::POST, path, Some(body)).await;
-        if answer.is_success() {
-            return Ok(answer.body);
-        }
-        return Err(answer
-            .body
-            .get("message")
-            .and_then(Value::as_str)
-            .map_or_else(|| format!("the internal {path} failed"), str::to_owned));
+/// POST to one of the internal Simkl routes, answered in-process. A
+/// failure carries the message Node's error handler wrote, which is what
+/// the route surfaces.
+async fn internal_simkl(ctx: &Ready<'_>, path: &str, body: &Value) -> Result<Value, String> {
+    let answer =
+        crate::standalone::internal::call(ctx.state, &Method::POST, path, Some(body)).await;
+    if answer.is_success() {
+        return Ok(answer.body);
     }
-    let url = format!(
-        "{}/internal{path}",
-        ctx.state.env.node_url.trim_end_matches('/')
-    );
-    let res = ctx
-        .state
-        .internal
-        .post(url)
-        .header("X-API-Key", ctx.settings.api_key())
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| format!("the internal {path} could not be reached: {e:#}"))?;
-    let ok = res.status().is_success();
-    let value = res
-        .json::<Value>()
-        .await
-        .map_err(|e| format!("the internal {path} answered something other than JSON: {e:#}"))?;
-    if ok {
-        return Ok(value);
-    }
-    Err(value
+    Err(answer
+        .body
         .get("message")
         .and_then(Value::as_str)
         .map_or_else(|| format!("the internal {path} failed"), str::to_owned))
 }
 
-/// Node's `/internal/simkl/resolve`: resolution, miss records and
-/// `toSimklWatchlistItems` for one page of hydrated candidates.
+/// What Node's `/internal/simkl/resolve` did: resolution, miss records
+/// and `toSimklWatchlistItems` for one page of hydrated candidates.
 async fn resolve(
     ctx: &Ready<'_>,
     candidates: Vec<Value>,
     discover_source: &str,
     hide_unmapped: bool,
-    user_id: Option<i64>,
-) -> Result<Vec<Value>, String> {
-    if crate::mappinglayer::owned() {
-        let mapping = crate::mappinglayer::Ctx::with_settings(ctx.state, &ctx.settings);
-        let items = crate::mappinglayer::simklresolve::resolve(
-            &mapping,
-            candidates,
-            discover_source,
-            hide_unmapped,
-        )
-        .await;
-        return Ok(super::discoverkit::annotate_provider_active_requests(ctx, items).await);
-    }
-    let body = json!({
-        "candidates": candidates,
-        "discoverSource": discover_source,
-        "hideUnmapped": hide_unmapped,
-        "userId": user_id,
-    });
-    match node_simkl(ctx, "/simkl/resolve", &body).await? {
-        Value::Array(items) => Ok(items),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
-            Err(String::from(
-                "the internal simkl resolve answered something other than an array",
-            ))
-        }
-    }
+) -> Vec<Value> {
+    let mapping = crate::mappinglayer::Ctx::with_settings(ctx.state, &ctx.settings);
+    let items = crate::mappinglayer::simklresolve::resolve(
+        &mapping,
+        candidates,
+        discover_source,
+        hide_unmapped,
+    )
+    .await;
+    super::discoverkit::annotate_provider_active_requests(ctx, items).await
 }
 
 /// `GET /discover/simkl/library`.
@@ -154,13 +111,13 @@ fn library<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         let page = super::providerkit::page(&query);
         let hide = query.truthy("hideUnmapped");
-        let sync = if simkl.is_none() && crate::standalone::enabled() {
+        let sync = if simkl.is_none() {
             match super::simklunconfigured::sync(ctx, user_id).await {
                 Ok(()) => Value::Null,
                 Err(why) => return internal_error(ctx, &why),
             }
         } else {
-            match node_simkl(ctx, "/simkl/sync", &json!({ "userId": user_id })).await {
+            match internal_simkl(ctx, "/simkl/sync", &json!({ "userId": user_id })).await {
                 Ok(result) => result,
                 Err(why) => return internal_error(ctx, &why),
             }
@@ -186,10 +143,7 @@ fn library<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             .map(sync_candidate)
             .collect();
         let hydrated = hydrate(&simkl, slice).await;
-        let results = match resolve(ctx, hydrated, "simkl/library", hide, Some(user_id)).await {
-            Ok(r) => r,
-            Err(why) => return internal_error(ctx, &why),
-        };
+        let results = resolve(ctx, hydrated, "simkl/library", hide).await;
         for item in &results {
             let (Some(tmdb), Some(source_id)) = (
                 item.get("tmdbId")
@@ -308,53 +262,31 @@ fn trending<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return unavailable(crate::simklapi::NOT_CONFIGURED);
         };
         let source = format!("simkl/trending/{media_type}");
-        if crate::mappinglayer::owned() {
-            let page = page.max(1);
-            let stored = provider_row(
-                ctx,
-                &TRENDING_ROWS,
-                &format!("simkl/trending|{media_type}|{period}|page:{page}"),
-                TRENDING_FRESH,
-                Box::pin(trending_page(ctx, &simkl, (&media_type, &period), page)),
-                refresh_trending,
-            )
-            .await;
-            let stored = match stored {
-                Ok(stored) => stored,
-                Err(message) => return unavailable(&message),
-            };
-            let mapping = crate::mappinglayer::Ctx::with_settings(ctx.state, &ctx.settings);
-            let items = stored
-                .resolved
-                .serve(&mapping, &source, query.truthy("hideUnmapped"));
-            let results = super::discoverkit::annotate_provider_active_requests(ctx, items).await;
-            return ctx.json(&super::providerkit::page_body(
-                stored.page,
-                stored.has_more,
-                results,
-                &[],
-            ));
-        }
-        let payload = match simkl
-            .cdn_catalog(&trending_file(&media_type, &period))
-            .await
-        {
-            Ok(p) => p,
-            Err(e) => return unavailable(e.message()),
-        };
-        let candidates = match catalog_candidates(&payload, &media_type, "simkl-public") {
-            Ok(c) => c,
+        let page = page.max(1);
+        let stored = provider_row(
+            ctx,
+            &TRENDING_ROWS,
+            &format!("simkl/trending|{media_type}|{period}|page:{page}"),
+            TRENDING_FRESH,
+            Box::pin(trending_page(ctx, &simkl, (&media_type, &period), page)),
+            refresh_trending,
+        )
+        .await;
+        let stored = match stored {
+            Ok(stored) => stored,
             Err(message) => return unavailable(&message),
         };
-        let (slice, has_more, page) = paginate(candidates, page);
-        let hydrated = hydrate(&simkl, slice).await;
-        match resolve(ctx, hydrated, &source, query.truthy("hideUnmapped"), None).await {
-            Ok(results) => ctx.json(&super::providerkit::page_body(page, has_more, results, &[])),
-            Err(why) => {
-                tracing::error!("[Simkl] {why}");
-                unavailable(&why)
-            }
-        }
+        let mapping = crate::mappinglayer::Ctx::with_settings(ctx.state, &ctx.settings);
+        let items = stored
+            .resolved
+            .serve(&mapping, &source, query.truthy("hideUnmapped"));
+        let results = super::discoverkit::annotate_provider_active_requests(ctx, items).await;
+        ctx.json(&super::providerkit::page_body(
+            stored.page,
+            stored.has_more,
+            results,
+            &[],
+        ))
     })
 }
 

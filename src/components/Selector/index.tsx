@@ -10,13 +10,13 @@ import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowDownIcon, ArrowUpIcon } from '@heroicons/react/20/solid';
 import { CheckCircleIcon } from '@heroicons/react/24/solid';
-import type { TmdbGenre } from '@server/api/themoviedb/interfaces';
-import type { UserResultsResponse } from '@server/interfaces/api/userInterfaces';
+import type { TmdbGenre } from '@shared/api/themoviedb/interfaces';
+import type { UserResultsResponse } from '@shared/interfaces/api/userInterfaces';
 import type {
   Keyword,
   ProductionCompany,
   WatchProviderDetails,
-} from '@server/models/common';
+} from '@shared/models/common';
 import axios from 'axios';
 import orderBy from 'lodash/orderBy';
 import { useEffect, useMemo, useState } from 'react';

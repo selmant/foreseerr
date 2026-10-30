@@ -21,10 +21,10 @@ import type {
   LibraryItemInspectorResponse,
   LibrarySeasonEpisodesResponse,
   LibraryTitle,
-} from '@server/interfaces/api/libraryInterfaces';
-import { hasServarrMapping } from '@server/lib/servarrMapping';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+} from '@shared/interfaces/api/libraryInterfaces';
+import { hasServarrMapping } from '@shared/lib/servarrMapping';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';

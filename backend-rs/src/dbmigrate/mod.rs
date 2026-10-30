@@ -1,15 +1,16 @@
-//! The database schema at startup when no Node runs behind this server.
+//! The database schema at startup.
 //!
 //! As Node's `server/index.ts` handles it: `TypeORM`'s
 //! `dataSource.runMigrations()` in production (with `PRAGMA
 //! foreign_keys=OFF/ON` around it on `SQLite`), then
 //! `assertSupportedDatabaseSchema` (`server/lib/db/schemaGuard.ts`).
 //!
-//! The statements come from `server/migration/{sqlite,postgres}` through
-//! `scripts/gen-migrations.ts`; none of the migrations' `up()` methods
-//! branch on data, so replaying them in order is the whole port. Applied
-//! migrations are recorded in the `migrations` table exactly as `TypeORM`
-//! does (id, timestamp, name), so Node and Rust agree on what has run.
+//! The statements are those of Node's `server/migration/{sqlite,postgres}`
+//! (`sqlite.rs`, `postgres.rs`, maintained by hand now); none of the
+//! migrations' `up()` methods branch on data, so replaying them in order
+//! is the whole port. Applied migrations are recorded in the `migrations`
+//! table exactly as `TypeORM` does (id, timestamp, name), so databases
+//! Node migrated carry on where it left off.
 
 pub mod devschema;
 mod postgres;
@@ -364,3 +365,5 @@ pub async fn assert_supported_schema(db: &Db, known: &[&'static Migration]) -> R
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod upgradetests;

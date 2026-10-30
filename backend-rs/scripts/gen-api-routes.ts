@@ -2,40 +2,46 @@
 // routes express-openapi-validator knows, in the order it matches them, with
 // the methods each one documents and whether the method needs a credential.
 //
-// Standalone mode uses the table to answer what the validator answers for
+// The fallback uses the table to answer what the validator answered for
 // requests no Rust handler takes: 405 for an undocumented method, 401 when a
 // secured route has neither a session cookie nor an API key.
 //
-// The route list and its order follow the validator's OpenApiSpecLoader:
-// `{param}` becomes `:param`, routes are sorted with its `sortRoutes`, and
-// the first route registered for an Express path wins.
+// The route list and its order follow express-openapi-validator 5.6.2's
+// OpenApiSpecLoader: `{param}` becomes `:param`, routes are sorted with its
+// `sortRoutes` (copied below), and the first route registered for an Express
+// path wins.
 //
-// Run from the repository (mise picks the bun the server uses there):
+// Needs only Bun (Bun.YAML), no node_modules. Run from the repository:
 //   cd <repo> && bun <crate>/scripts/gen-api-routes.ts <repo> <crate>
 import { readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
 const [repo, crate] = process.argv.slice(2);
 if (!repo || !crate) {
   throw new Error('usage: gen-api-routes.ts <repo> <crate>');
 }
-const require = createRequire(join(repo, 'package.json'));
-const yaml = require('js-yaml') as { load(text: string): unknown };
-const { sortRoutes } =
-  require('express-openapi-validator/dist/framework/openapi.spec.loader') as {
-    sortRoutes(
-      a: { expressRoute: string },
-      b: { expressRoute: string }
-    ): number;
-  };
+
+// express-openapi-validator 5.6.2, dist/framework/openapi.spec.loader.js:
+// static routes before dynamic ones (/users/my_route before /users/{id}).
+const sortRoutes = (
+  r1: { expressRoute: string },
+  r2: { expressRoute: string }
+): number => {
+  const e1 = r1.expressRoute.replace(/\/:/g, '/~');
+  const e2 = r2.expressRoute.replace(/\/:/g, '/~');
+  if (e1.startsWith(e2)) return -1;
+  else if (e2.startsWith(e1)) return 1;
+  return e1 > e2 ? 1 : -1;
+};
 
 type Operation = { security?: Record<string, unknown>[] };
 type Doc = {
   security?: Record<string, unknown>[];
   paths: Record<string, Record<string, Operation>>;
 };
-const doc = yaml.load(readFileSync(join(repo, 'seerr-api.yml'), 'utf8')) as Doc;
+const doc = Bun.YAML.parse(
+  readFileSync(join(repo, 'seerr-api.yml'), 'utf8')
+) as Doc;
 
 const METHODS = [
   'get',

@@ -2,7 +2,7 @@
 name = "foreseerr"
 version = "0.1.0"
 edition = "2021"
-description = "Rust backend for Foreseerr, replacing the Node server route by route"
+description = "The Foreseerr backend server"
 publish = false
 license = "MIT"
 repository = "https://github.com/selmant/SeerrSuggestArr"
@@ -21,8 +21,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 hmac = "0.13"
 http-body-util = "0.1"
 lettre = { version = "0.11.23", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls-native-certs", "ring", "builder", "hostname"] }
-hyper = { version = "1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1", features = ["client-legacy", "http1", "service", "tokio"] }
+hyper = { version = "1", features = ["http1", "server"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "deflate", "brotli"] }
 ring = { version = "0.17", default-features = false, features = ["alloc"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }

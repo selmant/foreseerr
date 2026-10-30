@@ -9,8 +9,8 @@ use super::{
 };
 use crate::db::Db;
 
-/// What `TypeORM`'s own `runMigrations()` leaves in a fresh `SQLite` file
-/// (`scripts/gen-migrations.ts`).
+/// What `TypeORM`'s own `runMigrations()` left in a fresh `SQLite` file, as
+/// recorded from Node; a new migration updates it to the schema it leaves.
 const REFERENCE: &str = include_str!("sqlite_reference.json");
 
 fn temp_db(tag: &str) -> Result<(PathBuf, Db)> {

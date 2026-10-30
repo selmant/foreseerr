@@ -133,8 +133,8 @@ impl Tx {
 /// `settings.save()` after a job's change to the shared settings.
 ///
 /// `change` runs on the latest settings under the mutation lock (see
-/// [`crate::settings::SettingsStore::mutate`]), settings.json is written
-/// and Node is told to reload it.
+/// [`crate::settings::SettingsStore::mutate`]) and settings.json is
+/// written.
 ///
 /// # Errors
 ///
@@ -143,27 +143,7 @@ pub async fn mutate_settings(
     state: &crate::state::AppState,
     change: impl FnOnce(&mut Value),
 ) -> Result<()> {
-    state.settings.update(change).await?;
-    if crate::standalone::enabled() {
-        return Ok(());
-    }
-    let api_key = state.settings.current().await?.api_key().to_owned();
-    let url = format!(
-        "{}/internal/settings/reload",
-        state.env.node_url.trim_end_matches('/')
-    );
-    match state
-        .internal
-        .post(url)
-        .header("X-API-Key", api_key)
-        .send()
-        .await
-    {
-        Ok(res) if res.status().is_success() => {}
-        Ok(res) => tracing::warn!("Node refused to reload settings: {}", res.status()),
-        Err(e) => tracing::warn!("Node could not be told to reload settings: {e:#}"),
-    }
-    Ok(())
+    state.settings.update(change).await
 }
 
 /// `Number(text)` printed back as JavaScript prints it (`NaN` included),

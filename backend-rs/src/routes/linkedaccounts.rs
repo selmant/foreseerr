@@ -291,7 +291,7 @@ fn trakt_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         .await;
         match cleared {
             Ok(true) => {
-                invalidate_sync_cache(ctx, id, "trakt").await;
+                invalidate_sync_cache(id, "trakt");
                 Ready::no_content()
             }
             Ok(false) => Ready::no_content(),
@@ -319,7 +319,7 @@ fn anilist_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         .await;
         match cleared {
             Ok(true) => {
-                invalidate_sync_cache(ctx, id, "anilist").await;
+                invalidate_sync_cache(id, "anilist");
                 Ready::no_content()
             }
             Ok(false) => Ready::no_content(),
@@ -790,7 +790,7 @@ fn anilist_link<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if let Err(e) = saved {
             return failed(&format!("{e:#}"));
         }
-        invalidate_sync_cache(ctx, id, "anilist").await;
+        invalidate_sync_cache(id, "anilist");
         let mut out = Map::new();
         out.insert(String::from("status"), Value::from("authorized"));
         if let Some(name) = link.viewer_name {

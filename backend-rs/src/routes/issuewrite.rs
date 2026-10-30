@@ -101,9 +101,9 @@ fn rel_json(rel: Option<&UserRel>) -> Result<Value, String> {
 }
 
 /// The loaded issue as `res.json` prints it.
-async fn loaded_json(ctx: &Ready<'_>, l: &Loaded) -> Result<Map<String, Value>, String> {
+fn loaded_json(ctx: &Ready<'_>, l: &Loaded) -> Result<Map<String, Value>, String> {
     let media: Vec<&MediaRow> = l.media.iter().collect();
-    let downloads = downloads_for(ctx, &media).await?;
+    let downloads = downloads_for(&media);
     let mut out = Map::new();
     super::issue::columns(&mut out, &l.row);
     out.insert(
@@ -196,7 +196,7 @@ fn create<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 None => return ctx.error(404, "Issue user not found"),
             }
         }
-        let downloads = forward_on_err!(downloads_for(ctx, &[&media]).await);
+        let downloads = downloads_for(&[&media]);
         let creator_json = forward_on_err!(user_json(&created_by));
         let media_json = crate::media::media_json(&media, &ctx.settings, &downloads, true);
         // The cascaded `save` runs in one transaction.
@@ -315,7 +315,7 @@ async fn comment(ctx: &Ready<'_>) -> Outcome {
     if creator != user.id && !user.has_permission(MANAGE_ISSUES) {
         return ctx.error(403, "You do not have permission to comment on this issue.");
     }
-    let mut out = forward_on_err!(loaded_json(ctx, &loaded).await);
+    let mut out = forward_on_err!(loaded_json(ctx, &loaded));
     let viewer_json = forward_on_err!(user_json(&viewer));
     let db = &ctx.state.db;
     let comment_id = db
@@ -444,7 +444,7 @@ async fn set_status(ctx: &Ready<'_>, status: i64) -> Outcome {
     loaded.row.status = status;
     loaded.row.modified_by_id = Some(user.id);
     loaded.modified_by = Some(viewer);
-    let out = loaded_json(ctx, &loaded).await;
+    let out = loaded_json(ctx, &loaded);
     let out = if changed {
         fail_on_err!(ctx, out)
     } else {

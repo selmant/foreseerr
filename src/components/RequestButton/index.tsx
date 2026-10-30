@@ -15,9 +15,9 @@ import {
   InformationCircleIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
-import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
-import type Media from '@server/entity/Media';
-import type { MediaRequest } from '@server/entity/MediaRequest';
+import { MediaRequestStatus, MediaStatus } from '@shared/constants/media';
+import type Media from '@shared/entity/Media';
+import type { MediaRequest } from '@shared/entity/MediaRequest';
 import axios from 'axios';
 import { useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';

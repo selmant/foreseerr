@@ -1,5 +1,5 @@
 import type { FilterOptions } from '@app/components/Discover/constants';
-import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
+import type { DiscoverFilterDefaults } from '@shared/lib/discover/filterDefaults';
 
 const SESSION_CLEARED_KEY = 'seerr-discover-defaults-cleared';
 

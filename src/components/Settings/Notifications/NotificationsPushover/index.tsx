@@ -5,7 +5,7 @@ import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowDownOnSquareIcon, BeakerIcon } from '@heroicons/react/24/outline';
-import type { PushoverSound } from '@server/api/pushover';
+import type { PushoverSound } from '@shared/api/pushover';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { useState } from 'react';

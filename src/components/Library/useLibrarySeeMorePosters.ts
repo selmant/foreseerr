@@ -5,7 +5,7 @@ import {
 import type {
   LibraryBrowseResponse,
   LibraryTitle,
-} from '@server/interfaces/api/libraryInterfaces';
+} from '@shared/interfaces/api/libraryInterfaces';
 import useSWR from 'swr';
 
 /** How many posters a See More card collages. */

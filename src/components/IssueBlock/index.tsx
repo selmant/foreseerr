@@ -7,7 +7,7 @@ import {
   EyeIcon,
   UserIcon,
 } from '@heroicons/react/24/solid';
-import type Issue from '@server/entity/Issue';
+import type Issue from '@shared/entity/Issue';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 

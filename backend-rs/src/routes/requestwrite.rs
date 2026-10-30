@@ -70,18 +70,7 @@ pub(super) fn status<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return ctx.error(409, conflict);
         }
         let downloads = if entity.media.as_ref().is_some_and(tracks_downloads) {
-            match Downloads::fetch(
-                &ctx.state.internal,
-                &ctx.state.env.node_url,
-                ctx.settings.api_key(),
-            )
-            .await
-            {
-                Ok(d) => d,
-                Err(e) => {
-                    return Outcome::forward(format!("reading the download tracker failed: {e:#}"))
-                }
-            }
+            Downloads::current()
         } else {
             Downloads::default()
         };

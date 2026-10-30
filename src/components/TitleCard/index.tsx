@@ -33,10 +33,10 @@ import {
   QueueListIcon,
 } from '@heroicons/react/24/outline';
 import { CogIcon, PlayIcon } from '@heroicons/react/24/solid';
-import type { RatingResponse } from '@server/api/ratings';
-import { MediaStatus } from '@server/constants/media';
-import type { Watchlist } from '@server/entity/Watchlist';
-import type { MediaType } from '@server/models/Search';
+import type { RatingResponse } from '@shared/api/ratings';
+import { MediaStatus } from '@shared/constants/media';
+import type { Watchlist } from '@shared/entity/Watchlist';
+import type { MediaType } from '@shared/models/Search';
 import axios from 'axios';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';

@@ -16,7 +16,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { ArrowLeftIcon, Bars3BottomLeftIcon } from '@heroicons/react/24/solid';
-import type { AvailableLocale } from '@server/types/languages';
+import type { AvailableLocale } from '@shared/types/languages';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';

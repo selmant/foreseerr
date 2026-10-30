@@ -54,17 +54,17 @@ import {
   MinusCircleIcon,
   PlayIcon,
 } from '@heroicons/react/24/solid';
-import { IssueStatus } from '@server/constants/issue';
+import { IssueStatus } from '@shared/constants/issue';
 import {
   MediaRequestStatus,
   MediaStatus,
   MediaType,
-} from '@server/constants/media';
-import { MediaServerType } from '@server/constants/server';
-import { isAnimeMedia } from '@server/lib/anime/detect';
-import { isSeasonCoveredForFullRequest } from '@server/lib/seasonRequests';
-import type { TvDetails as TvDetailsType } from '@server/models/Tv';
-import type { Crew } from '@server/models/common';
+} from '@shared/constants/media';
+import { MediaServerType } from '@shared/constants/server';
+import { isAnimeMedia } from '@shared/lib/anime/detect';
+import { isSeasonCoveredForFullRequest } from '@shared/lib/seasonRequests';
+import type { TvDetails as TvDetailsType } from '@shared/models/Tv';
+import type { Crew } from '@shared/models/common';
 import { countries } from 'country-flag-icons';
 import 'country-flag-icons/3x2/flags.css';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';

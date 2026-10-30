@@ -230,20 +230,11 @@ pub(super) fn tmdb_path_key(ctx: &Ready<'_>) -> Result<crate::db::Bind, super::F
 }
 
 /// The download tracker, when a media row needs it.
-pub(super) async fn downloads_for(
-    ctx: &Ready<'_>,
-    media: &[&MediaRow],
-) -> Result<Downloads, String> {
+pub(super) fn downloads_for(media: &[&MediaRow]) -> Downloads {
     if media.iter().any(|m| crate::media::tracks_downloads(m)) {
-        Downloads::fetch(
-            &ctx.state.internal,
-            &ctx.state.env.node_url,
-            ctx.settings.api_key(),
-        )
-        .await
-        .map_err(|e| format!("reading the download tracker failed: {e:#}"))
+        Downloads::current()
     } else {
-        Ok(Downloads::default())
+        Downloads::default()
     }
 }
 

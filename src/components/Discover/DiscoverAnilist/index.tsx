@@ -8,7 +8,7 @@ import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 

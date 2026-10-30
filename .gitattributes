@@ -38,7 +38,6 @@ docs export-ignore
 *.md export-ignore
 
 .editorconfig export-ignore
-Dockerfile.local export-ignore
 compose.yaml export-ignore
 stylelint.config.js export-ignore
 

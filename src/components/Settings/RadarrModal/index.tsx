@@ -10,7 +10,7 @@ import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { isValidURL } from '@app/utils/urlValidationHelper';
 import { Transition } from '@headlessui/react';
-import type { RadarrSettings } from '@server/lib/settings';
+import type { RadarrSettings } from '@shared/lib/settings';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { useCallback, useEffect } from 'react';

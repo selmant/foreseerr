@@ -105,7 +105,7 @@ jobs:
             run: bun run typecheck
 
           - name: Build
-            run: bun run build
+            run: bun run build:web
 
   unit-test:
     name: Unit Tests
@@ -132,7 +132,7 @@ jobs:
       - name: Run tests
         env:
           CI: true
-        run: bun run test
+        run: bun run test --reporter=junit --reporter-outfile=report.xml
 
       - name: Publish test report
         uses: mikepenz/action-junit-report@a9170d5795813c01ab4901ffb045b52bab4ab09d # v6.5.0
@@ -146,47 +146,55 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18
         env:
           POSTGRES_USER: foreseerr
-          POSTGRES_PASSWORD: foreseerr
+          POSTGRES_PASSWORD: ci-password
           POSTGRES_DB: foreseerr
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U foreseerr"
-          --health-interval 10s
+          --health-cmd "pg_isready -U foreseerr -d foreseerr"
+          --health-interval 2s
           --health-timeout 5s
-          --health-retries 5
-    env:
-      DB_HOST: 127.0.0.1
-      DB_PORT: 5432
-      DB_USER: foreseerr
-      DB_PASS: foreseerr
-      DB_NAME: foreseerr
+          --health-retries 30
+    defaults:
+      run:
+        working-directory: backend-rs
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
 
-      - name: Install dependencies
+      - name: Build
+        run: cargo build --locked
+
+      # A fresh database gets every shipped migration in order, and a
+      # restart applies nothing new.
+      - name: Migrations on SQLite
+        run: python3 scripts/ci-smoke.py --bin target/debug/foreseerr
+
+      - name: Migrations on PostgreSQL
         env:
-          CI: true
-        run: bun install --frozen-lockfile
+          DB_TYPE: postgres
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_USER: foreseerr
+          DB_PASS: ci-password
+          DB_NAME: foreseerr
+          DB_USE_SSL: 'false'
+        run: python3 scripts/ci-smoke.py --bin target/debug/foreseerr
 
-      - name: Run migration checks
-        run: bun run check:migrations
-
-      - name: Run upgrade-matrix tests (SQLite + PostgreSQL)
+      # Databases from upstream Seerr and earlier Foreseerr releases, with
+      # rows in them, upgraded to this build's schema on both engines.
+      - name: Upgrade matrix
         env:
-          CI: true
-        run: bun run test server/migration/upgradeMatrix.sqlite.test.ts server/migration/upgradeMatrix.postgres.test.ts server/migration/upgradeMatrix.foreseerrStable.sqlite.test.ts server/migration/upgradeMatrix.foreseerrStable.postgres.test.ts
+          FORESEERR_UPGRADE_TEST_PG: postgres://foreseerr:ci-password@127.0.0.1:5432/foreseerr
+        run: cargo test --locked dbmigrate::upgradetests
 
   helm-lint:
     name: Helm Lint

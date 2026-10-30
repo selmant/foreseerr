@@ -1,8 +1,7 @@
 //! Path ids and numeric query values, read as plain integers.
 //!
 //! A path id or a numeric query value that isn't a whole number (`1.5`,
-//! `1e2`, `0x10`, `Infinity`) is a bad parameter: the request gets a 400
-//! (in proxy mode Node still answers it).
+//! `1e2`, `0x10`, `Infinity`) is a bad parameter: the request gets a 400.
 
 use serde_json::{Map, Value};
 

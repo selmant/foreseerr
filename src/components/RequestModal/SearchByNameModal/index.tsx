@@ -3,7 +3,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import Modal from '@app/components/Common/Modal';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import type { SonarrSeries } from '@server/api/servarr/sonarr';
+import type { SonarrSeries } from '@shared/api/servarr/sonarr';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 

@@ -7,7 +7,7 @@ import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
+import type { UserSettingsNotificationsResponse } from '@shared/interfaces/api/userSettingsInterfaces';
 import axios from 'axios';
 import { Form, Formik } from 'formik';
 import { useIntl } from 'react-intl';

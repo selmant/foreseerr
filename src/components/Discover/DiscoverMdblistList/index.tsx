@@ -9,7 +9,7 @@ import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverMdblistList', {

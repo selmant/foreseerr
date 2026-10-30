@@ -13,7 +13,7 @@ import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import { CloudIcon, EnvelopeIcon } from '@heroicons/react/24/solid';
-import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
+import type { UserSettingsNotificationsResponse } from '@shared/interfaces/api/userSettingsInterfaces';
 import { useIntl } from 'react-intl';
 import { useLocation } from 'react-router';
 import useSWR from 'swr';

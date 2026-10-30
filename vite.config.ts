@@ -8,12 +8,11 @@ import svgr from 'vite-plugin-svgr';
 const API_PORT = process.env.PORT || '5055';
 const API_HOST = process.env.HOST || '127.0.0.1';
 const PUBLIC_BASE = process.env.FORESEERR_BASE_PATH ? './' : '/';
-// Resolve through swagger-ui-express so the docs use its pinned distribution.
-// These browser assets are packaged at build time; Rust needs no node_modules.
-const swaggerRequire = createRequire(
-  createRequire(import.meta.url).resolve('swagger-ui-express')
-);
-const swaggerDist: string = swaggerRequire('swagger-ui-dist/absolute-path')();
+// The API docs' browser assets are packaged at build time, so the backend
+// serves them without node_modules.
+const swaggerDist: string = createRequire(import.meta.url)(
+  'swagger-ui-dist/absolute-path'
+)();
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -53,7 +52,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@app': path.resolve(__dirname, 'src'),
-        '@server': path.resolve(__dirname, 'server'),
+        '@shared': path.resolve(__dirname, 'shared'),
         // The package "module" entry is ESM that still calls require() for
         // dayjs locales/plugins. Force the CJS build so Rollup rewrites them.
         '@seerr-team/react-tailwindcss-datepicker': path.resolve(

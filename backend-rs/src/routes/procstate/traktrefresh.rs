@@ -356,7 +356,7 @@ async fn clear_credentials(
         .await
         .map_err(|e| thrown("DatabaseError", &crate::db::failure_message(&e)))?;
     if let Some(user_id) = user_id {
-        synccache::invalidate_user(state, user_id, Provider::Trakt).await;
+        synccache::invalidate_user(user_id, Provider::Trakt);
     }
     Ok(())
 }

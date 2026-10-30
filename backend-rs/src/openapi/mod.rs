@@ -17,9 +17,6 @@ pub mod request;
 mod spec;
 pub mod yaml;
 
-#[cfg(test)]
-mod difftest;
-
 use std::collections::HashMap;
 use std::path::Path;
 

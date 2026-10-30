@@ -6,7 +6,7 @@ import {
   PlayIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
-import type { LibraryEpisode } from '@server/interfaces/api/libraryInterfaces';
+import type { LibraryEpisode } from '@shared/interfaces/api/libraryInterfaces';
 import { useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 

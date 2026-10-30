@@ -2,7 +2,7 @@ import QuickConnectModal from '@app/components/Common/QuickConnectModal';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType } from '@shared/constants/server';
 import axios from 'axios';
 import { useCallback } from 'react';
 import { useIntl } from 'react-intl';

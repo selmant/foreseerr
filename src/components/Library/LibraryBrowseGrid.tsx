@@ -6,8 +6,8 @@ import { libraryMediaActionRefs } from '@app/components/Library/libraryPosterWat
 import { TitleCardBatchProvider } from '@app/components/TitleCard/TitleCardBatchContext';
 import defineMessages from '@app/utils/defineMessages';
 import { FunnelIcon } from '@heroicons/react/24/outline';
-import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
-import type { LibraryDensity } from '@server/lib/libraryBrowseQuery';
+import type { LibraryTitle } from '@shared/interfaces/api/libraryInterfaces';
+import type { LibraryDensity } from '@shared/lib/libraryBrowseQuery';
 import { useEffect, useRef, type RefObject } from 'react';
 import { useIntl } from 'react-intl';
 

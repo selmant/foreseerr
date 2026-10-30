@@ -38,13 +38,7 @@ impl Related {
             .await
             .map_err(|e| format!("loading the related media failed: {e:#}"))?;
         let downloads = if media.iter().any(tracks_downloads) {
-            Downloads::fetch(
-                &ctx.state.internal,
-                &ctx.state.env.node_url,
-                ctx.settings.api_key(),
-            )
-            .await
-            .map_err(|e| format!("reading the download tracker failed: {e:#}"))?
+            Downloads::current()
         } else {
             Downloads::default()
         };

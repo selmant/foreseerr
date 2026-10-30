@@ -1,12 +1,11 @@
 //! What every handler can reach.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::Value;
 
 use crate::db::Db;
 use crate::env::Env;
 use crate::github::GithubApi;
-use crate::proxy::NodeProxy;
 use crate::ratings::Ratings;
 use crate::servarr::ServarrClient;
 use crate::settings::{Settings, SettingsStore};
@@ -42,10 +41,8 @@ pub struct AppState {
     pub version: AppVersion,
     /// settings.json.
     pub settings: SettingsStore,
-    /// The database Node created.
+    /// The `SQLite` or Postgres database.
     pub db: Db,
-    /// The Node server behind this one.
-    pub node: NodeProxy,
     /// The update check.
     pub github: GithubApi,
     /// TMDB lookups.
@@ -56,9 +53,6 @@ pub struct AppState {
     pub outbound: reqwest::Client,
     /// Rotten Tomatoes, `IMDb` and `MDBList` ratings.
     pub ratings: Ratings,
-    /// A plain client for Node's `/internal` routes on loopback: no proxy,
-    /// no extra CA, so a replay proxy never sees these calls.
-    pub internal: reqwest::Client,
     startup_network: NetworkSnapshot,
 }
 
@@ -76,36 +70,28 @@ impl AppState {
         let current = settings.current().await?;
         let startup_network = NetworkSnapshot::of(&current);
         let db = Db::open(&env.config_dir)?;
-        let node = NodeProxy::new(&env.node_url)?;
         let outbound = crate::outbound::client(&current, &version, env.extra_ca_file.as_deref())?;
         let github = GithubApi::new(outbound.clone());
         let servarr = ServarrClient::new(outbound.clone());
         let ratings = Ratings::new(outbound.clone());
         let outbound_shared = outbound.clone();
         let tmdb = TmdbClient::new(outbound);
-        let internal = reqwest::Client::builder()
-            .no_proxy()
-            .default_headers(crate::csrf::internal_headers())
-            .build()
-            .context("building the client for Node's internal routes")?;
         Ok(Self {
             env,
             version,
             settings,
             db,
-            node,
             github,
             tmdb,
             servarr,
             ratings,
             outbound: outbound_shared,
-            internal,
             startup_network,
         })
     }
 
     /// A state over `db` for tests of the jobs: settings.json is read from
-    /// `config_dir`, and no Node server listens behind it.
+    /// `config_dir`.
     ///
     /// # Errors
     ///
@@ -121,7 +107,6 @@ impl AppState {
         let env = Env {
             listen: std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
             config_dir: config_dir.to_owned(),
-            node_url: String::from("http://127.0.0.1:9"),
             app_root: config_dir.to_owned(),
             plugin_mode: false,
             desktop_runtime: false,
@@ -136,13 +121,11 @@ impl AppState {
         Ok(Self {
             settings: SettingsStore::new(config_dir),
             db,
-            node: NodeProxy::new(&env.node_url)?,
             github: GithubApi::new(outbound.clone()),
             tmdb: TmdbClient::new(outbound.clone()),
             servarr: ServarrClient::new(outbound.clone()),
             ratings: Ratings::new(outbound.clone()),
             outbound,
-            internal: reqwest::Client::builder().no_proxy().build()?,
             startup_network: NetworkSnapshot::of(&current),
             env,
             version,

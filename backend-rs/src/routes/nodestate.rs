@@ -1,14 +1,14 @@
 //! Pieces the ported settings routes share.
 //!
-//! Calls to Node's `/internal` routes for process state, the request-body
-//! checks Node's `OpenAPI` validator makes, and JavaScript object semantics
-//! (key order, strict equality, `jsonSafeClone`).
+//! Calls to the `/internal` routes for process state (answered in-process),
+//! the request-body checks Node's `OpenAPI` validator makes, and JavaScript
+//! object semantics (key order, strict equality, `jsonSafeClone`).
 
 use std::future::Future;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::{Map, Value};
 
 use super::{Outcome, Ready};
@@ -23,50 +23,16 @@ pub(super) fn admin(ctx: &Ready<'_>) -> Result<(), super::Fallback> {
     ctx.authenticated(super::ADMIN).map(|_| ())
 }
 
-/// One call to Node's `/internal{path}` with the API key; the status and
-/// the JSON answer (null when empty).
-///
-/// # Errors
-///
-/// Fails when Node can't be reached or answers something that isn't JSON.
-pub(super) async fn node_call(
+/// One of the `/internal{path}` routes Node used to serve, answered
+/// in-process; the status and the JSON answer (null when empty).
+pub(super) async fn internal_call(
     ctx: &Ready<'_>,
     method: axum::http::Method,
     path: &str,
     body: Option<&Value>,
-) -> Result<(u16, Value)> {
-    if super::procstate::in_process(path) {
-        let answer = crate::standalone::internal::call(ctx.state, &method, path, body).await;
-        return Ok((answer.status, answer.body));
-    }
-    let url = format!(
-        "{}/internal{path}",
-        ctx.state.env.node_url.trim_end_matches('/')
-    );
-    let mut request = ctx
-        .state
-        .internal
-        .request(method, url)
-        .header("X-API-Key", ctx.settings.api_key());
-    if let Some(body) = body {
-        request = request.json(body);
-    }
-    let response = request
-        .send()
-        .await
-        .with_context(|| format!("calling Node's /internal{path}"))?;
-    let status = response.status().as_u16();
-    let bytes = response
-        .bytes()
-        .await
-        .with_context(|| format!("reading Node's /internal{path}"))?;
-    let value = if bytes.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&bytes)
-            .with_context(|| format!("Node's /internal{path} is not JSON"))?
-    };
-    Ok((status, crate::tmdb::js_numbers(value)))
+) -> (u16, Value) {
+    let answer = crate::standalone::internal::call(ctx.state, &method, path, body).await;
+    (answer.status, answer.body)
 }
 
 /// The request's JSON object body, when `express.json()` would have parsed

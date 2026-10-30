@@ -70,7 +70,7 @@ pub(super) struct UserParam {
 
 /// `isAuthenticated()` (answered by `require` once the validator ran) and
 /// the profile middleware with its error-handler 403. A request the
-/// validator didn't judge goes to Node.
+/// validator didn't judge gets the fallback answer.
 pub(super) fn guard<'a>(
     ctx: &'a Ready<'a>,
     guard: Guard,
@@ -610,16 +610,11 @@ fn quickconnect_link<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 /// `POST .../linked-accounts/simkl/sync`: `syncSimklUser(id, true)`, 503
 /// when the result is stale.
 ///
-/// With Node behind, Node runs it (its per-user lock and throttle live
-/// there). Standalone, it goes through the same in-process seam the
-/// Simkl discover route uses (`/internal/simkl/sync`, the node-state
-/// port).
+/// It goes through the same in-process seam the Simkl discover route
+/// uses (`/internal/simkl/sync`, `src/routes/procstate/simklsync.rs`).
 fn simkl_sync<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         let (_, param) = try_outcome!(guard(ctx, Guard::OwnOrAdmin));
-        if !crate::standalone::enabled() {
-            return Outcome::forward(String::from("the Simkl sync is not available"));
-        }
         let body = json!({ "userId": crate::jsnum::json(param.number), "force": true });
         let answer =
             crate::standalone::internal::call(ctx.state, &Method::POST, "/simkl/sync", Some(&body))

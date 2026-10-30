@@ -1,4 +1,4 @@
-import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistResponse } from '@shared/interfaces/api/discoverInterfaces';
 import useSWR from 'swr';
 
 type PagedTitles = Pick<WatchlistResponse, 'hasMore' | 'totalPages'> & {

@@ -11,12 +11,12 @@ import {
   ArrowPathIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
-import { MediaStatus } from '@server/constants/media';
+import { MediaStatus } from '@shared/constants/media';
 import type {
   MovieResult,
   PersonResult,
   TvResult,
-} from '@server/models/Search';
+} from '@shared/models/Search';
 import { useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 

@@ -15,7 +15,6 @@
 .vscode
 charts
 config
-cypress
 dist
 Dockerfile*
 compose.yaml

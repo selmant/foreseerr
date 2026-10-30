@@ -12,11 +12,11 @@ import {
   type RatingBadge,
   type RatingBadgeItem,
 } from '@app/utils/ratingBadges';
-import type { RatingBadgeSettings } from '@server/constants/ratingBadges';
+import type { RatingBadgeSettings } from '@shared/constants/ratingBadges';
 import {
   DEFAULT_RATING_BADGE_SETTINGS,
   resolveRatingBadgeSettings,
-} from '@server/constants/ratingBadges';
+} from '@shared/constants/ratingBadges';
 
 interface RatingBadgesProps {
   item: RatingBadgeItem;

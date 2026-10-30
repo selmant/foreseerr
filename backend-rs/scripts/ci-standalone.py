@@ -2,7 +2,7 @@
 """Exercise standalone startup, auth failure cases and packaged browser assets.
 
 The app root contains only seerr-api.yml and the built frontend, with no
-node_modules or Node server. Uses SQLite by default, or the same dedicated
+node_modules. Uses SQLite by default, or the same dedicated
 Postgres database as ci-smoke.py through DB_*; never run against a real install.
 
 Usage: python3 backend-rs/scripts/ci-standalone.py --bin backend-rs/target/debug/foreseerr
@@ -124,7 +124,7 @@ def packaged_assets(server, app_root, web):
         status, headers, data = call(server, 'GET', name)
         expected = (app_root / 'dist/public' / name.lstrip('/')).read_bytes()
         check(status == 200 and headers.get_content_type() == mime and data == expected,
-              f'packaged {name} is served without Node')
+              f'packaged {name} is served')
     status, headers, data = call(server, 'GET', '/api-docs/')
     check(status == 200 and b'Swagger UI' in data, 'API docs HTML loads')
     status, headers, data = call(server, 'GET', '/api-docs/swagger-ui-init.js')
@@ -183,14 +183,12 @@ def main():
             shutil.copytree(public, app_root / 'dist/public')
         server = smoke.Server(binary, root / 'server', env={
             'FORESEERR_APP_ROOT': str(app_root),
-            'FORESEERR_STANDALONE': '',
-            'FORESEERR_NODE_URL': '  ',
             'API_KEY': '',
         })
         db = smoke.Database(server.root / 'config')
         try:
             server.start()
-            check(True, 'empty Node URL selects standalone and starts')
+            check(True, 'starts from an app root without node_modules')
             if db.query('SELECT COUNT(*) FROM "user" WHERE "id" = 1')[0][0] == '0':
                 db.execute('INSERT INTO "user" ("id", "email", "avatar", "permissions") '
                            "VALUES (1, 'standalone-admin@example.test', '', 2)")
@@ -205,15 +203,14 @@ def main():
             packaged_assets(server, app_root, web)
         finally:
             server.stop()
-        forced = smoke.Server(binary, server.root, env={
+        restarted = smoke.Server(binary, server.root, env={
             'FORESEERR_APP_ROOT': str(app_root),
-            'FORESEERR_NODE_URL': 'https://unused.invalid',
         })
         try:
-            forced.start()
-            check(True, 'forced standalone ignores an unused Node URL')
+            restarted.start()
+            check(True, 'starts again on the same config directory')
         finally:
-            forced.stop()
+            restarted.stop()
         reject_future_schema(binary, server.root, db, app_root)
     print('[ci-standalone] all checks passed', flush=True)
 

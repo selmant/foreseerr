@@ -6,7 +6,7 @@ import TmdbTitleCard, {
 import useSeeMorePosters from '@app/hooks/useSeeMorePosters';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
-import type { WatchlistResponse } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistResponse } from '@shared/interfaces/api/discoverInterfaces';
 import { useEffect } from 'react';
 import useSWR from 'swr';
 

@@ -3,13 +3,8 @@
 //!
 //! The response caches, integration health, the settings
 //! side effects, the TVDB metadata provider, the Trakt token refresh, the
-//! Simkl sync and the login avatar check.
-//!
-//! The state is this process's whenever it runs the jobs
-//! ([`crate::jobs::scheduler::rust_jobs`], which standalone mode implies):
-//! the call sites then come here ([`in_process`]) instead of asking Node.
-//! The per-user media-action sync caches stay Node's until the mapping
-//! port has them ([`synccache`]).
+//! Simkl sync, the login avatar check and the per-user media-action sync
+//! caches ([`synccache`]).
 
 pub mod avatar;
 pub mod caches;
@@ -28,7 +23,7 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use axum::http::Method;
 use serde_json::{Map, Value};
 
-use crate::standalone::internal::{group, Answer, Group};
+use crate::standalone::internal::Answer;
 use crate::state::AppState;
 use crate::sync::lock;
 
@@ -45,20 +40,6 @@ pub fn register(state: &Arc<AppState>) {
 #[must_use]
 pub fn app() -> Option<Arc<AppState>> {
     APP.get().and_then(Weak::upgrade)
-}
-
-/// Whether `/internal{path}` is answered here rather than by Node.
-///
-/// Always without Node, and for the process state this process owns when
-/// it runs the jobs. The sync caches (`/user/:id/sync-cache/*`) stay Node's while
-/// Node runs.
-#[must_use]
-pub fn in_process(path: &str) -> bool {
-    crate::standalone::enabled() || (crate::jobs::scheduler::rust_jobs() && owned(path))
-}
-
-fn owned(path: &str) -> bool {
-    group(path) == Some(Group::NodeState) && !path.starts_with("/user/")
 }
 
 /// `/internal{path}` for the Node process-state routes.
@@ -94,7 +75,7 @@ pub async fn call(state: &AppState, method: &Method, path: &str, body: Option<&V
         ["simkl", "sync"] if post => simklsync::answer(state, body).await,
         ["auth", "avatar-check"] if post => avatar::answer(state, body).await,
         ["user", id, "sync-cache", provider, "invalidate"] if post => {
-            synccache::answer(state, id, provider).await
+            synccache::answer(id, provider)
         }
         _ => Answer::message(404, "Unknown internal route"),
     }
@@ -164,31 +145,6 @@ pub async fn settings(state: &AppState) -> anyhow::Result<Arc<crate::settings::S
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn owns_the_node_state_routes_but_the_sync_caches() {
-        for path in [
-            "/cache",
-            "/cache/tmdb/flush",
-            "/integrations/health",
-            "/settings/effects",
-            "/metadata/tv/tv/1",
-            "/trakt/refresh",
-            "/simkl/sync",
-            "/auth/avatar-check",
-        ] {
-            assert!(owned(path), "{path}");
-        }
-        for path in [
-            "/user/1/sync-cache/trakt/invalidate",
-            "/simkl/resolve",
-            "/mapping/confirm",
-            "/settings/reload",
-            "/jobs",
-        ] {
-            assert!(!owned(path), "{path}");
-        }
-    }
 
     #[test]
     fn stringifies_like_javascript() {

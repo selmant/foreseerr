@@ -1,6 +1,6 @@
 import Blocklist from '@app/components/Blocklist';
 import useRouteGuard from '@app/hooks/useRouteGuard';
-import { Permission } from '@server/lib/permissions';
+import { Permission } from '@shared/lib/permissions';
 
 const BlocklistPage = () => {
   useRouteGuard([Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST], {

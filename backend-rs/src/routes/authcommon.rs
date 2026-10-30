@@ -416,33 +416,10 @@ pub(super) fn error_body(ctx: &Ready<'_>, status: u16, message: &str) -> Outcome
     ctx.json_with(status, &Value::Object(body))
 }
 
-fn internal_url(ctx: &Ready<'_>, path: &str) -> String {
-    format!(
-        "{}/internal{path}",
-        ctx.state.env.node_url.trim_end_matches('/')
-    )
-}
-
-/// `startJobs(); startDesktopCatchUp();` in Node, which owns the
-/// scheduler. Node has already reloaded the settings by then.
+/// `startJobs(); startDesktopCatchUp();` once the first user exists.
 pub(super) async fn start_jobs(ctx: &Ready<'_>) {
-    if crate::jobs::scheduler::rust_jobs() {
-        crate::jobs::scheduler::start(std::sync::Arc::clone(&ctx.shared)).await;
-        crate::runtime::desktop::start_jobs_now(&ctx.shared);
-        return;
-    }
-    let sent = ctx
-        .state
-        .internal
-        .post(internal_url(ctx, "/jobs/start"))
-        .header("X-API-Key", ctx.settings.api_key())
-        .send()
-        .await;
-    match sent {
-        Ok(res) if res.status().is_success() => {}
-        Ok(res) => tracing::warn!("Node refused to start the jobs: {}", res.status()),
-        Err(e) => tracing::warn!("Node could not be asked to start the jobs: {e:#}"),
-    }
+    crate::jobs::scheduler::start(std::sync::Arc::clone(&ctx.shared)).await;
+    crate::runtime::desktop::start_jobs_now(&ctx.shared);
 }
 
 /// What the avatar check left in the entity: `avatar` and `updatedAt`.
@@ -453,10 +430,9 @@ pub(super) struct AvatarResult {
 }
 
 /// The login's `checkAvatarChanged(user)` and, when it changed, the
-/// avatar save. The image cache is Node's, so Node runs both on the user
-/// as loaded, with `overrides` for properties the handler's copy holds
-/// stale. `None` when Node couldn't be asked; the entity is then left as
-/// it is, like a failed check.
+/// avatar save, on the user as loaded, with `overrides` for properties
+/// the handler's copy holds stale. `None` when the check failed; the
+/// entity is then left as it is.
 pub(super) async fn avatar_check(
     ctx: &Ready<'_>,
     user_id: i64,
@@ -467,49 +443,20 @@ pub(super) async fn avatar_check(
     if let Some(overrides) = overrides {
         body.insert(String::from("overrides"), Value::Object(overrides));
     }
-    if super::procstate::in_process("/auth/avatar-check") {
-        let path = "/auth/avatar-check";
-        let body = Value::Object(body);
-        let answer =
-            crate::standalone::internal::call(ctx.state, &Method::POST, path, Some(&body)).await;
-        if !answer.is_success() {
-            tracing::error!(
-                "Error handling avatar during login: answered {}",
-                answer.status
-            );
-            return None;
-        }
-        return Some(AvatarResult {
-            avatar: answer.body.get("avatar").cloned()?,
-            updated_at: answer.body.get("updatedAt").cloned()?,
-        });
+    let path = "/auth/avatar-check";
+    let body = Value::Object(body);
+    let answer =
+        crate::standalone::internal::call(ctx.state, &Method::POST, path, Some(&body)).await;
+    if !answer.is_success() {
+        tracing::error!(
+            "Error handling avatar during login: answered {}",
+            answer.status
+        );
+        return None;
     }
-    let sent = ctx
-        .state
-        .internal
-        .post(internal_url(ctx, "/auth/avatar-check"))
-        .header("X-API-Key", ctx.settings.api_key())
-        .json(&Value::Object(body))
-        .send()
-        .await;
-    let res = match sent {
-        Ok(res) if res.status().is_success() => res,
-        Ok(res) => {
-            tracing::error!(
-                "Error handling avatar during login: Node answered {}",
-                res.status()
-            );
-            return None;
-        }
-        Err(e) => {
-            tracing::error!("Error handling avatar during login: {e:#}");
-            return None;
-        }
-    };
-    let value: Value = res.json().await.ok()?;
     Some(AvatarResult {
-        avatar: value.get("avatar").cloned()?,
-        updated_at: value.get("updatedAt").cloned()?,
+        avatar: answer.body.get("avatar").cloned()?,
+        updated_at: answer.body.get("updatedAt").cloned()?,
     })
 }
 

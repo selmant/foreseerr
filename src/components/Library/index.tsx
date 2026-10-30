@@ -27,9 +27,9 @@ import type {
   LibraryShelf,
   LibraryTitle,
   LibraryWatchNowResponse,
-} from '@server/interfaces/api/libraryInterfaces';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+} from '@shared/interfaces/api/libraryInterfaces';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';

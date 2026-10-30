@@ -1,6 +1,6 @@
 import useSettings from '@app/hooks/useSettings';
 import { withPublicBasePath } from '@app/utils/publicBasePath';
-import { rewriteCachedImageSrc } from '@server/lib/imageproxySources';
+import { rewriteCachedImageSrc } from '@shared/lib/imageproxySources';
 import type { CSSProperties, ImgHTMLAttributes } from 'react';
 
 export type CachedImageProps = ImgHTMLAttributes<HTMLImageElement> & {

@@ -5,8 +5,8 @@ use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::nodestate::{
-    admin, admin_columns, assign, fits, js_key_order, mutate, node_call, object_body_or_empty, opt,
-    upstream_get, Field, NativeFut, Ty, Upstream,
+    admin, admin_columns, assign, fits, internal_call, js_key_order, mutate, object_body_or_empty,
+    opt, upstream_get, Field, NativeFut, Ty, Upstream,
 };
 use super::plexsettings::merge_libraries;
 use super::{Outcome, Ready, Table};
@@ -186,12 +186,11 @@ fn jellyfin_save<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
     })
 }
 
-/// `clearIntegrationHealthCache()` in Node.
+/// `clearIntegrationHealthCache()`.
 async fn clear_integration_health(ctx: &Ready<'_>) {
-    match node_call(ctx, Method::POST, "/integrations/health/clear", None).await {
-        Ok((204, _)) => {}
-        Ok((status, _)) => tracing::warn!("Node refused to clear integration health: {status}"),
-        Err(e) => tracing::warn!("Node could not be told to clear integration health: {e:#}"),
+    match internal_call(ctx, Method::POST, "/integrations/health/clear", None).await {
+        (204, _) => {}
+        (status, _) => tracing::warn!("Integration health was not cleared: {status}"),
     }
 }
 

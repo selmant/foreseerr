@@ -132,6 +132,9 @@ struct Layer {
 
 static LAYER: LazyLock<Mutex<Layer>> = LazyLock::new(|| Mutex::new(Layer::default()));
 static SEEDING: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
+/// One dataset ingests at a time, so the pauses between its slices leave
+/// the write lock free for everyone else.
+static INGESTING: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
 static RUN_IDS: AtomicU64 = AtomicU64::new(0);
 
 fn toggle_of(key: &str) -> u64 {
@@ -273,41 +276,17 @@ pub async fn load_active_generations(db: &Db, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// The readable edge set changed: Node reloads its generations and drops
-/// its lookup caches.
-async fn notify_changed(state: &AppState) {
-    // The stored provider rows resolved against the old edge set.
+/// The readable edge set changed: the lookups follow the database, so
+/// their caches and the stored provider rows resolved against the old edge
+/// set are dropped.
+fn notify_changed() {
     crate::rowcache::mark_stale();
-    if crate::mappinglayer::owned() {
-        // This process's lookups follow the database; drop their caches.
-        crate::mappinglayer::datasets_changed();
-        if crate::standalone::enabled() {
-            return;
-        }
-    }
-    let Ok(settings) = state.settings.current().await else {
-        return;
-    };
-    let url = format!(
-        "{}/internal/mapping/datasets/changed",
-        state.env.node_url.trim_end_matches('/')
-    );
-    let sent = state
-        .internal
-        .post(url)
-        .header("X-API-Key", settings.api_key())
-        .send()
-        .await;
-    match sent {
-        Ok(res) if res.status().is_success() => {}
-        Ok(res) => tracing::debug!("Node did not reload the mapping datasets: {}", res.status()),
-        Err(e) => tracing::debug!("Node could not be told the mapping datasets changed: {e}"),
-    }
+    crate::mappinglayer::datasets_changed();
 }
 
 async fn reload(state: &AppState) -> Result<()> {
     load_active_generations(&state.db, true).await?;
-    notify_changed(state).await;
+    notify_changed();
     Ok(())
 }
 
@@ -367,12 +346,12 @@ pub async fn write_generation(
     generation: i64,
     edges: &[mappingpacks::EdgeRow],
 ) -> Result<()> {
+    let _ingesting = INGESTING.lock().await;
     delete_generation(db, key, true, generation).await?;
     let total = edges.len();
     let mut done = 0_usize;
     let mut chunks = edges.chunks(INSERT_CHUNK).peekable();
     while chunks.peek().is_some() {
-        tokio::task::yield_now().await;
         // One `dataSource.transaction` per slice of at most
         // `INGEST_SLICE_MSEC`, then the progress.
         let mut tx = crate::jobs::syncutil::Tx::begin(db).await?;
@@ -386,6 +365,12 @@ pub async fn write_generation(
             }
         }
         tx.commit().await?;
+        // Node's single connection queued every other query between
+        // slices. Here the others wait in SQLite's busy handler, which
+        // only retries every 100 ms or so; beginning the next slice at
+        // once would starve them (sign-ins failed with "database is
+        // locked" during a first import), so leave the lock free a while.
+        tokio::time::sleep(INGEST_PAUSE).await;
         update_pack_progress(
             key,
             &[
@@ -400,6 +385,9 @@ pub async fn write_generation(
 
 /// `INGEST_SLICE_MSEC`.
 const INGEST_SLICE: Duration = Duration::from_millis(50);
+
+/// How long the write lock stays free between ingest slices.
+const INGEST_PAUSE: Duration = Duration::from_millis(50);
 
 /// The multi-row insert of one chunk of edges.
 fn edge_insert(key: &str, generation: i64, chunk: &[mappingpacks::EdgeRow]) -> (String, Vec<Bind>) {

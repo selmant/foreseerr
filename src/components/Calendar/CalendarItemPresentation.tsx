@@ -8,7 +8,7 @@ import { FilmIcon, TvIcon } from '@heroicons/react/24/outline';
 import type {
   CalendarDateType,
   CalendarItem,
-} from '@server/interfaces/api/calendarInterfaces';
+} from '@shared/interfaces/api/calendarInterfaces';
 import type { IntlShape } from 'react-intl';
 import { useIntl } from 'react-intl';
 import messages from './calendarMessages';

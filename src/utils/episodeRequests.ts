@@ -1,5 +1,5 @@
 import defineMessages from '@app/utils/defineMessages';
-import type EpisodeRequest from '@server/entity/EpisodeRequest';
+import type EpisodeRequest from '@shared/entity/EpisodeRequest';
 import type { IntlShape } from 'react-intl';
 
 const messages = defineMessages('utils.episodeRequests', {

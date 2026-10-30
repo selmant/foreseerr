@@ -2,11 +2,9 @@
 //! fallback) and the discover, Trakt, `AniList`, `animeList`, Simkl and
 //! watched-title code built on it, in this process.
 //!
-//! One process owns the mapping state (lookup caches, the miss buffer,
-//! the per-user sync caches): this one when it runs the jobs
-//! ([`owned`]), Node otherwise. The call sites ask [`owned`] and either
-//! call in here or keep calling Node's `/internal` routes, which
-//! [`answer`] reproduces for standalone mode.
+//! The mapping state (lookup caches, the miss buffer, the per-user sync
+//! caches) lives here. Call sites either call in directly or go through
+//! the `/internal` routes Node used to serve, which [`answer`] reproduces.
 
 pub mod animelist;
 pub mod derive;
@@ -36,14 +34,6 @@ use crate::db::Db;
 use crate::state::AppState;
 use crate::sync::lock;
 use crate::tmdb::TmdbClient;
-
-/// Whether this process owns the mapping state: when it runs the jobs
-/// (always in standalone mode). Otherwise Node does, and the call sites
-/// keep using its `/internal` routes.
-#[must_use]
-pub fn owned() -> bool {
-    crate::jobs::scheduler::rust_jobs()
-}
 
 static SHARED: Mutex<Option<Weak<AppState>>> = Mutex::new(None);
 

@@ -18,9 +18,9 @@ reviews:
     - '!dist/**'
     - '!src/i18n/locale/**'
   path_instructions:
-    - path: 'server/migration/**'
+    - path: 'backend-rs/src/dbmigrate/**'
       instructions: >-
-        TypeORM migrations must ship for both SQLite and Postgres, be
-        reversible in down(), and never edit an already released migration.
+        Migrations must ship for both SQLite and Postgres, keep TypeORM's
+        name/timestamp scheme, and never edit an already released migration.
 chat:
   auto_reply: true

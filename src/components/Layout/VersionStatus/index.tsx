@@ -6,7 +6,7 @@ import {
   CodeBracketIcon,
   ServerIcon,
 } from '@heroicons/react/24/outline';
-import type { StatusResponse } from '@server/interfaces/api/settingsInterfaces';
+import type { StatusResponse } from '@shared/interfaces/api/settingsInterfaces';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR from 'swr';

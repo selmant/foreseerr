@@ -17,7 +17,7 @@ import defineMessages from '@app/utils/defineMessages';
 import { withPublicBasePath } from '@app/utils/publicBasePath';
 import { Transition } from '@headlessui/react';
 import { XCircleIcon } from '@heroicons/react/24/solid';
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType } from '@shared/constants/server';
 import axios from 'axios';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { useIntl } from 'react-intl';

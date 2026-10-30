@@ -1,11 +1,11 @@
-//! The database Node created, on `SQLite` or Postgres.
+//! The database, on `SQLite` or Postgres.
 //!
 //! Connection settings come from the same variables as Node's
 //! `server/datasource.ts`: `DB_TYPE=postgres` plus `DB_HOST`, `DB_PORT`,
 //! `DB_USER`, `DB_PASS`, `DB_NAME`, `DB_SOCKET_PATH`, `DB_USE_SSL` and
 //! `DB_SSL_*`; otherwise `<config>/db/db.sqlite3`.
 //!
-//! Schema and migrations still belong to Node. Tables and columns are
+//! The schema is `TypeORM`'s (`src/dbmigrate/`). Tables and columns are
 //! `TypeORM`'s names, quoted, so the same SQL text works on both databases
 //! apart from parameter placeholders.
 
@@ -65,7 +65,9 @@ impl Db {
             .filename(&path)
             .create_if_missing(false)
             .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(5));
+            // Node's one connection made every query wait its turn; with
+            // a pool, a writer waits here for another's transaction.
+            .busy_timeout(Duration::from_secs(30));
         let pool = SqlitePoolOptions::new()
             .max_connections(4)
             .connect_lazy_with(options);

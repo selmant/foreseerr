@@ -7,7 +7,7 @@ import useRouteQuery from '@app/hooks/useRouteQuery';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { TvResult } from '@server/models/Search';
+import type { TvResult } from '@shared/models/Search';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverTvGenre', {

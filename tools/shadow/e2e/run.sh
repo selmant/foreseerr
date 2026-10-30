@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # End-to-end check of the shadow tool against the real backend:
-#   1. start the backend (from source) behind `shadow record`
+#   1. start the backend (built from source) behind `shadow record`
 #   2. drive some traffic: logins, TMDB-backed pages, writes, a scheduled job
 #   3. replay against baseline + noise + two candidates (one deliberately altered)
 #   4. compare: the faithful candidate must match, the altered one must not
 #
 # Usage: tools/shadow/e2e/run.sh [config-dir]   (default: ./config, the Cypress test config)
+# FORESEERR_BIN replaces the backend built from backend-rs.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
 SRC_CONFIG=${1:-$REPO/config}
 WORK=${SHADOW_E2E_DIR:-/tmp/shadow-e2e}
 SHADOW=$REPO/tools/shadow/target/release/shadow
+BACKEND=${FORESEERR_BIN:-$REPO/backend-rs/target/release/foreseerr}
 PRIMARY_PORT=5155
 RECORD_PORT=5156
 UPSTREAM_PORT=8899
@@ -24,6 +26,9 @@ cleanup() {
 trap cleanup EXIT
 
 (cd "$REPO/tools/shadow" && cargo build --release --quiet)
+if [[ -z "${FORESEERR_BIN:-}" ]]; then
+  (cd "$REPO/backend-rs" && cargo build --release --locked --quiet)
+fi
 
 rm -rf "$WORK/primary" "$WORK/recording" "$WORK/run"
 mkdir -p "$WORK/primary"
@@ -53,7 +58,7 @@ REC_PID=$!
 
 echo "== starting primary backend on :$PRIMARY_PORT"
 (cd "$REPO" && NODE_ENV=development PORT=$PRIMARY_PORT CONFIG_DIRECTORY="$WORK/primary/config" \
-  NODE_EXTRA_CA_CERTS="$WORK/ca/ca.pem" exec bun server/launcher.ts) >"$WORK/primary.log" 2>&1 &
+  SHADOW_CA_FILE="$WORK/ca/ca.pem" exec "$BACKEND") >"$WORK/primary.log" 2>&1 &
 PRIMARY_PID=$!
 for _ in $(seq 1 120); do
   curl -sf -o /dev/null http://127.0.0.1:$PRIMARY_PORT/api/v1/status && break
@@ -110,21 +115,21 @@ ca_dir = "$WORK/ca"
 ignore_tables = ["session"]
 
 [[target]]
-name = "node"
+name = "baseline"
 role = "baseline"
 url = "http://127.0.0.1:6101"
 proxy_port = 6201
 cwd = "$REPO"
-command = ["bun", "server/launcher.ts"]
+command = ["$BACKEND"]
 env = { NODE_ENV = "development", PORT = "6101" }
 
 [[target]]
-name = "node-noise"
+name = "baseline-noise"
 role = "noise"
 url = "http://127.0.0.1:6102"
 proxy_port = 6202
 cwd = "$REPO"
-command = ["bun", "server/launcher.ts"]
+command = ["$BACKEND"]
 env = { NODE_ENV = "development", PORT = "6102" }
 
 [[target]]
@@ -133,17 +138,17 @@ role = "candidate"
 url = "http://127.0.0.1:6103"
 proxy_port = 6203
 cwd = "$REPO"
-command = ["bun", "server/launcher.ts"]
+command = ["$BACKEND"]
 env = { NODE_ENV = "development", PORT = "6103" }
 
-# Same code with a changed setting, standing in for a buggy reimplementation.
+# Same build with a changed setting, standing in for a buggy candidate.
 [[target]]
 name = "altered"
 role = "candidate"
 url = "http://127.0.0.1:6104"
 proxy_port = 6204
 cwd = "$REPO"
-command = ["bun", "server/launcher.ts"]
+command = ["$BACKEND"]
 env = { NODE_ENV = "development", PORT = "6104" }
 prepare = [["python3", "-c", "import json,sys; p=sys.argv[1]; s=json.load(open(p)); s['main']['applicationTitle']='Altered'; s['main']['discoverRegion']='DE'; json.dump(s,open(p,'w'))", "{config}/settings.json"]]
 TOML

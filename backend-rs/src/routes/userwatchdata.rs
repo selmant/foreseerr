@@ -304,13 +304,7 @@ async fn recently_watched(ctx: &Ready<'_>, history: &[Value]) -> Result<Vec<Valu
         .map_err(|e| Stop::Unported(format!("database: {e:#}")))?;
     rows.sort_by_key(|m| ids.iter().position(|id| *id == m.id));
     let downloads = if rows.iter().any(tracks_downloads) {
-        Downloads::fetch(
-            &ctx.state.internal,
-            &ctx.state.env.node_url,
-            ctx.settings.api_key(),
-        )
-        .await
-        .map_err(|e| Stop::Unported(format!("reading the download tracker failed: {e:#}")))?
+        Downloads::current()
     } else {
         Downloads::default()
     };

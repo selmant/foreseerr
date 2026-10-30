@@ -1,17 +1,16 @@
 //! Node's `/internal` routes (`server/routes/internal.ts`) answered
 //! in-process.
 //!
-//! Every Rust call site that would call Node over HTTP calls
-//! [`call`] instead in standalone mode, with the same method, path (below
-//! `/internal`) and JSON body, and reads the [`Answer`] like the HTTP
-//! response it replaces.
+//! The call sites that once called Node over HTTP call [`call`] with the
+//! same method, path (below `/internal`) and JSON body, and read the
+//! [`Answer`] like the HTTP response it replaced.
 //!
 //! Three groups:
 //! - core, answered here: `POST /settings/reload` is a no-op (the settings
 //!   store re-reads settings.json when it changes). The download tracker,
 //!   the job and scanner state and the calendar source statuses are the
-//!   Rust scheduler's in standalone mode (it implies `FORESEERR_RUST_JOBS`),
-//!   so their call sites read them directly and never get here.
+//!   Rust scheduler's, so their call sites read them directly and never
+//!   get here.
 //! - mapping layer: [`super::pending_mapping`].
 //! - Node process state: [`super::pending_nodestate`].
 
@@ -132,8 +131,7 @@ fn core(method: &Method, path: &str) -> Answer {
         return Answer::no_content();
     }
     // Downloads, jobs, scanners and calendar statuses: the call sites read
-    // the Rust scheduler's state directly when it owns the jobs, which it
-    // always does in standalone mode.
+    // the Rust scheduler's state directly.
     tracing::warn!("/internal{path} reached the in-process dispatcher; its caller should read the Rust scheduler instead");
     Answer::message(501, "Answered by the Rust scheduler at the call site")
 }
@@ -142,13 +140,8 @@ fn core(method: &Method, path: &str) -> Answer {
 /// call sites log.
 #[must_use]
 pub fn pending(group: &str, path: &str) -> Answer {
-    tracing::warn!(
-        "/internal{path} needs the {group} port, which standalone mode doesn't have yet"
-    );
-    Answer::message(
-        501,
-        &format!("/internal{path} is not available in standalone mode yet ({group})"),
-    )
+    tracing::warn!("/internal{path} needs the {group} port, which this build doesn't have");
+    Answer::message(501, &format!("/internal{path} is not available ({group})"))
 }
 
 #[cfg(test)]

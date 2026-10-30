@@ -138,7 +138,7 @@ pub struct SettingsStore {
     api_key_override: Option<String>,
     cached: RwLock<Option<Cached>>,
     /// Node's in-memory settings when a handler changed them and answered
-    /// without `save()` (standalone mode only). Node never reads the file
+    /// without `save()`. Node never read the file
     /// again, so this is what every later read sees, whatever the file
     /// says, until the next save writes it.
     unsaved: RwLock<Option<Arc<Settings>>>,

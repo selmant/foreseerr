@@ -2,8 +2,8 @@
 //!
 //! What every library and *arr scanner shares — the run session and its status board,
 //! the bundle loop, the per-title lock — plus the helpers the scanners use
-//! to talk to Node (the mapping layer behind `animeList`, the TVDB
-//! metadata provider) and to save settings.
+//! to reach the mapping layer behind `animeList` and the TVDB metadata
+//! provider, and to save settings.
 //!
 //! Node's scanners are singletons whose `status()` outlives a run (the last
 //! libraries, progress and total stay until the next run replaces them);
@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use serde_json::{Map, Value};
 
 use super::JobCtx;
@@ -477,53 +477,28 @@ pub fn parse_date(text: &str) -> Option<i64> {
     crate::clock::parse_date_millis(&normalized)
 }
 
-/// Ask Node (`/internal{path}`) for what only it holds.
+/// One of the `/internal{path}` routes Node used to serve, answered
+/// in-process.
 ///
 /// # Errors
 ///
-/// Fails when Node can't be reached, refuses or doesn't answer JSON.
-pub async fn node_call(job: &JobCtx, method: reqwest::Method, path: &str) -> Result<Value> {
-    if crate::routes::procstate::in_process(path) {
-        return crate::standalone::internal::call(&job.state, &method, path, None)
-            .await
-            .into_result(path);
-    }
-    let url = format!(
-        "{}/internal{path}",
-        job.state.env.node_url.trim_end_matches('/')
-    );
-    let response = job
-        .state
-        .internal
-        .request(method, url)
-        .header("X-API-Key", job.settings.api_key())
-        .send()
+/// Fails when the route answers an error status.
+pub async fn internal_call(job: &JobCtx, method: reqwest::Method, path: &str) -> Result<Value> {
+    crate::standalone::internal::call(&job.state, &method, path, None)
         .await
-        .with_context(|| format!("asking Node for {path}"))?
-        .error_for_status()
-        .with_context(|| format!("Node refused {path}"))?;
-    let bytes = response.bytes().await.context("reading Node's answer")?;
-    if bytes.is_empty() {
-        return Ok(Value::Null);
-    }
-    serde_json::from_slice(&bytes).with_context(|| format!("Node's answer to {path}"))
+        .into_result(path)
 }
 
 /// `settings.save()` after a scan's change to the shared settings.
 ///
 /// `change` runs on the latest settings under the mutation lock (see
-/// [`crate::settings::SettingsStore::mutate`]), then Node reloads the file
-/// (only logged when it can't be told).
+/// [`crate::settings::SettingsStore::mutate`]).
 ///
 /// # Errors
 ///
 /// Fails when the file can't be read or written.
 pub async fn mutate_settings(job: &JobCtx, change: impl FnOnce(&mut Value)) -> Result<()> {
-    job.state.settings.update(change).await?;
-    if let Err(e) = node_call(job, reqwest::Method::POST, "/settings/reload").await {
-        tracing::warn!("Node could not be told to reload settings: {e:#}");
-    }
-    Ok(())
+    job.state.settings.update(change).await
 }
 
 /// What `animeList` (the mapping layer) knows about an
@@ -540,85 +515,37 @@ pub struct AnidbItem {
     pub tvdb_season: Option<i64>,
 }
 
-impl AnidbItem {
-    fn parse(value: &Value) -> Option<Self> {
-        let item = value.get("item").filter(|v| v.is_object())?;
-        Some(Self {
-            tvdb_id: item.get("tvdbId").and_then(Value::as_i64),
-            tmdb_id: item.get("tmdbId").and_then(Value::as_i64),
-            imdb_id: str_of(item, "imdbId").map(str::to_owned),
-            tvdb_season: item.get("tvdbSeason").and_then(Value::as_i64),
-        })
-    }
-}
-
-/// `animeList.sync()` (`ensureMappingLayer`). Node being unreachable is
-/// only logged: the lookups that need the layer fail on their own.
+/// `animeList.sync()` (`ensureMappingLayer`).
 ///
 /// # Errors
 ///
-/// Node answered that the mapping layer failed to load.
+/// The mapping layer failed to load.
 pub async fn anime_sync(job: &JobCtx) -> Result<()> {
-    if crate::mappinglayer::owned() {
-        let ctx = crate::mappinglayer::Ctx::with_settings(&job.state, &job.settings);
-        return Box::pin(crate::mappinglayer::animelist::sync(&ctx)).await;
-    }
-    match node_call(job, reqwest::Method::POST, "/animelist/sync").await {
-        Ok(_) => Ok(()),
-        Err(e) if refused(&e) => Err(e),
-        Err(e) => {
-            tracing::warn!("Mapping layer sync skipped: {e:#}");
-            Ok(())
-        }
-    }
-}
-
-/// Whether the error is Node answering with an error status.
-fn refused(e: &anyhow::Error) -> bool {
-    e.chain()
-        .filter_map(|c| c.downcast_ref::<reqwest::Error>())
-        .any(reqwest::Error::is_status)
+    let ctx = crate::mappinglayer::Ctx::with_settings(&job.state, &job.settings);
+    Box::pin(crate::mappinglayer::animelist::sync(&ctx)).await
 }
 
 /// `animeList.getFromAnidbId(id)`.
 ///
 /// # Errors
 ///
-/// Fails when Node can't answer.
+/// Fails when the mapping layer can't answer.
 pub async fn anime_from_anidb(job: &JobCtx, anidb_id: i64) -> Result<Option<AnidbItem>> {
-    if crate::mappinglayer::owned() {
-        let ctx = crate::mappinglayer::Ctx::with_settings(&job.state, &job.settings);
-        return Box::pin(crate::mappinglayer::animelist::from_anidb(&ctx, anidb_id)).await;
-    }
-    let answer = node_call(
-        job,
-        reqwest::Method::GET,
-        &format!("/animelist/anidb/{anidb_id}"),
-    )
-    .await?;
-    Ok(AnidbItem::parse(&answer))
+    let ctx = crate::mappinglayer::Ctx::with_settings(&job.state, &job.settings);
+    Box::pin(crate::mappinglayer::animelist::from_anidb(&ctx, anidb_id)).await
 }
 
 /// `animeList.getSpecialEpisode(tvdbId, episode)`.
 ///
 /// # Errors
 ///
-/// Fails when Node can't answer.
+/// Fails when the mapping layer can't answer.
 pub async fn anime_special(job: &JobCtx, tvdb_id: i64, episode: i64) -> Result<Option<AnidbItem>> {
-    if crate::mappinglayer::owned() {
-        let ctx = crate::mappinglayer::Ctx::with_settings(&job.state, &job.settings);
-        return Box::pin(crate::mappinglayer::animelist::special_episode(
-            &ctx, tvdb_id, episode,
-        ))
-        .await;
-    }
-    let answer = node_call(
-        job,
-        reqwest::Method::GET,
-        &format!("/animelist/special/{tvdb_id}/{episode}"),
-    )
-    .await?;
-    Ok(AnidbItem::parse(&answer))
+    let ctx = crate::mappinglayer::Ctx::with_settings(&job.state, &job.settings);
+    Box::pin(crate::mappinglayer::animelist::special_episode(
+        &ctx, tvdb_id, episode,
+    ))
+    .await
 }
 
 #[cfg(test)]

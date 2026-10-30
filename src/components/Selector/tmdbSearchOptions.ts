@@ -1,7 +1,7 @@
 import type {
   TmdbCompanySearchResponse,
   TmdbKeywordSearchResponse,
-} from '@server/api/themoviedb/interfaces';
+} from '@shared/api/themoviedb/interfaces';
 import axios from 'axios';
 
 export type SelectorOption = { label: string; value: number };

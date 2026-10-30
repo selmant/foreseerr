@@ -22,8 +22,8 @@ import {
   EyeIcon,
   EyeSlashIcon,
 } from '@heroicons/react/24/outline';
-import { MediaStatus } from '@server/constants/media';
-import type { Collection } from '@server/models/Collection';
+import { MediaStatus } from '@shared/constants/media';
+import type { Collection } from '@shared/models/Collection';
 import axios from 'axios';
 import { uniq } from 'lodash';
 import { Fragment, useMemo, useState } from 'react';

@@ -1,7 +1,7 @@
-import type { MediaRequest } from '@server/entity/MediaRequest';
-import type { PaginatedResponse } from '@server/interfaces/api/common';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+import type { MediaRequest } from '@shared/entity/MediaRequest';
+import type { PaginatedResponse } from '@shared/interfaces/api/common';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import axios from 'axios';
 import useSWR from 'swr';
 

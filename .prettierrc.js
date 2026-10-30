@@ -28,12 +28,6 @@ module.exports = {
       },
     },
     {
-      files: 'cypress/config/settings.cypress.json',
-      options: {
-        rangeEnd: 0,
-      },
-    },
-    {
       files: 'public/offline.html',
       options: {
         rangeEnd: 0,

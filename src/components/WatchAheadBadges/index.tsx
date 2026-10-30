@@ -1,9 +1,9 @@
 import Badge from '@app/components/Common/Badge';
 import Tooltip from '@app/components/Common/Tooltip';
 import defineMessages from '@app/utils/defineMessages';
-import { MediaRequestStatus } from '@server/constants/media';
-import type EpisodeRequest from '@server/entity/EpisodeRequest';
-import type { MediaRequest } from '@server/entity/MediaRequest';
+import { MediaRequestStatus } from '@shared/constants/media';
+import type EpisodeRequest from '@shared/entity/EpisodeRequest';
+import type { MediaRequest } from '@shared/entity/MediaRequest';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.WatchAheadBadges', {

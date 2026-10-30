@@ -10,14 +10,14 @@ import TmdbTitleCard, {
 import { Permission, useUser } from '@app/hooks/useUser';
 import useVerticalScroll from '@app/hooks/useVerticalScroll';
 import globalMessages from '@app/i18n/globalMessages';
-import { MediaStatus } from '@server/constants/media';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import { MediaStatus } from '@shared/constants/media';
+import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import type {
   CollectionResult,
   MovieResult,
   PersonResult,
   TvResult,
-} from '@server/models/Search';
+} from '@shared/models/Search';
 import { useMemo } from 'react';
 import { useIntl } from 'react-intl';
 

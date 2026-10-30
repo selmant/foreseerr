@@ -314,7 +314,7 @@ mod tests {
     fn empty_report_renders() -> Result<(), fmt::Error> {
         let r = Report {
             run: String::from("run"),
-            baseline: String::from("node"),
+            baseline: String::from("release"),
             noise: Vec::new(),
             candidates: Vec::new(),
         };

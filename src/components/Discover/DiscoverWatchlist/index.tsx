@@ -9,7 +9,7 @@ import useRouteQuery from '@app/hooks/useRouteQuery';
 import { UserType, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowPathIcon, BookmarkIcon } from '@heroicons/react/24/outline';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import { useIntl } from 'react-intl';
 import { Link, useLocation } from 'react-router';
 

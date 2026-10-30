@@ -7,16 +7,16 @@ import {
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import { rowCoversIdleRatingBadges } from '@app/utils/ratingBadges';
-import type { RatingResponse } from '@server/api/ratings';
+import type { RatingResponse } from '@shared/api/ratings';
 import type {
   DiscoverItemSource,
   DiscoverMappingInfo,
   WatchlistItem,
   WatchlistItemMediaInfo,
-} from '@server/interfaces/api/discoverInterfaces';
-import { hasServarrMapping } from '@server/lib/servarrMapping';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+} from '@shared/interfaces/api/discoverInterfaces';
+import { hasServarrMapping } from '@shared/lib/servarrMapping';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useInView } from 'react-intersection-observer';
 import useSWR from 'swr';

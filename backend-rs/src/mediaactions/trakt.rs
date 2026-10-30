@@ -11,7 +11,7 @@ use crate::mappinglayer::synccache::{self, TraktPatch, TraktSnapshot};
 use crate::settings::Settings;
 use crate::state::AppState;
 use crate::trakt::actions;
-use crate::trakt::{NodeRefresh, TraktClient, TraktError};
+use crate::trakt::{TraktClient, TraktError, UserRefresh};
 
 /// `createTraktUserClient(userId)` for a direct Trakt link.
 ///
@@ -49,22 +49,14 @@ pub async fn user_client(
         return Err(TraktError::NotLinked);
     };
     let expires_at = text(row, "expires").map_or(0.0, |t| crate::jsval::number_of_str(&t));
-    let node = NodeRefresh {
-        client: state.internal.clone(),
-        url: format!(
-            "{}/internal/trakt/refresh",
-            state.env.node_url.trim_end_matches('/')
-        ),
-        api_key: settings.api_key().to_owned(),
-        user_id: user,
-    };
+    let refresher = UserRefresh { user_id: user };
     Ok(TraktClient::user(
         state.outbound.clone(),
         client_id,
         access,
         refresh,
         expires_at,
-        node,
+        refresher,
     ))
 }
 

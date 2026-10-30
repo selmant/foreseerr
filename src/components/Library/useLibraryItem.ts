@@ -1,4 +1,4 @@
-import type { LibraryItemInspectorResponse } from '@server/interfaces/api/libraryInterfaces';
+import type { LibraryItemInspectorResponse } from '@shared/interfaces/api/libraryInterfaces';
 import useSWR from 'swr';
 
 /**

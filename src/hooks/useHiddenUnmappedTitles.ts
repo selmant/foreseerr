@@ -2,7 +2,7 @@ import { areDiscoverDefaultsCleared } from '@app/components/Discover/mergeFilter
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import { useUser } from '@app/hooks/useUser';
-import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
+import type { DiscoverFilterDefaults } from '@shared/lib/discover/filterDefaults';
 import { useCallback, useEffect, useState } from 'react';
 
 const EVENT = 'seerr-hidden-unmapped-changed';

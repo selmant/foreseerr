@@ -27,11 +27,11 @@ import {
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
-import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
-import type { MediaRequest } from '@server/entity/MediaRequest';
-import type { NonFunctionProperties } from '@server/interfaces/api/common';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+import { MediaRequestStatus, MediaStatus } from '@shared/constants/media';
+import type { MediaRequest } from '@shared/entity/MediaRequest';
+import type { NonFunctionProperties } from '@shared/interfaces/api/common';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { useInView } from 'react-intersection-observer';

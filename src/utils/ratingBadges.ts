@@ -1,14 +1,14 @@
-import type { RatingResponse } from '@server/api/ratings';
+import type { RatingResponse } from '@shared/api/ratings';
 import type {
   RatingBadgeSettings,
   RatingSourceToggles,
-} from '@server/constants/ratingBadges';
+} from '@shared/constants/ratingBadges';
 import {
   DEFAULT_RATING_BADGE_SETTINGS,
   DEFAULT_RATING_SOURCE_TOGGLES,
   needsVisibleMdblistBadges,
   resolveRatingBadgeSettings,
-} from '@server/constants/ratingBadges';
+} from '@shared/constants/ratingBadges';
 
 export type RatingBadgeSource =
   | 'tmdb'

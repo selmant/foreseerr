@@ -26,7 +26,7 @@ import type {
   MovieResult,
   PersonResult,
   TvResult,
-} from '@server/models/Search';
+} from '@shared/models/Search';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 

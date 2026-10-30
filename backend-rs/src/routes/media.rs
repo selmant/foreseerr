@@ -39,18 +39,7 @@ pub(super) fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Err(e) => return Outcome::forward(format!("listing media failed: {e:#}")),
         };
         let downloads = if rows.iter().any(tracks_downloads) {
-            match Downloads::fetch(
-                &ctx.state.internal,
-                &ctx.state.env.node_url,
-                ctx.settings.api_key(),
-            )
-            .await
-            {
-                Ok(downloads) => downloads,
-                Err(e) => {
-                    return Outcome::forward(format!("reading the download tracker failed: {e:#}"))
-                }
-            }
+            Downloads::current()
         } else {
             Downloads::default()
         };

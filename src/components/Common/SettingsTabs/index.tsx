@@ -1,7 +1,7 @@
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import type { Permission } from '@server/lib/permissions';
-import { hasPermission } from '@server/lib/permissions';
+import type { Permission } from '@shared/lib/permissions';
+import { hasPermission } from '@shared/lib/permissions';
 import { useId } from 'react';
 import { useIntl } from 'react-intl';
 import { Link, useLocation, useNavigate } from 'react-router';

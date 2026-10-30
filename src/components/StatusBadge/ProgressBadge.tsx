@@ -1,8 +1,8 @@
 import Spinner from '@app/assets/spinner.svg';
 import Badge from '@app/components/Common/Badge';
 import Tooltip from '@app/components/Common/Tooltip';
-import { MediaStatus } from '@server/constants/media';
-import type { DownloadingItem } from '@server/lib/downloadtracker';
+import { MediaStatus } from '@shared/constants/media';
+import type { DownloadingItem } from '@shared/lib/downloadtracker';
 import type { ReactNode } from 'react';
 
 interface ProgressBadgeProps {

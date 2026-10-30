@@ -8,7 +8,7 @@ import {
   ArrowRightCircleIcon,
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
-import type { RequestResultsResponse } from '@server/interfaces/api/requestInterfaces';
+import type { RequestResultsResponse } from '@shared/interfaces/api/requestInterfaces';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR from 'swr';

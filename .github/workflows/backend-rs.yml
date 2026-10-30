@@ -7,19 +7,14 @@ on:
     paths:
       - 'backend-rs/**'
       - 'Dockerfile'
-      - 'Dockerfile.rust'
       - '.dockerignore'
       - 'vite.config.ts'
       # Compiled or read in from outside the crate.
       - 'package.json'
       - 'seerr-api.yml'
-      # The generators and the Node side of the comparisons run on these.
+      # The route table generator and the frontend build run on these.
       - 'bun.lock'
       - '.bun-version'
-      # The locales are compiled in; the rest (entities, migrations, settings
-      # defaults, routes, jobs) is mirrored by hand, so a Node change there
-      # can break parity without touching the crate.
-      - 'server/**'
       - '.github/workflows/backend-rs.yml'
   push:
     branches:
@@ -27,19 +22,14 @@ on:
     paths:
       - 'backend-rs/**'
       - 'Dockerfile'
-      - 'Dockerfile.rust'
       - '.dockerignore'
       - 'vite.config.ts'
       # Compiled or read in from outside the crate.
       - 'package.json'
       - 'seerr-api.yml'
-      # The generators and the Node side of the comparisons run on these.
+      # The route table generator and the frontend build run on these.
       - 'bun.lock'
       - '.bun-version'
-      # The locales are compiled in; the rest (entities, migrations, settings
-      # defaults, routes, jobs) is mirrored by hand, so a Node change there
-      # can break parity without touching the crate.
-      - 'server/**'
       - '.github/workflows/backend-rs.yml'
   workflow_dispatch:
 
@@ -85,8 +75,8 @@ jobs:
       - name: Test
         run: FORESEERR_MAPPING_TEST_DB="$RUNNER_TEMP/mapping.sqlite3" cargo test --locked
 
-  generated:
-    name: Generated code matches Node
+  api-routes:
+    name: API route table matches seerr-api.yml
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -99,20 +89,11 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - name: Install dependencies
-        env:
-          CI: true
-        run: bun install --frozen-lockfile
-
-      # The validator route table (seerr-api.yml), the migrations (TypeORM's
-      # server/migration) and the dev-mode synchronize DDL (server/entity)
-      # are generated from the Node sources; a change there must come with
-      # regenerated Rust copies.
+      # The fallback's route table (src/standalone/apiroutes.rs) is generated
+      # from seerr-api.yml; a spec change must come with a regenerated copy.
+      # The generator needs only Bun, no node_modules.
       - name: Regenerate
-        run: |
-          bun backend-rs/scripts/gen-api-routes.ts "$PWD" "$PWD/backend-rs"
-          bun backend-rs/scripts/gen-migrations.ts "$PWD" "$PWD/backend-rs"
-          bun backend-rs/scripts/gen-synchronize.ts "$PWD" "$PWD/backend-rs"
+        run: bun backend-rs/scripts/gen-api-routes.ts "$PWD" "$PWD/backend-rs"
 
       - name: Fail on drift
         run: |
@@ -120,38 +101,9 @@ jobs:
           if [ -n "$changes" ]; then
             echo "$changes"
             git diff -- backend-rs
-            echo "::error::The generated Rust copies are out of date. Run backend-rs/scripts/gen-*.ts (see their headers) and commit the result."
+            echo "::error::src/standalone/apiroutes.rs is out of date. Run backend-rs/scripts/gen-api-routes.ts (see its header) and commit the result."
             exit 1
           fi
-
-  validator-diff:
-    name: Validator differential test
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install the pinned toolchain
-        working-directory: backend-rs
-        run: rustup toolchain install
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        env:
-          CI: true
-        run: bun install --frozen-lockfile
-
-      # Records express-openapi-validator's answers to the generated corpus,
-      # then replays it through the Rust validator (the ignored openapi_
-      # tests, which fail under CI without a corpus).
-      - name: Compare with express-openapi-validator
-        run: backend-rs/scripts/openapi-diff.sh "$RUNNER_TEMP/openapi/corpus.jsonl"
 
   postgres:
     name: Startup and migrations on Postgres 18
@@ -209,8 +161,8 @@ jobs:
           DB_USE_SSL: 'false'
         run: python3 scripts/ci-standalone.py --bin target/debug/foreseerr
 
-  compare:
-    name: Node and Rust answer alike
+  standalone-web:
+    name: Standalone with the built frontend
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -236,14 +188,9 @@ jobs:
         working-directory: backend-rs
         run: cargo build --locked
 
-      # Both backends on fresh SQLite databases with the same seed rows and
-      # the same scripted requests, including the review's failure and
-      # concurrency cases (KNOWN_GAPS in the script lists the open ones).
-      - name: Compare
-        run: python3 backend-rs/scripts/ci-compare.py --bin backend-rs/target/debug/foreseerr
-
       - name: Build the frontend and API docs assets
         run: bun run build:web
 
+      # SQLite; the Postgres job runs the same script without the frontend.
       - name: Standalone regressions without node_modules in the app root
         run: python3 backend-rs/scripts/ci-standalone.py --bin backend-rs/target/debug/foreseerr --require-web

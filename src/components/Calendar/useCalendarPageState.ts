@@ -11,7 +11,7 @@ import type {
   CalendarMediaType,
   CalendarScope,
   CalendarSource,
-} from '@server/interfaces/api/calendarInterfaces';
+} from '@shared/interfaces/api/calendarInterfaces';
 import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 import {

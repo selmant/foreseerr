@@ -194,10 +194,11 @@ fn watchlist_add<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             tracing::warn!("Something wrong with data watchlist");
             return ctx.error(409, "Something wrong");
         }
-        let downloads = match &existing {
-            Some(m) => forward_on_err!(super::draft::downloads_for(ctx, &[m]).await),
-            None => crate::downloads::Downloads::default(),
-        };
+        let downloads = existing
+            .as_ref()
+            .map_or_else(crate::downloads::Downloads::default, |m| {
+                super::draft::downloads_for(&[m])
+            });
         let media_json = existing.as_ref().map_or(Value::Null, |m| {
             crate::media::media_json(m, &ctx.settings, &downloads, true)
         });

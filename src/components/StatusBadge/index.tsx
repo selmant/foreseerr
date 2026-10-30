@@ -8,9 +8,9 @@ import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { MediaStatus } from '@server/constants/media';
-import { MediaServerType } from '@server/constants/server';
-import type { DownloadingItem } from '@server/lib/downloadtracker';
+import { MediaStatus } from '@shared/constants/media';
+import { MediaServerType } from '@shared/constants/server';
+import type { DownloadingItem } from '@shared/lib/downloadtracker';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.StatusBadge', {

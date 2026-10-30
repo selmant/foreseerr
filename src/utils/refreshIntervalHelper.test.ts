@@ -1,5 +1,5 @@
-import { MediaType } from '@server/constants/media';
-import type { DownloadingItem } from '@server/lib/downloadtracker';
+import { MediaType } from '@shared/constants/media';
+import type { DownloadingItem } from '@shared/lib/downloadtracker';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { getRequestDownloadStatus } from './refreshIntervalHelper';

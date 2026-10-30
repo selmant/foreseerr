@@ -1,7 +1,7 @@
 import Badge from '@app/components/Common/Badge';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import type { DownloadingItem } from '@server/lib/downloadtracker';
+import type { DownloadingItem } from '@shared/lib/downloadtracker';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
 
 const messages = defineMessages('components.DownloadBlock', {

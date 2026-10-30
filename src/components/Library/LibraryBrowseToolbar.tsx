@@ -11,7 +11,7 @@ import {
   countActiveLibraryBrowseFilters,
   type LibraryDensity,
   type ParsedLibraryBrowseQuery,
-} from '@server/lib/libraryBrowseQuery';
+} from '@shared/lib/libraryBrowseQuery';
 import { useEffect, useId, useRef } from 'react';
 import { useIntl } from 'react-intl';
 

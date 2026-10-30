@@ -10,8 +10,8 @@ import {
   PlusIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { MediaRequestStatus } from '@server/constants/media';
-import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
+import { MediaRequestStatus } from '@shared/constants/media';
+import type { EpisodeSelection } from '@shared/interfaces/api/requestInterfaces';
 import { useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';

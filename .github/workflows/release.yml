@@ -21,26 +21,7 @@ jobs:
   quality-gate:
     name: Quality gate
     runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: foreseerr
-          POSTGRES_PASSWORD: foreseerr
-          POSTGRES_DB: foreseerr
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U foreseerr"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     env:
-      DB_HOST: 127.0.0.1
-      DB_PORT: 5432
-      DB_USER: foreseerr
-      DB_PASS: foreseerr
-      DB_NAME: foreseerr
       VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout tagged commit
@@ -71,29 +52,30 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Unit tests
+      - name: Frontend tests
         env:
           CI: true
         run: bun run test
 
-      - name: Production build
-        run: bun run build
+      - name: Frontend build
+        run: bun run build:web
 
-      - name: Pack launcher.js server tree
-        run: bun run pack:server
+      - name: Install the pinned Rust toolchain
+        working-directory: backend-rs
+        run: rustup toolchain install
 
-      - name: Upload server archive
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: foreseerr-server-${{ env.VERSION }}
-          path: |
-            dist/bin/foreseerr-server.tar.gz
-            dist/bin/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 1
+      - name: Rust format, lint and tests
+        working-directory: backend-rs
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
 
-      - name: Migration checks
-        run: bun run check:migrations
+      - name: Migrations on a fresh database
+        working-directory: backend-rs
+        run: |
+          cargo build --locked
+          python3 scripts/ci-smoke.py --bin target/debug/foreseerr
 
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
@@ -154,6 +136,96 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_BODY: ${{ needs.changelog.outputs.release_body }}
+
+  runtime:
+    name: Runtime (${{ matrix.target }})
+    needs: create-draft-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: true
+      matrix:
+        # The Linux binaries link against glibc 2.28 (zigbuild's suffix), so
+        # they run on older distributions than the runner's; Windows builds
+        # natively.
+        include:
+          - runner: ubuntu-24.04
+            target: linux-x64
+            rust_target: x86_64-unknown-linux-gnu.2.28
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+            rust_target: aarch64-unknown-linux-gnu.2.28
+          - runner: windows-2025
+            target: windows-x64
+          - runner: ubuntu-24.04
+            target: linux-x64
+            rust_target: x86_64-unknown-linux-gnu.2.28
+            flavor: plugin
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+            rust_target: aarch64-unknown-linux-gnu.2.28
+            flavor: plugin
+          - runner: windows-2025
+            target: windows-x64
+            flavor: plugin
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ github.ref_name }}
+      # The Jellyfin plugin serves Foreseerr under a sub-path, which the
+      # frontend build has to know.
+      FORESEERR_BASE_PATH: ${{ matrix.flavor == 'plugin' && '/Foreseerr' || '' }}
+      COMMIT_TAG: ${{ github.sha }}
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        env:
+          CI: true
+        run: bun install --frozen-lockfile
+
+      - name: Install the pinned Rust toolchain
+        working-directory: backend-rs
+        run: rustup toolchain install
+
+      - name: Install zig and cargo-zigbuild
+        if: matrix.rust_target
+        run: |
+          pip3 install --user ziglang==0.17.0
+          cargo install --locked cargo-zigbuild@0.24.0
+
+      - name: Build the runtime
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: scripts/build-runtime.sh "$RUNNER_TEMP/foreseerr" ${RUST_TARGET:+--target "$RUST_TARGET"}
+
+      - name: Package and upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          name="foreseerr-${{ matrix.flavor && format('{0}-', matrix.flavor) || '' }}${{ matrix.target }}"
+          cd "$RUNNER_TEMP/foreseerr"
+          if [[ "${{ matrix.target }}" == windows-* ]]; then
+            archive="$RUNNER_TEMP/$name.zip"
+            7z a -tzip "$archive" . >/dev/null
+          else
+            archive="$RUNNER_TEMP/$name.tar.gz"
+            tar -czf "$archive" .
+          fi
+          cd "$RUNNER_TEMP"
+          sha256sum "$(basename "$archive")" > "$archive.sha256"
+          gh release upload "$VERSION" "$archive" "$archive.sha256" --repo "$GITHUB_REPOSITORY" --clobber
 
   build:
     name: Build (${{ matrix.arch }})
@@ -409,100 +481,23 @@ jobs:
             --certificate-identity "https://github.com/${{ github.workflow_ref }}" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" > /dev/null
 
-  compile-binaries:
-    name: Compile standalone binaries
-    needs: quality-gate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      VERSION: ${{ github.ref_name }}
-      COMMIT_TAG: ${{ github.sha }}
-    steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.ref }}
-          persist-credentials: false
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-
-      - name: Install dependencies
-        env:
-          CI: true
-        run: bun install --frozen-lockfile
-
-      - name: Compile linux-x64, linux-arm64, and windows-x64
-        run: bun run compile
-
-      - name: Prove linux-x64 boot, SQLite, SPA, and /api/v1/status
-        run: bun run compile:prove
-
-      - name: Compress binaries
-        run: bun run compile:pack
-
-      - name: Upload packed binary artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: foreseerr-binaries-${{ env.VERSION }}
-          path: |
-            dist/bin/foreseerr-linux-x64.tar.gz
-            dist/bin/foreseerr-linux-arm64.tar.gz
-            dist/bin/foreseerr-windows-x64.zip
-            dist/bin/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 1
-
   publish-release:
     name: Publish release
-    needs: [create-draft-release, compile-binaries, quality-gate, sign]
+    needs: [create-draft-release, runtime, quality-gate, sign]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
       VERSION: ${{ github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Download compiled binaries
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: foreseerr-binaries-${{ env.VERSION }}
-          path: dist/bin
-
-      - name: Download launcher.js server archive
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: foreseerr-server-${{ env.VERSION }}
-          path: dist/server-artifact
-
-      - name: Upload archives and checksums
+      - name: Upload combined checksums
         run: |
           set -euo pipefail
-          mkdir -p dist/bin
-          cp dist/server-artifact/foreseerr-server.tar.gz dist/bin/
-          cd dist/bin
-          if [[ -f ../server-artifact/SHA256SUMS ]]; then
-            grep 'foreseerr-server.tar.gz' ../server-artifact/SHA256SUMS >> SHA256SUMS || true
-          fi
-          if ! grep -q 'foreseerr-server.tar.gz' SHA256SUMS; then
-            sha256sum foreseerr-server.tar.gz >> SHA256SUMS
-          fi
-          sort -u -o SHA256SUMS SHA256SUMS
-          gh release upload "${{ env.VERSION }}" \
-            foreseerr-linux-x64.tar.gz \
-            foreseerr-linux-arm64.tar.gz \
-            foreseerr-windows-x64.zip \
-            foreseerr-server.tar.gz \
-            SHA256SUMS \
-            --repo "${{ github.repository }}" \
-            --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          mkdir -p sums && cd sums
+          gh release download "$VERSION" --pattern '*.sha256' --repo "$GITHUB_REPOSITORY"
+          cat ./*.sha256 | sort -k2 > SHA256SUMS
+          gh release upload "$VERSION" SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Publish release
-        run: gh release edit "${{ env.VERSION }}" --draft=false --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$VERSION" --draft=false --repo "$GITHUB_REPOSITORY"

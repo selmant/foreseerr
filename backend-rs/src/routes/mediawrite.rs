@@ -160,7 +160,7 @@ fn set_status<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 edit.set_season_status(number, is4k, M_AVAILABLE);
             }
         }
-        let downloads = try_forward!(downloads_for(ctx, &edit.before).await);
+        let downloads = downloads_for(&edit.before);
         if let Err(e) = mediasave::save(&mediasave::lc_of(ctx), &mut edit).await {
             tracing::error!("Saving media {id} failed: {e:#}");
             return ctx.error(500, &format!("{e:#}"));
@@ -170,17 +170,12 @@ fn set_status<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 }
 
 /// The download tracker's items when the row's `@AfterLoad` reads them.
-pub(super) async fn downloads_for(ctx: &Ready<'_>, media: &MediaRow) -> Result<Downloads, String> {
-    if !tracks_downloads(media) {
-        return Ok(Downloads::default());
+pub(super) fn downloads_for(media: &MediaRow) -> Downloads {
+    if tracks_downloads(media) {
+        Downloads::current()
+    } else {
+        Downloads::default()
     }
-    Downloads::fetch(
-        &ctx.state.internal,
-        &ctx.state.env.node_url,
-        ctx.settings.api_key(),
-    )
-    .await
-    .map_err(|e| format!("reading the download tracker failed: {e:#}"))
 }
 
 /// The `is4k` query of `DELETE /media/{id}/file`, as the validator lets it
