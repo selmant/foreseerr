@@ -132,6 +132,9 @@ struct Layer {
 
 static LAYER: LazyLock<Mutex<Layer>> = LazyLock::new(|| Mutex::new(Layer::default()));
 static SEEDING: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
+/// One dataset ingests at a time, so the pauses between its slices leave
+/// the write lock free for everyone else.
+static INGESTING: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
 static RUN_IDS: AtomicU64 = AtomicU64::new(0);
 
 fn toggle_of(key: &str) -> u64 {
@@ -367,12 +370,12 @@ pub async fn write_generation(
     generation: i64,
     edges: &[mappingpacks::EdgeRow],
 ) -> Result<()> {
+    let _ingesting = INGESTING.lock().await;
     delete_generation(db, key, true, generation).await?;
     let total = edges.len();
     let mut done = 0_usize;
     let mut chunks = edges.chunks(INSERT_CHUNK).peekable();
     while chunks.peek().is_some() {
-        tokio::task::yield_now().await;
         // One `dataSource.transaction` per slice of at most
         // `INGEST_SLICE_MSEC`, then the progress.
         let mut tx = crate::jobs::syncutil::Tx::begin(db).await?;
@@ -386,6 +389,12 @@ pub async fn write_generation(
             }
         }
         tx.commit().await?;
+        // Node's single connection queued every other query between
+        // slices. Here the others wait in SQLite's busy handler, which
+        // only retries every 100 ms or so; beginning the next slice at
+        // once would starve them (sign-ins failed with "database is
+        // locked" during a first import), so leave the lock free a while.
+        tokio::time::sleep(INGEST_PAUSE).await;
         update_pack_progress(
             key,
             &[
@@ -400,6 +409,9 @@ pub async fn write_generation(
 
 /// `INGEST_SLICE_MSEC`.
 const INGEST_SLICE: Duration = Duration::from_millis(50);
+
+/// How long the write lock stays free between ingest slices.
+const INGEST_PAUSE: Duration = Duration::from_millis(50);
 
 /// The multi-row insert of one chunk of edges.
 fn edge_insert(key: &str, generation: i64, chunk: &[mappingpacks::EdgeRow]) -> (String, Vec<Bind>) {

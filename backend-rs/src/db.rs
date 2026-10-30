@@ -65,7 +65,9 @@ impl Db {
             .filename(&path)
             .create_if_missing(false)
             .journal_mode(SqliteJournalMode::Wal)
-            .busy_timeout(Duration::from_secs(5));
+            // Node's one connection made every query wait its turn; with
+            // a pool, a writer waits here for another's transaction.
+            .busy_timeout(Duration::from_secs(30));
         let pool = SqlitePoolOptions::new()
             .max_connections(4)
             .connect_lazy_with(options);
