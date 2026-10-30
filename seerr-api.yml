@@ -11403,7 +11403,7 @@ paths:
   /media/{mediaId}/servarr/context:
     get:
       summary: Get mapped Servarr management context
-      description: Returns the mapped Radarr movie or Sonarr seasons and episodes. Requires `MANAGE_REQUESTS`.
+      description: Returns the mapped Radarr movie or Sonarr seasons and episodes, with the series' episode order (`seasonOrder`, `{ type, name }`) where Sonarr reports one (Sonarr 5). Requires `MANAGE_REQUESTS`.
       tags:
         - media
       parameters:

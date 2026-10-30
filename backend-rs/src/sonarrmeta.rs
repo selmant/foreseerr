@@ -188,6 +188,32 @@ pub fn language_list(languages: &Value) -> Vec<Value> {
         .collect()
 }
 
+/// A series' episode order (`seasonType`) and its display name from
+/// `seasonTypes`, when Sonarr reports one (Sonarr 5).
+#[must_use]
+pub fn season_order(series: &Value) -> Option<Value> {
+    let kind = series
+        .get("seasonType")
+        .and_then(Value::as_str)
+        .filter(|t| !t.is_empty())?;
+    let name = series
+        .get("seasonTypes")
+        .and_then(Value::as_array)
+        .and_then(|types| {
+            types
+                .iter()
+                .find(|t| t.get("type").and_then(Value::as_str) == Some(kind))
+        })
+        .and_then(|t| t.get("name"))
+        .and_then(Value::as_str);
+    let mut out = Map::new();
+    out.insert(String::from("type"), Value::from(kind));
+    if let Some(name) = name {
+        out.insert(String::from("name"), Value::from(name));
+    }
+    Some(Value::Object(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,6 +246,26 @@ mod tests {
             json!([{"id": 1, "name": "English"}, {"id": 8, "name": "Japanese"}])
         );
         assert!(language_list(&json!("<html>")).is_empty());
+    }
+
+    #[test]
+    fn season_orders() {
+        let series = json!({
+            "seasonType": "dvd",
+            "seasonTypes": [
+                {"name": "Aired Order", "type": "official"},
+                {"name": "DVD Order", "type": "dvd"}
+            ]
+        });
+        assert_eq!(
+            season_order(&series),
+            Some(json!({"type": "dvd", "name": "DVD Order"}))
+        );
+        assert_eq!(
+            season_order(&json!({"seasonType": "official"})),
+            Some(json!({"type": "official"}))
+        );
+        assert_eq!(season_order(&json!({"title": "v4"})), None, "Sonarr 4");
     }
 
     #[test]

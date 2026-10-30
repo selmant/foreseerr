@@ -13,6 +13,8 @@ export type ServarrContext = {
   service: { type: string; name: string };
   seasons?: { seasonNumber: number; episodes: Episode[] }[];
   nativeUrl?: string;
+  /** The series' episode order, where Sonarr reports one (Sonarr 5). */
+  seasonOrder?: { type: string; name?: string };
 };
 
 export type ImportSource = { token: string; kind: 'queue'; label: string };
