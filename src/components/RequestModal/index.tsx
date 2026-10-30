@@ -2,10 +2,10 @@ import CollectionRequestModal from '@app/components/RequestModal/CollectionReque
 import MovieRequestModal from '@app/components/RequestModal/MovieRequestModal';
 import TvRequestModal from '@app/components/RequestModal/TvRequestModal';
 import { Transition } from '@headlessui/react';
-import type { MediaStatus } from '@server/constants/media';
-import type { MediaRequest } from '@server/entity/MediaRequest';
-import type { NonFunctionProperties } from '@server/interfaces/api/common';
-import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
+import type { MediaStatus } from '@shared/constants/media';
+import type { MediaRequest } from '@shared/entity/MediaRequest';
+import type { NonFunctionProperties } from '@shared/interfaces/api/common';
+import type { EpisodeSelection } from '@shared/interfaces/api/requestInterfaces';
 
 interface RequestModalProps {
   show: boolean;

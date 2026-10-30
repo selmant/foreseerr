@@ -23,8 +23,8 @@ import {
   PencilIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
-import { DiscoverSliderType } from '@server/constants/discover';
-import type DiscoverSlider from '@server/entity/DiscoverSlider';
+import { DiscoverSliderType } from '@shared/constants/discover';
+import type DiscoverSlider from '@shared/entity/DiscoverSlider';
 import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
 import { useDrag, useDrop } from 'react-aria';

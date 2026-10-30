@@ -14,11 +14,11 @@ import type {
   TmdbCompanySearchResponse,
   TmdbGenre,
   TmdbKeywordSearchResponse,
-} from '@server/api/themoviedb/interfaces';
-import { DiscoverSliderType } from '@server/constants/discover';
-import type DiscoverSlider from '@server/entity/DiscoverSlider';
-import type { GenreSliderItem } from '@server/interfaces/api/discoverInterfaces';
-import type { Keyword, ProductionCompany } from '@server/models/common';
+} from '@shared/api/themoviedb/interfaces';
+import { DiscoverSliderType } from '@shared/constants/discover';
+import type DiscoverSlider from '@shared/entity/DiscoverSlider';
+import type { GenreSliderItem } from '@shared/interfaces/api/discoverInterfaces';
+import type { Keyword, ProductionCompany } from '@shared/models/common';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { useEffect, useState } from 'react';

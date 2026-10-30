@@ -7,7 +7,7 @@ import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR from 'swr';

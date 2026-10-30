@@ -8,7 +8,7 @@ import {
   countActiveLibraryBrowseFilters,
   toggleLibraryBrowseGenre,
   type ParsedLibraryBrowseQuery,
-} from '@server/lib/libraryBrowseQuery';
+} from '@shared/lib/libraryBrowseQuery';
 import { useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 

@@ -8,8 +8,8 @@ import { ArrowDownIcon } from '@heroicons/react/24/solid';
 import type {
   TmdbKeyword,
   TmdbKeywordSearchResponse,
-} from '@server/api/themoviedb/interfaces';
-import type { Keyword } from '@server/models/common';
+} from '@shared/api/themoviedb/interfaces';
+import type { Keyword } from '@shared/models/common';
 import axios from 'axios';
 import { useFormikContext } from 'formik';
 import {

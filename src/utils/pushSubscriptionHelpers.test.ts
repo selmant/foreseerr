@@ -1,4 +1,4 @@
-import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
+import type { PublicSettingsResponse } from '@shared/interfaces/api/settingsInterfaces';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import { verifyAndResubscribePushSubscription } from './pushSubscriptionHelpers';

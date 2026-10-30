@@ -17,7 +17,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/solid';
-import type { RequestResultsResponse } from '@server/interfaces/api/requestInterfaces';
+import type { RequestResultsResponse } from '@shared/interfaces/api/requestInterfaces';
 import { useEffect, useMemo } from 'react';
 import { useIntl } from 'react-intl';
 import { Link, useLocation, useNavigate } from 'react-router';

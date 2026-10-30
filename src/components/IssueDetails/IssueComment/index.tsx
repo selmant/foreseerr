@@ -12,7 +12,7 @@ import {
   Transition,
 } from '@headlessui/react';
 import { EllipsisVerticalIcon } from '@heroicons/react/24/solid';
-import type { default as IssueCommentType } from '@server/entity/IssueComment';
+import type { default as IssueCommentType } from '@shared/entity/IssueComment';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { Fragment, useState } from 'react';

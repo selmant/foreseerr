@@ -28,7 +28,7 @@ import {
   XCircleIcon,
 } from '@heroicons/react/24/outline';
 import Datepicker from '@seerr-team/react-tailwindcss-datepicker';
-import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
+import type { DiscoverFilterDefaults } from '@shared/lib/discover/filterDefaults';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';

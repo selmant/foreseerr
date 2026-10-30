@@ -19,18 +19,18 @@ import {
   DocumentMinusIcon,
   TrashIcon,
 } from '@heroicons/react/24/solid';
-import { IssueStatus } from '@server/constants/issue';
+import { IssueStatus } from '@shared/constants/issue';
 import {
   MediaRequestStatus,
   MediaStatus,
   MediaType,
-} from '@server/constants/media';
-import { MediaServerType } from '@server/constants/server';
-import type { MediaWatchDataResponse } from '@server/interfaces/api/mediaInterfaces';
-import type { DownloadingItem } from '@server/lib/downloadtracker';
-import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+} from '@shared/constants/media';
+import { MediaServerType } from '@shared/constants/server';
+import type { MediaWatchDataResponse } from '@shared/interfaces/api/mediaInterfaces';
+import type { DownloadingItem } from '@shared/lib/downloadtracker';
+import type { RadarrSettings, SonarrSettings } from '@shared/lib/settings';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import axios from 'axios';
 import { useId } from 'react';
 import { useIntl } from 'react-intl';

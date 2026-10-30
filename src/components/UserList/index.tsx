@@ -32,9 +32,9 @@ import {
   PencilIcon,
   UserPlusIcon,
 } from '@heroicons/react/24/solid';
-import { MediaServerType } from '@server/constants/server';
-import type { UserResultsResponse } from '@server/interfaces/api/userInterfaces';
-import { hasPermission } from '@server/lib/permissions';
+import { MediaServerType } from '@shared/constants/server';
+import type { UserResultsResponse } from '@shared/interfaces/api/userInterfaces';
+import { hasPermission } from '@shared/lib/permissions';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { useEffect, useRef, useState } from 'react';

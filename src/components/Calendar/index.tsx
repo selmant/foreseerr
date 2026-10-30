@@ -18,8 +18,8 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { FunnelIcon } from '@heroicons/react/24/solid';
-import type { CalendarItem } from '@server/interfaces/api/calendarInterfaces';
-import { toCalendarDateKey } from '@server/lib/releases/calendarDateKey';
+import type { CalendarItem } from '@shared/interfaces/api/calendarInterfaces';
+import { toCalendarDateKey } from '@shared/lib/releases/calendarDateKey';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';

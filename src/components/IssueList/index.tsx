@@ -14,7 +14,7 @@ import {
   ChevronRightIcon,
   FunnelIcon,
 } from '@heroicons/react/24/solid';
-import type { IssueResultsResponse } from '@server/interfaces/api/issueInterfaces';
+import type { IssueResultsResponse } from '@shared/interfaces/api/issueInterfaces';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { useLocation, useNavigate } from 'react-router';

@@ -4,7 +4,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import useDiscover from '@app/hooks/useDiscover';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { TvResult } from '@server/models/Search';
+import type { TvResult } from '@shared/models/Search';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.DiscoverTvUpcoming', {

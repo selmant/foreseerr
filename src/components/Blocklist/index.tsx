@@ -31,9 +31,9 @@ import {
 import type {
   BlocklistItem,
   BlocklistResultsResponse,
-} from '@server/interfaces/api/blocklistInterfaces';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+} from '@shared/interfaces/api/blocklistInterfaces';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import axios from 'axios';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { useInView } from 'react-intersection-observer';

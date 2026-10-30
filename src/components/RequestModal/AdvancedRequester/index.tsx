@@ -19,9 +19,9 @@ import { CheckIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
 import type {
   ServiceCommonServer,
   ServiceCommonServerWithDetails,
-} from '@server/interfaces/api/serviceInterfaces';
-import type { UserResultsResponse } from '@server/interfaces/api/userInterfaces';
-import { hasPermission } from '@server/lib/permissions';
+} from '@shared/interfaces/api/serviceInterfaces';
+import type { UserResultsResponse } from '@shared/interfaces/api/userInterfaces';
+import { hasPermission } from '@shared/lib/permissions';
 import { isEqual } from 'lodash';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';

@@ -1,4 +1,4 @@
-import type { DownloadingItem } from '@server/lib/downloadtracker';
+import type { DownloadingItem } from '@shared/lib/downloadtracker';
 
 type RequestDownloadScope =
   | { type: 'movie' }

@@ -1,5 +1,5 @@
-import { MediaStatus } from '@server/constants/media';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import { MediaStatus } from '@shared/constants/media';
+import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';

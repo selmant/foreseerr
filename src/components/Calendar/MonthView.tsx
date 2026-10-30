@@ -4,7 +4,7 @@ import {
   sameDay,
   toLocalDate,
 } from '@app/components/Calendar/calendarUtils';
-import type { CalendarItem } from '@server/interfaces/api/calendarInterfaces';
+import type { CalendarItem } from '@shared/interfaces/api/calendarInterfaces';
 import { useIntl } from 'react-intl';
 import { CalendarChip } from './CalendarItemPresentation';
 import messages from './calendarMessages';

@@ -3,7 +3,7 @@ import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
-import { ApiErrorCode } from '@server/constants/error';
+import { ApiErrorCode } from '@shared/constants/error';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { useIntl } from 'react-intl';

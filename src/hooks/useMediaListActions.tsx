@@ -1,7 +1,7 @@
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import type { MediaType } from '@server/constants/media';
+import type { MediaType } from '@shared/constants/media';
 import axios from 'axios';
 import { useCallback, useState, type ReactNode } from 'react';
 import { useIntl } from 'react-intl';

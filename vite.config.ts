@@ -53,7 +53,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@app': path.resolve(__dirname, 'src'),
-        '@server': path.resolve(__dirname, 'server'),
+        '@shared': path.resolve(__dirname, 'shared'),
         // The package "module" entry is ESM that still calls require() for
         // dayjs locales/plugins. Force the CJS build so Rollup rewrites them.
         '@seerr-team/react-tailwindcss-datepicker': path.resolve(

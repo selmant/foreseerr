@@ -4,7 +4,7 @@ import useLocale from '@app/hooks/useLocale';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import { LanguageIcon } from '@heroicons/react/24/solid';
-import type { AvailableLocale } from '@server/types/languages';
+import type { AvailableLocale } from '@shared/types/languages';
 import { useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 

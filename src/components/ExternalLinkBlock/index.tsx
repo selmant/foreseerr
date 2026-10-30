@@ -10,8 +10,8 @@ import TraktLogo from '@app/assets/services/trakt.svg';
 import TvdbLogo from '@app/assets/services/tvdb.svg';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
-import { MediaType } from '@server/constants/media';
-import { MediaServerType } from '@server/constants/server';
+import { MediaType } from '@shared/constants/media';
+import { MediaServerType } from '@shared/constants/server';
 
 type ExternalLinkType = 'movie' | 'tv' | 'person';
 

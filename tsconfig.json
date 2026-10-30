@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "ES2021",
     "lib": ["dom", "dom.iterable", "esnext"],
+    "types": ["node"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -20,6 +21,7 @@
     "incremental": true,
     "paths": {
       "@server/*": ["./server/*"],
+      "@shared/*": ["./shared/*"],
       "@app/*": ["./src/*"]
     }
   },
@@ -27,7 +29,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/vite-env.d.ts",
-    "server/types/bun-runtime.d.ts"
+    "shared/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

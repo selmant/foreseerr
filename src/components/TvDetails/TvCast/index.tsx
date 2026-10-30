@@ -5,7 +5,7 @@ import PersonCard from '@app/components/PersonCard';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { TvDetails } from '@server/models/Tv';
+import type { TvDetails } from '@shared/models/Tv';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR from 'swr';

@@ -1,6 +1,6 @@
-import { DEFAULT_RATING_BADGE_SETTINGS } from '@server/constants/ratingBadges';
-import { MediaServerType } from '@server/constants/server';
-import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
+import { DEFAULT_RATING_BADGE_SETTINGS } from '@shared/constants/ratingBadges';
+import { MediaServerType } from '@shared/constants/server';
+import type { PublicSettingsResponse } from '@shared/interfaces/api/settingsInterfaces';
 import React from 'react';
 import useSWR from 'swr';
 

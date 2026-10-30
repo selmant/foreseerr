@@ -1,7 +1,7 @@
-import { UserType } from '@server/constants/user';
-import type { PermissionCheckOptions } from '@server/lib/permissions';
-import { hasPermission, Permission } from '@server/lib/permissions';
-import type { NotificationAgentKey } from '@server/lib/settings';
+import { UserType } from '@shared/constants/user';
+import type { PermissionCheckOptions } from '@shared/lib/permissions';
+import { hasPermission, Permission } from '@shared/lib/permissions';
+import type { NotificationAgentKey } from '@shared/lib/settings';
 import { useLocation } from 'react-router';
 import type { MutatorCallback } from 'swr';
 import useSWR from 'swr';

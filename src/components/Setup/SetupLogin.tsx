@@ -3,7 +3,7 @@ import PlexLoginButton from '@app/components/Login/PlexLoginButton';
 import JellyfinSetup from '@app/components/Setup/JellyfinSetup';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType } from '@shared/constants/server';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { FormattedMessage } from 'react-intl';

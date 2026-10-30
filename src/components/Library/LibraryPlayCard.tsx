@@ -1,6 +1,6 @@
 import LibraryPosterCard from '@app/components/Library/LibraryPosterCard';
 import LibraryResumeCard from '@app/components/Library/LibraryResumeCard';
-import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
+import type { LibraryTitle } from '@shared/interfaces/api/libraryInterfaces';
 
 interface LibraryPlayCardProps {
   item: LibraryTitle;

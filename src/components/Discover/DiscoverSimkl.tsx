@@ -15,7 +15,7 @@ import defineMessages from '@app/utils/defineMessages';
 import type {
   WatchlistItem,
   WatchlistResponse,
-} from '@server/interfaces/api/discoverInterfaces';
+} from '@shared/interfaces/api/discoverInterfaces';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 

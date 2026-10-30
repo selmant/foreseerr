@@ -5,7 +5,7 @@ import {
   serializeLibraryBrowseQuery,
   type LibraryDensity,
   type ParsedLibraryBrowseQuery,
-} from '@server/lib/libraryBrowseQuery';
+} from '@shared/lib/libraryBrowseQuery';
 import type { ParsedUrlQuery } from 'querystring';
 
 export type LibraryBrowsePageState = ParsedLibraryBrowseQuery & {

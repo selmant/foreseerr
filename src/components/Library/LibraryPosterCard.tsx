@@ -11,7 +11,7 @@ import { useTitleCardBatch } from '@app/components/TitleCard/TitleCardBatchConte
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import defineMessages from '@app/utils/defineMessages';
 import { CheckBadgeIcon, PlayIcon } from '@heroicons/react/24/solid';
-import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
+import type { LibraryTitle } from '@shared/interfaces/api/libraryInterfaces';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Library.LibraryPosterCard', {

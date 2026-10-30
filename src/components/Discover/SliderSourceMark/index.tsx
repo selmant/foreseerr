@@ -3,7 +3,7 @@ import MdblistLogo from '@app/assets/services/mdblist.svg';
 import SimklLogo from '@app/assets/services/simkl.svg';
 import TraktLogo from '@app/assets/services/trakt.svg';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
-import { DiscoverSliderType } from '@server/constants/discover';
+import { DiscoverSliderType } from '@shared/constants/discover';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import { Link } from 'react-router';
 

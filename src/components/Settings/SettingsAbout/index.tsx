@@ -11,7 +11,7 @@ import defineMessages from '@app/utils/defineMessages';
 import type {
   SettingsAboutResponse,
   StatusResponse,
-} from '@server/interfaces/api/settingsInterfaces';
+} from '@shared/interfaces/api/settingsInterfaces';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 

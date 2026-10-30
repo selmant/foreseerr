@@ -3,8 +3,8 @@ import type {
   CalendarResponse,
   CalendarScope,
   CalendarSource,
-} from '@server/interfaces/api/calendarInterfaces';
-import { toCalendarDateKey } from '@server/lib/releases/calendarDateKey';
+} from '@shared/interfaces/api/calendarInterfaces';
+import { toCalendarDateKey } from '@shared/lib/releases/calendarDateKey';
 import useSWR from 'swr';
 
 export interface CalendarQuery {

@@ -4,7 +4,7 @@ import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType } from '@shared/constants/server';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { useState } from 'react';

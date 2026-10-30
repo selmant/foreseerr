@@ -2,7 +2,7 @@ import type {
   CalendarMediaType,
   CalendarScope,
   CalendarSource,
-} from '@server/interfaces/api/calendarInterfaces';
+} from '@shared/interfaces/api/calendarInterfaces';
 
 export type CalendarView = 'month' | 'agenda';
 

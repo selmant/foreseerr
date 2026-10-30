@@ -12,8 +12,8 @@ import {
   PlusIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline';
-import { DISCORD_SNOWFLAKE_REGEX } from '@server/constants/discord';
-import type { UserSettingsNotificationsResponse } from '@server/interfaces/api/userSettingsInterfaces';
+import { DISCORD_SNOWFLAKE_REGEX } from '@shared/constants/discord';
+import type { UserSettingsNotificationsResponse } from '@shared/interfaces/api/userSettingsInterfaces';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { useIntl } from 'react-intl';

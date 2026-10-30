@@ -9,8 +9,8 @@ import {
   QrCodeIcon,
 } from '@heroicons/react/24/outline';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
-import { ApiErrorCode } from '@server/constants/error';
-import { MediaServerType, ServerType } from '@server/constants/server';
+import { ApiErrorCode } from '@shared/constants/error';
+import { MediaServerType, ServerType } from '@shared/constants/server';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
 import { useCallback, useState } from 'react';

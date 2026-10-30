@@ -22,8 +22,8 @@ import {
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid';
-import { MediaRequestStatus } from '@server/constants/media';
-import type { MediaRequest } from '@server/entity/MediaRequest';
+import { MediaRequestStatus } from '@shared/constants/media';
+import type { MediaRequest } from '@shared/entity/MediaRequest';
 import axios from 'axios';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';

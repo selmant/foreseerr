@@ -4,13 +4,13 @@ import TitleCard from '@app/components/TitleCard';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
-import { MediaStatus } from '@server/constants/media';
-import { Permission } from '@server/lib/permissions';
+import { MediaStatus } from '@shared/constants/media';
+import { Permission } from '@shared/lib/permissions';
 import type {
   MovieResult,
   PersonResult,
   TvResult,
-} from '@server/models/Search';
+} from '@shared/models/Search';
 import { useEffect } from 'react';
 import { Link } from 'react-router';
 import useSWRInfinite from 'swr/infinite';

@@ -7,8 +7,8 @@ import useRouteQuery from '@app/hooks/useRouteQuery';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import type { MovieResult } from '@server/models/Search';
-import type { ProductionCompany } from '@server/models/common';
+import type { MovieResult } from '@shared/models/Search';
+import type { ProductionCompany } from '@shared/models/common';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Discover.DiscoverStudio', {

@@ -7,7 +7,7 @@ import {
   MinusSmallIcon,
   TrashIcon,
 } from '@heroicons/react/24/solid';
-import { MediaStatus } from '@server/constants/media';
+import { MediaStatus } from '@shared/constants/media';
 
 interface StatusBadgeMiniProps {
   status: MediaStatus;

@@ -1,5 +1,5 @@
-import type { MediaRequest } from '@server/entity/MediaRequest';
-import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
+import type { MediaRequest } from '@shared/entity/MediaRequest';
+import type { EpisodeSelection } from '@shared/interfaces/api/requestInterfaces';
 import axios from 'axios';
 import { mutate } from 'swr';
 

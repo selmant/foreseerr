@@ -44,8 +44,8 @@ import {
 import {
   DiscoverSliderType,
   retiredDiscoverSliderTypes,
-} from '@server/constants/discover';
-import type DiscoverSlider from '@server/entity/DiscoverSlider';
+} from '@shared/constants/discover';
+import type DiscoverSlider from '@shared/entity/DiscoverSlider';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';

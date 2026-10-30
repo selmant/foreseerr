@@ -3,7 +3,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import useLibraryPlay from '@app/components/Library/useLibraryPlay';
 import defineMessages from '@app/utils/defineMessages';
 import { PlayIcon } from '@heroicons/react/24/solid';
-import type { LibraryTitle } from '@server/interfaces/api/libraryInterfaces';
+import type { LibraryTitle } from '@shared/interfaces/api/libraryInterfaces';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Library.LibraryResumeCard', {

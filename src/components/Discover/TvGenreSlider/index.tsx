@@ -3,7 +3,7 @@ import GenreCard from '@app/components/GenreCard';
 import Slider from '@app/components/Slider';
 import defineMessages from '@app/utils/defineMessages';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
-import type { GenreSliderItem } from '@server/interfaces/api/discoverInterfaces';
+import type { GenreSliderItem } from '@shared/interfaces/api/discoverInterfaces';
 import React from 'react';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';

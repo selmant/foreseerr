@@ -2,16 +2,16 @@ import type { DVRTestResponse } from '@app/components/Settings/SettingsServices'
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { PencilIcon, TrashIcon } from '@heroicons/react/24/solid';
-import type { TmdbGenre } from '@server/api/themoviedb/interfaces';
-import type OverrideRule from '@server/entity/OverrideRule';
-import type { User } from '@server/entity/User';
+import type { TmdbGenre } from '@shared/api/themoviedb/interfaces';
+import type OverrideRule from '@shared/entity/OverrideRule';
+import type { User } from '@shared/entity/User';
 import type {
   DVRSettings,
   Language,
   RadarrSettings,
   SonarrSettings,
-} from '@server/lib/settings';
-import type { Keyword } from '@server/models/common';
+} from '@shared/lib/settings';
+import type { Keyword } from '@shared/models/common';
 import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';

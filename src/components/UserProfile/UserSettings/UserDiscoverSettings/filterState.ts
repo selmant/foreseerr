@@ -1,5 +1,5 @@
 import { genreColorMap } from '@app/components/Discover/constants';
-import type { DiscoverFilterDefaults } from '@server/lib/discover/filterDefaults';
+import type { DiscoverFilterDefaults } from '@shared/lib/discover/filterDefaults';
 import { useEffect, useRef, useState } from 'react';
 
 export function discoverDefaultsEqual(

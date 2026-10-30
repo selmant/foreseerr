@@ -29,14 +29,14 @@ import {
   CheckBadgeIcon as CheckBadgeSolid,
   PlayIcon,
 } from '@heroicons/react/24/solid';
-import { MediaRequestStatus } from '@server/constants/media';
+import { MediaRequestStatus } from '@shared/constants/media';
 import type {
   LibraryEpisode,
   LibrarySeasonEpisodesResponse,
-} from '@server/interfaces/api/libraryInterfaces';
-import type { EpisodeSelection } from '@server/interfaces/api/requestInterfaces';
-import type { QuotaResponse } from '@server/interfaces/api/userInterfaces';
-import type { SeasonWithEpisodes } from '@server/models/Tv';
+} from '@shared/interfaces/api/libraryInterfaces';
+import type { EpisodeSelection } from '@shared/interfaces/api/requestInterfaces';
+import type { QuotaResponse } from '@shared/interfaces/api/userInterfaces';
+import type { SeasonWithEpisodes } from '@shared/models/Tv';
 import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';

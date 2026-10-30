@@ -1,7 +1,7 @@
 import Spinner from '@app/assets/spinner.svg';
 import Tag from '@app/components/Common/Tag';
 import { BuildingOffice2Icon } from '@heroicons/react/24/outline';
-import type { ProductionCompany, TvNetwork } from '@server/models/common';
+import type { ProductionCompany, TvNetwork } from '@shared/models/common';
 import useSWR from 'swr';
 
 type CompanyTagProps = {

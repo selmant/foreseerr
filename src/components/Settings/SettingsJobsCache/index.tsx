@@ -15,13 +15,13 @@ import { formatBytes } from '@app/utils/numberHelpers';
 import { Transition } from '@headlessui/react';
 import { PlayIcon, StopIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { PencilIcon } from '@heroicons/react/24/solid';
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType } from '@shared/constants/server';
 import type {
   CacheItem,
   CacheResponse,
   ImageCacheSource,
-} from '@server/interfaces/api/settingsInterfaces';
-import type { JobId } from '@server/lib/settings';
+} from '@shared/interfaces/api/settingsInterfaces';
+import type { JobId } from '@shared/lib/settings';
 import axios from 'axios';
 import cronstrue from 'cronstrue/i18n';
 import humanizeDuration from 'humanize-duration';

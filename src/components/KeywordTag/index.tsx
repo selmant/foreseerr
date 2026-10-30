@@ -1,6 +1,6 @@
 import Spinner from '@app/assets/spinner.svg';
 import Tag from '@app/components/Common/Tag';
-import type { Keyword } from '@server/models/common';
+import type { Keyword } from '@shared/models/common';
 import useSWR from 'swr';
 
 type KeywordTagProps = {

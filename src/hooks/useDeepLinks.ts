@@ -1,5 +1,5 @@
 import useSettings from '@app/hooks/useSettings';
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType } from '@shared/constants/server';
 import { useEffect, useState } from 'react';
 
 interface useDeepLinksProps {

@@ -8,7 +8,7 @@ import {
   ArrowPathIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
-import type { WatchlistItem } from '@server/interfaces/api/discoverInterfaces';
+import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';

@@ -4,7 +4,7 @@ import type {
   CalendarMediaType,
   CalendarScope,
   CalendarSource,
-} from '@server/interfaces/api/calendarInterfaces';
+} from '@shared/interfaces/api/calendarInterfaces';
 import { useIntl } from 'react-intl';
 import messages from './calendarMessages';
 import type { CalendarFilterState } from './calendarUtils';

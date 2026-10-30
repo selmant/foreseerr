@@ -14,10 +14,10 @@ import {
   InformationCircleIcon,
   PlayIcon,
 } from '@heroicons/react/24/outline';
-import type { CalendarItem } from '@server/interfaces/api/calendarInterfaces';
-import { hasServarrMapping } from '@server/lib/servarrMapping';
-import type { MovieDetails } from '@server/models/Movie';
-import type { TvDetails } from '@server/models/Tv';
+import type { CalendarItem } from '@shared/interfaces/api/calendarInterfaces';
+import { hasServarrMapping } from '@shared/lib/servarrMapping';
+import type { MovieDetails } from '@shared/models/Movie';
+import type { TvDetails } from '@shared/models/Tv';
 import { useEffect, useState, type MouseEvent } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR, { mutate } from 'swr';

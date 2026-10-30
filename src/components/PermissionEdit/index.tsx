@@ -4,7 +4,7 @@ import useSettings from '@app/hooks/useSettings';
 import type { User } from '@app/hooks/useUser';
 import { Permission } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType } from '@shared/constants/server';
 import { useIntl } from 'react-intl';
 
 export const messages = defineMessages('components.PermissionEdit', {

@@ -17,7 +17,7 @@ import { EyeSlashIcon } from '@heroicons/react/24/solid';
 import type {
   DiscoverItemSource,
   DiscoverMappingInfo,
-} from '@server/interfaces/api/discoverInterfaces';
+} from '@shared/interfaces/api/discoverInterfaces';
 import type { ComponentType, SVGProps } from 'react';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';

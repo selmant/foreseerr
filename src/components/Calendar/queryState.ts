@@ -1,4 +1,4 @@
-import { toCalendarDateKey } from '@server/lib/releases/calendarDateKey';
+import { toCalendarDateKey } from '@shared/lib/releases/calendarDateKey';
 import type { CalendarFilterState, CalendarView } from './calendarUtils';
 
 export type CalendarPageState = CalendarFilterState & {

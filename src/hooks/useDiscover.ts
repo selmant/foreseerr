@@ -1,6 +1,6 @@
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
-import { MediaStatus } from '@server/constants/media';
+import { MediaStatus } from '@shared/constants/media';
 import { useEffect } from 'react';
 import { useIntl } from 'react-intl';
 import useSWRInfinite from 'swr/infinite';
