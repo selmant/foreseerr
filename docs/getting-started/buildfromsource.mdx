@@ -14,8 +14,13 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 ### Prerequisites
-    - [Bun 1.4+](https://bun.sh/) (`>=1.4.0`)
+    - [Bun 1.4+](https://bun.sh/) (`>=1.4.0`) to build the web app
+    - [Rust](https://rustup.rs/) through `rustup`, plus a C toolchain (`build-essential` on Debian/Ubuntu, the Xcode command line tools on macOS, the Visual Studio C++ build tools on Windows). The first build installs the Rust version pinned in `backend-rs/rust-toolchain.toml`.
     - [Git](https://git-scm.com/downloads)
+
+:::tip
+On Linux x64/arm64 and Windows x64 you can skip the build: every [release](https://github.com/selmant/foreseerr/releases) attaches a ready-to-run server archive. Extract it, then start `foreseerr` (`foreseerr.exe` on Windows) from that directory with `NODE_ENV=production`; the service examples below work the same way with that directory as the working directory.
+:::
 
 ## Unix (Linux, macOS)
 ### Installation
@@ -26,13 +31,13 @@ sudo mkdir -p /opt/foreseerr && cd /opt/foreseerr
 2. Clone the Foreseerr repository. Use a release tag for production, or `develop` for the latest unreleased work:
 ```bash
 git clone https://github.com/selmant/foreseerr.git .
-git checkout v0.12.0
+git checkout v0.15.0
 ```
-3. Install the dependencies:
+3. Install the web app's dependencies:
 ```bash
-CYPRESS_INSTALL_BINARY=0 bun install --frozen-lockfile
+bun install --frozen-lockfile
 ```
-4. Build the project:
+4. Build the web app and the server:
 ```bash
 bun run build
 ```
@@ -40,6 +45,8 @@ bun run build
 ```bash
 bun run start
 ```
+
+The server is the single binary `backend-rs/target/release/foreseerr`. It reads `seerr-api.yml`, the web app in `dist/public/` and its `config/` directory from its working directory, so always start it from `/opt/foreseerr` (or set `FORESEERR_APP_ROOT=/opt/foreseerr`).
 
 :::info
 You can now access Foreseerr by visiting `http://localhost:5055` in your web browser.
@@ -57,17 +64,9 @@ PORT=5055
 
 ## specify on which interface to listen, by default Foreseerr listens on all interfaces
 #HOST=127.0.0.1
-
-## Uncomment if you want to force Node.js to resolve IPv4 before IPv6 (advanced users only)
-# FORCE_IPV4_FIRST=true
 ```
-2. Then run the following commands:
-```bash
-which bun
-```
-Copy the path to bun, it should be something like `/usr/bin/bun`.
 
-3. Create the systemd service file at `/etc/systemd/system/foreseerr.service`, using either `sudo systemctl edit --force --full foreseerr` or `sudo nano /etc/systemd/system/foreseerr.service`:
+2. Create the systemd service file at `/etc/systemd/system/foreseerr.service`, using either `sudo systemctl edit --force --full foreseerr` or `sudo nano /etc/systemd/system/foreseerr.service`:
 ```bash
 [Unit]
 Description=Foreseerr Service
@@ -80,16 +79,13 @@ Environment=NODE_ENV=production
 Type=exec
 Restart=on-failure
 WorkingDirectory=/opt/foreseerr
-ExecStart=/usr/bin/bun dist/launcher.js
+ExecStart=/opt/foreseerr/backend-rs/target/release/foreseerr
 
 [Install]
 WantedBy=multi-user.target
 ```
-:::note
-If you are using a different path to bun, replace `/usr/bin/bun` with the path to bun.
-:::
 
-4. Enable and start the service:
+3. Enable and start the service:
 ```bash
 sudo systemctl enable foreseerr
 sudo systemctl start foreseerr
@@ -97,13 +93,7 @@ sudo systemctl start foreseerr
   </TabItem>
   <TabItem value="macos" label="macOS">
 To run Foreseerr as a launchd service:
-1. Find the path to bun:
-```bash
-which bun
-```
-Copy the path to bun, it should be something like `/usr/local/bin/bun`.
-
-2. Create a launchd plist file at `~/Library/LaunchAgents/com.foreseerr.plist`:
+1. Create a launchd plist file at `~/Library/LaunchAgents/com.foreseerr.plist`:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -113,8 +103,7 @@ Copy the path to bun, it should be something like `/usr/local/bin/bun`.
   <string>com.foreseerr</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/bun</string>
-    <string>/opt/foreseerr/dist/launcher.js</string>
+    <string>/opt/foreseerr/backend-rs/target/release/foreseerr</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/opt/foreseerr</string>
@@ -132,14 +121,11 @@ Copy the path to bun, it should be something like `/usr/local/bin/bun`.
 </dict>
 </plist>
 ```
-:::note
-If you are using a different path to bun, replace `/usr/local/bin/bun` with the path to bun.
-:::
-3. Load the service:
+2. Load the service:
 ```bash
 launchctl load ~/Library/LaunchAgents/com.foreseerr.plist
 ```
-4. Start the service:
+3. Start the service:
 ```bash
 launchctl start com.foreseerr
 ```
@@ -150,9 +136,9 @@ To run Foreseerr as a PM2 service:
 ```bash
 npm install -g pm2
 ```
-2. Start Foreseerr with PM2:
+2. Start Foreseerr with PM2 from `/opt/foreseerr`:
 ```bash
-NODE_ENV=production pm2 start dist/launcher.js --name foreseerr
+NODE_ENV=production pm2 start backend-rs/target/release/foreseerr --name foreseerr --interpreter none
 ```
 3. Save the process list:
 ```bash
@@ -196,24 +182,21 @@ cd C:\foreseerr
 2. Clone the Foreseerr repository. Use a release tag for production, or `develop` for the latest unreleased work:
 ```powershell
 git clone https://github.com/selmant/foreseerr.git .
-git checkout v0.12.0
+git checkout v0.15.0
 ```
-3. Install the dependencies:
+3. Install the web app's dependencies:
 ```powershell
-$env:CYPRESS_INSTALL_BINARY = 0; bun install --frozen-lockfile
+bun install --frozen-lockfile
 ```
-4. Build the project:
+4. Build the web app and the server:
 ```powershell
-bun run build
+bun run build:web
+cd backend-rs; cargo build --release --locked; cd ..
 ```
 5. Start Foreseerr:
 ```powershell
-bun run start
+$env:NODE_ENV = "production"; .\backend-rs\target\release\foreseerr.exe
 ```
-
-:::tip
-You can add the environment variables to a `.env` file in the Foreseerr directory.
-:::
 
 :::info
 You can now access Foreseerr by visiting `http://localhost:5055` in your web browser.
@@ -226,9 +209,10 @@ To run Foreseerr as a bat script:
 1. Create a file named `start-foreseerr.bat` in the Foreseerr directory:
 ```batch
 @echo off
+cd /d "%~dp0"
 set PORT=5055
 set NODE_ENV=production
-bun dist/launcher.js
+backend-rs\target\release\foreseerr.exe
 ```
 2. Create a task in Task Scheduler:
 - Open Task Scheduler
@@ -248,7 +232,7 @@ To run Foreseerr as a service:
 1. Download the [Non-Sucking Service Manager](https://nssm.cc/download)
 2. Install NSSM:
 ```powershell
-nssm install Foreseerr "C:\Users\%USERNAME%\.bun\bin\bun.exe" "C:\foreseerr\dist\launcher.js"
+nssm install Foreseerr "C:\foreseerr\backend-rs\target\release\foreseerr.exe"
 nssm set Foreseerr AppDirectory "C:\foreseerr"
 nssm set Foreseerr AppEnvironmentExtra NODE_ENV=production
 ```
@@ -267,9 +251,9 @@ To run Foreseerr as a PM2 service:
 ```powershell
 npm install -g pm2
 ```
-2. Start Foreseerr with PM2:
+2. Start Foreseerr with PM2 from `C:\foreseerr`:
 ```powershell
-$env:NODE_ENV = "production"; pm2 start dist/launcher.js --name foreseerr
+$env:NODE_ENV = "production"; pm2 start backend-rs\target\release\foreseerr.exe --name foreseerr --interpreter none
 ```
 3. Save the process list:
 ```powershell
@@ -307,7 +291,7 @@ pm2 status foreseerr
 To update Foreseerr, navigate to the Foreseerr directory, fetch the tag or branch you want, then rebuild and restart:
 ```bash
 git fetch --tags
-git checkout v0.12.0
+git checkout v0.15.0
 bun install --frozen-lockfile
 bun run build
 ```

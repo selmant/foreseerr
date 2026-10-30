@@ -13,9 +13,10 @@ Using AI is fine. Two rules:
 
 ### Tools Required
 
-- HTML/Typescript/Javascript editor
+- HTML/Typescript/Javascript and Rust editor
 - [VSCode](https://code.visualstudio.com/) is recommended. Upon opening the project, a few extensions will be automatically recommended for install.
-- [Bun](https://bun.sh/docs/installation) 1.4+ (or `mise install` from this repo)
+- [Bun](https://bun.sh/docs/installation) 1.4+ (or `mise install` from this repo) for the frontend
+- [Rust](https://rustup.rs/) for the backend in `backend-rs/`; `rustup` installs the toolchain pinned in `backend-rs/rust-toolchain.toml` on first use
 - .NET 8 SDK if you are building the optional Jellyfin sidecar plugin (`mise.toml` pins it)
 - [Git](https://git-scm.com/downloads)
 
@@ -59,7 +60,9 @@ Using AI is fine. Two rules:
    bun run dev
    ```
 
-   - Alternatively, you can use [Docker](https://www.docker.com/) with `docker compose up -d`. This method does not require installing Bun on your machine directly.
+   This starts the Rust backend on port 5055 and the Vite dev server on port 3000, which forwards API calls to the backend; open `http://localhost:3000`. `backend-rs/README.md` documents the backend's environment variables, tests and lints.
+
+   - Alternatively, you can use [Docker](https://www.docker.com/) with `docker compose up -d`. This method does not require installing Bun or Rust on your machine directly.
 
 5. Create your patch and test your changes.
 

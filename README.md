@@ -66,25 +66,20 @@ Foreseerr can also run **inside Jellyfin** as a third-party plugin that supervis
 
 Foreseerr is currently distributed as a **Docker image** (recommended). Docker and Docker Compose must be installed on the host; see the [Docker installation guide](https://docs.docker.com/get-docker/) if needed.
 
-GitHub Releases also attach optional server archives plus `SHA256SUMS`:
+GitHub Releases also attach standalone server archives plus `SHA256SUMS`:
 
-- **`foreseerr-server.tar.gz`** — `bun run build` tree (`dist/launcher.js`). Extract, `bun install --production --frozen-lockfile`, then `bun dist/launcher.js`. Same runtime as Docker, not a packed exe.
-- **`foreseerr-linux-x64.tar.gz` / `foreseerr-linux-arm64.tar.gz` / `foreseerr-windows-x64.zip`** — `bun --compile` standalone (SPA + API in one binary). Open `http://127.0.0.1:5055` after start. Config defaults to `config/` next to the executable (`CONFIG_DIRECTORY` overrides it).
+- **`foreseerr-linux-x64.tar.gz` / `foreseerr-linux-arm64.tar.gz` / `foreseerr-windows-x64.zip`** — the `foreseerr` server binary next to the web app (`dist/public/`), its API spec (`seerr-api.yml`) and `committag.json`. Keep those files together and start the binary from that directory, then open `http://127.0.0.1:5055`. Config defaults to `config/` in that directory (`CONFIG_DIRECTORY` overrides it). The Linux builds need glibc.
+- **`foreseerr-plugin-*`** — the same server built for the Jellyfin plugin's `/Foreseerr` sub-path; the plugin downloads these itself.
 
 Those are the Foreseerr **server**, not [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop). Postgres still needs a real Postgres; Windows SmartScreen will warn on the unsigned `.exe`.
 
 ```bash
-tar -xzf foreseerr-server.tar.gz
-bun install --production --frozen-lockfile
-CONFIG_DIRECTORY=./foreseerr-config bun dist/launcher.js
+mkdir foreseerr && tar -xzf foreseerr-linux-x64.tar.gz -C foreseerr
+cd foreseerr
+NODE_ENV=production CONFIG_DIRECTORY=./foreseerr-config ./foreseerr
 ```
 
-```bash
-tar -xzf foreseerr-linux-x64.tar.gz
-CONFIG_DIRECTORY=./foreseerr-config ./foreseerr-linux-x64
-```
-
-On Windows, extract `foreseerr-windows-x64.zip` and run `foreseerr-windows-x64.exe`.
+On Windows, extract `foreseerr-windows-x64.zip` into a folder and run `foreseerr.exe` from it with `NODE_ENV=production` set.
 
 ### Docker CLI
 
