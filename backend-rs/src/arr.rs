@@ -511,6 +511,13 @@ impl Arr<'_> {
         if !o.language_profile.is_null() {
             fields.push(("languageProfileId", o.language_profile.clone()));
         }
+        // Sonarr 5 requires both. The lookup carries the server's preferred
+        // metadata language; aired order keeps the season and episode
+        // numbers TMDB uses.
+        if let Some(language) = series.get("language").filter(|l| !l.is_null()) {
+            fields.push(("language", language.clone()));
+        }
+        fields.push(("seasonType", Value::from("official")));
         fields.extend([
             (
                 "seasons",

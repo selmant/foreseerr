@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::media::js_string;
 use crate::servarr::build_url;
+use crate::sonarrv5::{self, ApiVersion};
 use crate::tmdb::{axios_encode, js_numbers};
 
 /// `QUEUE_PAGE_SIZE` and `QUEUE_MAX_PAGES` of `ServarrBase.getQueue`.
@@ -98,7 +99,28 @@ impl ArrServer<'_> {
         }
     }
 
-    /// `this.axios.<method>(path, { params, timeout })` against `/api/v3`.
+    /// The API this server is talked to through: v5 for a Sonarr that
+    /// offers it, v3 otherwise.
+    async fn api(&self) -> ApiVersion {
+        if self.api_name != "Sonarr" {
+            return ApiVersion::V3;
+        }
+        let api_key = match self.server.get("apiKey") {
+            None | Some(Value::Null) => None,
+            other => Some(js_string(other)),
+        };
+        let timeout = (self.timeout_ms > 0).then(|| Duration::from_millis(self.timeout_ms));
+        sonarrv5::api_version(
+            self.client,
+            &build_url(self.server, ""),
+            api_key.as_deref(),
+            timeout,
+        )
+        .await
+    }
+
+    /// `this.axios.<method>(path, { params, timeout })` against `/api/v3`,
+    /// translated to `/api/v5` for a Sonarr that offers it.
     pub(super) async fn request(
         &self,
         method: Method,
@@ -107,15 +129,22 @@ impl ArrServer<'_> {
         body: Option<&Value>,
         timeout_ms: u64,
     ) -> Result<Value, ArrError> {
-        let mut url = build_url(self.server, &format!("/api/v3{path}"));
+        let api = self.api().await;
+        let query: Vec<(String, String)> = query
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect();
+        let (query, body) = match api {
+            ApiVersion::V3 => (query, body.cloned()),
+            ApiVersion::V5 => sonarrv5::to_v5_request(method.as_str(), path, query, body.cloned()),
+        };
+        let mut url = build_url(self.server, &format!("{}{path}", api.prefix()));
         let mut params: Vec<(String, String)> = Vec::new();
         match self.server.get("apiKey") {
             None | Some(Value::Null) => {}
             other => params.push((String::from("apikey"), js_string(other).into_owned())),
         }
-        for (k, v) in query {
-            params.push(((*k).to_owned(), v.clone()));
-        }
+        params.extend(query);
         for (i, (k, v)) in params.iter().enumerate() {
             url.push(if i == 0 && !url.contains('?') {
                 '?'
@@ -128,13 +157,13 @@ impl ArrServer<'_> {
         }
         let mut request = self
             .client
-            .request(method, &url)
+            .request(method.clone(), &url)
             .header(reqwest::header::ACCEPT, "application/json")
             .header(reqwest::header::CONTENT_TYPE, "application/json");
         if timeout_ms > 0 {
             request = request.timeout(Duration::from_millis(timeout_ms));
         }
-        if let Some(body) = body {
+        if let Some(body) = &body {
             request = request.body(body.to_string());
         }
         let response = request
@@ -148,7 +177,10 @@ impl ArrServer<'_> {
             .map_err(|e| ArrError::Transport(transport_message(&e)))?;
         let data = axios_data(&bytes);
         if status.is_success() {
-            Ok(data)
+            Ok(match api {
+                ApiVersion::V3 => data,
+                ApiVersion::V5 => sonarrv5::from_v5_response(method.as_str(), path, data),
+            })
         } else {
             Err(ArrError::Http {
                 status: status.as_u16(),

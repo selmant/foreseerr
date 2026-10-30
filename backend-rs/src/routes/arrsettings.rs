@@ -429,7 +429,7 @@ fn sonarr_test<'a>(ctx: &'a Ready<'a>) -> NativeFut<'a> {
             Err(why) => return Outcome::forward(why),
         };
         let timeout = api_timeout(&ctx.settings);
-        let client = &ctx.state.servarr;
+        let client = &ctx.state.servarr.for_sonarr();
         let fail = |why: &str| {
             tracing::error!("Failed to test Sonarr: {why}");
             ctx.error(500, "Failed to connect to Sonarr")

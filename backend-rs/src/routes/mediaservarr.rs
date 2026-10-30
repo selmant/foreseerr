@@ -396,12 +396,15 @@ async fn context_json(ctx: &Ready<'_>, id: i64, is4k: bool) -> Step<Value> {
         .collect();
     let mut status_by_episode: Vec<(Value, Option<&'static str>)> = Vec::new();
     for item in &queue {
-        let Some(episode_id) = item.pointer("/episode/id").filter(|v| truthy(Some(v))) else {
-            continue;
-        };
-        let status = episode_queue_status(item).map_err(|()| odd())?;
-        status_by_episode.retain(|(k, _)| k != episode_id);
-        status_by_episode.push((episode_id.clone(), status));
+        // Sonarr 5 lists a multi-episode download once with all episodes.
+        for episode in crate::sonarrv5::queue_item_episodes(item) {
+            let Some(episode_id) = episode.get("id").filter(|v| truthy(Some(v))) else {
+                continue;
+            };
+            let status = episode_queue_status(item).map_err(|()| odd())?;
+            status_by_episode.retain(|(k, _)| k != episode_id);
+            status_by_episode.push((episode_id.clone(), status));
+        }
     }
     let Some(seasons) = series.get("seasons").and_then(Value::as_array) else {
         return Err(odd());
