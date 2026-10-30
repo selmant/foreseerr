@@ -42,6 +42,33 @@ describe('fetchPaginatedTraktDiscoverWithPostFilters', () => {
     assert.equal(page.hasMore, false);
   });
 
+  it('keeps paging past a page the media-type filter emptied', async () => {
+    const requestedPages: number[] = [];
+    const page = await fetchPaginatedTraktDiscoverWithPostFilters(
+      async (upstreamPage) => {
+        requestedPages.push(upstreamPage);
+        return {
+          items: upstreamPage === 1 ? [] : [item(3)],
+          hasMore: upstreamPage < 2,
+        };
+      },
+      {
+        page: 1,
+        itemsPerPage: 2,
+        tmdb: {} as never,
+        query: { traktRatingGte: '7' },
+        user: undefined,
+      }
+    );
+
+    assert.deepEqual(requestedPages, [1, 2]);
+    assert.deepEqual(
+      page.items.map((entry) => entry.tmdbId),
+      [3]
+    );
+    assert.equal(page.hasMore, false);
+  });
+
   it('returns an empty terminal page when filters remove everything', async () => {
     const page = await fetchPaginatedTraktDiscoverWithPostFilters(
       async () => ({

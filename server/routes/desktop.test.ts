@@ -6,6 +6,7 @@ import { Session } from '@server/entity/Session';
 import { User } from '@server/entity/User';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
+import settingsRoutes from '@server/routes/settings';
 import { setupTestDb } from '@server/test/db';
 import { ApiError } from '@server/types/error';
 import express, { type Express } from 'express';
@@ -108,6 +109,27 @@ describe('desktop auth tickets', () => {
       .send({ ticket: issued.ticket, protocolVersion: 1 });
     assert.strictEqual(replay.status, 401);
     assert.strictEqual(replay.body.code, 'ticket_expired');
+  });
+
+  it('issues a browser-cache ticket from the settings flush route', async () => {
+    const settingsApp = createApp();
+    settingsApp.use('/settings', settingsRoutes);
+    const runtime = process.env.FORESEERR_RUNTIME;
+    process.env.FORESEERR_RUNTIME = 'desktop';
+    try {
+      const issued = await request(settingsApp).post(
+        '/settings/cache/browser/flush'
+      );
+      assert.strictEqual(issued.status, 201, JSON.stringify(issued.body));
+      assert.strictEqual(issued.body.expiresIn, 60_000);
+      const redeemed = await request(app)
+        .post('/desktop/browser-cache/redeem')
+        .send({ ticket: issued.body.ticket, protocolVersion: 1 });
+      assert.strictEqual(redeemed.status, 204);
+    } finally {
+      if (runtime === undefined) delete process.env.FORESEERR_RUNTIME;
+      else process.env.FORESEERR_RUNTIME = runtime;
+    }
   });
 
   it('rejects browser-cache tickets after the issuing session expires', async () => {

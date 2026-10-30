@@ -4,6 +4,7 @@ import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
 import { getSettings } from '@server/lib/settings';
 import {
+  createSimklUserClient,
   getUserSimklSettings,
   refreshUserSimklTokens,
 } from '@server/lib/simkl';
@@ -372,5 +373,41 @@ describe('Simkl token refresh', () => {
     await assert.rejects(refreshUserSimklTokens(userId, 'simkl_at_old'));
     const settings = await getUserSimklSettings(userId);
     assert.equal(settings?.simklRefreshToken, 'simkl_rt_refresh');
+  });
+
+  it('leaves a newer link alone when a request with the old token gets a 401', async () => {
+    const userId = await linkV2();
+    const settingsId = (await getUserSimklSettings(userId))?.id as number;
+    // A V1 link: the 401 unlinks without trying a refresh.
+    await getRepository(UserSettings).update(settingsId, {
+      simklRefreshToken: () => 'NULL',
+      simklTokenExpiresAt: () => 'NULL',
+    });
+    stubSimkl(async () => {
+      await getRepository(UserSettings).update(settingsId, {
+        simklAccessToken: 'simkl_at_relinked',
+      });
+      return { status: 401, data: {} };
+    });
+    const client = await createSimklUserClient(userId);
+    await assert.rejects(client.getActivities(), SimklUnauthorizedError);
+    const settings = await getUserSimklSettings(userId);
+    assert.equal(settings?.simklAccessToken, 'simkl_at_relinked');
+    assert.equal(settings?.simklUserId, '4242');
+  });
+
+  it('unlinks when a request with the stored token gets a 401', async () => {
+    const userId = await linkV2();
+    const settingsId = (await getUserSimklSettings(userId))?.id as number;
+    await getRepository(UserSettings).update(settingsId, {
+      simklRefreshToken: () => 'NULL',
+      simklTokenExpiresAt: () => 'NULL',
+    });
+    stubSimkl(() => ({ status: 401, data: {} }));
+    const client = await createSimklUserClient(userId);
+    await assert.rejects(client.getActivities(), SimklUnauthorizedError);
+    const settings = await getUserSimklSettings(userId);
+    assert.equal(settings?.simklAccessToken, null);
+    assert.equal(settings?.simklUserId, null);
   });
 });

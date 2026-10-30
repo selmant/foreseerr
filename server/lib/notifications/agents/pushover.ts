@@ -288,9 +288,9 @@ class PushoverAgent
             if (
               user.settings?.pushoverApplicationToken &&
               user.settings?.pushoverUserKey &&
-              user.settings.pushoverApplicationToken !==
-                settings.options.accessToken &&
-              user.settings.pushoverUserKey !== settings.options.userToken
+              (user.settings.pushoverApplicationToken !==
+                settings.options.accessToken ||
+                user.settings.pushoverUserKey !== settings.options.userToken)
             ) {
               logger.debug('Sending Pushover notification', {
                 label: 'Notifications',

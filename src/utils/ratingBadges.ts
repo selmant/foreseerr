@@ -1,6 +1,14 @@
 import type { RatingResponse } from '@server/api/ratings';
-import type { RatingSourceToggles } from '@server/constants/ratingBadges';
-import { DEFAULT_RATING_SOURCE_TOGGLES } from '@server/constants/ratingBadges';
+import type {
+  RatingBadgeSettings,
+  RatingSourceToggles,
+} from '@server/constants/ratingBadges';
+import {
+  DEFAULT_RATING_BADGE_SETTINGS,
+  DEFAULT_RATING_SOURCE_TOGGLES,
+  needsVisibleMdblistBadges,
+  resolveRatingBadgeSettings,
+} from '@server/constants/ratingBadges';
 
 export type RatingBadgeSource =
   | 'tmdb'
@@ -122,4 +130,33 @@ export function buildRatingBadges(
   }
 
   return badges;
+}
+
+/**
+ * Whether a list row carries what the idle (unhovered) poster badges show:
+ * the TMDB score when that badge is on, and the MDBList ratings when any
+ * MDBList-backed badge is on and a key is set. `ratings: null` is a lookup
+ * that found nothing and counts as carried; an absent `ratings` was never
+ * looked up (AniList, Simkl, and MDBList list rows).
+ */
+export function rowCoversIdleRatingBadges(
+  item: RatingBadgeItem,
+  badgeSettings: RatingBadgeSettings = DEFAULT_RATING_BADGE_SETTINGS,
+  mdblistConfigured = false
+): boolean {
+  const idle = resolveRatingBadgeSettings(
+    { ...DEFAULT_RATING_BADGE_SETTINGS, ...badgeSettings },
+    'minimal'
+  );
+  if (idle.showTmdb && item.tmdbRating == null) {
+    return false;
+  }
+  if (
+    mdblistConfigured &&
+    needsVisibleMdblistBadges(idle) &&
+    item.ratings === undefined
+  ) {
+    return false;
+  }
+  return true;
 }

@@ -1,0 +1,436 @@
+{
+  "schema": [
+    {
+      "type": "index",
+      "name": "IDX_03f7958328e311761b0de675fb",
+      "tbl_name": "user_push_subscription",
+      "sql": "CREATE INDEX \"IDX_03f7958328e311761b0de675fb\" ON \"user_push_subscription\" (\"userId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_087099b39600be695591da9a49",
+      "tbl_name": "season",
+      "sql": "CREATE INDEX \"IDX_087099b39600be695591da9a49\" ON \"season\" (\"mediaId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_09b94c932e84635c5461f3c0a9",
+      "tbl_name": "blocklist",
+      "sql": "CREATE INDEX \"IDX_09b94c932e84635c5461f3c0a9\" ON \"blocklist\" (\"tmdbId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_10b17b49d1ee77e7184216001e",
+      "tbl_name": "issue",
+      "sql": "CREATE INDEX \"IDX_10b17b49d1ee77e7184216001e\" ON \"issue\" (\"createdById\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_180710fead1c94ca499c57a7d4",
+      "tbl_name": "issue_comment",
+      "sql": "CREATE INDEX \"IDX_180710fead1c94ca499c57a7d4\" ON \"issue_comment\" (\"issueId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_276e20d053f3cff1645803c95d",
+      "tbl_name": "issue",
+      "sql": "CREATE INDEX \"IDX_276e20d053f3cff1645803c95d\" ON \"issue\" (\"mediaId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_28c5d1d16da7908c97c9bc2f74",
+      "tbl_name": "session",
+      "sql": "CREATE INDEX \"IDX_28c5d1d16da7908c97c9bc2f74\" ON \"session\" (\"expiredAt\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_2f369fd57bac23e9fd586517fa",
+      "tbl_name": "desktop_auth_ticket",
+      "sql": "CREATE INDEX \"IDX_2f369fd57bac23e9fd586517fa\" ON \"desktop_auth_ticket\" (\"expiresAt\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_356721a49f145aa439c16e6b99",
+      "tbl_name": "blocklist",
+      "sql": "CREATE INDEX \"IDX_356721a49f145aa439c16e6b99\" ON \"blocklist\" (\"userId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_36d969a608afd268a840f73850",
+      "tbl_name": "servarr_intervention",
+      "sql": "CREATE INDEX \"IDX_36d969a608afd268a840f73850\" ON \"servarr_intervention\" (\"state\", \"firstSeenAt\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_3a294b1c2610faf3c3895a79a8",
+      "tbl_name": "mapping_resolution",
+      "sql": "CREATE UNIQUE INDEX \"IDX_3a294b1c2610faf3c3895a79a8\" ON \"mapping_resolution\" (\"srcNs\", \"srcId\", \"mediaType\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_41a289eb1fa489c1bc6f38d9c3",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX \"IDX_41a289eb1fa489c1bc6f38d9c3\" ON \"media\" (\"tvdbId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_4c696e8ed36ae34fe18abe59d2",
+      "tbl_name": "media_request",
+      "sql": "CREATE INDEX \"IDX_4c696e8ed36ae34fe18abe59d2\" ON \"media_request\" (\"status\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_53d04c07c3f4f54eae372ed665",
+      "tbl_name": "issue",
+      "sql": "CREATE INDEX \"IDX_53d04c07c3f4f54eae372ed665\" ON \"issue\" (\"issueType\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_57bd3024202e89b708a189121e",
+      "tbl_name": "simkl_sync_item",
+      "sql": "CREATE UNIQUE INDEX \"IDX_57bd3024202e89b708a189121e\" ON \"simkl_sync_item\" (\"userId\", \"simklType\", \"simklId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_5d6218de4f547909391a5c1347",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX \"IDX_5d6218de4f547909391a5c1347\" ON \"media\" (\"status4k\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_63e54f3729fb868e7206ec2058",
+      "tbl_name": "simkl_sync_item",
+      "sql": "CREATE INDEX \"IDX_63e54f3729fb868e7206ec2058\" ON \"simkl_sync_item\" (\"userId\", \"status\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_6641da8d831b93dfcb429f8b8b",
+      "tbl_name": "watchlist",
+      "sql": "CREATE INDEX \"IDX_6641da8d831b93dfcb429f8b8b\" ON \"watchlist\" (\"mediaId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_6997bee94720f1ecb7f3113709",
+      "tbl_name": "media_request",
+      "sql": "CREATE INDEX \"IDX_6997bee94720f1ecb7f3113709\" ON \"media_request\" (\"requestedById\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_6f14737e346d6b27d8e50d2157",
+      "tbl_name": "season_request",
+      "sql": "CREATE INDEX \"IDX_6f14737e346d6b27d8e50d2157\" ON \"season_request\" (\"requestId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_707b033c2d0653f75213614789",
+      "tbl_name": "issue_comment",
+      "sql": "CREATE INDEX \"IDX_707b033c2d0653f75213614789\" ON \"issue_comment\" (\"userId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_7157aad07c73f6a6ae3bbd5ef5",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX \"IDX_7157aad07c73f6a6ae3bbd5ef5\" ON \"media\" (\"tmdbId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_7ff2d11f6a83cb52386eaebe74",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX \"IDX_7ff2d11f6a83cb52386eaebe74\" ON \"media\" (\"imdbId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_8940c9e039e90f95f2354f54d1",
+      "tbl_name": "episode_request",
+      "sql": "CREATE INDEX \"IDX_8940c9e039e90f95f2354f54d1\" ON \"episode_request\" (\"requestId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_89f7f53a35d5a7515d62876abc",
+      "tbl_name": "simkl_sync_item",
+      "sql": "CREATE INDEX \"IDX_89f7f53a35d5a7515d62876abc\" ON \"simkl_sync_item\" (\"userId\", \"tmdbId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_939f205946256cc0d2a1ac51a8",
+      "tbl_name": "watchlist",
+      "sql": "CREATE INDEX \"IDX_939f205946256cc0d2a1ac51a8\" ON \"watchlist\" (\"tmdbId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_9d54577cb4efd6c5b1f7feccd2",
+      "tbl_name": "mapping_edge",
+      "sql": "CREATE INDEX \"IDX_9d54577cb4efd6c5b1f7feccd2\" ON \"mapping_edge\" (\"srcNs\", \"srcId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_a1aa713f41c99e9d10c48da75a",
+      "tbl_name": "media_request",
+      "sql": "CREATE INDEX \"IDX_a1aa713f41c99e9d10c48da75a\" ON \"media_request\" (\"mediaId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_ae34e6b153a90672eb9dc4857d",
+      "tbl_name": "watchlist",
+      "sql": "CREATE INDEX \"IDX_ae34e6b153a90672eb9dc4857d\" ON \"watchlist\" (\"requestedById\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_af2be44d40fca46a52c52b0d3f",
+      "tbl_name": "mapping_edge",
+      "sql": "CREATE INDEX \"IDX_af2be44d40fca46a52c52b0d3f\" ON \"mapping_edge\" (\"dataset\", \"generation\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_afae8f2afbbf7e63245bc221f8",
+      "tbl_name": "release_occurrence",
+      "sql": "CREATE INDEX \"IDX_afae8f2afbbf7e63245bc221f8\" ON \"release_occurrence\" (\"mediaId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_b55142aa00c643bb3f97e2a868",
+      "tbl_name": "mapping_resolution",
+      "sql": "CREATE INDEX \"IDX_b55142aa00c643bb3f97e2a868\" ON \"mapping_resolution\" (\"origin\", \"hitCount\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_b5b858245d306119f3fd542a27",
+      "tbl_name": "desktop_auth_ticket",
+      "sql": "CREATE INDEX \"IDX_b5b858245d306119f3fd542a27\" ON \"desktop_auth_ticket\" (\"userId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_bdfc396899c1059814db280169",
+      "tbl_name": "episode_request",
+      "sql": "CREATE INDEX \"IDX_bdfc396899c1059814db280169\" ON \"episode_request\" (\"tvdbId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_c5baddc36fca8d37b2589b89a0",
+      "tbl_name": "desktop_auth_ticket",
+      "sql": "CREATE UNIQUE INDEX \"IDX_c5baddc36fca8d37b2589b89a0\" ON \"desktop_auth_ticket\" (\"ticketDigest\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_c730c2d67f271a372c39a07b7e",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX \"IDX_c730c2d67f271a372c39a07b7e\" ON \"media\" (\"status\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_ca657c5812b87c9a9a056a0c1f",
+      "tbl_name": "servarr_intervention",
+      "sql": "CREATE INDEX \"IDX_ca657c5812b87c9a9a056a0c1f\" ON \"servarr_intervention\" (\"serviceType\", \"serviceId\", \"queueId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_da88a1019c850d1a7b143ca02e",
+      "tbl_name": "issue",
+      "sql": "CREATE INDEX \"IDX_da88a1019c850d1a7b143ca02e\" ON \"issue\" (\"modifiedById\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_e0f42378cc290c70f7296baa13",
+      "tbl_name": "release_date_change",
+      "sql": "CREATE INDEX \"IDX_e0f42378cc290c70f7296baa13\" ON \"release_date_change\" (\"occurrenceId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_f4fc4efa14c3ba2b29c4525fa1",
+      "tbl_name": "media_request",
+      "sql": "CREATE INDEX \"IDX_f4fc4efa14c3ba2b29c4525fa1\" ON \"media_request\" (\"modifiedById\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_f8233358694d1677a67899b90a",
+      "tbl_name": "media",
+      "sql": "CREATE INDEX \"IDX_f8233358694d1677a67899b90a\" ON \"media\" (\"tmdbId\", \"mediaType\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_media_request_active_ongoing_episode",
+      "tbl_name": "media_request",
+      "sql": "CREATE UNIQUE INDEX \"IDX_media_request_active_ongoing_episode\" ON \"media_request\" (\"ongoingEpisodeRequestKey\") WHERE \"episodeSelectionType\" IN ('after', 'watchAhead') AND \"status\" NOT IN (3, 5)"
+    },
+    {
+      "type": "index",
+      "name": "IDX_release_occurrence_missing_since",
+      "tbl_name": "release_occurrence",
+      "sql": "CREATE INDEX \"IDX_release_occurrence_missing_since\" ON \"release_occurrence\" (\"missingSince\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_release_occurrence_series_detection",
+      "tbl_name": "release_occurrence",
+      "sql": "CREATE INDEX \"IDX_release_occurrence_series_detection\" ON \"release_occurrence\" (\"sourceServerId\", \"sourceSeriesId\", \"seasonNumber\", \"episodeNumber\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_release_occurrence_starts_at_media_type",
+      "tbl_name": "release_occurrence",
+      "sql": "CREATE INDEX \"IDX_release_occurrence_starts_at_media_type\" ON \"release_occurrence\" (\"startsAt\", \"mediaType\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_release_sync_state_lease_expires_at",
+      "tbl_name": "release_sync_state",
+      "sql": "CREATE INDEX \"IDX_release_sync_state_lease_expires_at\" ON \"release_sync_state\" (\"leaseExpiresAt\") "
+    },
+    {
+      "type": "table",
+      "name": "blocklist",
+      "tbl_name": "blocklist",
+      "sql": "CREATE TABLE \"blocklist\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"title\" varchar, \"tmdbId\" integer NOT NULL, \"blocklistedTags\" varchar, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer, \"mediaId\" integer, CONSTRAINT \"UQ_81504e02db89b4c1e3152729fa6\" UNIQUE (\"tmdbId\", \"mediaType\"), CONSTRAINT \"REL_5c8af2d0e83b3be6d250eccc19\" UNIQUE (\"mediaId\"), CONSTRAINT \"FK_356721a49f145aa439c16e6b999\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE NO ACTION ON UPDATE NO ACTION, CONSTRAINT \"FK_5c8af2d0e83b3be6d250eccc19d\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "desktop_auth_ticket",
+      "tbl_name": "desktop_auth_ticket",
+      "sql": "CREATE TABLE \"desktop_auth_ticket\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"userId\" integer NOT NULL, \"sessionId\" varchar(255) NOT NULL, \"ticketDigest\" varchar(64) NOT NULL, \"challengeDigest\" varchar(64) NOT NULL, \"protocolVersion\" integer NOT NULL, \"expiresAt\" datetime NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"consumedAt\" datetime)"
+    },
+    {
+      "type": "table",
+      "name": "discover_slider",
+      "tbl_name": "discover_slider",
+      "sql": "CREATE TABLE \"discover_slider\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"type\" integer NOT NULL, \"order\" integer NOT NULL, \"isBuiltIn\" boolean NOT NULL DEFAULT (0), \"enabled\" boolean NOT NULL DEFAULT (1), \"title\" varchar, \"data\" varchar, \"sort\" varchar, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP))"
+    },
+    {
+      "type": "table",
+      "name": "episode_request",
+      "tbl_name": "episode_request",
+      "sql": "CREATE TABLE \"episode_request\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"tvdbId\" integer NOT NULL, \"seasonNumber\" integer NOT NULL, \"episodeNumber\" integer NOT NULL, \"title\" varchar, \"airDate\" varchar, \"status\" integer NOT NULL DEFAULT (1), \"searchTriggeredAt\" datetime, \"monitoredAt\" datetime, \"unmonitoredAt\" datetime, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"requestId\" integer, CONSTRAINT \"UQ_episode_request_request_tvdb\" UNIQUE (\"requestId\", \"tvdbId\"), CONSTRAINT \"FK_8940c9e039e90f95f2354f54d1b\" FOREIGN KEY (\"requestId\") REFERENCES \"media_request\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "issue",
+      "tbl_name": "issue",
+      "sql": "CREATE TABLE \"issue\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"issueType\" integer NOT NULL, \"status\" integer NOT NULL DEFAULT (1), \"problemSeason\" integer NOT NULL DEFAULT (0), \"problemEpisode\" integer NOT NULL DEFAULT (0), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"mediaId\" integer, \"createdById\" integer, \"modifiedById\" integer, CONSTRAINT \"FK_276e20d053f3cff1645803c95d8\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_10b17b49d1ee77e7184216001e0\" FOREIGN KEY (\"createdById\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_da88a1019c850d1a7b143ca02e5\" FOREIGN KEY (\"modifiedById\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "issue_comment",
+      "tbl_name": "issue_comment",
+      "sql": "CREATE TABLE \"issue_comment\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"message\" text NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer, \"issueId\" integer, CONSTRAINT \"FK_707b033c2d0653f75213614789d\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_180710fead1c94ca499c57a7d42\" FOREIGN KEY (\"issueId\") REFERENCES \"issue\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "job_execution_state",
+      "tbl_name": "job_execution_state",
+      "sql": "CREATE TABLE \"job_execution_state\" (\"jobId\" varchar(128) PRIMARY KEY NOT NULL, \"lastStartedAt\" datetime, \"lastSucceededAt\" datetime, \"lastFailedAt\" datetime, \"lastCancelledAt\" datetime, \"lastFailureSummary\" varchar(512), \"consecutiveFailures\" integer NOT NULL DEFAULT (0))"
+    },
+    {
+      "type": "table",
+      "name": "mapping_dataset",
+      "tbl_name": "mapping_dataset",
+      "sql": "CREATE TABLE \"mapping_dataset\" (\"key\" varchar PRIMARY KEY NOT NULL, \"enabled\" boolean NOT NULL DEFAULT (1), \"generation\" integer NOT NULL DEFAULT (0), \"edgeCount\" integer, \"version\" varchar, \"etag\" varchar, \"lastModified\" varchar, \"lastFetchedAt\" datetime, \"lastSuccessAt\" datetime, \"lastError\" text)"
+    },
+    {
+      "type": "table",
+      "name": "mapping_edge",
+      "tbl_name": "mapping_edge",
+      "sql": "CREATE TABLE \"mapping_edge\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"dataset\" varchar NOT NULL, \"generation\" integer NOT NULL, \"srcNs\" varchar NOT NULL, \"srcId\" varchar NOT NULL, \"srcScope\" varchar NOT NULL DEFAULT (''), \"dstNs\" varchar NOT NULL, \"dstId\" varchar NOT NULL, \"dstScope\" varchar NOT NULL DEFAULT (''), \"srcRange\" varchar, \"dstRange\" varchar)"
+    },
+    {
+      "type": "table",
+      "name": "mapping_resolution",
+      "tbl_name": "mapping_resolution",
+      "sql": "CREATE TABLE \"mapping_resolution\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"srcNs\" varchar NOT NULL, \"srcId\" varchar NOT NULL, \"mediaType\" varchar NOT NULL DEFAULT (''), \"tmdbId\" integer, \"tmdbType\" varchar, \"origin\" varchar NOT NULL, \"title\" varchar, \"year\" integer, \"discoverSource\" varchar, \"detail\" varchar, \"hitCount\" integer NOT NULL DEFAULT (0), \"createdByUserId\" integer, \"checkedAt\" datetime NOT NULL, \"createdAt\" datetime NOT NULL, \"updatedAt\" datetime NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "media",
+      "tbl_name": "media",
+      "sql": "CREATE TABLE \"media\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"tvdbId\" integer, \"imdbId\" varchar, \"status\" integer NOT NULL DEFAULT (1), \"status4k\" integer NOT NULL DEFAULT (1), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"lastSeasonChange\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"mediaAddedAt\" datetime DEFAULT (CURRENT_TIMESTAMP), \"serviceId\" integer, \"serviceId4k\" integer, \"externalServiceId\" integer, \"externalServiceId4k\" integer, \"externalServiceSlug\" varchar, \"externalServiceSlug4k\" varchar, \"ratingKey\" varchar, \"ratingKey4k\" varchar, \"jellyfinMediaId\" varchar, \"jellyfinMediaId4k\" varchar, CONSTRAINT \"UQ_41a289eb1fa489c1bc6f38d9c3c\" UNIQUE (\"tvdbId\"))"
+    },
+    {
+      "type": "table",
+      "name": "media_request",
+      "tbl_name": "media_request",
+      "sql": "CREATE TABLE \"media_request\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"status\" integer NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"type\" varchar NOT NULL, \"episodeSelectionType\" varchar, \"episodeStartTvdbId\" integer, \"episodeEndTvdbId\" integer, \"watchAheadCount\" integer, \"watchAheadInactiveAt\" datetime, \"ongoingEpisodeRequestKey\" varchar, \"tvQuotaUnits\" integer NOT NULL DEFAULT (0), \"is4k\" boolean NOT NULL DEFAULT (0), \"serverId\" integer, \"profileId\" integer, \"rootFolder\" varchar, \"languageProfileId\" integer, \"tags\" text, \"isAutoRequest\" boolean NOT NULL DEFAULT (0), \"ignoreQuota\" boolean NOT NULL DEFAULT (0), \"mediaId\" integer, \"requestedById\" integer, \"modifiedById\" integer, CONSTRAINT \"FK_a1aa713f41c99e9d10c48da75a0\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_6997bee94720f1ecb7f31137095\" FOREIGN KEY (\"requestedById\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_f4fc4efa14c3ba2b29c4525fa15\" FOREIGN KEY (\"modifiedById\") REFERENCES \"user\" (\"id\") ON DELETE SET NULL ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "override_rule",
+      "tbl_name": "override_rule",
+      "sql": "CREATE TABLE \"override_rule\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"radarrServiceId\" integer, \"sonarrServiceId\" integer, \"users\" varchar, \"genre\" varchar, \"language\" varchar, \"keywords\" varchar, \"profileId\" integer, \"rootFolder\" varchar, \"tags\" varchar, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP))"
+    },
+    {
+      "type": "table",
+      "name": "release_date_change",
+      "tbl_name": "release_date_change",
+      "sql": "CREATE TABLE \"release_date_change\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"occurrenceId\" integer NOT NULL, \"oldStartsAt\" datetime, \"newStartsAt\" datetime, \"changeKind\" varchar NOT NULL, \"detectedAt\" datetime NOT NULL, \"notifiable\" boolean NOT NULL DEFAULT (0), \"metadata\" text, CONSTRAINT \"FK_e0f42378cc290c70f7296baa13d\" FOREIGN KEY (\"occurrenceId\") REFERENCES \"release_occurrence\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "release_occurrence",
+      "tbl_name": "release_occurrence",
+      "sql": "CREATE TABLE \"release_occurrence\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"source\" varchar NOT NULL, \"sourceServerId\" integer NOT NULL, \"sourceItemId\" integer NOT NULL, \"sourceSeriesId\" integer, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer, \"tvdbId\" integer, \"mediaId\" integer, \"title\" varchar NOT NULL, \"subtitle\" varchar, \"seasonNumber\" integer, \"episodeNumber\" integer, \"dateType\" varchar NOT NULL, \"startsAt\" datetime NOT NULL, \"allDay\" boolean NOT NULL DEFAULT (0), \"monitored\" boolean NOT NULL DEFAULT (1), \"hasFile\" boolean NOT NULL DEFAULT (0), \"is4k\" boolean NOT NULL DEFAULT (0), \"sourceUrl\" varchar, \"rawDates\" text, \"firstSeenAt\" datetime NOT NULL, \"lastSeenAt\" datetime NOT NULL, \"missingSince\" datetime, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), CONSTRAINT \"UQ_release_occurrence_source_item_date_type\" UNIQUE (\"source\", \"sourceServerId\", \"sourceItemId\", \"dateType\"), CONSTRAINT \"FK_afae8f2afbbf7e63245bc221f8b\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE SET NULL ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "release_sync_state",
+      "tbl_name": "release_sync_state",
+      "sql": "CREATE TABLE \"release_sync_state\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"source\" varchar NOT NULL, \"sourceServerId\" integer NOT NULL, \"lastSuccessfulIncrementalAt\" datetime, \"lastSuccessfulBackfillAt\" datetime, \"lastErrorAt\" datetime, \"lastError\" text, \"leaseOwner\" varchar, \"leaseFence\" integer NOT NULL DEFAULT (0), \"leaseExpiresAt\" datetime, CONSTRAINT \"UQ_release_sync_state_source_server\" UNIQUE (\"source\", \"sourceServerId\"))"
+    },
+    {
+      "type": "table",
+      "name": "season",
+      "tbl_name": "season",
+      "sql": "CREATE TABLE \"season\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"seasonNumber\" integer NOT NULL, \"status\" integer NOT NULL DEFAULT (1), \"status4k\" integer NOT NULL DEFAULT (1), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"mediaId\" integer, CONSTRAINT \"FK_087099b39600be695591da9a49c\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "season_request",
+      "tbl_name": "season_request",
+      "sql": "CREATE TABLE \"season_request\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"seasonNumber\" integer NOT NULL, \"status\" integer NOT NULL DEFAULT (1), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"requestId\" integer, CONSTRAINT \"FK_6f14737e346d6b27d8e50d2157a\" FOREIGN KEY (\"requestId\") REFERENCES \"media_request\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "servarr_intervention",
+      "tbl_name": "servarr_intervention",
+      "sql": "CREATE TABLE \"servarr_intervention\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"serviceType\" varchar NOT NULL, \"serviceId\" integer NOT NULL, \"serviceName\" varchar NOT NULL, \"is4k\" boolean NOT NULL DEFAULT (0), \"queueId\" integer NOT NULL, \"downloadId\" varchar, \"outputPath\" varchar, \"externalServiceId\" integer NOT NULL, \"mediaId\" integer NOT NULL, \"tmdbId\" integer NOT NULL, \"mediaType\" varchar NOT NULL, \"releaseTitle\" varchar NOT NULL, \"warningMessages\" text NOT NULL, \"manualImportCapable\" boolean NOT NULL DEFAULT (0), \"state\" varchar NOT NULL DEFAULT ('active'), \"resolution\" varchar, \"actedByUserId\" integer, \"cleanupError\" text, \"firstSeenAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"cleanupDeadlineAt\" datetime NOT NULL, \"resolvedAt\" datetime, \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP))"
+    },
+    {
+      "type": "table",
+      "name": "session",
+      "tbl_name": "session",
+      "sql": "CREATE TABLE \"session\" (\"expiredAt\" bigint NOT NULL, \"id\" varchar(255) PRIMARY KEY NOT NULL, \"json\" text NOT NULL, \"destroyedAt\" datetime)"
+    },
+    {
+      "type": "table",
+      "name": "simkl_sync_item",
+      "tbl_name": "simkl_sync_item",
+      "sql": "CREATE TABLE \"simkl_sync_item\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"simklId\" varchar NOT NULL, \"simklType\" varchar NOT NULL, \"tmdbId\" integer, \"tvdbId\" integer, \"slug\" varchar, \"title\" varchar NOT NULL, \"year\" integer, \"posterPath\" varchar, \"animeType\" varchar, \"status\" varchar NOT NULL, \"userRating\" float, \"addedAt\" datetime, \"lastWatchedAt\" datetime, \"watchedEpisodeCount\" integer, \"totalEpisodeCount\" integer, \"watchedEpisodes\" text, \"userId\" integer, CONSTRAINT \"FK_1c7c24ca88f711e0ef39c821bff\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "simkl_sync_state",
+      "tbl_name": "simkl_sync_state",
+      "sql": "CREATE TABLE \"simkl_sync_state\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"activities\" text, \"initialSyncComplete\" boolean NOT NULL DEFAULT (0), \"lastCheckedAt\" datetime, \"lastSuccessfulSyncAt\" datetime, \"lastError\" text, \"userId\" integer, CONSTRAINT \"REL_3ce08674f9b0800d93a310b10f\" UNIQUE (\"userId\"), CONSTRAINT \"FK_3ce08674f9b0800d93a310b10f6\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "user",
+      "tbl_name": "user",
+      "sql": "CREATE TABLE \"user\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"email\" varchar NOT NULL, \"plexUsername\" varchar, \"jellyfinUsername\" varchar, \"username\" varchar, \"password\" varchar, \"resetPasswordGuid\" varchar, \"recoveryLinkExpirationDate\" datetime, \"userType\" integer NOT NULL DEFAULT (1), \"plexId\" integer, \"jellyfinUserId\" varchar, \"jellyfinDeviceId\" varchar, \"jellyfinAuthToken\" varchar, \"plexToken\" varchar, \"permissions\" integer NOT NULL DEFAULT (0), \"avatar\" varchar NOT NULL, \"avatarETag\" varchar, \"avatarVersion\" varchar, \"movieQuotaLimit\" integer, \"movieQuotaDays\" integer, \"tvQuotaLimit\" integer, \"tvQuotaDays\" integer, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), CONSTRAINT \"UQ_e12875dfb3b1d92d7d7c5377e22\" UNIQUE (\"email\"))"
+    },
+    {
+      "type": "table",
+      "name": "user_push_subscription",
+      "tbl_name": "user_push_subscription",
+      "sql": "CREATE TABLE \"user_push_subscription\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"endpoint\" varchar NOT NULL, \"p256dh\" varchar NOT NULL, \"auth\" varchar NOT NULL, \"userAgent\" varchar, \"createdAt\" datetime DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer, CONSTRAINT \"UQ_6427d07d9a171a3a1ab87480005\" UNIQUE (\"endpoint\", \"userId\"), CONSTRAINT \"FK_03f7958328e311761b0de675fbe\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "user_settings",
+      "tbl_name": "user_settings",
+      "sql": "CREATE TABLE \"user_settings\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"locale\" varchar NOT NULL DEFAULT (''), \"discoverRegion\" varchar, \"streamingRegion\" varchar, \"originalLanguage\" varchar, \"pgpKey\" varchar, \"discordIds\" text, \"pushbulletAccessToken\" varchar, \"pushoverApplicationToken\" varchar, \"pushoverUserKey\" varchar, \"pushoverSound\" varchar, \"telegramChatId\" varchar, \"telegramMessageThreadId\" varchar, \"telegramSendSilently\" boolean, \"watchlistSyncMovies\" boolean, \"watchlistSyncTv\" boolean, \"autoCompleteSkippedEpisodeEndings\" boolean, \"autoCompleteSkippedEpisodeThreshold\" integer, \"watchAheadEpisodeCount\" integer, \"servarrInterventionsSeenAt\" datetime, \"traktAccessToken\" varchar, \"traktRefreshToken\" varchar, \"traktTokenExpiresAt\" bigint, \"traktUsername\" varchar, \"traktUserId\" varchar, \"anilistAccessToken\" varchar, \"anilistTokenExpiresAt\" bigint, \"anilistUsername\" varchar, \"anilistUserId\" varchar, \"simklAccessToken\" varchar, \"simklRefreshToken\" varchar, \"simklTokenExpiresAt\" bigint, \"simklUsername\" varchar, \"simklUserId\" varchar, \"mediaActionsTraktEnabled\" boolean, \"mediaActionsAnilistEnabled\" boolean, \"mediaActionsSimklEnabled\" boolean, \"discoverFilterDefaults\" text, \"notificationTypes\" text, \"userId\" integer, CONSTRAINT \"UQ_a0507e35aa3e885801e73656d65\" UNIQUE (\"traktUserId\"), CONSTRAINT \"UQ_d6ca541b43d3df760bec5cc82a9\" UNIQUE (\"anilistUserId\"), CONSTRAINT \"UQ_af964a66be43e341a144e8a1d56\" UNIQUE (\"simklUserId\"), CONSTRAINT \"REL_986a2b6d3c05eb4091bb8066f7\" UNIQUE (\"userId\"), CONSTRAINT \"FK_986a2b6d3c05eb4091bb8066f78\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    },
+    {
+      "type": "table",
+      "name": "watchlist",
+      "tbl_name": "watchlist",
+      "sql": "CREATE TABLE \"watchlist\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"ratingKey\" varchar NOT NULL, \"mediaType\" varchar NOT NULL, \"title\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"requestedById\" integer, \"mediaId\" integer, CONSTRAINT \"UNIQUE_USER_DB\" UNIQUE (\"tmdbId\", \"mediaType\", \"requestedById\"), CONSTRAINT \"FK_ae34e6b153a90672eb9dc4857d7\" FOREIGN KEY (\"requestedById\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_6641da8d831b93dfcb429f8b8bc\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION)"
+    }
+  ]
+}

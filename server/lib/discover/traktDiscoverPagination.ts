@@ -85,15 +85,14 @@ export async function fetchPaginatedTraktDiscoverWithPostFilters(
 
   while (upstreamPage <= MAX_TRAKT_DISCOVER_UPSTREAM_PAGES) {
     const upstream = await fetchUpstreamPage(upstreamPage);
-    if (!upstream.items.length) {
-      upstreamHasMore = false;
-      break;
-    }
-
+    // The media-type filter may have emptied a page the upstream still
+    // follows; only the upstream's own hasMore ends the walk.
     upstreamHasMore = upstream.hasMore;
-    filtered.push(
-      ...(await filterTraktDiscoverPageItems(upstream.items, options))
-    );
+    if (upstream.items.length) {
+      filtered.push(
+        ...(await filterTraktDiscoverPageItems(upstream.items, options))
+      );
+    }
 
     if (!upstreamHasMore) {
       break;

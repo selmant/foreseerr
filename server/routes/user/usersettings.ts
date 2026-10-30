@@ -481,8 +481,10 @@ userSettingsRoutes.post<
     }
 
     // If the user has a password, we need to check the currentPassword is correct
+    // (`user` is loaded without the password column, so read it from
+    // `userWithPassword`)
     if (
-      user.password &&
+      userWithPassword.password &&
       (!req.body.currentPassword ||
         !(await userWithPassword.passwordMatch(req.body.currentPassword)))
     ) {

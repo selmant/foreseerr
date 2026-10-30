@@ -6,6 +6,7 @@ export {
   needsTmdbBrowseFilters,
   needsTraktRatingBrowseFilters,
   parseBrowseQueryFilters,
+  parseTmdbDiscoverQueryFilters,
   type BrowseQueryFilters,
 } from './query';
 import type { Request } from 'express';

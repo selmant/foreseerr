@@ -67,6 +67,8 @@ interface TitleCardProps {
   mediaUrl?: string | null;
   onLibraryOpenSeries?: (jellyfinSeriesId: string) => void;
   onLibraryManage?: () => void;
+  /** Hover, focus, or tap opened (true) or closed (false) the detail overlay. */
+  onShowDetailChange?: (shown: boolean) => void;
 }
 
 const messages = defineMessages('components.TitleCard', {
@@ -117,6 +119,7 @@ const TitleCard = ({
   mediaUrl,
   onLibraryOpenSeries,
   onLibraryManage,
+  onShowDetailChange,
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
@@ -152,9 +155,58 @@ const TitleCard = ({
     useState<boolean>(!isAddedToWatchlist);
   const [showBlocklistModal, setShowBlocklistModal] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const pointerOverSurface = useRef<Event | null>(null);
   useEffect(() => {
     setCurrentStatus(status);
   }, [status]);
+
+  useEffect(() => {
+    onShowDetailChange?.(showDetail);
+  }, [showDetail, onShowDetailChange]);
+
+  /**
+   * An open card stays open while its menu or a modal is up, or it has keyboard
+   * focus. Focus left by a click (a button, or the rating button the popover
+   * hands focus back to after saving) does not hold it open for the mouse.
+   */
+  const keepDetailOpen = useCallback(
+    (surface: HTMLElement) => {
+      const focused = document.activeElement;
+      return (
+        showTvMenu ||
+        showRequestModal ||
+        showBlocklistModal ||
+        Boolean(focused?.closest('[role="dialog"], [role="menu"]')) ||
+        (surface.contains(focused) &&
+          Boolean(focused?.matches(':focus-visible')))
+      );
+    },
+    [showTvMenu, showRequestModal, showBlocklistModal]
+  );
+
+  // React derives mouseleave from mouseout, which Chromium never sends when
+  // the element under the pointer is replaced (the request button or a watched
+  // icon swapping once data loads) and the pointer then leaves on its next
+  // move. The pointerover on whatever it moved to still arrives, so one that
+  // did not pass through this card's tree means the pointer has left it.
+  useEffect(() => {
+    if (!showDetail) return;
+    const onPointerOver = (event: PointerEvent) => {
+      const surface = surfaceRef.current;
+      if (
+        event.pointerType === 'touch' ||
+        event === pointerOverSurface.current ||
+        !surface ||
+        keepDetailOpen(surface)
+      ) {
+        return;
+      }
+      setShowDetail(false);
+    };
+    document.addEventListener('pointerover', onPointerOver);
+    return () => document.removeEventListener('pointerover', onPointerOver);
+  }, [showDetail, keepDetailOpen]);
 
   const requestComplete = useCallback((newStatus: MediaStatus) => {
     setCurrentStatus(newStatus);
@@ -578,23 +630,20 @@ const TitleCard = ({
         style={{
           paddingBottom: '150%',
         }}
+        ref={surfaceRef}
         onMouseEnter={() => {
           if (!isTouch) {
             setShowDetail(true);
           }
         }}
         onMouseLeave={(e) => {
-          if (
-            !showTvMenu &&
-            !showRequestModal &&
-            !showBlocklistModal &&
-            !document.activeElement?.closest(
-              '[role="dialog"], [role="menu"]'
-            ) &&
-            !e.currentTarget.contains(document.activeElement)
-          ) {
+          if (!keepDetailOpen(e.currentTarget)) {
             setShowDetail(false);
           }
+        }}
+        onPointerOver={(event) => {
+          // Portaled children (tooltips) count as the card, as for mouseleave.
+          pointerOverSurface.current = event.nativeEvent;
         }}
         onFocus={() => setShowDetail(true)}
         onBlur={(event) => {

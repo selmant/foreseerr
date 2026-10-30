@@ -3,6 +3,7 @@ import { SimklSyncItem } from '@server/entity/SimklSyncItem';
 import { SimklSyncState } from '@server/entity/SimklSyncState';
 import { User } from '@server/entity/User';
 import { UserSettings } from '@server/entity/UserSettings';
+import { SimklMediaActionProvider } from '@server/lib/mediaActions/simkl';
 import { cachedWatchedCoordinates } from '@server/lib/mediaActions/simklEpisodes';
 import { getSettings } from '@server/lib/settings';
 import { syncSimklUser } from '@server/lib/simklSync';
@@ -347,5 +348,53 @@ describe('Simkl sync (two-phase, per the Simkl sync guide)', () => {
       )
     );
     assert.deepEqual(await cached(userId), ['show:1:watching']);
+  });
+});
+
+describe('Simkl media action status', () => {
+  it('reads anime rows as the TMDB type they belong to', async () => {
+    const userId = await linkedUser();
+    const anime = (simkl: number, animeType: string) => ({
+      status: 'completed',
+      user_rating: 8,
+      last_watched_at: '2026-04-01T00:00:00Z',
+      anime_type: animeType,
+      show: { title: `Anime ${simkl}`, ids: { simkl, tmdb: '95479' } },
+    });
+    stubSimkl((path) => {
+      if (path === '/sync/activities')
+        return { status: 200, data: activities('2026-05-01T00:00:00Z') };
+      if (path === '/sync/all-items/anime')
+        return { status: 200, data: { anime: [anime(7, 'tv')] } };
+      return { status: 200, data: {} };
+    });
+    assert.equal((await syncSimklUser(userId, true)).stale, false);
+    const provider = new SimklMediaActionProvider();
+    assert.deepEqual(
+      await provider.getStatus(userId, { mediaType: 'tv', tmdbId: 95479 }),
+      { watched: true, rating: 8, ratingStars: 4 }
+    );
+    assert.equal(
+      (await provider.getStatus(userId, { mediaType: 'movie', tmdbId: 95479 }))
+        .watched,
+      false,
+      'a TV anime is not the movie with the same TMDB number'
+    );
+
+    await getRepository(SimklSyncItem).update(
+      { user: { id: userId } },
+      { animeType: 'movie' }
+    );
+    assert.equal(
+      (await provider.getStatus(userId, { mediaType: 'movie', tmdbId: 95479 }))
+        .watched,
+      true,
+      'an anime film'
+    );
+    assert.equal(
+      (await provider.getStatus(userId, { mediaType: 'tv', tmdbId: 95479 }))
+        .watched,
+      false
+    );
   });
 });

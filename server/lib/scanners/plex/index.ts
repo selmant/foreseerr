@@ -232,32 +232,34 @@ class PlexScanner
   private async processPlexMovie(plexitem: PlexLibraryItem) {
     const mediaIds = await this.getMediaIds(plexitem);
 
-    const has4k = plexitem.Media.some(
-      (media) => media.videoResolution === '4k'
-    );
-
-    await this.processMovie(mediaIds.tmdbId, {
-      is4k: has4k && this.enable4kMovie,
-      mediaAddedAt: new Date(plexitem.addedAt * 1000),
-      ratingKey: plexitem.ratingKey,
-      title: plexitem.title,
-    });
+    await this.processPlexMovieByTmdbId(plexitem, mediaIds.tmdbId);
   }
 
   private async processPlexMovieByTmdbId(
-    plexitem: PlexMetadata,
+    plexitem: PlexLibraryItem | PlexMetadata,
     tmdbId: number
   ) {
-    const has4k = plexitem.Media.some(
-      (media) => media.videoResolution === '4k'
+    // A title with both a standard and a 4K version is saved as both
+    const has4k =
+      this.enable4kMovie &&
+      plexitem.Media.some((media) => media.videoResolution === '4k');
+    const hasOtherResolution = plexitem.Media.some(
+      (media) => media.videoResolution !== '4k'
     );
 
-    await this.processMovie(tmdbId, {
-      is4k: has4k && this.enable4kMovie,
+    const options = {
       mediaAddedAt: new Date(plexitem.addedAt * 1000),
       ratingKey: plexitem.ratingKey,
       title: plexitem.title,
-    });
+    };
+
+    if (hasOtherResolution || !has4k) {
+      await this.processMovie(tmdbId, { ...options, is4k: false });
+    }
+
+    if (has4k) {
+      await this.processMovie(tmdbId, { ...options, is4k: true });
+    }
   }
 
   private async getTvShow({

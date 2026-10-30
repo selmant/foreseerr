@@ -6,7 +6,7 @@ import {
 import {
   filterDiscoverResults,
   hasBrowseQueryFilters,
-  parseBrowseQueryFilters,
+  parseTmdbDiscoverQueryFilters,
 } from '@server/lib/requestFilters';
 import {
   filterWatchedMixedBrowseResults,
@@ -48,7 +48,7 @@ export function needsDiscoverPostFilters(
   user: User | undefined,
   query: Request['query']
 ): boolean {
-  if (hasBrowseQueryFilters(parseBrowseQueryFilters(query))) {
+  if (hasBrowseQueryFilters(parseTmdbDiscoverQueryFilters(query))) {
     return true;
   }
   return Boolean(user?.id && parseTruthyQuery(query.ignoreWatched));

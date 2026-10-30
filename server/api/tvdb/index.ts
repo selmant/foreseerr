@@ -570,7 +570,7 @@ class Tvdb extends ExternalAPI implements TvShowProvider {
       overview: '',
       id: season.id,
       air_date: season.firstAired,
-      season_number: episodes.length,
+      season_number: seasonNumber,
     };
   }
 
@@ -607,7 +607,7 @@ class Tvdb extends ExternalAPI implements TvShowProvider {
       overview: '',
       id: seasons.id,
       air_date: seasons.firstAired,
-      season_number: episodes.length,
+      season_number: seasonNumber,
     };
   }
 

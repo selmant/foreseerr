@@ -93,6 +93,27 @@ describe('paginateTmdbDiscover', () => {
     assert.equal(page.hasMore, false);
   });
 
+  it('leaves runtime and status to TMDB instead of dropping summary rows', async () => {
+    const page = await paginateTmdbDiscover({
+      page: 1,
+      itemsPerPage: 2,
+      user: undefined,
+      query: { withRuntimeGte: '60', withRuntimeLte: '120', status: '3' },
+      fetchMappedPage: async () => ({
+        items: [makeMovie(1), makeMovie(2)],
+        totalPages: 5,
+        totalResults: 100,
+      }),
+    });
+
+    assert.deepEqual(
+      page.results.map((item) => item.id),
+      [1, 2]
+    );
+    assert.equal(page.totalPages, 5);
+    assert.equal(page.hasMore, undefined);
+  });
+
   it('degrades safely when upstream provider fetch fails', async () => {
     await assert.rejects(
       paginateTmdbDiscover({
@@ -118,6 +139,13 @@ describe('needsDiscoverPostFilters', () => {
     assert.equal(
       needsDiscoverPostFilters({ id: 1 } as never, { ignoreWatched: 'true' }),
       true
+    );
+    assert.equal(
+      needsDiscoverPostFilters(undefined, {
+        withRuntimeGte: '60',
+        status: '3',
+      }),
+      false
     );
   });
 });

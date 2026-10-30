@@ -15,14 +15,16 @@ afterEach(() => {
 /** `find` answers TMDB's `/find` by external id. */
 const fakeTmdb = (find: Record<string, { tv?: number[] }> = {}) =>
   ({
-    getMovie: async () => {
-      throw new Error('404');
+    getTitleSummary: async ({
+      mediaType,
+      tmdbId,
+    }: {
+      mediaType: 'movie' | 'tv';
+      tmdbId: number;
+    }) => {
+      if (mediaType === 'movie') throw new Error('404');
+      return { id: tmdbId, name: 'Breaking Bad', poster_path: '/bb.jpg' };
     },
-    getTvShow: async ({ tvId }: { tvId: number }) => ({
-      id: tvId,
-      name: 'Breaking Bad',
-      poster_path: '/bb.jpg',
-    }),
     getByExternalId: async ({
       externalId,
     }: {

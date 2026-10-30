@@ -24,3 +24,19 @@ export const sliderTarget = ({
     )
   );
 };
+
+/**
+ * Whether the titles alone are wider than the shelf. The See More card is left
+ * out so showing it can't make the shelf overflow and keep itself visible.
+ */
+export const titlesOverflow = ({
+  scrollWidth,
+  viewportWidth,
+  seeMoreWidth,
+  margin = 5,
+}: {
+  scrollWidth: number;
+  viewportWidth: number;
+  seeMoreWidth: number;
+  margin?: number;
+}) => scrollWidth - seeMoreWidth > viewportWidth + margin;

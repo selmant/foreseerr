@@ -1,0 +1,112 @@
+[package]
+name = "foreseerr"
+version = "0.1.0"
+edition = "2021"
+description = "Rust backend for Foreseerr, replacing the Node server route by route"
+publish = false
+license = "MIT"
+repository = "https://github.com/selmant/SeerrSuggestArr"
+readme = "README.md"
+keywords = ["media", "requests", "jellyfin", "plex", "server"]
+categories = ["web-programming::http-server"]
+rust-version = "1.85"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "tracing"] }
+base64 = "0.23"
+bcrypt = { version = "0.17", default-features = false, features = ["std"] }
+bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+hmac = "0.13"
+http-body-util = "0.1"
+lettre = { version = "0.11.23", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls-native-certs", "ring", "builder", "hostname"] }
+hyper = { version = "1", features = ["client", "http1", "server"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "service", "tokio"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "gzip", "deflate", "brotli"] }
+ring = { version = "0.17", default-features = false, features = ["alloc"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha1 = "0.11"
+sha2 = "0.11"
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "postgres", "tls-rustls-ring-webpki"] }
+subtle = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-normalization = "0.1.25"
+unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
+pgp = "0.17.0"
+rand = "0.8"
+yaml-rust2 = { version = "0.13", default-features = false }
+regex = "1.13"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+brotli-decompressor = { version = "4.0", default-features = false, features = ["std"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+future_incompatible = { level = "deny", priority = -1 }
+nonstandard_style = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+let_underscore_drop = "deny"
+meta_variable_misuse = "deny"
+missing_debug_implementations = "deny"
+redundant_lifetimes = "deny"
+single_use_lifetimes = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unit_bindings = "deny"
+unreachable_pub = "deny"
+unused_import_braces = "deny"
+unused_lifetimes = "deny"
+unused_macro_rules = "deny"
+unused_qualifications = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+# cargo group
+cargo_common_metadata = "deny"
+negative_feature_names = "deny"
+redundant_feature_names = "deny"
+wildcard_dependencies = "deny"
+# sqlx alone pulls two lines of the RustCrypto crates (digest 0.10 and 0.11),
+# so duplicate versions can't be avoided here.
+multiple_crate_versions = "allow"
+# restriction picks
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+as_conversions = "deny"
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+empty_structs_with_brackets = "deny"
+exit = "deny"
+expect_used = "deny"
+float_cmp_const = "deny"
+format_push_string = "deny"
+if_then_some_else_none = "deny"
+indexing_slicing = "deny"
+let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+lossy_float_literal = "deny"
+mem_forget = "deny"
+missing_assert_message = "deny"
+multiple_inherent_impl = "deny"
+panic = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+str_to_string = "deny"
+string_slice = "deny"
+tests_outside_test_module = "deny"
+todo = "deny"
+unimplemented = "deny"
+unneeded_field_pattern = "deny"
+unreachable = "deny"
+unwrap_in_result = "deny"
+unwrap_used = "deny"
+verbose_file_reads = "deny"
+wildcard_enum_match_arm = "deny"

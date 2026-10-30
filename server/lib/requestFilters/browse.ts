@@ -25,6 +25,7 @@ import {
   needsTmdbBrowseFilters,
   needsTraktRatingBrowseFilters,
   parseBrowseQueryFilters,
+  parseTmdbDiscoverQueryFilters,
   type BrowseQueryFilters,
 } from './query';
 
@@ -295,7 +296,7 @@ export const filterDiscoverResults = async <T extends BrowseResult>(
   results: T[],
   query: QueryLike = {}
 ): Promise<T[]> => {
-  const filters = parseBrowseQueryFilters(query);
+  const filters = parseTmdbDiscoverQueryFilters(query);
   if (!hasBrowseQueryFilters(filters) || !results.length) {
     return results;
   }

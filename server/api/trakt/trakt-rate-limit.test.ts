@@ -142,6 +142,27 @@ describe('TraktAPI rate limit gating', () => {
     assert.equal(publicCalls, 0);
   });
 
+  it('falls back to an app-key-only request the shared cache can hold', async () => {
+    const api = makeApi();
+    rawClient(api).defaults.adapter = async (config) =>
+      jsonResponse(config, 503, {});
+
+    const axiosClient = (api as unknown as { axios: AxiosInstance }).axios;
+    const publicAuth: unknown[] = [];
+    axiosClient.defaults.adapter = async (config) => {
+      publicAuth.push(config.headers?.Authorization);
+      return jsonResponse(config, 200, { name: 'Alice favorites' });
+    };
+
+    const payload = await (
+      api as unknown as {
+        getAuthenticatedOrPublic: (path: string) => Promise<unknown>;
+      }
+    ).getAuthenticatedOrPublic('/users/alice/lists/favorites');
+    assert.deepEqual(payload, { name: 'Alice favorites' });
+    assert.deepEqual(publicAuth, [undefined]);
+  });
+
   it('flushes watched GET cache after episode history writes', async () => {
     const api = makeApi();
     const client = rawClient(api);

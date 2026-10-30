@@ -55,12 +55,12 @@ export async function confirmTmdbId(
 
 export type TmdbTileArt = Pick<
   TmdbProbe,
-  'posterPath' | 'backdropPath' | 'releaseDate' | 'firstAirDate'
+  'posterPath' | 'backdropPath' | 'releaseDate' | 'firstAirDate' | 'voteAverage'
 >;
 
 /**
- * Poster, backdrop, and date from the cached confirm probe. No extra request
- * when the id was already checked; empty when the id is dead.
+ * Poster, backdrop, date, and score from the cached confirm probe. No extra
+ * request when the id was already checked; empty when the id is dead.
  */
 export async function tmdbTileArt(
   mediaType: 'movie' | 'tv',
@@ -74,6 +74,9 @@ export async function tmdbTileArt(
     ...(record.backdropPath ? { backdropPath: record.backdropPath } : {}),
     ...(record.releaseDate ? { releaseDate: record.releaseDate } : {}),
     ...(record.firstAirDate ? { firstAirDate: record.firstAirDate } : {}),
+    ...(record.voteAverage !== undefined
+      ? { voteAverage: record.voteAverage }
+      : {}),
   };
 }
 

@@ -82,8 +82,14 @@ export async function excludeTraktAnimeItems(
     .map((result) => result.item);
 }
 
+/**
+ * One upstream page; `hasMore` is the raw upstream's own signal, which a
+ * page the media-type filter already shortened or emptied still carries.
+ */
+type TraktUpstreamPage = { items: TraktMediaItem[]; hasMore: boolean };
+
 export async function fetchPaginatedTraktFilteredItems(
-  fetchPage: (page: number) => Promise<TraktMediaItem[]>,
+  fetchPage: (page: number) => Promise<TraktUpstreamPage>,
   page: number,
   itemsPerPage: number,
   filterItems: (items: TraktMediaItem[]) => Promise<TraktMediaItem[]>,
@@ -92,19 +98,16 @@ export async function fetchPaginatedTraktFilteredItems(
   const needed = page * itemsPerPage;
   const filtered: TraktMediaItem[] = [];
   let traktPage = 1;
-  let lastBatchFull = false;
+  let upstreamHasMore = false;
 
   while (traktPage <= MAX_TRAKT_PAGES) {
     const batch = await fetchPage(traktPage);
-    if (!batch.length) {
-      lastBatchFull = false;
-      break;
+    upstreamHasMore = batch.hasMore;
+    if (batch.items.length) {
+      filtered.push(...(await filterItems(batch.items)));
     }
 
-    lastBatchFull = batch.length >= itemsPerPage;
-    filtered.push(...(await filterItems(batch)));
-
-    if (!lastBatchFull) {
+    if (!upstreamHasMore) {
       break;
     }
 
@@ -120,7 +123,7 @@ export async function fetchPaginatedTraktFilteredItems(
       page,
       limit: itemsPerPage,
       sortBy,
-      hasMoreUpstream: lastBatchFull && traktPage <= MAX_TRAKT_PAGES,
+      hasMoreUpstream: upstreamHasMore && traktPage <= MAX_TRAKT_PAGES,
     });
   }
 
@@ -128,13 +131,13 @@ export async function fetchPaginatedTraktFilteredItems(
   const items = filtered.slice(start, start + itemsPerPage);
   const hasMore =
     filtered.length > start + itemsPerPage ||
-    (lastBatchFull && traktPage <= MAX_TRAKT_PAGES);
+    (upstreamHasMore && traktPage <= MAX_TRAKT_PAGES);
 
   return { items, hasMore };
 }
 
 export async function fetchPaginatedTraktAnimeItems(
-  fetchPage: (page: number) => Promise<TraktMediaItem[]>,
+  fetchPage: (page: number) => Promise<TraktUpstreamPage>,
   page: number,
   itemsPerPage: number,
   tmdb: TheMovieDb,
@@ -150,7 +153,7 @@ export async function fetchPaginatedTraktAnimeItems(
 }
 
 export async function fetchPaginatedTraktNonAnimeItems(
-  fetchPage: (page: number) => Promise<TraktMediaItem[]>,
+  fetchPage: (page: number) => Promise<TraktUpstreamPage>,
   page: number,
   itemsPerPage: number,
   tmdb: TheMovieDb,

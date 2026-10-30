@@ -11,6 +11,7 @@ import {
   MediaType,
 } from '@server/constants/media';
 import { getRepository } from '@server/datasource';
+import EpisodeRequest from '@server/entity/EpisodeRequest';
 import Media from '@server/entity/Media';
 import {
   DuplicateMediaRequestError,
@@ -18,7 +19,6 @@ import {
   QuotaRestrictedError,
 } from '@server/entity/MediaRequest';
 import OverrideRule from '@server/entity/OverrideRule';
-import EpisodeRequest from '@server/entity/EpisodeRequest';
 import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import { User } from '@server/entity/User';
@@ -481,6 +481,71 @@ describe('PUT /request/:requestId (tv)', () => {
       otherSaved.seasons.map((s) => s.seasonNumber),
       [3]
     );
+  });
+
+  it('holds a whole-season edit to the series quota', async () => {
+    const userRepo = getRepository(User);
+    const requestRepo = getRepository(MediaRequest);
+
+    const owner = await userRepo.findOneOrFail({
+      where: { email: 'friend@seerr.dev' },
+    });
+    owner.tvQuotaLimit = 2;
+    owner.tvQuotaDays = 7;
+    await userRepo.save(owner);
+
+    const media = await getRepository(Media).save(
+      new Media({
+        mediaType: MediaType.TV,
+        tmdbId: 67891,
+        status: MediaStatus.PENDING,
+        status4k: MediaStatus.UNKNOWN,
+      })
+    );
+    const mediaRequest = await requestRepo.save(
+      new MediaRequest({
+        type: MediaType.TV,
+        status: MediaRequestStatus.PENDING,
+        media,
+        requestedBy: owner,
+        is4k: false,
+        tvQuotaUnits: 1,
+        seasons: [
+          new SeasonRequest({
+            seasonNumber: 1,
+            status: MediaRequestStatus.PENDING,
+          }),
+        ],
+      })
+    );
+
+    const agent = await loginAs('friend@seerr.dev', 'test1234');
+    const over = await agent.put(`/request/${mediaRequest.id}`).send({
+      mediaType: MediaType.TV,
+      seasons: [1, 2, 3],
+    });
+
+    assert.strictEqual(over.status, 403);
+    assert.strictEqual(over.body.message, 'Series Quota exceeded.');
+    const kept = await requestRepo.findOneOrFail({
+      where: { id: mediaRequest.id },
+    });
+    assert.strictEqual(kept.tvQuotaUnits, 1);
+    assert.deepStrictEqual(
+      kept.seasons.map((s) => s.seasonNumber),
+      [1]
+    );
+
+    const within = await agent.put(`/request/${mediaRequest.id}`).send({
+      mediaType: MediaType.TV,
+      seasons: [1, 2],
+    });
+
+    assert.strictEqual(within.status, 200);
+    const grown = await requestRepo.findOneOrFail({
+      where: { id: mediaRequest.id },
+    });
+    assert.strictEqual(grown.tvQuotaUnits, 2);
   });
 });
 
