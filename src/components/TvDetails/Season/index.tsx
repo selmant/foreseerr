@@ -11,6 +11,7 @@ import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { episodeRequestStatus } from '@app/utils/episodeRequests';
 import { invalidateMediaActionCaches } from '@app/utils/mediaActionInvalidation';
 import {
   failedProviderLabels,
@@ -85,11 +86,7 @@ const seasonWatchStatusKey = (tvId: number, seasonNumber: number) =>
   `/api/v1/media-actions/tv/${tvId}/seasons/${seasonNumber}/episodes/status`;
 
 const effectiveRequestStatus = (state?: EpisodeRequestState) =>
-  state?.requestStatus === MediaRequestStatus.FAILED ||
-  state?.requestStatus === MediaRequestStatus.DECLINED ||
-  state?.requestStatus === MediaRequestStatus.COMPLETED
-    ? state.requestStatus
-    : state?.episodeStatus;
+  episodeRequestStatus(state?.requestStatus, state?.episodeStatus);
 
 export const SeasonWatchProgress = ({
   tvId,
