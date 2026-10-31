@@ -432,7 +432,9 @@ fn to_v3_release(item: Value) -> Value {
 /// The rejection reason of a multi-season release or download.
 pub const MULTI_SEASON: &str = "multiSeason";
 
-/// v5 rejections carry a reason code and the text in `message`.
+/// v5 rejections carry a reason code and the text in `message`; v3's
+/// `reason` is the text, and the code is kept next to it as `code` (e.g.
+/// `executableFile`).
 fn to_v3_import_candidate(item: &mut Value) {
     let Some(Value::Array(rejections)) = item.get_mut("rejections") else {
         return;
@@ -450,6 +452,9 @@ fn to_v3_import_candidate(item: &mut Value) {
         v3.insert(String::from("reason"), reason);
         if let Some(kind) = r.get("type") {
             v3.insert(String::from("type"), kind.clone());
+        }
+        if let Some(code) = r.get("reason").filter(|v| v.is_string()) {
+            v3.insert(String::from("code"), code.clone());
         }
         *rejection = Value::Object(v3);
     }
@@ -515,6 +520,34 @@ pub fn queue_item_episodes(item: &Value) -> Vec<Value> {
             .into_iter()
             .collect(),
     }
+}
+
+/// The start of Sonarr 5's warning on a download it won't import
+/// automatically because it holds several seasons
+/// (`DownloadedEpisodesImportService`).
+const MULTI_SEASON_WARNING: &str = "Multi-season download";
+
+/// Whether a queue entry downloads several seasons: v5 lists them in
+/// `seasons`, and warns that it won't import such a download
+/// automatically. Never on v3, which has neither.
+#[must_use]
+pub fn queue_item_multi_season(item: &Value) -> bool {
+    let seasons = item
+        .get("seasons")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let warned = item
+        .get("statusMessages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|status| status.get("messages").and_then(Value::as_array))
+        .flatten()
+        .any(|m| {
+            m.as_str()
+                .is_some_and(|m| m.starts_with(MULTI_SEASON_WARNING))
+        });
+    seasons > 1 || warned
 }
 
 /// Sonarr 5 removes a download from the client before blocklisting it and
@@ -860,7 +893,9 @@ mod tests {
                     {"reason": "unknownSeries", "message": "Unknown Series", "type": "permanent"}
                 ]}])
             ),
-            json!([{"path": "/a", "rejections": [{"reason": "Unknown Series", "type": "permanent"}]}])
+            json!([{"path": "/a", "rejections": [
+                {"reason": "Unknown Series", "type": "permanent", "code": "unknownSeries"}
+            ]}])
         );
     }
 
@@ -941,6 +976,26 @@ mod tests {
             q(&[("seriesId", "7")]),
             "no episodes asked for"
         );
+    }
+
+    #[test]
+    fn multi_season_downloads() {
+        assert!(queue_item_multi_season(&json!({"seasons": [
+            {"seasonNumber": 1, "episodeCount": 7, "episodesWithFilesCount": 0},
+            {"seasonNumber": 2, "episodeCount": 13, "episodesWithFilesCount": 0}
+        ]})));
+        assert!(
+            queue_item_multi_season(
+                &json!({"seasons": [{"seasonNumber": 1}], "statusMessages": [
+                    {"title": "t", "messages": ["Multi-season download, unable to import automatically"]}
+                ]})
+            ),
+            "Sonarr's warning"
+        );
+        assert!(!queue_item_multi_season(
+            &json!({"seasons": [{"seasonNumber": 1}], "statusMessages": [{"title": "t", "messages": ["Sample"]}]})
+        ));
+        assert!(!queue_item_multi_season(&json!({"episodeId": 3})), "v3");
     }
 
     #[test]

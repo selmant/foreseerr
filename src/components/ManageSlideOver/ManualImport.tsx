@@ -12,6 +12,7 @@ import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import EpisodeAssignmentPicker from './EpisodeAssignmentPicker';
+import { explainRejections, rejectionMessages } from './rejectionExplanations';
 
 import {
   formatSize,
@@ -77,6 +78,8 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   moveHint:
     'Move removes the files from the download folder after adding them to your library.',
   copyHint: 'Copy keeps the original files in the download folder.',
+  multiSeasonHint:
+    "This file comes from a multi-season download, which {service} won't import automatically. Check the episodes it holds, then apply them before importing.",
 });
 
 const MANUAL_IMPORT_POLL_MS = 2000;
@@ -355,11 +358,28 @@ const ManualImport = ({
     );
   };
 
+  // A flagged file is never imported; a multi-season one only to episodes
+  // picked for it.
+  const importable = (candidate: ImportCandidate) =>
+    candidate.complete &&
+    !candidate.unsafe &&
+    (!candidate.multiSeason ||
+      (episodeMappings[candidate.token]?.length ?? 0) > 0);
+  const explain = (candidate: ImportCandidate) =>
+    explainRejections(
+      intl,
+      'import',
+      candidate.rejections.map(({ reason, code }) => ({
+        message: reason,
+        code,
+      })),
+      service
+    );
   const selectedFiles = candidates.filter((candidate) =>
     selected.includes(candidate.token)
   );
   const selectedWarnings = selectedFiles.flatMap((candidate) =>
-    candidate.rejections.map((rejection) => rejection.reason)
+    explain(candidate).map((rejection) => rejection.text)
   );
 
   const submitImport = async () => {
@@ -414,7 +434,7 @@ const ManualImport = ({
 
   const episodes = context.seasons?.flatMap((season) => season.episodes) ?? [];
   const isBusy = scanning || submitting || polling;
-  const readyFiles = candidates.filter((candidate) => candidate.complete);
+  const readyFiles = candidates.filter(importable);
 
   return (
     <div className="space-y-3">
@@ -655,7 +675,11 @@ const ManualImport = ({
                   buttonType="success"
                   buttonSize="sm"
                   className="min-h-11"
-                  disabled={!selectedFiles.length || submitting}
+                  disabled={
+                    !selectedFiles.length ||
+                    submitting ||
+                    !selectedFiles.every(importable)
+                  }
                   onClick={() => void submitImport()}
                 >
                   <ArrowDownTrayIcon />
@@ -674,7 +698,10 @@ const ManualImport = ({
               ref={importTriggerRef}
               type="button"
               disabled={
-                !selected.length || submitting || rematchingToken !== undefined
+                !selected.length ||
+                submitting ||
+                rematchingToken !== undefined ||
+                !selectedFiles.every(importable)
               }
               onClick={() => setConfirmOpen(true)}
             >
@@ -688,6 +715,10 @@ const ManualImport = ({
           )}
           <ul className="divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
             {candidates.map((candidate) => {
+              const unsafeText =
+                candidate.unsafe &&
+                intl.formatMessage(rejectionMessages[candidate.unsafe]);
+              const warnings = explain(candidate);
               const assigned =
                 episodeMappings[candidate.token] ??
                 candidate.episodes?.map((episode) => episode.id) ??
@@ -701,7 +732,8 @@ const ManualImport = ({
                       type="checkbox"
                       className="mt-0.5 flex-none"
                       disabled={
-                        !candidate.complete ||
+                        (!importable(candidate) &&
+                          !selected.includes(candidate.token)) ||
                         submitting ||
                         rematchingToken !== undefined
                       }
@@ -755,16 +787,52 @@ const ManualImport = ({
                         {intl.formatMessage(messages.incomplete, { service })}
                       </p>
                     )}
-                    {candidate.rejections.length > 0 && (
-                      <p className="mt-1 text-xs text-yellow-300">
-                        {candidate.rejections
-                          .map((rejection) => rejection.reason)
-                          .join(' • ')}
+                    {unsafeText ? (
+                      <p className="mt-1 text-xs font-semibold text-red-400">
+                        {unsafeText}
+                        {warnings
+                          .filter((warning) => warning.text === unsafeText)
+                          .map((warning, index) => (
+                            <span
+                              key={`${index}-${warning.detail}`}
+                              className="block font-normal text-gray-400"
+                            >
+                              {warning.detail}
+                            </span>
+                          ))}
                       </p>
+                    ) : (
+                      candidate.multiSeason && (
+                        <p className="mt-1 text-xs text-indigo-200">
+                          {intl.formatMessage(messages.multiSeasonHint, {
+                            service,
+                          })}
+                        </p>
+                      )
+                    )}
+                    {warnings.some(
+                      (warning) => warning.text !== unsafeText
+                    ) && (
+                      <ul className="mt-1 space-y-0.5 text-xs text-yellow-300">
+                        {warnings
+                          .filter((warning) => warning.text !== unsafeText)
+                          .map((rejection, index) => (
+                            <li key={`${index}-${rejection.text}`}>
+                              {rejection.text}
+                              {rejection.detail && (
+                                <span className="block text-gray-400">
+                                  {rejection.detail}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                      </ul>
                     )}
                     {context.mediaType === 'tv' &&
+                      !candidate.unsafe &&
                       (selected.includes(candidate.token) ||
-                        !candidate.complete) && (
+                        !candidate.complete ||
+                        candidate.multiSeason) && (
                         <div className="mt-2 rounded-md border border-gray-700 bg-gray-800 p-3">
                           <div className="mb-2 text-sm font-semibold text-gray-200">
                             {intl.formatMessage(messages.episodeAssignment)}

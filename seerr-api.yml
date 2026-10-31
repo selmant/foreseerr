@@ -11502,7 +11502,7 @@ paths:
                   type: string
       responses:
         '200':
-          description: Arr manual import candidates with opaque tokens
+          description: 'Arr manual import candidates with opaque tokens. Sonarr 5 rejections carry a typed `code` next to `reason`; a candidate flagged as potentially dangerous or executable has `unsafe`, and one from a multi-season download has `multiSeason`.'
         '401':
           description: Unauthorized
         '409':
@@ -11614,7 +11614,7 @@ paths:
         '401':
           description: Unauthorized
         '409':
-          description: Invalid, expired, or unacknowledged import token
+          description: 'Invalid, expired, or unacknowledged import token; a file flagged as potentially dangerous or executable (never imported, acknowledged or not); or a file from a multi-season download without `episodeMappings` for it'
   /media/{mediaId}/servarr/commands/{token}:
     get:
       summary: Get Servarr manual import command status

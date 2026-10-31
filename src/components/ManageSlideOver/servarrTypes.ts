@@ -16,7 +16,11 @@ export type ServarrContext = {
 };
 
 export type ImportSource = { token: string; kind: 'queue'; label: string };
-export type Rejection = { reason: string; type?: string };
+/**
+ * An import warning: `reason` is the Arr's text; `code` is Sonarr 5's
+ * typed reason (e.g. `executableFile`).
+ */
+export type Rejection = { reason: string; type?: string; code?: string };
 /** A Sonarr 5 release rejection with its typed reason (e.g. `blocklisted`). */
 export type ReleaseRejection = {
   message: string;
@@ -61,6 +65,10 @@ export type ImportCandidate = {
   seasonNumber?: number;
   episodes?: Episode[];
   complete: boolean;
+  /** Flagged as potentially dangerous or executable: never importable. */
+  unsafe?: 'dangerousFile' | 'executableFile';
+  /** From a multi-season download: import only to episodes picked for it. */
+  multiSeason?: boolean;
 };
 
 export const formatSize = (size: number) =>

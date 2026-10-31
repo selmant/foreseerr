@@ -924,6 +924,7 @@
   "components.ManageSlideOver.ManualImport.manualImport": "Manual Import ({count})",
   "components.ManageSlideOver.ManualImport.moveFiles": "Move Files",
   "components.ManageSlideOver.ManualImport.moveHint": "Move removes the files from the download folder after adding them to your library.",
+  "components.ManageSlideOver.ManualImport.multiSeasonHint": "This file comes from a multi-season download, which {service} won't import automatically. Check the episodes it holds, then apply them before importing.",
   "components.ManageSlideOver.ManualImport.noCandidates": "{service} found no manual-import candidates in {source}.",
   "components.ManageSlideOver.ManualImport.noSources": "No download is waiting for a manual import.",
   "components.ManageSlideOver.ManualImport.pollTimeout": "Manual import status check timed out.",

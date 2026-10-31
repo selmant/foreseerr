@@ -47,14 +47,88 @@ fn interactive(item: &Value) -> Option<bool> {
     Some(truthy(item.get("downloadId")) && truthy(item.get("outputPath")))
 }
 
-/// `importSourceFor(item)`.
+/// `importSourceFor(item)`. A Sonarr 5 download of several seasons is
+/// marked `multiSeason`: Sonarr won't import it automatically, and its
+/// files are imported only to episodes the user picked.
 fn source_for(item: &Value) -> Value {
     let mut out = Map::new();
     out.insert(String::from("kind"), Value::from("queue"));
     put(&mut out, "label", item.get("title").cloned());
     put(&mut out, "folder", item.get("outputPath").cloned());
     put(&mut out, "downloadId", item.get("downloadId").cloned());
+    if crate::sonarrv5::queue_item_multi_season(item) {
+        out.insert(String::from("multiSeason"), Value::Bool(true));
+    }
     Value::Object(out)
+}
+
+/// Sonarr's and Radarr's `FileExtensions.DangerousExtensions`.
+const DANGEROUS_EXTENSIONS: &[&str] = &["arj", "lnk", "lzh", "ps1", "scr", "vbs", "zipx"];
+/// Sonarr's and Radarr's `FileExtensions.ExecutableExtensions`.
+const EXECUTABLE_EXTENSIONS: &[&str] = &["bat", "cmd", "exe", "sh"];
+/// The rejection codes (Sonarr 5) of the two.
+const DANGEROUS_FILE: &str = "dangerousFile";
+const EXECUTABLE_FILE: &str = "executableFile";
+
+/// The extension of the last segment of a path, lower-cased, without the
+/// dot (`Path.GetExtension`, for `/` and `\` separators alike).
+fn extension(path: &str) -> Option<String> {
+    let name = path.rsplit(['/', '\\']).next()?;
+    name.rsplit_once('.').map(|(_, ext)| ext.to_lowercase())
+}
+
+/// Why a candidate must never be imported, even with its warnings
+/// acknowledged: a file the Arr calls potentially dangerous or executable
+/// (typed as `dangerousFile`/`executableFile` on Sonarr 5, by the message
+/// both Sonarr 4 and 5 give otherwise), or one whose own extension is on
+/// those lists.
+fn unsafe_kind(candidate: &Value) -> Option<&'static str> {
+    let rejections = candidate.get("rejections").and_then(Value::as_array);
+    for rejection in rejections.into_iter().flatten() {
+        let code = rejection.get("code").and_then(Value::as_str);
+        let text = rejection
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if code == Some(DANGEROUS_FILE) || text.starts_with("Caution: Found potentially dangerous")
+        {
+            return Some(DANGEROUS_FILE);
+        }
+        if code == Some(EXECUTABLE_FILE) || text.starts_with("Caution: Found executable") {
+            return Some(EXECUTABLE_FILE);
+        }
+    }
+    for key in ["path", "relativePath"] {
+        let Some(ext) = candidate
+            .get(key)
+            .and_then(Value::as_str)
+            .and_then(extension)
+        else {
+            continue;
+        };
+        if DANGEROUS_EXTENSIONS.contains(&ext.as_str()) {
+            return Some(DANGEROUS_FILE);
+        }
+        if EXECUTABLE_EXTENSIONS.contains(&ext.as_str()) {
+            return Some(EXECUTABLE_FILE);
+        }
+    }
+    None
+}
+
+/// Whether a candidate comes from a multi-season download (or Sonarr says
+/// so of the file itself), so it may only be imported to the episodes the
+/// user picked for it.
+fn multi_season(candidate: &Value, source: &Value) -> bool {
+    truthy(source.get("multiSeason"))
+        || candidate
+            .get("rejections")
+            .and_then(Value::as_array)
+            .is_some_and(|list| {
+                list.iter().any(|r| {
+                    r.get("code").and_then(Value::as_str) == Some(crate::sonarrv5::MULTI_SEASON)
+                })
+            })
 }
 
 /// `getImportQueue(context)`: the queue details of the mapped title.
@@ -211,6 +285,10 @@ fn candidate_response(candidate: &Value, c: &Context, user_id: i64, source: &Val
         String::from("complete"),
         Value::Bool(complete(candidate, c.radarr)),
     );
+    put(&mut out, "unsafe", unsafe_kind(candidate).map(Value::from));
+    if !c.radarr && multi_season(candidate, source) {
+        out.insert(String::from("multiSeason"), Value::Bool(true));
+    }
     Value::Object(out)
 }
 
@@ -635,6 +713,7 @@ async fn run_import(ctx: &Ready<'_>, user: i64, id: i64, b: &ImportBody) -> Step
         .iter()
         .map(|s| s.get("source").cloned().unwrap_or(Value::Null))
         .collect();
+    safe_to_import(&c, b, &stored)?;
     let arr = c.arr(ctx);
     for source in &sources {
         assert_current(&c, &arr, source).await?;
@@ -669,6 +748,41 @@ async fn run_import(ctx: &Ready<'_>, user: i64, id: i64, b: &ImportBody) -> Step
     }
     assign_targets(&c, &arr, &mut files, b).await?;
     run_command(ctx, &c, &arr, files, b, user, intervention).await
+}
+
+/// Refuses, before anything is asked of the Arr, a file flagged as
+/// potentially dangerous or executable (no acknowledgement lets it
+/// through), and a file of a multi-season download the user didn't pick
+/// episodes for.
+fn safe_to_import(c: &Context, b: &ImportBody, stored: &[Value]) -> Step<()> {
+    let candidate = |s: &Value| s.get("candidate").cloned().unwrap_or(Value::Null);
+    if stored.iter().any(|s| unsafe_kind(&candidate(s)).is_some()) {
+        return Err(Fail::Status(
+            409,
+            String::from(
+                "Foreseerr does not import files flagged as potentially dangerous or executable.",
+            ),
+        ));
+    }
+    if c.radarr {
+        return Ok(());
+    }
+    let unpicked = stored.iter().zip(&b.tokens).any(|(s, token)| {
+        multi_season(&candidate(s), s.get("source").unwrap_or(&Value::Null))
+            && !b
+                .mappings
+                .iter()
+                .any(|(t, ids)| t == token && !ids.is_empty())
+    });
+    if unpicked {
+        return Err(Fail::Status(
+            409,
+            String::from(
+                "Choose the episodes of every file from a multi-season download before importing.",
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// `movieId`, or `seriesId` and the chosen (or matched) episodes, on every
@@ -874,6 +988,119 @@ mod tests {
         assert!(
             matches!(parsed, Some(Ok(ImportBody { copy: true, .. }))),
             "copy mode"
+        );
+    }
+
+    #[test]
+    fn unsafe_files() {
+        let typed =
+            |code: &str| json!({"path": "/d/a.mkv", "rejections": [{"reason": "m", "code": code}]});
+        assert_eq!(unsafe_kind(&typed("dangerousFile")), Some("dangerousFile"));
+        assert_eq!(
+            unsafe_kind(&typed("executableFile")),
+            Some("executableFile")
+        );
+        assert_eq!(unsafe_kind(&typed("sample")), None, "another warning");
+        assert_eq!(
+            unsafe_kind(&json!({"rejections": [
+                {"reason": "Caution: Found executable file with extension: '.exe'", "type": "permanent"}
+            ]})),
+            Some("executableFile"),
+            "Sonarr 4 says it in words"
+        );
+        assert_eq!(
+            unsafe_kind(&json!({"rejections": [
+                {"reason": "Caution: Found potentially dangerous file with extension: .lnk"}
+            ]})),
+            Some("dangerousFile")
+        );
+        assert_eq!(
+            unsafe_kind(&json!({"path": "/d/Show.S01E01.mkv.EXE", "rejections": []})),
+            Some("executableFile"),
+            "the file itself, any case"
+        );
+        assert_eq!(
+            unsafe_kind(&json!({"path": "C:\\d\\x.scr"})),
+            Some("dangerousFile"),
+            "a Windows path"
+        );
+        assert_eq!(
+            unsafe_kind(&json!({"relativePath": "Show/x.vbs"})),
+            Some("dangerousFile")
+        );
+        assert_eq!(
+            unsafe_kind(&json!({"path": "/d.exe/Show.S01E01.mkv"})),
+            None,
+            "only the file name counts"
+        );
+        assert_eq!(extension("/a/b.tar.GZ"), Some(String::from("gz")));
+        assert_eq!(extension("/a/noext"), None);
+    }
+
+    #[test]
+    fn multi_season_downloads() {
+        let item = json!({
+            "status": "completed", "trackedDownloadStatus": "warning", "downloadId": "d",
+            "outputPath": "/x", "title": "Show.S01-S02",
+            "seasons": [{"seasonNumber": 1}, {"seasonNumber": 2}]
+        });
+        let source = source_for(&item);
+        assert_eq!(source.get("multiSeason"), Some(&json!(true)), "source");
+        let file = json!({"path": "/x/Show.S02E01.mkv", "rejections": []});
+        assert!(multi_season(&file, &source), "from the download");
+        assert!(
+            multi_season(
+                &json!({"rejections": [{"reason": "m", "code": "multiSeason"}]}),
+                &Value::Null
+            ),
+            "Sonarr says so of the file"
+        );
+        assert!(!multi_season(&file, &source_for(&json!({"title": "T"}))));
+        let body = |mappings: Vec<(String, Vec<i64>)>| ImportBody {
+            tokens: vec![String::from("a")],
+            copy: false,
+            is4k: false,
+            acknowledge: true,
+            mappings,
+            intervention: None,
+        };
+        let c = Context {
+            media_id: 1,
+            is4k: false,
+            radarr: false,
+            external_id: 7,
+            service_id: 1,
+            service_name: None,
+            native_url: None,
+            server: Value::Null,
+        };
+        let stored = [json!({"candidate": file, "source": source})];
+        assert!(
+            matches!(
+                safe_to_import(&c, &body(Vec::new()), &stored),
+                Err(Fail::Status(409, _))
+            ),
+            "episodes not picked"
+        );
+        assert!(
+            matches!(
+                safe_to_import(&c, &body(vec![(String::from("a"), Vec::new())]), &stored),
+                Err(Fail::Status(409, _))
+            ),
+            "an empty pick"
+        );
+        assert_eq!(
+            safe_to_import(&c, &body(vec![(String::from("a"), vec![21])]), &stored),
+            Ok(()),
+            "picked"
+        );
+        let exe = [json!({"candidate": {"path": "/x/setup.exe"}, "source": {}})];
+        assert!(
+            matches!(
+                safe_to_import(&c, &body(vec![(String::from("a"), vec![21])]), &exe),
+                Err(Fail::Status(409, m)) if m.contains("dangerous or executable")
+            ),
+            "never, acknowledged or not"
         );
     }
 
