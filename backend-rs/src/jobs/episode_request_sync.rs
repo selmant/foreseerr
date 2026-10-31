@@ -124,7 +124,10 @@ pub fn watch_ahead_window<S: std::hash::BuildHasher>(
     regular.into_iter().skip(last).take(take).cloned().collect()
 }
 
-/// `Tvdb.getEpisodeCatalog({ tvId })` in its default language.
+/// `Tvdb.getEpisodeCatalog({ tvId })` in its default language, in TVDB's
+/// `default` order as the request UI lists episodes (the window is counted
+/// in the numbers the viewer requested by); matching Sonarr's numbers uses
+/// the aired order instead ([`crate::episodeorder::aired_catalog`]).
 async fn episode_catalog(job: &JobCtx, show_id: i64) -> Result<Vec<CatalogEpisode>> {
     let client = &job.state.outbound;
     crate::tvdb::ensure_instance(client).await?;
@@ -138,7 +141,7 @@ async fn episode_catalog(job: &JobCtx, show_id: i64) -> Result<Vec<CatalogEpisod
         .and_then(Value::as_i64)
         .filter(|id| *id != 0 && *id != -1)
         .ok_or_else(|| anyhow!("[TVDB] TVDB ID not found for series"))?;
-    crate::episodeorder::aired_catalog(client, tvdb_id).await
+    crate::episodeorder::catalog_in(client, tvdb_id, crate::episodeorder::TVDB_DEFAULT).await
 }
 
 /// A Sonarr series and its episodes for one server.

@@ -19,8 +19,12 @@ use serde_json::{json, Value};
 use crate::jobs::episode_request_sync::CatalogEpisode;
 use crate::settings::public::truthy;
 
-/// `SeasonType.Official`: the aired order.
+/// `SeasonType.Official`: the aired order, in Sonarr and in TVDB.
 pub const OFFICIAL: &str = "official";
+
+/// TVDB's `default` season type: the order a series' TVDB editors chose,
+/// the aired one for most series. The request UI lists episodes in it.
+pub const TVDB_DEFAULT: &str = "default";
 
 /// `getEpisodeCatalog` reads at most this many pages.
 const MAX_PAGES: u32 = 50;
@@ -36,14 +40,31 @@ pub fn other_order(series: &Value) -> Option<&str> {
         .filter(|t| !t.is_empty() && !t.eq_ignore_ascii_case(OFFICIAL))
 }
 
-/// `Tvdb.getEpisodeCatalog` of a TVDB series in TVDB's default language:
-/// the episodes of its official seasons in aired order (TVDB's `default`
-/// season type), sorted by season and episode.
+/// The aired order of a TVDB series in TVDB's default language.
+///
+/// The episodes of its official seasons numbered as aired (TVDB's
+/// `official` season type, which Sonarr's aired order follows), sorted by
+/// season and episode.
 ///
 /// # Errors
 ///
 /// When TVDB can't be logged in to or asked.
 pub async fn aired_catalog(client: &reqwest::Client, tvdb_id: i64) -> Result<Vec<CatalogEpisode>> {
+    catalog_in(client, tvdb_id, OFFICIAL).await
+}
+
+/// `Tvdb.getEpisodeCatalog` of a TVDB series in TVDB's default language,
+/// numbered in TVDB's `season_type` order: the episodes of its official
+/// seasons, sorted by season and episode.
+///
+/// # Errors
+///
+/// When TVDB can't be logged in to or asked.
+pub async fn catalog_in(
+    client: &reqwest::Client,
+    tvdb_id: i64,
+    season_type: &str,
+) -> Result<Vec<CatalogEpisode>> {
     crate::tvdb::ensure_instance(client).await?;
     crate::tvdb::refresh_token(client).await?;
     let extended = crate::tvdb::get(
@@ -64,14 +85,7 @@ pub async fn aired_catalog(client: &reqwest::Client, tvdb_id: i64) -> Result<Vec
         .unwrap_or_default();
     let mut raw: Vec<Value> = Vec::new();
     for page in 0..MAX_PAGES {
-        let response = crate::tvdb::get(
-            client,
-            &format!(
-                "/series/{tvdb_id}/episodes/default/{}?page={page}",
-                crate::tvdb::DEFAULT_LANGUAGE
-            ),
-        )
-        .await?;
+        let response = crate::tvdb::get(client, &episodes_path(tvdb_id, season_type, page)).await?;
         let episodes = response
             .pointer("/data/episodes")
             .and_then(Value::as_array)
@@ -84,6 +98,14 @@ pub async fn aired_catalog(client: &reqwest::Client, tvdb_id: i64) -> Result<Vec
         }
     }
     Ok(catalog_of(&raw, &official))
+}
+
+/// A page of a TVDB series' episodes in the `season_type` order.
+fn episodes_path(tvdb_id: i64, season_type: &str, page: u32) -> String {
+    format!(
+        "/series/{tvdb_id}/episodes/{season_type}/{}?page={page}",
+        crate::tvdb::DEFAULT_LANGUAGE
+    )
 }
 
 /// The raw TVDB episodes of the `official` seasons as catalog entries,
@@ -433,6 +455,20 @@ mod tests {
                 json!({"seasonNumber": 2, "monitored": true, "statistics": {"episodeFileCount": 1, "totalEpisodeCount": 3}}),
             ],
             "counted per aired season, not as Sonarr's one season"
+        );
+    }
+
+    #[test]
+    fn aired_catalog_reads_the_official_order() {
+        assert_eq!(
+            episodes_path(81797, OFFICIAL, 2),
+            "/series/81797/episodes/official/eng?page=2",
+            "aired order, not the series' default one"
+        );
+        assert_eq!(
+            episodes_path(81797, TVDB_DEFAULT, 0),
+            "/series/81797/episodes/default/eng?page=0",
+            "the request UI's order for watch-ahead"
         );
     }
 
