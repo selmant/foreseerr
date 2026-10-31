@@ -157,6 +157,10 @@ pub enum Aired {
     Mapped(i64, i64),
     /// Sonarr numbers it in another order and its aired place is unknown.
     Unknown,
+    /// Sonarr numbers it in another order and TVDB, which knows its aired
+    /// place, couldn't be asked: a new one waits for a run that can place
+    /// it, so no season premiere is missed.
+    Unchecked,
 }
 
 impl Normalized {
@@ -369,7 +373,7 @@ async fn place_in_aired_order(job: &JobCtx, episodes: &[Value], occurrences: &mu
                         label = "Release Calendar Sync",
                         tvdb_id,
                         error_message = %format!("{e:#}"),
-                        "Failed to load the aired episode order of a series Sonarr numbers in another order; its season premieres are not announced this time"
+                        "Failed to load the aired episode order of a series Sonarr numbers in another order; its new calendar entries wait for a run that can check them for season premieres"
                     );
                     None
                 }
@@ -384,9 +388,13 @@ async fn place_in_aired_order(job: &JobCtx, episodes: &[Value], occurrences: &mu
     }
 }
 
-/// An episode's aired place from its series' aired numbers, when known.
+/// An episode's aired place from its series' aired numbers (`None` when
+/// TVDB couldn't be asked).
 fn placed(numbers: Option<&AiredNumbers>, tvdb_id: Option<i64>) -> Aired {
-    match tvdb_id.and_then(|t| numbers?.get(&t)) {
+    let Some(numbers) = numbers else {
+        return Aired::Unchecked;
+    };
+    match tvdb_id.and_then(|t| numbers.get(&t)) {
         Some(&(season, episode)) => Aired::Mapped(season, episode),
         None => Aired::Unknown,
     }
@@ -900,6 +908,26 @@ mod tests {
 
     fn server() -> Value {
         json!({"id": 2, "is4k": false, "externalUrl": "https://servarr.example/base"})
+    }
+
+    #[test]
+    fn aired_places() {
+        let numbers: AiredNumbers = std::iter::once((501, (2, 1))).collect();
+        assert_eq!(
+            placed(Some(&numbers), Some(501)),
+            Aired::Mapped(2, 1),
+            "placed"
+        );
+        assert_eq!(
+            placed(Some(&numbers), Some(9)),
+            Aired::Unknown,
+            "not in the aired order"
+        );
+        assert_eq!(
+            placed(None, Some(501)),
+            Aired::Unchecked,
+            "TVDB down: checked again later"
+        );
     }
 
     #[test]

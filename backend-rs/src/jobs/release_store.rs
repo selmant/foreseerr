@@ -336,6 +336,12 @@ pub async fn reconcile(
     for next in input.occurrences {
         let key = next.key();
         let existing = by_key.get(&key);
+        if existing.is_none() && !input.initial_backfill && next.aired == Aired::Unchecked {
+            // Stored now, it would never be checked for a season premiere
+            // again (only new entries are); the next run that reaches TVDB
+            // stores it.
+            continue;
+        }
         let media_id = if opt_int(next.tmdb_id.as_ref()).is_some_and(|t| t != 0) {
             opt_int(next.tmdb_id.as_ref()).and_then(|t| media_ids.0.get(&t).copied())
         } else {
@@ -506,7 +512,7 @@ fn premiere_season(o: &EventOccurrence) -> Option<i64> {
     let (season, episode) = match o.aired {
         Aired::AsNumbered => (o.season.unwrap_or(0), o.episode),
         Aired::Mapped(season, episode) => (season, Some(episode)),
-        Aired::Unknown => return None,
+        Aired::Unknown | Aired::Unchecked => return None,
     };
     (season > 0 && episode == Some(1)).then_some(season)
 }
