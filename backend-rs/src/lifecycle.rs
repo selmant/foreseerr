@@ -402,21 +402,13 @@ impl Lc {
         let Some(latest) = self.state.db.media_by_ids(&[media_id], true).await?.pop() else {
             return Ok(());
         };
-        let requested: Vec<i64> = e.row.seasons.iter().map(|s| s.season_number).collect();
-        let available = latest
+        let available: Vec<i64> = latest
             .seasons
             .iter()
-            .filter(|s| {
-                (if e.row.is4k { s.status4k } else { s.status }) == M_AVAILABLE
-                    && requested.contains(&s.season_number)
-            })
-            .count();
-        let ready = if e.row.episodes.is_empty() {
-            available > 0 && available == requested.len()
-        } else {
-            e.row.episodes.iter().all(|x| x.status == COMPLETED)
-        };
-        if !ready {
+            .filter(|s| (if e.row.is4k { s.status4k } else { s.status }) == M_AVAILABLE)
+            .map(|s| s.season_number)
+            .collect();
+        if !series_ready(&e.row, &available) {
             return Ok(());
         }
         let tmdb_id = e.media.as_ref().map_or(latest.tmdb_id, |m| m.tmdb_id);
@@ -430,7 +422,9 @@ impl Lc {
             notify_admin: false,
             notify_system: true,
             notify_user: Some(info.requested_by.clone()),
-            extra: vec![requested_extra(&e.row)],
+            extra: std::iter::once(requested_extra(&e.row))
+                .chain(unavailable_extra(&e.row))
+                .collect(),
             request: Some(info),
             watch_url: crate::media::media_url(&latest, &self.settings, e.row.is4k),
             ..Payload::default()
@@ -1369,6 +1363,41 @@ pub fn truncate(text: &str) -> String {
     out
 }
 
+/// Whether a completed series request is told available, given the season
+/// numbers (`available`) the title has available in its quality: each
+/// requested season Sonarr can download is available, or each requested
+/// episode is downloaded or out of reach (`FAILED`) with one downloaded.
+fn series_ready(row: &RequestRow, available: &[i64]) -> bool {
+    if row.episodes.is_empty() {
+        let mut wanted = row.seasons.iter().filter(|s| s.status != FAILED).peekable();
+        wanted.peek().is_some() && wanted.all(|s| available.contains(&s.season_number))
+    } else {
+        episodes_done(&row.episodes) == EpisodesDone::Complete
+    }
+}
+
+/// What a request available all the same couldn't get, for its
+/// notification: the requested episodes or seasons marked `FAILED`, which
+/// the episode order the series uses in Sonarr leaves out.
+fn unavailable_extra(row: &RequestRow) -> Option<(String, String)> {
+    let episodes: Vec<String> = row
+        .episodes
+        .iter()
+        .filter(|x| x.status == FAILED)
+        .map(episode_code)
+        .collect();
+    if !episodes.is_empty() {
+        return Some((String::from("Unavailable Episodes"), episodes.join(", ")));
+    }
+    let seasons: Vec<String> = row
+        .seasons
+        .iter()
+        .filter(|s| s.status == FAILED)
+        .map(|s| s.season_number.to_string())
+        .collect();
+    (!seasons.is_empty()).then(|| (String::from("Unavailable Seasons"), seasons.join(", ")))
+}
+
 /// `Requested Episodes` or `Requested Seasons` for a TV notification.
 fn requested_extra(row: &RequestRow) -> (String, String) {
     let code = |s: i64, e: i64| format!("S{s:02}E{e:02}");
@@ -1455,6 +1484,82 @@ mod tests {
         );
     }
     use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
+
+    fn episode(season: i64, number: i64, status: i64) -> EpisodeRequestRow {
+        EpisodeRequestRow {
+            season_number: season,
+            episode_number: number,
+            status,
+            ..EpisodeRequestRow::default()
+        }
+    }
+
+    fn season(number: i64, status: i64) -> crate::db::SeasonRequestRow {
+        crate::db::SeasonRequestRow {
+            season_number: number,
+            status,
+            ..crate::db::SeasonRequestRow::default()
+        }
+    }
+
+    #[test]
+    fn partly_downloadable_requests_are_told_available() {
+        let episodes = |list: Vec<EpisodeRequestRow>| RequestRow {
+            episodes: list,
+            ..RequestRow::default()
+        };
+        let partly = episodes(vec![
+            episode(21, 40, COMPLETED),
+            episode(21, 41, COMPLETED),
+            episode(21, 42, FAILED),
+        ]);
+        assert!(series_ready(&partly, &[]), "the rest is downloaded");
+        assert_eq!(
+            unavailable_extra(&partly),
+            Some((String::from("Unavailable Episodes"), String::from("S21E42"))),
+            "says what Sonarr can't download"
+        );
+        let whole = episodes(vec![episode(1, 1, COMPLETED)]);
+        assert!(series_ready(&whole, &[]), "all downloaded");
+        assert_eq!(unavailable_extra(&whole), None, "nothing to add");
+        assert!(
+            !series_ready(&episodes(vec![episode(1, 1, FAILED)]), &[]),
+            "none downloaded: the failure notification tells it"
+        );
+        assert!(
+            !series_ready(
+                &episodes(vec![episode(1, 1, COMPLETED), episode(1, 2, APPROVED)]),
+                &[]
+            ),
+            "one to come"
+        );
+        let seasons = |list: Vec<crate::db::SeasonRequestRow>| RequestRow {
+            seasons: list,
+            ..RequestRow::default()
+        };
+        let partly = seasons(vec![season(2, COMPLETED), season(22, FAILED)]);
+        assert!(
+            series_ready(&partly, &[1, 2]),
+            "the season Sonarr can download is available"
+        );
+        assert!(!series_ready(&partly, &[1]), "it isn't yet");
+        assert_eq!(
+            unavailable_extra(&partly),
+            Some((String::from("Unavailable Seasons"), String::from("22"))),
+            "the season the order leaves out"
+        );
+        assert!(
+            !series_ready(&seasons(vec![season(22, FAILED)]), &[22]),
+            "nothing Sonarr can download"
+        );
+        assert!(
+            series_ready(
+                &seasons(vec![season(1, COMPLETED), season(2, COMPLETED)]),
+                &[1, 2]
+            ),
+            "every season"
+        );
+    }
 
     #[test]
     fn helpers() {
