@@ -158,8 +158,8 @@ pub enum Aired {
     /// Sonarr numbers it in another order and its aired place is unknown.
     Unknown,
     /// Sonarr numbers it in another order and TVDB, which knows its aired
-    /// place, couldn't be asked: a new one waits for a run that can place
-    /// it, so no season premiere is missed.
+    /// place, couldn't be asked: a new one more than two days off waits for
+    /// a run that can place it, so its season premiere isn't missed.
     Unchecked,
 }
 
@@ -373,7 +373,7 @@ async fn place_in_aired_order(job: &JobCtx, episodes: &[Value], occurrences: &mu
                         label = "Release Calendar Sync",
                         tvdb_id,
                         error_message = %format!("{e:#}"),
-                        "Failed to load the aired episode order of a series Sonarr numbers in another order; its new calendar entries wait for a run that can check them for season premieres"
+                        "Failed to load the aired episode order of a series Sonarr numbers in another order; its new calendar entries more than two days off wait for a run that can check them for season premieres"
                     );
                     None
                 }

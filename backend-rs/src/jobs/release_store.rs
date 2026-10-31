@@ -336,10 +336,9 @@ pub async fn reconcile(
     for next in input.occurrences {
         let key = next.key();
         let existing = by_key.get(&key);
-        if existing.is_none() && !input.initial_backfill && next.aired == Aired::Unchecked {
-            // Stored now, it would never be checked for a season premiere
-            // again (only new entries are); the next run that reaches TVDB
-            // stores it.
+        if existing.is_none()
+            && waits_for_tvdb(next.aired, next.starts_at, input.initial_backfill, now)
+        {
             continue;
         }
         let media_id = if opt_int(next.tmdb_id.as_ref()).is_some_and(|t| t != 0) {
@@ -495,6 +494,20 @@ async fn media_maps(
         }
     }
     Ok((movies, series))
+}
+
+/// How far ahead a new entry TVDB couldn't place in the aired order waits
+/// for a run that can.
+const UNPLACED_WAIT_MS: i64 = 2 * DAY_MS;
+
+/// Whether a new entry is left for a later run. TVDB couldn't place it in
+/// the aired order (`Unchecked`), which tells whether it premieres a
+/// season, and only new entries are checked for that. While it is more
+/// than two days away a later run may still place it in time; closer, it
+/// is stored with no place, so the calendar shows it even when TVDB keeps
+/// failing for the series.
+fn waits_for_tvdb(aired: Aired, starts_at: i64, initial_backfill: bool, now: i64) -> bool {
+    !initial_backfill && aired == Aired::Unchecked && starts_at > now + UNPLACED_WAIT_MS
 }
 
 fn is_season_premiere(o: &EventOccurrence) -> bool {
@@ -1013,6 +1026,27 @@ mod tests {
             aired,
             ..occ("air", "{}")
         }
+    }
+
+    #[test]
+    fn unplaced_entries_wait_only_while_far_off() {
+        let now = 1_000 * DAY_MS;
+        assert!(
+            waits_for_tvdb(Aired::Unchecked, now + 3 * DAY_MS, false, now),
+            "TVDB may answer before it airs"
+        );
+        assert!(
+            !waits_for_tvdb(Aired::Unchecked, now + DAY_MS, false, now),
+            "too close: shown without a place"
+        );
+        assert!(
+            !waits_for_tvdb(Aired::Unknown, now + 3 * DAY_MS, false, now),
+            "TVDB answered"
+        );
+        assert!(
+            !waits_for_tvdb(Aired::Unchecked, now + 3 * DAY_MS, true, now),
+            "the initial backfill announces nothing"
+        );
     }
 
     #[test]
