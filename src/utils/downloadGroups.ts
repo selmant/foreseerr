@@ -87,7 +87,11 @@ export const downloadScope = (
   if (items.some((item) => item.isFullSeason)) {
     return { kind: 'pack', seasonNumbers, episodeCount };
   }
-  if (seasonNumbers.length === 1 && episodes.length === episodeCount) {
+  if (
+    episodes.length &&
+    seasonNumbers.length === 1 &&
+    episodes.length === episodeCount
+  ) {
     const [first] = episodes;
     const last = episodes[episodes.length - 1];
     if (episodes.length === 1) {

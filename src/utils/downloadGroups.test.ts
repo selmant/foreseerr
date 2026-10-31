@@ -181,4 +181,18 @@ describe('download groups', () => {
     assert.equal(downloadScope([item('m')]), undefined);
     assert.equal(downloadLabel(intl, []), undefined);
   });
+
+  it('copes with a season listed without episodes', () => {
+    const empty = item('e', undefined, undefined, {
+      seasons: [
+        { seasonNumber: 1, episodeCount: 0, episodesWithFilesCount: 0 },
+      ],
+      isFullSeason: false,
+    });
+    assert.deepEqual(downloadScope([empty]), {
+      kind: 'episodes',
+      seasonNumbers: [1],
+      episodeCount: 0,
+    });
+  });
 });

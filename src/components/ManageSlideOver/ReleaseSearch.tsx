@@ -608,8 +608,12 @@ const ReleaseSearch = ({
                     {explainRejections(
                       intl,
                       'release',
-                      release.rejectionDetails ??
-                        release.rejections.map((message) => ({ message })),
+                      release.rejections.map(
+                        (message) =>
+                          release.rejectionDetails?.find(
+                            (detail) => detail.message === message
+                          ) ?? { message }
+                      ),
                       context.service.name
                     ).map((rejection, index) => (
                       <li key={`${index}-${rejection.text}`}>

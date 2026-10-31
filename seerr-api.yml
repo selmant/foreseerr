@@ -11425,7 +11425,7 @@ paths:
           description: Unauthorized
     post:
       summary: Grab a Servarr release
-      description: 'Grabs a previously returned release token. Quality-rejected or alias-mismatched releases require `acknowledgeRejections: true`. Foreseer then tells Sonarr/Radarr to grab against the mapped series or movie (`seriesId`/`movieId`, and `shouldOverride` when needed) instead of posting only guid and indexer id. A forced Sonarr grab keeps the episodes Sonarr mapped the release to (every season of a multi-season pack), falling back to the searched episode or season only for a release Sonarr could not map to the series. Requires `MANAGE_REQUESTS`.'
+      description: 'Grabs a previously returned release token. Quality-rejected or alias-mismatched releases require `acknowledgeRejections: true`. Foreseer then tells Sonarr/Radarr to grab against the mapped series or movie (`seriesId`/`movieId`, and `shouldOverride` when needed) instead of posting only guid and indexer id. A forced Sonarr grab keeps the episodes Sonarr mapped the release to (every season of a multi-season pack), falling back to the searched episode or season when Sonarr could not map the release to the series or mapped it to other episodes than the ones searched. Requires `MANAGE_REQUESTS`.'
       tags:
         - media
       parameters:

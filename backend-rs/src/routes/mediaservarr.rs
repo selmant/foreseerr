@@ -804,7 +804,20 @@ async fn forced_episode_ids(c: &Context, arr: &ArrServer<'_>, record: &Token) ->
         .and_then(Value::as_array)
         .is_some_and(|list| !list.is_empty());
     let episodes = if mapped_any || record.episode_id.is_none() {
-        arr.episodes(c.external_id).await?
+        match (arr.episodes(c.external_id).await, record.episode_id) {
+            (Ok(episodes), _) => episodes,
+            // Sonarr's mapping can't be checked without the episodes; an
+            // episode search still has its target.
+            (Err(e), Some(episode_id)) => {
+                tracing::warn!(
+                    "Could not read the episodes of media {}, grabbing the searched episode: {}",
+                    c.media_id,
+                    e.message()
+                );
+                return Ok(vec![Value::from(episode_id)]);
+            }
+            (Err(e), None) => return Err(Fail::Arr(e)),
+        }
     } else {
         Vec::new()
     };
