@@ -246,15 +246,17 @@ impl Arr<'_> {
     ///
     /// # Errors
     ///
-    /// Fails when the call fails.
+    /// Fails when the call fails or Sonarr answers with something else
+    /// than a list: read as "no episodes", it would leave every requested
+    /// episode out.
     pub async fn episodes(&self, series_id: &Value) -> Result<Vec<Value>> {
         let id = crate::media::js_string(Some(series_id)).into_owned();
-        Ok(self
-            .get("/episode", &[("seriesId", id)])
-            .await?
-            .as_array()
-            .cloned()
-            .unwrap_or_default())
+        let answer = self.get("/episode", &[("seriesId", id.clone())]).await?;
+        if let Value::Array(list) = answer {
+            Ok(list)
+        } else {
+            bail!("[Sonarr] The episodes of series {id} came back as something else than a list")
+        }
     }
 
     async fn monitor_episodes(&self, ids: Vec<Value>) -> Result<()> {
@@ -336,8 +338,8 @@ impl Arr<'_> {
     ///
     /// # Errors
     ///
-    /// When TVDB or Sonarr can't be asked, or the order leaves out every
-    /// requested season.
+    /// When TVDB or Sonarr can't be asked, Sonarr lists no episodes for
+    /// the series, or the order leaves out every requested season.
     async fn monitor_aired_seasons(
         &self,
         series_id: &Value,
@@ -353,6 +355,11 @@ impl Arr<'_> {
             ))
         })?;
         let episodes = self.episodes(series_id).await?;
+        if episodes.is_empty() {
+            bail!(
+                "[Sonarr] Sonarr lists no episodes for series {series}, so the requested aired seasons can't be matched to its {order} episode order; the request can be retried once Sonarr lists them"
+            );
+        }
         let (kept, left_out) = episodeorder::seasons_in_order(&catalog, &o.seasons, &episodes);
         if kept.is_empty() {
             bail!(
@@ -417,9 +424,11 @@ impl Arr<'_> {
         }
         let mut episodes = Vec::new();
         for attempt in 1..=attempts {
-            episodes = self
-                .episodes(series_id)
-                .await?
+            let all = self.episodes(series_id).await?;
+            // An empty list says nothing about the order: Sonarr hasn't
+            // listed the series' episodes (yet).
+            let listed = !all.is_empty();
+            episodes = all
                 .into_iter()
                 .filter(|e| {
                     e.get("tvdbId")
@@ -439,7 +448,7 @@ impl Arr<'_> {
             if unresolved.is_empty() {
                 break;
             }
-            if let Some(order) = order {
+            if let Some(order) = order.filter(|_| listed) {
                 tracing::debug!(
                     "[Sonarr] TVDB episodes {} are not in the {order} episode order of series {}; they are left out",
                     unresolved
@@ -1175,6 +1184,48 @@ mod tests {
                 "None of the requested aired seasons (3) have episodes in the dvd episode order"
             ),
             "nothing to monitor fails the request"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn empty_or_odd_episode_lists_leave_nothing_out() -> Result<()> {
+        let dvd = series(Some("dvd"));
+        let seasons = add_to(
+            "v5",
+            dvd.clone(),
+            json!([]),
+            &aired_order(),
+            &options(vec![1], None),
+        )
+        .await;
+        assert!(
+            failure(seasons).contains("Sonarr lists no episodes for series 7"),
+            "an empty list is no order"
+        );
+        let episodes = add_to(
+            "v5",
+            dvd.clone(),
+            json!([]),
+            &aired_order(),
+            &options(Vec::new(), Some(vec![101])),
+        )
+        .await;
+        assert!(
+            failure(episodes).contains("Failed to resolve TVDB episode IDs: 101"),
+            "the episode isn't skipped as left out"
+        );
+        let odd = add_to(
+            "v5",
+            dvd,
+            json!({"message": "busy"}),
+            &aired_order(),
+            &options(vec![1], None),
+        )
+        .await;
+        assert!(
+            failure(odd).contains("came back as something else than a list"),
+            "an answer that isn't a list is no list"
         );
         Ok(())
     }

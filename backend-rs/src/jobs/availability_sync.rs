@@ -921,7 +921,10 @@ impl Sync<'_> {
         let catalog = crate::episodeorder::aired_catalog(&self.job.state.outbound, tvdb_id)
             .await
             .context("[TVDB] Failed to load the aired episode order")?;
-        let episodes = episodes.as_array().map_or(&[][..], Vec::as_slice);
+        // Counted from no episodes, every season would look gone.
+        let Some(episodes) = episodes.as_array().filter(|list| !list.is_empty()) else {
+            return Err(anyhow!("[Sonarr] Sonarr listed no episodes for the series"));
+        };
         Ok(crate::episodeorder::aired_seasons(&catalog, episodes))
     }
 

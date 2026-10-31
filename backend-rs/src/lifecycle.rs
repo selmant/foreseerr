@@ -891,7 +891,10 @@ impl Lc {
                         .await?;
                     let now = crate::clock::now_millis();
                     let prevent = truthy(server.get("preventSearch"));
-                    let order = crate::episodeorder::other_order(&added);
+                    // An empty list says nothing about the order; the
+                    // episode sync settles those episodes later.
+                    let order = crate::episodeorder::other_order(&added)
+                        .filter(|_| !episodes.is_empty());
                     let mut left_out = Vec::new();
                     for child in &mut entity.row.episodes {
                         let Some(found) = episodes.iter().find(|x| {

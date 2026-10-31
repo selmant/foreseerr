@@ -13,7 +13,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use anyhow::{anyhow, Result};
 use reqwest::Method;
@@ -36,6 +36,12 @@ const MIN_WATCH_AHEAD: i64 = 1;
 const MAX_WATCH_AHEAD: i64 = 50;
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// The episode children (by id) the last run that looked found missing from
+/// the order their series uses in Sonarr. One episode list may be partial
+/// (Sonarr refreshing the series), so a child is marked `FAILED` only when
+/// two runs in a row miss it. Kept in memory: a restart only delays it.
+static MISSED: LazyLock<Mutex<HashSet<i64>>> = LazyLock::new(Mutex::default);
 
 /// `episodeRequestSync.running`.
 #[must_use]
@@ -312,7 +318,7 @@ async fn sonarr_context(
                 axios_message(&e)
             )
         })?;
-    let episodes = match sonarr_get(
+    let answer = match sonarr_get(
         job,
         &server,
         "/episode",
@@ -320,8 +326,7 @@ async fn sonarr_context(
     )
     .await
     {
-        Ok(Value::Array(list)) => list,
-        Ok(_) => Vec::new(),
+        Ok(answer) => answer,
         Err(e) => {
             tracing::error!(
                 label = "Sonarr API",
@@ -332,6 +337,24 @@ async fn sonarr_context(
             return Err(anyhow!("Failed to get episodes"));
         }
     };
+    let Some(episodes) = usable_episodes(answer)
+        .map_err(|e| anyhow!("[Sonarr] Series {external_id}: {e}; skipping it this run"))?
+    else {
+        if expects_episodes(&series) {
+            tracing::warn!(
+                label = "Episode Request Sync",
+                series_id = external_id,
+                "Sonarr listed no episodes for a series it counts episodes for; skipping its requests this run"
+            );
+        } else {
+            tracing::debug!(
+                label = "Episode Request Sync",
+                series_id = external_id,
+                "Sonarr lists no episodes for the series yet; skipping its requests this run"
+            );
+        }
+        return Ok(None);
+    };
     let context = Context {
         prevent_search: truthy(server.get("preventSearch")),
         server,
@@ -340,6 +363,29 @@ async fn sonarr_context(
     };
     cache.insert(key, context.clone());
     Ok(Some(context))
+}
+
+/// Sonarr's answer for a series' episodes as a list to act on: `None` when
+/// it lists none, an error when it isn't a list. Read as the series'
+/// episodes, either would leave every requested episode out (and mark it
+/// `FAILED` on a series in another order), so the run skips the series.
+fn usable_episodes(answer: Value) -> Result<Option<Vec<Value>>> {
+    match answer {
+        Value::Array(list) if list.is_empty() => Ok(None),
+        Value::Array(list) => Ok(Some(list)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+            Err(anyhow!(
+                "its episodes came back as something else than a list"
+            ))
+        }
+    }
+}
+
+/// Whether Sonarr counts episodes for a series (`statistics`).
+fn expects_episodes(series: &Value) -> bool {
+    ["/statistics/totalEpisodeCount", "/statistics/episodeCount"]
+        .iter()
+        .any(|p| series.pointer(p).and_then(Value::as_i64).unwrap_or(0) > 0)
 }
 
 /// A new `EpisodeRequest` row.
@@ -411,6 +457,26 @@ const fn removed_externally(
     !has_file && !monitored && (status == COMPLETED || monitored_at)
 }
 
+/// Whether a child missing from the order its series uses in Sonarr was
+/// missing the last time too (and so is `FAILED` now); remembered as
+/// missed once otherwise.
+fn missed_again(missed: &mut HashSet<i64>, child: i64) -> bool {
+    if missed.remove(&child) {
+        true
+    } else {
+        missed.insert(child);
+        false
+    }
+}
+
+/// Whether a `FAILED` child back in Sonarr's order is monitored and
+/// searched as a new one. A watch-ahead child follows the window rule as
+/// any other: only inside the current window, as older ones are behind the
+/// viewer.
+const fn revival_wanted(watch_ahead: bool, in_window: bool) -> bool {
+    !watch_ahead || in_window
+}
+
 /// Whether every episode of a non-empty watch-ahead window was removed.
 fn window_inactive(window: &HashSet<i64>, removed: &HashSet<i64>) -> bool {
     !window.is_empty() && window.iter().all(|t| removed.contains(t))
@@ -470,17 +536,23 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
     let mut removed: HashSet<i64> = HashSet::new();
     let db = &job.state.db;
     let mut left_out = Vec::new();
+    let watch_ahead = selection.as_deref() == Some("watchAhead");
     for child in &mut request.row.episodes {
         let Some(episode) = by_tvdb.get(&child.tvdb_id) else {
             // Missing from aired order means Sonarr hasn't caught up yet;
             // another order may never have it.
             if order.is_some() && child.status == APPROVED {
-                child.status = FAILED;
-                set_child_status(db, child.id, FAILED).await?;
-                left_out.push(episode_code(child));
+                let again = missed_again(&mut crate::sync::lock(&MISSED), child.id);
+                if again {
+                    child.status = FAILED;
+                    set_child_status(db, child.id, FAILED).await?;
+                    left_out.push(episode_code(child));
+                }
             }
             continue;
         };
+        crate::sync::lock(&MISSED).remove(&child.id);
+        let in_window = window.as_ref().is_some_and(|w| w.contains(&child.tvdb_id));
         let revived = child.status == FAILED;
         if revived {
             tracing::info!(
@@ -494,11 +566,11 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
             child.status = APPROVED;
             set_child_status(db, child.id, APPROVED).await?;
         }
-        let is_new = additions.contains(&child.tvdb_id) || revived;
+        let is_new = additions.contains(&child.tvdb_id)
+            || (revived && revival_wanted(watch_ahead, in_window));
         let has_file = truthy(episode.get("hasFile"));
         let monitored = truthy(episode.get("monitored"));
         let monitored_at = child.monitored_at.is_some();
-        let in_window = window.as_ref().is_some_and(|w| w.contains(&child.tvdb_id));
         let awaiting = awaits_monitor(in_window, has_file, child.status, monitored_at);
         if (is_new || awaiting) && !monitored {
             unmonitored.push(episode.get("id").cloned().unwrap_or(Value::Null));
@@ -970,6 +1042,56 @@ mod tests {
             .iter()
             .map(|e| (e.tvdb_id, e.season, e.episode))
             .collect()
+    }
+
+    #[test]
+    fn one_episode_list_fails_nothing() {
+        use serde_json::json;
+        assert!(
+            matches!(usable_episodes(json!([])), Ok(None)),
+            "an empty list skips the series"
+        );
+        assert!(
+            usable_episodes(json!({"message": "busy"})).is_err(),
+            "so does an answer that isn't a list"
+        );
+        assert!(
+            matches!(usable_episodes(json!([{"id": 1}])), Ok(Some(list)) if list.len() == 1),
+            "a list is used"
+        );
+        assert!(
+            expects_episodes(&json!({"statistics": {"totalEpisodeCount": 1180}})),
+            "Sonarr counts some"
+        );
+        assert!(
+            !expects_episodes(&json!({"statistics": {"totalEpisodeCount": 0}})),
+            "a series without episodes yet"
+        );
+        let mut missed = HashSet::new();
+        assert!(!missed_again(&mut missed, 7), "the first miss waits");
+        assert!(missed_again(&mut missed, 7), "the second in a row fails it");
+        assert!(!missed_again(&mut missed, 7), "and starts over");
+        missed.remove(&7);
+        assert!(
+            !missed_again(&mut missed, 7),
+            "found in between: a miss is a first one again"
+        );
+    }
+
+    #[test]
+    fn revived_watch_ahead_episodes_keep_to_the_window() {
+        assert!(
+            revival_wanted(true, true),
+            "inside the window: fetched again"
+        );
+        assert!(
+            !revival_wanted(true, false),
+            "behind the viewer: left alone"
+        );
+        assert!(
+            revival_wanted(false, false),
+            "other requests have no window"
+        );
     }
 
     #[test]
