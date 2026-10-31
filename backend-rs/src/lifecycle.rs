@@ -891,19 +891,16 @@ impl Lc {
                         .await?;
                     let now = crate::clock::now_millis();
                     let prevent = truthy(server.get("preventSearch"));
-                    // An empty list says nothing about the order; the
-                    // episode sync settles those episodes later.
-                    let order = crate::episodeorder::other_order(&added)
-                        .filter(|_| !episodes.is_empty());
-                    let mut left_out = Vec::new();
                     for child in &mut entity.row.episodes {
+                        // One Sonarr doesn't list stays APPROVED, as the
+                        // approval leaves it (this copy may predate that).
+                        // Should the order the series uses leave it out,
+                        // the episode sync marks it FAILED once two runs in
+                        // a row miss it: this one list may be partial.
                         let Some(found) = episodes.iter().find(|x| {
                             x.get("tvdbId").and_then(Value::as_i64) == Some(child.tvdb_id)
                         }) else {
-                            if order.is_some() {
-                                child.status = FAILED;
-                                left_out.push(episode_code(child));
-                            }
+                            child.status = APPROVED;
                             continue;
                         };
                         let has_file = truthy(found.get("hasFile"));
@@ -911,9 +908,6 @@ impl Lc {
                         if !prevent && !has_file && crate::arr::aired(found, now) {
                             child.search_triggered_at = Some(crate::clock::Utc::now().iso_string());
                         }
-                    }
-                    if let Some(order) = order {
-                        log_out_of_order(entity.row.id, order, &left_out);
                     }
                     lc.write(&mut entity, false).await?;
                     let rolling = matches!(
@@ -923,16 +917,10 @@ impl Lc {
                     let ended = js_string(added.get("status")).to_lowercase() == "ended";
                     let may_complete = !rolling
                         || (entity.row.episode_selection_type.as_deref() == Some("after") && ended);
-                    match episodes_done(&entity.row.episodes) {
-                        EpisodesDone::Complete if may_complete => {
-                            entity.row.status = COMPLETED;
-                            lc.save(&mut entity).await?;
-                        }
-                        EpisodesDone::AllFailed if may_complete => anyhow::bail!(
-                            "None of the requested episodes are in the {} episode order the series uses in Sonarr",
-                            order.unwrap_or(crate::episodeorder::OFFICIAL)
-                        ),
-                        EpisodesDone::Complete | EpisodesDone::AllFailed | EpisodesDone::Pending => {}
+                    if may_complete && episodes_done(&entity.row.episodes) == EpisodesDone::Complete
+                    {
+                        entity.row.status = COMPLETED;
+                        lc.save(&mut entity).await?;
                     }
                 }
                 anyhow::Ok(())
