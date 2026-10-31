@@ -882,7 +882,7 @@ impl Lc {
                 if !left_out_seasons.is_empty() {
                     let order = crate::episodeorder::other_order(&added)
                         .unwrap_or(crate::episodeorder::OFFICIAL);
-                    lc.fail_left_out_seasons(&mut entity, tmdb_id, &left_out_seasons, order)
+                    lc.fail_left_out_seasons(&entity, tmdb_id, &left_out_seasons, order)
                         .await?;
                 }
                 if !entity.row.episodes.is_empty() && truthy(added.get("id")) {
@@ -945,35 +945,58 @@ impl Lc {
     /// Sonarr leaves out entirely (`left_out`): nothing of them was
     /// monitored, and waiting for them would keep the request open for
     /// good. The request completes once its other seasons are available.
+    ///
+    /// `e` is the background add's copy of the request, older than what
+    /// the approval wrote since, so only those rows are written.
     async fn fail_left_out_seasons(
         &self,
-        e: &mut Entity,
+        e: &Entity,
         tmdb_id: i64,
         left_out: &[i64],
         order: &str,
     ) -> Result<()> {
-        let mut failed = Vec::new();
-        for season in &mut e.row.seasons {
+        let mut ids = Vec::new();
+        let mut numbers = Vec::new();
+        for season in &e.row.seasons {
             let number = season.season_number;
             let mapped = crate::mapping::sonarr_seasons(&self.state.db, tmdb_id, &[number])
                 .await
                 .unwrap_or_else(|_| vec![number]);
-            if season.status != FAILED && season_left_out(&mapped, left_out) {
-                season.status = FAILED;
-                failed.push(number.to_string());
+            if season_left_out(&mapped, left_out) {
+                ids.push(season.id);
+                numbers.push(number.to_string());
             }
         }
-        if failed.is_empty() {
+        if fail_season_rows(&self.state.db, &ids).await? == 0 {
             return Ok(());
         }
-        self.write(e, false).await?;
         tracing::warn!(
             "Season(s) {} of request {} have no episodes in the {order} episode order the series uses in Sonarr, so Sonarr can't download them; marked FAILED",
-            failed.join(", "),
+            numbers.join(", "),
             e.row.id
         );
         Ok(())
     }
+}
+
+/// Mark `FAILED` the season rows `ids` that are still `APPROVED`, in one
+/// statement that touches nothing else; how many changed.
+async fn fail_season_rows(db: &Db, ids: &[i64]) -> Result<u64> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let list = ids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    db.execute(
+        &format!(
+            r#"UPDATE "season_request" SET "status" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "status" = ?2 AND "id" IN ({list})"#
+        ),
+        &[Bind::Int(FAILED), Bind::Int(APPROVED)],
+    )
+    .await
 }
 
 /// Whether a requested season is out of reach: Sonarr's order leaves out
@@ -1601,6 +1624,43 @@ mod tests {
             ),
             "every season"
         );
+    }
+
+    #[tokio::test]
+    async fn left_out_seasons_are_failed_alone() -> Result<()> {
+        let scratch = scratch::sqlite("lifecycle-left-out").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[
+                r#"UPDATE "media_request" SET "status" = 2 WHERE "id" = 1"#,
+                r#"UPDATE "season_request" SET "status" = 2 WHERE "requestId" = 1"#,
+                r#"INSERT INTO "season_request" ("seasonNumber", "status", "requestId") VALUES (22, 2, 1)"#,
+                r#"INSERT INTO "season_request" ("seasonNumber", "status", "requestId") VALUES (23, 1, 1)"#,
+            ],
+        )
+        .await?;
+        assert_eq!(
+            fail_season_rows(db, &[2, 3]).await?,
+            1,
+            "only the season still approved"
+        );
+        let seasons =
+            r#"SELECT "status" FROM "season_request" WHERE "requestId" = 1 ORDER BY "id""#;
+        assert_eq!(
+            ints(db, seasons).await?,
+            [APPROVED, FAILED, PENDING],
+            "the kept season as the approval left it"
+        );
+        let request = r#"SELECT "status" FROM "media_request" WHERE "id" = 1"#;
+        assert_eq!(
+            ints(db, request).await?,
+            [APPROVED],
+            "the request row untouched"
+        );
+        assert_eq!(fail_season_rows(db, &[]).await?, 0, "nothing to write");
+        Ok(())
     }
 
     #[test]
