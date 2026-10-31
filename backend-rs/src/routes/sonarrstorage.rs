@@ -26,6 +26,10 @@ const MANAGE_REQUESTS: i64 = 16;
 /// visit shouldn't walk every Sonarr server each time.
 const USAGE_TTL: Duration = Duration::from_secs(300);
 
+/// How long "no tag there yet" is reused: the user's first series tags
+/// them, and the card should show it soon.
+const NO_TAG_TTL: Duration = Duration::from_secs(60);
+
 /// This module's routes.
 pub(super) const ROUTES: &Table = &[("/api/v1/user/{id}/sonarr-storage", Method::GET, storage)];
 
@@ -93,8 +97,8 @@ fn storage<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// The user's usage on one server, from the cache when read in the last
-/// five minutes; none on a Sonarr without API v5.
+/// The user's usage on one server, from the cache when read recently (see
+/// [`stats_ttl`]); none on a Sonarr without API v5.
 async fn cached_usage(arr: &Arr<'_>, user_id: i64) -> anyhow::Result<Option<Value>> {
     // Keyed by the server's address and the user; the server's name and
     // flags come from the settings each time.
@@ -106,7 +110,9 @@ async fn cached_usage(arr: &Arr<'_>, user_id: i64) -> anyhow::Result<Option<Valu
         std::sync::Arc::unwrap_or_clone(cached)
     } else {
         let stats = server_stats(arr, user_id).await?;
-        memcache::set(CacheId::Sonarr, key, stats.clone(), USAGE_TTL);
+        if let Some(ttl) = stats_ttl(&stats) {
+            memcache::set(CacheId::Sonarr, key, stats.clone(), ttl);
+        }
         stats
     };
     Ok(match stats {
@@ -118,6 +124,21 @@ async fn cached_usage(arr: &Arr<'_>, user_id: i64) -> anyhow::Result<Option<Valu
         | Value::Array(_)
         | Value::Object(_)) => Some(usage_json(arr.server, Some(&found))),
     })
+}
+
+/// How long [`server_stats`]' answer is cached. "Not Sonarr 5" isn't: a
+/// failed version probe reads as an older Sonarr, and the probe's own cache
+/// already holds a real answer (and retries a failed one after a minute).
+const fn stats_ttl(stats: &Value) -> Option<Duration> {
+    match stats {
+        Value::Bool(false) => None,
+        Value::Null => Some(NO_TAG_TTL),
+        Value::Bool(true)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Array(_)
+        | Value::Object(_) => Some(USAGE_TTL),
+    }
 }
 
 /// The statistics of the user's tag on one server: `false` on a Sonarr
@@ -192,6 +213,20 @@ mod tests {
                 "seriesCount": 0, "episodeCount": 0, "episodeFileCount": 0, "sizeOnDisk": 0
             }),
             "no tag yet"
+        );
+    }
+
+    #[test]
+    fn cache_lifetimes() {
+        assert_eq!(
+            stats_ttl(&Value::Bool(false)),
+            None,
+            "not Sonarr 5, or its version probe failed"
+        );
+        assert_eq!(stats_ttl(&Value::Null), Some(NO_TAG_TTL), "no tag yet");
+        assert_eq!(
+            stats_ttl(&json!({"seriesCount": 2, "sizeOnDisk": 1})),
+            Some(USAGE_TTL)
         );
     }
 }
