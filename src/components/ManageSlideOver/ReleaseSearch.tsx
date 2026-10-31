@@ -12,6 +12,7 @@ import axios from 'axios';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import Select, { type StylesConfig } from 'react-select';
+import { explainRejections } from './rejectionExplanations';
 import { filterReleaseResults, type ReleaseSort } from './releaseResults';
 
 import {
@@ -75,7 +76,16 @@ const messages = defineMessages('components.ManageSlideOver.ReleaseSearch', {
   emptyMovieHint: 'Check your indexers in {service}, then search again.',
   showMore: 'Show more releases ({count})',
   releaseAction: '{action}: {title}',
+  grabbedBefore: 'Grabbed {date}',
+  failedBefore: 'Download failed {date}',
+  multiSeason:
+    "Multi-season pack{seasons, select, none {} other { (seasons {seasons})}}. {service} won't import it automatically: when the download finishes, import its files from Import files.",
+  sentMultiSeason:
+    "Sent to {service}. It won't import this multi-season pack automatically: when the download finishes, import its files from Import files.",
 });
+
+const formatSeasons = (seasonNumbers: number[] | undefined) =>
+  seasonNumbers && seasonNumbers.length > 1 ? seasonNumbers.join(', ') : 'none';
 
 type SelectOption = {
   value: number;
@@ -295,9 +305,10 @@ const ReleaseSearch = ({
       if (controller.signal.aborted) return;
       setGrabFeedback({
         kind: 'success',
-        message: intl.formatMessage(messages.sent, {
-          service: context.service.name,
-        }),
+        message: intl.formatMessage(
+          release.multiSeason ? messages.sentMultiSeason : messages.sent,
+          { service: context.service.name }
+        ),
       });
       addToast(intl.formatMessage(messages.sentToast), {
         appearance: 'success',
@@ -568,10 +579,57 @@ const ReleaseSearch = ({
                     .filter(Boolean)
                     .join(' · ')}
                 </div>
-                {release.rejections.length > 0 && (
-                  <div className="break-words text-xs text-yellow-300">
-                    {release.rejections.join(' • ')}
+                {(release.history?.grabbed || release.history?.failed) && (
+                  <div className="flex flex-wrap gap-1">
+                    {release.history.grabbed && (
+                      <Badge badgeType="primary">
+                        {intl.formatMessage(messages.grabbedBefore, {
+                          date: intl.formatDate(release.history.grabbed, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          }),
+                        })}
+                      </Badge>
+                    )}
+                    {release.history.failed && (
+                      <Badge badgeType="danger">
+                        {intl.formatMessage(messages.failedBefore, {
+                          date: intl.formatDate(release.history.failed, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          }),
+                        })}
+                      </Badge>
+                    )}
                   </div>
+                )}
+                {release.rejections.length > 0 && (
+                  <ul className="space-y-0.5 break-words text-xs text-yellow-300">
+                    {explainRejections(
+                      intl,
+                      'release',
+                      release.rejectionDetails ??
+                        release.rejections.map((message) => ({ message })),
+                      context.service.name
+                    ).map((rejection, index) => (
+                      <li key={`${index}-${rejection.text}`}>
+                        {rejection.text}
+                        {rejection.detail && (
+                          <span className="block text-gray-400">
+                            {rejection.detail}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {release.multiSeason && (
+                  <p className="break-words text-xs text-indigo-200">
+                    {intl.formatMessage(messages.multiSeason, {
+                      seasons: formatSeasons(release.seasonNumbers),
+                      service: context.service.name,
+                    })}
+                  </p>
                 )}
                 <div className="pt-1">
                   <Button

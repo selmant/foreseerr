@@ -474,8 +474,56 @@ fn release_json(token: String, release: &Value) -> Value {
         "downloadAllowed",
         release.get("downloadAllowed").cloned(),
     );
+    put(&mut out, "rejectionDetails", rejection_details(release));
+    put(&mut out, "history", release_history(release));
+    if truthy(release.get("multiSeason")) {
+        out.insert(String::from("multiSeason"), Value::Bool(true));
+        put(
+            &mut out,
+            "seasonNumbers",
+            release
+                .get("seasonNumbers")
+                .filter(|v| v.is_array())
+                .cloned(),
+        );
+    }
     Value::Object(out)
 }
+
+/// Sonarr 5's typed rejections (`{ message, code, type }`), text fields
+/// only; `None` on Sonarr 4 and Radarr, which send only the messages.
+fn rejection_details(release: &Value) -> Option<Value> {
+    let list: Vec<Value> = release
+        .get("rejectionDetails")?
+        .as_array()?
+        .iter()
+        .filter_map(|detail| {
+            let detail = detail.as_object()?;
+            let mut out = Map::new();
+            for key in ["message", "code", "type"] {
+                if let Some(text) = detail.get(key).filter(|v| v.is_string()) {
+                    out.insert(key.to_owned(), text.clone());
+                }
+            }
+            out.contains_key("message").then_some(Value::Object(out))
+        })
+        .collect();
+    (!list.is_empty()).then_some(Value::Array(list))
+}
+
+/// Sonarr 5's history of the release: when it was grabbed before and when
+/// that download failed.
+fn release_history(release: &Value) -> Option<Value> {
+    let history = release.get("history")?.as_object()?;
+    let mut out = Map::new();
+    for key in ["grabbed", "failed"] {
+        if let Some(at) = history.get(key).filter(|v| v.is_string()) {
+            out.insert(key.to_owned(), at.clone());
+        }
+    }
+    (!out.is_empty()).then_some(Value::Object(out))
+}
+
 
 /// The search target of `GET /releases` for a series.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -787,6 +835,45 @@ mod tests {
             grab_body(&json!({"guid": "g"}), true, 9, None, true),
             json!({"guid": "g", "movieId": 9}),
             "no quality, no override"
+        );
+    }
+
+    #[test]
+    fn release_details() {
+        let release = json!({
+            "title": "Show.S01-S02", "rejected": true, "multiSeason": true, "seasonNumbers": [1, 2],
+            "rejections": ["Multi-season releases are not supported"],
+            "rejectionDetails": [
+                {"message": "Multi-season releases are not supported", "code": "multiSeason", "type": "permanent"},
+                {"code": "noMessage"},
+                {"message": "Blocklisted", "code": 3}
+            ],
+            "history": {"grabbed": "2026-10-30T10:00:00Z", "failed": null}
+        });
+        let out = release_json(String::from("tok"), &release);
+        assert_eq!(
+            out.get("rejectionDetails"),
+            Some(&json!([
+                {"message": "Multi-season releases are not supported", "code": "multiSeason", "type": "permanent"},
+                {"message": "Blocklisted"}
+            ])),
+            "text fields of the typed rejections"
+        );
+        assert_eq!(
+            out.get("history"),
+            Some(&json!({"grabbed": "2026-10-30T10:00:00Z"})),
+            "grabbed, never failed"
+        );
+        assert_eq!(out.get("multiSeason"), Some(&json!(true)));
+        assert_eq!(out.get("seasonNumbers"), Some(&json!([1, 2])));
+        let v4 = release_json(
+            String::from("tok"),
+            &json!({"title": "t", "rejections": ["x"], "seasonNumbers": [1, 2], "history": {}}),
+        );
+        assert_eq!(
+            v4,
+            json!({"token": "tok", "title": "t", "rejections": ["x"]}),
+            "Sonarr 4: messages only"
         );
     }
 

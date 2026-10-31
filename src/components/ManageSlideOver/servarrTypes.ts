@@ -17,6 +17,12 @@ export type ServarrContext = {
 
 export type ImportSource = { token: string; kind: 'queue'; label: string };
 export type Rejection = { reason: string; type?: string };
+/** A Sonarr 5 release rejection with its typed reason (e.g. `blocklisted`). */
+export type ReleaseRejection = {
+  message: string;
+  code?: string;
+  type?: string;
+};
 
 export type Release = {
   token: string;
@@ -28,8 +34,15 @@ export type Release = {
   protocol: string;
   seeders?: number;
   rejections: string[];
+  /** Sonarr 5: the rejections with their typed reasons. */
+  rejectionDetails?: ReleaseRejection[];
   rejected: boolean;
   downloadAllowed: boolean;
+  /** Sonarr 5: when the release was grabbed before, and when that failed. */
+  history?: { grabbed?: string; failed?: string };
+  /** Sonarr 5: a pack of several seasons, which it won't import itself. */
+  multiSeason?: boolean;
+  seasonNumbers?: number[];
 };
 
 export type ImportCandidate = {

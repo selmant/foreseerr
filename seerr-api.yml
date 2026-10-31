@@ -11420,7 +11420,7 @@ paths:
             type: integer
       responses:
         '200':
-          description: Release candidates with short-lived server-side tokens
+          description: "Release candidates with short-lived server-side tokens. From Sonarr 5 a release may also carry `rejectionDetails` (each rejection's `message`, typed `code` such as `blocklisted`, and `type`), `history` (`grabbed`/`failed` dates of an earlier grab of the release) and `multiSeason` with `seasonNumbers` for a pack of several seasons, which Sonarr 5 does not import automatically."
         '401':
           description: Unauthorized
     post:
