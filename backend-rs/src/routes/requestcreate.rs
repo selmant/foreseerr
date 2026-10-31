@@ -1198,11 +1198,13 @@ async fn replace_request(
     {
         sets.push(("languageProfileId", Bind::Int(v)));
     }
-    if let Some(v) = routing
-        .metadata_language_id
-        .filter(|v| old.metadata_language_id != Some(*v))
-    {
-        sets.push(("metadataLanguageId", Bind::Int(v)));
+    // Unlike the routing above, the replacement's own choice stands: none
+    // drops an earlier one, so the server's setting applies again.
+    if routing.metadata_language_id != old.metadata_language_id {
+        sets.push((
+            "metadataLanguageId",
+            Bind::OptInt(routing.metadata_language_id),
+        ));
     }
     if let Some(tags) = routing.tags.as_ref().map(|t| tags_text(t)) {
         if old.tags.as_ref() != Some(&tags) {
@@ -1258,9 +1260,7 @@ async fn replace_request(
         entity.row.language_profile_id = routing
             .language_profile_id
             .or(entity.row.language_profile_id);
-        entity.row.metadata_language_id = routing
-            .metadata_language_id
-            .or(entity.row.metadata_language_id);
+        entity.row.metadata_language_id = routing.metadata_language_id;
         entity.media = Some(media_now);
         lc.after_update(&mut entity).await;
     }
@@ -1316,10 +1316,11 @@ async fn replace_request(
         routing.language_profile_id.map(Value::from),
         &mut out,
     );
-    given(
-        "metadataLanguageId",
-        routing.metadata_language_id.map(Value::from),
-        &mut out,
+    out.insert(
+        String::from("metadataLanguageId"),
+        routing
+            .metadata_language_id
+            .map_or(Value::Null, Value::from),
     );
     given(
         "tags",

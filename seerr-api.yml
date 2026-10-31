@@ -9898,8 +9898,10 @@ paths:
                     The metadata language Sonarr 5 adds the series with, when the
                     requester chose one; otherwise the server's
                     `metadataLanguageId` (or `animeMetadataLanguageId`) applies
-                    when the request is sent. On an edit, null clears the choice
-                    and leaving it out keeps it.
+                    when the request is sent. Null, 0 or a negative id means no
+                    choice: on an edit it clears the stored one, and leaving
+                    the key out keeps it. A request that replaces a pending one
+                    takes its own value.
                 userId:
                   type: number
                   nullable: true
@@ -10064,8 +10066,10 @@ paths:
                     The metadata language Sonarr 5 adds the series with, when the
                     requester chose one; otherwise the server's
                     `metadataLanguageId` (or `animeMetadataLanguageId`) applies
-                    when the request is sent. On an edit, null clears the choice
-                    and leaving it out keeps it.
+                    when the request is sent. Null, 0 or a negative id means no
+                    choice: on an edit it clears the stored one, and leaving
+                    the key out keeps it. A request that replaces a pending one
+                    takes its own value.
                 userId:
                   type: number
                   nullable: true
