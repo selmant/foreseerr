@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 
 use super::syncutil::{axios_message, date_ph, int, iso, now_ms, opt_date_bind, parse_js_date, Tx};
 use super::JobCtx;
-use crate::db::{Bind, Db};
+use crate::db::{Bind, Db, EpisodeRequestRow};
 use crate::library::{Lib, Link};
 use crate::lifecycle::{
     episode_code, episodes_done, log_out_of_order, Entity, EpisodesDone, Lc, APPROVED, COMPLETED,
@@ -563,8 +563,8 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
                 child.episode_number,
                 child.tvdb_id
             );
-            child.status = APPROVED;
-            set_child_status(db, child.id, APPROVED).await?;
+            revive(child);
+            save_revived(db, child.id).await?;
         }
         let is_new = additions.contains(&child.tvdb_id)
             || (revived && revival_wanted(watch_ahead, in_window));
@@ -744,6 +744,27 @@ fn aired_after(
             })
         })
         .collect())
+}
+
+/// A `FAILED` child back in the order its series uses in Sonarr, requested
+/// afresh: `APPROVED`, its monitor, removal and search stamps cleared. They
+/// date from before it failed; kept, a watch-ahead child would never be
+/// monitored again, and one Sonarr doesn't monitor would count as removed.
+fn revive(child: &mut EpisodeRequestRow) {
+    child.status = APPROVED;
+    child.monitored_at = None;
+    child.unmonitored_at = None;
+    child.search_triggered_at = None;
+}
+
+/// What [`revive`] changed, in one statement.
+async fn save_revived(db: &Db, child: i64) -> Result<()> {
+    db.execute(
+        r#"UPDATE "episode_request" SET "status" = ?1, "monitoredAt" = NULL, "unmonitoredAt" = NULL, "searchTriggeredAt" = NULL, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
+        &[Bind::Int(APPROVED), Bind::Int(child)],
+    )
+    .await?;
+    Ok(())
 }
 
 /// An episode child's `status`.
@@ -1075,6 +1096,37 @@ mod tests {
         assert!(
             !missed_again(&mut missed, 7),
             "found in between: a miss is a first one again"
+        );
+    }
+
+    #[test]
+    fn revived_episodes_are_fetched_again() {
+        let mut child = EpisodeRequestRow {
+            status: FAILED,
+            monitored_at: Some(String::from("2026-10-01T00:00:00.000Z")),
+            unmonitored_at: Some(String::from("2026-10-02T00:00:00.000Z")),
+            search_triggered_at: Some(String::from("2026-10-01T00:00:00.000Z")),
+            ..EpisodeRequestRow::default()
+        };
+        revive(&mut child);
+        assert_eq!(
+            (
+                child.status,
+                child.monitored_at.as_ref(),
+                child.unmonitored_at.as_ref(),
+                child.search_triggered_at.as_ref()
+            ),
+            (APPROVED, None, None, None),
+            "requested afresh"
+        );
+        let monitored_at = child.monitored_at.is_some();
+        assert!(
+            awaits_monitor(true, false, child.status, monitored_at),
+            "monitored once inside the window"
+        );
+        assert!(
+            !removed_externally(false, false, child.status, monitored_at),
+            "not taken for one someone removed"
         );
     }
 
