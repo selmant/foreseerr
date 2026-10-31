@@ -12,7 +12,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde_json::{Map, Value};
 
-use crate::db::{Bind, Db, MediaRow, SeasonRow};
+use crate::db::{Bind, Db, MediaRow, SeasonRequestRow, SeasonRow};
 use crate::dbtx::Exec;
 use crate::jobs::syncutil::Tx;
 use crate::lifecycle::{Entity, Lc, APPROVED, COMPLETED, FAILED, PENDING};
@@ -495,35 +495,12 @@ async fn complete_related(
             if !entity.row.episodes.is_empty() {
                 continue;
             }
-            let mut all_ready = true;
-            let mut seasons_touched = false;
-            for request_season in &mut entity.row.seasons {
-                let Some(current) = edit
-                    .after
-                    .seasons
-                    .iter()
-                    .find(|s| s.season_number == request_season.season_number)
-                else {
-                    all_ready = false;
-                    continue;
-                };
-                let previous = db_seasons
-                    .iter()
-                    .find(|s| s.season_number == request_season.season_number)
-                    .map(|s| season_status(s, key));
-                let now = season_status(current, key);
-                let status_changed = Some(now) != previous;
-                if (status_changed || request_season.status == COMPLETED)
-                    && matches!(now, M_AVAILABLE | M_DELETED)
-                {
-                    if request_season.status != COMPLETED {
-                        seasons_touched = true;
-                    }
-                    request_season.status = COMPLETED;
-                } else {
-                    all_ready = false;
-                }
-            }
+            let (all_ready, seasons_touched) = settle_seasons(
+                &mut entity.row.seasons,
+                &edit.after.seasons,
+                db_seasons,
+                key,
+            );
             should_complete = all_ready;
             if !should_complete && seasons_touched {
                 lc.save(&mut entity).await?;
@@ -538,6 +515,51 @@ async fn complete_related(
         lc.save(&mut entity).await?;
     }
     Ok(())
+}
+
+/// The requested seasons of a TV request after a media save (`after`, the
+/// seasons as stored `before`): each one now available or deleted turns
+/// `COMPLETED`. Whether the request is ready to complete, and whether a
+/// season turned `COMPLETED`.
+///
+/// A `FAILED` season is one the episode order the series uses in Sonarr
+/// leaves out entirely: it can't be downloaded, so it doesn't keep the
+/// request open, though a request of nothing but those doesn't complete.
+fn settle_seasons(
+    requested: &mut [SeasonRequestRow],
+    after: &[SeasonRow],
+    before: &[SeasonRow],
+    key: bool,
+) -> (bool, bool) {
+    let all_failed = !requested.is_empty() && requested.iter().all(|s| s.status == FAILED);
+    let mut all_ready = !all_failed;
+    let mut touched = false;
+    for request_season in requested.iter_mut().filter(|s| s.status != FAILED) {
+        let Some(current) = after
+            .iter()
+            .find(|s| s.season_number == request_season.season_number)
+        else {
+            all_ready = false;
+            continue;
+        };
+        let previous = before
+            .iter()
+            .find(|s| s.season_number == request_season.season_number)
+            .map(|s| season_status(s, key));
+        let now = season_status(current, key);
+        let status_changed = Some(now) != previous;
+        if (status_changed || request_season.status == COMPLETED)
+            && matches!(now, M_AVAILABLE | M_DELETED)
+        {
+            if request_season.status != COMPLETED {
+                touched = true;
+            }
+            request_season.status = COMPLETED;
+        } else {
+            all_ready = false;
+        }
+    }
+    (all_ready, touched)
 }
 
 /// The media as `res.json` prints the saved entity: loaded seasons in
@@ -602,6 +624,54 @@ mod tests {
     use anyhow::Context;
 
     use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
+
+    #[test]
+    fn seasons_out_of_reach_dont_hold_requests_open() {
+        let media_season = |number: i64, status: i64| SeasonRow {
+            season_number: number,
+            status,
+            ..SeasonRow::default()
+        };
+        let requested = |list: &[(i64, i64)]| -> Vec<SeasonRequestRow> {
+            list.iter()
+                .map(|&(number, status)| SeasonRequestRow {
+                    season_number: number,
+                    status,
+                    ..SeasonRequestRow::default()
+                })
+                .collect()
+        };
+        let before = [media_season(2, 3), media_season(22, 1)];
+        let after = [media_season(2, M_AVAILABLE), media_season(22, 1)];
+        let mut partly = requested(&[(2, APPROVED), (22, FAILED)]);
+        assert_eq!(
+            settle_seasons(&mut partly, &after, &before, false),
+            (true, true),
+            "aired season 2 came in; the season the order leaves out doesn't count"
+        );
+        assert_eq!(
+            partly.iter().map(|s| s.status).collect::<Vec<_>>(),
+            vec![COMPLETED, FAILED],
+            "the left-out season stays failed"
+        );
+        let mut waiting = requested(&[(2, APPROVED), (22, APPROVED)]);
+        assert_eq!(
+            settle_seasons(&mut waiting, &after, &before, false),
+            (false, true),
+            "a season that can still come holds it open"
+        );
+        let mut none = requested(&[(22, FAILED)]);
+        assert_eq!(
+            settle_seasons(&mut none, &after, &before, false),
+            (false, false),
+            "nothing Sonarr can download doesn't complete"
+        );
+        assert_eq!(
+            settle_seasons(&mut [], &after, &before, false),
+            (true, false),
+            "no seasons, as before"
+        );
+    }
 
     #[test]
     fn fresh_seasons_and_resets() {

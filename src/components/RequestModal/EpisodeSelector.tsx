@@ -4,6 +4,7 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
+import { episodeRequestStatus } from '@app/utils/episodeRequests';
 import {
   ArrowPathIcon,
   CheckIcon,
@@ -95,11 +96,7 @@ export interface EpisodeSelectorRequestState {
 }
 
 const effectiveRequestStatus = (state?: EpisodeSelectorRequestState) =>
-  state?.requestStatus === MediaRequestStatus.FAILED ||
-  state?.requestStatus === MediaRequestStatus.DECLINED ||
-  state?.requestStatus === MediaRequestStatus.COMPLETED
-    ? state.requestStatus
-    : state?.childStatus;
+  episodeRequestStatus(state?.requestStatus, state?.childStatus);
 
 const EpisodeSelector = ({
   tmdbId,

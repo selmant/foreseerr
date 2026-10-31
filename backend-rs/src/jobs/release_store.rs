@@ -8,7 +8,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use serde_json::{Map, Value};
 
-use super::release_calendar::{is_material_date_change, lease_condition, Lease, Normalized};
+use super::release_calendar::{is_material_date_change, lease_condition, Aired, Lease, Normalized};
 use super::syncutil::{boolean, date, date_bind, date_ph, int, iso, now_ms, opt_date_bind, Tx};
 use super::JobCtx;
 use crate::db::Bind;
@@ -74,6 +74,8 @@ pub struct EventOccurrence {
     is4k: bool,
     starts_at: i64,
     raw_dates: Option<String>,
+    /// Where the episode sits in the aired order.
+    aired: Aired,
 }
 
 /// A `ReleaseDateChange` as saved.
@@ -213,6 +215,7 @@ fn merged(
         is4k: next.flags.is4k,
         starts_at: next.starts_at,
         raw_dates: Some(next.raw_dates.clone()),
+        aired: next.aired,
     }
 }
 
@@ -245,6 +248,8 @@ fn stored_event(row: &Map<String, Value>) -> EventOccurrence {
             .get("rawDates")
             .and_then(Value::as_str)
             .map(str::to_owned),
+        // Only premieres read it, and those come from fresh calendars.
+        aired: Aired::AsNumbered,
     }
 }
 
@@ -331,6 +336,11 @@ pub async fn reconcile(
     for next in input.occurrences {
         let key = next.key();
         let existing = by_key.get(&key);
+        if existing.is_none()
+            && waits_for_tvdb(next.aired, next.starts_at, input.initial_backfill, now)
+        {
+            continue;
+        }
         let media_id = if opt_int(next.tmdb_id.as_ref()).is_some_and(|t| t != 0) {
             opt_int(next.tmdb_id.as_ref()).and_then(|t| media_ids.0.get(&t).copied())
         } else {
@@ -486,8 +496,38 @@ async fn media_maps(
     Ok((movies, series))
 }
 
+/// How far ahead a new entry TVDB couldn't place in the aired order waits
+/// for a run that can.
+const UNPLACED_WAIT_MS: i64 = 2 * DAY_MS;
+
+/// Whether a new entry is left for a later run. TVDB couldn't place it in
+/// the aired order (`Unchecked`), which tells whether it premieres a
+/// season, and only new entries are checked for that. While it is more
+/// than two days away a later run may still place it in time; closer, it
+/// is stored with no place, so the calendar shows it even when TVDB keeps
+/// failing for the series.
+fn waits_for_tvdb(aired: Aired, starts_at: i64, initial_backfill: bool, now: i64) -> bool {
+    !initial_backfill && aired == Aired::Unchecked && starts_at > now + UNPLACED_WAIT_MS
+}
+
 fn is_season_premiere(o: &EventOccurrence) -> bool {
-    o.source == "sonarr" && o.season.unwrap_or(0) > 0 && o.episode == Some(1)
+    premiere_season(o).is_some()
+}
+
+/// The aired season a Sonarr episode premieres: its first episode, past
+/// the specials. A series Sonarr numbers in another order is placed by
+/// its aired-order numbers: Sonarr's episode 1 may be none (absolute
+/// order) or another season's (DVD order).
+fn premiere_season(o: &EventOccurrence) -> Option<i64> {
+    if o.source != "sonarr" {
+        return None;
+    }
+    let (season, episode) = match o.aired {
+        Aired::AsNumbered => (o.season.unwrap_or(0), o.episode),
+        Aired::Mapped(season, episode) => (season, Some(episode)),
+        Aired::Unknown | Aired::Unchecked => return None,
+    };
+    (season > 0 && episode == Some(1)).then_some(season)
 }
 
 async fn insert_occurrence(
@@ -890,11 +930,10 @@ pub async fn produce_events(job: &JobCtx, events: &Events) {
     }
     let now = now_ms();
     for occurrence in &events.new_seasons {
-        if occurrence.source != "sonarr"
-            || occurrence.season.unwrap_or(0) == 0
-            || occurrence.episode != Some(1)
-            || occurrence.starts_at < now - NEW_SEASON_GRACE_MS
-        {
+        let Some(season) = premiere_season(occurrence) else {
+            continue;
+        };
+        if occurrence.starts_at < now - NEW_SEASON_GRACE_MS {
             continue;
         }
         match notification_context(&job.state, occurrence).await {
@@ -908,8 +947,7 @@ pub async fn produce_events(job: &JobCtx, events: &Events) {
                             event: Some(String::from("New Season Announced")),
                             subject: occurrence.title.clone(),
                             message: Some(format!(
-                                "Season {} premieres {}.",
-                                occurrence.season.unwrap_or(0),
+                                "Season {season} premieres {}.",
                                 iso_date(occurrence.starts_at)
                             )),
                             notify_admin: false,
@@ -975,7 +1013,74 @@ mod tests {
             is4k: false,
             starts_at: 0,
             raw_dates: Some(raw.to_owned()),
+            aired: Aired::AsNumbered,
         }
+    }
+
+    fn episode(season: i64, episode: i64, aired: Aired) -> EventOccurrence {
+        EventOccurrence {
+            source: String::from("sonarr"),
+            season: Some(season),
+            episode: Some(episode),
+            media_type: String::from("tv"),
+            aired,
+            ..occ("air", "{}")
+        }
+    }
+
+    #[test]
+    fn unplaced_entries_wait_only_while_far_off() {
+        let now = 1_000 * DAY_MS;
+        assert!(
+            waits_for_tvdb(Aired::Unchecked, now + 3 * DAY_MS, false, now),
+            "TVDB may answer before it airs"
+        );
+        assert!(
+            !waits_for_tvdb(Aired::Unchecked, now + DAY_MS, false, now),
+            "too close: shown without a place"
+        );
+        assert!(
+            !waits_for_tvdb(Aired::Unknown, now + 3 * DAY_MS, false, now),
+            "TVDB answered"
+        );
+        assert!(
+            !waits_for_tvdb(Aired::Unchecked, now + 3 * DAY_MS, true, now),
+            "the initial backfill announces nothing"
+        );
+    }
+
+    #[test]
+    fn premieres_by_aired_order() {
+        assert_eq!(
+            premiere_season(&episode(2, 1, Aired::AsNumbered)),
+            Some(2),
+            "aired order"
+        );
+        assert_eq!(
+            premiere_season(&episode(0, 1, Aired::AsNumbered)),
+            None,
+            "specials"
+        );
+        assert_eq!(
+            premiere_season(&episode(1, 13, Aired::Mapped(2, 1))),
+            Some(2),
+            "absolute S01E13 premieres aired season 2"
+        );
+        assert_eq!(
+            premiere_season(&episode(2, 1, Aired::Mapped(1, 14))),
+            None,
+            "DVD S02E01 is the middle of aired season 1"
+        );
+        assert_eq!(
+            premiere_season(&episode(2, 1, Aired::Unknown)),
+            None,
+            "aired place unknown"
+        );
+        assert_eq!(
+            premiere_season(&occ("digital", "{}")),
+            None,
+            "movies don't premiere seasons"
+        );
     }
 
     #[test]

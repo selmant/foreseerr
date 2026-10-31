@@ -16,8 +16,10 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use crate::arr::{Arr, MovieOptions, SeriesOptions};
-use crate::db::{Bind, Db, MediaRow, RequestRow, UserRecord, UserSettingsRecord};
+use crate::arr::{Arr, MovieOptions, SeriesAdded, SeriesOptions};
+use crate::db::{
+    Bind, Db, EpisodeRequestRow, MediaRow, RequestRow, UserRecord, UserSettingsRecord,
+};
 use crate::dbtx::Exec;
 use crate::jobs::syncutil::Tx;
 use crate::media::js_string;
@@ -400,21 +402,13 @@ impl Lc {
         let Some(latest) = self.state.db.media_by_ids(&[media_id], true).await?.pop() else {
             return Ok(());
         };
-        let requested: Vec<i64> = e.row.seasons.iter().map(|s| s.season_number).collect();
-        let available = latest
+        let available: Vec<i64> = latest
             .seasons
             .iter()
-            .filter(|s| {
-                (if e.row.is4k { s.status4k } else { s.status }) == M_AVAILABLE
-                    && requested.contains(&s.season_number)
-            })
-            .count();
-        let ready = if e.row.episodes.is_empty() {
-            available > 0 && available == requested.len()
-        } else {
-            e.row.episodes.iter().all(|x| x.status == COMPLETED)
-        };
-        if !ready {
+            .filter(|s| (if e.row.is4k { s.status4k } else { s.status }) == M_AVAILABLE)
+            .map(|s| s.season_number)
+            .collect();
+        if !series_ready(&e.row, &available) {
             return Ok(());
         }
         let tmdb_id = e.media.as_ref().map_or(latest.tmdb_id, |m| m.tmdb_id);
@@ -428,7 +422,9 @@ impl Lc {
             notify_admin: false,
             notify_system: true,
             notify_user: Some(info.requested_by.clone()),
-            extra: vec![requested_extra(&e.row)],
+            extra: std::iter::once(requested_extra(&e.row))
+                .chain(unavailable_extra(&e.row))
+                .collect(),
             request: Some(info),
             watch_url: crate::media::media_url(&latest, &self.settings, e.row.is4k),
             ..Payload::default()
@@ -937,10 +933,21 @@ impl Lc {
                 server: &server,
                 timeout,
             };
+            let tmdb_id = media.tmdb_id;
             let result = async {
-                let added = arr.add_series(&options).await?;
+                let aired = crate::episodeorder::Tvdb(&lc.state.outbound);
+                let SeriesAdded {
+                    series: added,
+                    left_out_seasons,
+                } = arr.add_series(&options, &aired).await?;
                 lc.record_service(&snapshot, &server, &added).await?;
                 let mut entity = snapshot.clone();
+                if !left_out_seasons.is_empty() {
+                    let order = crate::episodeorder::other_order(&added)
+                        .unwrap_or(crate::episodeorder::OFFICIAL);
+                    lc.fail_left_out_seasons(&entity, tmdb_id, &left_out_seasons, order)
+                        .await?;
+                }
                 if !entity.row.episodes.is_empty() && truthy(added.get("id")) {
                     let episodes = arr
                         .episodes(added.get("id").unwrap_or(&Value::Null))
@@ -948,9 +955,15 @@ impl Lc {
                     let now = crate::clock::now_millis();
                     let prevent = truthy(server.get("preventSearch"));
                     for child in &mut entity.row.episodes {
+                        // One Sonarr doesn't list stays APPROVED, as the
+                        // approval leaves it (this copy may predate that).
+                        // Should the order the series uses leave it out,
+                        // the episode sync marks it FAILED once two runs in
+                        // a row miss it: this one list may be partial.
                         let Some(found) = episodes.iter().find(|x| {
                             x.get("tvdbId").and_then(Value::as_i64) == Some(child.tvdb_id)
                         }) else {
+                            child.status = APPROVED;
                             continue;
                         };
                         let has_file = truthy(found.get("hasFile"));
@@ -960,7 +973,6 @@ impl Lc {
                         }
                     }
                     lc.write(&mut entity, false).await?;
-                    let all_complete = entity.row.episodes.iter().all(|x| x.status == COMPLETED);
                     let rolling = matches!(
                         entity.row.episode_selection_type.as_deref(),
                         Some("after" | "watchAhead")
@@ -968,7 +980,8 @@ impl Lc {
                     let ended = js_string(added.get("status")).to_lowercase() == "ended";
                     let may_complete = !rolling
                         || (entity.row.episode_selection_type.as_deref() == Some("after") && ended);
-                    if all_complete && may_complete {
+                    if may_complete && episodes_done(&entity.row.episodes) == EpisodesDone::Complete
+                    {
                         entity.row.status = COMPLETED;
                         lc.save(&mut entity).await?;
                     }
@@ -989,6 +1002,141 @@ impl Lc {
             }
         });
     }
+
+    /// Mark `FAILED` the request's seasons whose aired seasons (as
+    /// `resolveSonarrSeasons` maps them) the `order` the series uses in
+    /// Sonarr leaves out entirely (`left_out`): nothing of them was
+    /// monitored, and waiting for them would keep the request open for
+    /// good. The request completes once its other seasons are available.
+    ///
+    /// `e` is the background add's copy of the request, older than what
+    /// the approval wrote since, so only those rows are written.
+    async fn fail_left_out_seasons(
+        &self,
+        e: &Entity,
+        tmdb_id: i64,
+        left_out: &[i64],
+        order: &str,
+    ) -> Result<()> {
+        let mut ids = Vec::new();
+        let mut numbers = Vec::new();
+        for season in &e.row.seasons {
+            let number = season.season_number;
+            let mapped = crate::mapping::sonarr_seasons(&self.state.db, tmdb_id, &[number])
+                .await
+                .unwrap_or_else(|_| vec![number]);
+            if season_left_out(&mapped, left_out) {
+                ids.push(season.id);
+                numbers.push(number.to_string());
+            }
+        }
+        if fail_season_rows(&self.state.db, &ids).await? == 0 {
+            return Ok(());
+        }
+        tracing::warn!(
+            "Season(s) {} of request {} have no episodes in the {order} episode order the series uses in Sonarr, so Sonarr can't download them; marked FAILED",
+            numbers.join(", "),
+            e.row.id
+        );
+        Ok(())
+    }
+}
+
+/// Mark `FAILED` the season rows `ids` that are still `APPROVED`, in one
+/// statement that touches nothing else; how many changed.
+async fn fail_season_rows(db: &Db, ids: &[i64]) -> Result<u64> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let list = ids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    db.execute(
+        &format!(
+            r#"UPDATE "season_request" SET "status" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "status" = ?2 AND "id" IN ({list})"#
+        ),
+        &[Bind::Int(FAILED), Bind::Int(APPROVED)],
+    )
+    .await
+}
+
+/// Whether a requested season is out of reach: Sonarr's order leaves out
+/// each aired season it maps to (`mapped`).
+fn season_left_out(mapped: &[i64], left_out: &[i64]) -> bool {
+    !mapped.is_empty() && mapped.iter().all(|s| left_out.contains(s))
+}
+
+/// Where a request's episodes stand: each one downloaded (`COMPLETED`) or
+/// out of reach (`FAILED`, as an episode the order the series uses in
+/// Sonarr leaves out is).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EpisodesDone {
+    /// Some are still to be downloaded.
+    Pending,
+    /// Each one is downloaded or out of reach, and not all are out of
+    /// reach (no episodes at all count as complete).
+    Complete,
+    /// Every one is out of reach.
+    AllFailed,
+}
+
+/// Where `episodes` stand.
+#[must_use]
+pub fn episodes_done(episodes: &[EpisodeRequestRow]) -> EpisodesDone {
+    if !episodes.is_empty() && episodes.iter().all(|e| e.status == FAILED) {
+        EpisodesDone::AllFailed
+    } else if episodes
+        .iter()
+        .all(|e| e.status == COMPLETED || e.status == FAILED)
+    {
+        EpisodesDone::Complete
+    } else {
+        EpisodesDone::Pending
+    }
+}
+
+/// `S01E02` for a requested episode.
+#[must_use]
+pub fn episode_code(e: &EpisodeRequestRow) -> String {
+    format!("S{:02}E{:02}", e.season_number, e.episode_number)
+}
+
+/// The first few of `codes` for a log line.
+fn listed(codes: &[String]) -> String {
+    const SHOWN: usize = 10;
+    let shown = codes
+        .iter()
+        .take(SHOWN)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    match codes.len() {
+        1 => format!("Episode {shown}"),
+        n if n <= SHOWN => format!("Episodes {shown}"),
+        n => format!("Episodes {shown} and {} more", n - SHOWN),
+    }
+}
+
+/// Log the requested episodes (`codes`) marked `FAILED` in one line.
+///
+/// The `order` the series uses in Sonarr leaves them out, so Sonarr can't
+/// download them and waiting for them would keep the request open for
+/// good.
+pub fn log_out_of_order(request_id: i64, order: &str, codes: &[String]) {
+    if codes.is_empty() {
+        return;
+    }
+    let (verb, them) = if codes.len() == 1 {
+        ("is", "it")
+    } else {
+        ("are", "them")
+    };
+    tracing::warn!(
+        "{} of request {request_id} {verb} not in the {order} episode order the series uses in Sonarr, so Sonarr can't download {them}; marked FAILED",
+        listed(codes)
+    );
 }
 
 /// The writes of a save, in one transaction as `TypeORM`'s cascaded
@@ -1343,6 +1491,118 @@ pub fn truncate(text: &str) -> String {
     out
 }
 
+/// Whether a completed series request is told available, given the season
+/// numbers (`available`) the title has available in its quality: each
+/// requested season Sonarr can download is available, or each requested
+/// episode is downloaded or out of reach (`FAILED`) with one downloaded.
+fn series_ready(row: &RequestRow, available: &[i64]) -> bool {
+    if row.episodes.is_empty() {
+        let mut wanted = row.seasons.iter().filter(|s| s.status != FAILED).peekable();
+        wanted.peek().is_some() && wanted.all(|s| available.contains(&s.season_number))
+    } else {
+        episodes_done(&row.episodes) == EpisodesDone::Complete
+    }
+}
+
+/// What a request available all the same couldn't get, for its
+/// notification: the requested episodes or seasons marked `FAILED`, which
+/// the episode order the series uses in Sonarr leaves out.
+fn unavailable_extra(row: &RequestRow) -> Option<(String, String)> {
+    let episodes: Vec<(i64, i64)> = row
+        .episodes
+        .iter()
+        .filter(|x| x.status == FAILED)
+        .map(|x| (x.season_number, x.episode_number))
+        .collect();
+    if !episodes.is_empty() {
+        return Some((
+            String::from("Unavailable Episodes"),
+            episode_ranges(&episodes),
+        ));
+    }
+    let seasons: Vec<i64> = row
+        .seasons
+        .iter()
+        .filter(|s| s.status == FAILED)
+        .map(|s| s.season_number)
+        .collect();
+    (!seasons.is_empty()).then(|| (String::from("Unavailable Seasons"), season_ranges(&seasons)))
+}
+
+/// The longest an extra field's list runs before the rest is counted, well
+/// under the 1024 characters of a Discord embed field.
+const EXTRA_MAX: usize = 400;
+
+/// Runs of consecutive numbers, sorted: first and last of each.
+fn runs<K: Ord + Copy>(items: &[(K, i64)]) -> Vec<(K, i64, i64)> {
+    let mut sorted = items.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut runs: Vec<(K, i64, i64)> = Vec::new();
+    for (key, number) in sorted {
+        if let Some(run) = runs
+            .last_mut()
+            .filter(|run| run.0 == key && run.2 + 1 == number)
+        {
+            run.2 = number;
+        } else {
+            runs.push((key, number, number));
+        }
+    }
+    runs
+}
+
+/// Episodes (season, number) as `S01E03–E07, S02E01`, capped.
+fn episode_ranges(episodes: &[(i64, i64)]) -> String {
+    let parts: Vec<(String, i64)> = runs(episodes)
+        .into_iter()
+        .map(|(season, first, last)| {
+            let text = if first == last {
+                format!("S{season:02}E{first:02}")
+            } else {
+                format!("S{season:02}E{first:02}–E{last:02}")
+            };
+            (text, last - first + 1)
+        })
+        .collect();
+    capped(&parts, ("episode", "episodes"))
+}
+
+/// Season numbers as `1–3, 5`, capped.
+fn season_ranges(seasons: &[i64]) -> String {
+    let numbered: Vec<((), i64)> = seasons.iter().map(|s| ((), *s)).collect();
+    let parts: Vec<(String, i64)> = runs(&numbered)
+        .into_iter()
+        .map(|((), first, last)| {
+            let text = if first == last {
+                first.to_string()
+            } else {
+                format!("{first}–{last}")
+            };
+            (text, last - first + 1)
+        })
+        .collect();
+    capped(&parts, ("season", "seasons"))
+}
+
+/// `parts` (text and how many items it stands for) joined with commas up
+/// to [`EXTRA_MAX`], the items left over counted: `… and 12 more episodes`.
+fn capped(parts: &[(String, i64)], (one, many): (&str, &str)) -> String {
+    let mut out = String::new();
+    for (i, (text, _)) in parts.iter().enumerate() {
+        if !out.is_empty() && out.len() + 2 + text.len() > EXTRA_MAX {
+            let rest: i64 = parts.iter().skip(i).map(|(_, n)| n).sum();
+            let noun = if rest == 1 { one } else { many };
+            return format!("{out} and {rest} more {noun}");
+        }
+        if !out.is_empty() {
+            out.push_str(", ");
+        }
+        out.push_str(text);
+    }
+    out
+}
+
 /// `Requested Episodes` or `Requested Seasons` for a TV notification.
 fn requested_extra(row: &RequestRow) -> (String, String) {
     let code = |s: i64, e: i64| format!("S{s:02}E{e:02}");
@@ -1382,7 +1642,212 @@ fn requested_extra(row: &RequestRow) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn episodes_settle_when_downloaded_or_out_of_reach() {
+        let rows = |statuses: &[i64]| -> Vec<EpisodeRequestRow> {
+            statuses
+                .iter()
+                .map(|status| EpisodeRequestRow {
+                    status: *status,
+                    ..EpisodeRequestRow::default()
+                })
+                .collect()
+        };
+        assert_eq!(
+            episodes_done(&rows(&[COMPLETED, FAILED])),
+            EpisodesDone::Complete,
+            "the rest downloaded"
+        );
+        assert_eq!(
+            episodes_done(&rows(&[FAILED, FAILED])),
+            EpisodesDone::AllFailed,
+            "nothing Sonarr can download"
+        );
+        assert_eq!(
+            episodes_done(&rows(&[COMPLETED, APPROVED, FAILED])),
+            EpisodesDone::Pending,
+            "one to come"
+        );
+        assert_eq!(episodes_done(&[]), EpisodesDone::Complete, "none asked for");
+        let child = EpisodeRequestRow {
+            season_number: 21,
+            episode_number: 4,
+            ..EpisodeRequestRow::default()
+        };
+        assert_eq!(episode_code(&child), "S21E04", "code");
+        let codes: Vec<String> = (1..=12).map(|n| format!("S01E{n:02}")).collect();
+        assert_eq!(
+            listed(codes.get(..1).unwrap_or_default()),
+            "Episode S01E01",
+            "one"
+        );
+        assert_eq!(
+            listed(&codes),
+            "Episodes S01E01, S01E02, S01E03, S01E04, S01E05, S01E06, S01E07, S01E08, S01E09, S01E10 and 2 more",
+            "the first ten"
+        );
+    }
     use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
+
+    fn episode(season: i64, number: i64, status: i64) -> EpisodeRequestRow {
+        EpisodeRequestRow {
+            season_number: season,
+            episode_number: number,
+            status,
+            ..EpisodeRequestRow::default()
+        }
+    }
+
+    fn season(number: i64, status: i64) -> crate::db::SeasonRequestRow {
+        crate::db::SeasonRequestRow {
+            season_number: number,
+            status,
+            ..crate::db::SeasonRequestRow::default()
+        }
+    }
+
+    #[test]
+    fn partly_downloadable_requests_are_told_available() {
+        let episodes = |list: Vec<EpisodeRequestRow>| RequestRow {
+            episodes: list,
+            ..RequestRow::default()
+        };
+        let partly = episodes(vec![
+            episode(21, 40, COMPLETED),
+            episode(21, 41, COMPLETED),
+            episode(21, 42, FAILED),
+        ]);
+        assert!(series_ready(&partly, &[]), "the rest is downloaded");
+        assert_eq!(
+            unavailable_extra(&partly),
+            Some((String::from("Unavailable Episodes"), String::from("S21E42"))),
+            "says what Sonarr can't download"
+        );
+        let whole = episodes(vec![episode(1, 1, COMPLETED)]);
+        assert!(series_ready(&whole, &[]), "all downloaded");
+        assert_eq!(unavailable_extra(&whole), None, "nothing to add");
+        assert!(
+            !series_ready(&episodes(vec![episode(1, 1, FAILED)]), &[]),
+            "none downloaded: the failure notification tells it"
+        );
+        assert!(
+            !series_ready(
+                &episodes(vec![episode(1, 1, COMPLETED), episode(1, 2, APPROVED)]),
+                &[]
+            ),
+            "one to come"
+        );
+        let seasons = |list: Vec<crate::db::SeasonRequestRow>| RequestRow {
+            seasons: list,
+            ..RequestRow::default()
+        };
+        let partly = seasons(vec![season(2, COMPLETED), season(22, FAILED)]);
+        assert!(
+            series_ready(&partly, &[1, 2]),
+            "the season Sonarr can download is available"
+        );
+        assert!(!series_ready(&partly, &[1]), "it isn't yet");
+        assert_eq!(
+            unavailable_extra(&partly),
+            Some((String::from("Unavailable Seasons"), String::from("22"))),
+            "the season the order leaves out"
+        );
+        assert!(
+            !series_ready(&seasons(vec![season(22, FAILED)]), &[22]),
+            "nothing Sonarr can download"
+        );
+        assert!(
+            series_ready(
+                &seasons(vec![season(1, COMPLETED), season(2, COMPLETED)]),
+                &[1, 2]
+            ),
+            "every season"
+        );
+    }
+
+    #[test]
+    fn unavailable_lists_stay_short() {
+        let mut episodes: Vec<(i64, i64)> = (42..=241).map(|n| (21, n)).collect();
+        episodes.extend([(22, 3), (22, 1), (21, 42)]);
+        assert_eq!(
+            episode_ranges(&episodes),
+            "S21E42–E241, S22E01, S22E03",
+            "runs of a season compressed, sorted"
+        );
+        let scattered: Vec<(i64, i64)> = (0..600).map(|n| (1, n * 2 + 1)).collect();
+        let text = episode_ranges(&scattered);
+        assert!(
+            text.chars().count() < 1024,
+            "fits a Discord field: {} characters",
+            text.chars().count()
+        );
+        let shown = text.split(", ").count();
+        assert!(
+            text.ends_with(&format!(" and {} more episodes", 600 - shown)),
+            "the rest counted: {text}"
+        );
+        assert_eq!(season_ranges(&[5, 1, 2, 3, 22]), "1–3, 5, 22", "seasons");
+        assert_eq!(
+            capped(
+                &[
+                    (String::from("x").repeat(EXTRA_MAX), 1),
+                    (String::from("y"), 1)
+                ],
+                ("episode", "episodes")
+            ),
+            format!("{} and 1 more episode", "x".repeat(EXTRA_MAX)),
+            "one more"
+        );
+    }
+
+    #[tokio::test]
+    async fn left_out_seasons_are_failed_alone() -> Result<()> {
+        let scratch = scratch::sqlite("lifecycle-left-out").await?;
+        let db = &scratch.db;
+        scratch::run(db, &PENDING_SEASON_ONE).await?;
+        scratch::run(
+            db,
+            &[
+                r#"UPDATE "media_request" SET "status" = 2 WHERE "id" = 1"#,
+                r#"UPDATE "season_request" SET "status" = 2 WHERE "requestId" = 1"#,
+                r#"INSERT INTO "season_request" ("seasonNumber", "status", "requestId") VALUES (22, 2, 1)"#,
+                r#"INSERT INTO "season_request" ("seasonNumber", "status", "requestId") VALUES (23, 1, 1)"#,
+            ],
+        )
+        .await?;
+        assert_eq!(
+            fail_season_rows(db, &[2, 3]).await?,
+            1,
+            "only the season still approved"
+        );
+        let seasons =
+            r#"SELECT "status" FROM "season_request" WHERE "requestId" = 1 ORDER BY "id""#;
+        assert_eq!(
+            ints(db, seasons).await?,
+            [APPROVED, FAILED, PENDING],
+            "the kept season as the approval left it"
+        );
+        let request = r#"SELECT "status" FROM "media_request" WHERE "id" = 1"#;
+        assert_eq!(
+            ints(db, request).await?,
+            [APPROVED],
+            "the request row untouched"
+        );
+        assert_eq!(fail_season_rows(db, &[]).await?, 0, "nothing to write");
+        Ok(())
+    }
+
+    #[test]
+    fn seasons_out_of_reach() {
+        assert!(season_left_out(&[22], &[22]), "its one aired season");
+        assert!(
+            !season_left_out(&[21, 22], &[22]),
+            "part of it can be downloaded"
+        );
+        assert!(season_left_out(&[3, 4], &[3, 4, 5]), "every mapped season");
+        assert!(!season_left_out(&[], &[22]), "nothing mapped");
+    }
 
     #[test]
     fn helpers() {

@@ -7,6 +7,7 @@
 //! scanned and none came back empty.
 
 use std::collections::HashSet;
+use std::future::Future;
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Context, Result};
@@ -14,7 +15,7 @@ use serde_json::Value;
 
 use super::scanbase::{array_of, js_truthy, str_of, uniq_with, Kind, Scan, PROCESSING, UNKNOWN};
 use super::scanmedia::{MovieOpts, ProcessableSeason, ShowOpts};
-use super::scantmdb::{provider_show, seasons_of, show_by_tvdb, tv_for_scan};
+use super::scantmdb::{provider_show, seasons_of, tv_for_scan, tvdb_show_id};
 use super::JobCtx;
 use crate::db::{Bind, MediaRow};
 use crate::media::js_string;
@@ -318,6 +319,7 @@ impl ArrRun<'_> {
     async fn try_series(&self, series: &Value, tvdb_known: Option<i64>) -> Result<()> {
         let job = self.scan.job;
         let tvdb = tvdb_known.ok_or_else(|| anyhow!("a series without a TVDB id"))?;
+        crate::episodeorder::track_order(&self.current, series);
         let known = job
             .state
             .db
@@ -333,7 +335,15 @@ impl ArrRun<'_> {
             .filter(|id| *id != 0);
         let show = match known {
             Some(id) => tv_for_scan(job, id).await?,
-            None => show_by_tvdb(job, tvdb).await?,
+            None => {
+                new_show(
+                    || tvdb_show_id(job, tvdb),
+                    tvdb,
+                    sonarr_tmdb_id(series),
+                    |id| tv_for_scan(job, id),
+                )
+                .await?
+            }
         };
         let tmdb_id = show
             .get("id")
@@ -343,11 +353,14 @@ impl ArrRun<'_> {
         let settings = job.current_settings().await?;
         let specials = js_truthy(settings.get("/main/enableSpecialEpisodes"));
         let four_k = self.server_4k(&self.current);
-        let seasons = sonarr_seasons(
-            &seasons_of(&show, specials),
-            array_of(series, "seasons"),
-            four_k,
-        );
+        let aired;
+        let sonarr = if crate::episodeorder::other_order(series).is_some() {
+            aired = self.aired_seasons(series, tvdb).await?;
+            aired.as_slice()
+        } else {
+            array_of(series, "seasons")
+        };
+        let seasons = sonarr_seasons(&seasons_of(&show, specials), sonarr, four_k);
         let (service_id, external_service_id, external_service_slug) = self.service_opts(series);
         let o = ShowOpts {
             service_id,
@@ -360,6 +373,21 @@ impl ArrRun<'_> {
         self.scan
             .process_show(tmdb_id, Some(tvdb), &seasons, &o)
             .await
+    }
+
+    /// The seasons of a series Sonarr numbers in another order than the
+    /// aired one, counted per aired season: Sonarr's own season N holds
+    /// other episodes than the aired season N the provider lists.
+    async fn aired_seasons(&self, series: &Value, tvdb: i64) -> Result<Vec<Value>> {
+        let id = js_string(series.get("id")).into_owned();
+        let episodes = self
+            .call(&self.current, "/episode", &[("seriesId", id)])
+            .await
+            .context("[Sonarr] Failed to retrieve episodes")?;
+        let catalog = crate::episodeorder::aired_catalog(&self.scan.job.state.outbound, tvdb)
+            .await
+            .context("[TVDB] Failed to load the aired episode order")?;
+        Ok(crate::episodeorder::aired_seasons(&catalog, &episodes))
     }
 
     /// `existsInAnyServer(id, is4k)`.
@@ -509,6 +537,52 @@ fn orphaned(media: &MediaRow, four_k: bool) -> MediaRow {
     after
 }
 
+/// The TMDB show of a Sonarr series no title has yet, by its TVDB id
+/// `tvdb`.
+///
+/// TMDB's find by TVDB id (`find`) comes first, as requests resolve a
+/// series that way and a second title for the same TVDB id would split the
+/// series in two. Only when TMDB answers but finds no show is the `tmdbId`
+/// Sonarr knows it by (`sonarr`) used, and only if that show doesn't name
+/// another TVDB id. TMDB failing skips the series this run (`by_id` shows
+/// a TMDB id).
+async fn new_show<F, FF, I, IF>(find: F, tvdb: i64, sonarr: Option<i64>, by_id: I) -> Result<Value>
+where
+    F: FnOnce() -> FF,
+    FF: Future<Output = Result<Option<i64>>>,
+    I: FnOnce(i64) -> IF,
+    IF: Future<Output = Result<Value>>,
+{
+    const CONTEXT: &str = "[TMDB] Failed to get TV show using the external TVDB ID";
+    if let Some(id) = find().await.context(CONTEXT)? {
+        return by_id(id).await.context(CONTEXT);
+    }
+    let Some(id) = sonarr else {
+        return Err(anyhow!("No show returned from API for ID {tvdb}").context(CONTEXT));
+    };
+    tracing::debug!("TMDB finds no show for TVDB ID {tvdb}; using Sonarr's TMDB ID {id}");
+    let show = by_id(id).await?;
+    let named = show
+        .pointer("/external_ids/tvdb_id")
+        .and_then(Value::as_i64)
+        .filter(|other| *other > 0 && *other != tvdb);
+    if let Some(other) = named {
+        return Err(anyhow!(
+            "Sonarr's TMDB ID {id} is TMDB's show of TVDB ID {other}, not {tvdb}"
+        ));
+    }
+    Ok(show)
+}
+
+/// The `tmdbId` Sonarr knows a series by; Sonarr sends 0 for none, and
+/// older Sonarrs nothing.
+fn sonarr_tmdb_id(series: &Value) -> Option<i64> {
+    series
+        .get("tmdbId")
+        .and_then(Value::as_i64)
+        .filter(|id| *id > 0)
+}
+
 /// The seasons `processSonarrSeries` builds from the provider's seasons and
 /// Sonarr's (seasons Sonarr doesn't list count as unmonitored and empty).
 fn sonarr_seasons(
@@ -632,6 +706,134 @@ mod tests {
             after.seasons.iter().map(|s| s.status).collect::<Vec<_>>(),
             vec![UNKNOWN, 5],
             "only processing seasons reset"
+        );
+    }
+
+    #[tokio::test]
+    async fn new_shows_are_found_by_tvdb_id_first() -> Result<()> {
+        use std::cell::Cell;
+        let show =
+            |id: i64, tvdb: Option<i64>| json!({ "id": id, "external_ids": { "tvdb_id": tvdb } });
+        let asked: Cell<Option<i64>> = Cell::new(None);
+        let by_id = |id: i64| {
+            asked.set(Some(id));
+            async move { Ok(show(id, Some(81797))) }
+        };
+        let found = new_show(|| async { Ok(Some(37854)) }, 81797, Some(1), by_id).await?;
+        assert_eq!(
+            (found.get("id").cloned(), asked.get()),
+            (Some(json!(37854)), Some(37854)),
+            "TMDB's find by TVDB id, as requests resolve it; Sonarr's id unused"
+        );
+        let found = new_show(
+            || async { Ok(None) },
+            81797,
+            Some(37854),
+            |id| async move { Ok(show(id, Some(81797))) },
+        )
+        .await?;
+        assert_eq!(
+            found.get("id"),
+            Some(&json!(37854)),
+            "Sonarr's id when TMDB finds nothing"
+        );
+        let unnamed = new_show(
+            || async { Ok(None) },
+            81797,
+            Some(37854),
+            |id| async move { Ok(show(id, None)) },
+        )
+        .await;
+        assert!(unnamed.is_ok(), "a show without a TVDB id is taken");
+        let other = new_show(
+            || async { Ok(None) },
+            81797,
+            Some(5),
+            |id| async move { Ok(show(id, Some(12))) },
+        )
+        .await;
+        assert!(
+            other.is_err_and(|e| format!("{e:#}").contains("TVDB ID 12, not 81797")),
+            "another series' show is refused"
+        );
+        let asked: Cell<Option<i64>> = Cell::new(None);
+        let down = new_show(
+            || async { Err(anyhow!("TMDB down")) },
+            81797,
+            Some(5),
+            |id| {
+                asked.set(Some(id));
+                async move { Ok(show(id, Some(81797))) }
+            },
+        )
+        .await;
+        assert!(
+            down.is_err() && asked.get().is_none(),
+            "TMDB failing skips the series; no fallback"
+        );
+        let none = new_show(
+            || async { Ok(None) },
+            81797,
+            None,
+            |id| async move { Ok(show(id, None)) },
+        )
+        .await;
+        assert!(
+            none.is_err_and(|e| format!("{e:#}").contains("No show returned from API for ID 81797")),
+            "no fallback without Sonarr's id"
+        );
+        assert_eq!(
+            sonarr_tmdb_id(&json!({ "tvdbId": 81797, "tmdbId": 37854 })),
+            Some(37854),
+            "Sonarr's id"
+        );
+        assert_eq!(sonarr_tmdb_id(&json!({ "tmdbId": 0 })), None, "0 is none");
+        assert_eq!(
+            sonarr_tmdb_id(&json!({ "tvdbId": 1 })),
+            None,
+            "an older Sonarr"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn aired_season_counts_for_another_order() {
+        use crate::jobs::episode_request_sync::CatalogEpisode;
+        let ep = |tvdb_id: i64, season: i64, episode: i64| CatalogEpisode {
+            tvdb_id,
+            season,
+            episode,
+            title: String::new(),
+            air_date: None,
+        };
+        // Aired: S1 = 11, 12; S2 = 21, 22. DVD order: one season of all four,
+        // where Sonarr's season 2 would be an unrelated, empty one.
+        let catalog = [ep(11, 1, 1), ep(12, 1, 2), ep(21, 2, 1), ep(22, 2, 2)];
+        let dvd = [
+            json!({"id": 1, "tvdbId": 12, "seasonNumber": 1, "episodeNumber": 1, "hasFile": true, "monitored": true}),
+            json!({"id": 2, "tvdbId": 11, "seasonNumber": 1, "episodeNumber": 2, "hasFile": true, "monitored": true}),
+            json!({"id": 3, "tvdbId": 21, "seasonNumber": 1, "episodeNumber": 3, "hasFile": false, "monitored": true}),
+            json!({"id": 4, "tvdbId": 22, "seasonNumber": 1, "episodeNumber": 4, "hasFile": false, "monitored": true}),
+        ];
+        let aired = crate::episodeorder::aired_seasons(&catalog, &dvd);
+        let seasons = sonarr_seasons(&[(1, 2), (2, 2)], &aired, false);
+        assert_eq!(
+            seasons,
+            vec![
+                ProcessableSeason {
+                    season_number: 1,
+                    total_episodes: 2,
+                    episodes: 2,
+                    ..ProcessableSeason::default()
+                },
+                ProcessableSeason {
+                    season_number: 2,
+                    total_episodes: 2,
+                    processing: true,
+                    ..ProcessableSeason::default()
+                }
+            ],
+            "aired season 1 is downloaded, season 2 is wanted"
         );
     }
 
