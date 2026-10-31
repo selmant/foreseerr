@@ -333,8 +333,11 @@ impl Arr<'_> {
     /// Monitor the episodes of the requested aired seasons on a series
     /// Sonarr numbers in another `order`, matched by TVDB episode id: its
     /// own seasons of the same numbers hold other episodes. The requested
-    /// aired seasons the order leaves out entirely come back: nothing of
-    /// them is monitored, and Sonarr can't download them.
+    /// aired seasons the order leaves out entirely (TVDB lists aired
+    /// episodes of them, Sonarr none) come back: nothing of them is
+    /// monitored, and Sonarr can't download them. A season TVDB lists no
+    /// aired episode of yet isn't left out: nothing of it is monitored now,
+    /// as on the aired-order path before Sonarr lists its episodes.
     ///
     /// # Errors
     ///
@@ -360,8 +363,17 @@ impl Arr<'_> {
                 "[Sonarr] Sonarr lists no episodes for series {series}, so the requested aired seasons can't be matched to its {order} episode order; the request can be retried once Sonarr lists them"
             );
         }
-        let (kept, left_out) = episodeorder::seasons_in_order(&catalog, &o.seasons, &episodes);
-        if kept.is_empty() {
+        let episodeorder::SeasonSplit {
+            kept,
+            left_out,
+            unlisted,
+        } = episodeorder::seasons_in_order(
+            &catalog,
+            &o.seasons,
+            &episodes,
+            crate::clock::now_millis(),
+        );
+        if kept.is_empty() && unlisted.is_empty() {
             bail!(
                 "None of the requested aired seasons ({}) have episodes in the {order} episode order series {series} uses in Sonarr, so Sonarr can't download them",
                 joined(&left_out)
@@ -369,9 +381,14 @@ impl Arr<'_> {
         }
         if !left_out.is_empty() {
             tracing::warn!(
-                "[Sonarr] Aired season(s) {} have no episodes in the {order} episode order of series {series}, so Sonarr can't download them; monitoring aired season(s) {} only",
-                joined(&left_out),
-                joined(&kept)
+                "[Sonarr] Aired season(s) {} have no episodes in the {order} episode order of series {series}, so Sonarr can't download them",
+                joined(&left_out)
+            );
+        }
+        if !unlisted.is_empty() {
+            tracing::warn!(
+                "[Sonarr] TVDB lists no aired episodes of aired season(s) {} of series {series} yet, and its {order} episode order has none; nothing of them is monitored now",
+                joined(&unlisted)
             );
         }
         let wanted = episodeorder::season_episodes(&catalog, &kept);
@@ -885,13 +902,14 @@ mod tests {
         }
     }
 
+    /// An episode that aired in 2002.
     fn ep(tvdb_id: i64, season: i64, episode: i64) -> CatalogEpisode {
         CatalogEpisode {
             tvdb_id,
             season,
             episode,
             title: String::new(),
-            air_date: None,
+            air_date: Some(String::from("2002-09-20")),
         }
     }
 
@@ -906,7 +924,9 @@ mod tests {
 
     /// Firefly-like: aired season 1 is 101 (aired first, the DVD's second),
     /// 102 (the pilot, the DVD's first), 103; aired season 2 is 201; aired
-    /// season 3 is 301, which the DVD order leaves out.
+    /// season 3 is 301, which the DVD order leaves out; aired season 4 is
+    /// 401, which hasn't aired yet (nor is in Sonarr). TVDB lists nothing
+    /// for aired season 5.
     fn aired_order() -> Fixed {
         Fixed(vec![
             ep(101, 1, 1),
@@ -914,6 +934,10 @@ mod tests {
             ep(103, 1, 3),
             ep(201, 2, 1),
             ep(301, 3, 1),
+            CatalogEpisode {
+                air_date: Some(String::from("2999-01-01")),
+                ..ep(401, 4, 1)
+            },
         ])
     }
 
@@ -1184,6 +1208,47 @@ mod tests {
                 "None of the requested aired seasons (3) have episodes in the dvd episode order"
             ),
             "nothing to monitor fails the request"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn seasons_not_listed_yet_are_not_left_out() -> Result<()> {
+        let dvd = series(Some("dvd"));
+        let (seen, left_out) = add_to(
+            "v5",
+            dvd.clone(),
+            dvd_episodes(),
+            &aired_order(),
+            &options(vec![1, 4, 5], None),
+        )
+        .await?;
+        assert!(
+            left_out.is_empty(),
+            "a future season and one TVDB lists nothing for yet may still come"
+        );
+        assert_eq!(
+            seen.last(),
+            Some(&write(
+                "PUT",
+                "/api/v5/episode/monitor",
+                json!({"episodeIds": [73, 71], "monitored": true})
+            )),
+            "aired season 1 is monitored"
+        );
+        let (seen, left_out) = add_to(
+            "v5",
+            dvd,
+            dvd_episodes(),
+            &aired_order(),
+            &options(vec![5], None),
+        )
+        .await?;
+        assert!(left_out.is_empty(), "nothing left out");
+        assert!(
+            seen.iter()
+                .all(|(_, path, _)| !path.ends_with("/episode/monitor")),
+            "nothing to monitor yet, and the request isn't failed: {seen:?}"
         );
         Ok(())
     }

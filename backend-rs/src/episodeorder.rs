@@ -178,22 +178,54 @@ pub fn season_episodes(catalog: &[CatalogEpisode], seasons: &[i64]) -> Vec<i64> 
         .collect()
 }
 
-/// The requested aired `seasons` split by Sonarr's order of the series.
-///
-/// First those it has any episode of (in their order), then those it
-/// leaves out entirely, which Sonarr can't download.
+/// The requested aired seasons as the order a Sonarr series uses holds
+/// them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SeasonSplit {
+    /// Seasons it has an episode of.
+    pub kept: Vec<i64>,
+    /// Seasons with aired episodes, none of which it has: Sonarr can't
+    /// download them.
+    pub left_out: Vec<i64>,
+    /// Seasons the aired catalog lists no aired episode of yet (none, or
+    /// only future ones) and it has nothing of: nothing to monitor now,
+    /// but they may come.
+    pub unlisted: Vec<i64>,
+}
+
+/// The requested aired `seasons` split by Sonarr's order of the series,
+/// each list in their order; an episode has aired when its air date is
+/// at or before `now_ms`.
 #[must_use]
 pub fn seasons_in_order(
     catalog: &[CatalogEpisode],
     seasons: &[i64],
     episodes: &[Value],
-) -> (Vec<i64>, Vec<i64>) {
+    now_ms: i64,
+) -> SeasonSplit {
     let known: HashSet<i64> = episodes.iter().filter_map(tvdb_of).collect();
-    seasons.iter().copied().partition(|season| {
-        catalog
-            .iter()
-            .any(|e| e.season == *season && known.contains(&e.tvdb_id))
-    })
+    let mut split = SeasonSplit::default();
+    for &season in seasons {
+        let mut of_season = catalog.iter().filter(|e| e.season == season);
+        if of_season.clone().any(|e| known.contains(&e.tvdb_id)) {
+            split.kept.push(season);
+        } else if of_season.any(|e| has_aired(e, now_ms)) {
+            split.left_out.push(season);
+        } else {
+            split.unlisted.push(season);
+        }
+    }
+    split
+}
+
+/// Whether a catalog episode has aired by `now_ms`; one without an air
+/// date hasn't.
+fn has_aired(episode: &CatalogEpisode, now_ms: i64) -> bool {
+    episode
+        .air_date
+        .as_deref()
+        .and_then(crate::clock::parse_date_millis)
+        .is_some_and(|at| at <= now_ms)
 }
 
 /// Sonarr's episodes by their TVDB id.
@@ -478,18 +510,34 @@ mod tests {
 
     #[test]
     fn seasons_the_order_leaves_out() {
-        // Aired S1 = 11, 12 and S2 = 21; the story order has 12 only, and
+        let on = |tvdb_id: i64, season: i64, episode: i64, date: &str| CatalogEpisode {
+            air_date: Some(date.to_owned()),
+            ..ep(tvdb_id, season, episode)
+        };
+        let now = crate::clock::parse_date_millis("2026-10-31").unwrap_or_default();
+        // Aired S1 = 11, 12 and S2 = 21 (all aired); S4 = 41, airing next
+        // year; S5 = 51 without a date. The story order has 12 only, and
         // TVDB lists nothing for aired season 3 yet.
-        let catalog = vec![ep(11, 1, 1), ep(12, 1, 2), ep(21, 2, 1)];
+        let catalog = vec![
+            on(11, 1, 1, "2020-01-01"),
+            on(12, 1, 2, "2020-01-08"),
+            on(21, 2, 1, "2021-01-01"),
+            on(41, 4, 1, "2027-01-01"),
+            ep(51, 5, 1),
+        ];
         let story = vec![sonarr(1, 12, 1, 1, false, false)];
         assert_eq!(
-            seasons_in_order(&catalog, &[1, 2, 3], &story),
-            (vec![1], vec![2, 3]),
-            "one episode is enough; a season without any can't be downloaded"
+            seasons_in_order(&catalog, &[1, 2, 3, 4, 5], &story, now),
+            SeasonSplit {
+                kept: vec![1],
+                left_out: vec![2],
+                unlisted: vec![3, 4, 5],
+            },
+            "one episode is enough; only aired episodes the order lacks leave a season out"
         );
         assert_eq!(
-            seasons_in_order(&catalog, &[2], &[]),
-            (Vec::new(), vec![2]),
+            seasons_in_order(&catalog, &[2], &[], now).left_out,
+            vec![2],
             "an empty list holds nothing (callers refuse to decide on one)"
         );
     }
