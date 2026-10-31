@@ -89,10 +89,10 @@ pub struct SonarrMatch {
 ///
 /// Those ids cover a whole franchise: Sonarr names the TVDB series every
 /// season, film and special of it belongs to. So only an entry that is a
-/// TV series (a known series format) and starts its show (no series
-/// prequel, relations known) is looked up; later seasons stay with the
-/// prequel rule, and films, OVAs and entries of unknown format or
-/// relations with the title rule.
+/// TV series (a known series format) and starts its own show (no series
+/// prequel, no parent, relations known) is looked up; later seasons stay
+/// with the prequel rule, and spin-offs, side stories, films, OVAs and
+/// entries of unknown format or relations with the title rule.
 #[must_use]
 pub fn sonarr_lookup_applies(hints: &AnimeHints) -> bool {
     let series = hints
@@ -107,7 +107,12 @@ pub fn sonarr_lookup_applies(hints: &AnimeHints) -> bool {
             .as_deref()
             .is_none_or(|f| SERIES_FORMATS.contains(&f))
     });
-    series && hints.year.is_some_and(|y| y != 0) && !sequel
+    // `PARENT`: the entry is someone's side story or spin-off, which
+    // Sonarr may file under the parent's series.
+    let spin_off = relations
+        .iter()
+        .any(|edge| edge.get("relationType").and_then(Value::as_str) == Some("PARENT"));
+    series && hints.year.is_some_and(|y| y != 0) && !sequel && !spin_off
 }
 
 /// The one series Sonarr's lookup for `{ns}:{id}` found, when it has a TMDB
@@ -666,6 +671,20 @@ mod tests {
                     ..first.clone()
                 },
                 "a prequel of unknown format",
+            ),
+            (
+                AnimeHints {
+                    relations: Some(vec![edge("PARENT", 3, Some("TV"))]),
+                    ..first.clone()
+                },
+                "a spin-off",
+            ),
+            (
+                AnimeHints {
+                    relations: Some(vec![edge("PARENT", 3, Some("MOVIE"))]),
+                    ..first.clone()
+                },
+                "a film's side story",
             ),
             (
                 AnimeHints {
