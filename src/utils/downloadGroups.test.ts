@@ -63,17 +63,52 @@ describe('download groups', () => {
       item('a', 1, 2),
       item('b', 2, 1),
       item('a', 1, 3),
-      item('', 3, 1),
-      item('', 3, 2),
+      item('c', 3, 1, { title: 'Release a' }),
     ];
     const groups = groupDownloads(items);
     assert.deepEqual(
       groups.map((group) => group.items.length),
-      [2, 1, 1, 1],
-      'items without a download id stay apart'
+      [2, 1, 1],
+      'by download id, whatever the title'
     );
     assert.equal(groups[0].item, items[0]);
     assert.deepEqual(groupDownloads(undefined), []);
+  });
+
+  it('groups pending downloads, which have no download id', () => {
+    // A delayed Sonarr 5 pack: the tracker lists it once per episode, and
+    // Sonarr gives a pending download no download id.
+    const pending = pack('', [[2, 3]], true).map((i) => ({
+      ...i,
+      title: 'Show.S02',
+      status: 'delay',
+      downloadId: undefined as unknown as string,
+    }));
+    const groups = groupDownloads(pending);
+    assert.equal(groups.length, 1, 'one entry for the pack');
+    assert.equal(groups[0].items.length, 3);
+    assert.equal(downloadLabel(intl, groups[0].items), 'S02 pack (3 eps)');
+
+    // Sonarr 4 lists a pending pack once per episode too.
+    assert.equal(
+      groupDownloads([item('', 1, 1), item('', 1, 2)]).length,
+      1,
+      'an empty download id'
+    );
+
+    const apart = groupDownloads([
+      item('', 1, 1, { title: 'A' }),
+      item('', 1, 2, { title: 'B' }),
+      item('', 1, 3, { title: 'A', status: 'downloading' }),
+      item('', 1, 4, { title: 'A', status: 'delay' }),
+      item('', 1, 5, { title: 'A', externalId: 8 }),
+      item('x', 1, 6, { title: 'A' }),
+    ]);
+    assert.deepEqual(
+      apart.map((group) => group.items.length),
+      [2, 1, 1, 1, 1],
+      'another title, status or series stays apart, as does a started download'
+    );
   });
 
   it('labels a Sonarr 5 season pack with its episode count', () => {

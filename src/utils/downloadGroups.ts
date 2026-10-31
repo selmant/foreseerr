@@ -7,27 +7,39 @@ const messages = defineMessages('utils.downloadGroups', {
   episodes: '{seasons} ({count, plural, one {# ep} other {# eps}})',
 });
 
-/** The tracker items of one download (one `downloadId`), in tracker order. */
+/** The tracker items of one download, in tracker order. */
 export type DownloadGroup = { item: DownloadingItem; items: DownloadingItem[] };
 
 /**
+ * Which download an item belongs to: its `downloadId`, or for an item
+ * without one (a pending, delayed Sonarr download) its title and status,
+ * and its series or movie.
+ */
+const downloadKey = (item: DownloadingItem): string =>
+  item.downloadId
+    ? `id:${item.downloadId}`
+    : `pending:${JSON.stringify([item.externalId, item.status, item.title])}`;
+
+/**
  * The downloads among tracker items. The tracker lists a download of several
- * episodes once per episode, each with the download's `downloadId`.
+ * episodes once per episode, each with the download's `downloadId`, or, while
+ * the download is pending, each without one.
  */
 export const groupDownloads = (
   items: DownloadingItem[] = []
 ): DownloadGroup[] => {
   const groups: DownloadGroup[] = [];
-  const byId = new Map<string, DownloadGroup>();
+  const byKey = new Map<string, DownloadGroup>();
   for (const item of items) {
-    const group = item.downloadId ? byId.get(item.downloadId) : undefined;
+    const key = downloadKey(item);
+    const group = byKey.get(key);
     if (group) {
       group.items.push(item);
       continue;
     }
     const created = { item, items: [item] };
     groups.push(created);
-    if (item.downloadId) byId.set(item.downloadId, created);
+    byKey.set(key, created);
   }
   return groups;
 };
