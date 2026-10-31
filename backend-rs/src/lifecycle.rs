@@ -1445,22 +1445,99 @@ fn series_ready(row: &RequestRow, available: &[i64]) -> bool {
 /// notification: the requested episodes or seasons marked `FAILED`, which
 /// the episode order the series uses in Sonarr leaves out.
 fn unavailable_extra(row: &RequestRow) -> Option<(String, String)> {
-    let episodes: Vec<String> = row
+    let episodes: Vec<(i64, i64)> = row
         .episodes
         .iter()
         .filter(|x| x.status == FAILED)
-        .map(episode_code)
+        .map(|x| (x.season_number, x.episode_number))
         .collect();
     if !episodes.is_empty() {
-        return Some((String::from("Unavailable Episodes"), episodes.join(", ")));
+        return Some((
+            String::from("Unavailable Episodes"),
+            episode_ranges(&episodes),
+        ));
     }
-    let seasons: Vec<String> = row
+    let seasons: Vec<i64> = row
         .seasons
         .iter()
         .filter(|s| s.status == FAILED)
-        .map(|s| s.season_number.to_string())
+        .map(|s| s.season_number)
         .collect();
-    (!seasons.is_empty()).then(|| (String::from("Unavailable Seasons"), seasons.join(", ")))
+    (!seasons.is_empty()).then(|| (String::from("Unavailable Seasons"), season_ranges(&seasons)))
+}
+
+/// The longest an extra field's list runs before the rest is counted, well
+/// under the 1024 characters of a Discord embed field.
+const EXTRA_MAX: usize = 400;
+
+/// Runs of consecutive numbers, sorted: first and last of each.
+fn runs<K: Ord + Copy>(items: &[(K, i64)]) -> Vec<(K, i64, i64)> {
+    let mut sorted = items.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut runs: Vec<(K, i64, i64)> = Vec::new();
+    for (key, number) in sorted {
+        if let Some(run) = runs
+            .last_mut()
+            .filter(|run| run.0 == key && run.2 + 1 == number)
+        {
+            run.2 = number;
+        } else {
+            runs.push((key, number, number));
+        }
+    }
+    runs
+}
+
+/// Episodes (season, number) as `S01E03–E07, S02E01`, capped.
+fn episode_ranges(episodes: &[(i64, i64)]) -> String {
+    let parts: Vec<(String, i64)> = runs(episodes)
+        .into_iter()
+        .map(|(season, first, last)| {
+            let text = if first == last {
+                format!("S{season:02}E{first:02}")
+            } else {
+                format!("S{season:02}E{first:02}–E{last:02}")
+            };
+            (text, last - first + 1)
+        })
+        .collect();
+    capped(&parts, ("episode", "episodes"))
+}
+
+/// Season numbers as `1–3, 5`, capped.
+fn season_ranges(seasons: &[i64]) -> String {
+    let numbered: Vec<((), i64)> = seasons.iter().map(|s| ((), *s)).collect();
+    let parts: Vec<(String, i64)> = runs(&numbered)
+        .into_iter()
+        .map(|((), first, last)| {
+            let text = if first == last {
+                first.to_string()
+            } else {
+                format!("{first}–{last}")
+            };
+            (text, last - first + 1)
+        })
+        .collect();
+    capped(&parts, ("season", "seasons"))
+}
+
+/// `parts` (text and how many items it stands for) joined with commas up
+/// to [`EXTRA_MAX`], the items left over counted: `… and 12 more episodes`.
+fn capped(parts: &[(String, i64)], (one, many): (&str, &str)) -> String {
+    let mut out = String::new();
+    for (i, (text, _)) in parts.iter().enumerate() {
+        if !out.is_empty() && out.len() + 2 + text.len() > EXTRA_MAX {
+            let rest: i64 = parts.iter().skip(i).map(|(_, n)| n).sum();
+            let noun = if rest == 1 { one } else { many };
+            return format!("{out} and {rest} more {noun}");
+        }
+        if !out.is_empty() {
+            out.push_str(", ");
+        }
+        out.push_str(text);
+    }
+    out
 }
 
 /// `Requested Episodes` or `Requested Seasons` for a TV notification.
@@ -1623,6 +1700,41 @@ mod tests {
                 &[1, 2]
             ),
             "every season"
+        );
+    }
+
+    #[test]
+    fn unavailable_lists_stay_short() {
+        let mut episodes: Vec<(i64, i64)> = (42..=241).map(|n| (21, n)).collect();
+        episodes.extend([(22, 3), (22, 1), (21, 42)]);
+        assert_eq!(
+            episode_ranges(&episodes),
+            "S21E42–E241, S22E01, S22E03",
+            "runs of a season compressed, sorted"
+        );
+        let scattered: Vec<(i64, i64)> = (0..600).map(|n| (1, n * 2 + 1)).collect();
+        let text = episode_ranges(&scattered);
+        assert!(
+            text.chars().count() < 1024,
+            "fits a Discord field: {} characters",
+            text.chars().count()
+        );
+        let shown = text.split(", ").count();
+        assert!(
+            text.ends_with(&format!(" and {} more episodes", 600 - shown)),
+            "the rest counted: {text}"
+        );
+        assert_eq!(season_ranges(&[5, 1, 2, 3, 22]), "1–3, 5, 22", "seasons");
+        assert_eq!(
+            capped(
+                &[
+                    (String::from("x").repeat(EXTRA_MAX), 1),
+                    (String::from("y"), 1)
+                ],
+                ("episode", "episodes")
+            ),
+            format!("{} and 1 more episode", "x".repeat(EXTRA_MAX)),
+            "one more"
         );
     }
 
