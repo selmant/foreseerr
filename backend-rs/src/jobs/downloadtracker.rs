@@ -218,7 +218,9 @@ fn downloading_items(service: Service, item: &Value) -> Vec<Value> {
 }
 
 /// The `DownloadingItem` of a queue record, keys in Node's order, absent
-/// properties left out.
+/// properties left out. A Sonarr 5 record adds what the whole download
+/// covers: its `seasons` (episode and file counts per season),
+/// `isFullSeason` and `episodesWithFilesCount`.
 fn downloading_item(service: Service, item: &Value) -> Value {
     let mut out = Map::new();
     let copy = |to: &str, from: &str, out: &mut Map<String, Value>| {
@@ -245,6 +247,15 @@ fn downloading_item(service: Service, item: &Value) -> Value {
     copy("title", "title", &mut out);
     if service == Service::Sonarr {
         copy("episode", "episode", &mut out);
+        if let Some(seasons) = item.get("seasons").filter(|v| v.is_array()) {
+            out.insert(String::from("seasons"), seasons.clone());
+        }
+        if let Some(full) = item.get("isFullSeason").filter(|v| v.is_boolean()) {
+            out.insert(String::from("isFullSeason"), full.clone());
+        }
+        if let Some(count) = item.get("episodesWithFilesCount").filter(|v| v.is_number()) {
+            out.insert(String::from("episodesWithFilesCount"), count.clone());
+        }
     }
     copy("downloadId", "downloadId", &mut out);
     Value::Object(out)
@@ -328,6 +339,51 @@ mod tests {
             1,
             "a movie"
         );
+    }
+
+    #[test]
+    fn grouped_sonarr5_records() {
+        // A Sonarr 5 season pack: one record for both episodes.
+        let pack = json!({
+            "seriesId": 3, "title": "Show.S02", "downloadId": "D", "size": 10, "sizeleft": 5,
+            "episodes": [{"id": 1, "seasonNumber": 2, "episodeNumber": 1}, {"id": 2, "seasonNumber": 2, "episodeNumber": 2}],
+            "seasons": [{"seasonNumber": 2, "episodeCount": 2, "episodesWithFilesCount": 1}],
+            "isFullSeason": true, "episodesWithFilesCount": 1
+        });
+        let items = downloading_items(Service::Sonarr, &pack);
+        assert_eq!(
+            items.len(),
+            2,
+            "one item per episode, as Sonarr 4 lists them"
+        );
+        for (item, number) in items.iter().zip([1, 2]) {
+            assert_eq!(item.pointer("/episode/episodeNumber"), Some(&json!(number)));
+            assert_eq!(
+                item.get("seasons"),
+                Some(&json!([{"seasonNumber": 2, "episodeCount": 2, "episodesWithFilesCount": 1}])),
+                "what the whole download covers"
+            );
+            assert_eq!(item.get("isFullSeason"), Some(&json!(true)));
+            assert_eq!(item.get("episodesWithFilesCount"), Some(&json!(1)));
+            assert_eq!(
+                item.get("downloadId"),
+                Some(&json!("D")),
+                "the same download"
+            );
+        }
+        let v4 = downloading_item(
+            Service::Sonarr,
+            &json!({"seriesId": 3, "episode": {"id": 1}, "downloadId": "D"}),
+        );
+        assert!(
+            v4.get("seasons").is_none() && v4.get("isFullSeason").is_none(),
+            "Sonarr 4 has no grouping"
+        );
+        let movie = downloading_item(
+            Service::Radarr,
+            &json!({"movieId": 3, "seasons": [], "isFullSeason": false}),
+        );
+        assert!(movie.get("seasons").is_none(), "Radarr");
     }
 
     #[test]

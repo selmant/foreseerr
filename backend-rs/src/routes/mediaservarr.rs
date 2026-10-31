@@ -381,7 +381,7 @@ async fn context_json(ctx: &Ready<'_>, id: i64, is4k: bool) -> Step<Value> {
     let (series, episodes, queue) = tokio::join!(
         arr.get(&series_path, &[]),
         arr.episodes(c.external_id),
-        arr.queue()
+        arr.series_queue(c.external_id)
     );
     let series = series.map_err(|e| e.wrapped("[Sonarr] Failed to retrieve series by ID: "))?;
     let episodes = episodes?;
@@ -390,6 +390,8 @@ async fn context_json(ctx: &Ready<'_>, id: i64, is4k: bool) -> Step<Value> {
     if queue.iter().any(Value::is_null) {
         return Err(odd());
     }
+    // Sonarr filters by series already; the check stays for a server that
+    // ignores the parameter.
     let queue: Vec<Value> = queue
         .into_iter()
         .filter(|item| item.get("seriesId").and_then(Value::as_i64) == Some(c.external_id))
@@ -474,7 +476,90 @@ fn release_json(token: String, release: &Value) -> Value {
         "downloadAllowed",
         release.get("downloadAllowed").cloned(),
     );
+    put(&mut out, "rejectionDetails", rejection_details(release));
+    put(&mut out, "history", release_history(release));
+    if truthy(release.get("multiSeason")) {
+        out.insert(String::from("multiSeason"), Value::Bool(true));
+        put(
+            &mut out,
+            "seasonNumbers",
+            release
+                .get("seasonNumbers")
+                .filter(|v| v.is_array())
+                .cloned(),
+        );
+    }
     Value::Object(out)
+}
+
+/// Sonarr 5's typed rejections (`{ message, code, type }`), text fields
+/// only; `None` on Sonarr 4 and Radarr, which send only the messages.
+fn rejection_details(release: &Value) -> Option<Value> {
+    let list: Vec<Value> = release
+        .get("rejectionDetails")?
+        .as_array()?
+        .iter()
+        .filter_map(|detail| {
+            let detail = detail.as_object()?;
+            let mut out = Map::new();
+            for key in ["message", "code", "type"] {
+                if let Some(text) = detail.get(key).filter(|v| v.is_string()) {
+                    out.insert(key.to_owned(), text.clone());
+                }
+            }
+            out.contains_key("message").then_some(Value::Object(out))
+        })
+        .collect();
+    (!list.is_empty()).then_some(Value::Array(list))
+}
+
+/// Sonarr 5's history of the release: when it was grabbed before and when
+/// that download failed.
+fn release_history(release: &Value) -> Option<Value> {
+    let history = release.get("history")?.as_object()?;
+    let mut out = Map::new();
+    for key in ["grabbed", "failed"] {
+        if let Some(at) = history.get(key).filter(|v| v.is_string()) {
+            out.insert(key.to_owned(), at.clone());
+        }
+    }
+    (!out.is_empty()).then_some(Value::Object(out))
+}
+
+/// The episodes Sonarr mapped the release to (`mappedEpisodeInfo`), when
+/// it mapped it to this series and every one of them is among `episodes`:
+/// a multi-season pack's every season on Sonarr 5, both episodes of a
+/// double episode.
+fn mapped_episode_ids(release: &Value, series_id: i64, episodes: &[Value]) -> Option<Vec<Value>> {
+    if release
+        .get("mappedSeriesId")
+        .and_then(Value::as_i64)
+        .is_some_and(|id| id != series_id)
+    {
+        return None;
+    }
+    let ids = release
+        .get("mappedEpisodeInfo")?
+        .as_array()?
+        .iter()
+        .map(|e| e.get("id").and_then(Value::as_i64))
+        .collect::<Option<Vec<_>>>()?;
+    let known = |id: i64| {
+        episodes
+            .iter()
+            .any(|e| e.get("id").and_then(Value::as_i64) == Some(id))
+    };
+    if ids.is_empty() || !ids.iter().all(|id| known(*id)) {
+        return None;
+    }
+    let mut unique: Vec<Value> = Vec::new();
+    for id in ids {
+        let id = Value::from(id);
+        if !unique.contains(&id) {
+            unique.push(id);
+        }
+    }
+    Some(unique)
 }
 
 /// The search target of `GET /releases` for a series.
@@ -587,7 +672,9 @@ async fn search(ctx: &Ready<'_>, id: i64, is4k: bool, target: Target, user_id: i
     Ok(Value::Object(out))
 }
 
-/// `releaseGrabRequest` folded into `grabRelease`'s body.
+/// `releaseGrabRequest` folded into `grabRelease`'s body. A forced Sonarr
+/// grab overrides to `episode_ids` only, never to the release's own
+/// unchecked mapping.
 fn grab_body(
     release: &Value,
     radarr: bool,
@@ -602,36 +689,14 @@ fn grab_body(
         String::from(if radarr { "movieId" } else { "seriesId" }),
         Value::from(external_id),
     );
-    let from_release = || match release.get("mappedEpisodeInfo") {
-        Some(Value::Array(info)) => Some(
-            info.iter()
-                .map(|e| e.get("id").cloned().unwrap_or(Value::Null))
-                .collect(),
-        ),
-        None | Some(Value::Null) => match release.get("episodeIds") {
-            Some(Value::Array(ids)) => Some(ids.clone()),
-            None | Some(Value::Null) => match release.get("episodeId") {
-                None | Some(Value::Null) => None,
-                Some(id) => Some(vec![id.clone()]),
-            },
-            Some(_) => None,
-        },
-        Some(_) => None,
-    };
-    let ids: Option<Vec<Value>> = episode_ids
-        .filter(|ids| !ids.is_empty())
-        .map_or_else(from_release, |ids| Some(ids.to_vec()));
-    let has_ids = ids.as_ref().is_some_and(|ids| !ids.is_empty());
+    let ids = episode_ids.unwrap_or_default();
     if acknowledge
         && truthy(release.get("quality"))
         && truthy(release.get("languages"))
-        && (radarr || has_ids)
+        && (radarr || !ids.is_empty())
     {
-        if !radarr && has_ids {
-            body.insert(
-                String::from("episodeIds"),
-                Value::Array(ids.unwrap_or_default()),
-            );
+        if !radarr {
+            body.insert(String::from("episodeIds"), Value::Array(ids.to_vec()));
         }
         body.insert(String::from("shouldOverride"), Value::Bool(true));
         put(&mut body, "quality", release.get("quality").cloned());
@@ -673,6 +738,98 @@ fn grab<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
+/// The episodes a forced Sonarr grab overrides to, given the series'
+/// episodes. Sonarr's own mapping wins only when it covers what was
+/// searched: the searched episode, or an episode of the searched season.
+/// So a double episode keeps both episodes and a pack spanning seasons
+/// keeps every season. Sonarr also answers releases it mapped to other
+/// episodes (rejected as the wrong episode or season); those go to the
+/// searched episode, or the searched season's episodes, as on Sonarr 4.
+/// Empty when the searched season has no episodes.
+fn forced_ids(
+    release: &Value,
+    series_id: i64,
+    episodes: &[Value],
+    episode_id: Option<i64>,
+    season_number: Option<i64>,
+) -> Vec<Value> {
+    let in_season = |id: Option<i64>, n: i64| {
+        episodes.iter().any(|e| {
+            e.get("id").and_then(Value::as_i64) == id
+                && e.get("seasonNumber").and_then(Value::as_i64) == Some(n)
+        })
+    };
+    let covers_target = |ids: &[Value]| match (episode_id, season_number) {
+        (Some(target), _) => ids.iter().any(|id| id.as_i64() == Some(target)),
+        (None, Some(n)) => ids.iter().any(|id| in_season(id.as_i64(), n)),
+        // Every Sonarr search has a target; the mapping is this series'.
+        (None, None) => true,
+    };
+    if let Some(ids) = mapped_episode_ids(release, series_id, episodes) {
+        if covers_target(&ids) {
+            return ids;
+        }
+    }
+    if let Some(episode_id) = episode_id {
+        return vec![Value::from(episode_id)];
+    }
+    let season = season_number.map(Value::from).or_else(|| {
+        release
+            .get("seasonNumber")
+            .filter(|v| !v.is_null())
+            .cloned()
+    });
+    episodes
+        .iter()
+        .filter(|e| {
+            season.as_ref().map_or_else(
+                || {
+                    e.get("seasonNumber")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|n| n > 0.0)
+                },
+                |n| e.get("seasonNumber") == Some(n),
+            )
+        })
+        .map(|e| e.get("id").cloned().unwrap_or(Value::Null))
+        .collect()
+}
+
+/// `forced_ids` for a redeemed release token, fetching the series'
+/// episodes when the answer depends on them.
+async fn forced_episode_ids(c: &Context, arr: &ArrServer<'_>, record: &Token) -> Step<Vec<Value>> {
+    let release = &record.value;
+    let mapped_any = release
+        .get("mappedEpisodeInfo")
+        .and_then(Value::as_array)
+        .is_some_and(|list| !list.is_empty());
+    let episodes = if mapped_any || record.episode_id.is_none() {
+        match (arr.episodes(c.external_id).await, record.episode_id) {
+            (Ok(episodes), _) => episodes,
+            // Sonarr's mapping can't be checked without the episodes; an
+            // episode search still has its target.
+            (Err(e), Some(episode_id)) => {
+                tracing::warn!(
+                    "Could not read the episodes of media {}, grabbing the searched episode: {}",
+                    c.media_id,
+                    e.message()
+                );
+                return Ok(vec![Value::from(episode_id)]);
+            }
+            (Err(e), None) => return Err(Fail::Arr(e)),
+        }
+    } else {
+        Vec::new()
+    };
+    Ok(forced_ids(
+        release,
+        c.external_id,
+        &episodes,
+        record.episode_id,
+        record.season_number,
+    ))
+}
+
 async fn grab_release(
     ctx: &Ready<'_>,
     id: i64,
@@ -698,36 +855,22 @@ async fn grab_release(
         ));
     }
     let arr = c.arr(ctx);
-    let mut episode_ids: Option<Vec<Value>> = None;
-    if !c.radarr && acknowledge {
-        if let Some(episode_id) = record.episode_id {
-            episode_ids = Some(vec![Value::from(episode_id)]);
-        } else {
-            let season = record.season_number.map(Value::from).or_else(|| {
-                release
-                    .get("seasonNumber")
-                    .filter(|v| !v.is_null())
-                    .cloned()
-            });
-            let episodes = arr.episodes(c.external_id).await?;
-            episode_ids = Some(
-                episodes
-                    .iter()
-                    .filter(|e| {
-                        season.as_ref().map_or_else(
-                            || {
-                                e.get("seasonNumber")
-                                    .and_then(Value::as_f64)
-                                    .is_some_and(|n| n > 0.0)
-                            },
-                            |n| e.get("seasonNumber") == Some(n),
-                        )
-                    })
-                    .map(|e| e.get("id").cloned().unwrap_or(Value::Null))
-                    .collect(),
-            );
+    let episode_ids = if !c.radarr && acknowledge {
+        let ids = forced_episode_ids(&c, &arr, &record).await?;
+        // Without episodes of this series to override to, the grab would
+        // go wherever Sonarr mapped the release, another series included.
+        if ids.is_empty() {
+            return Err(Fail::Status(
+                409,
+                String::from(
+                    "This release can't be matched to an episode of this series, so it can't be downloaded anyway.",
+                ),
+            ));
         }
-    }
+        Some(ids)
+    } else {
+        None
+    };
     let body = grab_body(
         release,
         c.radarr,
@@ -777,16 +920,159 @@ mod tests {
             "a forced grab with the chosen episodes"
         );
         assert_eq!(
-            grab_body(&release, false, 7, Some(&[]), true)
-                .get("episodeIds")
-                .cloned(),
-            Some(json!([11, 12])),
-            "the release's mapped episodes when none were chosen"
+            grab_body(&release, false, 7, Some(&[]), true),
+            json!({"guid": "g", "indexerId": 4, "seriesId": 7}),
+            "never the release's unchecked mapping when none were chosen"
+        );
+        assert_eq!(
+            grab_body(&release, false, 7, None, true),
+            json!({"guid": "g", "indexerId": 4, "seriesId": 7}),
+            "nor without a choice"
         );
         assert_eq!(
             grab_body(&json!({"guid": "g"}), true, 9, None, true),
             json!({"guid": "g", "movieId": 9}),
             "no quality, no override"
+        );
+    }
+
+    #[test]
+    fn forced_grab_keeps_the_mapped_episodes() {
+        let series = [json!({"id": 11}), json!({"id": 12}), json!({"id": 21})];
+        // A Sonarr 5 multi-season pack found by a season 1 search.
+        let pack = json!({"mappedSeriesId": 7, "mappedEpisodeInfo": [
+            {"id": 11, "seasonNumber": 1}, {"id": 12, "seasonNumber": 1}, {"id": 21, "seasonNumber": 2}
+        ]});
+        assert_eq!(
+            mapped_episode_ids(&pack, 7, &series),
+            Some(vec![json!(11), json!(12), json!(21)]),
+            "every season of the pack"
+        );
+        assert_eq!(
+            mapped_episode_ids(&pack, 8, &series),
+            None,
+            "mapped to another series"
+        );
+        assert_eq!(
+            mapped_episode_ids(&pack, 7, &series[..2]),
+            None,
+            "an episode the series doesn't list"
+        );
+        assert_eq!(
+            mapped_episode_ids(&json!({"mappedEpisodeInfo": []}), 7, &series),
+            None,
+            "unmapped"
+        );
+        assert_eq!(
+            mapped_episode_ids(
+                &json!({"mappedEpisodeInfo": [{"id": 12}, {"id": 12}]}),
+                7,
+                &series
+            ),
+            Some(vec![json!(12)]),
+            "no series id on the release, duplicates dropped"
+        );
+        assert_eq!(
+            mapped_episode_ids(&json!({"mappedEpisodeInfo": [{"title": "x"}]}), 7, &series),
+            None,
+            "no ids"
+        );
+    }
+
+    #[test]
+    fn forced_grab_goes_to_the_searched_target() {
+        let ep = |id: i64, season: i64| json!({"id": id, "seasonNumber": season});
+        let series = [ep(104, 1), ep(105, 1), ep(106, 1), ep(201, 2), ep(202, 2)];
+        let mapped = |ids: &[(i64, i64)]| {
+            let info: Vec<Value> = ids
+                .iter()
+                .map(|(id, season)| json!({"id": id, "seasonNumber": season}))
+                .collect();
+            json!({"mappedSeriesId": 7, "mappedEpisodeInfo": info})
+        };
+
+        // An episode search for S01E05.
+        assert_eq!(
+            forced_ids(&mapped(&[(105, 1), (106, 1)]), 7, &series, Some(105), None),
+            vec![json!(105), json!(106)],
+            "mapped includes the target: a double episode keeps both"
+        );
+        assert_eq!(
+            forced_ids(&mapped(&[(106, 1)]), 7, &series, Some(105), None),
+            vec![json!(105)],
+            "mapped elsewhere (wrongEpisode): the searched episode, not E06"
+        );
+        assert_eq!(
+            forced_ids(&mapped(&[(105, 1)]), 8, &series, Some(105), None),
+            vec![json!(105)],
+            "mapped to another series"
+        );
+        assert_eq!(
+            forced_ids(&json!({}), 7, &[], Some(105), None),
+            vec![json!(105)],
+            "unmapped"
+        );
+
+        // A season 1 search.
+        assert_eq!(
+            forced_ids(
+                &mapped(&[(104, 1), (105, 1), (106, 1), (201, 2), (202, 2)]),
+                7,
+                &series,
+                None,
+                Some(1)
+            ),
+            vec![json!(104), json!(105), json!(106), json!(201), json!(202)],
+            "a pack spanning seasons keeps every season"
+        );
+        assert_eq!(
+            forced_ids(&mapped(&[(201, 2), (202, 2)]), 7, &series, None, Some(1)),
+            vec![json!(104), json!(105), json!(106)],
+            "mapped to another season (wrongSeason): the searched season"
+        );
+        assert_eq!(
+            forced_ids(&mapped(&[(201, 2)]), 7, &series, None, Some(3)),
+            Vec::<Value>::new(),
+            "a season without episodes: nothing to override to"
+        );
+    }
+
+    #[test]
+    fn release_details() {
+        let release = json!({
+            "title": "Show.S01-S02", "rejected": true, "multiSeason": true, "seasonNumbers": [1, 2],
+            "rejections": ["Multi-season releases are not supported"],
+            "rejectionDetails": [
+                {"message": "Multi-season releases are not supported", "code": "multiSeason", "type": "permanent"},
+                {"code": "noMessage"},
+                {"message": "Blocklisted", "code": 3}
+            ],
+            "history": {"grabbed": "2026-10-30T10:00:00Z", "failed": null}
+        });
+        let out = release_json(String::from("tok"), &release);
+        assert_eq!(
+            out.get("rejectionDetails"),
+            Some(&json!([
+                {"message": "Multi-season releases are not supported", "code": "multiSeason", "type": "permanent"},
+                {"message": "Blocklisted"}
+            ])),
+            "text fields of the typed rejections"
+        );
+        assert_eq!(
+            out.get("history"),
+            Some(&json!({"grabbed": "2026-10-30T10:00:00Z"})),
+            "grabbed, never failed"
+        );
+        assert_eq!(out.get("multiSeason"), Some(&json!(true)));
+        assert_eq!(out.get("seasonNumbers"), Some(&json!([1, 2])));
+        let v4 = release_json(
+            String::from("tok"),
+            &json!({"title": "t", "rejections": ["x"], "seasonNumbers": [1, 2], "history": {}}),
+        );
+        assert_eq!(
+            v4,
+            json!({"token": "tok", "title": "t", "rejections": ["x"]}),
+            "Sonarr 4: messages only"
         );
     }
 
