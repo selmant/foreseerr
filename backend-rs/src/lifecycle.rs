@@ -465,6 +465,55 @@ impl Lc {
         server
     }
 
+    /// The TVDB id of a show TMDB has none for, from the request's Sonarr:
+    /// its `tmdb:` lookup, trusting only a series with the same TMDB id.
+    async fn tvdb_from_sonarr(&self, e: &Entity, tmdb_id: i64) -> Option<i64> {
+        let server = self.pick_server("/sonarr", e)?;
+        let arr = Arr {
+            client: &self.state.servarr,
+            server: &server,
+            timeout: crate::servarr::api_timeout(&self.settings),
+        };
+        match crate::sonarrmeta::series_by_tmdb(&arr, tmdb_id).await {
+            Ok(found) => {
+                let found = crate::sonarrmeta::first_tvdb_id(&found);
+                if let Some(id) = found {
+                    tracing::info!(
+                        "TMDB has no TVDB ID for TMDB {tmdb_id}; Sonarr's lookup found TVDB {id}"
+                    );
+                }
+                found
+            }
+            Err(err) => {
+                tracing::warn!("Sonarr's tmdb:{tmdb_id} lookup failed: {err:#}");
+                None
+            }
+        }
+    }
+
+    /// Keeps a TVDB id Sonarr's lookup found on the media row, as the Sonarr
+    /// scan matches series by it; not when another media row already has
+    /// it (the column is unique).
+    async fn remember_tvdb_id(&self, media_id: i64, tvdb_id: i64) {
+        let saved = self
+            .state
+            .db
+            .execute(
+                r#"UPDATE "media" SET "tvdbId" = ?1 WHERE "id" = ?2 AND "tvdbId" IS NULL AND NOT EXISTS (SELECT 1 FROM "media" WHERE "tvdbId" = ?1)"#,
+                &[Bind::Int(tvdb_id), Bind::Int(media_id)],
+            )
+            .await;
+        match saved {
+            Ok(0) => tracing::warn!(
+                "TVDB ID {tvdb_id} not saved on media {media_id}: another media row already has it"
+            ),
+            Ok(_) => tracing::info!("Saved TVDB ID {tvdb_id} on media {media_id}"),
+            Err(err) => {
+                tracing::warn!("Saving TVDB ID {tvdb_id} on media {media_id} failed: {err:#}");
+            }
+        }
+    }
+
     /// The requester's tag on a server with `tagRequests`, created if
     /// missing.
     async fn requester_tag(&self, arr: &Arr<'_>, e: &Entity, tags: &mut Vec<Value>) -> Result<()> {
@@ -742,6 +791,15 @@ impl Lc {
             .pointer("/external_ids/tvdb_id")
             .and_then(Value::as_i64)
             .or(media.tvdb_id);
+        let tvdb_id = if tvdb_id.is_some() {
+            tvdb_id
+        } else {
+            let found = self.tvdb_from_sonarr(e, media.tmdb_id).await;
+            if let Some(id) = found {
+                self.remember_tvdb_id(media_id, id).await;
+            }
+            found
+        };
         let Some(tvdb_id) = tvdb_id else {
             // Both removes run in the save's transaction in Node.
             let mut tx = Tx::begin(db).await?;
@@ -834,6 +892,11 @@ impl Lc {
         let options = SeriesOptions {
             quality_profile: profile,
             language_profile: language,
+            metadata_language: crate::sonarrmeta::chosen_metadata_language(
+                &server,
+                anime,
+                e.row.metadata_language_id,
+            ),
             root_folder: root,
             title: series.get("name").cloned().unwrap_or(Value::Null),
             tvdb_id,

@@ -38,6 +38,7 @@ const messages = defineMessages('components.RequestBlock', {
   profilechanged: 'Quality Profile',
   rootfolder: 'Root Folder',
   languageprofile: 'Language Profile',
+  metadataLanguage: 'Metadata Language',
   requestdate: 'Request Date',
   requestedby: 'Requested By',
   lastmodifiedby: 'Last Modified By',
@@ -66,7 +67,7 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
   const { addToast } = useToasts();
   const [isUpdating, setIsUpdating] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const { profile, rootFolder, server, languageProfile } =
+  const { profile, rootFolder, server, languageProfile, metadataLanguage } =
     useRequestOverride(request);
 
   const runAction = async (action: () => Promise<unknown>) => {
@@ -120,6 +121,7 @@ const RequestBlock = ({ request, onUpdate }: RequestBlockProps) => {
     { label: messages.profilechanged, value: profile },
     { label: messages.rootfolder, value: rootFolder },
     { label: messages.languageprofile, value: languageProfile },
+    { label: messages.metadataLanguage, value: metadataLanguage },
   ].filter((override) => override.value);
 
   return (

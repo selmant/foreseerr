@@ -74,3 +74,9 @@ export interface LanguageProfile {
   id: number;
   name: string;
 }
+
+/** A metadata language Sonarr 5 adds series with. */
+export interface MetadataLanguage {
+  id: number;
+  name: string;
+}

@@ -162,6 +162,15 @@ pub fn to_v5_request(
     };
     let mut query = query;
     match (verb.as_str(), path) {
+        ("get", "/queue/details") => {
+            if take(&mut query, "includeEpisode").is_some_and(|v| v == "true") {
+                query.push((
+                    String::from("includeSubresources"),
+                    String::from("episodes"),
+                ));
+            }
+            (query, body)
+        }
         ("get", "/queue") => {
             let include_episode = take(&mut query, "includeEpisode").is_some_and(|v| v == "true");
             if !query.iter().any(|(k, _)| k == "includeUnknownSeriesItems") {
@@ -312,7 +321,37 @@ fn to_v3_queue_item(item: &mut Value) {
     }
 }
 
+/// A typed v5 rejection (`{ message, reason, type }`) as Foreseerr passes
+/// it on: `{ message, code, type }`, `code` being Sonarr's reason (e.g.
+/// `blocklisted`). Fields that aren't text are left out.
+fn rejection_detail(rejection: &Value) -> Option<Value> {
+    let r = rejection.as_object()?;
+    let text = |key: &str| r.get(key).and_then(Value::as_str).map(Value::from);
+    let message = text("message").or_else(|| text("reason"))?;
+    let mut out = Map::new();
+    out.insert(String::from("message"), message);
+    if let Some(code) = text("reason") {
+        out.insert(String::from("code"), code);
+    }
+    if let Some(kind) = text("type") {
+        out.insert(String::from("type"), kind);
+    }
+    Some(Value::Object(out))
+}
+
+/// The `code` of a typed rejection Foreseerr passes on.
+#[must_use]
+pub fn rejection_code(detail: &Value) -> Option<&str> {
+    detail.get("code").and_then(Value::as_str)
+}
+
 /// v5 nests a release in `release`, `parsedInfo` and `decision`.
+///
+/// The rejections stay v3's list of messages; next to them,
+/// `rejectionDetails` keeps v5's typed reasons, and `multiSeason` marks a
+/// pack of several seasons, which Sonarr 5 won't import automatically.
+/// v5's `history` (when it grabbed the release before, and whether that
+/// download failed) is kept as it is.
 fn to_v3_release(item: Value) -> Value {
     let Value::Object(mut item) = item else {
         return item;
@@ -332,6 +371,7 @@ fn to_v3_release(item: Value) -> Value {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let several_seasons = season_numbers.len() > 1;
     out.insert(String::from("quality"), parsed_field("quality"));
     out.insert(String::from("releaseGroup"), parsed_field("releaseGroup"));
     out.insert(String::from("releaseHash"), parsed_field("releaseHash"));
@@ -363,22 +403,38 @@ fn to_v3_release(item: Value) -> Value {
             decision.get(key).cloned().unwrap_or(Value::Bool(false)),
         );
     }
-    let rejections = decision
+    let listed = decision
         .get("rejections")
         .and_then(Value::as_array)
-        .map(|list| {
-            list.iter()
-                .map(|r| r.get("message").cloned().unwrap_or_else(|| r.clone()))
-                .collect()
-        })
+        .cloned()
         .unwrap_or_default();
+    let rejections = listed
+        .iter()
+        .map(|r| r.get("message").cloned().unwrap_or_else(|| r.clone()))
+        .collect();
+    let details: Vec<Value> = listed.iter().filter_map(rejection_detail).collect();
+    let multi_season = several_seasons
+        || details
+            .iter()
+            .any(|d| rejection_code(d) == Some(MULTI_SEASON));
     out.insert(String::from("rejections"), Value::Array(rejections));
+    if !details.is_empty() {
+        out.insert(String::from("rejectionDetails"), Value::Array(details));
+    }
+    if multi_season {
+        out.insert(String::from("multiSeason"), Value::Bool(true));
+    }
     // Absent fields stay absent, as `undefined` does in the Node answer.
     out.retain(|_, v| !v.is_null());
     Value::Object(out)
 }
 
-/// v5 rejections carry a reason code and the text in `message`.
+/// The rejection reason of a multi-season release or download.
+pub const MULTI_SEASON: &str = "multiSeason";
+
+/// v5 rejections carry a reason code and the text in `message`; v3's
+/// `reason` is the text, and the code is kept next to it as `code` (e.g.
+/// `executableFile`).
 fn to_v3_import_candidate(item: &mut Value) {
     let Some(Value::Array(rejections)) = item.get_mut("rejections") else {
         return;
@@ -396,6 +452,9 @@ fn to_v3_import_candidate(item: &mut Value) {
         v3.insert(String::from("reason"), reason);
         if let Some(kind) = r.get("type") {
             v3.insert(String::from("type"), kind.clone());
+        }
+        if let Some(code) = r.get("reason").filter(|v| v.is_string()) {
+            v3.insert(String::from("code"), code.clone());
         }
         *rejection = Value::Object(v3);
     }
@@ -461,6 +520,34 @@ pub fn queue_item_episodes(item: &Value) -> Vec<Value> {
             .into_iter()
             .collect(),
     }
+}
+
+/// The start of Sonarr 5's warning on a download it won't import
+/// automatically because it holds several seasons
+/// (`DownloadedEpisodesImportService`).
+const MULTI_SEASON_WARNING: &str = "Multi-season download";
+
+/// Whether a queue entry downloads several seasons: v5 lists them in
+/// `seasons`, and warns that it won't import such a download
+/// automatically. Never on v3, which has neither.
+#[must_use]
+pub fn queue_item_multi_season(item: &Value) -> bool {
+    let seasons = item
+        .get("seasons")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let warned = item
+        .get("statusMessages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|status| status.get("messages").and_then(Value::as_array))
+        .flatten()
+        .any(|m| {
+            m.as_str()
+                .is_some_and(|m| m.starts_with(MULTI_SEASON_WARNING))
+        });
+    seasons > 1 || warned
 }
 
 /// Sonarr 5 removes a download from the client before blocklisting it and
@@ -784,6 +871,13 @@ mod tests {
             json!(["Not an upgrade"])
         );
         assert_eq!(
+            release.get("rejectionDetails").cloned().unwrap_or_default(),
+            json!([{"message": "Not an upgrade", "code": "notUpgrade", "type": "permanent"}]),
+            "the typed reason next to the message"
+        );
+        assert!(release.get("multiSeason").is_none(), "one season");
+        assert!(release.get("history").is_none(), "never grabbed");
+        assert_eq!(
             release
                 .get("mappedEpisodeInfo")
                 .cloned()
@@ -799,8 +893,109 @@ mod tests {
                     {"reason": "unknownSeries", "message": "Unknown Series", "type": "permanent"}
                 ]}])
             ),
-            json!([{"path": "/a", "rejections": [{"reason": "Unknown Series", "type": "permanent"}]}])
+            json!([{"path": "/a", "rejections": [
+                {"reason": "Unknown Series", "type": "permanent", "code": "unknownSeries"}
+            ]}])
         );
+    }
+
+    #[test]
+    fn release_rejections_and_history() {
+        let flatten = |item: Value| {
+            from_v5_response("GET", "/release", json!([item]))
+                .pointer("/0")
+                .cloned()
+                .unwrap_or_default()
+        };
+        let pack = flatten(json!({
+            "release": {"guid": "g", "title": "Show.S01-S02"},
+            "parsedInfo": {"fullSeason": true, "seasonNumbers": [1, 2]},
+            "decision": {"rejected": true, "rejections": [
+                {"message": "Multi-season releases are not supported", "reason": "multiSeason", "type": "permanent"},
+                {"message": "Blocklisted", "reason": "blocklisted", "type": "permanent"},
+                "an odd one"
+            ]},
+            "history": {"grabbed": "2026-10-30T10:00:00Z", "failed": "2026-10-30T11:00:00Z"}
+        }));
+        assert_eq!(
+            pack.get("multiSeason"),
+            Some(&json!(true)),
+            "several seasons"
+        );
+        assert_eq!(
+            pack.get("rejections"),
+            Some(&json!([
+                "Multi-season releases are not supported",
+                "Blocklisted",
+                "an odd one"
+            ])),
+            "every message, as v3 lists them"
+        );
+        assert_eq!(
+            pack.get("rejectionDetails")
+                .and_then(Value::as_array)
+                .map(|list| list.iter().filter_map(rejection_code).collect::<Vec<_>>()),
+            Some(vec!["multiSeason", "blocklisted"]),
+            "only the typed ones"
+        );
+        assert_eq!(
+            pack.get("history"),
+            Some(&json!({"grabbed": "2026-10-30T10:00:00Z", "failed": "2026-10-30T11:00:00Z"})),
+            "v5's release history is kept"
+        );
+        let rejected_pack = flatten(json!({
+            "parsedInfo": {"seasonNumbers": [1]},
+            "decision": {"rejections": [{"message": "m", "reason": "multiSeason"}]},
+            "history": null
+        }));
+        assert_eq!(
+            rejected_pack.get("multiSeason"),
+            Some(&json!(true)),
+            "Sonarr's own verdict counts"
+        );
+        assert!(rejected_pack.get("history").is_none(), "null is absent");
+        let plain = flatten(json!({"decision": {"rejections": []}}));
+        assert!(plain.get("rejectionDetails").is_none(), "nothing typed");
+        assert!(plain.get("multiSeason").is_none(), "no seasons");
+    }
+
+    #[test]
+    fn queue_details() {
+        assert_eq!(
+            to_v5_request(
+                "GET",
+                "/queue/details",
+                q(&[("seriesId", "7"), ("includeEpisode", "true")]),
+                None
+            )
+            .0,
+            q(&[("seriesId", "7"), ("includeSubresources", "episodes")])
+        );
+        assert_eq!(
+            to_v5_request("GET", "/queue/details", q(&[("seriesId", "7")]), None).0,
+            q(&[("seriesId", "7")]),
+            "no episodes asked for"
+        );
+    }
+
+    #[test]
+    fn multi_season_downloads() {
+        assert!(queue_item_multi_season(&json!({"seasons": [
+            {"seasonNumber": 1, "episodeCount": 7, "episodesWithFilesCount": 0},
+            {"seasonNumber": 2, "episodeCount": 13, "episodesWithFilesCount": 0}
+        ]})));
+        assert!(
+            queue_item_multi_season(
+                &json!({"seasons": [{"seasonNumber": 1}], "statusMessages": [
+                    {"title": "t", "messages": ["Multi-season download, unable to import automatically"]}
+                ]})
+            ),
+            "Sonarr's warning"
+        );
+        assert!(!queue_item_multi_season(
+            &json!({"seasons": [{"seasonNumber": 1}], "statusMessages": [{"title": "t", "messages": ["Sample"]}]})
+        ));
+        assert!(!queue_item_multi_season(&json!({"episodeId": 3})), "v3");
     }
 
     #[test]

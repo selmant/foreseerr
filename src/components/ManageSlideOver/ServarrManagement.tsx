@@ -11,6 +11,7 @@ import { useIntl } from 'react-intl';
 
 import ManualImport from './ManualImport';
 import ReleaseSearch from './ReleaseSearch';
+import SeasonOrderWarning from './SeasonOrderWarning';
 import { type ServarrContext } from './servarrTypes';
 
 const messages = defineMessages(
@@ -124,6 +125,7 @@ const ServarrPanel = ({
         )}
       </div>
       <div className="space-y-4 p-4">
+        <SeasonOrderWarning order={context.seasonOrder} />
         <SegmentedControl<'releases' | 'imports'>
           wrapLabels
           ariaLabel={intl.formatMessage(messages.workflow, {

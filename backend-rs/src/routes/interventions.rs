@@ -650,26 +650,34 @@ pub(super) async fn rejection_work(
             String::from("The exact queue warning is no longer mapped and active."),
         ));
     }
-    let removed = arr
-        .request(
-            Method::DELETE,
-            &format!("/queue/{}", record.queue_id),
-            &[
-                ("removeFromClient", String::from("true")),
-                ("blocklist", String::from("true")),
-                ("skipRedownload", String::from("false")),
-            ],
-            None,
-            timeout,
-        )
-        .await;
-    match removed {
+    let path = format!("/queue/{}", record.queue_id);
+    let params = |blocklist: bool| {
+        [
+            ("removeFromClient", String::from("true")),
+            ("blocklist", blocklist.to_string()),
+            ("skipRedownload", String::from("false")),
+        ]
+    };
+    match arr
+        .request(Method::DELETE, &path, &params(true), None, timeout)
+        .await
+    {
         Ok(_) => Ok(()),
-        // Sonarr 5 has already removed the download from the client when
-        // it finds no grab to blocklist; Sonarr 4 skipped the blocklist.
+        // With no grab on record there is nothing to blocklist (Sonarr 4
+        // skips it). Sonarr 5 says so with a 400 after removing the item
+        // from the client but before it stops tracking it, so the queue
+        // keeps showing it: remove it again without the blocklist to
+        // finish (404 when Sonarr already dropped it).
         Err(ArrError::Http { status, data })
             if !radarr && crate::sonarrv5::removed_without_grab(status, &data) =>
         {
+            match arr
+                .request(Method::DELETE, &path, &params(false), None, timeout)
+                .await
+            {
+                Ok(_) | Err(ArrError::Http { status: 404, .. }) => {}
+                Err(e) => return Err(RejectError::Arr(e)),
+            }
             tracing::warn!(
                 label = "Sonarr API",
                 queueId = record.queue_id,

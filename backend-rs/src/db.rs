@@ -3450,6 +3450,9 @@ pub struct RequestRow {
     pub root_folder: Option<String>,
     /// `languageProfileId`.
     pub language_profile_id: Option<i64>,
+    /// `metadataLanguageId`: the Sonarr 5 metadata language the requester
+    /// chose; none when the server's setting applies.
+    pub metadata_language_id: Option<i64>,
     /// `tags` as stored, before the column transformer.
     pub tags: Option<String>,
     /// `isAutoRequest`.
@@ -3470,7 +3473,7 @@ pub struct RequestRow {
 
 const REQUEST_COLUMNS_SQLITE: &str = r#"r."id", r."status", r."createdAt", r."updatedAt", r."type", r."episodeSelectionType",
     r."episodeStartTvdbId", r."episodeEndTvdbId", r."watchAheadCount", r."watchAheadInactiveAt", r."ongoingEpisodeRequestKey", r."tvQuotaUnits", r."is4k",
-    r."serverId", r."profileId", r."rootFolder", r."languageProfileId", r."tags", r."isAutoRequest", r."ignoreQuota",
+    r."serverId", r."profileId", r."rootFolder", r."languageProfileId", r."metadataLanguageId", r."tags", r."isAutoRequest", r."ignoreQuota",
     r."mediaId", r."requestedById", r."modifiedById""#;
 
 const REQUEST_COLUMNS_PG: &str = r#"r."id"::bigint AS "id", r."status"::bigint AS "status",
@@ -3481,7 +3484,8 @@ const REQUEST_COLUMNS_PG: &str = r#"r."id"::bigint AS "id", r."status"::bigint A
     to_char(r."watchAheadInactiveAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "watchAheadInactiveAt",
     r."ongoingEpisodeRequestKey", r."tvQuotaUnits"::bigint AS "tvQuotaUnits", r."is4k",
     r."serverId"::bigint AS "serverId", r."profileId"::bigint AS "profileId", r."rootFolder",
-    r."languageProfileId"::bigint AS "languageProfileId", r."tags", r."isAutoRequest", r."ignoreQuota",
+    r."languageProfileId"::bigint AS "languageProfileId",
+    r."metadataLanguageId"::bigint AS "metadataLanguageId", r."tags", r."isAutoRequest", r."ignoreQuota",
     r."mediaId"::bigint AS "mediaId", r."requestedById"::bigint AS "requestedById", r."modifiedById"::bigint AS "modifiedById""#;
 
 /// A Postgres timestamp column as ISO 8601 UTC text.
@@ -3515,6 +3519,7 @@ where
         profile_id: r.try_get::<Option<i64>, _>("profileId")?,
         root_folder: r.try_get("rootFolder")?,
         language_profile_id: r.try_get::<Option<i64>, _>("languageProfileId")?,
+        metadata_language_id: r.try_get::<Option<i64>, _>("metadataLanguageId")?,
         tags: r.try_get("tags")?,
         is_auto_request: r.try_get("isAutoRequest")?,
         ignore_quota: r.try_get("ignoreQuota")?,

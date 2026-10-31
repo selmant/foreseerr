@@ -77,13 +77,15 @@ pub(super) async fn insert_media(
     insert_media_in(&mut exec, media_type, ids, status).await
 }
 
-/// [`insert_media`] on the pool or inside a transaction.
+/// [`insert_media`] on the pool or inside a transaction. A TVDB id another
+/// row already holds is left out (see [`crate::dbtx::free_tvdb_id`]).
 pub(super) async fn insert_media_in(
     exec: &mut crate::dbtx::Exec<'_>,
     media_type: &str,
     ids: (i64, Option<i64>),
     status: (i64, i64),
 ) -> anyhow::Result<i64> {
+    let tvdb_id = crate::dbtx::free_tvdb_id(exec, ids.0, ids.1).await?;
     exec.scalar(
             &format!(
                 r#"INSERT INTO "media" ("mediaType", "tmdbId", "tvdbId", "status", "status4k", "createdAt", "updatedAt", "lastSeasonChange", "mediaAddedAt") VALUES (?1, ?2, ?3, ?4, ?5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP){RETURNING_ID}"#
@@ -91,7 +93,7 @@ pub(super) async fn insert_media_in(
             &[
                 Bind::Text(media_type.to_owned()),
                 Bind::Int(ids.0),
-                Bind::OptInt(ids.1),
+                Bind::OptInt(tvdb_id),
                 Bind::Int(status.0),
                 Bind::Int(status.1),
             ],
@@ -692,7 +694,35 @@ fn blacklist_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dbtx::{scratch, Exec};
+    use crate::jobs::syncutil::Tx;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn a_request_for_a_show_another_row_has_the_tvdb_id_of() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("listwrite-tvdb").await?;
+        let db = &scratch.db;
+        scratch::run(
+            db,
+            &[r#"INSERT INTO "media" ("mediaType", "tmdbId", "tvdbId", "status") VALUES ('tv', 100, 472212, 3)"#],
+        )
+        .await?;
+        // In the request's transaction, as `persistPlan` inserts it.
+        let mut tx = Tx::begin(db).await?;
+        let id =
+            insert_media_in(&mut Exec::Tx(&mut tx), "tv", (200, Some(472_212)), (2, 1)).await?;
+        let fresh = insert_media_in(&mut Exec::Tx(&mut tx), "tv", (300, Some(5)), (2, 1)).await?;
+        tx.commit().await?;
+        let tvdb =
+            |id: i64| format!(r#"SELECT COALESCE("tvdbId", 0) FROM "media" WHERE "id" = {id}"#);
+        assert_eq!(scratch::ints(db, &tvdb(id)).await?, vec![0], "left out");
+        assert_eq!(
+            scratch::ints(db, &tvdb(fresh)).await?,
+            vec![5],
+            "a free one is kept"
+        );
+        Ok(())
+    }
 
     #[test]
     fn parts_dedupe_like_a_map() {

@@ -13,6 +13,7 @@ import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { groupDownloads } from '@app/utils/downloadGroups';
 import { Bars4Icon, ServerIcon } from '@heroicons/react/24/outline';
 import {
   CheckCircleIcon,
@@ -27,7 +28,6 @@ import {
 } from '@shared/constants/media';
 import { MediaServerType } from '@shared/constants/server';
 import type { MediaWatchDataResponse } from '@shared/interfaces/api/mediaInterfaces';
-import type { DownloadingItem } from '@shared/lib/downloadtracker';
 import type { RadarrSettings, SonarrSettings } from '@shared/lib/settings';
 import type { MovieDetails } from '@shared/models/Movie';
 import type { TvDetails } from '@shared/models/Tv';
@@ -38,17 +38,6 @@ import { Link } from 'react-router';
 import useSWR from 'swr';
 
 import type { JSX } from 'react';
-
-const filterDuplicateDownloads = (
-  items: DownloadingItem[] = []
-): DownloadingItem[] => {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    if (seen.has(item.downloadId)) return false;
-    seen.add(item.downloadId);
-    return true;
-  });
-};
 
 const messages = defineMessages('components.ManageSlideOver', {
   manageModalTitle: 'Manage {mediaType}',
@@ -393,26 +382,33 @@ const ManageSlideOver = ({
             </h3>
             <div className="overflow-hidden rounded-md border border-gray-700 shadow">
               <ul>
-                {filterDuplicateDownloads(data.mediaInfo?.downloadStatus).map(
-                  (status, index) => (
+                {groupDownloads(data.mediaInfo?.downloadStatus).map(
+                  (download, index) => (
                     <Tooltip
-                      key={`dl-status-${status.externalId}-${index}`}
-                      content={status.title}
+                      key={`dl-status-${download.item.externalId}-${index}`}
+                      content={download.item.title}
                     >
                       <li className="border-b border-gray-700 last:border-b-0">
-                        <DownloadBlock downloadItem={status} />
+                        <DownloadBlock
+                          downloadItem={download.item}
+                          items={download.items}
+                        />
                       </li>
                     </Tooltip>
                   )
                 )}
-                {filterDuplicateDownloads(data.mediaInfo?.downloadStatus4k).map(
-                  (status, index) => (
+                {groupDownloads(data.mediaInfo?.downloadStatus4k).map(
+                  (download, index) => (
                     <Tooltip
-                      key={`dl-status-4k-${status.externalId}-${index}`}
-                      content={status.title}
+                      key={`dl-status-4k-${download.item.externalId}-${index}`}
+                      content={download.item.title}
                     >
                       <li className="border-b border-gray-700 last:border-b-0">
-                        <DownloadBlock downloadItem={status} is4k />
+                        <DownloadBlock
+                          downloadItem={download.item}
+                          items={download.items}
+                          is4k
+                        />
                       </li>
                     </Tooltip>
                   )

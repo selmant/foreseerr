@@ -29,7 +29,7 @@ export type DiscoverMappingState =
 
 export interface DiscoverMappingInfo {
   state: DiscoverMappingState;
-  /** Step that produced the id: `manual`, `dataset`, `tmdb-find`, `title`, `prequel`. */
+  /** Step that produced the id: `manual`, `dataset`, `tmdb-find`, `sonarr`, `title`, `prequel`. */
   sourceKey?: string;
   /** Namespace and id the tile was resolved *from*, for corrections. */
   namespace?: string;

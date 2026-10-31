@@ -76,6 +76,7 @@ mod settings_util;
 pub mod settingswrite;
 pub mod simkldiscover;
 mod simklunconfigured;
+mod sonarrstorage;
 pub mod tmdb;
 pub mod trakt;
 pub mod traktpages;
@@ -157,6 +158,7 @@ const TABLES: &[&Table] = &[
     issuewrite::ROUTES,
     requestcreate::ROUTES,
     requestedit::ROUTES,
+    sonarrstorage::ROUTES,
 ];
 
 /// The router: the handlers first, the fallback for the rest. HEAD goes to

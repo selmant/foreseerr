@@ -8,6 +8,7 @@ import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { downloadLabel, groupDownloads } from '@app/utils/downloadGroups';
 import { MediaStatus } from '@shared/constants/media';
 import { MediaServerType } from '@shared/constants/server';
 import type { DownloadingItem } from '@shared/lib/downloadtracker';
@@ -19,8 +20,6 @@ const messages = defineMessages('components.StatusBadge', {
   playonplex: 'Play on {mediaServerName}',
   openinarr: 'Open in {arr}',
   managemedia: 'Manage {mediaType}',
-  seasonnumber: 'S{seasonNumber}',
-  seasonepisodenumber: 'S{seasonNumber}E{episodeNumber}',
 });
 
 interface StatusBadgeProps {
@@ -109,77 +108,34 @@ const StatusBadge = ({
     }
   }
 
-  const tooltipContent =
-    mediaType === 'tv' &&
-    downloadItem.length > 1 &&
-    downloadItem.every(
-      (item) =>
-        item.downloadId && item.downloadId === downloadItem[0].downloadId
-    ) ? (
-      <DownloadBlock
-        downloadItem={downloadItem[0]}
-        title={Array.isArray(title) ? title[0] : title}
-        is4k={is4k}
-      />
-    ) : (
-      <ul>
-        {downloadItem.map((status, index) => (
-          <li
-            key={`dl-status-${status.externalId}-${index}`}
-            className="border-b border-gray-700 last:border-b-0"
-          >
-            <DownloadBlock
-              downloadItem={status}
-              title={Array.isArray(title) ? title[index] : title}
-              is4k={is4k}
-            />
-          </li>
-        ))}
-      </ul>
-    );
+  // One entry per download: Sonarr lists a pack once per episode.
+  const downloads = groupDownloads(downloadItem);
+  const titleOf = (item: DownloadingItem) =>
+    Array.isArray(title) ? title[downloadItem.indexOf(item)] : title;
+  const tooltipContent = (
+    <ul>
+      {downloads.map((download, index) => (
+        <li
+          key={`dl-status-${download.item.externalId}-${index}`}
+          className="border-b border-gray-700 last:border-b-0"
+        >
+          <DownloadBlock
+            downloadItem={download.item}
+            items={download.items}
+            title={titleOf(download.item)}
+            is4k={is4k}
+          />
+        </li>
+      ))}
+    </ul>
+  );
 
   const firstDownload = downloadItem[0];
-  const groupedEpisodes =
-    mediaType === 'tv' &&
-    downloadItem.length > 1 &&
-    downloadItem.every(
-      (item) =>
-        item.downloadId && item.downloadId === downloadItem[0]?.downloadId
-    );
-  const seasonLabel =
-    firstDownload?.episode &&
-    intl.formatMessage(messages.seasonnumber, {
-      seasonNumber: firstDownload.episode.seasonNumber,
-    });
-  const episodeLabel =
-    firstDownload?.episode &&
-    intl.formatMessage(messages.seasonepisodenumber, {
-      seasonNumber: firstDownload.episode.seasonNumber,
-      episodeNumber: firstDownload.episode.episodeNumber,
-    });
-  const progressTooltip =
-    mediaType === 'tv' && groupedEpisodes ? (
-      <DownloadBlock
-        downloadItem={downloadItem[0]}
-        title={Array.isArray(title) ? title[0] : title}
-        is4k={is4k}
-      />
-    ) : (
-      <ul>
-        {downloadItem.map((item, index) => (
-          <li
-            key={`dl-status-${item.externalId}-${index}`}
-            className="border-b border-gray-700 last:border-b-0"
-          >
-            <DownloadBlock
-              downloadItem={item}
-              title={Array.isArray(title) ? title[index] : title}
-              is4k={is4k}
-            />
-          </li>
-        ))}
-      </ul>
-    );
+  // What the first download covers, e.g. `S01E02` or `S02 pack (10 eps)`.
+  const firstLabel =
+    mediaType === 'tv' && downloads[0]
+      ? downloadLabel(intl, downloads[0].items)
+      : undefined;
   // Remaining non-available branches retain their existing markup until they
   // are migrated to ProgressBadge; keep this overlay centralized in the
   // coordinator for now rather than leaving an incomplete extraction.
@@ -206,27 +162,12 @@ const StatusBadge = ({
     />
   );
 
-  const downloadContext = inProgress &&
-    mediaType === 'tv' &&
-    firstDownload?.episode && (
-      <>
-        {groupedEpisodes ? (
-          <span className="ml-1">
-            {intl.formatMessage(messages.seasonnumber, {
-              seasonNumber: firstDownload.episode.seasonNumber,
-            })}
-          </span>
-        ) : (
-          <span className="ml-1">
-            {intl.formatMessage(messages.seasonepisodenumber, {
-              seasonNumber: firstDownload.episode.seasonNumber,
-              episodeNumber: firstDownload.episode.episodeNumber,
-            })}
-          </span>
-        )}
-        <Spinner className="ml-1 h-3 w-3" />
-      </>
-    );
+  const downloadContext = inProgress && firstLabel && (
+    <>
+      <span className="ml-1">{firstLabel}</span>
+      <Spinner className="ml-1 h-3 w-3" />
+    </>
+  );
 
   switch (status) {
     case MediaStatus.AVAILABLE:
@@ -245,11 +186,9 @@ const StatusBadge = ({
           inProgress={inProgress}
           mediaLink={mediaLink}
           mediaLinkDescription={mediaLinkDescription}
-          tooltipContent={progressTooltip}
+          tooltipContent={tooltipContent}
           downloadItem={downloadItem}
-          mediaType={mediaType}
-          seasonLabel={seasonLabel ?? ''}
-          episodeLabel={episodeLabel ?? ''}
+          downloadLabel={firstLabel}
           onClick={(event) => {
             if (
               mediaLink &&

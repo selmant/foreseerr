@@ -67,6 +67,92 @@ pub trait DeriveDeps: Send + Sync {
     /// `anilistMedia(id)`: the entry with its relations, `None` when
     /// `AniList` has no such entry.
     fn anilist_media(&self, anilist_id: i64) -> BoxFut<'_, Result<Option<Value>>>;
+    /// Sonarr's series lookup for `term` (`anilist:21`, `mal:21`) on the
+    /// lookup server; `None` when no Sonarr is set up.
+    fn sonarr_lookup<'a>(&'a self, _term: &'a str) -> BoxFut<'a, Result<Option<Vec<Value>>>> {
+        Box::pin(async { Ok(None) })
+    }
+}
+
+/// A series Sonarr found for an `AniList` or MAL id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SonarrMatch {
+    /// TMDB id.
+    pub tmdb_id: i64,
+    /// TVDB id.
+    pub tvdb_id: Option<i64>,
+    /// Sonarr's title.
+    pub title: String,
+}
+
+/// Whether Sonarr's `anilist:` / `mal:` lookup may answer for an entry.
+///
+/// Those ids cover a whole franchise: Sonarr names the TVDB series every
+/// season, film and special of it belongs to. So only an entry that is a
+/// TV series (a known series format) and starts its own show (no series
+/// prequel, no parent, relations known) is looked up; later seasons stay
+/// with the prequel rule, and spin-offs, side stories, films, OVAs and
+/// entries of unknown format or relations with the title rule.
+#[must_use]
+pub fn sonarr_lookup_applies(hints: &AnimeHints) -> bool {
+    let series = hints
+        .format
+        .as_deref()
+        .is_some_and(|f| SERIES_FORMATS.contains(&f));
+    let Some(relations) = hints.relations.as_deref() else {
+        return false;
+    };
+    let sequel = prequels_of(Some(relations)).iter().any(|(_, format)| {
+        format
+            .as_deref()
+            .is_none_or(|f| SERIES_FORMATS.contains(&f))
+    });
+    // `PARENT`: the entry is someone's side story or spin-off, which
+    // Sonarr may file under the parent's series.
+    let spin_off = relations
+        .iter()
+        .any(|edge| edge.get("relationType").and_then(Value::as_str) == Some("PARENT"));
+    series && hints.year.is_some_and(|y| y != 0) && !sequel && !spin_off
+}
+
+/// The one series Sonarr's lookup for `{ns}:{id}` found, when it has a TMDB
+/// id, lists the id among its own (Sonarr 5 reports them; Sonarr 4
+/// doesn't) and starts within a year of the entry.
+#[must_use]
+pub fn sonarr_match(found: &[Value], ns: &str, id: i64, year: i64) -> Option<SonarrMatch> {
+    let [series] = found else {
+        return None;
+    };
+    let tmdb_id = series
+        .get("tmdbId")
+        .and_then(Value::as_i64)
+        .filter(|id| *id > 0)?;
+    let ids_key = match ns {
+        "anilist" => "aniListIds",
+        "mal" => "malIds",
+        _ => return None,
+    };
+    if let Some(ids) = series.get(ids_key).and_then(Value::as_array) {
+        if !ids.iter().any(|v| v.as_i64() == Some(id)) {
+            return None;
+        }
+    }
+    let starts = series.get("year").and_then(Value::as_i64)?;
+    if (starts - year).abs() > 1 {
+        return None;
+    }
+    Some(SonarrMatch {
+        tmdb_id,
+        tvdb_id: series
+            .get("tvdbId")
+            .and_then(Value::as_i64)
+            .filter(|id| *id > 0),
+        title: series
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    })
 }
 
 const ANIMATION_GENRE: i64 = 16;
@@ -169,6 +255,24 @@ impl DeriveDeps for NetDeps<'_> {
                 Err(AnilistError::GraphQl(_) | AnilistError::Http(404)) => Ok(None),
                 Err(e) => Err(anyhow::anyhow!(e.message())),
             }
+        })
+    }
+
+    fn sonarr_lookup<'a>(&'a self, term: &'a str) -> BoxFut<'a, Result<Option<Vec<Value>>>> {
+        Box::pin(async move {
+            let Some(state) = super::shared() else {
+                return Ok(None);
+            };
+            let settings = state.settings.current().await?;
+            let Some(server) = crate::sonarrmeta::lookup_server(&settings) else {
+                return Ok(None);
+            };
+            let arr = crate::arr::Arr {
+                client: &state.servarr,
+                server: &server,
+                timeout: crate::servarr::api_timeout(&settings),
+            };
+            crate::sonarrmeta::lookup_series(&arr, term).await.map(Some)
         })
     }
 }
@@ -511,5 +615,143 @@ mod tests {
             None,
             "no year"
         );
+    }
+
+    fn edge(relation: &str, id: i64, format: Option<&str>) -> Value {
+        serde_json::json!({"relationType": relation, "node": {"id": id, "type": "ANIME", "format": format}})
+    }
+
+    #[test]
+    fn sonarr_lookup_only_for_a_shows_first_entry() {
+        let first = AnimeHints {
+            anilist_id: Some(1),
+            titles: None,
+            year: Some(1998),
+            format: Some(String::from("TV")),
+            relations: Some(vec![edge("SIDE_STORY", 5, Some("MOVIE"))]),
+        };
+        assert!(sonarr_lookup_applies(&first), "a show's first season");
+        let after_film = AnimeHints {
+            relations: Some(vec![edge("PREQUEL", 5, Some("MOVIE"))]),
+            ..first.clone()
+        };
+        assert!(sonarr_lookup_applies(&after_film), "a series after a film");
+        for (hints, why) in [
+            (
+                AnimeHints {
+                    format: Some(String::from("MOVIE")),
+                    ..first.clone()
+                },
+                "a film",
+            ),
+            (
+                AnimeHints {
+                    format: Some(String::from("OVA")),
+                    ..first.clone()
+                },
+                "an OVA",
+            ),
+            (
+                AnimeHints {
+                    format: None,
+                    ..first.clone()
+                },
+                "unknown format",
+            ),
+            (
+                AnimeHints {
+                    relations: Some(vec![edge("PREQUEL", 2, Some("TV"))]),
+                    ..first.clone()
+                },
+                "a later season",
+            ),
+            (
+                AnimeHints {
+                    relations: Some(vec![edge("PREQUEL", 2, None)]),
+                    ..first.clone()
+                },
+                "a prequel of unknown format",
+            ),
+            (
+                AnimeHints {
+                    relations: Some(vec![edge("PARENT", 3, Some("TV"))]),
+                    ..first.clone()
+                },
+                "a spin-off",
+            ),
+            (
+                AnimeHints {
+                    relations: Some(vec![edge("PARENT", 3, Some("MOVIE"))]),
+                    ..first.clone()
+                },
+                "a film's side story",
+            ),
+            (
+                AnimeHints {
+                    relations: None,
+                    ..first.clone()
+                },
+                "unknown relations",
+            ),
+            (
+                AnimeHints {
+                    year: None,
+                    ..first
+                },
+                "no year",
+            ),
+        ] {
+            assert!(!sonarr_lookup_applies(&hints), "{why}");
+        }
+    }
+
+    #[test]
+    fn sonarr_lookup_results() {
+        let bebop = serde_json::json!({
+            "title": "Cowboy Bebop", "tvdbId": 76885, "tmdbId": 30991, "year": 1998,
+            "aniListIds": [1, 5], "malIds": [1, 5]
+        });
+        let found = Some(SonarrMatch {
+            tmdb_id: 30991,
+            tvdb_id: Some(76885),
+            title: String::from("Cowboy Bebop"),
+        });
+        assert_eq!(
+            sonarr_match(std::slice::from_ref(&bebop), "anilist", 1, 1998),
+            found
+        );
+        assert_eq!(
+            sonarr_match(std::slice::from_ref(&bebop), "mal", 1, 1999),
+            found,
+            "a year apart"
+        );
+        let v4 = serde_json::json!({"title": "Cowboy Bebop", "tvdbId": 76885, "tmdbId": 30991, "year": 1998});
+        assert_eq!(
+            sonarr_match(&[v4], "anilist", 1, 1998),
+            found,
+            "Sonarr 4 lists no ids"
+        );
+        for (results, ns, id, year, why) in [
+            (vec![bebop.clone()], "anilist", 9, 1998, "not among its ids"),
+            (
+                vec![bebop.clone()],
+                "anilist",
+                1,
+                2005,
+                "starts years apart",
+            ),
+            (vec![bebop.clone()], "anidb", 1, 1998, "another namespace"),
+            (vec![bebop.clone(), bebop], "anilist", 1, 1998, "two series"),
+            (Vec::new(), "anilist", 1, 1998, "nothing"),
+            (
+                vec![serde_json::json!({"tvdbId": 1, "year": 1998})],
+                "anilist",
+                1,
+                1998,
+                "no TMDB id",
+            ),
+        ] {
+            assert_eq!(sonarr_match(&results, ns, id, year), None, "{why}");
+        }
     }
 }

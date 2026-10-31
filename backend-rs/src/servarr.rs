@@ -67,7 +67,7 @@ impl ServarrClient {
 
     /// The API a server is talked to through: v5 for a Sonarr that offers
     /// it, v3 otherwise.
-    async fn api(&self, server: &Value, timeout: Option<Duration>) -> ApiVersion {
+    pub async fn api(&self, server: &Value, timeout: Option<Duration>) -> ApiVersion {
         if !self.sonarr && cache_for(server) != CacheId::Sonarr {
             return ApiVersion::V3;
         }

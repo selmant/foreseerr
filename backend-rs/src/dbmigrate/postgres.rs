@@ -666,4 +666,9 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "UPDATE \"episode_request\" SET \"monitoredAt\" = \"createdAt\" WHERE \"monitoredAt\" IS NULL AND \"requestId\" IN (SELECT \"id\" FROM \"media_request\" WHERE \"episodeSelectionType\" = 'watchAhead')",
         ],
     },
+    Migration {
+        timestamp: 1_789_800_000_000,
+        name: "AddRequestMetadataLanguage1789800000000",
+        queries: &["ALTER TABLE \"media_request\" ADD \"metadataLanguageId\" integer"],
+    },
 ];

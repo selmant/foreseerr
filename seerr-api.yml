@@ -125,7 +125,8 @@ components:
           type: string
           description: |
             The resolution step that produced the answer: `manual`, `dataset`,
-            `tmdb-find`, `title` or `prequel`.
+            `tmdb-find`, `sonarr` (Sonarr's AniList/MAL lookup), `title` or
+            `prequel`.
           example: dataset
         confidence:
           type: number
@@ -158,7 +159,7 @@ components:
           enum: [movie, tv, null]
         origin:
           type: string
-          enum: [manual, tmdb-find, title, prequel, miss]
+          enum: [manual, tmdb-find, sonarr, title, prequel, miss]
         title:
           type: string
           nullable: true
@@ -1283,12 +1284,25 @@ components:
         activeLanguageProfileId:
           type: number
           example: 1
+          description: The language profile, on Sonarr 3 and older; Sonarr 4 and 5 ignore it.
         activeAnimeProfileId:
           type: number
           nullable: true
         activeAnimeLanguageProfileId:
           type: number
           nullable: true
+          description: The anime override of `activeLanguageProfileId`.
+        metadataLanguageId:
+          type: number
+          nullable: true
+          description: |
+            The metadata language Sonarr 5 adds series with (a Sonarr
+            language id); Sonarr's own preferred metadata language when null.
+            Older Sonarr versions ignore it.
+        animeMetadataLanguageId:
+          type: number
+          nullable: true
+          description: The anime override of `metadataLanguageId`; `metadataLanguageId` applies when null.
         activeAnimeProfileName:
           type: string
           example: 720p/1080p
@@ -1330,6 +1344,15 @@ components:
         - is4k
         - enableSeasonFolders
         - isDefault
+    SonarrLanguage:
+      type: object
+      properties:
+        id:
+          type: number
+          example: 1
+        name:
+          type: string
+          example: English
     ServarrTag:
       type: object
       properties:
@@ -2073,6 +2096,10 @@ components:
           type: number
         rootFolder:
           type: string
+        metadataLanguageId:
+          type: number
+          nullable: true
+          description: The metadata language the requester chose for Sonarr 5; null when the server's setting applies.
         ignoreQuota:
           type: boolean
           example: false
@@ -4702,6 +4729,24 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ServiceProfile'
+                  languageProfiles:
+                    type: array
+                    nullable: true
+                    description: Language profiles, on Sonarr 3 and older only.
+                    items:
+                      $ref: '#/components/schemas/SonarrLanguage'
+                  metadataLanguages:
+                    type: array
+                    nullable: true
+                    description: |
+                      The metadata languages `metadataLanguageId` chooses from,
+                      on Sonarr 5 only.
+                    items:
+                      $ref: '#/components/schemas/SonarrLanguage'
+                  defaultMetadataLanguageId:
+                    type: number
+                    nullable: true
+                    description: Sonarr 5's preferred metadata language.
   /settings/sonarr/{sonarrId}:
     put:
       summary: Update Sonarr instance
@@ -4876,8 +4921,8 @@ paths:
       summary: List stored mappings
       description: |
         Lists stored mappings of one kind: `unmapped` items most-seen first,
-        `manual` corrections, or `guessed` answers from the title and prequel
-        fallback.
+        `manual` corrections, or `guessed` answers from Sonarr's AniList/MAL
+        lookup and the title and prequel fallback.
       tags:
         - settings
       parameters:
@@ -6691,6 +6736,62 @@ paths:
                       restricted:
                         type: boolean
                         example: false
+  /user/{userId}/sonarr-storage:
+    get:
+      summary: Get a user's Sonarr storage usage
+      description: |
+        Size on disk and episode counts of the series tagged with the
+        user's requester tag, per Sonarr server that has `tagRequests` on and
+        speaks Sonarr's API v5. Other servers are left out. Requires
+        `MANAGE_USERS` and `MANAGE_REQUESTS` permissions if viewing other
+        users.
+      tags:
+        - users
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Usage per Sonarr server
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: number
+                          example: 0
+                        name:
+                          type: string
+                          example: Sonarr
+                        is4k:
+                          type: boolean
+                          example: false
+                        seriesCount:
+                          type: number
+                          example: 3
+                        episodeCount:
+                          type: number
+                          description: Episodes with a file.
+                          example: 44
+                        episodeFileCount:
+                          type: number
+                          example: 42
+                        sizeOnDisk:
+                          type: number
+                          example: 53687091200
+        '403':
+          description: The viewer may not see this user's usage
+        '404':
+          description: User not found
   /blocklist:
     get:
       summary: Returns blocklisted items
@@ -9789,6 +9890,18 @@ paths:
                   type: string
                 languageProfileId:
                   type: number
+                  description: The language profile, on Sonarr 3 and older; Sonarr 4 and 5 ignore it.
+                metadataLanguageId:
+                  type: number
+                  nullable: true
+                  description: |
+                    The metadata language Sonarr 5 adds the series with, when the
+                    requester chose one; otherwise the server's
+                    `metadataLanguageId` (or `animeMetadataLanguageId`) applies
+                    when the request is sent. Null, 0 or a negative id means no
+                    choice: on an edit it clears the stored one, and leaving
+                    the key out keeps it. A request that replaces a pending one
+                    takes its own value.
                 userId:
                   type: number
                   nullable: true
@@ -9945,6 +10058,18 @@ paths:
                   type: string
                 languageProfileId:
                   type: number
+                  description: The language profile, on Sonarr 3 and older; Sonarr 4 and 5 ignore it.
+                metadataLanguageId:
+                  type: number
+                  nullable: true
+                  description: |
+                    The metadata language Sonarr 5 adds the series with, when the
+                    requester chose one; otherwise the server's
+                    `metadataLanguageId` (or `animeMetadataLanguageId`) applies
+                    when the request is sent. Null, 0 or a negative id means no
+                    choice: on an edit it clears the stored one, and leaving
+                    the key out keeps it. A request that replaces a pending one
+                    takes its own value.
                 userId:
                   type: number
                   nullable: true
@@ -11369,7 +11494,7 @@ paths:
   /media/{mediaId}/servarr/context:
     get:
       summary: Get mapped Servarr management context
-      description: Returns the mapped Radarr movie or Sonarr seasons and episodes. Requires `MANAGE_REQUESTS`.
+      description: Returns the mapped Radarr movie or Sonarr seasons and episodes, with the series' episode order (`seasonOrder`, `{ type, name }`) where Sonarr reports one (Sonarr 5). Requires `MANAGE_REQUESTS`.
       tags:
         - media
       parameters:
@@ -11420,12 +11545,12 @@ paths:
             type: integer
       responses:
         '200':
-          description: Release candidates with short-lived server-side tokens
+          description: "Release candidates with short-lived server-side tokens. From Sonarr 5 a release may also carry `rejectionDetails` (each rejection's `message`, typed `code` such as `blocklisted`, and `type`), `history` (`grabbed`/`failed` dates of an earlier grab of the release) and `multiSeason` with `seasonNumbers` for a pack of several seasons, which Sonarr 5 does not import automatically."
         '401':
           description: Unauthorized
     post:
       summary: Grab a Servarr release
-      description: 'Grabs a previously returned release token. Quality-rejected or alias-mismatched releases require `acknowledgeRejections: true`. Foreseer then tells Sonarr/Radarr to grab against the mapped series or movie (`seriesId`/`movieId`, and `shouldOverride` when needed) instead of posting only guid and indexer id. Requires `MANAGE_REQUESTS`.'
+      description: 'Grabs a previously returned release token. Quality-rejected or alias-mismatched releases require `acknowledgeRejections: true`. Foreseer then tells Sonarr/Radarr to grab against the mapped series or movie (`seriesId`/`movieId`, and `shouldOverride` when needed) instead of posting only guid and indexer id. A forced Sonarr grab keeps the episodes Sonarr mapped the release to (every season of a multi-season pack), falling back to the searched episode or season when Sonarr could not map the release to the series or mapped it to other episodes than the ones searched. Requires `MANAGE_REQUESTS`.'
       tags:
         - media
       parameters:
@@ -11502,7 +11627,7 @@ paths:
                   type: string
       responses:
         '200':
-          description: Arr manual import candidates with opaque tokens
+          description: 'Arr manual import candidates with opaque tokens. Sonarr 5 rejections carry a typed `code` next to `reason`; a candidate flagged as potentially dangerous or executable has `unsafe`, and one from a multi-season download has `multiSeason`.'
         '401':
           description: Unauthorized
         '409':
@@ -11614,7 +11739,7 @@ paths:
         '401':
           description: Unauthorized
         '409':
-          description: Invalid, expired, or unacknowledged import token
+          description: 'Invalid, expired, or unacknowledged import token; a file flagged as potentially dangerous or executable (never imported, acknowledged or not); or a file from a multi-season download without `episodeMappings` for it'
   /media/{mediaId}/servarr/commands/{token}:
     get:
       summary: Get Servarr manual import command status
@@ -11841,10 +11966,30 @@ paths:
                     $ref: '#/components/schemas/SonarrSettings'
                   profiles:
                     $ref: '#/components/schemas/ServiceProfile'
+                  languageProfiles:
+                    type: array
+                    nullable: true
+                    description: Language profiles, on Sonarr 3 and older only.
+                    items:
+                      $ref: '#/components/schemas/SonarrLanguage'
+                  metadataLanguages:
+                    type: array
+                    nullable: true
+                    description: |
+                      The metadata languages `metadataLanguageId` chooses from,
+                      on Sonarr 5 only.
+                    items:
+                      $ref: '#/components/schemas/SonarrLanguage'
+                  defaultMetadataLanguageId:
+                    type: number
+                    nullable: true
+                    description: Sonarr 5's preferred metadata language.
   /service/sonarr/lookup/{tmdbId}:
     get:
       summary: Get series from Sonarr
-      description: Returns a list of series returned by searching for the name in Sonarr.
+      description: |
+        Returns the series Sonarr's `tmdb:` lookup finds with this TMDB id or,
+        when it finds none, the series found by searching for the show's name.
       tags:
         - service
       parameters:

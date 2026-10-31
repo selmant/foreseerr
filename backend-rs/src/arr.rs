@@ -37,8 +37,12 @@ pub struct MovieOptions {
 pub struct SeriesOptions {
     /// `profileId`.
     pub quality_profile: Value,
-    /// `languageProfileId`.
+    /// `languageProfileId`: a language profile up to Sonarr 3, unused on
+    /// Sonarr 4 and not sent to Sonarr 5.
     pub language_profile: Value,
+    /// The metadata language a Sonarr 5 series is added with: the
+    /// request's or the server's choice, else Sonarr's preferred one.
+    pub metadata_language: Option<i64>,
     /// `rootFolderPath`.
     pub root_folder: Value,
     /// `title`.
@@ -641,18 +645,23 @@ impl Arr<'_> {
             ("title", o.title.clone()),
             ("qualityProfileId", o.quality_profile.clone()),
         ];
-        if !o.language_profile.is_null() {
-            fields.push(("languageProfileId", o.language_profile.clone()));
+        // Sonarr 5 requires both. It has no language profiles but a
+        // metadata language (English, which v3 adds with, when nothing
+        // names one); aired order keeps the season and episode numbers
+        // TMDB uses.
+        if crate::sonarrmeta::is_v5(self).await {
+            let language = crate::sonarrmeta::add_language(self, o.metadata_language, &series)
+                .await
+                .unwrap_or_else(|| serde_json::json!({ "id": 1, "name": "English" }));
+            fields.push(("language", language));
+        } else {
+            if !o.language_profile.is_null() {
+                fields.push(("languageProfileId", o.language_profile.clone()));
+            }
+            if let Some(language) = series.get("language").filter(|l| !l.is_null()) {
+                fields.push(("language", language.clone()));
+            }
         }
-        // Sonarr 5 requires both. The lookup carries the server's preferred
-        // metadata language (English, which v3 adds with, when it doesn't);
-        // aired order keeps the season and episode numbers TMDB uses.
-        let language = series
-            .get("language")
-            .filter(|l| !l.is_null())
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({ "id": 1, "name": "English" }));
-        fields.push(("language", language));
         fields.push(("seasonType", Value::from("official")));
         fields.extend([
             (
@@ -971,6 +980,7 @@ mod tests {
         SeriesOptions {
             quality_profile: Value::from(1),
             language_profile: Value::Null,
+            metadata_language: None,
             root_folder: Value::from("/tv"),
             title: Value::from("Firefly"),
             tvdb_id: 78874,
