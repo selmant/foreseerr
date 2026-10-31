@@ -84,6 +84,39 @@ pub async fn insert(exec: &mut Exec<'_>, table: &str, columns: &[(&str, Value)])
     exec.scalar(&sql, &binds).await
 }
 
+/// The TVDB id a new media row is saved with.
+///
+/// None when another row already holds it, as the column is unique and
+/// the insert would fail: Sonarr's `tmdb:` lookup can give a show the TVDB
+/// id TMDB lists for another entry.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn free_tvdb_id(
+    exec: &mut Exec<'_>,
+    tmdb_id: i64,
+    wanted: Option<i64>,
+) -> Result<Option<i64>> {
+    let Some(id) = wanted else {
+        return Ok(None);
+    };
+    let holders = exec
+        .rows(
+            r#"SELECT "tmdbId" FROM "media" WHERE "tvdbId" = ?1"#,
+            &[Bind::Int(id)],
+        )
+        .await?;
+    let Some(holder) = holders.first() else {
+        return Ok(Some(id));
+    };
+    let other = holder.get("tmdbId").and_then(Value::as_i64).unwrap_or(0);
+    tracing::warn!(
+        "TVDB ID {id} of TMDB {tmdb_id} is already on the media of TMDB {other}; saving TMDB {tmdb_id} without it"
+    );
+    Ok(None)
+}
+
 /// [`crate::typeorm::run`] on the pool or inside a transaction.
 ///
 /// # Errors

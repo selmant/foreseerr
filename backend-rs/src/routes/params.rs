@@ -122,6 +122,46 @@ pub(super) fn body_int(body: &Map<String, Value>, key: &str) -> Result<Option<i6
     })
 }
 
+/// An id body key that may also be cleared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Assign {
+    /// Not sent: the stored value stays.
+    Keep,
+    /// `null`: the stored value is removed.
+    Clear,
+    /// An id.
+    Set(i64),
+}
+
+impl Assign {
+    /// The id it sets, if any.
+    pub(super) const fn value(self) -> Option<i64> {
+        match self {
+            Self::Set(v) => Some(v),
+            Self::Keep | Self::Clear => None,
+        }
+    }
+
+    /// Whether it changes `stored`.
+    pub(super) fn changes(self, stored: Option<i64>) -> bool {
+        match self {
+            Self::Keep => false,
+            Self::Clear | Self::Set(_) => self.value() != stored,
+        }
+    }
+}
+
+/// An id body key that `null` (or an id below 1) clears.
+pub(super) fn body_id_assign(body: &Map<String, Value>, key: &str) -> Result<Assign, Fallback> {
+    match body.get(key) {
+        None => Ok(Assign::Keep),
+        Some(Value::Null) => Ok(Assign::Clear),
+        Some(_) => Ok(body_int(body, key)?
+            .filter(|id| *id > 0)
+            .map_or(Assign::Clear, Assign::Set)),
+    }
+}
+
 /// Whether a query value is truthy (`value ? ... : ...`).
 pub(super) fn truthy(value: Option<&Value>) -> bool {
     match value {

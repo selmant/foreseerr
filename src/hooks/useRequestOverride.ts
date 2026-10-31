@@ -10,6 +10,8 @@ interface OverrideStatus {
   profile?: string;
   rootFolder?: string;
   languageProfile?: string;
+  /** Sonarr 5: the metadata language the requester chose, if any. */
+  metadataLanguage?: string;
 }
 
 const useRequestOverride = (request: MediaRequest): OverrideStatus => {
@@ -54,6 +56,12 @@ const useRequestOverride = (request: MediaRequest): OverrideStatus => {
       defaultServer?.activeLanguageProfileId !== request.languageProfileId
         ? data.languageProfiles?.find(
             (profile) => profile.id === request.languageProfileId
+          )?.name
+        : undefined,
+    metadataLanguage:
+      request.type === 'tv' && request.metadataLanguageId
+        ? data.metadataLanguages?.find(
+            (language) => language.id === request.metadataLanguageId
           )?.name
         : undefined,
   };

@@ -228,7 +228,8 @@ fn same_value_zero(a: Option<&Value>, b: Option<&Value>) -> bool {
 const LOOKUP_FAILED: &str = "Something went wrong trying to fetch series information";
 
 /// `GET /service/sonarr/lookup/{tmdbId}`: the first Sonarr server's
-/// lookup for the show's English name.
+/// `tmdb:` lookup (only series with that TMDB id), else its lookup for the
+/// show's English name.
 fn sonarr_lookup<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         if let Err(why) = ctx
@@ -252,6 +253,18 @@ fn sonarr_lookup<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Some(server @ Value::Object(_)) => server,
             Some(_) => return Outcome::forward(String::from("an odd first Sonarr server")),
         };
+        let arr = crate::arr::Arr {
+            client: &ctx.state.servarr,
+            server,
+            timeout: crate::servarr::api_timeout(&ctx.settings),
+        };
+        match crate::sonarrmeta::series_by_tmdb(&arr, id).await {
+            Ok(found) if !found.is_empty() => return ctx.json(&Value::Array(found)),
+            Ok(_) => {}
+            Err(e) => {
+                tracing::debug!("Sonarr's tmdb:{id} lookup failed, searching by title: {e:#}");
+            }
+        }
         let show = match ctx.state.tmdb.tv(id, "en").await {
             Ok(show) => show,
             Err(e) => return lookup_failed(ctx, &e),

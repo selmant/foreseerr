@@ -13,8 +13,8 @@ use crate::clock::Utc;
 use crate::db::{Bind, Db};
 use crate::sync::lock;
 
-/// `GUESS_ORIGINS`.
-pub const GUESS_ORIGINS: [&str; 2] = ["title", "prequel"];
+/// `GUESS_ORIGINS`: answers a dataset edge replaces once it knows the item.
+pub const GUESS_ORIGINS: [&str; 3] = ["title", "prequel", "sonarr"];
 
 /// A `Correction`.
 #[derive(Debug, Clone, PartialEq, Eq)]

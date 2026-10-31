@@ -1,6 +1,6 @@
 //! `server/lib/mapping/resolve.ts`: a source item's ids to a TMDB id, in
 //! a fixed order: correction, dataset edge, stored answer, TMDB `/find`,
-//! then the anime fallback.
+//! Sonarr's `anilist:`/`mal:` lookup, then the anime fallback.
 
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
@@ -52,7 +52,7 @@ pub struct Resolution {
     pub tmdb_id: i64,
     /// Namespace.
     pub media_type: MediaType,
-    /// `manual`, `dataset`, `tmdb-find`, `title` or `prequel`.
+    /// `manual`, `dataset`, `tmdb-find`, `sonarr`, `title` or `prequel`.
     pub origin: String,
 }
 
@@ -136,6 +136,58 @@ async fn via_find(ctx: &Ctx<'_>, request: &Request<'_>) -> Result<Option<(IdRef,
         }
     }
     Ok(None)
+}
+
+/// Sonarr's `anilist:` then `mal:` lookup for an anime TV entry that starts
+/// its show ([`derive::sonarr_lookup_applies`]); the id it went by and the
+/// series. A Sonarr that can't be reached leaves it to the next rule.
+async fn via_sonarr(
+    request: &Request<'_>,
+    deps: &dyn DeriveDeps,
+) -> Option<(IdRef, derive::SonarrMatch)> {
+    let anime = request.anime.as_ref()?;
+    let year = anime.year.or(request.year).filter(|y| *y != 0)?;
+    let hints = AnimeHints {
+        year: Some(year),
+        ..anime.clone()
+    };
+    if request.media_type != Some(MediaType::Tv) || !derive::sonarr_lookup_applies(&hints) {
+        return None;
+    }
+    let mut ids: Vec<IdRef> = anime
+        .anilist_id
+        .filter(|id| *id > 0)
+        .map(|id| IdRef::new("anilist", &id.to_string()))
+        .into_iter()
+        .collect();
+    for ns in ["anilist", "mal"] {
+        for r in request.refs.iter().filter(|r| r.ns == ns) {
+            if !ids.contains(r) {
+                ids.push(r.clone());
+            }
+        }
+    }
+    for r in ids {
+        let Ok(id) = r.id.parse::<i64>() else {
+            continue;
+        };
+        let found = match deps.sonarr_lookup(&format!("{}:{id}", r.ns)).await {
+            Ok(Some(found)) => found,
+            Ok(None) => return None,
+            Err(e) => {
+                tracing::debug!(
+                    label = "Mapping",
+                    "Sonarr's {}:{id} lookup failed: {e:#}",
+                    r.ns
+                );
+                return None;
+            }
+        };
+        if let Some(series) = derive::sonarr_match(&found, &r.ns, id, year) {
+            return Some((r, series));
+        }
+    }
+    None
 }
 
 fn context_write(request: &Request<'_>, r: IdRef, origin: &'static str) -> Write {
@@ -231,6 +283,31 @@ async fn resolve_uncached(ctx: &Ctx<'_>, request: &Request<'_>) -> Result<Option
         return answered(ctx, answer, miss_ids()).await;
     }
 
+    let net = NetDeps::new(ctx);
+    let deps: &dyn DeriveDeps = request.derive.unwrap_or(&net);
+
+    if let Some((r, found)) = via_sonarr(request, deps).await {
+        let mut write = context_write(request, r.clone(), "sonarr");
+        write.tmdb_id = Some(found.tmdb_id);
+        write.tmdb_type = Some(MediaType::Tv.as_str().to_owned());
+        write.detail = Some(format!(
+            "{}:{} is \"{}\" (tvdb {})",
+            r.ns,
+            r.id,
+            found.title,
+            found
+                .tvdb_id
+                .map_or_else(|| String::from("?"), |id| id.to_string())
+        ));
+        resolutions::save_resolution(ctx.db, &write).await?;
+        let answer = Resolution {
+            tmdb_id: found.tmdb_id,
+            media_type: MediaType::Tv,
+            origin: String::from("sonarr"),
+        };
+        return answered(ctx, answer, miss_ids()).await;
+    }
+
     if let (Some(anime), Some(kind)) = (&request.anime, media_type) {
         let hints = AnimeHints {
             titles: Some(anime.titles.clone().unwrap_or_else(|| {
@@ -244,8 +321,6 @@ async fn resolve_uncached(ctx: &Ctx<'_>, request: &Request<'_>) -> Result<Option
             year: anime.year.or(request.year),
             ..anime.clone()
         };
-        let net = NetDeps::new(ctx);
-        let deps: &dyn DeriveDeps = request.derive.unwrap_or(&net);
         if let Some(derived) = derive::derive_tmdb(ctx, &hints, kind, deps).await? {
             let filed = anime.anilist_id.filter(|id| *id != 0).map_or_else(
                 || primary.clone(),

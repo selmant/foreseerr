@@ -45,6 +45,8 @@ pub(super) struct Body {
     pub(super) profile_id: Option<i64>,
     pub(super) root_folder: Option<String>,
     pub(super) language_profile_id: Option<i64>,
+    /// `metadataLanguageId`: absent keeps the stored one, `null` clears it.
+    pub(super) metadata_language_id: super::params::Assign,
     user_id: Option<i64>,
     pub(super) tags: Option<Vec<i64>>,
     /// `episodeSelection`, when sent.
@@ -76,6 +78,7 @@ fn parse_body(ctx: &Ready<'_>) -> Result<Body, super::Fallback> {
             "profileId",
             "rootFolder",
             "languageProfileId",
+            "metadataLanguageId",
             "userId",
             "tags",
             "episodeSelection",
@@ -106,6 +109,7 @@ fn parse_body(ctx: &Ready<'_>) -> Result<Body, super::Fallback> {
         profile_id: body_int(body, "profileId")?,
         root_folder: opt_text(body, "rootFolder")?,
         language_profile_id: body_int(body, "languageProfileId")?,
+        metadata_language_id: super::params::body_id_assign(body, "metadataLanguageId")?,
         user_id: user_id.filter(|id| *id != 0),
         tags: body.get("tags").map(|v| int_list(v, "tags")).transpose()?,
         episode_selection: body.get("episodeSelection").cloned(),
@@ -156,6 +160,12 @@ pub(super) fn changed_columns(
             .filter(|v| row.language_profile_id != Some(*v))
         {
             sets.push(("languageProfileId", Bind::Int(v)));
+        }
+        if body.metadata_language_id.changes(row.metadata_language_id) {
+            sets.push((
+                "metadataLanguageId",
+                Bind::OptInt(body.metadata_language_id.value()),
+            ));
         }
     }
     if let Some(tags) = &body.tags {
@@ -483,6 +493,12 @@ fn edited_json(
             String::from("languageProfileId"),
             number(body.language_profile_id),
         );
+        if body.metadata_language_id != super::params::Assign::Keep {
+            out.insert(
+                String::from("metadataLanguageId"),
+                number(body.metadata_language_id.value()),
+            );
+        }
         out.insert(String::from("ongoingEpisodeRequestKey"), Value::Null);
     }
     if let Some(edit) = seasons {

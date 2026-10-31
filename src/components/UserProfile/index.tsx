@@ -19,10 +19,12 @@ import useSeeMorePosters from '@app/hooks/useSeeMorePosters';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
+import { formatBytes } from '@app/utils/numberHelpers';
 import { ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import type { WatchlistResponse } from '@shared/interfaces/api/discoverInterfaces';
 import type {
   QuotaResponse,
+  SonarrStorageResponse,
   UserRequestsResponse,
   UserWatchDataResponse,
 } from '@shared/interfaces/api/userInterfaces';
@@ -47,6 +49,10 @@ const messages = defineMessages('components.UserProfile', {
   localWatchlist: "{username}'s Watchlist",
   emptywatchlist:
     'Media added to your <PlexWatchlistSupportLink>Plex Watchlist</PlexWatchlistSupportLink> will appear here.',
+  sonarrStorage: 'Sonarr Storage',
+  sonarrUsage:
+    '{episodes, plural, one {# episode} other {# episodes}} in {series, plural, one {# series} other {# series}}',
+  sonarrServerUsage: '{server}: {size}',
 });
 
 type MediaTitle = MovieDetails | TvDetails;
@@ -88,6 +94,22 @@ const UserProfile = () => {
       ? `/api/v1/user/${user.id}/quota`
       : null
   );
+  // Only Sonarr 5 servers that tag requests report it.
+  const { data: sonarrStorage } = useSWR<SonarrStorageResponse>(
+    quota && user ? `/api/v1/user/${user.id}/sonarr-storage` : null,
+    { revalidateOnFocus: false }
+  );
+  const storageServers = sonarrStorage?.servers ?? [];
+  const storage = storageServers.length
+    ? storageServers.reduce(
+        (total, server) => ({
+          sizeOnDisk: total.sizeOnDisk + server.sizeOnDisk,
+          episodeCount: total.episodeCount + server.episodeCount,
+          seriesCount: total.seriesCount + server.seriesCount,
+        }),
+        { sizeOnDisk: 0, episodeCount: 0, seriesCount: 0 }
+      )
+    : undefined;
   const { data: watchData, error: watchDataError } =
     useSWR<UserWatchDataResponse>(
       user?.userType === UserType.PLEX &&
@@ -170,7 +192,11 @@ const UserProfile = () => {
             { type: 'and' }
           )) && (
           <div className="relative z-40">
-            <dl className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
+            <dl
+              className={`mt-5 grid grid-cols-1 gap-5 ${
+                storage ? 'sm:grid-cols-2 lg:grid-cols-4' : 'lg:grid-cols-3'
+              }`}
+            >
               <div className="overflow-hidden rounded-lg bg-gray-800/50 px-4 py-5 shadow ring-1 ring-gray-700 sm:p-6">
                 <dt className="truncate text-sm font-bold text-gray-300">
                   {intl.formatMessage(messages.totalrequests)}
@@ -300,6 +326,36 @@ const UserProfile = () => {
                   )}
                 </dd>
               </div>
+              {storage && (
+                <div className="overflow-hidden rounded-lg bg-gray-800/50 px-4 py-5 shadow ring-1 ring-gray-700 sm:p-6">
+                  <dt className="truncate text-sm font-bold text-gray-300">
+                    {intl.formatMessage(messages.sonarrStorage)}
+                  </dt>
+                  <dd className="mt-1 text-white">
+                    <span className="text-3xl font-semibold">
+                      {formatBytes(storage.sizeOnDisk)}
+                    </span>
+                    <div className="mt-1 text-sm text-gray-300">
+                      {intl.formatMessage(messages.sonarrUsage, {
+                        episodes: storage.episodeCount,
+                        series: storage.seriesCount,
+                      })}
+                    </div>
+                    {storageServers.length > 1 && (
+                      <ul className="mt-1 text-xs text-gray-400">
+                        {storageServers.map((server) => (
+                          <li key={`sonarr-storage-${server.id}`}>
+                            {intl.formatMessage(messages.sonarrServerUsage, {
+                              server: server.name,
+                              size: formatBytes(server.sizeOnDisk),
+                            })}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </dd>
+                </div>
+              )}
             </dl>
           </div>
         )}

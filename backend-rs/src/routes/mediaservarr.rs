@@ -384,6 +384,11 @@ async fn context_json(ctx: &Ready<'_>, id: i64, is4k: bool) -> Step<Value> {
         arr.series_queue(c.external_id)
     );
     let series = series.map_err(|e| e.wrapped("[Sonarr] Failed to retrieve series by ID: "))?;
+    put(
+        &mut out,
+        "seasonOrder",
+        crate::sonarrmeta::season_order(&series),
+    );
     let episodes = episodes?;
     let queue = queue?;
     let odd = || Fail::Forward(String::from("a Sonarr shape the handler would trip over"));
