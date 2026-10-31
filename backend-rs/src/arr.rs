@@ -330,42 +330,51 @@ impl Arr<'_> {
 
     /// Monitor the episodes of the requested aired seasons on a series
     /// Sonarr numbers in another `order`, matched by TVDB episode id: its
-    /// own seasons of the same numbers hold other episodes.
+    /// own seasons of the same numbers hold other episodes. The requested
+    /// aired seasons the order leaves out entirely come back: nothing of
+    /// them is monitored, and Sonarr can't download them.
+    ///
+    /// # Errors
+    ///
+    /// When TVDB or Sonarr can't be asked, or the order leaves out every
+    /// requested season.
     async fn monitor_aired_seasons(
         &self,
         series_id: &Value,
         o: &SeriesOptions,
         order: &str,
         aired: &dyn AiredSource,
-    ) -> Result<()> {
-        let catalog = aired
-            .aired(o.tvdb_id)
-            .await
-            .map_err(|e| e.context("[TVDB] Failed to load the aired episode order"))?;
-        let wanted = episodeorder::season_episodes(&catalog, &o.seasons);
-        let seasons = o
-            .seasons
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
+    ) -> Result<Vec<i64>> {
         let series = crate::media::js_string(Some(series_id));
-        if wanted.is_empty() {
-            tracing::warn!(
-                "[Sonarr] TVDB lists no aired episodes for season(s) {seasons} of series {series}; nothing to monitor"
+        let catalog = aired.aired(o.tvdb_id).await.map_err(|e| {
+            e.context(format!(
+                "[TVDB] TVDB couldn't be reached for the aired episode order of TVDB series {}, which series {series} needs as Sonarr numbers it in the {order} order; the request can be retried once TVDB answers",
+                o.tvdb_id
+            ))
+        })?;
+        let episodes = self.episodes(series_id).await?;
+        let (kept, left_out) = episodeorder::seasons_in_order(&catalog, &o.seasons, &episodes);
+        if kept.is_empty() {
+            bail!(
+                "None of the requested aired seasons ({}) have episodes in the {order} episode order series {series} uses in Sonarr, so Sonarr can't download them",
+                joined(&left_out)
             );
         }
-        let episodes = self.episodes(series_id).await?;
+        if !left_out.is_empty() {
+            tracing::warn!(
+                "[Sonarr] Aired season(s) {} have no episodes in the {order} episode order of series {series}, so Sonarr can't download them; monitoring aired season(s) {} only",
+                joined(&left_out),
+                joined(&kept)
+            );
+        }
+        let wanted = episodeorder::season_episodes(&catalog, &kept);
         let missing = episodeorder::missing(&wanted, &episodes);
         if !missing.is_empty() {
             tracing::warn!(
-                "[Sonarr] {} episode(s) of aired season(s) {seasons} are not in the {order} episode order of series {series}, so Sonarr can't download them (TVDB {})",
+                "[Sonarr] {} episode(s) of aired season(s) {} are not in the {order} episode order of series {series}, so Sonarr can't download them (TVDB {})",
                 missing.len(),
-                missing
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                joined(&kept),
+                joined(&missing)
             );
         }
         let found = episodeorder::by_tvdb(&episodes);
@@ -375,7 +384,8 @@ impl Arr<'_> {
             .filter(|e| !crate::settings::public::truthy(e.get("monitored")))
             .filter_map(|e| e.get("id").cloned())
             .collect();
-        self.monitor_episodes(ids).await
+        self.monitor_episodes(ids).await?;
+        Ok(left_out)
     }
 
     /// `applyEpisodeSelection`. On a series Sonarr numbers in another
@@ -482,13 +492,21 @@ impl Arr<'_> {
     /// # Errors
     ///
     /// `Failed to add series` when any step fails.
-    pub async fn add_series(&self, o: &SeriesOptions, aired: &dyn AiredSource) -> Result<Value> {
+    pub async fn add_series(
+        &self,
+        o: &SeriesOptions,
+        aired: &dyn AiredSource,
+    ) -> Result<SeriesAdded> {
         self.add_series_inner(o, aired)
             .await
             .map_err(|e| e.context("Failed to add series"))
     }
 
-    async fn add_series_inner(&self, o: &SeriesOptions, aired: &dyn AiredSource) -> Result<Value> {
+    async fn add_series_inner(
+        &self,
+        o: &SeriesOptions,
+        aired: &dyn AiredSource,
+    ) -> Result<SeriesAdded> {
         let found = self
             .get("/series/lookup", &[("term", format!("tvdb:{}", o.tvdb_id))])
             .await?;
@@ -513,6 +531,7 @@ impl Arr<'_> {
             else {
                 bail!("Failed to update series in Sonarr");
             };
+            let mut left_out_seasons = Vec::new();
             if let Some(ids) = episode_ids {
                 self.apply_episode_selection(
                     &updated_id,
@@ -524,10 +543,14 @@ impl Arr<'_> {
                 )
                 .await?;
             } else {
-                if let Some(order) = &order {
-                    self.monitor_aired_seasons(&updated_id, o, order, aired)
+                // A rolling request created without episodes asks for no
+                // season: its episode sync monitors the episodes later.
+                let by_season = !o.seasons.is_empty();
+                if let Some(order) = order.as_deref().filter(|_| by_season) {
+                    left_out_seasons = self
+                        .monitor_aired_seasons(&updated_id, o, order, aired)
                         .await?;
-                } else {
+                } else if by_season {
                     match self.episodes(&updated_id).await {
                         Ok(episodes) => {
                             let ids: Vec<Value> = episodes
@@ -559,7 +582,10 @@ impl Arr<'_> {
                     }
                 }
             }
-            return Ok(updated);
+            return Ok(SeriesAdded {
+                series: updated,
+                left_out_seasons,
+            });
         }
         let lookup_seasons: Vec<Value> = series
             .get("seasons")
@@ -644,8 +670,31 @@ impl Arr<'_> {
             )
             .await?;
         }
-        Ok(created)
+        Ok(SeriesAdded {
+            series: created,
+            left_out_seasons: Vec::new(),
+        })
     }
+}
+
+/// What `addSeries` left in Sonarr.
+#[derive(Debug, Clone)]
+pub struct SeriesAdded {
+    /// The series as Sonarr has it now.
+    pub series: Value,
+    /// The requested aired seasons the order the series uses in Sonarr
+    /// leaves out entirely: nothing of them is monitored, and Sonarr can't
+    /// download them.
+    pub left_out_seasons: Vec<i64>,
+}
+
+/// Numbers for a log line: `1, 2, 3`.
+fn joined(numbers: &[i64]) -> String {
+    numbers
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// An existing series as `addSeries` leaves it: monitored, with the
@@ -837,14 +886,25 @@ mod tests {
         }
     }
 
+    /// TVDB down.
+    struct Down;
+
+    impl AiredSource for Down {
+        fn aired(&self, _tvdb_id: i64) -> CatalogFuture<'_> {
+            Box::pin(async { Err(anyhow!("connect timed out")) })
+        }
+    }
+
     /// Firefly-like: aired season 1 is 101 (aired first, the DVD's second),
-    /// 102 (the pilot, the DVD's first), 103; aired season 2 is 201.
+    /// 102 (the pilot, the DVD's first), 103; aired season 2 is 201; aired
+    /// season 3 is 301, which the DVD order leaves out.
     fn aired_order() -> Fixed {
         Fixed(vec![
             ep(101, 1, 1),
             ep(102, 1, 2),
             ep(103, 1, 3),
             ep(201, 2, 1),
+            ep(301, 3, 1),
         ])
     }
 
@@ -898,6 +958,20 @@ mod tests {
         existing: Value,
         o: &SeriesOptions,
     ) -> Result<Vec<Seen>> {
+        let (seen, _) = add_to(api, existing, dvd_episodes(), &aired_order(), o).await?;
+        Ok(seen.into_iter().filter(|(m, _, _)| m != "GET").collect())
+    }
+
+    /// `addSeries` of `o` against an existing series 7, whose episodes
+    /// Sonarr answers with `episodes`, on a fake Sonarr offering `api`;
+    /// what Sonarr got and the aired seasons left out.
+    async fn add_to(
+        api: &'static str,
+        existing: Value,
+        episodes: Value,
+        aired: &dyn AiredSource,
+        o: &SeriesOptions,
+    ) -> Result<(Vec<Seen>, Vec<i64>)> {
         if rustls::crypto::ring::default_provider()
             .install_default()
             .is_err()
@@ -915,7 +989,7 @@ mod tests {
                 ),
                 ("GET", format!("{prefix}/series/7"), existing.clone()),
                 ("PUT", format!("{prefix}/series"), existing),
-                ("GET", format!("{prefix}/episode"), dvd_episodes()),
+                ("GET", format!("{prefix}/episode"), episodes),
             ],
         )
         .await?;
@@ -929,14 +1003,19 @@ mod tests {
             server: &server,
             timeout: None,
         };
-        let added = arr.add_series(o, &aired_order()).await?;
-        assert_eq!(added.get("id"), Some(&json!(7)), "the series comes back");
-        let writes = crate::sync::lock(&seen)
-            .iter()
-            .filter(|(m, _, _)| m != "GET")
-            .cloned()
-            .collect();
-        Ok(writes)
+        let added = arr.add_series(o, aired).await?;
+        assert_eq!(
+            added.series.get("id"),
+            Some(&json!(7)),
+            "the series comes back"
+        );
+        let seen = crate::sync::lock(&seen).clone();
+        Ok((seen, added.left_out_seasons))
+    }
+
+    /// The error text of a failed add.
+    fn failure(result: Result<(Vec<Seen>, Vec<i64>)>) -> String {
+        result.err().map(|e| format!("{e:#}")).unwrap_or_default()
     }
 
     fn write(method: &str, path: &str, body: Value) -> Seen {
@@ -1058,6 +1137,71 @@ mod tests {
                 json!({"episodeIds": [73], "monitored": true})
             )),
             "the one Sonarr has is monitored, the missing one doesn't fail the add"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn aired_seasons_the_order_lacks_are_left_out() -> Result<()> {
+        let dvd = series(Some("dvd"));
+        let (seen, left_out) = add_to(
+            "v5",
+            dvd.clone(),
+            dvd_episodes(),
+            &aired_order(),
+            &options(vec![1, 3], None),
+        )
+        .await?;
+        assert_eq!(left_out, vec![3], "aired season 3 isn't in the DVD order");
+        assert_eq!(
+            seen.last(),
+            Some(&write(
+                "PUT",
+                "/api/v5/episode/monitor",
+                json!({"episodeIds": [73, 71], "monitored": true})
+            )),
+            "aired season 1 is monitored all the same"
+        );
+        let none = add_to(
+            "v5",
+            dvd,
+            dvd_episodes(),
+            &aired_order(),
+            &options(vec![3], None),
+        )
+        .await;
+        assert!(
+            failure(none).contains(
+                "None of the requested aired seasons (3) have episodes in the dvd episode order"
+            ),
+            "nothing to monitor fails the request"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rolling_requests_without_seasons_need_no_tvdb() -> Result<()> {
+        let dvd = series(Some("dvd"));
+        let (seen, left_out) = add_to(
+            "v5",
+            dvd.clone(),
+            dvd_episodes(),
+            &Down,
+            &options(Vec::new(), None),
+        )
+        .await?;
+        assert!(left_out.is_empty(), "nothing asked for, nothing left out");
+        assert!(
+            seen.iter()
+                .all(|(_, path, _)| !path.ends_with("/episode")
+                    && !path.ends_with("/episode/monitor")),
+            "no episodes read or monitored: {seen:?}"
+        );
+        let down = add_to("v5", dvd, dvd_episodes(), &Down, &options(vec![1], None)).await;
+        let text = failure(down);
+        assert!(
+            text.contains("TVDB couldn't be reached") && text.contains("can be retried"),
+            "says what failed and that a retry may work: {text}"
         );
         Ok(())
     }

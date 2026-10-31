@@ -16,7 +16,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use crate::arr::{Arr, MovieOptions, SeriesOptions};
+use crate::arr::{Arr, MovieOptions, SeriesAdded, SeriesOptions};
 use crate::db::{
     Bind, Db, EpisodeRequestRow, MediaRow, RequestRow, UserRecord, UserSettingsRecord,
 };
@@ -870,11 +870,21 @@ impl Lc {
                 server: &server,
                 timeout,
             };
+            let tmdb_id = media.tmdb_id;
             let result = async {
                 let aired = crate::episodeorder::Tvdb(&lc.state.outbound);
-                let added = arr.add_series(&options, &aired).await?;
+                let SeriesAdded {
+                    series: added,
+                    left_out_seasons,
+                } = arr.add_series(&options, &aired).await?;
                 lc.record_service(&snapshot, &server, &added).await?;
                 let mut entity = snapshot.clone();
+                if !left_out_seasons.is_empty() {
+                    let order = crate::episodeorder::other_order(&added)
+                        .unwrap_or(crate::episodeorder::OFFICIAL);
+                    lc.fail_left_out_seasons(&mut entity, tmdb_id, &left_out_seasons, order)
+                        .await?;
+                }
                 if !entity.row.episodes.is_empty() && truthy(added.get("id")) {
                     let episodes = arr
                         .episodes(added.get("id").unwrap_or(&Value::Null))
@@ -938,6 +948,47 @@ impl Lc {
             }
         });
     }
+
+    /// Mark `FAILED` the request's seasons whose aired seasons (as
+    /// `resolveSonarrSeasons` maps them) the `order` the series uses in
+    /// Sonarr leaves out entirely (`left_out`): nothing of them was
+    /// monitored, and waiting for them would keep the request open for
+    /// good. The request completes once its other seasons are available.
+    async fn fail_left_out_seasons(
+        &self,
+        e: &mut Entity,
+        tmdb_id: i64,
+        left_out: &[i64],
+        order: &str,
+    ) -> Result<()> {
+        let mut failed = Vec::new();
+        for season in &mut e.row.seasons {
+            let number = season.season_number;
+            let mapped = crate::mapping::sonarr_seasons(&self.state.db, tmdb_id, &[number])
+                .await
+                .unwrap_or_else(|_| vec![number]);
+            if season.status != FAILED && season_left_out(&mapped, left_out) {
+                season.status = FAILED;
+                failed.push(number.to_string());
+            }
+        }
+        if failed.is_empty() {
+            return Ok(());
+        }
+        self.write(e, false).await?;
+        tracing::warn!(
+            "Season(s) {} of request {} have no episodes in the {order} episode order the series uses in Sonarr, so Sonarr can't download them; marked FAILED",
+            failed.join(", "),
+            e.row.id
+        );
+        Ok(())
+    }
+}
+
+/// Whether a requested season is out of reach: Sonarr's order leaves out
+/// each aired season it maps to (`mapped`).
+fn season_left_out(mapped: &[i64], left_out: &[i64]) -> bool {
+    !mapped.is_empty() && mapped.iter().all(|s| left_out.contains(s))
 }
 
 /// Where a request's episodes stand: each one downloaded (`COMPLETED`) or
@@ -1559,6 +1610,17 @@ mod tests {
             ),
             "every season"
         );
+    }
+
+    #[test]
+    fn seasons_out_of_reach() {
+        assert!(season_left_out(&[22], &[22]), "its one aired season");
+        assert!(
+            !season_left_out(&[21, 22], &[22]),
+            "part of it can be downloaded"
+        );
+        assert!(season_left_out(&[3, 4], &[3, 4, 5]), "every mapped season");
+        assert!(!season_left_out(&[], &[22]), "nothing mapped");
     }
 
     #[test]

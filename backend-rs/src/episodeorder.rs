@@ -178,6 +178,24 @@ pub fn season_episodes(catalog: &[CatalogEpisode], seasons: &[i64]) -> Vec<i64> 
         .collect()
 }
 
+/// The requested aired `seasons` split by Sonarr's order of the series.
+///
+/// First those it has any episode of (in their order), then those it
+/// leaves out entirely, which Sonarr can't download.
+#[must_use]
+pub fn seasons_in_order(
+    catalog: &[CatalogEpisode],
+    seasons: &[i64],
+    episodes: &[Value],
+) -> (Vec<i64>, Vec<i64>) {
+    let known: HashSet<i64> = episodes.iter().filter_map(tvdb_of).collect();
+    seasons.iter().copied().partition(|season| {
+        catalog
+            .iter()
+            .any(|e| e.season == *season && known.contains(&e.tvdb_id))
+    })
+}
+
 /// Sonarr's episodes by their TVDB id.
 #[must_use]
 pub fn by_tvdb(episodes: &[Value]) -> HashMap<i64, &Value> {
@@ -455,6 +473,24 @@ mod tests {
                 json!({"seasonNumber": 2, "monitored": true, "statistics": {"episodeFileCount": 1, "totalEpisodeCount": 3}}),
             ],
             "counted per aired season, not as Sonarr's one season"
+        );
+    }
+
+    #[test]
+    fn seasons_the_order_leaves_out() {
+        // Aired S1 = 11, 12 and S2 = 21; the story order has 12 only, and
+        // TVDB lists nothing for aired season 3 yet.
+        let catalog = vec![ep(11, 1, 1), ep(12, 1, 2), ep(21, 2, 1)];
+        let story = vec![sonarr(1, 12, 1, 1, false, false)];
+        assert_eq!(
+            seasons_in_order(&catalog, &[1, 2, 3], &story),
+            (vec![1], vec![2, 3]),
+            "one episode is enough; a season without any can't be downloaded"
+        );
+        assert_eq!(
+            seasons_in_order(&catalog, &[2], &[]),
+            (Vec::new(), vec![2]),
+            "an empty list holds nothing (callers refuse to decide on one)"
         );
     }
 
