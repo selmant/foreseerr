@@ -15,7 +15,7 @@ use serde_json::Value;
 
 use super::scanbase::{array_of, js_truthy, str_of, uniq_with, Kind, Scan, PROCESSING, UNKNOWN};
 use super::scanmedia::{MovieOpts, ProcessableSeason, ShowOpts};
-use super::scantmdb::{provider_show, seasons_of, show_by_tvdb, tv_for_scan};
+use super::scantmdb::{provider_show, seasons_of, tv_for_scan, tvdb_show_id};
 use super::JobCtx;
 use crate::db::{Bind, MediaRow};
 use crate::media::js_string;
@@ -337,7 +337,8 @@ impl ArrRun<'_> {
             Some(id) => tv_for_scan(job, id).await?,
             None => {
                 new_show(
-                    || show_by_tvdb(job, tvdb),
+                    || tvdb_show_id(job, tvdb),
+                    tvdb,
                     sonarr_tmdb_id(series),
                     |id| tv_for_scan(job, id),
                 )
@@ -536,29 +537,41 @@ fn orphaned(media: &MediaRow, four_k: bool) -> MediaRow {
     after
 }
 
-/// The TMDB show of a Sonarr series no title has yet. TMDB's find by its
-/// TVDB id (`by_tvdb`) comes first, as requests resolve a series that way
-/// and a second title for the same TVDB id would split the series in two;
-/// the `tmdbId` Sonarr knows it by (`sonarr`, shown by `by_id`) is the
-/// fallback when TMDB finds nothing or fails.
-async fn new_show<T, TF, I, IF>(by_tvdb: T, sonarr: Option<i64>, by_id: I) -> Result<Value>
+/// The TMDB show of a Sonarr series no title has yet, by its TVDB id
+/// `tvdb`.
+///
+/// TMDB's find by TVDB id (`find`) comes first, as requests resolve a
+/// series that way and a second title for the same TVDB id would split the
+/// series in two. Only when TMDB answers but finds no show is the `tmdbId`
+/// Sonarr knows it by (`sonarr`) used, and only if that show doesn't name
+/// another TVDB id. TMDB failing skips the series this run (`by_id` shows
+/// a TMDB id).
+async fn new_show<F, FF, I, IF>(find: F, tvdb: i64, sonarr: Option<i64>, by_id: I) -> Result<Value>
 where
-    T: FnOnce() -> TF,
-    TF: Future<Output = Result<Value>>,
+    F: FnOnce() -> FF,
+    FF: Future<Output = Result<Option<i64>>>,
     I: FnOnce(i64) -> IF,
     IF: Future<Output = Result<Value>>,
 {
-    let found = by_tvdb().await;
-    let (Err(e), Some(id)) = (&found, sonarr) else {
-        return found;
+    const CONTEXT: &str = "[TMDB] Failed to get TV show using the external TVDB ID";
+    if let Some(id) = find().await.context(CONTEXT)? {
+        return by_id(id).await.context(CONTEXT);
+    }
+    let Some(id) = sonarr else {
+        return Err(anyhow!("No show returned from API for ID {tvdb}").context(CONTEXT));
     };
-    tracing::debug!(
-        errorMessage = %format!("{e:#}"),
-        "TMDB has no show for the series' TVDB ID; using Sonarr's TMDB ID {id}"
-    );
-    by_id(id)
-        .await
-        .map_err(|fallback| anyhow!("{e:#}; Sonarr's TMDB ID {id} failed too: {fallback:#}"))
+    tracing::debug!("TMDB finds no show for TVDB ID {tvdb}; using Sonarr's TMDB ID {id}");
+    let show = by_id(id).await?;
+    let named = show
+        .pointer("/external_ids/tvdb_id")
+        .and_then(Value::as_i64)
+        .filter(|other| *other > 0 && *other != tvdb);
+    if let Some(other) = named {
+        return Err(anyhow!(
+            "Sonarr's TMDB ID {id} is TMDB's show of TVDB ID {other}, not {tvdb}"
+        ));
+    }
+    Ok(show)
 }
 
 /// The `tmdbId` Sonarr knows a series by; Sonarr sends 0 for none, and
@@ -699,42 +712,75 @@ mod tests {
     #[tokio::test]
     async fn new_shows_are_found_by_tvdb_id_first() -> Result<()> {
         use std::cell::Cell;
-        let show = |id: i64| json!({ "id": id });
+        let show =
+            |id: i64, tvdb: Option<i64>| json!({ "id": id, "external_ids": { "tvdb_id": tvdb } });
         let asked: Cell<Option<i64>> = Cell::new(None);
         let by_id = |id: i64| {
             asked.set(Some(id));
-            async move { Ok(show(id)) }
+            async move { Ok(show(id, Some(81797))) }
         };
-        let found = new_show(|| async { Ok(show(37854)) }, Some(1), by_id).await?;
+        let found = new_show(|| async { Ok(Some(37854)) }, 81797, Some(1), by_id).await?;
         assert_eq!(
-            (found, asked.get()),
-            (show(37854), None),
+            (found.get("id").cloned(), asked.get()),
+            (Some(json!(37854)), Some(37854)),
             "TMDB's find by TVDB id, as requests resolve it; Sonarr's id unused"
         );
         let found = new_show(
-            || async { Err(anyhow!("No show returned from API for ID 81797")) },
+            || async { Ok(None) },
+            81797,
             Some(37854),
-            |id| async move { Ok(show(id)) },
+            |id| async move { Ok(show(id, Some(81797))) },
         )
         .await?;
-        assert_eq!(found, show(37854), "Sonarr's id when TMDB finds nothing");
-        let none = new_show(
-            || async { Err(anyhow!("TMDB down")) },
-            None,
-            |id| async move { Ok(show(id)) },
+        assert_eq!(
+            found.get("id"),
+            Some(&json!(37854)),
+            "Sonarr's id when TMDB finds nothing"
+        );
+        let unnamed = new_show(
+            || async { Ok(None) },
+            81797,
+            Some(37854),
+            |id| async move { Ok(show(id, None)) },
         )
         .await;
-        assert!(none.is_err(), "no fallback without Sonarr's id");
-        let both = new_show(
-            || async { Err(anyhow!("TMDB down")) },
+        assert!(unnamed.is_ok(), "a show without a TVDB id is taken");
+        let other = new_show(
+            || async { Ok(None) },
+            81797,
             Some(5),
-            |_| async { Err(anyhow!("still down")) },
+            |id| async move { Ok(show(id, Some(12))) },
         )
         .await;
         assert!(
-            both.is_err_and(|e| format!("{e:#}")
-                .contains("TMDB down; Sonarr's TMDB ID 5 failed too: still down")),
-            "both failures told"
+            other.is_err_and(|e| format!("{e:#}").contains("TVDB ID 12, not 81797")),
+            "another series' show is refused"
+        );
+        let asked: Cell<Option<i64>> = Cell::new(None);
+        let down = new_show(
+            || async { Err(anyhow!("TMDB down")) },
+            81797,
+            Some(5),
+            |id| {
+                asked.set(Some(id));
+                async move { Ok(show(id, Some(81797))) }
+            },
+        )
+        .await;
+        assert!(
+            down.is_err() && asked.get().is_none(),
+            "TMDB failing skips the series; no fallback"
+        );
+        let none = new_show(
+            || async { Ok(None) },
+            81797,
+            None,
+            |id| async move { Ok(show(id, None)) },
+        )
+        .await;
+        assert!(
+            none.is_err_and(|e| format!("{e:#}").contains("No show returned from API for ID 81797")),
+            "no fallback without Sonarr's id"
         );
         assert_eq!(
             sonarr_tmdb_id(&json!({ "tvdbId": 81797, "tmdbId": 37854 })),
