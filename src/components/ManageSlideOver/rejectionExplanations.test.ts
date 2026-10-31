@@ -72,6 +72,14 @@ describe('rejection explanations', () => {
       explainRejection(intl, 'import', 'multiSeason', 'Sonarr') ?? '',
       /Pick the episodes/
     );
+    assert.match(
+      explainRejection(intl, 'import', 'userRejectedExtension', 'Sonarr') ?? '',
+      /rejected in Sonarr's settings: Foreseerr won't import it/
+    );
+    assert.match(
+      explainRejection(intl, 'import', 'unsupportedExtension', 'Sonarr') ?? '',
+      /Not a video file/
+    );
     assert.equal(
       explainRejection(intl, 'import', 'blocklisted', 'Sonarr'),
       undefined,

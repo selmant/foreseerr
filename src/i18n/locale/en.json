@@ -987,6 +987,8 @@
   "components.ManageSlideOver.Rejections.unknownEpisode": "{service} couldn't tell which episodes it holds.",
   "components.ManageSlideOver.Rejections.unknownEpisodes": "{service} couldn't tell which episodes this file holds.",
   "components.ManageSlideOver.Rejections.unknownSeries": "{service} couldn't match the name to this series.",
+  "components.ManageSlideOver.Rejections.unsupportedExtension": "Not a video file: Foreseerr won't import it. Remove the download in your download client.",
+  "components.ManageSlideOver.Rejections.userRejectedExtension": "A file type rejected in {service}'s settings: Foreseerr won't import it. Remove the download in your download client.",
   "components.ManageSlideOver.Rejections.wrongEpisode": "Holds a different episode than the one searched for.",
   "components.ManageSlideOver.Rejections.wrongSeason": "Belongs to a different season than the one searched for.",
   "components.ManageSlideOver.Rejections.wrongSeries": "Belongs to a different series.",

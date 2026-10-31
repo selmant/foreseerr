@@ -717,7 +717,9 @@ const ManualImport = ({
             {candidates.map((candidate) => {
               const unsafeText =
                 candidate.unsafe &&
-                intl.formatMessage(rejectionMessages[candidate.unsafe]);
+                intl.formatMessage(rejectionMessages[candidate.unsafe], {
+                  service,
+                });
               const warnings = explain(candidate);
               const assigned =
                 episodeMappings[candidate.token] ??

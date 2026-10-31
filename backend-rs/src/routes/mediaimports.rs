@@ -66,9 +66,21 @@ fn source_for(item: &Value) -> Value {
 const DANGEROUS_EXTENSIONS: &[&str] = &["arj", "lnk", "lzh", "ps1", "scr", "vbs", "zipx"];
 /// Sonarr's and Radarr's `FileExtensions.ExecutableExtensions`.
 const EXECUTABLE_EXTENSIONS: &[&str] = &["bat", "cmd", "exe", "sh"];
-/// The rejection codes (Sonarr 5) of the two.
+/// Sonarr's `MediaFileExtensions.Extensions`, plus Radarr's Matroska 3D
+/// `mk3d`: the only files Foreseerr imports. For a download of a single
+/// file the Arr offers that file whatever its type.
+const MEDIA_EXTENSIONS: &[&str] = &[
+    "webm", "m4v", "3gp", "nsv", "ty", "strm", "rm", "rmvb", "m3u", "ifo", "mov", "qt", "divx",
+    "xvid", "bivx", "nrg", "pva", "wmv", "asf", "asx", "ogm", "ogv", "m2v", "avi", "bin", "dat",
+    "dvr-ms", "mpg", "mpeg", "mp4", "avc", "vp3", "svq3", "nuv", "viv", "dv", "fli", "flv", "wpl",
+    "img", "iso", "vob", "mkv", "mk3d", "ts", "wtv", "m2ts",
+];
+/// Why a candidate is unsafe; the first three are Sonarr 5's rejection
+/// codes.
 const DANGEROUS_FILE: &str = "dangerousFile";
 const EXECUTABLE_FILE: &str = "executableFile";
+const USER_REJECTED_EXTENSION: &str = "userRejectedExtension";
+const UNSUPPORTED_EXTENSION: &str = "unsupportedExtension";
 
 /// The extension of the last segment of a path, lower-cased, without the
 /// dot (`Path.GetExtension`, for `/` and `\` separators alike).
@@ -78,10 +90,11 @@ fn extension(path: &str) -> Option<String> {
 }
 
 /// Why a candidate must never be imported, even with its warnings
-/// acknowledged: a file the Arr calls potentially dangerous or executable
-/// (typed as `dangerousFile`/`executableFile` on Sonarr 5, by the message
-/// both Sonarr 4 and 5 give otherwise), or one whose own extension is on
-/// those lists.
+/// acknowledged: a file the Arr cautions against (potentially dangerous,
+/// executable, or of a type the user rejected: typed on Sonarr 5, by a
+/// message starting with "Caution:" on both Sonarr 4 and 5), or one whose
+/// own name isn't a video file's (`x.mkv.exe` included). A candidate
+/// without a name to check isn't safe either.
 fn unsafe_kind(candidate: &Value) -> Option<&'static str> {
     let rejections = candidate.get("rejections").and_then(Value::as_array);
     for rejection in rejections.into_iter().flatten() {
@@ -90,30 +103,50 @@ fn unsafe_kind(candidate: &Value) -> Option<&'static str> {
             .get("reason")
             .and_then(Value::as_str)
             .unwrap_or("");
-        if code == Some(DANGEROUS_FILE) || text.starts_with("Caution: Found potentially dangerous")
+        let caution = text.starts_with("Caution:");
+        if code == Some(USER_REJECTED_EXTENSION)
+            || (caution && text.contains("user defined rejected extension"))
         {
-            return Some(DANGEROUS_FILE);
+            return Some(USER_REJECTED_EXTENSION);
         }
         if code == Some(EXECUTABLE_FILE) || text.starts_with("Caution: Found executable") {
             return Some(EXECUTABLE_FILE);
         }
+        if code == Some(DANGEROUS_FILE) || caution {
+            return Some(DANGEROUS_FILE);
+        }
     }
+    let mut named = false;
     for key in ["path", "relativePath"] {
-        let Some(ext) = candidate
-            .get(key)
-            .and_then(Value::as_str)
-            .and_then(extension)
-        else {
+        let Some(name) = candidate.get(key).and_then(Value::as_str) else {
             continue;
         };
+        named = true;
+        let ext = extension(name).unwrap_or_default();
         if DANGEROUS_EXTENSIONS.contains(&ext.as_str()) {
             return Some(DANGEROUS_FILE);
         }
         if EXECUTABLE_EXTENSIONS.contains(&ext.as_str()) {
             return Some(EXECUTABLE_FILE);
         }
+        if !MEDIA_EXTENSIONS.contains(&ext.as_str()) {
+            return Some(UNSUPPORTED_EXTENSION);
+        }
     }
-    None
+    (!named).then_some(UNSUPPORTED_EXTENSION)
+}
+
+/// Refuses a candidate `unsafe_kind` flags.
+fn refuse_unsafe(candidate: &Value) -> Step<()> {
+    if unsafe_kind(candidate).is_some() {
+        return Err(Fail::Status(
+            409,
+            String::from(
+                "Foreseerr imports only video files, never one flagged as potentially dangerous or executable.",
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Whether a candidate comes from a multi-season download (or Sonarr says
@@ -474,6 +507,9 @@ pub(super) fn reprocess<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 ));
             }
             let stored = redeem(&token, &c, user, "import-candidate")?.value;
+            // Sonarr's rematch drops the "Caution" rejections, so an unsafe
+            // file is refused here rather than coming back clean.
+            refuse_unsafe(stored.get("candidate").unwrap_or(&Value::Null))?;
             let source = stored.get("source").cloned().unwrap_or(Value::Null);
             let arr = c.arr(ctx);
             assert_current(&c, &arr, &source).await?;
@@ -750,19 +786,14 @@ async fn run_import(ctx: &Ready<'_>, user: i64, id: i64, b: &ImportBody) -> Step
     run_command(ctx, &c, &arr, files, b, user, intervention).await
 }
 
-/// Refuses, before anything is asked of the Arr, a file flagged as
-/// potentially dangerous or executable (no acknowledgement lets it
-/// through), and a file of a multi-season download the user didn't pick
-/// episodes for.
+/// Refuses, before anything is asked of the Arr, a file that isn't a
+/// video file or is flagged as potentially dangerous or executable (no
+/// acknowledgement lets it through), and a file of a multi-season download
+/// the user didn't pick episodes for.
 fn safe_to_import(c: &Context, b: &ImportBody, stored: &[Value]) -> Step<()> {
     let candidate = |s: &Value| s.get("candidate").cloned().unwrap_or(Value::Null);
-    if stored.iter().any(|s| unsafe_kind(&candidate(s)).is_some()) {
-        return Err(Fail::Status(
-            409,
-            String::from(
-                "Foreseerr does not import files flagged as potentially dangerous or executable.",
-            ),
-        ));
+    for s in stored {
+        refuse_unsafe(&candidate(s))?;
     }
     if c.radarr {
         return Ok(());
@@ -1035,6 +1066,91 @@ mod tests {
         );
         assert_eq!(extension("/a/b.tar.GZ"), Some(String::from("gz")));
         assert_eq!(extension("/a/noext"), None);
+
+        // Only video files: a single-file download is offered whatever it is.
+        for name in [
+            "setup.msi",
+            "x.com",
+            "x.jar",
+            "x.js",
+            "x.tar.gz",
+            "x.nfo",
+            "noext",
+        ] {
+            assert_eq!(
+                unsafe_kind(&json!({"path": format!("/d/{name}"), "rejections": []})),
+                Some("unsupportedExtension"),
+                "{name}"
+            );
+        }
+        for name in [
+            "S01E01.MKV",
+            "x.mp4",
+            "x.dvr-ms",
+            "x.m2ts",
+            "x.iso",
+            "x.mk3d",
+        ] {
+            assert_eq!(
+                unsafe_kind(&json!({"path": format!("/d/{name}"), "relativePath": name})),
+                None,
+                "{name}"
+            );
+        }
+        assert_eq!(
+            unsafe_kind(&json!({"path": "/d/x.mkv", "relativePath": "x.msi"})),
+            Some("unsupportedExtension"),
+            "both names count"
+        );
+        assert_eq!(
+            unsafe_kind(&json!({"rejections": []})),
+            Some("unsupportedExtension"),
+            "no name to check"
+        );
+        assert_eq!(
+            unsafe_kind(&typed("userRejectedExtension")),
+            Some("userRejectedExtension"),
+            "Sonarr 5's typed user-rejected extension"
+        );
+        assert_eq!(
+            unsafe_kind(&json!({"path": "/d/a.mkv", "rejections": [
+                {"reason": "Caution: Found file with user defined rejected extension: '.mkv'"}
+            ]})),
+            Some("userRejectedExtension"),
+            "Sonarr 4 says it in words"
+        );
+        assert_eq!(
+            unsafe_kind(
+                &json!({"path": "/d/a.mkv", "rejections": [{"reason": "Caution: something new"}]})
+            ),
+            Some("dangerousFile"),
+            "any other caution"
+        );
+    }
+
+    #[test]
+    fn rematch_never_clears_unsafe() {
+        // Sonarr's rematch answer has no "Caution" rejection; the stored
+        // candidate is checked before the rematch is asked for.
+        let flagged = json!({"path": "/d/a.mkv", "rejections": [
+            {"reason": "Caution: Found potentially dangerous file with extension: .lnk", "code": "dangerousFile"}
+        ]});
+        assert!(
+            matches!(refuse_unsafe(&flagged), Err(Fail::Status(409, _))),
+            "a flagged file"
+        );
+        assert!(
+            matches!(
+                refuse_unsafe(&json!({"path": "/d/setup.msi"})),
+                Err(Fail::Status(409, _))
+            ),
+            "not a video file"
+        );
+        assert_eq!(
+            refuse_unsafe(&json!({"path": "/d/a.mkv", "rejections": [{"reason": "Sample"}]})),
+            Ok(()),
+            "a video file with other warnings"
+        );
     }
 
     #[test]
@@ -1101,6 +1217,14 @@ mod tests {
                 Err(Fail::Status(409, m)) if m.contains("dangerous or executable")
             ),
             "never, acknowledged or not"
+        );
+        let msi = [json!({"candidate": {"path": "/x/setup.msi"}, "source": {}})];
+        assert!(
+            matches!(
+                safe_to_import(&c, &body(vec![(String::from("a"), vec![21])]), &msi),
+                Err(Fail::Status(409, _))
+            ),
+            "nor a file that isn't a video"
         );
     }
 

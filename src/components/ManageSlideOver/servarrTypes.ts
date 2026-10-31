@@ -65,8 +65,15 @@ export type ImportCandidate = {
   seasonNumber?: number;
   episodes?: Episode[];
   complete: boolean;
-  /** Flagged as potentially dangerous or executable: never importable. */
-  unsafe?: 'dangerousFile' | 'executableFile';
+  /**
+   * Not a video file, or flagged as potentially dangerous, executable or of
+   * a type rejected in the Arr: never importable.
+   */
+  unsafe?:
+    | 'dangerousFile'
+    | 'executableFile'
+    | 'userRejectedExtension'
+    | 'unsupportedExtension';
   /** From a multi-season download: import only to episodes picked for it. */
   multiSeason?: boolean;
 };

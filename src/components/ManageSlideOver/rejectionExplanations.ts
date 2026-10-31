@@ -54,6 +54,10 @@ export const rejectionMessages = defineMessages(
       "Potentially dangerous file: Foreseerr won't import it. Remove the download in your download client.",
     executableFile:
       "Executable file: Foreseerr won't import it. Remove the download in your download client.",
+    userRejectedExtension:
+      "A file type rejected in {service}'s settings: Foreseerr won't import it. Remove the download in your download client.",
+    unsupportedExtension:
+      "Not a video file: Foreseerr won't import it. Remove the download in your download client.",
     multiSeasonImport:
       "From a multi-season download, which {service} won't import automatically. Pick the episodes this file holds.",
     sampleIndeterminate: "{service} couldn't tell whether this is a sample.",
@@ -136,6 +140,8 @@ const releaseExplanations = new Map<string, Explanation>([
 const importExplanations = new Map<string, Explanation>([
   ['dangerousFile', 'dangerousFile'],
   ['executableFile', 'executableFile'],
+  ['userRejectedExtension', 'userRejectedExtension'],
+  ['unsupportedExtension', 'unsupportedExtension'],
   ['multiSeason', 'multiSeasonImport'],
   ['unknownSeries', 'unknownSeries'],
   ['sample', 'sample'],
