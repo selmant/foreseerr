@@ -4,12 +4,15 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
 use axum::http::Method;
 use serde_json::{Map, Value};
 
 use super::{Outcome, Ready, Table};
 use crate::arr::Arr;
+use crate::jellyfin::{join_all, Job};
+use crate::memcache::{self, CacheId};
 use crate::settings::public::truthy;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
@@ -18,6 +21,10 @@ type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 /// a viewer see someone else's numbers, as for the quota.
 const MANAGE_USERS: i64 = 8;
 const MANAGE_REQUESTS: i64 = 16;
+
+/// How long one server's statistics for a user are reused: a profile
+/// visit shouldn't walk every Sonarr server each time.
+const USAGE_TTL: Duration = Duration::from_secs(300);
 
 /// This module's routes.
 pub(super) const ROUTES: &Table = &[("/api/v1/user/{id}/sonarr-storage", Method::GET, storage)];
@@ -55,39 +62,75 @@ fn storage<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             .cloned()
             .unwrap_or_default();
         let timeout = crate::servarr::api_timeout(&ctx.settings);
-        let mut usage = Vec::new();
-        for server in servers.iter().filter(|s| truthy(s.get("tagRequests"))) {
-            let arr = Arr {
-                client: &ctx.state.servarr,
-                server,
-                timeout,
-            };
-            match server_usage(&arr, id).await {
-                Ok(Some(entry)) => usage.push(entry),
-                Ok(None) => {}
-                Err(e) => tracing::warn!(
-                    label = "Sonarr API",
-                    "Could not read Sonarr's statistics for user {id}: {e:#}"
-                ),
-            }
-        }
+        let jobs: Vec<Job<'_, Option<Value>>> = servers
+            .iter()
+            .filter(|s| truthy(s.get("tagRequests")))
+            .map(|server| {
+                let job: Job<'_, Option<Value>> = Box::pin(async move {
+                    let arr = Arr {
+                        client: &ctx.state.servarr,
+                        server,
+                        timeout,
+                    };
+                    match cached_usage(&arr, id).await {
+                        Ok(entry) => entry,
+                        Err(e) => {
+                            tracing::warn!(
+                                label = "Sonarr API",
+                                "Could not read Sonarr's statistics for user {id}: {e:#}"
+                            );
+                            None
+                        }
+                    }
+                });
+                job
+            })
+            .collect();
+        let usage = join_all(jobs).await.into_iter().flatten().collect();
         let mut out = Map::new();
         out.insert(String::from("servers"), Value::Array(usage));
         ctx.json(&Value::Object(out))
     })
 }
 
-/// The user's usage on one server; none on a Sonarr without API v5.
-async fn server_usage(arr: &Arr<'_>, user_id: i64) -> anyhow::Result<Option<Value>> {
+/// The user's usage on one server, from the cache when read in the last
+/// five minutes; none on a Sonarr without API v5.
+async fn cached_usage(arr: &Arr<'_>, user_id: i64) -> anyhow::Result<Option<Value>> {
+    // Keyed by the server's address and the user; the server's name and
+    // flags come from the settings each time.
+    let key = format!(
+        "{}#sonarr-storage/user/{user_id}",
+        crate::servarr::build_url(arr.server, "")
+    );
+    let stats = if let Some(cached) = memcache::get(CacheId::Sonarr, &key) {
+        std::sync::Arc::unwrap_or_clone(cached)
+    } else {
+        let stats = server_stats(arr, user_id).await?;
+        memcache::set(CacheId::Sonarr, key, stats.clone(), USAGE_TTL);
+        stats
+    };
+    Ok(match stats {
+        Value::Bool(false) => None,
+        Value::Null => Some(usage_json(arr.server, None)),
+        found @ (Value::Bool(true)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Array(_)
+        | Value::Object(_)) => Some(usage_json(arr.server, Some(&found))),
+    })
+}
+
+/// The statistics of the user's tag on one server: `false` on a Sonarr
+/// without API v5, null when the user has no tag there yet.
+async fn server_stats(arr: &Arr<'_>, user_id: i64) -> anyhow::Result<Value> {
     if !crate::sonarrmeta::is_v5(arr).await {
-        return Ok(None);
+        return Ok(Value::Bool(false));
     }
     let tags = arr.tags().await?;
-    let stats = match crate::sonarrmeta::requester_tag_id(&tags, user_id) {
-        Some(tag) => Some(crate::sonarrmeta::tag_statistics(arr, tag).await?),
-        None => None,
-    };
-    Ok(Some(usage_json(arr.server, stats.as_ref())))
+    Ok(match crate::sonarrmeta::requester_tag_id(&tags, user_id) {
+        Some(tag) => crate::sonarrmeta::tag_statistics(arr, tag).await?,
+        None => Value::Null,
+    })
 }
 
 /// One server's entry; no statistics (the user has no tag there yet) reads
