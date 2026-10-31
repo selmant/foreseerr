@@ -1284,10 +1284,7 @@ components:
         activeLanguageProfileId:
           type: number
           example: 1
-          description: |
-            The language profile on Sonarr 3 and older; the metadata language
-            new series are added with on Sonarr 5 (Sonarr's own preferred
-            metadata language when unset). Sonarr 4 ignores it.
+          description: The language profile, on Sonarr 3 and older; Sonarr 4 and 5 ignore it.
         activeAnimeProfileId:
           type: number
           nullable: true
@@ -1295,6 +1292,17 @@ components:
           type: number
           nullable: true
           description: The anime override of `activeLanguageProfileId`.
+        metadataLanguageId:
+          type: number
+          nullable: true
+          description: |
+            The metadata language Sonarr 5 adds series with (a Sonarr
+            language id); Sonarr's own preferred metadata language when null.
+            Older Sonarr versions ignore it.
+        animeMetadataLanguageId:
+          type: number
+          nullable: true
+          description: The anime override of `metadataLanguageId`; `metadataLanguageId` applies when null.
         activeAnimeProfileName:
           type: string
           example: 720p/1080p
@@ -2088,6 +2096,10 @@ components:
           type: number
         rootFolder:
           type: string
+        metadataLanguageId:
+          type: number
+          nullable: true
+          description: The metadata language the requester chose for Sonarr 5; null when the server's setting applies.
         ignoreQuota:
           type: boolean
           example: false
@@ -4727,8 +4739,8 @@ paths:
                     type: array
                     nullable: true
                     description: |
-                      The metadata languages for the language slots, on Sonarr 5
-                      only.
+                      The metadata languages `metadataLanguageId` chooses from,
+                      on Sonarr 5 only.
                     items:
                       $ref: '#/components/schemas/SonarrLanguage'
                   defaultMetadataLanguageId:
@@ -9878,7 +9890,16 @@ paths:
                   type: string
                 languageProfileId:
                   type: number
-                  description: The language profile on Sonarr 3 and older, the metadata language id on Sonarr 5; ignored by Sonarr 4.
+                  description: The language profile, on Sonarr 3 and older; Sonarr 4 and 5 ignore it.
+                metadataLanguageId:
+                  type: number
+                  nullable: true
+                  description: |
+                    The metadata language Sonarr 5 adds the series with, when the
+                    requester chose one; otherwise the server's
+                    `metadataLanguageId` (or `animeMetadataLanguageId`) applies
+                    when the request is sent. On an edit, null clears the choice
+                    and leaving it out keeps it.
                 userId:
                   type: number
                   nullable: true
@@ -10035,7 +10056,16 @@ paths:
                   type: string
                 languageProfileId:
                   type: number
-                  description: The language profile on Sonarr 3 and older, the metadata language id on Sonarr 5; ignored by Sonarr 4.
+                  description: The language profile, on Sonarr 3 and older; Sonarr 4 and 5 ignore it.
+                metadataLanguageId:
+                  type: number
+                  nullable: true
+                  description: |
+                    The metadata language Sonarr 5 adds the series with, when the
+                    requester chose one; otherwise the server's
+                    `metadataLanguageId` (or `animeMetadataLanguageId`) applies
+                    when the request is sent. On an edit, null clears the choice
+                    and leaving it out keeps it.
                 userId:
                   type: number
                   nullable: true
@@ -11942,8 +11972,8 @@ paths:
                     type: array
                     nullable: true
                     description: |
-                      The metadata languages for the language slots, on Sonarr 5
-                      only.
+                      The metadata languages `metadataLanguageId` chooses from,
+                      on Sonarr 5 only.
                     items:
                       $ref: '#/components/schemas/SonarrLanguage'
                   defaultMetadataLanguageId:

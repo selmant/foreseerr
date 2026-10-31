@@ -36,6 +36,8 @@ export interface MediaRequest {
   profileId: number;
   rootFolder: string;
   languageProfileId: number;
+  /** Sonarr 5: the metadata language the requester chose, if any. */
+  metadataLanguageId?: number | null;
   tags?: number[];
   isAutoRequest: boolean;
   ignoreQuota: boolean;

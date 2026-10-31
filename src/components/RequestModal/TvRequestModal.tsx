@@ -296,6 +296,10 @@ const TvRequestModal = ({
           profileId: requestOverrides?.profile,
           rootFolder: requestOverrides?.folder,
           languageProfileId: requestOverrides?.language,
+          // null clears an earlier choice; left out, it stays.
+          metadataLanguageId: requestOverrides
+            ? (requestOverrides.metadataLanguage ?? null)
+            : undefined,
           userId: requestOverrides?.user?.id,
           tags: requestOverrides?.tags,
           ...(requestScope === 'seasons'
@@ -383,6 +387,7 @@ const TvRequestModal = ({
           profileId: requestOverrides.profile,
           rootFolder: requestOverrides.folder,
           languageProfileId: requestOverrides.language,
+          metadataLanguageId: requestOverrides.metadataLanguage ?? undefined,
           userId: requestOverrides?.user?.id,
           tags: requestOverrides.tags,
         };
@@ -1165,6 +1170,7 @@ const TvRequestModal = ({
                   profile: editRequest.profileId,
                   server: editRequest.serverId,
                   language: editRequest.languageProfileId,
+                  metadataLanguage: editRequest.metadataLanguageId,
                   tags: editRequest.tags,
                 }
               : undefined

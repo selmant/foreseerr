@@ -466,6 +466,10 @@ pub(super) fn columns(out: &mut Map<String, Value>, r: &RequestRow) {
         String::from("languageProfileId"),
         opt_int(r.language_profile_id),
     );
+    out.insert(
+        String::from("metadataLanguageId"),
+        opt_int(r.metadata_language_id),
+    );
     out.insert(String::from("tags"), tags_json(r.tags.as_deref()));
     out.insert(
         String::from("isAutoRequest"),

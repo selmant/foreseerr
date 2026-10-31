@@ -283,6 +283,14 @@ fn edited_json(
         body.language_profile_id.map(Value::from),
         updated,
     );
+    if body.metadata_language_id != super::params::Assign::Keep {
+        out.insert(
+            String::from("metadataLanguageId"),
+            body.metadata_language_id
+                .value()
+                .map_or(Value::Null, Value::from),
+        );
+    }
     assign(
         &mut out,
         "tags",

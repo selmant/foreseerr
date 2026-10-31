@@ -44,7 +44,9 @@ const messages = defineMessages('components.RequestModal.AdvancedRequester', {
   requestas: 'Request As',
   languageprofile: 'Language Profile',
   metadataLanguage: 'Metadata Language',
+  serverDefaultLanguage: 'Server default ({language})',
   sonarrDefaultLanguage: 'Sonarr default ({language})',
+  sonarrDefault: 'Sonarr default',
   tags: 'Tags',
   selecttags: 'Select tags',
   notagoptions: 'No tags.',
@@ -59,6 +61,8 @@ export type RequestOverrides = {
   folder?: string;
   tags?: number[];
   language?: number;
+  /** Sonarr 5: the metadata language chosen here; null leaves it to the server. */
+  metadataLanguage?: number | null;
   user?: User;
   ignoreQuota?: boolean;
 };
@@ -108,6 +112,13 @@ const AdvancedRequester = ({
   const [selectedLanguage, setSelectedLanguage] = useState<number>(
     defaultOverrides?.language ?? -1
   );
+
+  // -1: no choice, the server's setting applies when the request is sent.
+  const [selectedMetadataLanguage, setSelectedMetadataLanguage] =
+    useState<number>(defaultOverrides?.metadataLanguage ?? -1);
+  // The server whose details last set the metadata language: a choice
+  // belongs to one server, as language ids differ between them.
+  const metadataLanguageServer = useRef<number | null>(null);
 
   const [selectedTags, setSelectedTags] = useState<number[]>(
     defaultOverrides?.tags ?? []
@@ -216,9 +227,7 @@ const AdvancedRequester = ({
             ? serverData.server.activeAnimeDirectory
             : serverData.server.activeDirectory)
       );
-      const defaultLanguage = (
-        serverData.metadataLanguages ?? serverData.languageProfiles
-      )?.find(
+      const defaultLanguage = serverData.languageProfiles?.find(
         (language) =>
           language.id ===
           (isAnime && serverData.server.activeAnimeLanguageProfileId
@@ -265,6 +274,14 @@ const AdvancedRequester = ({
       ) {
         setSelectedTags(defaultTags);
       }
+
+      if (metadataLanguageServer.current !== serverData.server.id) {
+        const firstServer = metadataLanguageServer.current === null;
+        metadataLanguageServer.current = serverData.server.id;
+        if (!firstServer || !applyOverrides) {
+          setSelectedMetadataLanguage(-1);
+        }
+      }
     }
   }, [serverData]);
 
@@ -285,6 +302,10 @@ const AdvancedRequester = ({
       setSelectedLanguage(defaultOverrides.language);
     }
 
+    if (defaultOverrides && defaultOverrides.metadataLanguage != null) {
+      setSelectedMetadataLanguage(defaultOverrides.metadataLanguage);
+    }
+
     if (defaultOverrides && defaultOverrides.tags != null) {
       setSelectedTags(defaultOverrides.tags);
     }
@@ -297,6 +318,7 @@ const AdvancedRequester = ({
     defaultOverrides?.folder,
     defaultOverrides?.profile,
     defaultOverrides?.language,
+    defaultOverrides?.metadataLanguage,
     defaultOverrides?.tags,
     defaultOverrides?.ignoreQuota,
   ]);
@@ -319,6 +341,8 @@ const AdvancedRequester = ({
         server: selectedServer ?? undefined,
         user: selectedUser ?? undefined,
         language: selectedLanguage !== -1 ? selectedLanguage : undefined,
+        metadataLanguage:
+          selectedMetadataLanguage !== -1 ? selectedMetadataLanguage : null,
         tags: selectedTags,
         ignoreQuota: isIgnoreQuotaVisible && ignoreQuota ? true : undefined,
       });
@@ -329,27 +353,33 @@ const AdvancedRequester = ({
     selectedProfile,
     selectedUser,
     selectedLanguage,
+    selectedMetadataLanguage,
     selectedTags,
     ignoreQuota,
     isIgnoreQuotaVisible,
   ]);
 
-  // Sonarr 5 has metadata languages where Sonarr 3 had language profiles;
-  // both go in the request's language slot.
+  // Sonarr 5: what an empty choice means, the server's setting or else
+  // Sonarr's own preferred language.
   const metadataLanguages = serverData?.metadataLanguages ?? null;
-  const languageOptions =
-    metadataLanguages ?? serverData?.languageProfiles ?? [];
-  const slotLanguage =
-    isAnime && serverData?.server.activeAnimeLanguageProfileId
-      ? serverData.server.activeAnimeLanguageProfileId
-      : serverData?.server.activeLanguageProfileId;
-  const sonarrDefaultLanguage =
-    metadataLanguages &&
-    !languageOptions.some((language) => language.id === slotLanguage)
-      ? metadataLanguages.find(
-          (language) => language.id === serverData?.defaultMetadataLanguageId
-        )
-      : undefined;
+  const languageName = (id?: number | null) =>
+    id ? metadataLanguages?.find((language) => language.id === id)?.name : '';
+  const serverMetadataLanguage = languageName(
+    (isAnime && serverData?.server.animeMetadataLanguageId) ||
+      serverData?.server.metadataLanguageId
+  );
+  const sonarrMetadataLanguage = languageName(
+    serverData?.defaultMetadataLanguageId
+  );
+  const noMetadataLanguageLabel = serverMetadataLanguage
+    ? intl.formatMessage(messages.serverDefaultLanguage, {
+        language: serverMetadataLanguage,
+      })
+    : sonarrMetadataLanguage
+      ? intl.formatMessage(messages.sonarrDefaultLanguage, {
+          language: sonarrMetadataLanguage,
+        })
+      : intl.formatMessage(messages.sonarrDefault);
 
   if (!data && !error) {
     return (
@@ -366,7 +396,8 @@ const AdvancedRequester = ({
         (!serverData ||
           (serverData.profiles.length < 2 &&
             serverData.rootFolders.length < 2 &&
-            languageOptions.length < 2 &&
+            (serverData.languageProfiles ?? []).length < 2 &&
+            !metadataLanguages?.length &&
             !serverData.tags?.length)))) &&
     (!selectedUser || (filteredUserData ?? []).length < 2)
   ) {
@@ -516,14 +547,12 @@ const AdvancedRequester = ({
               </div>
             )}
             {type === 'tv' &&
-              (isValidating || !serverData || languageOptions.length > 1) && (
+              (isValidating ||
+                !serverData ||
+                (serverData.languageProfiles ?? []).length > 1) && (
                 <div className="mb-3 w-full flex-shrink-0 flex-grow last:pr-0 md:w-1/4 md:pr-4">
                   <label htmlFor="language">
-                    {intl.formatMessage(
-                      metadataLanguages
-                        ? messages.metadataLanguage
-                        : messages.languageprofile
-                    )}
+                    {intl.formatMessage(messages.languageprofile)}
                   </label>
                   <select
                     id="language"
@@ -543,16 +572,9 @@ const AdvancedRequester = ({
                         {intl.formatMessage(globalMessages.loading)}
                       </option>
                     )}
-                    {!isValidating && serverData && sonarrDefaultLanguage && (
-                      <option value={-1}>
-                        {intl.formatMessage(messages.sonarrDefaultLanguage, {
-                          language: sonarrDefaultLanguage.name,
-                        })}
-                      </option>
-                    )}
                     {!isValidating &&
                       serverData &&
-                      languageOptions.map((language) => (
+                      serverData.languageProfiles?.map((language) => (
                         <option
                           key={`folder-list${language.id}`}
                           value={language.id}
@@ -572,6 +594,38 @@ const AdvancedRequester = ({
                               : language.name}
                         </option>
                       ))}
+                  </select>
+                </div>
+              )}
+            {type === 'tv' &&
+              !isValidating &&
+              serverData &&
+              metadataLanguages && (
+                <div className="mb-3 w-full flex-shrink-0 flex-grow last:pr-0 md:w-1/4 md:pr-4">
+                  <label htmlFor="metadataLanguage">
+                    {intl.formatMessage(messages.metadataLanguage)}
+                  </label>
+                  <select
+                    id="metadataLanguage"
+                    name="metadataLanguage"
+                    value={selectedMetadataLanguage}
+                    onChange={(e) =>
+                      setSelectedMetadataLanguage(parseInt(e.target.value))
+                    }
+                    onBlur={(e) =>
+                      setSelectedMetadataLanguage(parseInt(e.target.value))
+                    }
+                    className="min-h-11 border-gray-700 bg-gray-800"
+                  >
+                    <option value={-1}>{noMetadataLanguageLabel}</option>
+                    {metadataLanguages.map((language) => (
+                      <option
+                        key={`metadata-language-${language.id}`}
+                        value={language.id}
+                      >
+                        {language.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}

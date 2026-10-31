@@ -25,7 +25,7 @@ const RADARR_FIELDS: [&str; 6] = [
 ];
 
 /// The fields `GET /service/sonarr` copies from each server's settings.
-const SONARR_FIELDS: [&str; 10] = [
+const SONARR_FIELDS: [&str; 12] = [
     "id",
     "name",
     "is4k",
@@ -36,6 +36,8 @@ const SONARR_FIELDS: [&str; 10] = [
     "activeAnimeDirectory",
     "activeLanguageProfileId",
     "activeAnimeLanguageProfileId",
+    "metadataLanguageId",
+    "animeMetadataLanguageId",
 ];
 
 /// `GET /service/radarr`: every Radarr server, `activeTags` defaulting to

@@ -137,6 +137,10 @@ export interface SonarrSettings extends DVRSettings {
   activeAnimeDirectory?: string;
   activeAnimeLanguageProfileId?: number;
   activeLanguageProfileId?: number;
+  /** Sonarr 5: the metadata language series are added with. */
+  metadataLanguageId?: number | null;
+  /** Sonarr 5: the anime override of `metadataLanguageId`. */
+  animeMetadataLanguageId?: number | null;
   animeTags?: number[];
   enableSeasonFolders: boolean;
   monitorNewItems: 'all' | 'none';

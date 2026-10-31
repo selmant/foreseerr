@@ -68,7 +68,7 @@ static CREATE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 pub(super) const ROUTES: &Table = &[("/api/v1/request", Method::POST, create)];
 
 /// `MediaRequest`'s columns in declaration order.
-pub(super) const REQUEST_COLUMNS: [Column; 20] = [
+pub(super) const REQUEST_COLUMNS: [Column; 21] = [
     ("id", false, true),
     ("status", false, false),
     ("createdAt", false, true),
@@ -86,6 +86,7 @@ pub(super) const REQUEST_COLUMNS: [Column; 20] = [
     ("profileId", true, false),
     ("rootFolder", true, false),
     ("languageProfileId", true, false),
+    ("metadataLanguageId", true, false),
     ("tags", true, false),
     ("isAutoRequest", false, true),
     ("ignoreQuota", false, true),
@@ -125,6 +126,8 @@ struct Body {
     profile_id: Option<i64>,
     root_folder: Option<String>,
     language_profile_id: Option<i64>,
+    /// `metadataLanguageId`: an explicit Sonarr 5 metadata language.
+    metadata_language_id: Option<i64>,
     user_id: Option<i64>,
     ignore_quota: Option<bool>,
     tags: Option<Vec<i64>>,
@@ -189,6 +192,7 @@ fn parse_body(body: &Map<String, Value>) -> Result<Body, super::Fallback> {
         profile_id: body_int(body, "profileId")?,
         root_folder: opt_text(body, "rootFolder")?,
         language_profile_id: body_int(body, "languageProfileId")?,
+        metadata_language_id: super::params::body_id_assign(body, "metadataLanguageId")?.value(),
         user_id: user_id.filter(|id| *id != 0),
         ignore_quota,
         tags: body.get("tags").map(|v| int_list(v, "tags")).transpose()?,
@@ -299,6 +303,9 @@ struct Routing {
     profile_id: Option<i64>,
     root_folder: Option<String>,
     language_profile_id: Option<i64>,
+    /// Only the requester's own choice: the server's setting is read when
+    /// the request is sent, so it isn't copied here.
+    metadata_language_id: Option<i64>,
     tags: Option<Vec<i64>>,
 }
 
@@ -969,6 +976,11 @@ async fn prepare(ctx: &Ready<'_>, user: &CurrentUser, body: &Body) -> Result<Pre
         profile_id: body.profile_id,
         root_folder: body.root_folder.clone(),
         language_profile_id: body.language_profile_id,
+        metadata_language_id: if movie {
+            None
+        } else {
+            body.metadata_language_id
+        },
         tags: body.tags.clone(),
     };
     if !user.has_permission(MANAGE_REQUESTS) {
@@ -1122,6 +1134,7 @@ async fn create_request(ctx: &Ready<'_>, user: &CurrentUser, body: &Body) -> Out
     entity.row.server_id = p.routing.server_id;
     entity.row.profile_id = p.routing.profile_id;
     entity.row.language_profile_id = p.routing.language_profile_id;
+    entity.row.metadata_language_id = p.routing.metadata_language_id;
     entity.media = Some(media_now);
     entity.requested_by = Some(p.request_user.clone());
     entity.modified_by = p.approved.then(|| p.actor.clone());
@@ -1185,6 +1198,12 @@ async fn replace_request(
     {
         sets.push(("languageProfileId", Bind::Int(v)));
     }
+    if let Some(v) = routing
+        .metadata_language_id
+        .filter(|v| old.metadata_language_id != Some(*v))
+    {
+        sets.push(("metadataLanguageId", Bind::Int(v)));
+    }
     if let Some(tags) = routing.tags.as_ref().map(|t| tags_text(t)) {
         if old.tags.as_ref() != Some(&tags) {
             sets.push(("tags", Bind::Text(tags)));
@@ -1239,6 +1258,9 @@ async fn replace_request(
         entity.row.language_profile_id = routing
             .language_profile_id
             .or(entity.row.language_profile_id);
+        entity.row.metadata_language_id = routing
+            .metadata_language_id
+            .or(entity.row.metadata_language_id);
         entity.media = Some(media_now);
         lc.after_update(&mut entity).await;
     }
@@ -1292,6 +1314,11 @@ async fn replace_request(
     given(
         "languageProfileId",
         routing.language_profile_id.map(Value::from),
+        &mut out,
+    );
+    given(
+        "metadataLanguageId",
+        routing.metadata_language_id.map(Value::from),
         &mut out,
     );
     given(
@@ -1434,6 +1461,10 @@ fn request_json(
     draft.set(
         "languageProfileId",
         routing.language_profile_id.map(Value::from),
+    );
+    draft.set(
+        "metadataLanguageId",
+        routing.metadata_language_id.map(Value::from),
     );
     draft.set(
         "tags",
@@ -1597,7 +1628,7 @@ async fn write(
     let request_id = Exec::Tx(db)
         .scalar(
             &format!(
-                r#"INSERT INTO "media_request" ("status", "createdAt", "updatedAt", "type", "tvQuotaUnits", "is4k", "serverId", "profileId", "rootFolder", "languageProfileId", "tags", "isAutoRequest", "ignoreQuota", "mediaId", "requestedById", "modifiedById", "episodeSelectionType", "episodeStartTvdbId", "episodeEndTvdbId", "watchAheadCount", "ongoingEpisodeRequestKey") VALUES (?1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19){RETURNING_ID}"#
+                r#"INSERT INTO "media_request" ("status", "createdAt", "updatedAt", "type", "tvQuotaUnits", "is4k", "serverId", "profileId", "rootFolder", "languageProfileId", "tags", "isAutoRequest", "ignoreQuota", "mediaId", "requestedById", "modifiedById", "episodeSelectionType", "episodeStartTvdbId", "episodeEndTvdbId", "watchAheadCount", "ongoingEpisodeRequestKey", "metadataLanguageId") VALUES (?1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20){RETURNING_ID}"#
             ),
             &[
                 Bind::Int(status),
@@ -1619,6 +1650,7 @@ async fn write(
                 Bind::OptInt(episodes.and_then(|e| e.resolved.end)),
                 Bind::OptInt(episodes.and_then(|e| e.resolved.watch_ahead)),
                 Bind::OptText(episodes.and_then(|e| e.key.clone())),
+                Bind::OptInt(routing.metadata_language_id),
             ],
         )
         .await?;

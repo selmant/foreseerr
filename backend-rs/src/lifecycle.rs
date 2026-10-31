@@ -868,6 +868,11 @@ impl Lc {
         let options = SeriesOptions {
             quality_profile: profile,
             language_profile: language,
+            metadata_language: crate::sonarrmeta::chosen_metadata_language(
+                &server,
+                anime,
+                e.row.metadata_language_id,
+            ),
             root_folder: root,
             title: series.get("name").cloned().unwrap_or(Value::Null),
             tvdb_id,

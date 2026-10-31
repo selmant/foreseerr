@@ -250,7 +250,7 @@ export type SonarrTestResponse = DVRTestResponse & {
         name: string;
       }[]
     | null;
-  /** Sonarr 5 only: the metadata languages for the language slots. */
+  /** Sonarr 5 only: what `metadataLanguageId` chooses from. */
   metadataLanguages?: MetadataLanguage[] | null;
   defaultMetadataLanguageId?: number | null;
 };

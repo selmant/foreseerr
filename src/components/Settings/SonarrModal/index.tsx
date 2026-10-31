@@ -117,7 +117,7 @@ const MetadataLanguageField = ({
   languages,
   disabled,
 }: {
-  id: 'activeLanguageProfileId' | 'activeAnimeLanguageProfileId';
+  id: 'metadataLanguageId' | 'animeMetadataLanguageId';
   label: string;
   help?: string;
   emptyLabel: string;
@@ -303,6 +303,8 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
           animeSeriesType: sonarr?.animeSeriesType ?? 'anime',
           activeAnimeProfileId: sonarr?.activeAnimeProfileId,
           activeAnimeLanguageProfileId: sonarr?.activeAnimeLanguageProfileId,
+          metadataLanguageId: sonarr?.metadataLanguageId ?? undefined,
+          animeMetadataLanguageId: sonarr?.animeMetadataLanguageId ?? undefined,
           activeAnimeRootFolder: sonarr?.activeAnimeDirectory,
           tags: sonarr?.tags ?? [],
           animeTags: sonarr?.animeTags ?? [],
@@ -346,6 +348,12 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                 : undefined,
               activeAnimeLanguageProfileId: values.activeAnimeLanguageProfileId
                 ? Number(values.activeAnimeLanguageProfileId)
+                : undefined,
+              metadataLanguageId: values.metadataLanguageId
+                ? Number(values.metadataLanguageId)
+                : undefined,
+              animeMetadataLanguageId: values.animeMetadataLanguageId
+                ? Number(values.animeMetadataLanguageId)
                 : undefined,
               activeAnimeProfileName: animeProfileName ?? undefined,
               activeAnimeDirectory: values.activeAnimeRootFolder,
@@ -775,7 +783,7 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                 )}
                 {metadataLanguages && (
                   <MetadataLanguageField
-                    id="activeLanguageProfileId"
+                    id="metadataLanguageId"
                     label={intl.formatMessage(messages.metadataLanguage)}
                     help={intl.formatMessage(messages.metadataLanguageHelp)}
                     emptyLabel={
@@ -1008,7 +1016,7 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                 )}
                 {metadataLanguages && (
                   <MetadataLanguageField
-                    id="activeAnimeLanguageProfileId"
+                    id="animeMetadataLanguageId"
                     label={intl.formatMessage(messages.animeMetadataLanguage)}
                     emptyLabel={intl.formatMessage(
                       messages.sameAsMetadataLanguage

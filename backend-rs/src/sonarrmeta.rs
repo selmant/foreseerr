@@ -67,11 +67,25 @@ pub async fn preferred_metadata_language(arr: &Arr<'_>) -> Result<Option<i64>> {
         .filter(|id| *id > 0))
 }
 
+/// The metadata language chosen for a request on a Sonarr 5 server.
+///
+/// The requester's, else the server's anime setting for an anime, else the
+/// server's setting. The language profile slots are never read: older
+/// Sonarr versions filled them with ids that mean other languages here.
+#[must_use]
+pub fn chosen_metadata_language(server: &Value, anime: bool, request: Option<i64>) -> Option<i64> {
+    let setting = |key: &str| server.get(key).and_then(Value::as_i64).filter(|id| *id > 0);
+    request
+        .filter(|id| *id > 0)
+        .or_else(|| anime.then(|| setting("animeMetadataLanguageId")).flatten())
+        .or_else(|| setting("metadataLanguageId"))
+}
+
 /// The `language` a new series is added with on Sonarr 5: the one chosen
-/// (the request's or the server's language slot), else the server's
-/// preferred metadata language, else the lookup's.
-pub async fn add_language(arr: &Arr<'_>, chosen: &Value, lookup: &Value) -> Option<Value> {
-    if let Some(id) = chosen.as_i64().filter(|id| *id > 0) {
+/// (see [`chosen_metadata_language`]), else the server's preferred
+/// metadata language, else the lookup's.
+pub async fn add_language(arr: &Arr<'_>, chosen: Option<i64>, lookup: &Value) -> Option<Value> {
+    if let Some(id) = chosen.filter(|id| *id > 0) {
         return Some(language_ref(id));
     }
     match preferred_metadata_language(arr).await {
@@ -331,6 +345,35 @@ mod tests {
             json!({"metadataLanguages": [{"id": 1, "name": "English"}], "defaultMetadataLanguageId": 1})
         );
         assert_eq!(language_ref(8), json!({"id": 8}));
+    }
+
+    #[test]
+    fn metadata_language_choice() {
+        // A Sonarr 4 config still names the "Deprecated" language profile.
+        let legacy = json!({"activeLanguageProfileId": 1, "activeAnimeLanguageProfileId": 2});
+        assert_eq!(
+            chosen_metadata_language(&legacy, true, None),
+            None,
+            "slots ignored"
+        );
+        let server = json!({"metadataLanguageId": 4, "animeMetadataLanguageId": 8});
+        assert_eq!(chosen_metadata_language(&server, false, None), Some(4));
+        assert_eq!(
+            chosen_metadata_language(&server, true, None),
+            Some(8),
+            "anime"
+        );
+        assert_eq!(
+            chosen_metadata_language(&server, true, Some(3)),
+            Some(3),
+            "the requester's choice"
+        );
+        let unset_anime = json!({"metadataLanguageId": 4, "animeMetadataLanguageId": null});
+        assert_eq!(
+            chosen_metadata_language(&unset_anime, true, Some(0)),
+            Some(4)
+        );
+        assert_eq!(chosen_metadata_language(&json!({}), false, None), None);
     }
 
     #[test]

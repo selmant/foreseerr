@@ -1400,6 +1400,8 @@
   "components.RequestModal.AdvancedRequester.requestas": "Request As",
   "components.RequestModal.AdvancedRequester.rootfolder": "Root Folder",
   "components.RequestModal.AdvancedRequester.selecttags": "Select tags",
+  "components.RequestModal.AdvancedRequester.serverDefaultLanguage": "Server default ({language})",
+  "components.RequestModal.AdvancedRequester.sonarrDefault": "Sonarr default",
   "components.RequestModal.AdvancedRequester.sonarrDefaultLanguage": "Sonarr default ({language})",
   "components.RequestModal.AdvancedRequester.tags": "Tags",
   "components.RequestModal.EpisodeSelector.available": "Available",

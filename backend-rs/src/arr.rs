@@ -35,9 +35,12 @@ pub struct MovieOptions {
 pub struct SeriesOptions {
     /// `profileId`.
     pub quality_profile: Value,
-    /// `languageProfileId`: a language profile up to Sonarr 3, the
-    /// metadata language on Sonarr 5, unused on Sonarr 4.
+    /// `languageProfileId`: a language profile up to Sonarr 3, unused on
+    /// Sonarr 4 and not sent to Sonarr 5.
     pub language_profile: Value,
+    /// The metadata language a Sonarr 5 series is added with: the
+    /// request's or the server's choice, else Sonarr's preferred one.
+    pub metadata_language: Option<i64>,
     /// `rootFolderPath`.
     pub root_folder: Value,
     /// `title`.
@@ -509,12 +512,12 @@ impl Arr<'_> {
             ("title", o.title.clone()),
             ("qualityProfileId", o.quality_profile.clone()),
         ];
-        // Sonarr 5 requires both. It has no language profiles, so the
-        // language slot holds the metadata language there (English, which
-        // v3 adds with, when nothing names one); aired order keeps the
-        // season and episode numbers TMDB uses.
+        // Sonarr 5 requires both. It has no language profiles but a
+        // metadata language (English, which v3 adds with, when nothing
+        // names one); aired order keeps the season and episode numbers
+        // TMDB uses.
         if crate::sonarrmeta::is_v5(self).await {
-            let language = crate::sonarrmeta::add_language(self, &o.language_profile, &series)
+            let language = crate::sonarrmeta::add_language(self, o.metadata_language, &series)
                 .await
                 .unwrap_or_else(|| serde_json::json!({ "id": 1, "name": "English" }));
             fields.push(("language", language));

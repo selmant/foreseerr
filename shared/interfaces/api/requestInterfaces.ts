@@ -35,6 +35,7 @@ export type MediaRequestBody = {
   profileName?: string;
   rootFolder?: string;
   languageProfileId?: number;
+  metadataLanguageId?: number | null;
   userId?: number;
   tags?: number[];
   ignoreQuota?: boolean;
