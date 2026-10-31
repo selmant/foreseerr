@@ -1116,9 +1116,11 @@ async fn create_request(ctx: &Ready<'_>, user: &CurrentUser, body: &Body) -> Out
     let mut media_json = after_save_media_json(ctx, media_head, &media_now);
     // The answer and the insert hooks see the saved entities as they are
     // in memory: a new media row's `tvdbId` and the request's routing as
-    // sent, where a read would `parseInt` them.
+    // sent, where a read would `parseInt` them. A `tvdbId` another row
+    // holds wasn't saved, and the answer shows none.
+    let saved_tvdb = p.plan.tvdb_id.filter(|t| media_now.tvdb_id == Some(*t));
     if let (None, Some(tvdb), Value::Object(media)) =
-        (&p.plan.existing, p.plan.tvdb_id, &mut media_json)
+        (&p.plan.existing, saved_tvdb, &mut media_json)
     {
         media.insert(String::from("tvdbId"), Value::from(tvdb));
     }

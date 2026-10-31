@@ -619,13 +619,17 @@ fn date_bind(db: &Db, iso: &str) -> Bind {
     })
 }
 
-/// `mediaRepository.save(new Media(…))`: the media row (columns left
-/// `undefined` take their defaults), then its seasons.
+/// `mediaRepository.save(new Media(…))`: the media row, then its seasons.
+///
+/// Columns left `undefined` take their defaults. A TVDB id another row
+/// already holds is left out (see [`crate::dbtx::free_tvdb_id`]).
 ///
 /// # Errors
 ///
-/// Database errors (a duplicate `tvdbId` among them).
+/// Database errors.
 pub async fn insert_media(db: &Db, m: &MediaRow) -> Result<i64> {
+    let tvdb_id =
+        crate::dbtx::free_tvdb_id(&mut crate::dbtx::Exec::Db(db), m.tmdb_id, m.tvdb_id).await?;
     let mut names = vec![
         "mediaType",
         "tmdbId",
@@ -647,7 +651,7 @@ pub async fn insert_media(db: &Db, m: &MediaRow) -> Result<i64> {
     let mut binds = vec![
         Bind::Text(m.media_type.clone()),
         Bind::Int(m.tmdb_id),
-        Bind::OptInt(m.tvdb_id),
+        Bind::OptInt(tvdb_id),
         Bind::OptText(m.imdb_id.clone()),
         Bind::Int(m.status),
         Bind::Int(m.status4k),
@@ -819,6 +823,37 @@ impl Scan<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dbtx::scratch;
+
+    #[tokio::test]
+    async fn a_new_row_leaves_out_a_taken_tvdb_id() -> Result<()> {
+        let scratch = scratch::sqlite("scanmedia-tvdb").await?;
+        let db = &scratch.db;
+        // TMDB 100 got TVDB 472212 from Sonarr's lookup; TMDB 200 lists it.
+        let first = MediaRow {
+            media_type: String::from("tv"),
+            tmdb_id: 100,
+            tvdb_id: Some(472_212),
+            status: 1,
+            status4k: 1,
+            ..MediaRow::default()
+        };
+        insert_media(db, &first).await?;
+        let second = MediaRow {
+            tmdb_id: 200,
+            ..first.clone()
+        };
+        insert_media(db, &second).await?;
+        assert_eq!(
+            scratch::ints(
+                db,
+                r#"SELECT COALESCE("tvdbId", 0) FROM "media" ORDER BY "tmdbId""#
+            )
+            .await?,
+            vec![472_212, 0]
+        );
+        Ok(())
+    }
 
     fn season(n: i64, status: i64, status4k: i64) -> SeasonRow {
         SeasonRow {
