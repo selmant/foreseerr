@@ -381,7 +381,7 @@ async fn context_json(ctx: &Ready<'_>, id: i64, is4k: bool) -> Step<Value> {
     let (series, episodes, queue) = tokio::join!(
         arr.get(&series_path, &[]),
         arr.episodes(c.external_id),
-        arr.queue()
+        arr.series_queue(c.external_id)
     );
     let series = series.map_err(|e| e.wrapped("[Sonarr] Failed to retrieve series by ID: "))?;
     let episodes = episodes?;
@@ -390,6 +390,8 @@ async fn context_json(ctx: &Ready<'_>, id: i64, is4k: bool) -> Step<Value> {
     if queue.iter().any(Value::is_null) {
         return Err(odd());
     }
+    // Sonarr filters by series already; the check stays for a server that
+    // ignores the parameter.
     let queue: Vec<Value> = queue
         .into_iter()
         .filter(|item| item.get("seriesId").and_then(Value::as_i64) == Some(c.external_id))

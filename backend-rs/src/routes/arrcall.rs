@@ -244,6 +244,32 @@ impl ArrServer<'_> {
         Ok(records)
     }
 
+    /// The queue entries of one series with their episodes, from
+    /// `GET /queue/details?seriesId=` (downloads and pending releases, as
+    /// `/queue` lists them) instead of every page of the whole queue;
+    /// failures wrapped as `queue`'s are.
+    pub(super) async fn series_queue(&self, series_id: i64) -> Result<Vec<Value>, ArrError> {
+        let failed = |why: &str| format!("[{}] Failed to retrieve queue: {why}", self.api_name);
+        let data = self
+            .get(
+                "/queue/details",
+                &[
+                    ("seriesId", series_id.to_string()),
+                    ("includeEpisode", String::from("true")),
+                ],
+            )
+            .await
+            .map_err(|e| e.wrapped(&failed("")))?;
+        match data {
+            Value::Array(items) => Ok(items),
+            Value::Null
+            | Value::Bool(_)
+            | Value::Number(_)
+            | Value::String(_)
+            | Value::Object(_) => Err(ArrError::Plain(failed("the answer is not a list"), false)),
+        }
+    }
+
     /// Sonarr's `getEpisodes`: failures become `Failed to get episodes`.
     pub(super) async fn episodes(&self, series_id: i64) -> Result<Vec<Value>, ArrError> {
         let data = self

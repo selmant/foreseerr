@@ -14,9 +14,8 @@ interface ProgressBadgeProps {
   mediaLinkDescription?: string;
   tooltipContent: ReactNode;
   downloadItem: DownloadingItem[];
-  mediaType?: 'movie' | 'tv';
-  seasonLabel: string;
-  episodeLabel: string;
+  /** What the first download covers, e.g. `S02 pack (10 eps)`. */
+  downloadLabel?: string;
   onClick?: React.MouseEventHandler<HTMLElement>;
 }
 
@@ -32,20 +31,10 @@ const ProgressBadge = ({
   mediaLinkDescription,
   tooltipContent,
   downloadItem,
-  mediaType,
-  seasonLabel,
-  episodeLabel,
+  downloadLabel,
   onClick,
 }: ProgressBadgeProps) => {
   const firstDownload = downloadItem[0];
-  const groupedEpisodes =
-    mediaType === 'tv' &&
-    downloadItem.length > 1 &&
-    downloadItem.every(
-      (item) =>
-        item.downloadId && item.downloadId === downloadItem[0]?.downloadId
-    );
-  const episodeLabelToShow = groupedEpisodes ? seasonLabel : episodeLabel;
   const progressClass =
     status === MediaStatus.DELETED
       ? 'bg-red-600/80'
@@ -83,15 +72,10 @@ const ProgressBadge = ({
           className={`relative z-20 flex items-center ${inProgress && 'px-2'}`}
         >
           <span>{statusText}</span>
-          {inProgress && firstDownload?.episode && (
-            <>
-              <span className="ml-1">{episodeLabelToShow}</span>
-              <Spinner className="ml-1 h-3 w-3" />
-            </>
+          {inProgress && downloadLabel && (
+            <span className="ml-1">{downloadLabel}</span>
           )}
-          {inProgress && !firstDownload?.episode && (
-            <Spinner className="ml-1 h-3 w-3" />
-          )}
+          {inProgress && <Spinner className="ml-1 h-3 w-3" />}
         </div>
       </Badge>
     </Tooltip>

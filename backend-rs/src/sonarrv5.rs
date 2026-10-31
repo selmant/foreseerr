@@ -162,6 +162,15 @@ pub fn to_v5_request(
     };
     let mut query = query;
     match (verb.as_str(), path) {
+        ("get", "/queue/details") => {
+            if take(&mut query, "includeEpisode").is_some_and(|v| v == "true") {
+                query.push((
+                    String::from("includeSubresources"),
+                    String::from("episodes"),
+                ));
+            }
+            (query, body)
+        }
         ("get", "/queue") => {
             let include_episode = take(&mut query, "includeEpisode").is_some_and(|v| v == "true");
             if !query.iter().any(|(k, _)| k == "includeUnknownSeriesItems") {
@@ -913,6 +922,25 @@ mod tests {
         let plain = flatten(json!({"decision": {"rejections": []}}));
         assert!(plain.get("rejectionDetails").is_none(), "nothing typed");
         assert!(plain.get("multiSeason").is_none(), "no seasons");
+    }
+
+    #[test]
+    fn queue_details() {
+        assert_eq!(
+            to_v5_request(
+                "GET",
+                "/queue/details",
+                q(&[("seriesId", "7"), ("includeEpisode", "true")]),
+                None
+            )
+            .0,
+            q(&[("seriesId", "7"), ("includeSubresources", "episodes")])
+        );
+        assert_eq!(
+            to_v5_request("GET", "/queue/details", q(&[("seriesId", "7")]), None).0,
+            q(&[("seriesId", "7")]),
+            "no episodes asked for"
+        );
     }
 
     #[test]
