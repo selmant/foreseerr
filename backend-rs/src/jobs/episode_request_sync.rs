@@ -23,7 +23,7 @@ use serde_json::{Map, Value};
 
 use super::syncutil::{axios_message, date_ph, int, iso, now_ms, opt_date_bind, parse_js_date, Tx};
 use super::JobCtx;
-use crate::db::{Bind, Db, EpisodeRequestRow};
+use crate::db::{Bind, Db, EpisodeRequestRow, RequestRow};
 use crate::library::{Lib, Link};
 use crate::lifecycle::{
     episode_code, episodes_done, log_out_of_order, Entity, EpisodesDone, Lc, APPROVED, COMPLETED,
@@ -652,7 +652,7 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         }
     }
     monitor_and_search(job, context, unmonitored, &newly_monitored, &searchable).await?;
-    unmonitor_deleted(job, context, request.row.id, &deleted).await?;
+    unmonitor_deleted(job, context, &request.row, &deleted).await?;
     let done = episodes_done(&request.row.episodes);
     let reads_status = match selection.as_deref() {
         Some("after") => true,
@@ -873,16 +873,45 @@ async fn monitor_and_search(
     save_child_dates(&job.state.db, "searchTriggeredAt", &searched).await
 }
 
+/// Whether another approved request is for the same series, 4K or not as
+/// this one. Sonarr's monitor flag is shared: an episode this request is
+/// done with may be one the other still waits for, so it is left alone.
+async fn shared_series(db: &Db, row: &RequestRow) -> Result<bool> {
+    let Some(media_id) = row.media_id else {
+        return Ok(false);
+    };
+    let others = db
+        .scalar(
+            r#"SELECT COUNT(*) FROM "media_request" WHERE "mediaId" = ?1 AND "is4k" = ?2 AND "status" = ?3 AND "id" != ?4"#,
+            &[
+                Bind::Int(media_id),
+                Bind::Bool(row.is4k),
+                Bind::Int(APPROVED),
+                Bind::Int(row.id),
+            ],
+        )
+        .await?;
+    Ok(others > 0)
+}
+
 /// Unmonitor the `deleted` children's episodes in Sonarr (child id, Sonarr
 /// episode id, code; see [`takes_back_monitor`]) and clear their
-/// `monitoredAt`.
+/// `monitoredAt`, unless another request shares the series.
 async fn unmonitor_deleted(
     job: &JobCtx,
     context: &Context,
-    request_id: i64,
+    request: &RequestRow,
     deleted: &[(i64, Value, String)],
 ) -> Result<()> {
     if deleted.is_empty() {
+        return Ok(());
+    }
+    if shared_series(&job.state.db, request).await? {
+        tracing::debug!(
+            label = "Episode Request Sync",
+            request_id = request.id,
+            "Another approved request is for the series; its deleted episodes stay monitored"
+        );
         return Ok(());
     }
     let ids = Value::Array(deleted.iter().map(|(_, id, _)| id.clone()).collect());
@@ -918,8 +947,9 @@ async fn unmonitor_deleted(
     };
     tracing::info!(
         label = "Episode Request Sync",
-        "{} of request {request_id} lost {files} after being downloaded; unmonitored in Sonarr so {they} downloaded again",
-        crate::lifecycle::listed(&codes)
+        "{} of request {} lost {files} after being downloaded; unmonitored in Sonarr so {they} downloaded again",
+        crate::lifecycle::listed(&codes),
+        request.id
     );
     let cleared: Vec<(i64, Option<i64>)> = deleted.iter().map(|(c, _, _)| (*c, None)).collect();
     save_child_dates(&job.state.db, "monitoredAt", &cleared).await
@@ -1534,13 +1564,18 @@ mod tests {
         Ok((port, writes))
     }
 
-    #[tokio::test]
-    async fn deleted_files_are_unmonitored_once() -> Result<()> {
+    /// What Sonarr was sent (method, path, body).
+    type Writes = Vec<(String, String, Value)>;
+
+    /// Two syncs of watch-ahead request 1, whose five children are each a
+    /// case of [`takes_back_monitor`], after `seed`; what Sonarr was sent
+    /// and which children still have `monitoredAt`.
+    async fn sync_deleted(tag: &str, seed: &[&str]) -> Result<(Writes, Vec<bool>)> {
         use crate::dbtx::scratch;
         use anyhow::Context as _;
         use serde_json::json;
 
-        let scratch = scratch::sqlite("episode-sync-deleted").await?;
+        let scratch = scratch::sqlite(tag).await?;
         let db = &scratch.db;
         scratch::run(
             db,
@@ -1554,6 +1589,7 @@ mod tests {
             ],
         )
         .await?;
+        scratch::run(db, seed).await?;
         let at = Some(1_789_000_000_000);
         // 3 was downloaded before the request: Foreseerr never monitored it.
         save_child_dates(db, "monitoredAt", &[(1, at), (2, at), (4, at), (5, at)]).await?;
@@ -1580,7 +1616,7 @@ mod tests {
             prevent_search: false,
         };
         let dir = std::env::temp_dir().join(format!(
-            "foreseerr-episode-sync-{}-{}",
+            "foreseerr-{tag}-{}-{}",
             std::process::id(),
             crate::clock::now_millis()
         ));
@@ -1598,25 +1634,53 @@ mod tests {
         }
         std::fs::remove_dir_all(&dir)?;
 
-        assert_eq!(
-            crate::sync::lock(&writes).clone(),
-            vec![(
-                String::from("PUT"),
-                String::from("/api/v3/episode/monitor"),
-                json!({"episodeIds": [11], "monitored": false})
-            )],
-            "only the downloaded one Foreseerr monitored, and once"
-        );
         let row = db.request_by_id(1).await?.context("request 1")?;
-        let monitored: Vec<bool> = row
+        let monitored = row
             .episodes
             .iter()
             .map(|e| e.monitored_at.is_some())
             .collect();
+        let writes = crate::sync::lock(&writes).clone();
+        Ok((writes, monitored))
+    }
+
+    #[tokio::test]
+    async fn deleted_files_are_unmonitored_once() -> Result<()> {
+        let (writes, monitored) = sync_deleted("episode-sync-deleted", &[]).await?;
+        assert_eq!(
+            writes,
+            vec![(
+                String::from("PUT"),
+                String::from("/api/v3/episode/monitor"),
+                serde_json::json!({"episodeIds": [11], "monitored": false})
+            )],
+            "only the downloaded one Foreseerr monitored, and once"
+        );
         assert_eq!(
             monitored,
             [false, true, false, true, true],
             "its monitoredAt cleared, the others kept"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn deleted_files_of_a_shared_series_stay_monitored() -> Result<()> {
+        let (writes, monitored) = sync_deleted(
+            "episode-sync-shared",
+            &[
+                r#"INSERT INTO "media_request" ("id", "status", "type", "mediaId", "requestedById") VALUES (2, 2, 'tv', 1, 1)"#,
+            ],
+        )
+        .await?;
+        assert!(
+            writes.is_empty(),
+            "another approved request may still want the episode"
+        );
+        assert_eq!(
+            monitored,
+            [true, true, false, true, true],
+            "nothing cleared"
         );
         Ok(())
     }
