@@ -10,7 +10,9 @@ title: Foreseerr v0.15.1 release notes
   that, and releases before `v0.14.1` re-monitored such episodes themselves.
   Sonarr's RSS sync then grabbed the episode again as soon as a new release
   appeared, sometimes weeks later. Foreseerr now unmonitors such an episode
-  once. If you monitor it again in Sonarr, Foreseerr leaves it alone.
+  once. If you monitor it again in Sonarr, Foreseerr leaves it alone. It also
+  leaves the episode alone if another approved request is for the same
+  series, because that request may still want it.
 
 ## Upgrade notes
 
