@@ -2052,7 +2052,7 @@ components:
           type: string
           nullable: true
           readOnly: true
-          description: When Foreseerr made Sonarr monitor this watch-ahead episode.
+          description: When Foreseerr made Sonarr monitor this watch-ahead episode. Cleared when Foreseerr unmonitors it again because its file was deleted after it was downloaded.
         unmonitoredAt:
           type: string
           nullable: true

@@ -1104,7 +1104,8 @@ pub fn episode_code(e: &EpisodeRequestRow) -> String {
 }
 
 /// The first few of `codes` for a log line.
-fn listed(codes: &[String]) -> String {
+#[must_use]
+pub fn listed(codes: &[String]) -> String {
     const SHOWN: usize = 10;
     let shown = codes
         .iter()
