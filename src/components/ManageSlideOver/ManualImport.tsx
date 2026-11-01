@@ -6,7 +6,9 @@ import defineMessages from '@app/utils/defineMessages';
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
+  CheckCircleIcon,
   DocumentMagnifyingGlassIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,7 +29,17 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   noSources: 'No download is waiting for a manual import.',
   availabilityFailed: 'Unable to check whether a download needs manual import.',
   retry: 'Retry',
-  status: 'Manual import: {status}',
+  jobQueued:
+    'Waiting for {service} to start importing {count, plural, one {# file} other {# files}}…',
+  jobStarted:
+    '{service} is {mode, select, copy {copying} other {moving}} {count, plural, one {# file} other {# files}} into your library…',
+  jobCompleted:
+    '{count, plural, one {# file} other {# files}} imported into your library.',
+  jobFailed: '{service} could not import the files.',
+  jobUnknown: "Foreseerr couldn't confirm whether the import finished.",
+  jobResolving: 'This warning will clear from the list in a moment.',
+  reviewAgain: 'Review files again',
+  dismiss: 'Done',
   chooseSource: 'Choose an import source',
   waitingSource: 'Download waiting for import',
   chooseSourceDescription:
@@ -93,7 +105,6 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   importCompleted: 'Manual import completed.',
   importFailed: 'Manual import failed.',
   statusFailed: 'Unable to read manual import status.',
-  importQueued: 'Manual import queued.',
   submitFailed: 'Unable to submit manual import.',
   title: 'Import downloaded files',
   description:
@@ -184,7 +195,14 @@ const ManualImport = ({
     Record<string, number[]>
   >({});
   const [mode, setMode] = useState<'move' | 'copy'>('move');
-  const [importStatus, setImportStatus] = useState<string>();
+  // The submitted import, until it is dismissed or reviewed again.
+  const [importJob, setImportJob] = useState<{
+    count: number;
+    mode: 'move' | 'copy';
+    status: string;
+    message?: string;
+  }>();
+  const lastSourceRef = useRef<string>(undefined);
   const [error, setError] = useState<string>();
   const [scanning, setScanning] = useState(false);
   // Files waiting for their picks to settle, and files being rematched.
@@ -286,6 +304,7 @@ const ManualImport = ({
 
   const scanSource = async (sourceToken = selectedSource) => {
     if (!sourceToken) return;
+    lastSourceRef.current = sourceToken;
     scanAbortRef.current?.abort();
     const controller = new AbortController();
     scanAbortRef.current = controller;
@@ -456,7 +475,14 @@ const ManualImport = ({
     const poll = async () => {
       if (state.cancelled) return;
       if (Date.now() - startedAt > MANUAL_IMPORT_POLL_DEADLINE_MS) {
-        setError(intl.formatMessage(messages.pollTimeout));
+        setImportJob(
+          (job) =>
+            job && {
+              ...job,
+              status: 'unknown',
+              message: intl.formatMessage(messages.pollTimeout),
+            }
+        );
         setPolling(false);
         return;
       }
@@ -468,19 +494,17 @@ const ManualImport = ({
           { signal: controller.signal }
         );
         if (state.cancelled || controller.signal.aborted) return;
-        setImportStatus(response.data.status);
-        if (['completed', 'failed', 'aborted'].includes(response.data.status)) {
-          if (response.data.status === 'completed') {
+        const { status, message } = response.data;
+        setImportJob((job) => job && { ...job, status, message });
+        if (['completed', 'failed', 'aborted'].includes(status)) {
+          if (status === 'completed') {
             addToast(intl.formatMessage(messages.importCompleted), {
               appearance: 'success',
               autoDismiss: true,
             });
             void refreshSources();
             onChanged();
-          } else
-            setError(
-              response.data.message ?? intl.formatMessage(messages.importFailed)
-            );
+          }
           setPolling(false);
           return;
         }
@@ -490,8 +514,16 @@ const ManualImport = ({
         );
       } catch (error) {
         if (!state.cancelled && !controller.signal.aborted) {
-          setError(
-            errorMessage(error, intl.formatMessage(messages.statusFailed))
+          setImportJob(
+            (job) =>
+              job && {
+                ...job,
+                status: 'unknown',
+                message: errorMessage(
+                  error,
+                  intl.formatMessage(messages.statusFailed)
+                ),
+              }
           );
           setPolling(false);
         }
@@ -607,15 +639,16 @@ const ManualImport = ({
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
-      addToast(intl.formatMessage(messages.importQueued), {
-        appearance: 'success',
-        autoDismiss: true,
+      setImportJob({
+        count: selected.length,
+        mode,
+        status: response.data.status?.toLowerCase() ?? 'queued',
       });
       setSelected([]);
-      setImportStatus(response.data.status ?? 'queued');
       setCandidates([]);
+      setSourceLabel(undefined);
+      cancelRematches();
       setWorkflowOpen(startOpen);
-      void refreshSources();
       onChanged();
       beginPolling(response.data.commandToken);
     } catch (error) {
@@ -656,6 +689,8 @@ const ManualImport = ({
       : labels.join(', ');
   };
   const isBusy = scanning || submitting || polling;
+  const jobFailed =
+    !!importJob && ['failed', 'aborted', 'unknown'].includes(importJob.status);
   const sortedEpisodes = [...episodes].sort(
     (a, b) =>
       a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber
@@ -704,7 +739,7 @@ const ManualImport = ({
           )}
         </span>
       </Button>
-      {!startOpen && sources.length > 0 && !workflowOpen && (
+      {!startOpen && !importJob && sources.length > 0 && !workflowOpen && (
         <Button
           buttonType="primary"
           className="min-h-11 w-full"
@@ -718,14 +753,11 @@ const ManualImport = ({
           </span>
         </Button>
       )}
-      {sourcesLoaded &&
-        !availabilityError &&
-        !sources.length &&
-        !importStatus && (
-          <p className="text-sm text-gray-400">
-            {intl.formatMessage(messages.noSources)}
-          </p>
-        )}
+      {sourcesLoaded && !availabilityError && !sources.length && !importJob && (
+        <p className="text-sm text-gray-400">
+          {intl.formatMessage(messages.noSources)}
+        </p>
+      )}
       {availabilityError && (
         <Alert type="warning" title={availabilityError}>
           <button
@@ -739,10 +771,75 @@ const ManualImport = ({
         </Alert>
       )}
       {error && <Alert type="error" title={error} />}
-      {importStatus && (
-        <p role="status" className="text-sm text-gray-300">
-          {intl.formatMessage(messages.status, { status: importStatus })}
-        </p>
+      {importJob && (
+        <div
+          role="status"
+          className={`space-y-3 rounded-md border p-4 text-sm shadow ${
+            importJob.status === 'completed'
+              ? 'border-green-500/40 bg-green-500/10 text-green-100'
+              : jobFailed
+                ? 'border-red-500/40 bg-red-500/10 text-red-100'
+                : 'border-gray-700 bg-gray-800 text-gray-200'
+          }`}
+        >
+          <div className="flex items-center gap-2 font-semibold">
+            {importJob.status === 'completed' ? (
+              <CheckCircleIcon className="h-5 w-5 flex-none" />
+            ) : jobFailed ? (
+              <ExclamationTriangleIcon className="h-5 w-5 flex-none" />
+            ) : (
+              <ArrowPathIcon className="h-5 w-5 flex-none animate-spin" />
+            )}
+            <span>
+              {intl.formatMessage(
+                importJob.status === 'completed'
+                  ? messages.jobCompleted
+                  : importJob.status === 'started'
+                    ? messages.jobStarted
+                    : jobFailed
+                      ? importJob.status === 'unknown'
+                        ? messages.jobUnknown
+                        : messages.jobFailed
+                      : messages.jobQueued,
+                { service, count: importJob.count, mode: importJob.mode }
+              )}
+            </span>
+          </div>
+          {jobFailed && (
+            <p className="break-words">
+              {importJob.message ?? intl.formatMessage(messages.importFailed)}
+            </p>
+          )}
+          {importJob.status === 'completed' && startOpen && (
+            <p>{intl.formatMessage(messages.jobResolving)}</p>
+          )}
+          {(jobFailed || (importJob.status === 'completed' && !startOpen)) && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {jobFailed && lastSourceRef.current && (
+                <Button
+                  buttonSize="sm"
+                  className="min-h-11"
+                  onClick={() => {
+                    setImportJob(undefined);
+                    void scanSource(lastSourceRef.current);
+                  }}
+                >
+                  {intl.formatMessage(messages.reviewAgain)}
+                </Button>
+              )}
+              <Button
+                buttonSize="sm"
+                className="min-h-11"
+                onClick={() => {
+                  setImportJob(undefined);
+                  void refreshSources();
+                }}
+              >
+                {intl.formatMessage(messages.dismiss)}
+              </Button>
+            </div>
+          )}
+        </div>
       )}
       {scanning && (
         <p role="status" className="text-sm text-gray-300">
@@ -756,6 +853,7 @@ const ManualImport = ({
         </p>
       )}
       {workflowOpen &&
+        !importJob &&
         !scanning &&
         sources.length > 0 &&
         !candidates.length && (
