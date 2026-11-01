@@ -64,18 +64,26 @@ jobs:
         working-directory: backend-rs
         run: rustup toolchain install
 
-      - name: Rust format, lint and tests
+      - name: Rust format and lint
         working-directory: backend-rs
         run: |
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
-          cargo test --locked
 
+      # The SQLite startup smoke also leaves the scratch mapping database
+      # src/mappinglayer/dbtests.rs needs; with CI set that test fails
+      # instead of skipping without one.
       - name: Migrations on a fresh database
         working-directory: backend-rs
         run: |
           cargo build --locked
-          python3 scripts/ci-smoke.py --bin target/debug/foreseerr
+          python3 scripts/ci-smoke.py --bin target/debug/foreseerr --mapping-db "$RUNNER_TEMP/mapping.sqlite3"
+
+      - name: Rust tests
+        working-directory: backend-rs
+        env:
+          CI: true
+        run: FORESEERR_MAPPING_TEST_DB="$RUNNER_TEMP/mapping.sqlite3" cargo test --locked
 
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
