@@ -1,6 +1,6 @@
 import Button from '@app/components/Common/Button';
 import defineMessages from '@app/utils/defineMessages';
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import type { Episode } from './servarrTypes';
 
@@ -16,6 +16,7 @@ const messages = defineMessages(
       '{count, plural, one {# episode assigned} other {# episodes assigned}}',
     noMatches: 'No episodes match these filters.',
     clearFilters: 'Clear episode filters',
+    rangeHint: 'Shift-click to tick or clear a range of episodes.',
   }
 );
 
@@ -61,6 +62,31 @@ const EpisodeAssignmentPicker = ({
     );
   });
 
+  // Shift-click ticks or clears every listed episode between the last one
+  // clicked and this one, like a file manager.
+  const shiftRef = useRef(false);
+  const lastClickedRef = useRef<number>(undefined);
+  const toggle = (id: number) => {
+    const checking = !assigned.includes(id);
+    const from = results.findIndex(
+      (episode) => episode.id === lastClickedRef.current
+    );
+    const to = results.findIndex((episode) => episode.id === id);
+    const range =
+      shiftRef.current && from !== -1
+        ? results
+            .slice(Math.min(from, to), Math.max(from, to) + 1)
+            .map((episode) => episode.id)
+        : [id];
+    shiftRef.current = false;
+    lastClickedRef.current = id;
+    onChange(
+      checking
+        ? [...assigned, ...range.filter((value) => !assigned.includes(value))]
+        : assigned.filter((value) => !range.includes(value))
+    );
+  };
+
   return (
     <div className="space-y-2">
       <div className="grid gap-2 sm:grid-cols-2">
@@ -103,6 +129,9 @@ const EpisodeAssignmentPicker = ({
       <p role="status" className="text-xs text-gray-400">
         {intl.formatMessage(messages.selected, { count: assigned.length })}
       </p>
+      <p className="text-xs text-gray-500">
+        {intl.formatMessage(messages.rangeHint)}
+      </p>
       {(query || season !== 'all') && (
         <Button
           className="min-h-11 w-full"
@@ -131,13 +160,10 @@ const EpisodeAssignmentPicker = ({
               className="flex-none"
               disabled={disabled}
               checked={assigned.includes(episode.id)}
-              onChange={() =>
-                onChange(
-                  assigned.includes(episode.id)
-                    ? assigned.filter((id) => id !== episode.id)
-                    : [...assigned, episode.id]
-                )
-              }
+              onClick={(event) => {
+                shiftRef.current = event.shiftKey;
+              }}
+              onChange={() => toggle(episode.id)}
             />
             <span className="min-w-0 break-words">
               S{String(episode.seasonNumber).padStart(2, '0')}E

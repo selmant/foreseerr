@@ -64,6 +64,16 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   moreEpisodes: '{list} and {count, plural, one {# more} other {# more}}',
   changeEpisodes: 'Change',
   doneEpisodes: 'Done',
+  numberFiles:
+    'Number the {count, plural, one {# selected file} other {# selected files}} in order',
+  numberFilesHint:
+    'For a season pack {service} misread: files are sorted by name and given one episode each, starting from the episode you choose.',
+  firstEpisode: 'Choose the first episode',
+  assign: 'Assign',
+  numberFilesPreview:
+    '{first} to {last} for the {count, plural, one {# file} other {# files}}, in name order.',
+  numberFilesShort:
+    'There are fewer episodes than {count, plural, one {# file} other {# files}} from this one on.',
   confirmEpisodes:
     '{count, plural, one {Use this episode} other {Use these # episodes}}',
   pickEpisodes: 'Pick the episodes this file holds so {service} can import it.',
@@ -173,6 +183,7 @@ const ManualImport = ({
   const [pendingRematch, setPendingRematch] = useState<Set<string>>(new Set());
   const [rematching, setRematching] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [bulkStart, setBulkStart] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -542,13 +553,13 @@ const ManualImport = ({
     !!candidate.multiSeason && !episodeMappings[candidate.token]?.length;
   const needsEpisodes = (candidate: ImportCandidate) =>
     !assignedTo(candidate).length || unconfirmedMultiSeason(candidate);
+  const episodeCode = (episode: (typeof episodes)[number]) =>
+    `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`;
   const describeEpisodes = (ids: number[]) => {
     if (!ids.length) return intl.formatMessage(messages.noEpisodes);
     const labels = ids.map((id) => {
       const episode = episodeById.get(id);
-      return episode
-        ? `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`
-        : `#${id}`;
+      return episode ? episodeCode(episode) : `#${id}`;
     });
     return labels.length > 4
       ? intl.formatMessage(messages.moreEpisodes, {
@@ -558,6 +569,28 @@ const ManualImport = ({
       : labels.join(', ');
   };
   const isBusy = scanning || submitting || polling;
+  const sortedEpisodes = [...episodes].sort(
+    (a, b) =>
+      a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber
+  );
+  // A season pack Sonarr misparsed is fixed by numbering its files in
+  // name order from one episode, rather than file by file.
+  const bulkFiles = selectedFiles
+    .filter((candidate) => !candidate.unsafe)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const bulkIndex = sortedEpisodes.findIndex(
+    (episode) => String(episode.id) === bulkStart
+  );
+  const bulkEpisodes =
+    bulkIndex === -1
+      ? []
+      : sortedEpisodes.slice(bulkIndex, bulkIndex + bulkFiles.length);
+  const numberFiles = () => {
+    if (bulkEpisodes.length !== bulkFiles.length) return;
+    bulkFiles.forEach((file, index) =>
+      assignEpisodes(file, [bulkEpisodes[index].id])
+    );
+  };
   const readyFiles = candidates.filter(importable);
   const notReady = selectedFiles.filter((candidate) => !importable(candidate));
 
@@ -771,6 +804,65 @@ const ManualImport = ({
               })}
             </p>
           </div>
+          {context.mediaType === 'tv' && bulkFiles.length > 1 && (
+            <div className="space-y-2 rounded-md border border-gray-700 bg-gray-800 p-3">
+              <label
+                htmlFor="manual-import-bulk-start"
+                className="mb-0 block text-sm font-semibold text-gray-200"
+              >
+                {intl.formatMessage(messages.numberFiles, {
+                  count: bulkFiles.length,
+                })}
+              </label>
+              <p className="text-xs text-gray-400">
+                {intl.formatMessage(messages.numberFilesHint, { service })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  id="manual-import-bulk-start"
+                  className="min-h-11 min-w-0 flex-1"
+                  value={bulkStart}
+                  disabled={isBusy}
+                  onChange={(event) => setBulkStart(event.target.value)}
+                >
+                  <option value="">
+                    {intl.formatMessage(messages.firstEpisode)}
+                  </option>
+                  {sortedEpisodes.map((episode) => (
+                    <option key={episode.id} value={episode.id}>
+                      {episodeCode(episode)} — {episode.title}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  className="min-h-11"
+                  disabled={
+                    isBusy ||
+                    !bulkEpisodes.length ||
+                    bulkEpisodes.length !== bulkFiles.length
+                  }
+                  onClick={numberFiles}
+                >
+                  {intl.formatMessage(messages.assign)}
+                </Button>
+              </div>
+              {bulkEpisodes.length > 0 && (
+                <p role="status" className="text-xs text-gray-400">
+                  {bulkEpisodes.length === bulkFiles.length
+                    ? intl.formatMessage(messages.numberFilesPreview, {
+                        first: episodeCode(bulkEpisodes[0]),
+                        last: episodeCode(
+                          bulkEpisodes[bulkEpisodes.length - 1]
+                        ),
+                        count: bulkFiles.length,
+                      })
+                    : intl.formatMessage(messages.numberFilesShort, {
+                        count: bulkFiles.length,
+                      })}
+                </p>
+              )}
+            </div>
+          )}
           {confirmOpen ? (
             // Escape dismisses this confirmation without closing its parent panel.
             // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
