@@ -316,7 +316,21 @@ fn candidate_response(candidate: &Value, c: &Context, user_id: i64, source: &Val
         "quality",
         chain(candidate, &["quality", "quality", "name"]),
     );
+    put(
+        &mut out,
+        "qualityId",
+        chain(candidate, &["quality", "quality", "id"]),
+    );
     out.insert(String::from("languages"), names("languages", false));
+    out.insert(
+        String::from("languageIds"),
+        match candidate.get("languages") {
+            Some(Value::Array(items)) => {
+                Value::Array(items.iter().filter_map(|i| i.get("id").cloned()).collect())
+            }
+            _ => Value::Array(Vec::new()),
+        },
+    );
     put(
         &mut out,
         "releaseGroup",

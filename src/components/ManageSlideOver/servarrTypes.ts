@@ -73,6 +73,9 @@ export type ImportCandidate = {
    * `languages` (both can be chosen).
    */
   missing?: string[];
+  /** The Arr's ids of the detected quality and languages; 0 is Unknown. */
+  qualityId?: number;
+  languageIds?: number[];
   /**
    * Not a video file, or flagged as potentially dangerous, executable or of
    * a type rejected in the Arr: never importable.

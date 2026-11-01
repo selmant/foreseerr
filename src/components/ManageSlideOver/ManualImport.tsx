@@ -552,12 +552,20 @@ const ManualImport = ({
         )
     );
   };
+  // A quality or language can be chosen where the Arr has none or detected
+  // Unknown (id 0); only a missing one has to be.
+  const choosable = (candidate: ImportCandidate) => ({
+    quality:
+      !candidate.unsafe &&
+      (!!candidate.missing?.includes('quality') || candidate.qualityId === 0),
+    languages:
+      !candidate.unsafe &&
+      (!!candidate.missing?.includes('languages') ||
+        !!candidate.languageIds?.includes(0)),
+  });
   const needsDetails = candidates.some(
     (candidate) =>
-      !candidate.unsafe &&
-      candidate.missing?.some(
-        (field) => field === 'quality' || field === 'languages'
-      )
+      choosable(candidate).quality || choosable(candidate).languages
   );
   useEffect(() => {
     if (!needsDetails || optionsRequestedRef.current) return;
@@ -1239,82 +1247,80 @@ const ManualImport = ({
                           )}
                         </p>
                       )}
-                    {!candidate.unsafe &&
-                      candidate.missing?.some((field) =>
-                        ['quality', 'languages'].includes(field)
-                      ) && (
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {candidate.missing.includes('quality') && (
-                            <div>
-                              <label
-                                htmlFor={`${checkboxId}-quality`}
-                                className="text-xs text-gray-400"
-                              >
-                                {intl.formatMessage(messages.quality)}
-                              </label>
-                              <select
-                                id={`${checkboxId}-quality`}
-                                className="min-h-11 w-full"
-                                disabled={isBusy || !options}
-                                value={
-                                  overrides[candidate.token]?.qualityId ?? ''
-                                }
-                                onChange={(event) =>
-                                  chooseDetail(candidate, {
-                                    qualityId: event.target.value
-                                      ? Number(event.target.value)
-                                      : undefined,
-                                  })
-                                }
-                              >
-                                <option value="">
-                                  {intl.formatMessage(messages.chooseQuality)}
+                    {(choosable(candidate).quality ||
+                      choosable(candidate).languages) && (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {choosable(candidate).quality && (
+                          <div>
+                            <label
+                              htmlFor={`${checkboxId}-quality`}
+                              className="text-xs text-gray-400"
+                            >
+                              {intl.formatMessage(messages.quality)}
+                            </label>
+                            <select
+                              id={`${checkboxId}-quality`}
+                              className="min-h-11 w-full"
+                              disabled={isBusy || !options}
+                              value={
+                                overrides[candidate.token]?.qualityId ?? ''
+                              }
+                              onChange={(event) =>
+                                chooseDetail(candidate, {
+                                  qualityId: event.target.value
+                                    ? Number(event.target.value)
+                                    : undefined,
+                                })
+                              }
+                            >
+                              <option value="">
+                                {intl.formatMessage(messages.chooseQuality)}
+                              </option>
+                              {options?.qualities.map((quality) => (
+                                <option key={quality.id} value={quality.id}>
+                                  {quality.name}
                                 </option>
-                                {options?.qualities.map((quality) => (
-                                  <option key={quality.id} value={quality.id}>
-                                    {quality.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                          {candidate.missing.includes('languages') && (
-                            <div>
-                              <label
-                                htmlFor={`${checkboxId}-language`}
-                                className="text-xs text-gray-400"
-                              >
-                                {intl.formatMessage(messages.language)}
-                              </label>
-                              <select
-                                id={`${checkboxId}-language`}
-                                className="min-h-11 w-full"
-                                disabled={isBusy || !options}
-                                value={
-                                  overrides[candidate.token]
-                                    ?.languageIds?.[0] ?? ''
-                                }
-                                onChange={(event) =>
-                                  chooseDetail(candidate, {
-                                    languageIds: event.target.value
-                                      ? [Number(event.target.value)]
-                                      : undefined,
-                                  })
-                                }
-                              >
-                                <option value="">
-                                  {intl.formatMessage(messages.chooseLanguage)}
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        {choosable(candidate).languages && (
+                          <div>
+                            <label
+                              htmlFor={`${checkboxId}-language`}
+                              className="text-xs text-gray-400"
+                            >
+                              {intl.formatMessage(messages.language)}
+                            </label>
+                            <select
+                              id={`${checkboxId}-language`}
+                              className="min-h-11 w-full"
+                              disabled={isBusy || !options}
+                              value={
+                                overrides[candidate.token]?.languageIds?.[0] ??
+                                ''
+                              }
+                              onChange={(event) =>
+                                chooseDetail(candidate, {
+                                  languageIds: event.target.value
+                                    ? [Number(event.target.value)]
+                                    : undefined,
+                                })
+                              }
+                            >
+                              <option value="">
+                                {intl.formatMessage(messages.chooseLanguage)}
+                              </option>
+                              {options?.languages.map((language) => (
+                                <option key={language.id} value={language.id}>
+                                  {language.name}
                                 </option>
-                                {options?.languages.map((language) => (
-                                  <option key={language.id} value={language.id}>
-                                    {language.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {unsafeText ? (
                       <p className="mt-1 text-xs font-semibold text-red-400">
                         {unsafeText}
