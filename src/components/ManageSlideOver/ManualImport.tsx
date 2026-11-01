@@ -92,6 +92,24 @@ const errorMessage = (error: unknown, fallback: string) =>
     ? (error.response?.data?.message ?? fallback)
     : fallback;
 
+// Files ready to import start selected, like Sonarr's own manual import:
+// those without warnings, or every ready one when opened from an
+// intervention, whose warnings are the reason it is being resolved (the
+// confirmation still lists them).
+const initialSelection = (
+  candidates: ImportCandidate[],
+  includeWarnings: boolean
+) =>
+  candidates
+    .filter(
+      (candidate) =>
+        candidate.complete &&
+        !candidate.unsafe &&
+        !candidate.multiSeason &&
+        (includeWarnings || !candidate.rejections.length)
+    )
+    .map((candidate) => candidate.token);
+
 const ManualImport = ({
   mediaId,
   is4k,
@@ -237,7 +255,7 @@ const ManualImport = ({
       if (controller.signal.aborted) return;
       setSourceLabel(response.data.source);
       setCandidates(response.data.candidates);
-      setSelected([]);
+      setSelected(initialSelection(response.data.candidates, startOpen));
       setEpisodeMappings({});
     } catch (error) {
       if (controller.signal.aborted) return;
