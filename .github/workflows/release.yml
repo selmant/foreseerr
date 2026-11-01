@@ -509,3 +509,19 @@ jobs:
 
       - name: Publish release
         run: gh release edit "$VERSION" --draft=false --repo "$GITHUB_REPOSITORY"
+
+      # The Jellyfin plugin releases itself for each stable Foreseerr release
+      # (its follow-foreseerr.yml). This starts that now; without the token
+      # (a fine-grained PAT with Contents read and write on the plugin
+      # repository) its hourly check picks the release up instead.
+      - name: Tell the Jellyfin plugin
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          PLUGIN_TOKEN: ${{ secrets.PLUGIN_DISPATCH_TOKEN }}
+        run: |
+          if [[ -z "$PLUGIN_TOKEN" ]]; then
+            echo "::notice::PLUGIN_DISPATCH_TOKEN is not set; the plugin's hourly check will release it"
+            exit 0
+          fi
+          GH_TOKEN="$PLUGIN_TOKEN" gh api repos/selmant/jellyfin-plugin-foreseerr/dispatches \
+            -f event_type=foreseerr-release -f "client_payload[tag]=$VERSION"
