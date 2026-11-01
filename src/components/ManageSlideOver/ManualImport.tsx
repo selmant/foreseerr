@@ -17,6 +17,7 @@ import { explainRejections, rejectionMessages } from './rejectionExplanations';
 import {
   formatSize,
   type ImportCandidate,
+  type ImportOptions,
   type ImportSource,
   type ServarrContext,
 } from './servarrTypes';
@@ -56,6 +57,13 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   unknownQuality: 'Unknown quality',
   unknownLanguage: 'Unknown language',
   customFormatScore: 'CF {score}',
+  chooseDetails:
+    "{service} couldn't detect everything about this file. Choose what's missing below.",
+  quality: 'Quality',
+  language: 'Language',
+  chooseQuality: 'Choose a quality',
+  chooseLanguage: 'Choose a language',
+  optionsFailed: 'Unable to load the qualities and languages of {service}.',
   incomplete:
     '{service} needs additional metadata for this file. Open it in {service} to complete the import.',
   episodeAssignment: 'Episode Assignment',
@@ -184,6 +192,12 @@ const ManualImport = ({
   const [rematching, setRematching] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [bulkStart, setBulkStart] = useState('');
+  // A quality or language picked for a file the Arr couldn't detect one for.
+  const [overrides, setOverrides] = useState<
+    Record<string, { qualityId?: number; languageIds?: number[] }>
+  >({});
+  const [options, setOptions] = useState<ImportOptions>();
+  const optionsRequestedRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -292,6 +306,7 @@ const ManualImport = ({
       setCandidates(response.data.candidates);
       setSelected(initialSelection(response.data.candidates, startOpen));
       setEpisodeMappings({});
+      setOverrides({});
       setExpanded(new Set());
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -361,6 +376,10 @@ const ManualImport = ({
         return { ...rest, [next.token]: ids };
       });
       setExpanded((current) => new Set(moveToken(current, token, next.token)));
+      setOverrides((current) => {
+        const { [token]: choice, ...rest } = current;
+        return choice ? { ...rest, [next.token]: choice } : rest;
+      });
     } catch (error) {
       if (!controller.signal.aborted)
         setError(
@@ -379,6 +398,25 @@ const ManualImport = ({
         });
       }
     }
+  };
+
+  const chooseDetail = (
+    candidate: ImportCandidate,
+    choice: { qualityId?: number; languageIds?: number[] }
+  ) => {
+    const { token } = candidate;
+    const next = { ...overrides[token], ...choice };
+    setOverrides((current) => ({ ...current, [token]: next }));
+    // Once nothing is left to choose, the file is selected for import.
+    if (
+      !candidate.unsafe &&
+      (!candidate.missing?.includes('quality') ||
+        next.qualityId !== undefined) &&
+      (!candidate.missing?.includes('languages') || !!next.languageIds?.length)
+    )
+      setSelected((current) =>
+        current.includes(token) ? current : [...current, token]
+      );
   };
 
   const assignEpisodes = (candidate: ImportCandidate, ids: number[]) => {
@@ -465,10 +503,53 @@ const ManualImport = ({
     );
   };
 
+  // What is still missing once the user's picks are counted: picked
+  // episodes stand in for the match, a chosen quality or language for the
+  // undetected one.
+  const stillMissing = (candidate: ImportCandidate) => {
+    const mapped = !!episodeMappings[candidate.token]?.length;
+    const choice = overrides[candidate.token];
+    return (
+      candidate.missing ?? (candidate.complete ? [] : ['unknown'])
+    ).filter(
+      (field) =>
+        !(
+          (mapped && ['series', 'seasonNumber', 'episodes'].includes(field)) ||
+          (field === 'quality' && choice?.qualityId !== undefined) ||
+          (field === 'languages' && !!choice?.languageIds?.length)
+        )
+    );
+  };
+  const needsDetails = candidates.some(
+    (candidate) =>
+      !candidate.unsafe &&
+      candidate.missing?.some(
+        (field) => field === 'quality' || field === 'languages'
+      )
+  );
+  useEffect(() => {
+    if (!needsDetails || optionsRequestedRef.current) return;
+    optionsRequestedRef.current = true;
+    axios
+      .get<ImportOptions>(
+        `/api/v1/media/${mediaId}/servarr/imports/options?is4k=${is4k}`
+      )
+      .then((response) => setOptions(response.data))
+      .catch((requestError) => {
+        optionsRequestedRef.current = false;
+        setError(
+          errorMessage(
+            requestError,
+            intl.formatMessage(messages.optionsFailed, { service })
+          )
+        );
+      });
+  }, [intl, is4k, mediaId, needsDetails, service]);
+
   // A flagged file is never imported; a multi-season one only to episodes
   // picked for it.
   const importable = (candidate: ImportCandidate) =>
-    candidate.complete &&
+    !stillMissing(candidate).length &&
     !candidate.unsafe &&
     !pendingRematch.has(candidate.token) &&
     !rematching.has(candidate.token) &&
@@ -514,6 +595,12 @@ const ManualImport = ({
             .map(([candidateToken, episodeIds]) => ({
               candidateToken,
               episodeIds,
+            })),
+          overrides: Object.entries(overrides)
+            .filter(([token]) => selected.includes(token))
+            .map(([candidateToken, choice]) => ({
+              candidateToken,
+              ...choice,
             })),
           interventionId,
         },
@@ -1031,17 +1118,98 @@ const ManualImport = ({
                     </label>
                   </div>
                   <div className="mt-2 space-y-2 sm:ml-9">
-                    {!candidate.complete &&
+                    {!candidate.unsafe &&
+                      stillMissing(candidate).length > 0 &&
                       !rematching.has(candidate.token) &&
                       !pendingRematch.has(candidate.token) && (
                         <p className="mt-1 text-xs text-yellow-300">
                           {intl.formatMessage(
-                            context.mediaType === 'tv' && !assigned.length
-                              ? messages.pickEpisodes
-                              : messages.incomplete,
+                            stillMissing(candidate).every((field) =>
+                              ['quality', 'languages'].includes(field)
+                            )
+                              ? messages.chooseDetails
+                              : context.mediaType === 'tv' && !assigned.length
+                                ? messages.pickEpisodes
+                                : messages.incomplete,
                             { service }
                           )}
                         </p>
+                      )}
+                    {!candidate.unsafe &&
+                      candidate.missing?.some((field) =>
+                        ['quality', 'languages'].includes(field)
+                      ) && (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {candidate.missing.includes('quality') && (
+                            <div>
+                              <label
+                                htmlFor={`${checkboxId}-quality`}
+                                className="text-xs text-gray-400"
+                              >
+                                {intl.formatMessage(messages.quality)}
+                              </label>
+                              <select
+                                id={`${checkboxId}-quality`}
+                                className="min-h-11 w-full"
+                                disabled={isBusy || !options}
+                                value={
+                                  overrides[candidate.token]?.qualityId ?? ''
+                                }
+                                onChange={(event) =>
+                                  chooseDetail(candidate, {
+                                    qualityId: event.target.value
+                                      ? Number(event.target.value)
+                                      : undefined,
+                                  })
+                                }
+                              >
+                                <option value="">
+                                  {intl.formatMessage(messages.chooseQuality)}
+                                </option>
+                                {options?.qualities.map((quality) => (
+                                  <option key={quality.id} value={quality.id}>
+                                    {quality.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          {candidate.missing.includes('languages') && (
+                            <div>
+                              <label
+                                htmlFor={`${checkboxId}-language`}
+                                className="text-xs text-gray-400"
+                              >
+                                {intl.formatMessage(messages.language)}
+                              </label>
+                              <select
+                                id={`${checkboxId}-language`}
+                                className="min-h-11 w-full"
+                                disabled={isBusy || !options}
+                                value={
+                                  overrides[candidate.token]
+                                    ?.languageIds?.[0] ?? ''
+                                }
+                                onChange={(event) =>
+                                  chooseDetail(candidate, {
+                                    languageIds: event.target.value
+                                      ? [Number(event.target.value)]
+                                      : undefined,
+                                  })
+                                }
+                              >
+                                <option value="">
+                                  {intl.formatMessage(messages.chooseLanguage)}
+                                </option>
+                                {options?.languages.map((language) => (
+                                  <option key={language.id} value={language.id}>
+                                    {language.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
                       )}
                     {unsafeText ? (
                       <p className="mt-1 text-xs font-semibold text-red-400">

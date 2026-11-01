@@ -242,19 +242,46 @@ fn has_length(v: Option<&Value>) -> bool {
     }
 }
 
-/// `isCompleteImportCandidate`. A rematched Sonarr 4 candidate names its
-/// series by `seriesId` only.
-fn complete(candidate: &Value, radarr: bool) -> bool {
+/// What the Arr left out of a candidate that an import needs. A rematched
+/// Sonarr 4 candidate names its series by `seriesId` only.
+fn missing(candidate: &Value, radarr: bool) -> Vec<&'static str> {
     let has = |k: &str| truthy(candidate.get(k));
+    let mut out = Vec::new();
     if radarr {
-        has("movie") && has("quality") && has_length(candidate.get("languages"))
+        if !has("movie") {
+            out.push("movie");
+        }
     } else {
-        (has("series") || has("seriesId"))
-            && candidate.get("seasonNumber").is_some_and(|v| !v.is_null())
-            && has_length(candidate.get("episodes"))
-            && has("quality")
-            && has_length(candidate.get("languages"))
+        if !has("series") && !has("seriesId") {
+            out.push("series");
+        }
+        if candidate.get("seasonNumber").is_none_or(Value::is_null) {
+            out.push("seasonNumber");
+        }
+        if !has_length(candidate.get("episodes")) {
+            out.push("episodes");
+        }
     }
+    if !has("quality") {
+        out.push("quality");
+    }
+    if !has_length(candidate.get("languages")) {
+        out.push("languages");
+    }
+    out
+}
+
+/// `isCompleteImportCandidate`.
+fn complete(candidate: &Value, radarr: bool) -> bool {
+    missing(candidate, radarr).is_empty()
+}
+
+/// Whether a file is ready once Foreseerr fills in what the user chose:
+/// the series and episodes of picked episodes, a quality or languages.
+fn complete_for_import(file: &Value, radarr: bool, mapped: bool) -> bool {
+    missing(file, radarr)
+        .iter()
+        .all(|field| mapped && matches!(*field, "series" | "seasonNumber" | "episodes"))
 }
 
 /// `candidateResponse`: the candidate's public fields with a token for it.
@@ -317,6 +344,15 @@ fn candidate_response(candidate: &Value, c: &Context, user_id: i64, source: &Val
     out.insert(
         String::from("complete"),
         Value::Bool(complete(candidate, c.radarr)),
+    );
+    out.insert(
+        String::from("missing"),
+        Value::Array(
+            missing(candidate, c.radarr)
+                .into_iter()
+                .map(Value::from)
+                .collect(),
+        ),
     );
     put(&mut out, "unsafe", unsafe_kind(candidate).map(Value::from));
     if !c.radarr && multi_season(candidate, source) {
@@ -657,7 +693,47 @@ struct ImportBody {
     is4k: bool,
     acknowledge: bool,
     mappings: Vec<(String, Vec<i64>)>,
+    overrides: Vec<Override>,
     intervention: Option<i64>,
+}
+
+/// A quality or languages the user chose for a file the Arr misread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Override {
+    token: String,
+    quality: Option<i64>,
+    languages: Option<Vec<i64>>,
+}
+
+fn overrides(v: Option<&Value>) -> Result<Vec<Override>, String> {
+    let bad = || String::from("overrides the validator judges");
+    match v {
+        None => Ok(Vec::new()),
+        Some(Value::Array(items)) => items
+            .iter()
+            .map(|item| {
+                let token = item
+                    .get("candidateToken")
+                    .and_then(Value::as_str)
+                    .ok_or_else(bad)?
+                    .to_owned();
+                let quality = match item.get("qualityId") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(v.as_i64().ok_or_else(bad)?),
+                };
+                let languages = match item.get("languageIds") {
+                    None | Some(Value::Null) => None,
+                    Some(v) => Some(int_list(Some(v), "languageIds")?),
+                };
+                Ok(Override {
+                    token,
+                    quality,
+                    languages,
+                })
+            })
+            .collect(),
+        Some(_) => Err(bad()),
+    }
 }
 
 fn import_body(b: &Map<String, Value>) -> Result<ImportBody, String> {
@@ -702,6 +778,7 @@ fn import_body(b: &Map<String, Value>) -> Result<ImportBody, String> {
         is4k: body_flag(b, "is4k")?,
         acknowledge: body_flag(b, "acknowledgeRejections")?,
         mappings,
+        overrides: overrides(b.get("overrides"))?,
         intervention,
     })
 }
@@ -804,9 +881,18 @@ async fn run_import(ctx: &Ready<'_>, user: i64, id: i64, b: &ImportBody) -> Step
         Some(iid) => Some(import_intervention(ctx, &c, iid, &sources).await?),
         None => None,
     };
+    apply_overrides(&c, &arr, &mut files, b).await?;
+    let mapped = |index: usize| {
+        b.tokens.get(index).is_some_and(|token| {
+            b.mappings
+                .iter()
+                .any(|(t, ids)| t == token && !ids.is_empty())
+        })
+    };
     if files
         .iter()
-        .any(|f| !complete(&Value::Object(f.clone()), c.radarr))
+        .enumerate()
+        .any(|(index, f)| !complete_for_import(&Value::Object(f.clone()), c.radarr, mapped(index)))
     {
         return Err(Fail::Status(
             409,
@@ -849,6 +935,122 @@ fn safe_to_import(c: &Context, b: &ImportBody, stored: &[Value]) -> Step<()> {
                 "Choose the episodes of every file from a multi-season download before importing.",
             ),
         ));
+    }
+    Ok(())
+}
+
+/// The qualities (whole, as an import sends them) and languages
+/// (`{ id, name }`) the Arr offers. `Unknown` (id 0) is left out: it is
+/// what made a file incomplete in the first place.
+async fn import_options(arr: &ArrServer<'_>) -> Step<(Vec<Value>, Vec<Value>)> {
+    let named = |v: &Value| {
+        v.get("id").and_then(Value::as_i64).is_some_and(|id| id > 0)
+            && v.get("name").is_some_and(Value::is_string)
+    };
+    let definitions = arr.get("/qualitydefinition", &[]).await?;
+    let qualities = definitions
+        .as_array()
+        .ok_or_else(|| shape_error("quality definitions"))?
+        .iter()
+        .filter_map(|d| d.get("quality"))
+        .filter(|q| named(q))
+        .cloned()
+        .collect();
+    let languages = arr.get("/language", &[]).await?;
+    let languages = languages
+        .as_array()
+        .ok_or_else(|| shape_error("languages"))?
+        .iter()
+        .filter(|l| named(l))
+        .map(|l| serde_json::json!({ "id": l.get("id"), "name": l.get("name") }))
+        .collect();
+    Ok((qualities, languages))
+}
+
+/// `GET /media/{id}/servarr/imports/options`: the qualities and languages
+/// a file can be imported as.
+pub(super) fn options<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    Box::pin(async move {
+        let (_, id, is4k) = match read_route(ctx, 3) {
+            Ok(v) => v,
+            Err(why) => return Outcome::forward(why),
+        };
+        let result = async {
+            let c = resolve(ctx, id, is4k).await?;
+            let (qualities, languages) = import_options(&c.arr(ctx)).await?;
+            let name = |v: &Value| {
+                serde_json::json!({ "id": v.get("id").cloned(), "name": v.get("name").cloned() })
+            };
+            Step::Ok(serde_json::json!({
+                "qualities": qualities.iter().map(name).collect::<Vec<_>>(),
+                "languages": languages,
+            }))
+        }
+        .await;
+        match result {
+            Ok(body) => ctx.json(&body),
+            Err(fail) => answer(ctx, fail, true),
+        }
+    })
+}
+
+/// The quality and languages the user chose, on the files they chose them
+/// for. A quality keeps the file's revision (proper, repack).
+async fn apply_overrides(
+    c: &Context,
+    arr: &ArrServer<'_>,
+    files: &mut [Map<String, Value>],
+    b: &ImportBody,
+) -> Step<()> {
+    if b.overrides.is_empty() {
+        return Ok(());
+    }
+    let (qualities, languages) = import_options(arr).await?;
+    let unknown = || {
+        Fail::Status(
+            400,
+            format!(
+                "Choose a quality and languages {} offers.",
+                if c.radarr { "Radarr" } else { "Sonarr" }
+            ),
+        )
+    };
+    for (index, file) in files.iter_mut().enumerate() {
+        let Some(token) = b.tokens.get(index) else {
+            continue;
+        };
+        let Some(choice) = b.overrides.iter().rev().find(|o| &o.token == token) else {
+            continue;
+        };
+        if let Some(qid) = choice.quality {
+            let quality = qualities
+                .iter()
+                .find(|q| q.get("id").and_then(Value::as_i64) == Some(qid))
+                .ok_or_else(unknown)?;
+            let revision = chain(&Value::Object(file.clone()), &["quality", "revision"])
+                .filter(Value::is_object)
+                .unwrap_or_else(|| serde_json::json!({"version": 1, "real": 0, "isRepack": false}));
+            file.insert(
+                String::from("quality"),
+                serde_json::json!({ "quality": quality, "revision": revision }),
+            );
+        }
+        if let Some(ids) = &choice.languages {
+            if ids.is_empty() {
+                return Err(unknown());
+            }
+            let chosen = dedupe(ids)
+                .iter()
+                .map(|lid| {
+                    languages
+                        .iter()
+                        .find(|l| l.get("id").and_then(Value::as_i64) == Some(*lid))
+                        .cloned()
+                        .ok_or_else(unknown)
+                })
+                .collect::<Step<Vec<_>>>()?;
+            file.insert(String::from("languages"), Value::Array(chosen));
+        }
     }
     Ok(())
 }
@@ -1060,6 +1262,49 @@ mod tests {
     }
 
     #[test]
+    fn missing_fields_and_choices() {
+        let unmatched = json!({"quality": {}, "languages": [{"name": "English"}]});
+        assert_eq!(
+            missing(&unmatched, false),
+            vec!["series", "seasonNumber", "episodes"],
+            "Sonarr couldn't match the file"
+        );
+        assert!(
+            complete_for_import(&unmatched, false, true),
+            "picked episodes stand in for the match"
+        );
+        assert!(!complete_for_import(&unmatched, false, false));
+        let unknown = json!({"movie": {}});
+        assert_eq!(missing(&unknown, true), vec!["quality", "languages"]);
+        assert!(
+            !complete_for_import(&unknown, true, true),
+            "picks never stand in for a quality"
+        );
+        let raw = json!({"candidateTokens": ["a"], "importMode": "move", "overrides": [
+            {"candidateToken": "a", "qualityId": 7, "languageIds": [1, 1]},
+            {"candidateToken": "b"}
+        ]});
+        let parsed = raw.as_object().map(import_body);
+        assert_eq!(
+            parsed.and_then(Result::ok).map(|b| b.overrides),
+            Some(vec![
+                Override {
+                    token: String::from("a"),
+                    quality: Some(7),
+                    languages: Some(vec![1, 1]),
+                },
+                Override {
+                    token: String::from("b"),
+                    quality: None,
+                    languages: None,
+                },
+            ])
+        );
+        let bad = json!({"candidateTokens": ["a"], "importMode": "move", "overrides": [{"candidateToken": "a", "qualityId": "x"}]});
+        assert!(matches!(bad.as_object().map(import_body), Some(Err(_))));
+    }
+
+    #[test]
     fn sources_query_intervention() {
         let q = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
             pairs
@@ -1231,6 +1476,7 @@ mod tests {
             is4k: false,
             acknowledge: true,
             mappings,
+            overrides: Vec::new(),
             intervention: None,
         };
         let c = Context {

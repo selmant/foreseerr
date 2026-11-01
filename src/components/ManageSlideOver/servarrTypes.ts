@@ -68,6 +68,12 @@ export type ImportCandidate = {
   episodes?: Episode[];
   complete: boolean;
   /**
+   * What the Arr left out that an import needs: `series`, `seasonNumber`,
+   * `episodes` (picked episodes stand in for them), `movie`, `quality`,
+   * `languages` (both can be chosen).
+   */
+  missing?: string[];
+  /**
    * Not a video file, or flagged as potentially dangerous, executable or of
    * a type rejected in the Arr: never importable.
    */
@@ -82,3 +88,9 @@ export type ImportCandidate = {
 
 export const formatSize = (size: number) =>
   `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
+
+export type ImportOption = { id: number; name: string };
+export type ImportOptions = {
+  qualities: ImportOption[];
+  languages: ImportOption[];
+};

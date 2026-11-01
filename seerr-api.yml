@@ -11637,6 +11637,27 @@ paths:
           description: Unauthorized
         '409':
           description: Expired, invalid, or no-longer-actionable source token
+  /media/{mediaId}/servarr/imports/options:
+    get:
+      summary: List the qualities and languages a manual import can assign
+      description: The qualities and languages of the mapped Sonarr or Radarr instance, without Unknown, for files it imported without one. Requires `MANAGE_REQUESTS`.
+      tags:
+        - media
+      parameters:
+        - in: path
+          name: mediaId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: is4k
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: '`{ qualities: [{ id, name }], languages: [{ id, name }] }`'
+        '401':
+          description: Unauthorized
   /media/{mediaId}/servarr/imports/reprocess:
     post:
       summary: Reprocess a Sonarr manual import candidate
@@ -11732,6 +11753,21 @@ paths:
                       candidateToken:
                         type: string
                       episodeIds:
+                        type: array
+                        items:
+                          type: integer
+                overrides:
+                  type: array
+                  description: A quality or languages chosen for files the Arr left without one. Qualities keep the file's revision.
+                  items:
+                    type: object
+                    required: [candidateToken]
+                    properties:
+                      candidateToken:
+                        type: string
+                      qualityId:
+                        type: integer
+                      languageIds:
                         type: array
                         items:
                           type: integer
