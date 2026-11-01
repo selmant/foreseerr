@@ -54,7 +54,8 @@ export type Release = {
 export type ImportCandidate = {
   token: string;
   source?: string;
-  name: string;
+  /** The Arr may leave it out. */
+  name: string | null;
   relativePath?: string;
   folderName?: string;
   size: number;

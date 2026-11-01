@@ -1016,7 +1016,12 @@ async fn apply_overrides(
     files: &mut [Map<String, Value>],
     b: &ImportBody,
 ) -> Step<()> {
-    if b.overrides.is_empty() {
+    // A cleared choice sets neither, and changes nothing.
+    if !b
+        .overrides
+        .iter()
+        .any(|o| o.quality.is_some() || o.languages.is_some())
+    {
         return Ok(());
     }
     let (qualities, languages) = import_options(arr).await?;

@@ -115,6 +115,8 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
 });
 
 const MANUAL_IMPORT_POLL_MS = 2000;
+// What picked episodes stand in for when the Arr couldn't match a file.
+const EPISODE_FIELDS = ['series', 'seasonNumber', 'episodes'];
 // How long episode picks settle before Sonarr rematches the file.
 const REMATCH_DELAY_MS = 600;
 const MANUAL_IMPORT_POLL_DEADLINE_MS = 2 * 60 * 60 * 1000;
@@ -210,6 +212,8 @@ const ManualImport = ({
   >({});
   const [options, setOptions] = useState<ImportOptions>();
   const optionsRequestedRef = useRef(false);
+  const [optionsError, setOptionsError] = useState<string>();
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
   useEffect(
@@ -349,6 +353,8 @@ const ManualImport = ({
   // own manual import, so the warnings shown are always for the current
   // assignment.
   const rematchCandidate = async (token: string, episodeIds: number[]) => {
+    // A newer pick for the same file supersedes the one still matching.
+    reprocessAbortRef.current.get(token)?.abort();
     const controller = new AbortController();
     reprocessAbortRef.current.set(token, controller);
     setRematching((current) => new Set(current).add(token));
@@ -368,7 +374,10 @@ const ManualImport = ({
       setSelected((current) =>
         current.includes(token)
           ? moveToken(current, token, next.token)
-          : next.complete && !next.unsafe
+          : !next.unsafe &&
+              (next.missing ?? (next.complete ? [] : ['unknown'])).every(
+                (field) => EPISODE_FIELDS.includes(field)
+              )
             ? [...current, next.token]
             : current
       );
@@ -532,7 +541,7 @@ const ManualImport = ({
     ).filter(
       (field) =>
         !(
-          (mapped && ['series', 'seasonNumber', 'episodes'].includes(field)) ||
+          (mapped && EPISODE_FIELDS.includes(field)) ||
           (field === 'quality' && choice?.qualityId !== undefined) ||
           (field === 'languages' && !!choice?.languageIds?.length)
         )
@@ -556,6 +565,7 @@ const ManualImport = ({
   useEffect(() => {
     if (!needsDetails || optionsRequestedRef.current) return;
     optionsRequestedRef.current = true;
+    setOptionsError(undefined);
     axios
       .get<ImportOptions>(
         `/api/v1/media/${mediaId}/servarr/imports/options?is4k=${is4k}`
@@ -563,14 +573,14 @@ const ManualImport = ({
       .then((response) => setOptions(response.data))
       .catch((requestError) => {
         optionsRequestedRef.current = false;
-        setError(
+        setOptionsError(
           errorMessage(
             requestError,
             intl.formatMessage(messages.optionsFailed, { service })
           )
         );
       });
-  }, [intl, is4k, mediaId, needsDetails, service]);
+  }, [intl, is4k, mediaId, needsDetails, optionsAttempt, service]);
 
   // A flagged file is never imported; a multi-season one only to episodes
   // picked for it.
@@ -692,7 +702,9 @@ const ManualImport = ({
   // name order from one episode, rather than file by file.
   const bulkFiles = selectedFiles
     .filter((candidate) => !candidate.unsafe)
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    .sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? '', undefined, { numeric: true })
+    );
   const bulkIndex = sortedEpisodes.findIndex(
     (episode) => String(episode.id) === bulkStart
   );
@@ -772,6 +784,17 @@ const ManualImport = ({
         </Alert>
       )}
       {error && <Alert type="error" title={error} />}
+      {optionsError && candidates.length > 0 && (
+        <Alert type="error" title={optionsError}>
+          <button
+            className="min-h-11 font-medium underline focus-visible:ring-2 focus-visible:ring-indigo-500"
+            type="button"
+            onClick={() => setOptionsAttempt((value) => value + 1)}
+          >
+            {intl.formatMessage(messages.retry)}
+          </button>
+        </Alert>
+      )}
       {importJob && (
         <div
           role="status"
@@ -1038,6 +1061,8 @@ const ManualImport = ({
                   className="min-h-11"
                   disabled={
                     isBusy ||
+                    rematching.size > 0 ||
+                    pendingRematch.size > 0 ||
                     !bulkEpisodes.length ||
                     bulkEpisodes.length !== bulkFiles.length
                   }
