@@ -57,14 +57,8 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   moveFiles: 'Move Files',
   copyFiles: 'Copy Files',
   importSelected: 'Import Selected ({count})',
-  confirmTitle:
-    '{mode, select, copy {Copy} other {Move}} {count, plural, one {# file} other {# files}}?',
-  confirmDescription:
-    '{service} will {mode, select, copy {copy} other {move}} the selected files.',
-  confirmDescriptionWarnings:
-    '{service} will {mode, select, copy {copy} other {move}} the selected files even though it reported warnings.',
+  importAnyway: 'Import Anyway ({count})',
   cancel: 'Cancel',
-  importNow: 'Import',
   importing: 'Importing…',
   unknownQuality: 'Unknown quality',
   unknownLanguage: 'Unknown language',
@@ -219,22 +213,10 @@ const ManualImport = ({
   const optionsRequestedRef = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const confirmCancelRef = useRef<HTMLButtonElement>(null);
-  const importTriggerRef = useRef<HTMLButtonElement>(null);
   useEffect(
     () => onSourceCountChanged?.(sources.length),
     [onSourceCountChanged, sources.length]
   );
-  useEffect(() => {
-    if (confirmOpen) confirmCancelRef.current?.focus({ preventScroll: true });
-  }, [confirmOpen]);
-  const dismissConfirmation = () => {
-    setConfirmOpen(false);
-    window.requestAnimationFrame(() =>
-      importTriggerRef.current?.focus({ preventScroll: true })
-    );
-  };
 
   const refreshSources = useCallback(async () => {
     sourcesAbortRef.current?.abort();
@@ -618,7 +600,6 @@ const ManualImport = ({
   );
 
   const submitImport = async () => {
-    setConfirmOpen(false);
     submitAbortRef.current?.abort();
     const controller = new AbortController();
     submitAbortRef.current = controller;
@@ -962,7 +943,6 @@ const ManualImport = ({
               onClick={() => {
                 setCandidates([]);
                 setSourceLabel(undefined);
-                setConfirmOpen(false);
                 setWorkflowOpen(true);
               }}
             >
@@ -1091,98 +1071,29 @@ const ManualImport = ({
               )}
             </div>
           )}
-          {confirmOpen ? (
-            // Escape dismisses this confirmation without closing its parent panel.
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
-            <div
-              role="region"
-              aria-label={intl.formatMessage(messages.confirmTitle, {
-                mode,
-                count: selectedFiles.length,
-              })}
-              className="space-y-3 rounded-md border border-gray-600 bg-gray-900/80 p-4 text-sm shadow"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.stopPropagation();
-                  if (!submitting) dismissConfirmation();
-                }
-              }}
-            >
-              <div className="font-semibold text-white">
-                {intl.formatMessage(messages.confirmTitle, {
-                  mode,
-                  count: selectedFiles.length,
-                })}
-              </div>
-              <p className="text-gray-300">
-                {intl.formatMessage(
-                  selectedWarnings.length
-                    ? messages.confirmDescriptionWarnings
-                    : messages.confirmDescription,
-                  { service, mode }
-                )}
-              </p>
-              {selectedWarnings.length > 0 && (
-                <ul className="list-disc space-y-1 pl-5 text-yellow-300">
-                  {selectedWarnings.map((warning, index) => (
-                    <li key={`${index}-${warning}`}>{warning}</li>
-                  ))}
-                </ul>
+          <Button
+            buttonType="success"
+            className="min-h-11 w-full"
+            type="button"
+            disabled={
+              !selected.length || submitting || !selectedFiles.every(importable)
+            }
+            aria-busy={submitting}
+            onClick={() => void submitImport()}
+          >
+            <ArrowDownTrayIcon />
+            <span>
+              {intl.formatMessage(
+                submitting
+                  ? messages.importing
+                  : selectedWarnings.length
+                    ? messages.importAnyway
+                    : messages.importSelected,
+                { count: selected.length }
               )}
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  type="button"
-                  buttonSize="sm"
-                  className="min-h-11"
-                  ref={confirmCancelRef}
-                  disabled={submitting}
-                  onClick={dismissConfirmation}
-                >
-                  {intl.formatMessage(messages.cancel)}
-                </Button>
-                <Button
-                  type="button"
-                  buttonType="success"
-                  buttonSize="sm"
-                  className="min-h-11"
-                  disabled={
-                    !selectedFiles.length ||
-                    submitting ||
-                    !selectedFiles.every(importable)
-                  }
-                  onClick={() => void submitImport()}
-                >
-                  <ArrowDownTrayIcon />
-                  <span>
-                    {intl.formatMessage(
-                      submitting ? messages.importing : messages.importNow
-                    )}
-                  </span>
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button
-              buttonType="success"
-              className="min-h-11 w-full"
-              ref={importTriggerRef}
-              type="button"
-              disabled={
-                !selected.length ||
-                submitting ||
-                !selectedFiles.every(importable)
-              }
-              onClick={() => setConfirmOpen(true)}
-            >
-              <ArrowDownTrayIcon />
-              <span>
-                {intl.formatMessage(messages.importSelected, {
-                  count: selected.length,
-                })}
-              </span>
-            </Button>
-          )}
-          {!confirmOpen && notReady.length > 0 && (
+            </span>
+          </Button>
+          {notReady.length > 0 && (
             <p className="text-xs text-yellow-300">
               {intl.formatMessage(
                 notReady.some(

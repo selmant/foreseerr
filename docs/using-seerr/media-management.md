@@ -66,9 +66,9 @@ episode you choose. When the service couldn't detect a file's quality or
 language, choose it below the file.
 
 **Move Files** removes the source files from the download folder after adding
-them to the library. **Copy Files** keeps the originals. Review the confirmation
-and any warnings before importing. **Cancel** or **Escape** dismisses the
-confirmation while preserving your selections. After importing, the panel
+them to the library. **Copy Files** keeps the originals. Each file lists the
+warnings the service reported; when a selected file has any, the button reads
+**Import Anyway** and imports it regardless. After importing, the panel
 shows the import's progress until the files are in the library, or why the
 service could not import them.
 
