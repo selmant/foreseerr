@@ -59,9 +59,17 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   incomplete:
     '{service} needs additional metadata for this file. Open it in {service} to complete the import.',
   episodeAssignment: 'Episode Assignment',
-  applyEpisodes: 'Apply with {service}',
-  applying: 'Applying…',
-  chooseEpisodeFirst: 'Choose at least one episode before rematching.',
+  rematching: 'Matching with {service}…',
+  noEpisodes: 'No episodes assigned yet',
+  moreEpisodes: '{list} and {count, plural, one {# more} other {# more}}',
+  changeEpisodes: 'Change',
+  doneEpisodes: 'Done',
+  confirmEpisodes:
+    '{count, plural, one {Use this episode} other {Use these # episodes}}',
+  pickEpisodes: 'Pick the episodes this file holds so {service} can import it.',
+  notReady:
+    "{count, plural, one {# selected file isn't} other {# selected files aren't}} ready to import yet.",
+  waitingForRematch: 'Waiting for {service} to match the episodes you picked…',
   rematchFailed: '{service} could not rematch this file.',
   pollTimeout: 'Manual import status check timed out.',
   importCompleted: 'Manual import completed.',
@@ -85,6 +93,8 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
 });
 
 const MANUAL_IMPORT_POLL_MS = 2000;
+// How long episode picks settle before Sonarr rematches the file.
+const REMATCH_DELAY_MS = 600;
 const MANUAL_IMPORT_POLL_DEADLINE_MS = 2 * 60 * 60 * 1000;
 
 const errorMessage = (error: unknown, fallback: string) =>
@@ -135,7 +145,8 @@ const ManualImport = ({
   const service = context.service.name;
   const sourcesAbortRef = useRef<AbortController | undefined>(undefined);
   const scanAbortRef = useRef<AbortController | undefined>(undefined);
-  const reprocessAbortRef = useRef<AbortController | undefined>(undefined);
+  const reprocessAbortRef = useRef(new Map<string, AbortController>());
+  const rematchTimersRef = useRef(new Map<string, number>());
   const submitAbortRef = useRef<AbortController | undefined>(undefined);
   const pollRef = useRef<{
     timeoutId?: number;
@@ -158,7 +169,10 @@ const ManualImport = ({
   const [importStatus, setImportStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [scanning, setScanning] = useState(false);
-  const [rematchingToken, setRematchingToken] = useState<string>();
+  // Files waiting for their picks to settle, and files being rematched.
+  const [pendingRematch, setPendingRematch] = useState<Set<string>>(new Set());
+  const [rematching, setRematching] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -214,6 +228,15 @@ const ManualImport = ({
     }
   }, [interventionId, intl, is4k, mediaId]);
 
+  const cancelRematches = useCallback(() => {
+    reprocessAbortRef.current.forEach((controller) => controller.abort());
+    reprocessAbortRef.current.clear();
+    rematchTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    rematchTimersRef.current.clear();
+    setPendingRematch(new Set());
+    setRematching(new Set());
+  }, []);
+
   const cancelPolling = useCallback(() => {
     const state = pollRef.current;
     state.cancelled = true;
@@ -226,11 +249,11 @@ const ManualImport = ({
     return () => {
       sourcesAbortRef.current?.abort();
       scanAbortRef.current?.abort();
-      reprocessAbortRef.current?.abort();
       submitAbortRef.current?.abort();
+      cancelRematches();
       cancelPolling();
     };
-  }, [cancelPolling, refreshSources]);
+  }, [cancelPolling, cancelRematches, refreshSources]);
 
   useEffect(() => {
     if (refreshToken > 0) void refreshSources();
@@ -241,6 +264,7 @@ const ManualImport = ({
     scanAbortRef.current?.abort();
     const controller = new AbortController();
     scanAbortRef.current = controller;
+    cancelRematches();
     setScanning(true);
     setError(undefined);
     try {
@@ -257,6 +281,7 @@ const ManualImport = ({
       setCandidates(response.data.candidates);
       setSelected(initialSelection(response.data.candidates, startOpen));
       setEpisodeMappings({});
+      setExpanded(new Set());
     } catch (error) {
       if (controller.signal.aborted) return;
       setError(errorMessage(error, intl.formatMessage(messages.scanFailed)));
@@ -290,42 +315,41 @@ const ManualImport = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources, startOpen]);
 
-  const rematchCandidate = async (candidate: ImportCandidate) => {
-    const episodeIds =
-      episodeMappings[candidate.token] ??
-      candidate.episodes?.map((episode) => episode.id) ??
-      [];
-    if (!episodeIds.length) {
-      setError(intl.formatMessage(messages.chooseEpisodeFirst));
-      return;
-    }
-    reprocessAbortRef.current?.abort();
+  const moveToken = <T,>(items: Set<T> | T[], from: T, to: T) =>
+    [...items].map((item) => (item === from ? to : item));
+
+  // Sonarr rematches a file as soon as its episodes are picked, as in its
+  // own manual import, so the warnings shown are always for the current
+  // assignment.
+  const rematchCandidate = async (token: string, episodeIds: number[]) => {
     const controller = new AbortController();
-    reprocessAbortRef.current = controller;
-    setRematchingToken(candidate.token);
+    reprocessAbortRef.current.set(token, controller);
+    setRematching((current) => new Set(current).add(token));
     setError(undefined);
     try {
       const response = await axios.post<ImportCandidate>(
         `/api/v1/media/${mediaId}/servarr/imports/reprocess`,
-        { is4k, candidateToken: candidate.token, episodeIds },
+        { is4k, candidateToken: token, episodeIds },
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
+      const next = response.data;
       setCandidates((current) =>
-        current.map((item) =>
-          item.token === candidate.token ? response.data : item
-        )
+        current.map((item) => (item.token === token ? next : item))
       );
+      // A file that became importable is selected for import.
       setSelected((current) =>
-        current.map((token) =>
-          token === candidate.token ? response.data.token : token
-        )
+        current.includes(token)
+          ? moveToken(current, token, next.token)
+          : next.complete && !next.unsafe
+            ? [...current, next.token]
+            : current
       );
       setEpisodeMappings((current) => {
-        const next = { ...current };
-        delete next[candidate.token];
-        return { ...next, [response.data.token]: episodeIds };
+        const { [token]: ids = episodeIds, ...rest } = current;
+        return { ...rest, [next.token]: ids };
       });
+      setExpanded((current) => new Set(moveToken(current, token, next.token)));
     } catch (error) {
       if (!controller.signal.aborted)
         setError(
@@ -335,8 +359,43 @@ const ManualImport = ({
           )
         );
     } finally {
-      if (!controller.signal.aborted) setRematchingToken(undefined);
+      if (reprocessAbortRef.current.get(token) === controller) {
+        reprocessAbortRef.current.delete(token);
+        setRematching((current) => {
+          const next = new Set(current);
+          next.delete(token);
+          return next;
+        });
+      }
     }
+  };
+
+  const assignEpisodes = (candidate: ImportCandidate, ids: number[]) => {
+    const { token } = candidate;
+    setEpisodeMappings((current) => ({ ...current, [token]: ids }));
+    setExpanded((current) => new Set(current).add(token));
+    const timers = rematchTimersRef.current;
+    window.clearTimeout(timers.get(token));
+    timers.delete(token);
+    const settled = () =>
+      setPendingRematch((current) => {
+        const next = new Set(current);
+        next.delete(token);
+        return next;
+      });
+    if (!ids.length) {
+      settled();
+      return;
+    }
+    setPendingRematch((current) => new Set(current).add(token));
+    timers.set(
+      token,
+      window.setTimeout(() => {
+        timers.delete(token);
+        settled();
+        void rematchCandidate(token, ids);
+      }, REMATCH_DELAY_MS)
+    );
   };
 
   const beginPolling = (commandToken: string) => {
@@ -400,6 +459,8 @@ const ManualImport = ({
   const importable = (candidate: ImportCandidate) =>
     candidate.complete &&
     !candidate.unsafe &&
+    !pendingRematch.has(candidate.token) &&
+    !rematching.has(candidate.token) &&
     (!candidate.multiSeason ||
       (episodeMappings[candidate.token]?.length ?? 0) > 0);
   const explain = (candidate: ImportCandidate) =>
@@ -470,8 +531,35 @@ const ManualImport = ({
   };
 
   const episodes = context.seasons?.flatMap((season) => season.episodes) ?? [];
+  const episodeById = new Map(episodes.map((episode) => [episode.id, episode]));
+  const assignedTo = (candidate: ImportCandidate) =>
+    episodeMappings[candidate.token] ??
+    candidate.episodes?.map((episode) => episode.id) ??
+    [];
+  // A file without episodes, or one from a multi-season download whose
+  // episodes aren't confirmed, keeps its picker open.
+  const unconfirmedMultiSeason = (candidate: ImportCandidate) =>
+    !!candidate.multiSeason && !episodeMappings[candidate.token]?.length;
+  const needsEpisodes = (candidate: ImportCandidate) =>
+    !assignedTo(candidate).length || unconfirmedMultiSeason(candidate);
+  const describeEpisodes = (ids: number[]) => {
+    if (!ids.length) return intl.formatMessage(messages.noEpisodes);
+    const labels = ids.map((id) => {
+      const episode = episodeById.get(id);
+      return episode
+        ? `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`
+        : `#${id}`;
+    });
+    return labels.length > 4
+      ? intl.formatMessage(messages.moreEpisodes, {
+          list: labels.slice(0, 3).join(', '),
+          count: labels.length - 3,
+        })
+      : labels.join(', ');
+  };
   const isBusy = scanning || submitting || polling;
   const readyFiles = candidates.filter(importable);
+  const notReady = selectedFiles.filter((candidate) => !importable(candidate));
 
   return (
     <div className="space-y-3">
@@ -663,9 +751,7 @@ const ManualImport = ({
             <label className="mb-0 flex min-h-11 cursor-pointer items-center gap-2 text-sm font-normal text-gray-200">
               <input
                 type="checkbox"
-                disabled={
-                  isBusy || rematchingToken !== undefined || !readyFiles.length
-                }
+                disabled={isBusy || !readyFiles.length}
                 checked={
                   readyFiles.length > 0 &&
                   readyFiles.every((file) => selected.includes(file.token))
@@ -764,7 +850,6 @@ const ManualImport = ({
               disabled={
                 !selected.length ||
                 submitting ||
-                rematchingToken !== undefined ||
                 !selectedFiles.every(importable)
               }
               onClick={() => setConfirmOpen(true)}
@@ -777,6 +862,20 @@ const ManualImport = ({
               </span>
             </Button>
           )}
+          {!confirmOpen && notReady.length > 0 && (
+            <p className="text-xs text-yellow-300">
+              {intl.formatMessage(
+                notReady.some(
+                  (candidate) =>
+                    pendingRematch.has(candidate.token) ||
+                    rematching.has(candidate.token)
+                )
+                  ? messages.waitingForRematch
+                  : messages.notReady,
+                { count: notReady.length, service }
+              )}
+            </p>
+          )}
           <ul className="divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
             {candidates.map((candidate) => {
               const unsafeText =
@@ -785,10 +884,7 @@ const ManualImport = ({
                   service,
                 });
               const warnings = explain(candidate);
-              const assigned =
-                episodeMappings[candidate.token] ??
-                candidate.episodes?.map((episode) => episode.id) ??
-                [];
+              const assigned = assignedTo(candidate);
               const checkboxId = `manual-import-${candidate.token}`;
               return (
                 <li key={candidate.token} className="px-4 py-3 text-sm">
@@ -797,12 +893,7 @@ const ManualImport = ({
                       id={checkboxId}
                       type="checkbox"
                       className="mt-0.5 flex-none"
-                      disabled={
-                        (!importable(candidate) &&
-                          !selected.includes(candidate.token)) ||
-                        submitting ||
-                        rematchingToken !== undefined
-                      }
+                      disabled={!!candidate.unsafe || submitting}
                       checked={selected.includes(candidate.token)}
                       onChange={() =>
                         setSelected((current) =>
@@ -848,11 +939,18 @@ const ManualImport = ({
                     </label>
                   </div>
                   <div className="mt-2 space-y-2 sm:ml-9">
-                    {!candidate.complete && (
-                      <p className="mt-1 text-xs text-yellow-300">
-                        {intl.formatMessage(messages.incomplete, { service })}
-                      </p>
-                    )}
+                    {!candidate.complete &&
+                      !rematching.has(candidate.token) &&
+                      !pendingRematch.has(candidate.token) && (
+                        <p className="mt-1 text-xs text-yellow-300">
+                          {intl.formatMessage(
+                            context.mediaType === 'tv' && !assigned.length
+                              ? messages.pickEpisodes
+                              : messages.incomplete,
+                            { service }
+                          )}
+                        </p>
+                      )}
                     {unsafeText ? (
                       <p className="mt-1 text-xs font-semibold text-red-400">
                         {unsafeText}
@@ -894,44 +992,75 @@ const ManualImport = ({
                           ))}
                       </ul>
                     )}
-                    {context.mediaType === 'tv' &&
-                      !candidate.unsafe &&
-                      (selected.includes(candidate.token) ||
-                        !candidate.complete ||
-                        candidate.multiSeason) && (
-                        <div className="mt-2 rounded-md border border-gray-700 bg-gray-800 p-3">
-                          <div className="mb-2 text-sm font-semibold text-gray-200">
-                            {intl.formatMessage(messages.episodeAssignment)}
+                    {context.mediaType === 'tv' && !candidate.unsafe && (
+                      <div className="mt-2 rounded-md border border-gray-700 bg-gray-800 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-200">
+                              {intl.formatMessage(messages.episodeAssignment)}
+                            </div>
+                            <p className="break-words text-xs text-gray-400">
+                              {rematching.has(candidate.token)
+                                ? intl.formatMessage(messages.rematching, {
+                                    service,
+                                  })
+                                : describeEpisodes(assigned)}
+                            </p>
                           </div>
-                          <EpisodeAssignmentPicker
-                            episodes={episodes}
-                            assigned={assigned}
-                            disabled={isBusy || rematchingToken !== undefined}
-                            onChange={(ids) =>
-                              setEpisodeMappings((current) => ({
-                                ...current,
-                                [candidate.token]: ids,
-                              }))
-                            }
-                          />
-                          <Button
-                            className="mt-3 min-h-11 w-full whitespace-normal"
-                            buttonSize="sm"
-                            disabled={
-                              rematchingToken !== undefined ||
-                              submitting ||
-                              !assigned.length
-                            }
-                            onClick={() => void rematchCandidate(candidate)}
-                          >
-                            {rematchingToken === candidate.token
-                              ? intl.formatMessage(messages.applying)
-                              : intl.formatMessage(messages.applyEpisodes, {
-                                  service,
-                                })}
-                          </Button>
+                          {!needsEpisodes(candidate) && (
+                            <Button
+                              buttonSize="sm"
+                              className="min-h-11"
+                              aria-expanded={expanded.has(candidate.token)}
+                              onClick={() =>
+                                setExpanded((current) => {
+                                  const next = new Set(current);
+                                  if (!next.delete(candidate.token))
+                                    next.add(candidate.token);
+                                  return next;
+                                })
+                              }
+                            >
+                              {intl.formatMessage(
+                                expanded.has(candidate.token)
+                                  ? messages.doneEpisodes
+                                  : messages.changeEpisodes
+                              )}
+                            </Button>
+                          )}
                         </div>
-                      )}
+                        {(expanded.has(candidate.token) ||
+                          needsEpisodes(candidate)) && (
+                          <div className="mt-3">
+                            <EpisodeAssignmentPicker
+                              episodes={episodes}
+                              assigned={assigned}
+                              initialSeason={candidate.seasonNumber}
+                              disabled={
+                                isBusy || rematching.has(candidate.token)
+                              }
+                              onChange={(ids) => assignEpisodes(candidate, ids)}
+                            />
+                            {unconfirmedMultiSeason(candidate) &&
+                              assigned.length > 0 && (
+                                <Button
+                                  buttonSize="sm"
+                                  className="mt-3 min-h-11 w-full"
+                                  disabled={isBusy}
+                                  onClick={() =>
+                                    assignEpisodes(candidate, assigned)
+                                  }
+                                >
+                                  {intl.formatMessage(
+                                    messages.confirmEpisodes,
+                                    { count: assigned.length }
+                                  )}
+                                </Button>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </li>
               );

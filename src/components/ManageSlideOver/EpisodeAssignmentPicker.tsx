@@ -24,15 +24,23 @@ const EpisodeAssignmentPicker = ({
   assigned,
   onChange,
   disabled,
+  initialSeason,
 }: {
   episodes: Episode[];
   assigned: number[];
   onChange: (ids: number[]) => void;
   disabled: boolean;
+  /** The season the file was matched to, shown first. */
+  initialSeason?: number;
 }) => {
   const intl = useIntl();
   const inputId = useId();
-  const [season, setSeason] = useState('all');
+  const [season, setSeason] = useState(() =>
+    initialSeason !== undefined &&
+    episodes.some((episode) => episode.seasonNumber === initialSeason)
+      ? String(initialSeason)
+      : 'all'
+  );
   const [query, setQuery] = useState('');
   const sorted = useMemo(
     () =>
