@@ -28,12 +28,14 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   retry: 'Retry',
   status: 'Manual import: {status}',
   chooseSource: 'Choose an import source',
+  waitingSource: 'Download waiting for import',
   chooseSourceDescription:
     'Foreseerr asks {service} to scan the selected download; it does not inspect your filesystem itself.',
   importSource: 'Import source',
   download: 'Download: {label}',
   reviewFiles: 'Review Files',
   scanning: 'Scanning…',
+  scanningSource: 'Asking {service} for the files in {source}…',
   scanFailed: 'Unable to scan this import source.',
   noCandidates: '{service} found no manual-import candidates in {source}.',
   reviewFrom: 'Review from {source}',
@@ -216,16 +218,8 @@ const ManualImport = ({
     if (refreshToken > 0) void refreshSources();
   }, [refreshSources, refreshToken]);
 
-  const openWorkflow = () => {
-    setError(undefined);
-    setCandidates([]);
-    setSelected([]);
-    setSourceLabel(undefined);
-    setWorkflowOpen(true);
-  };
-
-  const scanSource = async () => {
-    if (!selectedSource) return;
+  const scanSource = async (sourceToken = selectedSource) => {
+    if (!sourceToken) return;
     scanAbortRef.current?.abort();
     const controller = new AbortController();
     scanAbortRef.current = controller;
@@ -237,7 +231,7 @@ const ManualImport = ({
         candidates: ImportCandidate[];
       }>(
         `/api/v1/media/${mediaId}/servarr/imports/scan`,
-        { is4k, sourceToken: selectedSource },
+        { is4k, sourceToken },
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
@@ -256,6 +250,27 @@ const ManualImport = ({
       if (!controller.signal.aborted) setScanning(false);
     }
   };
+
+  const openWorkflow = () => {
+    setError(undefined);
+    setCandidates([]);
+    setSelected([]);
+    setSourceLabel(undefined);
+    setWorkflowOpen(true);
+    // A single download needs no choosing: review its files straight away.
+    if (sources.length === 1) void scanSource(sources[0].token);
+  };
+
+  // An intervention names its download, so its files are scanned as soon
+  // as the download is confirmed to still be waiting.
+  const autoScannedRef = useRef(false);
+  useEffect(() => {
+    if (!startOpen || autoScannedRef.current || sources.length !== 1) return;
+    autoScannedRef.current = true;
+    void scanSource(sources[0].token);
+    // scanSource is recreated each render; the ref keeps this to one scan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sources, startOpen]);
 
   const rematchCandidate = async (candidate: ImportCandidate) => {
     const episodeIds =
@@ -503,57 +518,84 @@ const ManualImport = ({
           {intl.formatMessage(messages.status, { status: importStatus })}
         </p>
       )}
-      {workflowOpen && sources.length > 0 && !candidates.length && (
-        <div className="space-y-3 rounded-md border border-gray-700 bg-gray-800 p-4 shadow">
-          <div>
-            <div className="font-semibold text-white">
-              {intl.formatMessage(messages.chooseSource)}
+      {scanning && (
+        <p role="status" className="text-sm text-gray-300">
+          {intl.formatMessage(messages.scanningSource, {
+            service,
+            source: (
+              sources.find((source) => source.token === selectedSource) ??
+              sources[0]
+            )?.label,
+          })}
+        </p>
+      )}
+      {workflowOpen &&
+        !scanning &&
+        sources.length > 0 &&
+        !candidates.length && (
+          <div className="space-y-3 rounded-md border border-gray-700 bg-gray-800 p-4 shadow">
+            <div>
+              <div className="font-semibold text-white">
+                {intl.formatMessage(
+                  sources.length === 1
+                    ? messages.waitingSource
+                    : messages.chooseSource
+                )}
+              </div>
+              <p className="mt-1 text-sm text-gray-400">
+                {intl.formatMessage(messages.chooseSourceDescription, {
+                  service,
+                })}
+              </p>
             </div>
-            <p className="mt-1 text-sm text-gray-400">
-              {intl.formatMessage(messages.chooseSourceDescription, {
-                service,
-              })}
-            </p>
-          </div>
-          <select
-            className="min-h-11 w-full"
-            aria-label={intl.formatMessage(messages.importSource)}
-            value={selectedSource}
-            onChange={(event) => setSelectedSource(event.target.value)}
-            disabled={scanning}
-          >
-            {sources.map((source) => (
-              <option key={source.token} value={source.token}>
-                {intl.formatMessage(messages.download, { label: source.label })}
-              </option>
-            ))}
-          </select>
-          <div className="flex flex-wrap justify-end gap-2">
-            {!startOpen && (
+            {sources.length === 1 ? (
+              <p className="break-all font-mono text-xs text-gray-300">
+                {sources[0].label}
+              </p>
+            ) : (
+              <select
+                className="min-h-11 w-full"
+                aria-label={intl.formatMessage(messages.importSource)}
+                value={selectedSource}
+                onChange={(event) => setSelectedSource(event.target.value)}
+                disabled={scanning}
+              >
+                {sources.map((source) => (
+                  <option key={source.token} value={source.token}>
+                    {intl.formatMessage(messages.download, {
+                      label: source.label,
+                    })}
+                  </option>
+                ))}
+              </select>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              {!startOpen && (
+                <Button
+                  className="min-h-11"
+                  disabled={scanning}
+                  onClick={() => setWorkflowOpen(false)}
+                >
+                  {intl.formatMessage(messages.cancel)}
+                </Button>
+              )}
               <Button
                 className="min-h-11"
-                disabled={scanning}
-                onClick={() => setWorkflowOpen(false)}
+                buttonType="primary"
+                disabled={!selectedSource || scanning}
+                onClick={() => void scanSource()}
+                aria-busy={scanning}
               >
-                {intl.formatMessage(messages.cancel)}
+                <DocumentMagnifyingGlassIcon />
+                <span>
+                  {intl.formatMessage(
+                    scanning ? messages.scanning : messages.reviewFiles
+                  )}
+                </span>
               </Button>
-            )}
-            <Button
-              className="min-h-11"
-              buttonType="primary"
-              disabled={!selectedSource || scanning}
-              onClick={() => void scanSource()}
-            >
-              <DocumentMagnifyingGlassIcon />
-              <span>
-                {intl.formatMessage(
-                  scanning ? messages.scanning : messages.reviewFiles
-                )}
-              </span>
-            </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
       {sourceLabel && !scanning && candidates.length === 0 && (
         <p className="text-sm text-gray-400">
           {intl.formatMessage(messages.noCandidates, {
