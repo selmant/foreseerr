@@ -33,7 +33,8 @@ usage() {
 
 [[ $# -ge 1 ]] || usage
 out="$1"
-[[ "$out" == /* ]] || out="$PWD/$out"
+# Absolute: /x, or a Windows drive path (D:\a\_temp on a Windows runner).
+[[ "$out" == /* || "$out" =~ ^[A-Za-z]:[\\/] ]] || out="$PWD/$out"
 shift
 target=""
 skip_web=0
