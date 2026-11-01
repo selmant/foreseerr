@@ -165,7 +165,11 @@ const ManualImport = ({
     setRefreshingSources(true);
     try {
       const response = await axios.get<{ sources: ImportSource[] }>(
-        `/api/v1/media/${mediaId}/servarr/imports/sources?is4k=${is4k}`,
+        `/api/v1/media/${mediaId}/servarr/imports/sources?is4k=${is4k}${
+          interventionId !== undefined
+            ? `&interventionId=${interventionId}`
+            : ''
+        }`,
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
@@ -188,7 +192,7 @@ const ManualImport = ({
         setSourcesLoaded(true);
       }
     }
-  }, [intl, is4k, mediaId]);
+  }, [interventionId, intl, is4k, mediaId]);
 
   const cancelPolling = useCallback(() => {
     const state = pollRef.current;

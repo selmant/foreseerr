@@ -8,8 +8,8 @@ use serde_json::{Map, Value};
 use super::arrcall::{ArrError, ArrServer};
 use super::interventions;
 use super::mediaservarr::{
-    answer, body, body_flag, body_text, chain, or_empty_list, put, query, query_is4k, redeem,
-    resolve, Context, Fail, Native, Step,
+    answer, body, body_flag, body_text, chain, or_empty_list, put, query, query_is4k, query_value,
+    redeem, resolve, Context, Fail, Native, Step,
 };
 use super::mediawrite::MANAGE_REQUESTS;
 use super::servarrtokens;
@@ -338,16 +338,42 @@ fn write_route(ctx: &Ready<'_>) -> Result<i64, super::Fallback> {
     Ok(ctx.authenticated(MANAGE_REQUESTS)?.id)
 }
 
-/// `GET /media/{id}/servarr/imports/sources`.
+/// The intervention id of a sources query, if it names one.
+fn query_intervention(q: &[(String, String)]) -> Result<Option<i64>, String> {
+    query_value(q, "interventionId")
+        .map(|v| {
+            v.parse::<i64>()
+                .map_err(|_| String::from("interventionId isn't an integer"))
+        })
+        .transpose()
+}
+
+/// `GET /media/{id}/servarr/imports/sources`. With `interventionId`, only
+/// that intervention's own download is offered.
 pub(super) fn sources<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
-        let (user, id, is4k) = match read_route(ctx, 3) {
+        let parsed = ctx.authenticated(MANAGE_REQUESTS).and_then(|user| {
+            let q = query(ctx, &["is4k", "interventionId"])?;
+            Ok((
+                user.id,
+                ctx.path_id(3)?,
+                query_is4k(&q)?,
+                query_intervention(&q)?,
+            ))
+        });
+        let (user, id, is4k, intervention) = match parsed {
             Ok(v) => v,
             Err(why) => return Outcome::forward(why),
         };
         let result = async {
             let c = resolve(ctx, id, is4k).await?;
-            let found = current_sources(&c, &c.arr(ctx)).await?;
+            let mut found = current_sources(&c, &c.arr(ctx)).await?;
+            if let Some(iid) = intervention {
+                let download = intervention_download(ctx, &c, iid).await?;
+                found.retain(|s| {
+                    matches!(s.get("downloadId"), Some(Value::String(d)) if Some(d.as_str()) == download.as_deref())
+                });
+            }
             let list: Vec<Value> = found
                 .into_iter()
                 .map(|source| {
@@ -704,29 +730,40 @@ async fn import_intervention(
     id: i64,
     sources: &[Value],
 ) -> Step<i64> {
+    let download = intervention_download(ctx, c, id).await?;
+    if sources.iter().all(|s| {
+        matches!(s.get("downloadId"), Some(Value::String(d)) if Some(d.as_str()) == download.as_deref())
+    }) {
+        Ok(id)
+    } else {
+        Err(invalid_intervention())
+    }
+}
+
+fn invalid_intervention() -> Fail {
+    Fail::Status(
+        409,
+        String::from("This intervention is not valid for the selected import."),
+    )
+}
+
+/// The download of an active, importable intervention of this title.
+async fn intervention_download(ctx: &Ready<'_>, c: &Context, id: i64) -> Step<Option<String>> {
     let record = interventions::load(&ctx.state.db, id)
         .await
         .map_err(|e| Fail::Status(500, format!("{e:#}")))?;
     let external = c.external_id;
-    let valid = record.is_some_and(|r| {
-        r.state == "active"
-            && r.manual_import_capable
-            && r.media_id == c.media_id
-            && r.service_id == c.service_id
-            && external == r.external_service_id
-            && r.is4k == c.is4k
-            && sources.iter().all(|s| {
-                matches!(s.get("downloadId"), Some(Value::String(d)) if Some(d.as_str()) == r.download_id.as_deref())
-            })
-    });
-    if valid {
-        Ok(id)
-    } else {
-        Err(Fail::Status(
-            409,
-            String::from("This intervention is not valid for the selected import."),
-        ))
-    }
+    record
+        .filter(|r| {
+            r.state == "active"
+                && r.manual_import_capable
+                && r.media_id == c.media_id
+                && r.service_id == c.service_id
+                && external == r.external_service_id
+                && r.is4k == c.is4k
+        })
+        .map(|r| r.download_id)
+        .ok_or_else(invalid_intervention)
 }
 
 async fn run_import(ctx: &Ready<'_>, user: i64, id: i64, b: &ImportBody) -> Step<Value> {
@@ -1020,6 +1057,22 @@ mod tests {
             matches!(parsed, Some(Ok(ImportBody { copy: true, .. }))),
             "copy mode"
         );
+    }
+
+    #[test]
+    fn sources_query_intervention() {
+        let q = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect()
+        };
+        assert_eq!(query_intervention(&q(&[("is4k", "false")])), Ok(None));
+        assert_eq!(
+            query_intervention(&q(&[("interventionId", "12")])),
+            Ok(Some(12))
+        );
+        assert!(query_intervention(&q(&[("interventionId", "x")])).is_err());
     }
 
     #[test]

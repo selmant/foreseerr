@@ -11596,6 +11596,11 @@ paths:
           name: is4k
           schema:
             type: boolean
+        - in: query
+          name: interventionId
+          description: Offer only the download of this active intervention. Returns 409 if the intervention is not valid for the title.
+          schema:
+            type: integer
       responses:
         '200':
           description: Opaque tokens for downloads currently requiring manual import; an empty list means no intervention is required.
