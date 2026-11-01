@@ -20,7 +20,8 @@ Filter by Radarr vs Sonarr and movie vs series. The view, filters, and page are
 saved in the URL, so shared links and browser Back return to the same queue.
 
 Each warning separates the service's explanation from the available next steps.
-**Manual Import** lets you review downloaded files and their assignments. It
+**Manual Import** opens that warning's own download and lists its files for
+review, with the ready ones selected. It
 appears when the service reports a completed download with a file location.
 Otherwise, the row explains why import is unavailable. **Manage downloads** opens
 the title's management panel to review its queue or find another release.

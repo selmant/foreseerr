@@ -54,7 +54,8 @@ export type Release = {
 export type ImportCandidate = {
   token: string;
   source?: string;
-  name: string;
+  /** The Arr may leave it out. */
+  name: string | null;
   relativePath?: string;
   folderName?: string;
   size: number;
@@ -67,6 +68,15 @@ export type ImportCandidate = {
   seasonNumber?: number;
   episodes?: Episode[];
   complete: boolean;
+  /**
+   * What the Arr left out that an import needs: `series`, `seasonNumber`,
+   * `episodes` (picked episodes stand in for them), `movie`, `quality`,
+   * `languages` (both can be chosen).
+   */
+  missing?: string[];
+  /** The Arr's ids of the detected quality and languages; 0 is Unknown. */
+  qualityId?: number;
+  languageIds?: number[];
   /**
    * Not a video file, or flagged as potentially dangerous, executable or of
    * a type rejected in the Arr: never importable.
@@ -82,3 +92,9 @@ export type ImportCandidate = {
 
 export const formatSize = (size: number) =>
   `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
+
+export type ImportOption = { id: number; name: string };
+export type ImportOptions = {
+  qualities: ImportOption[];
+  languages: ImportOption[];
+};

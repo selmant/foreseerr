@@ -6,7 +6,9 @@ import defineMessages from '@app/utils/defineMessages';
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
+  CheckCircleIcon,
   DocumentMagnifyingGlassIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -17,6 +19,7 @@ import { explainRejections, rejectionMessages } from './rejectionExplanations';
 import {
   formatSize,
   type ImportCandidate,
+  type ImportOptions,
   type ImportSource,
   type ServarrContext,
 } from './servarrTypes';
@@ -26,14 +29,25 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   noSources: 'No download is waiting for a manual import.',
   availabilityFailed: 'Unable to check whether a download needs manual import.',
   retry: 'Retry',
-  status: 'Manual import: {status}',
+  jobQueued:
+    'Waiting for {service} to start importing {count, plural, one {# file} other {# files}}…',
+  jobStarted:
+    '{service} is {mode, select, copy {copying} other {moving}} {count, plural, one {# file} other {# files}} into your library…',
+  jobCompleted:
+    '{count, plural, one {# file} other {# files}} imported into your library.',
+  jobFailed: '{service} could not import the files.',
+  jobUnknown: "Foreseerr couldn't confirm whether the import finished.",
+  jobResolving: 'This warning will clear from the list in a moment.',
+  reviewAgain: 'Review files again',
+  dismiss: 'Done',
   chooseSource: 'Choose an import source',
+  waitingSource: 'Download waiting for import',
   chooseSourceDescription:
     'Foreseerr asks {service} to scan the selected download; it does not inspect your filesystem itself.',
   importSource: 'Import source',
   download: 'Download: {label}',
   reviewFiles: 'Review Files',
-  scanning: 'Scanning…',
+  scanningSource: 'Asking {service} for the files in {source}…',
   scanFailed: 'Unable to scan this import source.',
   noCandidates: '{service} found no manual-import candidates in {source}.',
   reviewFrom: 'Review from {source}',
@@ -42,30 +56,48 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   moveFiles: 'Move Files',
   copyFiles: 'Copy Files',
   importSelected: 'Import Selected ({count})',
-  confirmTitle:
-    '{mode, select, copy {Copy} other {Move}} {count, plural, one {# file} other {# files}}?',
-  confirmDescription:
-    '{service} will {mode, select, copy {copy} other {move}} the selected files.',
-  confirmDescriptionWarnings:
-    '{service} will {mode, select, copy {copy} other {move}} the selected files even though it reported warnings.',
+  importAnyway: 'Import Anyway ({count})',
   cancel: 'Cancel',
-  importNow: 'Import',
   importing: 'Importing…',
   unknownQuality: 'Unknown quality',
   unknownLanguage: 'Unknown language',
   customFormatScore: 'CF {score}',
+  chooseDetails:
+    "{service} couldn't detect everything about this file. Choose what's missing below.",
+  quality: 'Quality',
+  language: 'Language',
+  chooseQuality: 'Choose a quality',
+  chooseLanguage: 'Choose a language',
+  optionsFailed: 'Unable to load the qualities and languages of {service}.',
   incomplete:
     '{service} needs additional metadata for this file. Open it in {service} to complete the import.',
   episodeAssignment: 'Episode Assignment',
-  applyEpisodes: 'Apply with {service}',
-  applying: 'Applying…',
-  chooseEpisodeFirst: 'Choose at least one episode before rematching.',
+  rematching: 'Matching with {service}…',
+  noEpisodes: 'No episodes assigned yet',
+  moreEpisodes: '{list} and {count, plural, one {# more} other {# more}}',
+  changeEpisodes: 'Change',
+  doneEpisodes: 'Done',
+  numberFiles:
+    'Number the {count, plural, one {# selected file} other {# selected files}} in order…',
+  numberFilesHint:
+    'For a season pack {service} misread: files are sorted by name and given one episode each, starting from the episode you choose.',
+  firstEpisode: 'Choose the first episode',
+  assign: 'Assign',
+  numberFilesPreview:
+    '{first} to {last} for the {count, plural, one {# file} other {# files}}, in name order.',
+  numberFilesShort:
+    'There are fewer episodes than {count, plural, one {# file} other {# files}} from this one on.',
+  confirmEpisodes:
+    '{count, plural, one {Use this episode} other {Use these # episodes}}',
+  pickEpisodes: 'Pick the episodes this file holds so {service} can import it.',
+  notReady:
+    "{count, plural, one {# selected file isn't} other {# selected files aren't}} ready to import yet.",
+  waitingForRematch: 'Waiting for {service} to match the episodes you picked…',
   rematchFailed: '{service} could not rematch this file.',
   pollTimeout: 'Manual import status check timed out.',
   importCompleted: 'Manual import completed.',
   importFailed: 'Manual import failed.',
   statusFailed: 'Unable to read manual import status.',
-  importQueued: 'Manual import queued.',
   submitFailed: 'Unable to submit manual import.',
   title: 'Import downloaded files',
   description:
@@ -83,12 +115,34 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
 });
 
 const MANUAL_IMPORT_POLL_MS = 2000;
+// What picked episodes stand in for when the Arr couldn't match a file.
+const EPISODE_FIELDS = ['series', 'seasonNumber', 'episodes'];
+// How long episode picks settle before Sonarr rematches the file.
+const REMATCH_DELAY_MS = 600;
 const MANUAL_IMPORT_POLL_DEADLINE_MS = 2 * 60 * 60 * 1000;
 
 const errorMessage = (error: unknown, fallback: string) =>
   axios.isAxiosError(error)
     ? (error.response?.data?.message ?? fallback)
     : fallback;
+
+// Files ready to import start selected, like Sonarr's own manual import:
+// those without warnings, or every ready one when opened from an
+// intervention, whose warnings are the reason it is being resolved (the
+// confirmation still lists them).
+const initialSelection = (
+  candidates: ImportCandidate[],
+  includeWarnings: boolean
+) =>
+  candidates
+    .filter(
+      (candidate) =>
+        candidate.complete &&
+        !candidate.unsafe &&
+        !candidate.multiSeason &&
+        (includeWarnings || !candidate.rejections.length)
+    )
+    .map((candidate) => candidate.token);
 
 const ManualImport = ({
   mediaId,
@@ -115,7 +169,8 @@ const ManualImport = ({
   const service = context.service.name;
   const sourcesAbortRef = useRef<AbortController | undefined>(undefined);
   const scanAbortRef = useRef<AbortController | undefined>(undefined);
-  const reprocessAbortRef = useRef<AbortController | undefined>(undefined);
+  const reprocessAbortRef = useRef(new Map<string, AbortController>());
+  const rematchTimersRef = useRef(new Map<string, number>());
   const submitAbortRef = useRef<AbortController | undefined>(undefined);
   const pollRef = useRef<{
     timeoutId?: number;
@@ -135,28 +190,36 @@ const ManualImport = ({
     Record<string, number[]>
   >({});
   const [mode, setMode] = useState<'move' | 'copy'>('move');
-  const [importStatus, setImportStatus] = useState<string>();
+  // The submitted import, until it is dismissed or reviewed again.
+  const [importJob, setImportJob] = useState<{
+    count: number;
+    mode: 'move' | 'copy';
+    status: string;
+    message?: string;
+  }>();
+  const lastSourceRef = useRef<string>(undefined);
   const [error, setError] = useState<string>();
   const [scanning, setScanning] = useState(false);
-  const [rematchingToken, setRematchingToken] = useState<string>();
+  // Files waiting for their picks to settle, and files being rematched.
+  const [pendingRematch, setPendingRematch] = useState<Set<string>>(new Set());
+  const [rematching, setRematching] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkStart, setBulkStart] = useState('');
+  // A quality or language picked for a file the Arr couldn't detect one for.
+  const [overrides, setOverrides] = useState<
+    Record<string, { qualityId?: number; languageIds?: number[] }>
+  >({});
+  const [options, setOptions] = useState<ImportOptions>();
+  const optionsRequestedRef = useRef(false);
+  const [optionsError, setOptionsError] = useState<string>();
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [polling, setPolling] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const confirmCancelRef = useRef<HTMLButtonElement>(null);
-  const importTriggerRef = useRef<HTMLButtonElement>(null);
   useEffect(
     () => onSourceCountChanged?.(sources.length),
     [onSourceCountChanged, sources.length]
   );
-  useEffect(() => {
-    if (confirmOpen) confirmCancelRef.current?.focus({ preventScroll: true });
-  }, [confirmOpen]);
-  const dismissConfirmation = () => {
-    setConfirmOpen(false);
-    window.requestAnimationFrame(() =>
-      importTriggerRef.current?.focus({ preventScroll: true })
-    );
-  };
 
   const refreshSources = useCallback(async () => {
     sourcesAbortRef.current?.abort();
@@ -165,7 +228,11 @@ const ManualImport = ({
     setRefreshingSources(true);
     try {
       const response = await axios.get<{ sources: ImportSource[] }>(
-        `/api/v1/media/${mediaId}/servarr/imports/sources?is4k=${is4k}`,
+        `/api/v1/media/${mediaId}/servarr/imports/sources?is4k=${is4k}${
+          interventionId !== undefined
+            ? `&interventionId=${interventionId}`
+            : ''
+        }`,
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
@@ -188,7 +255,16 @@ const ManualImport = ({
         setSourcesLoaded(true);
       }
     }
-  }, [intl, is4k, mediaId]);
+  }, [interventionId, intl, is4k, mediaId]);
+
+  const cancelRematches = useCallback(() => {
+    reprocessAbortRef.current.forEach((controller) => controller.abort());
+    reprocessAbortRef.current.clear();
+    rematchTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    rematchTimersRef.current.clear();
+    setPendingRematch(new Set());
+    setRematching(new Set());
+  }, []);
 
   const cancelPolling = useCallback(() => {
     const state = pollRef.current;
@@ -202,29 +278,23 @@ const ManualImport = ({
     return () => {
       sourcesAbortRef.current?.abort();
       scanAbortRef.current?.abort();
-      reprocessAbortRef.current?.abort();
       submitAbortRef.current?.abort();
+      cancelRematches();
       cancelPolling();
     };
-  }, [cancelPolling, refreshSources]);
+  }, [cancelPolling, cancelRematches, refreshSources]);
 
   useEffect(() => {
     if (refreshToken > 0) void refreshSources();
   }, [refreshSources, refreshToken]);
 
-  const openWorkflow = () => {
-    setError(undefined);
-    setCandidates([]);
-    setSelected([]);
-    setSourceLabel(undefined);
-    setWorkflowOpen(true);
-  };
-
-  const scanSource = async () => {
-    if (!selectedSource) return;
+  const scanSource = async (sourceToken = selectedSource) => {
+    if (!sourceToken) return;
+    lastSourceRef.current = sourceToken;
     scanAbortRef.current?.abort();
     const controller = new AbortController();
     scanAbortRef.current = controller;
+    cancelRematches();
     setScanning(true);
     setError(undefined);
     try {
@@ -233,14 +303,16 @@ const ManualImport = ({
         candidates: ImportCandidate[];
       }>(
         `/api/v1/media/${mediaId}/servarr/imports/scan`,
-        { is4k, sourceToken: selectedSource },
+        { is4k, sourceToken },
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
       setSourceLabel(response.data.source);
       setCandidates(response.data.candidates);
-      setSelected([]);
+      setSelected(initialSelection(response.data.candidates, startOpen));
       setEpisodeMappings({});
+      setOverrides({});
+      setExpanded(new Set());
     } catch (error) {
       if (controller.signal.aborted) return;
       setError(errorMessage(error, intl.formatMessage(messages.scanFailed)));
@@ -253,41 +325,70 @@ const ManualImport = ({
     }
   };
 
-  const rematchCandidate = async (candidate: ImportCandidate) => {
-    const episodeIds =
-      episodeMappings[candidate.token] ??
-      candidate.episodes?.map((episode) => episode.id) ??
-      [];
-    if (!episodeIds.length) {
-      setError(intl.formatMessage(messages.chooseEpisodeFirst));
-      return;
-    }
-    reprocessAbortRef.current?.abort();
+  const openWorkflow = () => {
+    setError(undefined);
+    setCandidates([]);
+    setSelected([]);
+    setSourceLabel(undefined);
+    setWorkflowOpen(true);
+    // A single download needs no choosing: review its files straight away.
+    if (sources.length === 1) void scanSource(sources[0].token);
+  };
+
+  // An intervention names its download, so its files are scanned as soon
+  // as the download is confirmed to still be waiting.
+  const autoScannedRef = useRef(false);
+  useEffect(() => {
+    if (!startOpen || autoScannedRef.current || sources.length !== 1) return;
+    autoScannedRef.current = true;
+    void scanSource(sources[0].token);
+    // scanSource is recreated each render; the ref keeps this to one scan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sources, startOpen]);
+
+  const moveToken = <T,>(items: Set<T> | T[], from: T, to: T) =>
+    [...items].map((item) => (item === from ? to : item));
+
+  // Sonarr rematches a file as soon as its episodes are picked, as in its
+  // own manual import, so the warnings shown are always for the current
+  // assignment.
+  const rematchCandidate = async (token: string, episodeIds: number[]) => {
+    // A newer pick for the same file supersedes the one still matching.
+    reprocessAbortRef.current.get(token)?.abort();
     const controller = new AbortController();
-    reprocessAbortRef.current = controller;
-    setRematchingToken(candidate.token);
+    reprocessAbortRef.current.set(token, controller);
+    setRematching((current) => new Set(current).add(token));
     setError(undefined);
     try {
       const response = await axios.post<ImportCandidate>(
         `/api/v1/media/${mediaId}/servarr/imports/reprocess`,
-        { is4k, candidateToken: candidate.token, episodeIds },
+        { is4k, candidateToken: token, episodeIds },
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
+      const next = response.data;
       setCandidates((current) =>
-        current.map((item) =>
-          item.token === candidate.token ? response.data : item
-        )
+        current.map((item) => (item.token === token ? next : item))
       );
+      // A file that became importable is selected for import.
       setSelected((current) =>
-        current.map((token) =>
-          token === candidate.token ? response.data.token : token
-        )
+        current.includes(token)
+          ? moveToken(current, token, next.token)
+          : !next.unsafe &&
+              (next.missing ?? (next.complete ? [] : ['unknown'])).every(
+                (field) => EPISODE_FIELDS.includes(field)
+              )
+            ? [...current, next.token]
+            : current
       );
       setEpisodeMappings((current) => {
-        const next = { ...current };
-        delete next[candidate.token];
-        return { ...next, [response.data.token]: episodeIds };
+        const { [token]: ids = episodeIds, ...rest } = current;
+        return { ...rest, [next.token]: ids };
+      });
+      setExpanded((current) => new Set(moveToken(current, token, next.token)));
+      setOverrides((current) => {
+        const { [token]: choice, ...rest } = current;
+        return choice ? { ...rest, [next.token]: choice } : rest;
       });
     } catch (error) {
       if (!controller.signal.aborted)
@@ -298,8 +399,66 @@ const ManualImport = ({
           )
         );
     } finally {
-      if (!controller.signal.aborted) setRematchingToken(undefined);
+      if (reprocessAbortRef.current.get(token) === controller) {
+        reprocessAbortRef.current.delete(token);
+        setRematching((current) => {
+          const next = new Set(current);
+          next.delete(token);
+          return next;
+        });
+      }
     }
+  };
+
+  const chooseDetail = (
+    candidate: ImportCandidate,
+    choice: { qualityId?: number; languageIds?: number[] }
+  ) => {
+    const { token } = candidate;
+    const next = { ...overrides[token], ...choice };
+    setOverrides((current) => ({ ...current, [token]: next }));
+    // Once nothing is left to choose, the file is selected for import.
+    if (
+      !candidate.unsafe &&
+      (!candidate.missing?.includes('quality') ||
+        next.qualityId !== undefined) &&
+      (!candidate.missing?.includes('languages') || !!next.languageIds?.length)
+    )
+      setSelected((current) =>
+        current.includes(token) ? current : [...current, token]
+      );
+  };
+
+  const assignEpisodes = (
+    candidate: ImportCandidate,
+    ids: number[],
+    { expand = true } = {}
+  ) => {
+    const { token } = candidate;
+    setEpisodeMappings((current) => ({ ...current, [token]: ids }));
+    if (expand) setExpanded((current) => new Set(current).add(token));
+    const timers = rematchTimersRef.current;
+    window.clearTimeout(timers.get(token));
+    timers.delete(token);
+    const settled = () =>
+      setPendingRematch((current) => {
+        const next = new Set(current);
+        next.delete(token);
+        return next;
+      });
+    if (!ids.length) {
+      settled();
+      return;
+    }
+    setPendingRematch((current) => new Set(current).add(token));
+    timers.set(
+      token,
+      window.setTimeout(() => {
+        timers.delete(token);
+        settled();
+        void rematchCandidate(token, ids);
+      }, REMATCH_DELAY_MS)
+    );
   };
 
   const beginPolling = (commandToken: string) => {
@@ -311,7 +470,14 @@ const ManualImport = ({
     const poll = async () => {
       if (state.cancelled) return;
       if (Date.now() - startedAt > MANUAL_IMPORT_POLL_DEADLINE_MS) {
-        setError(intl.formatMessage(messages.pollTimeout));
+        setImportJob(
+          (job) =>
+            job && {
+              ...job,
+              status: 'unknown',
+              message: intl.formatMessage(messages.pollTimeout),
+            }
+        );
         setPolling(false);
         return;
       }
@@ -323,19 +489,17 @@ const ManualImport = ({
           { signal: controller.signal }
         );
         if (state.cancelled || controller.signal.aborted) return;
-        setImportStatus(response.data.status);
-        if (['completed', 'failed', 'aborted'].includes(response.data.status)) {
-          if (response.data.status === 'completed') {
+        const { status, message } = response.data;
+        setImportJob((job) => job && { ...job, status, message });
+        if (['completed', 'failed', 'aborted'].includes(status)) {
+          if (status === 'completed') {
             addToast(intl.formatMessage(messages.importCompleted), {
               appearance: 'success',
               autoDismiss: true,
             });
             void refreshSources();
             onChanged();
-          } else
-            setError(
-              response.data.message ?? intl.formatMessage(messages.importFailed)
-            );
+          }
           setPolling(false);
           return;
         }
@@ -345,8 +509,16 @@ const ManualImport = ({
         );
       } catch (error) {
         if (!state.cancelled && !controller.signal.aborted) {
-          setError(
-            errorMessage(error, intl.formatMessage(messages.statusFailed))
+          setImportJob(
+            (job) =>
+              job && {
+                ...job,
+                status: 'unknown',
+                message: errorMessage(
+                  error,
+                  intl.formatMessage(messages.statusFailed)
+                ),
+              }
           );
           setPolling(false);
         }
@@ -358,11 +530,65 @@ const ManualImport = ({
     );
   };
 
+  // What is still missing once the user's picks are counted: picked
+  // episodes stand in for the match, a chosen quality or language for the
+  // undetected one.
+  const stillMissing = (candidate: ImportCandidate) => {
+    const mapped = !!episodeMappings[candidate.token]?.length;
+    const choice = overrides[candidate.token];
+    return (
+      candidate.missing ?? (candidate.complete ? [] : ['unknown'])
+    ).filter(
+      (field) =>
+        !(
+          (mapped && EPISODE_FIELDS.includes(field)) ||
+          (field === 'quality' && choice?.qualityId !== undefined) ||
+          (field === 'languages' && !!choice?.languageIds?.length)
+        )
+    );
+  };
+  // A quality or language can be chosen where the Arr has none or detected
+  // Unknown (id 0); only a missing one has to be.
+  const choosable = (candidate: ImportCandidate) => ({
+    quality:
+      !candidate.unsafe &&
+      (!!candidate.missing?.includes('quality') || candidate.qualityId === 0),
+    languages:
+      !candidate.unsafe &&
+      (!!candidate.missing?.includes('languages') ||
+        !!candidate.languageIds?.includes(0)),
+  });
+  const needsDetails = candidates.some(
+    (candidate) =>
+      choosable(candidate).quality || choosable(candidate).languages
+  );
+  useEffect(() => {
+    if (!needsDetails || optionsRequestedRef.current) return;
+    optionsRequestedRef.current = true;
+    setOptionsError(undefined);
+    axios
+      .get<ImportOptions>(
+        `/api/v1/media/${mediaId}/servarr/imports/options?is4k=${is4k}`
+      )
+      .then((response) => setOptions(response.data))
+      .catch((requestError) => {
+        optionsRequestedRef.current = false;
+        setOptionsError(
+          errorMessage(
+            requestError,
+            intl.formatMessage(messages.optionsFailed, { service })
+          )
+        );
+      });
+  }, [intl, is4k, mediaId, needsDetails, optionsAttempt, service]);
+
   // A flagged file is never imported; a multi-season one only to episodes
   // picked for it.
   const importable = (candidate: ImportCandidate) =>
-    candidate.complete &&
+    !stillMissing(candidate).length &&
     !candidate.unsafe &&
+    !pendingRematch.has(candidate.token) &&
+    !rematching.has(candidate.token) &&
     (!candidate.multiSeason ||
       (episodeMappings[candidate.token]?.length ?? 0) > 0);
   const explain = (candidate: ImportCandidate) =>
@@ -383,7 +609,6 @@ const ManualImport = ({
   );
 
   const submitImport = async () => {
-    setConfirmOpen(false);
     submitAbortRef.current?.abort();
     const controller = new AbortController();
     submitAbortRef.current = controller;
@@ -406,20 +631,27 @@ const ManualImport = ({
               candidateToken,
               episodeIds,
             })),
+          overrides: Object.entries(overrides)
+            .filter(([token]) => selected.includes(token))
+            .map(([candidateToken, choice]) => ({
+              candidateToken,
+              ...choice,
+            })),
           interventionId,
         },
         { signal: controller.signal }
       );
       if (controller.signal.aborted) return;
-      addToast(intl.formatMessage(messages.importQueued), {
-        appearance: 'success',
-        autoDismiss: true,
+      setImportJob({
+        count: selected.length,
+        mode,
+        status: response.data.status?.toLowerCase() ?? 'queued',
       });
       setSelected([]);
-      setImportStatus(response.data.status ?? 'queued');
       setCandidates([]);
+      setSourceLabel(undefined);
+      cancelRematches();
       setWorkflowOpen(startOpen);
-      void refreshSources();
       onChanged();
       beginPolling(response.data.commandToken);
     } catch (error) {
@@ -433,8 +665,63 @@ const ManualImport = ({
   };
 
   const episodes = context.seasons?.flatMap((season) => season.episodes) ?? [];
+  const episodeById = new Map(episodes.map((episode) => [episode.id, episode]));
+  const assignedTo = (candidate: ImportCandidate) =>
+    episodeMappings[candidate.token] ??
+    candidate.episodes?.map((episode) => episode.id) ??
+    [];
+  // A file without episodes, or one from a multi-season download whose
+  // episodes aren't confirmed, keeps its picker open.
+  const unconfirmedMultiSeason = (candidate: ImportCandidate) =>
+    !!candidate.multiSeason && !episodeMappings[candidate.token]?.length;
+  const needsEpisodes = (candidate: ImportCandidate) =>
+    !assignedTo(candidate).length || unconfirmedMultiSeason(candidate);
+  const episodeCode = (episode: (typeof episodes)[number]) =>
+    `S${String(episode.seasonNumber).padStart(2, '0')}E${String(episode.episodeNumber).padStart(2, '0')}`;
+  const describeEpisodes = (ids: number[]) => {
+    if (!ids.length) return intl.formatMessage(messages.noEpisodes);
+    const labels = ids.map((id) => {
+      const episode = episodeById.get(id);
+      return episode ? episodeCode(episode) : `#${id}`;
+    });
+    return labels.length > 4
+      ? intl.formatMessage(messages.moreEpisodes, {
+          list: labels.slice(0, 3).join(', '),
+          count: labels.length - 3,
+        })
+      : labels.join(', ');
+  };
   const isBusy = scanning || submitting || polling;
+  const jobFailed =
+    !!importJob && ['failed', 'aborted', 'unknown'].includes(importJob.status);
+  const sortedEpisodes = [...episodes].sort(
+    (a, b) =>
+      a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber
+  );
+  // A season pack Sonarr misparsed is fixed by numbering its files in
+  // name order from one episode, rather than file by file.
+  const bulkFiles = selectedFiles
+    .filter((candidate) => !candidate.unsafe)
+    .sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? '', undefined, { numeric: true })
+    );
+  const bulkIndex = sortedEpisodes.findIndex(
+    (episode) => String(episode.id) === bulkStart
+  );
+  const bulkEpisodes =
+    bulkIndex === -1
+      ? []
+      : sortedEpisodes.slice(bulkIndex, bulkIndex + bulkFiles.length);
+  const numberFiles = () => {
+    if (bulkEpisodes.length !== bulkFiles.length) return;
+    bulkFiles.forEach((file, index) =>
+      assignEpisodes(file, [bulkEpisodes[index].id], { expand: false })
+    );
+    setBulkStart('');
+    setBulkOpen(false);
+  };
   const readyFiles = candidates.filter(importable);
+  const notReady = selectedFiles.filter((candidate) => !importable(candidate));
 
   return (
     <div className="space-y-3">
@@ -446,20 +733,7 @@ const ManualImport = ({
           {intl.formatMessage(messages.description, { service })}
         </p>
       </div>
-      <Button
-        className="min-h-11 w-full"
-        disabled={refreshingSources || isBusy}
-        aria-busy={refreshingSources}
-        onClick={() => void refreshSources()}
-      >
-        <ArrowPathIcon />
-        <span>
-          {intl.formatMessage(
-            refreshingSources ? messages.checking : messages.refresh
-          )}
-        </span>
-      </Button>
-      {!startOpen && sources.length > 0 && !workflowOpen && (
+      {!startOpen && !importJob && sources.length > 0 && !workflowOpen && (
         <Button
           buttonType="primary"
           className="min-h-11 w-full"
@@ -473,14 +747,30 @@ const ManualImport = ({
           </span>
         </Button>
       )}
-      {sourcesLoaded &&
-        !availabilityError &&
-        !sources.length &&
-        !importStatus && (
+      {/* Checking again only matters while nothing is under review. */}
+      {!importJob && !candidates.length && !scanning && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-gray-400">
-            {intl.formatMessage(messages.noSources)}
+            {!sourcesLoaded
+              ? intl.formatMessage(messages.checking)
+              : !availabilityError && !sources.length
+                ? intl.formatMessage(messages.noSources)
+                : null}
           </p>
-        )}
+          <Button
+            buttonSize="sm"
+            className="min-h-11"
+            disabled={refreshingSources || isBusy}
+            aria-busy={refreshingSources}
+            onClick={() => void refreshSources()}
+          >
+            <ArrowPathIcon
+              className={refreshingSources ? 'animate-spin' : undefined}
+            />
+            <span>{intl.formatMessage(messages.refresh)}</span>
+          </Button>
+        </div>
+      )}
       {availabilityError && (
         <Alert type="warning" title={availabilityError}>
           <button
@@ -494,62 +784,159 @@ const ManualImport = ({
         </Alert>
       )}
       {error && <Alert type="error" title={error} />}
-      {importStatus && (
-        <p role="status" className="text-sm text-gray-300">
-          {intl.formatMessage(messages.status, { status: importStatus })}
-        </p>
-      )}
-      {workflowOpen && sources.length > 0 && !candidates.length && (
-        <div className="space-y-3 rounded-md border border-gray-700 bg-gray-800 p-4 shadow">
-          <div>
-            <div className="font-semibold text-white">
-              {intl.formatMessage(messages.chooseSource)}
-            </div>
-            <p className="mt-1 text-sm text-gray-400">
-              {intl.formatMessage(messages.chooseSourceDescription, {
-                service,
-              })}
-            </p>
-          </div>
-          <select
-            className="min-h-11 w-full"
-            aria-label={intl.formatMessage(messages.importSource)}
-            value={selectedSource}
-            onChange={(event) => setSelectedSource(event.target.value)}
-            disabled={scanning}
+      {optionsError && candidates.length > 0 && (
+        <Alert type="error" title={optionsError}>
+          <button
+            className="min-h-11 font-medium underline focus-visible:ring-2 focus-visible:ring-indigo-500"
+            type="button"
+            onClick={() => setOptionsAttempt((value) => value + 1)}
           >
-            {sources.map((source) => (
-              <option key={source.token} value={source.token}>
-                {intl.formatMessage(messages.download, { label: source.label })}
-              </option>
-            ))}
-          </select>
-          <div className="flex flex-wrap justify-end gap-2">
-            {!startOpen && (
-              <Button
-                className="min-h-11"
-                disabled={scanning}
-                onClick={() => setWorkflowOpen(false)}
-              >
-                {intl.formatMessage(messages.cancel)}
-              </Button>
+            {intl.formatMessage(messages.retry)}
+          </button>
+        </Alert>
+      )}
+      {importJob && (
+        <div
+          role="status"
+          className={`space-y-3 rounded-md border p-4 text-sm shadow ${
+            importJob.status === 'completed'
+              ? 'border-green-500/40 bg-green-500/10 text-green-100'
+              : jobFailed
+                ? 'border-red-500/40 bg-red-500/10 text-red-100'
+                : 'border-gray-700 bg-gray-800 text-gray-200'
+          }`}
+        >
+          <div className="flex items-center gap-2 font-semibold">
+            {importJob.status === 'completed' ? (
+              <CheckCircleIcon className="h-5 w-5 flex-none" />
+            ) : jobFailed ? (
+              <ExclamationTriangleIcon className="h-5 w-5 flex-none" />
+            ) : (
+              <ArrowPathIcon className="h-5 w-5 flex-none animate-spin" />
             )}
-            <Button
-              className="min-h-11"
-              buttonType="primary"
-              disabled={!selectedSource || scanning}
-              onClick={() => void scanSource()}
-            >
-              <DocumentMagnifyingGlassIcon />
-              <span>
-                {intl.formatMessage(
-                  scanning ? messages.scanning : messages.reviewFiles
-                )}
-              </span>
-            </Button>
+            <span>
+              {intl.formatMessage(
+                importJob.status === 'completed'
+                  ? messages.jobCompleted
+                  : importJob.status === 'started'
+                    ? messages.jobStarted
+                    : jobFailed
+                      ? importJob.status === 'unknown'
+                        ? messages.jobUnknown
+                        : messages.jobFailed
+                      : messages.jobQueued,
+                { service, count: importJob.count, mode: importJob.mode }
+              )}
+            </span>
           </div>
+          {jobFailed && (
+            <p className="break-words">
+              {importJob.message ?? intl.formatMessage(messages.importFailed)}
+            </p>
+          )}
+          {importJob.status === 'completed' && startOpen && (
+            <p>{intl.formatMessage(messages.jobResolving)}</p>
+          )}
+          {(jobFailed || (importJob.status === 'completed' && !startOpen)) && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {jobFailed && lastSourceRef.current && (
+                <Button
+                  buttonSize="sm"
+                  className="min-h-11"
+                  onClick={() => {
+                    setImportJob(undefined);
+                    void scanSource(lastSourceRef.current);
+                  }}
+                >
+                  {intl.formatMessage(messages.reviewAgain)}
+                </Button>
+              )}
+              <Button
+                buttonSize="sm"
+                className="min-h-11"
+                onClick={() => {
+                  setImportJob(undefined);
+                  void refreshSources();
+                }}
+              >
+                {intl.formatMessage(messages.dismiss)}
+              </Button>
+            </div>
+          )}
         </div>
       )}
+      {scanning && (
+        <p role="status" className="text-sm text-gray-300">
+          {intl.formatMessage(messages.scanningSource, {
+            service,
+            source: (
+              sources.find((source) => source.token === selectedSource) ??
+              sources[0]
+            )?.label,
+          })}
+        </p>
+      )}
+      {workflowOpen &&
+        !importJob &&
+        !scanning &&
+        sources.length > 0 &&
+        !candidates.length && (
+          <div className="space-y-3 rounded-md border border-gray-700 bg-gray-800 p-4 shadow">
+            <div>
+              <div className="font-semibold text-white">
+                {intl.formatMessage(
+                  sources.length === 1
+                    ? messages.waitingSource
+                    : messages.chooseSource
+                )}
+              </div>
+              <p className="mt-1 text-sm text-gray-400">
+                {intl.formatMessage(messages.chooseSourceDescription, {
+                  service,
+                })}
+              </p>
+            </div>
+            {sources.length === 1 ? (
+              <p className="break-all font-mono text-xs text-gray-300">
+                {sources[0].label}
+              </p>
+            ) : (
+              <select
+                className="min-h-11 w-full"
+                aria-label={intl.formatMessage(messages.importSource)}
+                value={selectedSource}
+                onChange={(event) => setSelectedSource(event.target.value)}
+              >
+                {sources.map((source) => (
+                  <option key={source.token} value={source.token}>
+                    {intl.formatMessage(messages.download, {
+                      label: source.label,
+                    })}
+                  </option>
+                ))}
+              </select>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              {!startOpen && (
+                <Button
+                  className="min-h-11"
+                  onClick={() => setWorkflowOpen(false)}
+                >
+                  {intl.formatMessage(messages.cancel)}
+                </Button>
+              )}
+              <Button
+                className="min-h-11"
+                buttonType="primary"
+                disabled={!selectedSource}
+                onClick={() => void scanSource()}
+              >
+                <DocumentMagnifyingGlassIcon />
+                <span>{intl.formatMessage(messages.reviewFiles)}</span>
+              </Button>
+            </div>
+          </div>
+        )}
       {sourceLabel && !scanning && candidates.length === 0 && (
         <p className="text-sm text-gray-400">
           {intl.formatMessage(messages.noCandidates, {
@@ -571,7 +958,6 @@ const ManualImport = ({
               onClick={() => {
                 setCandidates([]);
                 setSourceLabel(undefined);
-                setConfirmOpen(false);
                 setWorkflowOpen(true);
               }}
             >
@@ -599,9 +985,7 @@ const ManualImport = ({
             <label className="mb-0 flex min-h-11 cursor-pointer items-center gap-2 text-sm font-normal text-gray-200">
               <input
                 type="checkbox"
-                disabled={
-                  isBusy || rematchingToken !== undefined || !readyFiles.length
-                }
+                disabled={isBusy || !readyFiles.length}
                 checked={
                   readyFiles.length > 0 &&
                   readyFiles.every((file) => selected.includes(file.token))
@@ -621,97 +1005,124 @@ const ManualImport = ({
               })}
             </p>
           </div>
-          {confirmOpen ? (
-            // Escape dismisses this confirmation without closing its parent panel.
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
-            <div
-              role="region"
-              aria-label={intl.formatMessage(messages.confirmTitle, {
-                mode,
-                count: selectedFiles.length,
-              })}
-              className="space-y-3 rounded-md border border-gray-600 bg-gray-900/80 p-4 text-sm shadow"
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.stopPropagation();
-                  if (!submitting) dismissConfirmation();
-                }
-              }}
+          {context.mediaType === 'tv' && bulkFiles.length > 1 && !bulkOpen && (
+            <Button
+              buttonSize="sm"
+              className="min-h-11 w-full"
+              disabled={isBusy}
+              onClick={() => setBulkOpen(true)}
             >
-              <div className="font-semibold text-white">
-                {intl.formatMessage(messages.confirmTitle, {
-                  mode,
-                  count: selectedFiles.length,
+              {intl.formatMessage(messages.numberFiles, {
+                count: bulkFiles.length,
+              })}
+            </Button>
+          )}
+          {context.mediaType === 'tv' && bulkFiles.length > 1 && bulkOpen && (
+            <div className="space-y-2 rounded-md border border-gray-700 bg-gray-800 p-3">
+              <label
+                htmlFor="manual-import-bulk-start"
+                className="mb-0 block text-sm font-semibold text-gray-200"
+              >
+                {intl.formatMessage(messages.numberFiles, {
+                  count: bulkFiles.length,
                 })}
-              </div>
-              <p className="text-gray-300">
-                {intl.formatMessage(
-                  selectedWarnings.length
-                    ? messages.confirmDescriptionWarnings
-                    : messages.confirmDescription,
-                  { service, mode }
-                )}
+              </label>
+              <p className="text-xs text-gray-400">
+                {intl.formatMessage(messages.numberFilesHint, { service })}
               </p>
-              {selectedWarnings.length > 0 && (
-                <ul className="list-disc space-y-1 pl-5 text-yellow-300">
-                  {selectedWarnings.map((warning, index) => (
-                    <li key={`${index}-${warning}`}>{warning}</li>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  id="manual-import-bulk-start"
+                  className="min-h-11 min-w-0 flex-1"
+                  value={bulkStart}
+                  disabled={isBusy}
+                  onChange={(event) => setBulkStart(event.target.value)}
+                >
+                  <option value="">
+                    {intl.formatMessage(messages.firstEpisode)}
+                  </option>
+                  {sortedEpisodes.map((episode) => (
+                    <option key={episode.id} value={episode.id}>
+                      {episodeCode(episode)} — {episode.title}
+                    </option>
                   ))}
-                </ul>
-              )}
-              <div className="flex flex-wrap justify-end gap-2">
+                </select>
                 <Button
-                  type="button"
-                  buttonSize="sm"
                   className="min-h-11"
-                  ref={confirmCancelRef}
-                  disabled={submitting}
-                  onClick={dismissConfirmation}
+                  onClick={() => {
+                    setBulkStart('');
+                    setBulkOpen(false);
+                  }}
                 >
                   {intl.formatMessage(messages.cancel)}
                 </Button>
                 <Button
-                  type="button"
-                  buttonType="success"
-                  buttonSize="sm"
+                  buttonType="primary"
                   className="min-h-11"
                   disabled={
-                    !selectedFiles.length ||
-                    submitting ||
-                    !selectedFiles.every(importable)
+                    isBusy ||
+                    rematching.size > 0 ||
+                    pendingRematch.size > 0 ||
+                    !bulkEpisodes.length ||
+                    bulkEpisodes.length !== bulkFiles.length
                   }
-                  onClick={() => void submitImport()}
+                  onClick={numberFiles}
                 >
-                  <ArrowDownTrayIcon />
-                  <span>
-                    {intl.formatMessage(
-                      submitting ? messages.importing : messages.importNow
-                    )}
-                  </span>
+                  {intl.formatMessage(messages.assign)}
                 </Button>
               </div>
+              {bulkEpisodes.length > 0 && (
+                <p role="status" className="text-xs text-gray-400">
+                  {bulkEpisodes.length === bulkFiles.length
+                    ? intl.formatMessage(messages.numberFilesPreview, {
+                        first: episodeCode(bulkEpisodes[0]),
+                        last: episodeCode(
+                          bulkEpisodes[bulkEpisodes.length - 1]
+                        ),
+                        count: bulkFiles.length,
+                      })
+                    : intl.formatMessage(messages.numberFilesShort, {
+                        count: bulkFiles.length,
+                      })}
+                </p>
+              )}
             </div>
-          ) : (
-            <Button
-              buttonType="success"
-              className="min-h-11 w-full"
-              ref={importTriggerRef}
-              type="button"
-              disabled={
-                !selected.length ||
-                submitting ||
-                rematchingToken !== undefined ||
-                !selectedFiles.every(importable)
-              }
-              onClick={() => setConfirmOpen(true)}
-            >
-              <ArrowDownTrayIcon />
-              <span>
-                {intl.formatMessage(messages.importSelected, {
-                  count: selected.length,
-                })}
-              </span>
-            </Button>
+          )}
+          <Button
+            buttonType="success"
+            className="min-h-11 w-full"
+            type="button"
+            disabled={
+              !selected.length || submitting || !selectedFiles.every(importable)
+            }
+            aria-busy={submitting}
+            onClick={() => void submitImport()}
+          >
+            <ArrowDownTrayIcon />
+            <span>
+              {intl.formatMessage(
+                submitting
+                  ? messages.importing
+                  : selectedWarnings.length
+                    ? messages.importAnyway
+                    : messages.importSelected,
+                { count: selected.length }
+              )}
+            </span>
+          </Button>
+          {notReady.length > 0 && (
+            <p className="text-xs text-yellow-300">
+              {intl.formatMessage(
+                notReady.some(
+                  (candidate) =>
+                    pendingRematch.has(candidate.token) ||
+                    rematching.has(candidate.token)
+                )
+                  ? messages.waitingForRematch
+                  : messages.notReady,
+                { count: notReady.length, service }
+              )}
+            </p>
           )}
           <ul className="divide-y divide-gray-700 overflow-hidden rounded-md border border-gray-700 shadow">
             {candidates.map((candidate) => {
@@ -721,10 +1132,7 @@ const ManualImport = ({
                   service,
                 });
               const warnings = explain(candidate);
-              const assigned =
-                episodeMappings[candidate.token] ??
-                candidate.episodes?.map((episode) => episode.id) ??
-                [];
+              const assigned = assignedTo(candidate);
               const checkboxId = `manual-import-${candidate.token}`;
               return (
                 <li key={candidate.token} className="px-4 py-3 text-sm">
@@ -733,12 +1141,7 @@ const ManualImport = ({
                       id={checkboxId}
                       type="checkbox"
                       className="mt-0.5 flex-none"
-                      disabled={
-                        (!importable(candidate) &&
-                          !selected.includes(candidate.token)) ||
-                        submitting ||
-                        rematchingToken !== undefined
-                      }
+                      disabled={!!candidate.unsafe || submitting}
                       checked={selected.includes(candidate.token)}
                       onChange={() =>
                         setSelected((current) =>
@@ -784,10 +1187,96 @@ const ManualImport = ({
                     </label>
                   </div>
                   <div className="mt-2 space-y-2 sm:ml-9">
-                    {!candidate.complete && (
-                      <p className="mt-1 text-xs text-yellow-300">
-                        {intl.formatMessage(messages.incomplete, { service })}
-                      </p>
+                    {!candidate.unsafe &&
+                      stillMissing(candidate).length > 0 &&
+                      !rematching.has(candidate.token) &&
+                      !pendingRematch.has(candidate.token) && (
+                        <p className="mt-1 text-xs text-yellow-300">
+                          {intl.formatMessage(
+                            stillMissing(candidate).every((field) =>
+                              ['quality', 'languages'].includes(field)
+                            )
+                              ? messages.chooseDetails
+                              : context.mediaType === 'tv' && !assigned.length
+                                ? messages.pickEpisodes
+                                : messages.incomplete,
+                            { service }
+                          )}
+                        </p>
+                      )}
+                    {(choosable(candidate).quality ||
+                      choosable(candidate).languages) && (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {choosable(candidate).quality && (
+                          <div>
+                            <label
+                              htmlFor={`${checkboxId}-quality`}
+                              className="text-xs text-gray-400"
+                            >
+                              {intl.formatMessage(messages.quality)}
+                            </label>
+                            <select
+                              id={`${checkboxId}-quality`}
+                              className="min-h-11 w-full"
+                              disabled={isBusy || !options}
+                              value={
+                                overrides[candidate.token]?.qualityId ?? ''
+                              }
+                              onChange={(event) =>
+                                chooseDetail(candidate, {
+                                  qualityId: event.target.value
+                                    ? Number(event.target.value)
+                                    : undefined,
+                                })
+                              }
+                            >
+                              <option value="">
+                                {intl.formatMessage(messages.chooseQuality)}
+                              </option>
+                              {options?.qualities.map((quality) => (
+                                <option key={quality.id} value={quality.id}>
+                                  {quality.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        {choosable(candidate).languages && (
+                          <div>
+                            <label
+                              htmlFor={`${checkboxId}-language`}
+                              className="text-xs text-gray-400"
+                            >
+                              {intl.formatMessage(messages.language)}
+                            </label>
+                            <select
+                              id={`${checkboxId}-language`}
+                              className="min-h-11 w-full"
+                              disabled={isBusy || !options}
+                              value={
+                                overrides[candidate.token]?.languageIds?.[0] ??
+                                ''
+                              }
+                              onChange={(event) =>
+                                chooseDetail(candidate, {
+                                  languageIds: event.target.value
+                                    ? [Number(event.target.value)]
+                                    : undefined,
+                                })
+                              }
+                            >
+                              <option value="">
+                                {intl.formatMessage(messages.chooseLanguage)}
+                              </option>
+                              {options?.languages.map((language) => (
+                                <option key={language.id} value={language.id}>
+                                  {language.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
                     )}
                     {unsafeText ? (
                       <p className="mt-1 text-xs font-semibold text-red-400">
@@ -830,44 +1319,75 @@ const ManualImport = ({
                           ))}
                       </ul>
                     )}
-                    {context.mediaType === 'tv' &&
-                      !candidate.unsafe &&
-                      (selected.includes(candidate.token) ||
-                        !candidate.complete ||
-                        candidate.multiSeason) && (
-                        <div className="mt-2 rounded-md border border-gray-700 bg-gray-800 p-3">
-                          <div className="mb-2 text-sm font-semibold text-gray-200">
-                            {intl.formatMessage(messages.episodeAssignment)}
+                    {context.mediaType === 'tv' && !candidate.unsafe && (
+                      <div className="mt-2 rounded-md border border-gray-700 bg-gray-800 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-200">
+                              {intl.formatMessage(messages.episodeAssignment)}
+                            </div>
+                            <p className="break-words text-xs text-gray-400">
+                              {rematching.has(candidate.token)
+                                ? intl.formatMessage(messages.rematching, {
+                                    service,
+                                  })
+                                : describeEpisodes(assigned)}
+                            </p>
                           </div>
-                          <EpisodeAssignmentPicker
-                            episodes={episodes}
-                            assigned={assigned}
-                            disabled={isBusy || rematchingToken !== undefined}
-                            onChange={(ids) =>
-                              setEpisodeMappings((current) => ({
-                                ...current,
-                                [candidate.token]: ids,
-                              }))
-                            }
-                          />
-                          <Button
-                            className="mt-3 min-h-11 w-full whitespace-normal"
-                            buttonSize="sm"
-                            disabled={
-                              rematchingToken !== undefined ||
-                              submitting ||
-                              !assigned.length
-                            }
-                            onClick={() => void rematchCandidate(candidate)}
-                          >
-                            {rematchingToken === candidate.token
-                              ? intl.formatMessage(messages.applying)
-                              : intl.formatMessage(messages.applyEpisodes, {
-                                  service,
-                                })}
-                          </Button>
+                          {!needsEpisodes(candidate) && (
+                            <Button
+                              buttonSize="sm"
+                              className="min-h-11"
+                              aria-expanded={expanded.has(candidate.token)}
+                              onClick={() =>
+                                setExpanded((current) => {
+                                  const next = new Set(current);
+                                  if (!next.delete(candidate.token))
+                                    next.add(candidate.token);
+                                  return next;
+                                })
+                              }
+                            >
+                              {intl.formatMessage(
+                                expanded.has(candidate.token)
+                                  ? messages.doneEpisodes
+                                  : messages.changeEpisodes
+                              )}
+                            </Button>
+                          )}
                         </div>
-                      )}
+                        {(expanded.has(candidate.token) ||
+                          needsEpisodes(candidate)) && (
+                          <div className="mt-3">
+                            <EpisodeAssignmentPicker
+                              episodes={episodes}
+                              assigned={assigned}
+                              initialSeason={candidate.seasonNumber}
+                              disabled={
+                                isBusy || rematching.has(candidate.token)
+                              }
+                              onChange={(ids) => assignEpisodes(candidate, ids)}
+                            />
+                            {unconfirmedMultiSeason(candidate) &&
+                              assigned.length > 0 && (
+                                <Button
+                                  buttonSize="sm"
+                                  className="mt-3 min-h-11 w-full"
+                                  disabled={isBusy}
+                                  onClick={() =>
+                                    assignEpisodes(candidate, assigned)
+                                  }
+                                >
+                                  {intl.formatMessage(
+                                    messages.confirmEpisodes,
+                                    { count: assigned.length }
+                                  )}
+                                </Button>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </li>
               );
