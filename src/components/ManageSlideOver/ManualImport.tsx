@@ -47,7 +47,6 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   importSource: 'Import source',
   download: 'Download: {label}',
   reviewFiles: 'Review Files',
-  scanning: 'Scanning…',
   scanningSource: 'Asking {service} for the files in {source}…',
   scanFailed: 'Unable to scan this import source.',
   noCandidates: '{service} found no manual-import candidates in {source}.',
@@ -884,7 +883,6 @@ const ManualImport = ({
                 aria-label={intl.formatMessage(messages.importSource)}
                 value={selectedSource}
                 onChange={(event) => setSelectedSource(event.target.value)}
-                disabled={scanning}
               >
                 {sources.map((source) => (
                   <option key={source.token} value={source.token}>
@@ -899,7 +897,6 @@ const ManualImport = ({
               {!startOpen && (
                 <Button
                   className="min-h-11"
-                  disabled={scanning}
                   onClick={() => setWorkflowOpen(false)}
                 >
                   {intl.formatMessage(messages.cancel)}
@@ -908,16 +905,11 @@ const ManualImport = ({
               <Button
                 className="min-h-11"
                 buttonType="primary"
-                disabled={!selectedSource || scanning}
+                disabled={!selectedSource}
                 onClick={() => void scanSource()}
-                aria-busy={scanning}
               >
                 <DocumentMagnifyingGlassIcon />
-                <span>
-                  {intl.formatMessage(
-                    scanning ? messages.scanning : messages.reviewFiles
-                  )}
-                </span>
+                <span>{intl.formatMessage(messages.reviewFiles)}</span>
               </Button>
             </div>
           </div>

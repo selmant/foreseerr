@@ -956,7 +956,6 @@
   "components.ManageSlideOver.ManualImport.reviewFiles": "Review Files",
   "components.ManageSlideOver.ManualImport.reviewFrom": "Review from {source}",
   "components.ManageSlideOver.ManualImport.scanFailed": "Unable to scan this import source.",
-  "components.ManageSlideOver.ManualImport.scanning": "Scanning…",
   "components.ManageSlideOver.ManualImport.scanningSource": "Asking {service} for the files in {source}…",
   "components.ManageSlideOver.ManualImport.selectAll": "Select all ready files",
   "components.ManageSlideOver.ManualImport.selectedCount": "{selected, number} of {total, plural, one {# file selected} other {# files selected}}",
