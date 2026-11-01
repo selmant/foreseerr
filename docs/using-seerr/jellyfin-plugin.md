@@ -9,7 +9,7 @@ description: Run Foreseerr inside Jellyfin as a third-party plugin with SSO
 Anything can change between plugin releases: settings, data, URLs, and behavior. There is **no backward compatibility** between plugin versions and no promised upgrade path. If an update misbehaves, uninstall the plugin, delete `plugins/configurations/Foreseerr` in Jellyfin's data folder, and install again. Report plugin problems in the [plugin repository](https://github.com/selmant/jellyfin-plugin-foreseerr/issues).
 :::
 
-This is an **optional third-party** Jellyfin plugin for **Jellyfin 10.11 and newer**, developed in [selmant/jellyfin-plugin-foreseerr](https://github.com/selmant/jellyfin-plugin-foreseerr). It is not in the official Jellyfin catalog. It starts a bun-compiled Foreseerr process on `127.0.0.1`, reverse-proxies it at `/Foreseerr`, and signs the current Jellyfin Web user in without a password.
+This is an **optional third-party** Jellyfin plugin for **Jellyfin 10.11 and newer**, developed in [selmant/jellyfin-plugin-foreseerr](https://github.com/selmant/jellyfin-plugin-foreseerr). It is not in the official Jellyfin catalog. It starts a bundled Foreseerr server on `127.0.0.1`, reverse-proxies it at `/Foreseerr`, and signs the current Jellyfin Web user in without a password.
 
 Standalone Docker and compiled binaries remain the supported ways to run Foreseerr on its own.
 

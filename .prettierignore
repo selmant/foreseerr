@@ -3,7 +3,6 @@
 dist/
 config/
 cache/config.json
-pnpm-lock.yaml
 .github
 .vscode
 next-env.d.ts

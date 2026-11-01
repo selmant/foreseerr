@@ -130,46 +130,6 @@ launchctl load ~/Library/LaunchAgents/com.foreseerr.plist
 launchctl start com.foreseerr
 ```
   </TabItem>
-  <TabItem value="pm2" label="PM2">
-To run Foreseerr as a PM2 service:
-1. Install PM2:
-```bash
-npm install -g pm2
-```
-2. Start Foreseerr with PM2 from `/opt/foreseerr`:
-```bash
-NODE_ENV=production pm2 start backend-rs/target/release/foreseerr --name foreseerr --interpreter none
-```
-3. Save the process list:
-```bash
-pm2 save
-```
-4. Ensure PM2 starts on boot:
-```bash
-pm2 startup
-```
-**Managing the service**
-- To start the service:
-```bash
-pm2 start foreseerr
-```
-- To stop the service:
-```bash
-pm2 stop foreseerr
-```
-- To restart the service:
-```bash
-pm2 restart foreseerr
-```
-- To view the logs:
-```bash
-pm2 logs foreseerr
-```
-- To view the status:
-```bash
-pm2 status foreseerr
-```
-  </TabItem>
 </Tabs>
 
 ## Windows
@@ -243,46 +203,6 @@ nssm start Foreseerr
 4. To ensure the service starts on boot, run the following command:
 ```powershell
 nssm set Foreseerr Start SERVICE_AUTO_START
-```
-  </TabItem>
-  <TabItem value="pm2" label="PM2">
-To run Foreseerr as a PM2 service:
-1. Install PM2:
-```powershell
-npm install -g pm2
-```
-2. Start Foreseerr with PM2 from `C:\foreseerr`:
-```powershell
-$env:NODE_ENV = "production"; pm2 start backend-rs\target\release\foreseerr.exe --name foreseerr --interpreter none
-```
-3. Save the process list:
-```powershell
-pm2 save
-```
-4. Ensure PM2 starts on boot:
-```powershell
-pm2 startup
-```
-##### Managing the service
-- To start the service:
-```powershell
-pm2 start foreseerr
-```
-- To stop the service:
-```powershell
-pm2 stop foreseerr
-```
-- To restart the service:
-```powershell
-pm2 restart foreseerr
-```
-- To view the logs:
-```powershell
-pm2 logs foreseerr
-```
-- To view the status:
-```powershell
-pm2 status foreseerr
 ```
   </TabItem>
 </Tabs>

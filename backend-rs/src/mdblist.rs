@@ -974,7 +974,7 @@ fn list_id(digits: &str) -> Result<i64, RefError> {
 fn parse_list_url(full: &str, value: &str) -> Result<ListRef, RefError> {
     let forward = |why: &str| {
         Err(RefError::Forward(format!(
-            "{why}; Node's URL parser decides"
+            "{why}; Foreseerr can't read that list URL"
         )))
     };
     let unsupported = || {

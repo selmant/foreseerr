@@ -28,7 +28,7 @@ In case you still want to do it manually, please follow the instructions below.
 
 Before proceeding, choose which installation method best suits your server:
 
-**Seerr Default** (`UID 1000:1000`) — Runs with the container's native `node` user. Matches the official image, but may break SMB share access, trigger "Fix Common Problems" warnings, and cause issues with backup plugins (such as CA Appdata Backup) and network integrations (such as Tailscale).
+**Seerr Default** (`UID 1000:1000`) — Runs with the container's built-in `foreseerr` user. Matches the official image, but may break SMB share access, trigger "Fix Common Problems" warnings, and cause issues with backup plugins (such as CA Appdata Backup) and network integrations (such as Tailscale).
 
 **Unraid Default** (`UID 99:100`) — Runs with Unraid's native `nobody:users` ownership. Follows Unraid best practices, but overrides Seerr's built-in rootless user and may cause compatibility issues with future Seerr updates.
 

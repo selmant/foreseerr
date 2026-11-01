@@ -95,7 +95,7 @@ async fn sync_user(job: &JobCtx, user: &Map<String, Value>) -> Result<()> {
             tracing::warn!(
                 label = "Plex Watchlist Sync",
                 user_id,
-                "Skipping a watchlist Node would read differently: {}",
+                "Skipping a watchlist Foreseerr can't read: {}",
                 why.0
             );
             return Ok(());
