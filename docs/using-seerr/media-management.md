@@ -54,14 +54,23 @@ client.
 **Check downloads again** to refresh its status. A count on the workflow button
 shows completed downloads available for review.
 
-Choose a source and **Review Files**, then select the files to import.
-Incomplete files stay disabled until the service has enough metadata. For
-series, episode assignments can be corrected and applied through Sonarr.
+With one download waiting, its files are scanned straight away. With several,
+choose one and **Review Files**. Files ready to import start selected.
+
+For series, each file shows the episodes it is assigned to. Use **Change** to
+pick others; the service rematches the file on its own a moment later. Files it
+couldn't match keep their picker open, and shift-click ticks a range. To fix a
+season pack the service misread, select its files and **Number the selected
+files in order**: they are sorted by name and given one episode each from the
+episode you choose. When the service couldn't detect a file's quality or
+language, choose it below the file.
 
 **Move Files** removes the source files from the download folder after adding
 them to the library. **Copy Files** keeps the originals. Review the confirmation
 and any warnings before importing. **Cancel** or **Escape** dismisses the
-confirmation while preserving your selections.
+confirmation while preserving your selections. After importing, the panel
+shows the import's progress until the files are in the library, or why the
+service could not import them.
 
 Switching between release search and file import preserves the current review
 while the panel stays open. Interventions can also open the import workflow

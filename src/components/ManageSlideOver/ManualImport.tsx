@@ -726,19 +726,6 @@ const ManualImport = ({
           {intl.formatMessage(messages.description, { service })}
         </p>
       </div>
-      <Button
-        className="min-h-11 w-full"
-        disabled={refreshingSources || isBusy}
-        aria-busy={refreshingSources}
-        onClick={() => void refreshSources()}
-      >
-        <ArrowPathIcon />
-        <span>
-          {intl.formatMessage(
-            refreshingSources ? messages.checking : messages.refresh
-          )}
-        </span>
-      </Button>
       {!startOpen && !importJob && sources.length > 0 && !workflowOpen && (
         <Button
           buttonType="primary"
@@ -753,10 +740,29 @@ const ManualImport = ({
           </span>
         </Button>
       )}
-      {sourcesLoaded && !availabilityError && !sources.length && !importJob && (
-        <p className="text-sm text-gray-400">
-          {intl.formatMessage(messages.noSources)}
-        </p>
+      {/* Checking again only matters while nothing is under review. */}
+      {!importJob && !candidates.length && !scanning && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-gray-400">
+            {!sourcesLoaded
+              ? intl.formatMessage(messages.checking)
+              : !availabilityError && !sources.length
+                ? intl.formatMessage(messages.noSources)
+                : null}
+          </p>
+          <Button
+            buttonSize="sm"
+            className="min-h-11"
+            disabled={refreshingSources || isBusy}
+            aria-busy={refreshingSources}
+            onClick={() => void refreshSources()}
+          >
+            <ArrowPathIcon
+              className={refreshingSources ? 'animate-spin' : undefined}
+            />
+            <span>{intl.formatMessage(messages.refresh)}</span>
+          </Button>
+        </div>
       )}
       {availabilityError && (
         <Alert type="warning" title={availabilityError}>
