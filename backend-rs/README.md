@@ -1,7 +1,7 @@
 # backend-rs
 
-The Foreseerr backend. It replaced the Node server: one binary that listens
-where Node did, runs the migrations, the jobs and the settings bootstrap,
+The Foreseerr backend, and since v0.15.0 the only one: one binary that
+listens where the old Node server did, runs the migrations, the jobs and the settings bootstrap,
 serves the built frontend, and has a handler for every route in
 `seerr-api.yml`. Where a request has no exact answer the handlers give
 the fallback described under "Fallback answers" below.
@@ -9,8 +9,7 @@ the fallback described under "Fallback answers" below.
 The production `Dockerfile` runs this binary. Bun and Vite build the frontend; the final image
 contains neither Bun/Node nor `node_modules`. The package scripts in the
 repository root build the frontend and run this binary; the Rust commands
-use `backend-rs/rust-toolchain.toml`. [AUDIT.md](AUDIT.md) records the
-audit of the port.
+use `backend-rs/rust-toolchain.toml`.
 
 It reads and writes settings.json (reloaded when the file changes) as
 `getSettings().save()` did; each change runs on the latest document under

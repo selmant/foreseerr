@@ -3,14 +3,11 @@
 **/.vscode
 .dockerignore
 .editorconfig
-.eslintrc.js
 .git
 .gitconfig
 .github
 .gitignore
-.pnpm-store
 .husky
-.next
 .prettierignore
 .vscode
 charts

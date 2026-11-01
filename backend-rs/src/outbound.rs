@@ -110,7 +110,29 @@ pub fn builder(
     version: &AppVersion,
     extra_ca: Option<&Path>,
 ) -> Result<reqwest::ClientBuilder> {
-    let mut builder = reqwest::Client::builder().user_agent(version.user_agent());
+    let mut builder = trust_extra_ca(
+        reqwest::Client::builder().user_agent(version.user_agent()),
+        extra_ca,
+    )?;
+    if let Some(proxy) = proxy(settings.get("/network/proxy")) {
+        builder = builder.proxy(proxy);
+    }
+    if let Some(resolver) = crate::dnsresolve::resolver(settings) {
+        builder = builder.dns_resolver(resolver);
+    }
+    Ok(builder)
+}
+
+/// Trust the certificates in the PEM file `extra_ca` (`NODE_EXTRA_CA_CERTS`
+/// or `SHADOW_CA_FILE`) as well as the system's.
+///
+/// # Errors
+///
+/// Fails when the CA file can't be read or parsed.
+pub fn trust_extra_ca(
+    mut builder: reqwest::ClientBuilder,
+    extra_ca: Option<&Path>,
+) -> Result<reqwest::ClientBuilder> {
     if let Some(path) = extra_ca {
         let pem = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
         for cert in reqwest::Certificate::from_pem_bundle(&pem)
@@ -118,12 +140,6 @@ pub fn builder(
         {
             builder = builder.add_root_certificate(cert);
         }
-    }
-    if let Some(proxy) = proxy(settings.get("/network/proxy")) {
-        builder = builder.proxy(proxy);
-    }
-    if let Some(resolver) = crate::dnsresolve::resolver(settings) {
-        builder = builder.dns_resolver(resolver);
     }
     Ok(builder)
 }
