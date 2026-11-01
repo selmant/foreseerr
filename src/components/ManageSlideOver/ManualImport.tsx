@@ -85,7 +85,7 @@ const messages = defineMessages('components.ManageSlideOver.ManualImport', {
   changeEpisodes: 'Change',
   doneEpisodes: 'Done',
   numberFiles:
-    'Number the {count, plural, one {# selected file} other {# selected files}} in order',
+    'Number the {count, plural, one {# selected file} other {# selected files}} in order…',
   numberFilesHint:
     'For a season pack {service} misread: files are sorted by name and given one episode each, starting from the episode you choose.',
   firstEpisode: 'Choose the first episode',
@@ -209,6 +209,7 @@ const ManualImport = ({
   const [pendingRematch, setPendingRematch] = useState<Set<string>>(new Set());
   const [rematching, setRematching] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkStart, setBulkStart] = useState('');
   // A quality or language picked for a file the Arr couldn't detect one for.
   const [overrides, setOverrides] = useState<
@@ -438,10 +439,14 @@ const ManualImport = ({
       );
   };
 
-  const assignEpisodes = (candidate: ImportCandidate, ids: number[]) => {
+  const assignEpisodes = (
+    candidate: ImportCandidate,
+    ids: number[],
+    { expand = true } = {}
+  ) => {
     const { token } = candidate;
     setEpisodeMappings((current) => ({ ...current, [token]: ids }));
-    setExpanded((current) => new Set(current).add(token));
+    if (expand) setExpanded((current) => new Set(current).add(token));
     const timers = rematchTimersRef.current;
     window.clearTimeout(timers.get(token));
     timers.delete(token);
@@ -718,8 +723,10 @@ const ManualImport = ({
   const numberFiles = () => {
     if (bulkEpisodes.length !== bulkFiles.length) return;
     bulkFiles.forEach((file, index) =>
-      assignEpisodes(file, [bulkEpisodes[index].id])
+      assignEpisodes(file, [bulkEpisodes[index].id], { expand: false })
     );
+    setBulkStart('');
+    setBulkOpen(false);
   };
   const readyFiles = candidates.filter(importable);
   const notReady = selectedFiles.filter((candidate) => !importable(candidate));
@@ -1003,7 +1010,19 @@ const ManualImport = ({
               })}
             </p>
           </div>
-          {context.mediaType === 'tv' && bulkFiles.length > 1 && (
+          {context.mediaType === 'tv' && bulkFiles.length > 1 && !bulkOpen && (
+            <Button
+              buttonSize="sm"
+              className="min-h-11 w-full"
+              disabled={isBusy}
+              onClick={() => setBulkOpen(true)}
+            >
+              {intl.formatMessage(messages.numberFiles, {
+                count: bulkFiles.length,
+              })}
+            </Button>
+          )}
+          {context.mediaType === 'tv' && bulkFiles.length > 1 && bulkOpen && (
             <div className="space-y-2 rounded-md border border-gray-700 bg-gray-800 p-3">
               <label
                 htmlFor="manual-import-bulk-start"
@@ -1034,6 +1053,16 @@ const ManualImport = ({
                   ))}
                 </select>
                 <Button
+                  className="min-h-11"
+                  onClick={() => {
+                    setBulkStart('');
+                    setBulkOpen(false);
+                  }}
+                >
+                  {intl.formatMessage(messages.cancel)}
+                </Button>
+                <Button
+                  buttonType="primary"
                   className="min-h-11"
                   disabled={
                     isBusy ||

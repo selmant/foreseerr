@@ -943,7 +943,7 @@
   "components.ManageSlideOver.ManualImport.noEpisodes": "No episodes assigned yet",
   "components.ManageSlideOver.ManualImport.noSources": "No download is waiting for a manual import.",
   "components.ManageSlideOver.ManualImport.notReady": "{count, plural, one {# selected file isn't} other {# selected files aren't}} ready to import yet.",
-  "components.ManageSlideOver.ManualImport.numberFiles": "Number the {count, plural, one {# selected file} other {# selected files}} in order",
+  "components.ManageSlideOver.ManualImport.numberFiles": "Number the {count, plural, one {# selected file} other {# selected files}} in order…",
   "components.ManageSlideOver.ManualImport.numberFilesHint": "For a season pack {service} misread: files are sorted by name and given one episode each, starting from the episode you choose.",
   "components.ManageSlideOver.ManualImport.numberFilesPreview": "{first} to {last} for the {count, plural, one {# file} other {# files}}, in name order.",
   "components.ManageSlideOver.ManualImport.numberFilesShort": "There are fewer episodes than {count, plural, one {# file} other {# files}} from this one on.",
