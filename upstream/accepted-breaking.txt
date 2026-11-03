@@ -1,0 +1,5 @@
+# Known differences from the Seerr API contract (upstream/seerr-api.yml),
+# in oasdiff's --err-ignore format: METHOD /path and the oasdiff message.
+# Each line is a compatibility gap: give the reason and remove it once fixed.
+#
+# None at the moment.

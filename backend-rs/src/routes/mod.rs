@@ -1066,6 +1066,95 @@ fn settings_discover_native<'a>(
     })
 }
 
+#[cfg(test)]
+mod spec_coverage {
+    use axum::http::Method;
+
+    use super::{ROUTES, SETTINGS_SECTIONS, TABLES};
+
+    type Op = (String, &'static str);
+
+    /// A handler and a documented operation are the same route when every
+    /// segment is equal or either side is a parameter: handlers take
+    /// `/request/{id}/{status}` for the documented `/request/{requestId}/retry`,
+    /// or `/media-actions/movie/{id}/rate` for `/media-actions/{mediaType}/{tmdbId}/rate`.
+    fn same_route(a: &Op, b: &Op) -> bool {
+        let param = |s: &str| s.starts_with('{');
+        let (sa, sb): (Vec<&str>, Vec<&str>) = (a.1.split('/').collect(), b.1.split('/').collect());
+        a.0 == b.0
+            && sa.len() == sb.len()
+            && sa
+                .iter()
+                .zip(&sb)
+                .all(|(x, y)| param(x) || param(y) || x.eq_ignore_ascii_case(y))
+    }
+
+    fn handled() -> Vec<Op> {
+        let mut handled: Vec<Op> = Vec::new();
+        for (path, _) in ROUTES {
+            handled.push((Method::GET.to_string(), path));
+        }
+        for (path, _) in SETTINGS_SECTIONS {
+            handled.push((Method::GET.to_string(), path));
+        }
+        for table in TABLES {
+            for (path, method, _) in *table {
+                handled.push((method.to_string(), path));
+            }
+        }
+        handled
+    }
+
+    fn documented() -> Vec<Op> {
+        crate::standalone::fallback::documented()
+            .map(|(method, template)| (method.to_owned(), template))
+            .collect()
+    }
+
+    fn unmatched(ops: &[Op], against: &[Op]) -> Vec<String> {
+        ops.iter()
+            .filter(|op| !against.iter().any(|other| same_route(op, other)))
+            .map(|(method, path)| format!("{method} {path}"))
+            .collect()
+    }
+
+    /// Every operation in seerr-api.yml has a Rust handler. One without
+    /// answers a bare 500 from the fallback, so a documented route (an
+    /// upstream Seerr one especially) that nothing serves is a broken API.
+    #[test]
+    fn every_documented_operation_has_a_handler() {
+        let missing = unmatched(&documented(), &handled());
+        assert!(
+            missing.is_empty(),
+            "documented in seerr-api.yml but no handler in routes::router:\n{}",
+            missing.join("\n")
+        );
+    }
+
+    /// Handlers deliberately left out of seerr-api.yml.
+    const UNDOCUMENTED: [&str; 1] = [
+        // The native desktop host's private route: undocumented so the
+        // validator, csurf and the desktop guard's Origin check skip it
+        // (see `desktopcache`).
+        "POST /api/v1/desktop/browser-cache/redeem",
+    ];
+
+    /// The reverse: every handler is documented, so the spec (and the
+    /// Seerr-compatibility check run on it) describes the whole API.
+    #[test]
+    fn every_handler_is_documented() {
+        let undocumented: Vec<String> = unmatched(&handled(), &documented())
+            .into_iter()
+            .filter(|op| !UNDOCUMENTED.contains(&op.as_str()))
+            .collect();
+        assert!(
+            undocumented.is_empty(),
+            "handled in routes::router but not documented in seerr-api.yml:\n{}",
+            undocumented.join("\n")
+        );
+    }
+}
+
 /// Calling a native handler directly, as the router would after the
 /// validator.
 #[cfg(test)]

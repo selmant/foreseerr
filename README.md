@@ -145,9 +145,11 @@ See the [migration guide](docs/migration-guide.mdx) for the evergreen replacemen
 
 With a running instance: http://localhost:5055/api-docs
 
+Foreseerr serves the [Seerr](https://github.com/seerr-team/seerr) `/api/v1` API, so tools built for Seerr (and for Overseerr and Jellyseerr before it) keep working against it. CI checks the API against upstream's spec on every change. Operations Foreseerr adds are marked `x-foreseerr` in [`seerr-api.yml`](seerr-api.yml). See [upstream/README.md](upstream/README.md) for what is guaranteed and how upstream changes are tracked.
+
 ## Upstream
 
-Foreseerr tracks [seerr-team/seerr](https://github.com/seerr-team/seerr). This fork’s remote is [selmant/foreseerr](https://github.com/selmant/foreseerr).
+Foreseerr began as a fork of [seerr-team/seerr](https://github.com/seerr-team/seerr), and its frontend and much of its request logic come from Seerr and its predecessors, Overseerr and Jellyseerr. The backend has been rewritten in Rust, so upstream is no longer merged. Instead, upstream fixes are ported, and a weekly job lists every upstream commit not yet reviewed; [upstream/sync.json](upstream/sync.json) records how far that review has got. See [upstream/README.md](upstream/README.md).
 
 ## License
 

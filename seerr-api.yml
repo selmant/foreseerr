@@ -3536,6 +3536,7 @@ components:
 paths:
   /desktop/auth-tickets:
     post:
+      x-foreseerr: true
       summary: Issue a challenge-bound desktop authentication ticket
       tags: [auth]
       security:
@@ -3577,6 +3578,7 @@ paths:
         '429': { description: Rate limited }
   /desktop/auth-tickets/redeem:
     post:
+      x-foreseerr: true
       summary: Redeem a challenge-bound desktop authentication ticket
       tags: [auth]
       security: []
@@ -3636,6 +3638,7 @@ paths:
         '503': { description: Jellyfin server unavailable }
   /calendar:
     get:
+      x-foreseerr: true
       summary: Get release calendar entries
       tags: [calendar]
       parameters:
@@ -3809,6 +3812,7 @@ paths:
                 $ref: '#/components/schemas/MainSettings'
   /settings/servarr-interventions:
     get:
+      x-foreseerr: true
       summary: Get Servarr intervention cleanup settings
       description: Requires `ADMIN`.
       tags: [settings]
@@ -3822,6 +3826,7 @@ paths:
         '401': { description: Unauthorized }
         '403': { description: Insufficient permission }
     post:
+      x-foreseerr: true
       summary: Update Servarr intervention cleanup settings
       description: The grace period applies only to warnings detected after this change. Requires `ADMIN`.
       tags: [settings]
@@ -4378,6 +4383,7 @@ paths:
                 $ref: '#/components/schemas/TautulliSettings'
   /settings/trakt:
     get:
+      x-foreseerr: true
       summary: Get Trakt settings
       description: Retrieves current Trakt application credentials (secret masked).
       tags:
@@ -4390,6 +4396,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/TraktSettings'
     post:
+      x-foreseerr: true
       summary: Update Trakt settings
       description: Updates Trakt application Client ID and Client Secret.
       tags:
@@ -4409,6 +4416,7 @@ paths:
                 $ref: '#/components/schemas/TraktSettings'
   /settings/integrations/status:
     get:
+      x-foreseerr: true
       summary: Check integration health
       description: Checks whether configured Trakt, MDBList, and AniList integrations are currently reachable.
       tags:
@@ -4418,6 +4426,7 @@ paths:
           description: Integration health returned
   /settings/integrations/status/refresh:
     post:
+      x-foreseerr: true
       summary: Refresh integration health
       description: Clears cached integration health and runs non-mutating checks immediately.
       tags:
@@ -4427,6 +4436,7 @@ paths:
           description: Integration health refreshed
   /settings/trakt/actions:
     post:
+      x-foreseerr: true
       summary: Update Trakt media actions
       description: Enables or disables watched and rating actions independently of the active Trakt connection method.
       tags:
@@ -4447,6 +4457,7 @@ paths:
           description: Trakt media actions updated
   /settings/anilist:
     get:
+      x-foreseerr: true
       summary: Get AniList settings
       description: Retrieves current AniList application credentials (secret masked).
       tags:
@@ -4459,6 +4470,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AniListSettings'
     post:
+      x-foreseerr: true
       summary: Update AniList settings
       description: Updates AniList application Client ID and Client Secret. The developer app Redirect URL must be https://anilist.co/api/v2/oauth/pin.
       tags:
@@ -4478,6 +4490,7 @@ paths:
                 $ref: '#/components/schemas/AniListSettings'
   /settings/anilist/actions:
     post:
+      x-foreseerr: true
       summary: Enable or disable AniList media actions
       tags:
         - settings
@@ -4497,6 +4510,7 @@ paths:
           description: AniList media actions updated
   /settings/mdblist:
     get:
+      x-foreseerr: true
       summary: Get MDBList settings
       description: Retrieves MDBList API key (masked) and rating badge visibility toggles.
       tags:
@@ -4509,6 +4523,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MdbListSettings'
     post:
+      x-foreseerr: true
       summary: Update MDBList settings
       description: Updates MDBList API key and which rating badges to display.
       tags:
@@ -4921,6 +4936,7 @@ paths:
                 $ref: '#/components/schemas/Job'
   /settings/mapping/status:
     get:
+      x-foreseerr: true
       summary: Get mapping status
       description: |
         Returns the mapping datasets with the state of their last refresh, and
@@ -4936,6 +4952,7 @@ paths:
                 $ref: '#/components/schemas/MappingStatus'
   /settings/mapping/resolutions:
     get:
+      x-foreseerr: true
       summary: List stored mappings
       description: |
         Lists stored mappings of one kind: `unmapped` items most-seen first,
@@ -4976,6 +4993,7 @@ paths:
                     type: number
   /settings/mapping/resolutions/{resolutionId}:
     delete:
+      x-foreseerr: true
       summary: Forget a stored mapping
       description: |
         Undoes a correction, discards a guess so it is worked out again, or
@@ -4993,6 +5011,7 @@ paths:
           description: Mapping deleted
   /settings/mapping/corrections:
     post:
+      x-foreseerr: true
       summary: Save a mapping correction
       description: |
         A correction wins over every automatic step, including the datasets.
@@ -5009,6 +5028,7 @@ paths:
           description: Correction saved
   /settings/mapping/corrections/import:
     post:
+      x-foreseerr: true
       summary: Import mapping corrections
       tags:
         - settings
@@ -5037,6 +5057,7 @@ paths:
                     type: number
   /settings/mapping/datasets/{datasetKey}:
     post:
+      x-foreseerr: true
       summary: Enable or disable a mapping dataset
       description: |
         Enabling fetches the dataset in the background; the status endpoint
@@ -5068,6 +5089,7 @@ paths:
                 $ref: '#/components/schemas/MappingDataset'
   /settings/mapping/datasets/{datasetKey}/refresh:
     post:
+      x-foreseerr: true
       summary: Refresh a mapping dataset
       description: Downloads the dataset now and swaps it in.
       tags:
@@ -6066,6 +6088,7 @@ paths:
                 - password
   /auth/jellyfin/plugin:
     post:
+      x-foreseerr: true
       summary: Sign in from the Jellyfin sidecar plugin
       description: Loopback-only mint used by the Foreseerr Jellyfin plugin, authenticated by the plugin's shared secret header. Maps a Jellyfin user to a Foreseerr session without a password and keeps the ADMIN permission in step with Jellyfin's administrator flag.
       security: []
@@ -6756,6 +6779,7 @@ paths:
                         example: false
   /user/{userId}/sonarr-storage:
     get:
+      x-foreseerr: true
       summary: Get a user's Sonarr storage usage
       description: |
         Size on disk and episode counts of the series tagged with the
@@ -7250,6 +7274,7 @@ paths:
                 $ref: '#/components/schemas/UserSettings'
   /user/{userId}/settings/discover:
     get:
+      x-foreseerr: true
       summary: Get Discover filter defaults for a user
       description: Returns persisted Discover browse filter defaults for a specific user. Requires `MANAGE_USERS` permission if viewing other users.
       tags:
@@ -7270,6 +7295,7 @@ paths:
         '401':
           description: Unauthorized
     post:
+      x-foreseerr: true
       summary: Update Discover filter defaults for a user
       description: Replaces Discover browse filter defaults for a specific user. Requires `MANAGE_USERS` permission if editing other users.
       tags:
@@ -7484,6 +7510,7 @@ paths:
           description: Server error
   /user/{userId}/settings/linked-accounts/trakt:
     get:
+      x-foreseerr: true
       summary: Get Trakt link status for a user
       description: Returns whether the user has linked a Trakt account and the Trakt username if available. Users can only view their own status unless they have `MANAGE_USERS`.
       tags:
@@ -7533,6 +7560,7 @@ paths:
         '401':
           description: Unauthorized
     patch:
+      x-foreseerr: true
       summary: Update Trakt watch-sync preference for a user
       description: Enables or disables watched and rating fan-out to Trakt for this user without unlinking the account. Users can only update their own preference unless they have `MANAGE_USERS`.
       tags:
@@ -7579,6 +7607,7 @@ paths:
         '403':
           description: Forbidden
     delete:
+      x-foreseerr: true
       summary: Unlink Trakt account for a user
       description: Removes Trakt OAuth tokens for a specific user. Requires `MANAGE_USERS` permission if editing other users.
       tags:
@@ -7598,6 +7627,7 @@ paths:
           description: Server error
   /user/{userId}/settings/linked-accounts/trakt/device/code:
     post:
+      x-foreseerr: true
       summary: Start Trakt device authorization
       description: Requests a Trakt device code for linking the caller's Trakt account. Users can only link their own account. Requires Trakt to be configured by an administrator.
       tags:
@@ -7634,6 +7664,7 @@ paths:
           description: Server error
   /user/{userId}/settings/linked-accounts/trakt/device/token:
     post:
+      x-foreseerr: true
       summary: Poll Trakt device authorization
       description: Polls Trakt for completion of device authorization and stores tokens on success. Users can only link their own account.
       tags:
@@ -7693,6 +7724,7 @@ paths:
           description: Server error
   /user/{userId}/settings/linked-accounts/anilist:
     get:
+      x-foreseerr: true
       summary: Get AniList link status for a user
       tags:
         - users
@@ -7726,6 +7758,7 @@ paths:
         '401':
           description: Unauthorized
     patch:
+      x-foreseerr: true
       summary: Update AniList watch-sync preference for a user
       description: Enables or disables watched and rating fan-out to AniList for this user without unlinking the account. Users can only update their own preference unless they have `MANAGE_USERS`.
       tags:
@@ -7774,6 +7807,7 @@ paths:
         '403':
           description: Forbidden
     post:
+      x-foreseerr: true
       summary: Link AniList with a PIN authorization code
       tags:
         - users
@@ -7806,6 +7840,7 @@ paths:
         '500':
           description: Server error
     delete:
+      x-foreseerr: true
       summary: Unlink AniList account for a user
       tags:
         - users
@@ -8970,6 +9005,7 @@ paths:
                       example: Genre Name
   /discover/trakt/recommendations:
     get:
+      x-foreseerr: true
       summary: Get personalized Trakt recommendations for the current user.
       tags:
         - search
@@ -9029,6 +9065,7 @@ paths:
           description: Trakt account not linked
   /discover/trakt/watchlist:
     get:
+      x-foreseerr: true
       summary: Get the authenticated user's Trakt watchlist.
       tags:
         - search
@@ -9093,6 +9130,7 @@ paths:
           description: Trakt account not linked
   /discover/trakt/history:
     get:
+      x-foreseerr: true
       summary: Get the authenticated user's Trakt watch history.
       tags:
         - search
@@ -9157,6 +9195,7 @@ paths:
           description: Trakt account not linked
   /discover/trakt/trending:
     get:
+      x-foreseerr: true
       summary: Get the titles Trakt users are watching right now.
       tags:
         - search
@@ -9221,6 +9260,7 @@ paths:
           description: Trakt account not linked
   /discover/trakt/popular:
     get:
+      x-foreseerr: true
       summary: Get the most popular titles on Trakt.
       tags:
         - search
@@ -9285,6 +9325,7 @@ paths:
           description: Trakt account not linked
   /discover/trakt/anticipated:
     get:
+      x-foreseerr: true
       summary: Get the most anticipated upcoming titles on Trakt.
       tags:
         - search
@@ -9349,6 +9390,7 @@ paths:
           description: Trakt account not linked
   /discover/trakt/lists:
     get:
+      x-foreseerr: true
       summary: List the authenticated user's Trakt lists.
       tags:
         - search
@@ -9359,6 +9401,7 @@ paths:
           description: Trakt account not linked
   /discover/trakt/lists/search:
     get:
+      x-foreseerr: true
       summary: Search public Trakt lists
       tags:
         - search
@@ -9375,6 +9418,7 @@ paths:
           description: Trakt is not configured
   /discover/trakt/list:
     get:
+      x-foreseerr: true
       summary: Browse a Trakt list by public URL or shorthand reference.
       tags:
         - search
@@ -9437,6 +9481,7 @@ paths:
           description: Trakt list items returned
   /discover/anilist/trending:
     get:
+      x-foreseerr: true
       summary: Get AniList trending anime mapped to TMDB.
       tags:
         - search
@@ -9453,6 +9498,7 @@ paths:
           description: AniList trending anime returned
   /discover/anilist/season:
     get:
+      x-foreseerr: true
       summary: Get AniList current-season anime mapped to TMDB.
       tags:
         - search
@@ -9469,6 +9515,7 @@ paths:
           description: AniList seasonal anime returned
   /discover/anilist/popular:
     get:
+      x-foreseerr: true
       summary: Get AniList all-time popular anime mapped to TMDB.
       tags:
         - search
@@ -9485,6 +9532,7 @@ paths:
           description: AniList popular anime returned
   /discover/anilist/top:
     get:
+      x-foreseerr: true
       summary: Get AniList top-rated anime mapped to TMDB.
       tags:
         - search
@@ -9501,6 +9549,7 @@ paths:
           description: AniList top-rated anime returned
   /discover/anilist/next-season:
     get:
+      x-foreseerr: true
       summary: Get AniList next-season anime mapped to TMDB.
       tags:
         - search
@@ -9517,6 +9566,7 @@ paths:
           description: AniList next-season anime returned
   /discover/anilist/watching:
     get:
+      x-foreseerr: true
       summary: Get the authenticated user's AniList currently watching list.
       tags:
         - search
@@ -9535,6 +9585,7 @@ paths:
           description: AniList account not linked
   /discover/anilist/planning:
     get:
+      x-foreseerr: true
       summary: Get the authenticated user's AniList planning list.
       tags:
         - search
@@ -9553,6 +9604,7 @@ paths:
           description: AniList account not linked
   /discover/anilist/completed:
     get:
+      x-foreseerr: true
       summary: Get the authenticated user's AniList completed list.
       tags:
         - search
@@ -9571,6 +9623,7 @@ paths:
           description: AniList account not linked
   /discover/anilist/paused:
     get:
+      x-foreseerr: true
       summary: Get the authenticated user's AniList on-hold (paused) list.
       tags:
         - search
@@ -9589,6 +9642,7 @@ paths:
           description: AniList account not linked
   /discover/anilist/dropped:
     get:
+      x-foreseerr: true
       summary: Get the authenticated user's AniList dropped list.
       tags:
         - search
@@ -9607,6 +9661,7 @@ paths:
           description: AniList account not linked
   /discover/anilist/lists:
     get:
+      x-foreseerr: true
       summary: List the authenticated user's AniList anime lists.
       tags:
         - search
@@ -9615,6 +9670,7 @@ paths:
           description: AniList lists returned
   /discover/anilist/list:
     get:
+      x-foreseerr: true
       summary: Get one of your AniList anime lists by name, or anyone's public anime list by link.
       tags:
         - search
@@ -9645,6 +9701,7 @@ paths:
           description: AniList account not linked, or the public list's user was not found or is private
   /discover/mdblist/lists/search:
     get:
+      x-foreseerr: true
       summary: Search public MDBList lists
       tags:
         - search
@@ -9661,6 +9718,7 @@ paths:
           description: MDBList is not configured
   /discover/mdblist/list:
     get:
+      x-foreseerr: true
       summary: Browse an MDBList public list by URL, username/slug, or list id.
       tags:
         - search
@@ -10420,6 +10478,7 @@ paths:
                 $ref: '#/components/schemas/TvDetails'
   /tv/{tvId}/episodes:
     get:
+      x-foreseerr: true
       summary: Get the canonical TVDB episode catalog
       description: Returns official TVDB episodes when TVDB episode requests are enabled for the series.
       tags:
@@ -10666,6 +10725,7 @@ paths:
                     type: number
   /media-actions/capabilities:
     get:
+      x-foreseerr: true
       summary: Per-user media action capabilities
       description: Returns which watched and rating operations are available for the authenticated user across providers.
       tags:
@@ -10681,6 +10741,7 @@ paths:
           description: Unauthorized
   /media-actions/status-batch:
     post:
+      x-foreseerr: true
       summary: Batch media action status
       description: Returns watched/rating status for many titles via enabled action providers (fan-out).
       tags:
@@ -10722,6 +10783,7 @@ paths:
                       $ref: '#/components/schemas/MediaActionStatus'
   /media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/status:
     get:
+      x-foreseerr: true
       summary: Get episode watched status for a TV season
       description: Returns one batched set of watched episode numbers from linked providers (Trakt and/or Jellyfin) for the current user.
       tags:
@@ -10749,6 +10811,7 @@ paths:
                 $ref: '#/components/schemas/EpisodeWatchStatus'
   /media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/{episodeNumber}/watched:
     post:
+      x-foreseerr: true
       summary: Mark a TV episode watched
       tags:
         - media
@@ -10805,6 +10868,7 @@ paths:
                 $ref: '#/components/schemas/EpisodeWatchWriteResult'
   /media-actions/tv/{tmdbId}/seasons/{seasonNumber}/episodes/{episodeNumber}/unwatched:
     post:
+      x-foreseerr: true
       summary: Mark a TV episode unwatched
       tags:
         - media
@@ -10861,6 +10925,7 @@ paths:
                 $ref: '#/components/schemas/EpisodeWatchWriteResult'
   /media-actions/episodes/jellyfin/{jellyfinItemId}/watched:
     post:
+      x-foreseerr: true
       summary: Mark a Jellyfin library episode watched
       description: Uses the current user's linked Jellyfin session; no Jellyfin credentials are accepted by this endpoint.
       tags:
@@ -10888,6 +10953,7 @@ paths:
                 $ref: '#/components/schemas/EpisodeWatchWriteResult'
   /media-actions/episodes/jellyfin/{jellyfinItemId}/unwatched:
     post:
+      x-foreseerr: true
       summary: Mark a Jellyfin library episode unwatched
       description: Uses the current user's linked Jellyfin session; no Jellyfin credentials are accepted by this endpoint.
       tags:
@@ -10915,6 +10981,7 @@ paths:
                 $ref: '#/components/schemas/EpisodeWatchWriteResult'
   /media-actions/{mediaType}/{tmdbId}/status:
     get:
+      x-foreseerr: true
       summary: Get media action status
       description: Returns watched/rating status aggregated from enabled action providers.
       tags:
@@ -10940,6 +11007,7 @@ paths:
                 $ref: '#/components/schemas/MediaActionStatus'
   /media-actions/{mediaType}/{tmdbId}/watched:
     post:
+      x-foreseerr: true
       summary: Mark media watched
       description: Fans out mark-watched (and optional rating) to all enabled action providers.
       tags:
@@ -10991,6 +11059,7 @@ paths:
                 $ref: '#/components/schemas/MediaActionStatus'
   /media-actions/{mediaType}/{tmdbId}/unwatched:
     post:
+      x-foreseerr: true
       summary: Mark media unwatched
       description: Fans out unmark-watched to all enabled action providers.
       tags:
@@ -11037,6 +11106,7 @@ paths:
                 $ref: '#/components/schemas/MediaActionStatus'
   /media-actions/{mediaType}/{tmdbId}/rate:
     post:
+      x-foreseerr: true
       summary: Rate media
       description: Fans out user score to all enabled action providers.
       tags:
@@ -11087,6 +11157,7 @@ paths:
                 $ref: '#/components/schemas/MediaActionStatus'
   /library/watch-now:
     get:
+      x-foreseerr: true
       summary: Get Watch Now library shelves
       description: >
         Returns Continue Watching, Recently Added, and Ready to Watch shelves
@@ -11104,6 +11175,7 @@ paths:
           description: Unauthorized
   /library/available:
     get:
+      x-foreseerr: true
       summary: List available library titles
       description: >
         Paginated titles that are available or partially available in Foreseer
@@ -11143,6 +11215,7 @@ paths:
           description: Unauthorized
   /library/search:
     get:
+      x-foreseerr: true
       summary: Search available library titles
       description: Search owned/available titles. Non-numeric `q` queries Jellyfin.
       tags:
@@ -11181,6 +11254,7 @@ paths:
           description: Unauthorized
   /library/browse:
     get:
+      x-foreseerr: true
       summary: Browse the authenticated user's Jellyfin-visible catalog
       description: >
         Paginated Movie/Series catalog from the linked Jellyfin user view,
@@ -11252,6 +11326,7 @@ paths:
           description: Unauthorized
   /library/facets:
     get:
+      x-foreseerr: true
       summary: Get library browse facets
       description: Available genres and release-year bounds for the user's catalog.
       tags:
@@ -11273,6 +11348,7 @@ paths:
           description: Unauthorized
   /library/items/{jellyfinItemId}:
     get:
+      x-foreseerr: true
       summary: Get library item inspector payload
       description: >
         Unified movie or series inspector. Episode ids resolve to the parent
@@ -11297,6 +11373,7 @@ paths:
           description: Unauthorized
   /library/items/{jellyfinItemId}/images/{imageType}:
     get:
+      x-foreseerr: true
       summary: Proxy a Jellyfin library image
       description: >
         Authenticated poster or backdrop proxy using the requesting user's
@@ -11337,6 +11414,7 @@ paths:
           description: Image or item not found
   /library/series/{jellyfinSeriesId}:
     get:
+      x-foreseerr: true
       summary: Get Library series panel detail
       description: >
         Seasons and resolved Play-next target for an owned series, using the
@@ -11360,6 +11438,7 @@ paths:
           description: Unauthorized
   /library/series/{jellyfinSeriesId}/seasons/{seasonId}/episodes:
     get:
+      x-foreseerr: true
       summary: List Library series season episodes
       description: Episodes for one season with watched/progress for the Library panel.
       tags:
@@ -11481,6 +11560,7 @@ paths:
           description: Successfully removed media item
   /servarr/interventions:
     get:
+      x-foreseerr: true
       summary: List Servarr interventions
       description: Lists active warnings or only releases blocklisted by Foreseerr. Requires `MANAGE_REQUESTS`.
       tags: [service]
@@ -11520,6 +11600,7 @@ paths:
         '403': { description: Insufficient permission }
   /servarr/interventions/count:
     get:
+      x-foreseerr: true
       summary: Count active and unseen Servarr interventions
       tags: [service]
       responses:
@@ -11536,6 +11617,7 @@ paths:
         '403': { description: Insufficient permission }
   /servarr/interventions/seen:
     post:
+      x-foreseerr: true
       summary: Mark current Servarr interventions seen for this manager
       tags: [service]
       responses:
@@ -11544,6 +11626,7 @@ paths:
         '403': { description: Insufficient permission }
   /servarr/interventions/{interventionId}/reject:
     post:
+      x-foreseerr: true
       summary: Reject and release-blocklist one warning
       description: Revalidates the exact mapped warning before deleting it from the client and blocklisting it in Arr. Requires `MANAGE_REQUESTS`.
       tags: [service]
@@ -11568,6 +11651,7 @@ paths:
         '504': { description: Arr rejection timed out }
   /media/{mediaId}/servarr/context:
     get:
+      x-foreseerr: true
       summary: Get mapped Servarr management context
       description: Returns the mapped Radarr movie or Sonarr seasons and episodes, with the series' episode order (`seasonOrder`, `{ type, name }`) where Sonarr reports one (Sonarr 5). Requires `MANAGE_REQUESTS`.
       tags:
@@ -11591,6 +11675,7 @@ paths:
           description: Media is not mapped to a configured Servarr instance
   /media/{mediaId}/servarr/releases:
     get:
+      x-foreseerr: true
       summary: Search mapped Servarr releases
       description: Searches a mapped Radarr movie or Sonarr episode/season. Requires `MANAGE_REQUESTS`.
       tags:
@@ -11624,6 +11709,7 @@ paths:
         '401':
           description: Unauthorized
     post:
+      x-foreseerr: true
       summary: Grab a Servarr release
       description: 'Grabs a previously returned release token. Quality-rejected or alias-mismatched releases require `acknowledgeRejections: true`. Foreseer then tells Sonarr/Radarr to grab against the mapped series or movie (`seriesId`/`movieId`, and `shouldOverride` when needed) instead of posting only guid and indexer id. A forced Sonarr grab keeps the episodes Sonarr mapped the release to (every season of a multi-season pack), falling back to the searched episode or season when Sonarr could not map the release to the series or mapped it to other episodes than the ones searched. Requires `MANAGE_REQUESTS`.'
       tags:
@@ -11657,6 +11743,7 @@ paths:
           description: Invalid, expired, unavailable, or unacknowledged release token
   /media/{mediaId}/servarr/imports/sources:
     get:
+      x-foreseerr: true
       summary: List safe Servarr manual import sources
       description: Lists only completed queue downloads that Sonarr or Radarr has marked with an import warning, without exposing Arr filesystem paths. Requires `MANAGE_REQUESTS`.
       tags:
@@ -11683,6 +11770,7 @@ paths:
           description: Unauthorized
   /media/{mediaId}/servarr/imports/scan:
     post:
+      x-foreseerr: true
       summary: Scan a safe Servarr manual import source
       description: Asks the mapped Sonarr or Radarr instance to inspect a previously listed warning-state download. Returns 409 if Arr no longer requires manual import. Requires `MANAGE_REQUESTS`.
       tags:
@@ -11714,6 +11802,7 @@ paths:
           description: Expired, invalid, or no-longer-actionable source token
   /media/{mediaId}/servarr/imports/options:
     get:
+      x-foreseerr: true
       summary: List the qualities and languages a manual import can assign
       description: The qualities and languages of the mapped Sonarr or Radarr instance, without Unknown, for files it imported without one. Requires `MANAGE_REQUESTS`.
       tags:
@@ -11735,6 +11824,7 @@ paths:
           description: Unauthorized
   /media/{mediaId}/servarr/imports/reprocess:
     post:
+      x-foreseerr: true
       summary: Reprocess a Sonarr manual import candidate
       description: Re-evaluates a candidate using Sonarr after selecting the intended episodes. The source download must still be marked for manual import. Requires `MANAGE_REQUESTS`.
       tags:
@@ -11770,6 +11860,7 @@ paths:
           description: Expired, invalid, or no-longer-actionable candidate token
   /media/{mediaId}/servarr/imports:
     get:
+      x-foreseerr: true
       summary: List Servarr manual import candidates
       description: Lists candidates only from queue downloads Arr has marked for manual import. Requires `MANAGE_REQUESTS`.
       tags:
@@ -11790,6 +11881,7 @@ paths:
         '401':
           description: Unauthorized
     post:
+      x-foreseerr: true
       summary: Submit mapped Servarr manual import
       description: Imports previously returned candidates. Requires `MANAGE_REQUESTS`.
       tags:
@@ -11858,6 +11950,7 @@ paths:
           description: 'Invalid, expired, or unacknowledged import token; a file flagged as potentially dangerous or executable (never imported, acknowledged or not); or a file from a multi-season download without `episodeMappings` for it'
   /media/{mediaId}/servarr/commands/{token}:
     get:
+      x-foreseerr: true
       summary: Get Servarr manual import command status
       description: Returns the status of a previously submitted manual import command. Requires `MANAGE_REQUESTS`.
       tags:
@@ -12744,11 +12837,13 @@ paths:
                   $ref: '#/components/schemas/OverrideRule'
   /settings/simkl:
     get:
+      x-foreseerr: true
       summary: Get Simkl settings
       tags: [settings]
       responses:
         '200': { description: Simkl settings returned }
     post:
+      x-foreseerr: true
       summary: Update Simkl settings
       tags: [settings]
       requestBody:
@@ -12770,6 +12865,7 @@ paths:
         '200': { description: Simkl settings updated }
   /settings/simkl/actions:
     post:
+      x-foreseerr: true
       summary: Update Simkl media actions
       tags: [settings]
       requestBody:
@@ -12785,6 +12881,7 @@ paths:
         '200': { description: Simkl media actions updated }
   /user/{userId}/settings/linked-accounts/simkl:
     get:
+      x-foreseerr: true
       summary: Get Simkl link status for a user
       tags: [users]
       parameters:
@@ -12795,6 +12892,7 @@ paths:
       responses:
         '200': { description: Simkl link status returned }
     patch:
+      x-foreseerr: true
       summary: Update Simkl action preference for a user
       tags: [users]
       parameters:
@@ -12814,6 +12912,7 @@ paths:
       responses:
         '200': { description: Simkl link status returned }
     delete:
+      x-foreseerr: true
       summary: Unlink Simkl account for a user
       tags: [users]
       parameters:
@@ -12825,6 +12924,7 @@ paths:
         '204': { description: Simkl account unlinked }
   /user/{userId}/settings/linked-accounts/simkl/pin/code:
     post:
+      x-foreseerr: true
       summary: Start Simkl PIN authorization
       tags: [users]
       parameters:
@@ -12836,6 +12936,7 @@ paths:
         '200': { description: PIN code issued }
   /user/{userId}/settings/linked-accounts/simkl/pin/token:
     post:
+      x-foreseerr: true
       summary: Poll Simkl PIN authorization
       tags: [users]
       parameters:
@@ -12857,6 +12958,7 @@ paths:
         '202': { description: Authorization pending }
   /user/{userId}/settings/linked-accounts/simkl/sync:
     post:
+      x-foreseerr: true
       summary: Synchronize a linked Simkl account
       tags: [users]
       parameters:
@@ -12869,6 +12971,7 @@ paths:
         '503': { description: Simkl cache is stale }
   /discover/simkl/library:
     get:
+      x-foreseerr: true
       summary: Get the authenticated user's Simkl library
       tags: [discover]
       parameters:
@@ -12890,6 +12993,7 @@ paths:
         '200': { description: Simkl library returned }
   /discover/simkl/trending:
     get:
+      x-foreseerr: true
       summary: Get Simkl trending titles
       tags: [discover]
       parameters:

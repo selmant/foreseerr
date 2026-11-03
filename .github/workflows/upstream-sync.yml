@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Upstream Seerr sync
+
+# Weekly: list the upstream Seerr commits Foreseerr hasn't reviewed (by what
+# to do with them: port to Rust, cherry-pick, skip) and the Seerr API changes,
+# in one open issue labelled upstream-sync. See upstream/README.md.
+
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Report unreviewed upstream commits
+    if: github.repository == 'selmant/foreseerr'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Commits and trees only; the one spec blob is fetched on demand.
+      - name: Fetch upstream history
+        run: |
+          git remote add upstream https://github.com/seerr-team/seerr.git
+          git fetch --quiet --filter=blob:none upstream develop
+
+      - name: Build the report
+        run: scripts/upstream-sync.sh report > "$RUNNER_TEMP/report.md"
+
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          report="$RUNNER_TEMP/report.md"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          number=$(gh issue list --label upstream-sync --state open --json number --jq '.[0].number // empty')
+          if grep -q '^Foreseerr has reviewed upstream Seerr through' "$report"; then
+            if [ -n "$number" ]; then
+              gh issue close "$number" --comment "$(cat "$report")"
+            fi
+            exit 0
+          fi
+          {
+            cat "$report"
+            echo
+            echo '<sub>Regenerated weekly by the Upstream Seerr sync workflow from upstream/sync.json; the list shrinks when the reviewed commit is bumped, not when boxes are ticked.</sub>'
+          } > "$RUNNER_TEMP/body.md"
+          title="Upstream Seerr sync: $(grep -o '\*\*[0-9]*\*\*' "$report" | head -1 | tr -d '*') commit(s) to review"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh label create upstream-sync --color 5319e7 \
+              --description 'Upstream Seerr changes to review' --force
+            gh issue create --title "$title" --label upstream-sync --body-file "$RUNNER_TEMP/body.md"
+          fi
