@@ -1547,11 +1547,11 @@ async fn existing_media_json(
         );
         item.insert(
             String::from("requestedBy"),
-            related.user_json(r.requested_by_id, false)?,
+            related.user_json(r.requested_by_id)?,
         );
         item.insert(
             String::from("modifiedBy"),
-            related.user_json(r.modified_by_id, false)?,
+            related.user_json(r.modified_by_id)?,
         );
         item.insert(
             String::from("seasons"),

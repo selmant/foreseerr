@@ -13,9 +13,9 @@ use crate::db::{IssueCommentRow, IssueListQuery, IssueRow, IssueSort};
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
 /// `Permission.MANAGE_ISSUES`, `VIEW_ISSUES` and `CREATE_ISSUES`.
-const MANAGE_ISSUES: i64 = 1_048_576;
-const VIEW_ISSUES: i64 = 2_097_152;
-const CREATE_ISSUES: i64 = 4_194_304;
+pub(super) const MANAGE_ISSUES: i64 = 1_048_576;
+pub(super) const VIEW_ISSUES: i64 = 2_097_152;
+pub(super) const CREATE_ISSUES: i64 = 4_194_304;
 
 /// `IssueStatus`.
 const OPEN: i64 = 1;
@@ -55,7 +55,7 @@ pub(super) fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         for issue in &issues {
             let mut out = Map::new();
             columns(&mut out, issue);
-            let created_by = match related.user_json(issue.created_by_id, false) {
+            let created_by = match related.user_json(issue.created_by_id) {
                 Ok(json) => json,
                 Err(why) => return Outcome::forward(why),
             };
@@ -64,7 +64,7 @@ pub(super) fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 String::from("media"),
                 related.media_json(ctx, issue.media_id, false),
             );
-            let modified_by = match related.user_json(issue.modified_by_id, false) {
+            let modified_by = match related.user_json(issue.modified_by_id) {
                 Ok(json) => json,
                 Err(why) => return Outcome::forward(why),
             };
@@ -173,13 +173,13 @@ pub(super) fn detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         columns(&mut out, &issue);
         let mut comments = Vec::with_capacity(issue.comments.len());
         for comment in &issue.comments {
-            match related.user_json(comment.user_id, false) {
+            match related.user_json(comment.user_id) {
                 Ok(user) => comments.push(comment_json(comment, Some(user))),
                 Err(why) => return Outcome::forward(why),
             }
         }
         out.insert(String::from("comments"), Value::Array(comments));
-        let created_by = match related.user_json(issue.created_by_id, false) {
+        let created_by = match related.user_json(issue.created_by_id) {
             Ok(json) => json,
             Err(why) => return Outcome::forward(why),
         };

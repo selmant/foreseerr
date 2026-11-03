@@ -16,7 +16,7 @@ use super::{Outcome, Ready};
 use crate::downloads::Downloads;
 use crate::lifecycle::{Entity, Lc, APPROVED, DECLINED, FAILED, PENDING};
 use crate::media::{media_json, tracks_downloads};
-use crate::user::filtered_json;
+use crate::user::embedded_json;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
@@ -98,10 +98,11 @@ pub(super) fn status<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// A request's user relation as the answer prints it.
+/// A request's user relation as the answer prints it (`User.toJSON`,
+/// without the eager settings).
 fn user_json(rel: Option<&crate::lifecycle::UserRel>) -> Result<Value, String> {
-    rel.map_or(Ok(Value::Null), |(u, s)| {
-        filtered_json(u, Some(s.as_ref()), true).map_err(str::to_owned)
+    rel.map_or(Ok(Value::Null), |(u, _)| {
+        embedded_json(u).map_err(str::to_owned)
     })
 }
 

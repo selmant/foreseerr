@@ -148,11 +148,11 @@ pub(super) fn request_json(
     out.insert(String::from("episodes"), episodes_json(&request.episodes));
     out.insert(
         String::from("modifiedBy"),
-        related.user_json(request.modified_by_id, false)?,
+        related.user_json(request.modified_by_id)?,
     );
     out.insert(
         String::from("requestedBy"),
-        related.user_json(request.requested_by_id, false)?,
+        related.user_json(request.requested_by_id)?,
     );
     out.insert(String::from("seasonCount"), count_of(&request.seasons));
     if let Some(name) = profile_name(servers, request) {
@@ -406,12 +406,12 @@ pub(super) fn detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let request = &request;
         let mut out = Map::new();
         columns(&mut out, request);
-        let requested_by = match related.user_json(request.requested_by_id, true) {
+        let requested_by = match related.user_json(request.requested_by_id) {
             Ok(json) => json,
             Err(why) => return Outcome::forward(why),
         };
         out.insert(String::from("requestedBy"), requested_by);
-        let modified_by = match related.user_json(request.modified_by_id, true) {
+        let modified_by = match related.user_json(request.modified_by_id) {
             Ok(json) => json,
             Err(why) => return Outcome::forward(why),
         };
