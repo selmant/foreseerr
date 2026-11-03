@@ -219,6 +219,54 @@ pub(super) fn rt_ratings<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
+/// `GET /movie/{id}/ratingscombined`: Rotten Tomatoes and `IMDb` together
+/// (`MDBList`'s ratings instead when it is configured), as the details
+/// page gets them.
+pub(super) fn combined_ratings<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    Box::pin(async move {
+        if let Err(why) = ctx
+            .no_query()
+            .and_then(|()| ctx.authenticated(0).map(|_| ()))
+        {
+            return Outcome::forward(why);
+        }
+        let id = match path_number(ctx, 1) {
+            Ok(id) => id,
+            Err(why) => return Outcome::forward(why),
+        };
+        let (main_locale, _) = languages(ctx, None, None);
+        let movie = match ctx.state.tmdb.movie(id, &main_locale).await {
+            Ok(movie) => movie,
+            Err(e) => {
+                tracing::debug!("TMDB movie {id} failed: {e:#}");
+                return ctx.error(500, "Unable to retrieve movie ratings.");
+            }
+        };
+        let release_date = movie
+            .get("release_date")
+            .and_then(Value::as_str)
+            .filter(|d| !d.is_empty());
+        let title = Title {
+            media_type: "movie",
+            tmdb_id: movie.get("id").and_then(Value::as_i64).unwrap_or(id),
+            title: movie.get("title").and_then(Value::as_str).unwrap_or(""),
+            year: release_date
+                .and_then(|d| d.get(..4))
+                .and_then(|y| y.parse::<i64>().ok()),
+            release_date,
+            imdb_id: movie.get("imdb_id").and_then(Value::as_str),
+        };
+        match ctx.state.ratings.combined(&ctx.settings, &title).await {
+            Ok(Some(ratings)) => ctx.json(&ratings),
+            Ok(None) => ctx.error(404, "No ratings found."),
+            Err(e) => {
+                tracing::debug!("combined ratings for movie {id} failed: {e:#}");
+                ctx.error(500, "Unable to retrieve movie ratings.")
+            }
+        }
+    })
+}
+
 /// `page` (the validator's default is 1) and `language`.
 pub(super) fn page_query(raw: &str) -> Result<(i64, Option<String>), String> {
     let (mut page, mut language) = (1, None);
@@ -1007,7 +1055,10 @@ pub(super) fn map_watch_providers(results: Option<&Value>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::Method;
     use serde_json::json;
+
+    use crate::routes::testkit::Kit;
 
     fn viewer(permissions: i64) -> CurrentUser {
         CurrentUser {
@@ -1131,6 +1182,88 @@ mod tests {
             Some(&json!([{"id": 2, "name": "Co", "originCountry": "US", "logoPath": null}])),
             "companies"
         );
+    }
+
+    async fn ratings_kit(tag: &str) -> anyhow::Result<(crate::dbtx::scratch::Scratch, Kit)> {
+        let scratch = crate::dbtx::scratch::sqlite(tag).await?;
+        let kit = Kit::new(tag, scratch.db.clone(), json!({}))?;
+        Ok((scratch, kit))
+    }
+
+    async fn combined(
+        kit: &Kit,
+        id: i64,
+        user: Option<(i64, i64)>,
+    ) -> anyhow::Result<(u16, Value)> {
+        let uri = format!("/api/v1/movie/{id}/ratingscombined");
+        kit.call(combined_ratings, (Method::GET, &uri), user, None)
+            .await
+    }
+
+    #[tokio::test]
+    async fn combined_ratings_need_a_user() -> anyhow::Result<()> {
+        let (_scratch, kit) = ratings_kit("ratingscombined-auth").await?;
+        let (status, json) = combined(&kit, 9_200_009, None).await?;
+        assert_eq!(status, 403, "nobody signed in");
+        assert_eq!(
+            json.get("error").and_then(Value::as_str),
+            Some("You do not have permission to access this endpoint"),
+            "isAuthenticated's answer"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn combined_ratings_from_rt_and_imdb() -> anyhow::Result<()> {
+        let (_scratch, kit) = ratings_kit("ratingscombined-ok").await?;
+        let id = 9_200_001;
+        crate::tmdb::remember_title_for_tests(
+            "movie",
+            id,
+            "en",
+            json!({"id": id, "title": "Zyzzyva Quest", "release_date": "2001-05-04", "imdb_id": "tt9200001"}),
+        );
+        crate::ratings::remember_movie_for_tests(
+            "Zyzzyva Quest",
+            &json!([{"title": "Zyzzyva Quest", "releaseYear": 2001, "vanity": "zyzzyva_quest", "rottenTomatoes": {"criticsScore": 90, "audienceScore": 50}}]),
+            Some((
+                "tt9200001",
+                json!([{"ImdbId": "tt9200001", "Title": "Zyzzyva Quest", "MovieRatings": {"Imdb": {"Value": 7.5, "Count": 1000}}}]),
+            )),
+        );
+        let (status, json) = combined(&kit, id, Some((5, 32))).await?;
+        assert_eq!(status, 200, "found");
+        assert_eq!(
+            json,
+            json!({
+                "provider": "legacy",
+                "rt": {"title": "Zyzzyva Quest", "url": "https://www.rottentomatoes.com/m/zyzzyva_quest", "criticsRating": "Fresh", "criticsScore": 90, "audienceRating": "Spilled", "audienceScore": 50, "year": 2001},
+                "imdb": {"title": "Zyzzyva Quest", "url": "https://www.imdb.com/title/tt9200001", "criticsScore": 7.5, "criticsScoreCount": 1000},
+            }),
+            "both sources"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn combined_ratings_not_found() -> anyhow::Result<()> {
+        let (_scratch, kit) = ratings_kit("ratingscombined-none").await?;
+        let id = 9_200_002;
+        crate::tmdb::remember_title_for_tests(
+            "movie",
+            id,
+            "en",
+            json!({"id": id, "title": "Qwxlpt Unrated", "release_date": "", "imdb_id": null}),
+        );
+        crate::ratings::remember_movie_for_tests("Qwxlpt Unrated", &json!([]), None);
+        let (status, json) = combined(&kit, id, Some((5, 32))).await?;
+        assert_eq!(status, 404, "no source knows it");
+        assert_eq!(
+            json.get("message").and_then(Value::as_str),
+            Some("No ratings found."),
+            "the message"
+        );
+        Ok(())
     }
 
     #[test]

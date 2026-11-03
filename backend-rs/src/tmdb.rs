@@ -542,6 +542,26 @@ pub fn remember_for_tests(path: &str, params: &[(&str, &str)], value: Value) {
     memcache::set(CacheId::Tmdb, cache_key(path, params), value, HALF_DAY);
 }
 
+/// Put a `getMovie` (`kind` `movie`) or `getTvShow` (`tv`) answer in the
+/// `tmdb` cache, for tests that must not reach TMDB.
+#[cfg(test)]
+pub fn remember_title_for_tests(kind: &str, id: i64, language: &str, value: Value) {
+    let append = if kind == "movie" {
+        MOVIE_DETAILS_APPEND
+    } else {
+        TV_DETAILS_APPEND
+    };
+    remember_for_tests(
+        &format!("/{kind}/{id}"),
+        &[
+            ("language", language),
+            ("append_to_response", append),
+            ("include_video_language", language),
+        ],
+        value,
+    );
+}
+
 /// The request URL: the API key first, then the parameters in order.
 fn request_url(path: &str, params: &[(&str, &str)]) -> String {
     let mut url = format!("{BASE_URL}{path}?api_key={API_KEY}");

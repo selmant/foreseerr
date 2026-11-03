@@ -21,6 +21,7 @@ use super::draft::{
 };
 use super::episodeselect::{self, Refused, Resolved, Selection};
 use super::listwrite::{insert_media_in, main_locale, media_row};
+use super::overriderule::{self, RuleInput};
 use super::related::Related;
 use super::{Outcome, Ready, Table};
 use crate::auth::CurrentUser;
@@ -58,9 +59,6 @@ const M_PROCESSING: i64 = 3;
 const M_AVAILABLE: i64 = 5;
 const M_BLOCKLISTED: i64 = 6;
 const M_DELETED: i64 = 7;
-
-/// TMDB's `anime` keyword.
-const ANIME_KEYWORD_ID: i64 = 210_024;
 
 /// `requestLock` and `mediaLock`: one request created or edited at a time.
 pub(super) static REQUEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -339,84 +337,6 @@ struct Routing {
     tags: Option<Vec<i64>>,
 }
 
-/// `Number(piece)` for the id lists override rules store; anything but
-/// digits (or nothing, which is 0) is left to Node.
-fn rule_number(piece: &str) -> Result<i64, String> {
-    let trimmed = piece.trim();
-    if trimmed.is_empty() {
-        return Ok(0);
-    }
-    trimmed
-        .strip_prefix('-')
-        .unwrap_or(trimmed)
-        .bytes()
-        .all(|b| b.is_ascii_digit())
-        .then(|| trimmed.parse::<i64>().ok())
-        .flatten()
-        .ok_or_else(|| format!("an override rule id {trimmed:?} Number() reads oddly"))
-}
-
-fn rule_numbers(list: &str) -> Result<Vec<i64>, String> {
-    list.split(',').map(rule_number).collect()
-}
-
-/// The ids of a list of `{ id }` objects.
-fn ids_of(list: Option<&Value>) -> Vec<i64> {
-    list.and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|i| i.get("id").and_then(Value::as_i64))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Whether a rule applies to this title and user.
-fn rule_applies(
-    rule: &OverrideRuleRow,
-    details: &Value,
-    tv_anime: bool,
-    user_id: i64,
-) -> Result<bool, String> {
-    let set = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
-    if tv_anime {
-        match set(&rule.keywords) {
-            Some(k) if rule_numbers(&k)?.contains(&ANIME_KEYWORD_ID) => {}
-            _ => return Ok(false),
-        }
-    }
-    if let Some(users) = set(&rule.users) {
-        if !rule_numbers(&users)?.contains(&user_id) {
-            return Ok(false);
-        }
-    }
-    if let Some(genres) = set(&rule.genre) {
-        let ids = ids_of(details.get("genres"));
-        if !rule_numbers(&genres)?.iter().any(|g| ids.contains(g)) {
-            return Ok(false);
-        }
-    }
-    if let Some(languages) = set(&rule.language) {
-        let original = details.get("original_language").and_then(Value::as_str);
-        if !languages.split('|').any(|l| Some(l) == original) {
-            return Ok(false);
-        }
-    }
-    if let Some(keywords) = set(&rule.keywords) {
-        let list = details.get("keywords").and_then(|k| {
-            k.get("keywords")
-                .filter(|v| v.is_array())
-                .or_else(|| k.get("results"))
-        });
-        let ids = ids_of(list);
-        if !rule_numbers(&keywords)?.iter().any(|k| ids.contains(k)) {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
 /// The `serverId` an advanced requester asked for, when it is a configured
 /// server of the request's kind and quality; anything else (or a requester
 /// who may not pick one) goes to the default server.
@@ -456,9 +376,9 @@ fn requested_routing(body: &Body, advanced: bool, server_id: Option<i64>) -> Rou
     }
 }
 
-/// The override rules for the server the request goes to (the requested
-/// one, or the default for its kind and quality), most specific first; the
-/// first one that applies is used.
+/// The most specific override rule of the server the request goes to (the
+/// requested one, or the default for its kind and quality) that applies to
+/// this title and user (`super::overriderule`).
 async fn matching_rule(
     ctx: &Ready<'_>,
     body: &Body,
@@ -467,59 +387,15 @@ async fn matching_rule(
     user_id: i64,
     service_id: Option<i64>,
 ) -> Result<Option<OverrideRuleRow>, String> {
-    let (section, field) = if body.media_type == "movie" {
-        ("/radarr", "radarr")
-    } else {
-        ("/sonarr", "sonarr")
+    let input = RuleInput {
+        movie: body.media_type == "movie",
+        is4k: body.is4k,
+        service_id,
+        details,
+        anime,
+        user_id,
     };
-    let server_id = if let Some(id) = service_id {
-        id
-    } else {
-        let default_id = ctx
-            .settings
-            .get(section)
-            .and_then(Value::as_array)
-            .and_then(|servers| {
-                servers.iter().find(|s| {
-                    s.get("is4k").and_then(Value::as_bool) == Some(body.is4k)
-                        && truthy(s.get("isDefault"))
-                })
-            })
-            .and_then(|s| s.get("id"));
-        let Some(default_id) = default_id else {
-            return Ok(None);
-        };
-        default_id
-            .as_i64()
-            .ok_or_else(|| String::from("a server id that isn't a whole number"))?
-    };
-    let rules = ctx
-        .state
-        .db
-        .override_rules()
-        .await
-        .map_err(|e| format!("loading override rules failed: {e:#}"))?;
-    let mut applied = Vec::new();
-    for rule in rules {
-        let service = if field == "radarr" {
-            rule.radarr_service_id
-        } else {
-            rule.sonarr_service_id
-        };
-        if service == Some(server_id)
-            && rule_applies(&rule, details, body.media_type == "tv" && anime, user_id)?
-        {
-            applied.push(rule);
-        }
-    }
-    let specificity = |r: &OverrideRuleRow| {
-        [&r.genre, &r.language, &r.keywords]
-            .iter()
-            .filter(|v| v.is_some())
-            .count()
-    };
-    applied.sort_by_key(|r| std::cmp::Reverse(specificity(r)));
-    Ok(applied.into_iter().next())
+    overriderule::matching_rule(ctx, input).await
 }
 
 /// An override rule's values on top of the routing. An advanced requester
@@ -543,7 +419,7 @@ fn apply_rule(rule: &OverrideRuleRow, advanced: bool, routing: &mut Routing) -> 
     }
     if let Some(tags) = tags {
         let mut merged = routing.tags.clone().unwrap_or_default();
-        merged.extend(rule_numbers(tags)?);
+        merged.extend(overriderule::rule_numbers(tags)?);
         let mut unique: Vec<i64> = Vec::with_capacity(merged.len());
         for tag in merged {
             if !unique.contains(&tag) {
@@ -1881,12 +1757,6 @@ mod tests {
             2,
             "no window"
         );
-    }
-
-    #[test]
-    fn rule_numbers_read_like_number() {
-        assert_eq!(rule_numbers("1, 2,").ok(), Some(vec![1, 2, 0]), "lists");
-        assert!(rule_numbers("1e2").is_err(), "odd shapes go to Node");
     }
 
     #[test]
