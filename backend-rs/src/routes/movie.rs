@@ -10,6 +10,7 @@ use super::blocklist::plain_integer;
 use super::ratingsenrich::enrich_results_with_ratings;
 use super::related::Related;
 use super::{issue, request, Outcome, Ready};
+use crate::auth::CurrentUser;
 use crate::db::{IssueRow, MediaRow, RelatedMedia, RequestRow, WatchlistRow};
 use crate::ratings::Title;
 
@@ -55,7 +56,7 @@ pub(super) fn detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
         };
         let media_info = match &media {
-            Some(media) => match media_info_json(ctx, media).await {
+            Some(media) => match media_info_json(ctx, media, user).await {
                 Ok(json) => Some(json),
                 Err(why) => return Outcome::forward(why),
             },
@@ -551,22 +552,34 @@ pub(super) fn language_query(raw: &str) -> Result<Option<String>, String> {
     Ok(language)
 }
 
-/// `Media.getMedia` as `mediaInfo`: the media with its `requests` (each
-/// with its own media, users, seasons and episodes), `issues` (with
-/// media, users and comments) and `seasons`.
-pub(super) async fn media_info_json(ctx: &Ready<'_>, media: &MediaRow) -> Result<Value, String> {
+/// `Media.getMedia(...).filter(req.user)` as `mediaInfo`: the media with
+/// its `requests` (each with its own media, seasons, episodes and users
+/// passed through `User.filter()`), `issues` and `seasons`.
+///
+/// Every signed-in user may read a title's details, so the nested users
+/// lose their email and Plex id, and the issues are only included for a
+/// viewer who may read issues at all, without their comments or problem
+/// season and episode (GHSA-xc6j-6p6h-p799).
+pub(super) async fn media_info_json(
+    ctx: &Ready<'_>,
+    media: &MediaRow,
+    viewer: &CurrentUser,
+) -> Result<Value, String> {
     let mut requests = ctx
         .state
         .db
         .requests_of_media(media.id)
         .await
         .map_err(|e| format!("loading the media's requests failed: {e:#}"))?;
-    let mut issues = ctx
-        .state
-        .db
-        .issues_of_media(media.id)
-        .await
-        .map_err(|e| format!("loading the media's issues failed: {e:#}"))?;
+    let mut issues = if can_view_issues(viewer) {
+        ctx.state
+            .db
+            .issues_of_media(media.id)
+            .await
+            .map_err(|e| format!("loading the media's issues failed: {e:#}"))?
+    } else {
+        Vec::new()
+    };
     let mut media = media.clone();
     crate::pgorder::media_details(&ctx.state.db, &mut media, &mut requests, &mut issues)
         .await
@@ -611,7 +624,7 @@ pub(super) async fn media_info_json(ctx: &Ready<'_>, media: &MediaRow) -> Result
 }
 
 /// A request as the eager relation of its media prints it: its own copy
-/// of the media (without seasons), users without settings.
+/// of the media (without seasons), users through `User.filter()`.
 fn nested_request_json(
     ctx: &Ready<'_>,
     related: &Related,
@@ -625,11 +638,11 @@ fn nested_request_json(
     );
     out.insert(
         String::from("requestedBy"),
-        related.user_json(request.requested_by_id, false)?,
+        related.public_user_json(request.requested_by_id)?,
     );
     out.insert(
         String::from("modifiedBy"),
-        related.user_json(request.modified_by_id, false)?,
+        related.public_user_json(request.modified_by_id)?,
     );
     out.insert(
         String::from("seasons"),
@@ -646,37 +659,42 @@ fn nested_request_json(
     Ok(Value::Object(out))
 }
 
-/// An issue as the eager relation of its media prints it.
+/// `Media.filter`'s issue gate: the permissions `GET /issue` asks for.
+const fn can_view_issues(viewer: &CurrentUser) -> bool {
+    viewer.has_permission(issue::MANAGE_ISSUES | issue::VIEW_ISSUES | issue::CREATE_ISSUES)
+}
+
+/// An issue as `Media.filter` prints it: the columns without the problem
+/// season and episode, its media, users through `User.filter()`, and no
+/// comments.
 fn nested_issue_json(
     ctx: &Ready<'_>,
     related: &Related,
     issue: &IssueRow,
 ) -> Result<Value, String> {
+    Ok(filtered_issue_json(
+        issue,
+        related.media_json(ctx, issue.media_id, false),
+        related.public_user_json(issue.created_by_id)?,
+        related.public_user_json(issue.modified_by_id)?,
+    ))
+}
+
+/// [`nested_issue_json`] once its relations are rendered.
+fn filtered_issue_json(
+    issue: &IssueRow,
+    media: Value,
+    created_by: Value,
+    modified_by: Value,
+) -> Value {
     let mut out = Map::new();
     issue::columns(&mut out, issue);
-    out.insert(
-        String::from("media"),
-        related.media_json(ctx, issue.media_id, false),
-    );
-    out.insert(
-        String::from("createdBy"),
-        related.user_json(issue.created_by_id, false)?,
-    );
-    out.insert(
-        String::from("modifiedBy"),
-        related.user_json(issue.modified_by_id, false)?,
-    );
-    out.insert(
-        String::from("comments"),
-        Value::Array(
-            issue
-                .comments
-                .iter()
-                .map(|c| issue::comment_json(c, None))
-                .collect(),
-        ),
-    );
-    Ok(Value::Object(out))
+    out.shift_remove("problemSeason");
+    out.shift_remove("problemEpisode");
+    out.insert(String::from("media"), media);
+    out.insert(String::from("createdBy"), created_by);
+    out.insert(String::from("modifiedBy"), modified_by);
+    Value::Object(out)
 }
 
 /// `mapMovieDetails`, in its key order; a property TMDB left out stays out
@@ -990,6 +1008,51 @@ pub(super) fn map_watch_providers(results: Option<&Value>) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn viewer(permissions: i64) -> CurrentUser {
+        CurrentUser {
+            id: 2,
+            permissions,
+            webpush_enabled: true,
+            locale: None,
+        }
+    }
+
+    #[test]
+    fn media_issues_need_an_issue_permission() {
+        assert!(!can_view_issues(&viewer(32)), "REQUEST only");
+        assert!(can_view_issues(&viewer(issue::VIEW_ISSUES)), "view");
+        assert!(can_view_issues(&viewer(issue::CREATE_ISSUES)), "create");
+        assert!(can_view_issues(&viewer(issue::MANAGE_ISSUES)), "manage");
+        assert!(can_view_issues(&viewer(2)), "admin");
+    }
+
+    #[test]
+    fn media_issues_leave_comments_and_problem_out() {
+        let issue = IssueRow {
+            id: 4,
+            issue_type: 1,
+            status: 1,
+            problem_season: 2,
+            problem_episode: 3,
+            created_at: Some(String::from("2026-01-01T00:00:00.000Z")),
+            comments: vec![crate::db::IssueCommentRow {
+                id: 9,
+                message: String::from("secret"),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let out = filtered_issue_json(&issue, json!(null), json!({"id": 1}), json!(null));
+        assert_eq!(
+            out,
+            json!({
+                "id": 4, "issueType": 1, "status": 1,
+                "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": null,
+                "media": null, "createdBy": {"id": 1}, "modifiedBy": null
+            })
+        );
+    }
 
     #[test]
     fn maps_details_in_order() {

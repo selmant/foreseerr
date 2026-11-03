@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 use super::{Native as NativeFn, Outcome, Ready};
 use crate::db::{Bind, Db, DiscoverSliderRow, IssueCommentRow, OverrideRuleRow};
 use crate::jobs::syncutil::Tx;
-use crate::user::filtered_json;
+use crate::user::embedded_json;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
@@ -373,12 +373,12 @@ fn text(v: Option<&String>) -> Value {
     v.map_or(Value::Null, |s| Value::from(s.as_str()))
 }
 
-/// The comment with its user (and the user's settings, both eager).
+/// The comment with its user (eager; `User.toJSON` leaves its settings out).
 async fn comment_json(ctx: &Ready<'_>, c: &IssueCommentRow) -> Result<Value, String> {
     let user_id = c
         .user_id
         .ok_or_else(|| String::from("a comment without a user"))?;
-    let (user, settings) = ctx
+    let (user, _settings) = ctx
         .state
         .db
         .user_record(user_id)
@@ -392,7 +392,7 @@ async fn comment_json(ctx: &Ready<'_>, c: &IssueCommentRow) -> Result<Value, Str
     out.insert(String::from("updatedAt"), text(c.updated_at.as_ref()));
     out.insert(
         String::from("user"),
-        filtered_json(&user, Some(settings.as_ref()), true).map_err(str::to_owned)?,
+        embedded_json(&user).map_err(str::to_owned)?,
     );
     Ok(Value::Object(out))
 }

@@ -410,6 +410,23 @@ fn same_group(a: &Value, b: &Value) -> bool {
     a.get("Id") == b.get("Id")
 }
 
+/// The series to process for an item: a series itself, or the series a
+/// season or episode belongs to (the recently-added list returns those
+/// when only new episodes of a show were added).
+fn show_item(item: &Value) -> Option<Value> {
+    match str_of(item, "Type") {
+        Some("Series") => Some(item.clone()),
+        Some("Season" | "Episode") if js_truthy(item.get("SeriesId")) => {
+            let mut show = item.clone();
+            if let (Some(map), Some(series)) = (show.as_object_mut(), item.get("SeriesId")) {
+                map.insert(String::from("Id"), series.clone());
+            }
+            Some(show)
+        }
+        _ => None,
+    }
+}
+
 /// What `extractMovieIds` found.
 struct MovieIds {
     tmdb_id: i64,
@@ -419,10 +436,10 @@ struct MovieIds {
 
 impl Jellyfin<'_> {
     async fn process_item(&self, item: Value) {
-        match str_of(&item, "Type") {
-            Some("Movie") => self.process_movie(&item).await,
-            Some("Series") => self.process_show(&item).await,
-            _ => {}
+        if str_of(&item, "Type") == Some("Movie") {
+            self.process_movie(&item).await;
+        } else if let Some(show) = show_item(&item) {
+            self.process_show(&show).await;
         }
     }
 
@@ -707,6 +724,28 @@ impl Jellyfin<'_> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn new_episodes_scan_their_series() {
+        let id = |item: Value| show_item(&item).and_then(|s| s.get("Id").cloned());
+        assert_eq!(
+            id(json!({"Type": "Series", "Id": "s"})),
+            Some(json!("s")),
+            "a series"
+        );
+        assert_eq!(
+            id(json!({"Type": "Episode", "Id": "e", "SeriesId": "s"})),
+            Some(json!("s")),
+            "an episode's series"
+        );
+        assert_eq!(
+            id(json!({"Type": "Season", "Id": "n", "SeriesId": "s"})),
+            Some(json!("s")),
+            "a season's series"
+        );
+        assert_eq!(id(json!({"Type": "Episode", "Id": "e"})), None, "no series");
+        assert_eq!(id(json!({"Type": "Movie", "Id": "m"})), None, "a movie");
+    }
 
     #[test]
     fn episodes_and_widths() {

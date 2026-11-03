@@ -15,7 +15,7 @@ use super::Ready;
 use crate::db::MediaRow;
 use crate::downloads::Downloads;
 use crate::lifecycle::UserRel;
-use crate::user::filtered_json;
+use crate::user::embedded_json;
 
 /// `Outcome::Forward` on an `Err`.
 macro_rules! forward_on_err {
@@ -153,9 +153,10 @@ pub(super) fn inserted_media_json(
     draft.json()
 }
 
-/// A user relation (or `req.user`) as loaded with its eager settings.
+/// A user relation (or `req.user`) as it serializes inside another entity:
+/// `User.toJSON` leaves the eager settings out.
 pub(super) fn user_json(rel: &UserRel) -> Result<Value, String> {
-    filtered_json(&rel.0, Some(rel.1.as_ref()), true).map_err(str::to_owned)
+    embedded_json(&rel.0).map_err(str::to_owned)
 }
 
 /// `req.user`: the signed-in user with its settings, loaded now (as

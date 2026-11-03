@@ -77,7 +77,7 @@ pub(super) fn detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
         };
         let media_info = match &media {
-            Some(media) => match media_info_json(ctx, media).await {
+            Some(media) => match media_info_json(ctx, media, user).await {
                 Ok(json) => Some(json),
                 Err(why) => return Outcome::forward(why),
             },

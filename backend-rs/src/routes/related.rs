@@ -6,16 +6,16 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use super::Ready;
-use crate::db::{MediaRow, UserRecord, UserSettingsRecord};
+use crate::db::{MediaRow, UserRecord};
 use crate::downloads::Downloads;
 use crate::media::{media_json, tracks_downloads};
-use crate::user::filtered_json;
+use crate::user::{embedded_json, filtered_json};
 
 /// The media rows, users and download tracker a page refers to.
 pub(super) struct Related {
     /// Media rows by id.
     pub(super) media: HashMap<i64, MediaRow>,
-    users: HashMap<i64, (UserRecord, Option<UserSettingsRecord>)>,
+    users: HashMap<i64, UserRecord>,
     downloads: Downloads,
 }
 
@@ -48,7 +48,7 @@ impl Related {
                 continue;
             }
             match ctx.state.db.user_record(id).await {
-                Ok(Some(record)) => {
+                Ok(Some((record, _settings))) => {
                     users.insert(id, record);
                 }
                 Ok(None) => {}
@@ -75,13 +75,22 @@ impl Related {
             })
     }
 
-    /// A user relation: null when unset or the row is gone; with its
-    /// `settings` relation when `with_settings` (the `find` path loads it).
-    pub(super) fn user_json(&self, id: Option<i64>, with_settings: bool) -> Result<Value, String> {
-        let Some((user, settings)) = id.and_then(|id| self.users.get(&id)) else {
-            return Ok(Value::Null);
-        };
-        let settings = with_settings.then_some(settings.as_ref());
-        filtered_json(user, settings, true).map_err(str::to_owned)
+    /// A user relation as it serializes nested in another entity
+    /// (`User.toJSON`): null when unset or the row is gone, never with its
+    /// eager `settings` (GHSA-8j73-j6rc-q8xh).
+    pub(super) fn user_json(&self, id: Option<i64>) -> Result<Value, String> {
+        id.and_then(|id| self.users.get(&id))
+            .map_or(Ok(Value::Null), |user| {
+                embedded_json(user).map_err(str::to_owned)
+            })
+    }
+
+    /// A user relation passed through `User.filter()`: also without the
+    /// email and Plex id, for viewers who aren't owed them.
+    pub(super) fn public_user_json(&self, id: Option<i64>) -> Result<Value, String> {
+        id.and_then(|id| self.users.get(&id))
+            .map_or(Ok(Value::Null), |user| {
+                filtered_json(user, None, false).map_err(str::to_owned)
+            })
     }
 }

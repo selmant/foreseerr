@@ -6,7 +6,7 @@
 //! approved requests declined — only when every server of that quality was
 //! scanned and none came back empty.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::Mutex;
 
@@ -82,6 +82,7 @@ async fn run(job: &JobCtx, arr: Arr) {
         current: Value::Null,
         scanned: Mutex::new(HashSet::new()),
         scanned_4k: Mutex::new(HashSet::new()),
+        pursued: Mutex::default(),
     };
     if let Err(e) = Box::pin(run.servers_scan()).await {
         scan.error("Scan interrupted", &e);
@@ -147,6 +148,38 @@ struct ArrRun<'s> {
     current: Value,
     scanned: Mutex<HashSet<i64>>,
     scanned_4k: Mutex<HashSet<i64>>,
+    pursued: Mutex<Pursued>,
+}
+
+/// What the servers still pursue, for the resets left to the end of a run.
+#[derive(Debug, Default)]
+struct Pursued {
+    /// (TMDB id, 4K) → the seasons monitored with nothing downloaded (none
+    /// for a movie); unmonitored titles aren't listed.
+    processing: HashMap<(i64, bool), HashSet<i64>>,
+    /// Series whose processing failed: (TVDB id, 4K).
+    failed: HashSet<(i64, bool)>,
+    /// The TMDB id each processed series resolved to, by TVDB id: a failure
+    /// can come before its TMDB id is known.
+    tmdb_by_tvdb: HashMap<i64, i64>,
+}
+
+impl Pursued {
+    /// Whether a title (or one of its seasons) the scan found abandoned is
+    /// abandoned for good: every server of the quality was scanned
+    /// (`complete`), none failed on it, and none pursues it.
+    fn abandoned(&self, complete: bool, tmdb_id: i64, four_k: bool, season: Option<i64>) -> bool {
+        let failed = self
+            .failed
+            .iter()
+            .any(|(tvdb, f)| *f == four_k && self.tmdb_by_tvdb.get(tvdb) == Some(&tmdb_id));
+        let pursued = self.processing.get(&(tmdb_id, four_k));
+        let still = season.map_or_else(
+            || pursued.is_some(),
+            |n| pursued.is_some_and(|seasons| seasons.contains(&n)),
+        );
+        complete && !failed && !still
+    }
 }
 
 impl ArrRun<'_> {
@@ -245,6 +278,14 @@ impl ArrRun<'_> {
             .await?;
         }
         let flags = cleanup_flags(&self.servers, self.enable4k(), &results);
+        {
+            let pursued = std::mem::take(&mut *lock(&self.pursued));
+            scan.resolve_resets(&|tmdb_id, four_k, season| {
+                let complete = if four_k { flags.uhd } else { flags.standard };
+                pursued.abandoned(complete, tmdb_id, four_k, season)
+            })
+            .await?;
+        }
         self.cleanup(flags).await?;
         scan.info(&format!("{name} scan complete"));
         Ok(())
@@ -278,9 +319,16 @@ impl ArrRun<'_> {
             let tmdb_id = tmdb_id.ok_or_else(|| anyhow!("a movie without a TMDB id"))?;
             let has_file = movie.get("hasFile").is_none_or(|v| js_truthy(Some(v)));
             let processing = !has_file && js_truthy(movie.get("monitored"));
+            let four_k = self.server_4k(&self.current);
+            if processing {
+                lock(&self.pursued)
+                    .processing
+                    .entry((tmdb_id, four_k))
+                    .or_default();
+            }
             let (service_id, external_service_id, external_service_slug) = self.service_opts(movie);
             let o = MovieOpts {
-                is4k: self.server_4k(&self.current),
+                is4k: four_k,
                 service_id,
                 external_service_id,
                 external_service_slug,
@@ -307,6 +355,10 @@ impl ArrRun<'_> {
             self.mark_scanned(id);
         }
         if let Err(e) = Box::pin(self.try_series(series, tvdb_id)).await {
+            if let Some(tvdb) = tvdb_id {
+                let four_k = self.server_4k(&self.current);
+                lock(&self.pursued).failed.insert((tvdb, four_k));
+            }
             tracing::error!(
                 label = self.scan.kind.label,
                 errorMessage = %format!("{e:#}"),
@@ -349,6 +401,7 @@ impl ArrRun<'_> {
             .get("id")
             .and_then(Value::as_i64)
             .ok_or_else(|| anyhow!("TMDB answered without an id"))?;
+        lock(&self.pursued).tmdb_by_tvdb.insert(tvdb, tmdb_id);
         let show = provider_show(job, show).await?;
         let settings = job.current_settings().await?;
         let specials = js_truthy(settings.get("/main/enableSpecialEpisodes"));
@@ -361,6 +414,16 @@ impl ArrRun<'_> {
             array_of(series, "seasons")
         };
         let seasons = sonarr_seasons(&seasons_of(&show, specials), sonarr, four_k);
+        {
+            let mut pursued = lock(&self.pursued);
+            for season in seasons.iter().filter(|s| s.processing) {
+                pursued
+                    .processing
+                    .entry((tmdb_id, four_k))
+                    .or_default()
+                    .insert(season.season_number);
+            }
+        }
         let (service_id, external_service_id, external_service_slug) = self.service_opts(series);
         let o = ShowOpts {
             service_id,
@@ -666,6 +729,30 @@ mod tests {
                 uhd: false
             },
             "without 4K detection every server is standard"
+        );
+    }
+
+    #[test]
+    fn only_titles_no_server_pursues_are_abandoned() {
+        let mut pursued = Pursued::default();
+        pursued.processing.insert((10, false), HashSet::from([1]));
+        assert!(!pursued.abandoned(true, 10, false, None), "still pursued");
+        assert!(!pursued.abandoned(true, 10, false, Some(1)), "season 1 too");
+        assert!(pursued.abandoned(true, 10, false, Some(2)), "not season 2");
+        assert!(pursued.abandoned(true, 10, true, None), "nor in 4K");
+        assert!(
+            !pursued.abandoned(false, 20, false, None),
+            "an incomplete scan"
+        );
+        pursued.tmdb_by_tvdb.insert(7, 20);
+        pursued.failed.insert((7, false));
+        assert!(
+            !pursued.abandoned(true, 20, false, None),
+            "a server failed on it"
+        );
+        assert!(
+            pursued.abandoned(true, 20, true, None),
+            "in the other quality"
         );
     }
 

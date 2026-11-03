@@ -15,6 +15,8 @@ use crate::memcache::{self, CacheId};
 const DISCOVER_URL: &str = "https://discover.provider.plex.tv";
 const TTL: Duration = Duration::from_secs(300);
 const ROLLING_BUFFER: Duration = Duration::from_secs(10);
+/// How many items' metadata are fetched at once.
+const METADATA_CONCURRENCY: usize = 5;
 
 /// `PlexWatchlistItem`, as the route reads it.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,15 +64,44 @@ fn request(client: &reqwest::Client, token: &str, url: &str) -> reqwest::Request
         .header(ACCEPT, "application/json")
 }
 
-async fn fetch_json(req: reqwest::RequestBuilder) -> Result<(u16, Option<String>, Value), ()> {
-    let res = req.send().await.map_err(|_| ())?;
+/// Why a call to plex.tv got no answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Failed {
+    /// Timed out or never connected: a passing network problem.
+    Network,
+    /// Anything else.
+    Other,
+}
+
+impl From<reqwest::Error> for Failed {
+    fn from(e: reqwest::Error) -> Self {
+        if e.is_timeout() || e.is_connect() {
+            Self::Network
+        } else {
+            Self::Other
+        }
+    }
+}
+
+/// A watchlist page worth caching: `MediaContainer` an object with a
+/// numeric `totalSize`. Anything else (an error body, say) would be
+/// revalidated with its `ETag`, answered 304, and fail every time.
+fn is_watchlist_response(response: &Value) -> bool {
+    response
+        .get("MediaContainer")
+        .and_then(Value::as_object)
+        .is_some_and(|container| container.get("totalSize").is_some_and(Value::is_number))
+}
+
+async fn fetch_json(req: reqwest::RequestBuilder) -> Result<(u16, Option<String>, Value), Failed> {
+    let res = req.send().await?;
     let status = res.status().as_u16();
     let etag = res
         .headers()
         .get("etag")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    let text = res.text().await.map_err(|_| ())?;
+    let text = res.text().await?;
     let body = serde_json::from_str::<Value>(&text)
         .map_or_else(|_| Value::from(text.as_str()), crate::tmdb::js_numbers);
     Ok((status, etag, body))
@@ -88,12 +119,19 @@ pub async fn watchlist(
     offset: f64,
 ) -> Result<Page, Unportable> {
     // The shared `plexwatchlist` cache: token → `{ etag, response }`.
-    let cached = memcache::get(CacheId::PlexWatchlist, token).map(|entry| {
+    let mut cached = memcache::get(CacheId::PlexWatchlist, token).map(|entry| {
         (
             entry.get("etag").and_then(Value::as_str).map(str::to_owned),
             entry.get("response").cloned().unwrap_or(Value::Null),
         )
     });
+    if cached
+        .as_ref()
+        .is_some_and(|(_, response)| !is_watchlist_response(response))
+    {
+        memcache::delete(CacheId::PlexWatchlist, token);
+        cached = None;
+    }
     let url = format!(
         "{DISCOVER_URL}/library/sections/watchlist/all?X-Plex-Container-Start={}&X-Plex-Container-Size=20",
         crate::jsval::number_string(offset)
@@ -110,7 +148,7 @@ pub async fn watchlist(
         tracing::error!("[Plex.TV Metadata API] Failed to retrieve watchlist items");
         return Ok(Page::empty());
     }
-    let response = if (200..300).contains(&status) {
+    let response = if (200..300).contains(&status) && is_watchlist_response(&body) {
         let mut entry = Map::new();
         if let Some(etag) = etag {
             entry.insert(String::from("etag"), Value::from(etag));
@@ -132,10 +170,9 @@ pub async fn watchlist(
     let Some(container) = response.get("MediaContainer").filter(|c| !c.is_null()) else {
         return Ok(Page::empty());
     };
-    let entries = match container.get("Metadata") {
-        None | Some(Value::Null) => Vec::new(),
-        Some(Value::Array(items)) => items.clone(),
-        Some(_) => return Ok(Page::empty()),
+    let entries = match (container.get("Metadata"), container.get("Video")) {
+        (Some(Value::Array(items)), _) | (_, Some(Value::Array(items))) => items.clone(),
+        _ => Vec::new(),
     };
     let mut keys = Vec::with_capacity(entries.len());
     for entry in &entries {
@@ -152,10 +189,15 @@ pub async fn watchlist(
         keys.push(key);
     }
     let mut set = tokio::task::JoinSet::new();
+    let slots = std::sync::Arc::new(tokio::sync::Semaphore::new(METADATA_CONCURRENCY));
     for (index, key) in keys.into_iter().enumerate() {
         let client = client.clone();
         let token = token.to_owned();
-        set.spawn(async move { (index, metadata(&client, &token, &key).await) });
+        let slots = std::sync::Arc::clone(&slots);
+        set.spawn(async move {
+            let _slot = slots.acquire_owned().await;
+            (index, metadata(&client, &token, &key).await)
+        });
     }
     let mut details: Vec<Option<Result<Option<Item>, ()>>> = vec![None; entries.len()];
     while let Some(done) = set.join_next().await {
@@ -176,23 +218,32 @@ pub async fn watchlist(
             }
         }
     }
-    let total_size = match container.get("totalSize") {
-        None | Some(Value::Null) => Value::from(0),
-        Some(n @ Value::Number(_)) => n.clone(),
-        Some(_) => return Err(Unportable(String::from("totalSize isn't a number"))),
-    };
+    // A cached or fresh page is always a valid one.
+    let total_size = container
+        .get("totalSize")
+        .cloned()
+        .unwrap_or_else(|| Value::from(0));
     Ok(Page { total_size, items })
 }
 
-/// One item's metadata: `Ok(None)` where Node skips it (404, no
-/// metadata), `Err` where it throws.
+/// One item's metadata: `Ok(None)` where Node skips it (404, a network
+/// failure, no metadata), `Err` where it throws.
 async fn metadata(
     client: &reqwest::Client,
     token: &str,
     rating_key: &str,
 ) -> Result<Option<Item>, ()> {
     let path = format!("/library/metadata/{rating_key}");
-    let response = rolling(client, token, &path).await?;
+    let response = match rolling(client, token, &path).await {
+        Ok(response) => response,
+        Err(Failed::Network) => {
+            tracing::warn!(
+                "[Plex.TV Metadata API] Failed to fetch metadata for ratingKey {rating_key}"
+            );
+            return Ok(None);
+        }
+        Err(Failed::Other) => return Err(()),
+    };
     let Some(response) = response else {
         tracing::warn!(
             "[Plex.TV Metadata API] Item with ratingKey {rating_key} not found, it may have been removed from the server."
@@ -264,7 +315,11 @@ fn find_guid(guids: Option<&Value>, prefix: &str) -> Result<Option<String>, ()> 
 }
 
 /// `getRolling(path)`: `Ok(None)` for a 404.
-async fn rolling(client: &reqwest::Client, token: &str, path: &str) -> Result<Option<Value>, ()> {
+async fn rolling(
+    client: &reqwest::Client,
+    token: &str,
+    path: &str,
+) -> Result<Option<Value>, Failed> {
     // The shared `plextv` cache, keyed by the path.
     let key = format!("https://plex.tv{path}");
     let cached = memcache::get(CacheId::PlexTv, &key)
@@ -294,7 +349,7 @@ async fn rolling(client: &reqwest::Client, token: &str, path: &str) -> Result<Op
         return Ok(None);
     }
     if !(200..300).contains(&status) {
-        return Err(());
+        return Err(Failed::Other);
     }
     memcache::set(CacheId::PlexTv, key, body.clone(), TTL);
     Ok(Some(body))
@@ -332,6 +387,26 @@ pub fn tile(item: &Item) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn only_valid_watchlist_pages_are_cached() {
+        assert!(is_watchlist_response(
+            &json!({"MediaContainer": {"totalSize": 0}})
+        ));
+        assert!(
+            !is_watchlist_response(&json!({"errors": []})),
+            "an error body"
+        );
+        assert!(
+            !is_watchlist_response(&json!({"MediaContainer": []})),
+            "a list"
+        );
+        assert!(
+            !is_watchlist_response(&json!({"MediaContainer": {"Metadata": []}})),
+            "no totalSize"
+        );
+        assert!(!is_watchlist_response(&json!("text")), "not JSON");
+    }
 
     #[test]
     fn tiles() {

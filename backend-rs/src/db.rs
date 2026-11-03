@@ -722,15 +722,7 @@ impl Db {
                     .iter()
                     .map(|r| request_from_row(r, false))
                     .collect::<Result<Vec<_>>>()?;
-                let total = count_q.fetch_one(p).await?;
-                if query.sort == RequestSort::UpdatedAt && !requests.is_empty() {
-                    (
-                        pg_request_order(p, requests, query, &sql.binds).await?,
-                        total,
-                    )
-                } else {
-                    (requests, total)
-                }
+                (requests, count_q.fetch_one(p).await?)
             }
         };
         self.attach_request_children(&mut requests).await?;
@@ -1945,73 +1937,6 @@ impl Db {
             }
         }
     }
-}
-
-/// `getManyAndCount`'s second query of `GET /request` on Postgres, sorted
-/// by `updatedAt`: the page's requests again with every joined relation,
-/// ordered by the sort column alone. Requests tied on `updatedAt` come
-/// back in the order Postgres's sort leaves them, which is the order Node
-/// answers with. `binds` are the page query's, in the same order.
-async fn pg_request_order(
-    pool: &PgPool,
-    requests: Vec<RequestRow>,
-    query: &RequestListQuery,
-    binds: &[Bind],
-) -> Result<Vec<RequestRow>> {
-    let mut n = 0;
-    let mut list = |count: usize| {
-        let out = (n + 1..=n + count)
-            .map(|i| format!("${i}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        n += count;
-        out
-    };
-    let statuses = list(query.statuses.len());
-    let plain = list(query.media_statuses.len());
-    let four_k = list(query.media_statuses.len());
-    let user = if query.requested_by.is_some() {
-        n += 1;
-        format!(r#" AND "requestedBy"."id" = ${n}"#)
-    } else {
-        String::new()
-    };
-    let kind = if query.media_type.is_some() {
-        n += 1;
-        format!(r#" AND "request"."type" = ${n}"#)
-    } else {
-        String::new()
-    };
-    let filter = format!(
-        r#""request"."status" IN ({statuses}) AND (("request"."is4k" = false AND "media"."status" IN ({plain})) OR ("request"."is4k" = true AND "media"."status4k" IN ({four_k}))){user}{kind}"#
-    );
-    let ids = requests
-        .iter()
-        .map(|r| r.id.to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let direction = if query.ascending { "ASC" } else { "DESC" };
-    let sql = format!(
-        r#"SELECT "request"."id"::bigint AS "id" FROM "media_request" "request" LEFT JOIN "media" "media" ON "media"."id"="request"."mediaId"  LEFT JOIN "season_request" "seasons" ON "seasons"."requestId"="request"."id"  LEFT JOIN "episode_request" "episodes" ON "episodes"."requestId"="request"."id"  LEFT JOIN "user" "modifiedBy" ON "modifiedBy"."id"="request"."modifiedById"  LEFT JOIN "user" "requestedBy" ON "requestedBy"."id"="request"."requestedById" WHERE ( {filter} ) AND ( "request"."id" IN ({ids}) ) ORDER BY "request"."updatedAt" {direction}"#
-    );
-    let mut q = sqlx::query(AssertSqlSafe(sql));
-    for value in binds {
-        q = bind_value(q, value);
-    }
-    let mut left: Vec<Option<RequestRow>> = requests.into_iter().map(Some).collect();
-    let mut out = Vec::with_capacity(left.len());
-    for row in q.fetch_all(pool).await? {
-        let id: i64 = row.try_get("id")?;
-        if let Some(r) = left
-            .iter_mut()
-            .find(|r| r.as_ref().is_some_and(|r| r.id == id))
-            .and_then(Option::take)
-        {
-            out.push(r);
-        }
-    }
-    out.extend(left.into_iter().flatten());
-    Ok(out)
 }
 
 /// `TypeORM`'s second query of a page on Postgres (a `take` with joins):
@@ -3252,9 +3177,11 @@ pub struct RequestListQuery {
 /// The `sort` query parameter of `GET /request`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestSort {
-    /// `added` (the default): by id.
+    /// No `sort`: by id.
     Id,
-    /// `modified`: by `updatedAt`.
+    /// `added`: by `createdAt`, then id.
+    CreatedAt,
+    /// `modified`: by `updatedAt`, then id.
     UpdatedAt,
 }
 
@@ -3302,7 +3229,8 @@ impl RequestSql {
         let direction = if query.ascending { "ASC" } else { "DESC" };
         let order = match query.sort {
             RequestSort::Id => format!(r#"r."id" {direction}"#),
-            RequestSort::UpdatedAt => format!(r#"r."updatedAt" {direction}, r."id" ASC"#),
+            RequestSort::CreatedAt => format!(r#"r."createdAt" {direction}, r."id" {direction}"#),
+            RequestSort::UpdatedAt => format!(r#"r."updatedAt" {direction}, r."id" {direction}"#),
         };
         let columns = if sqlite {
             REQUEST_COLUMNS_SQLITE

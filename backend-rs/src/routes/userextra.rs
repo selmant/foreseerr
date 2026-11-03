@@ -173,7 +173,7 @@ pub(super) fn watchlist<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             item.insert(String::from("updatedAt"), text(w.updated_at.as_ref()));
             item.insert(
                 String::from("requestedBy"),
-                try_forward!(related.user_json(Some(id), true)),
+                try_forward!(related.user_json(Some(id))),
             );
             item.insert(
                 String::from("media"),
@@ -190,7 +190,7 @@ pub(super) fn watchlist<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// A subscription with its user (eager, with settings).
+/// A subscription with its user (`User.toJSON`, so without settings).
 fn push_json(related: &Related, s: &PushSubscriptionRow) -> Result<Value, String> {
     let mut out = Map::new();
     out.insert(String::from("id"), Value::from(s.id));
@@ -205,7 +205,7 @@ fn push_json(related: &Related, s: &PushSubscriptionRow) -> Result<Value, String
         String::from("createdAt"),
         s.created_at.as_deref().map_or(Value::Null, Value::from),
     );
-    out.insert(String::from("user"), related.user_json(s.user_id, true)?);
+    out.insert(String::from("user"), related.user_json(s.user_id)?);
     Ok(Value::Object(out))
 }
 

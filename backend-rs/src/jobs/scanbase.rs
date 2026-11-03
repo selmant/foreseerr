@@ -51,6 +51,10 @@ pub struct Kind {
     current_key: &'static str,
     /// `libraries` or `servers`.
     list_key: &'static str,
+    /// `declineRequestsOnStatusReset`: only the *arr scanners know whether
+    /// a title is still pursued, so they leave the titles they find
+    /// abandoned for the end of the run to settle.
+    pub defer_resets: bool,
 }
 
 impl Kind {
@@ -62,6 +66,7 @@ impl Kind {
             label,
             current_key: "currentLibrary",
             list_key: "libraries",
+            defer_resets: false,
         }
     }
 
@@ -73,6 +78,7 @@ impl Kind {
             label,
             current_key: "currentServer",
             list_key: "servers",
+            defer_resets: true,
         }
     }
 }
@@ -178,6 +184,8 @@ pub struct Scan<'a> {
     /// `enable4kShow`: a 4K Sonarr server exists.
     pub enable4k_show: bool,
     locks: Arc<KeyLock>,
+    /// The status resets left for the end of the run.
+    pub resets: Arc<Mutex<super::scanmedia::Resets>>,
 }
 
 /// A run's [`Scan`] that owns its job, for work the run starts without
@@ -190,6 +198,7 @@ pub struct Detached {
     enable4k_movie: bool,
     enable4k_show: bool,
     locks: Arc<KeyLock>,
+    resets: Arc<Mutex<super::scanmedia::Resets>>,
 }
 
 impl Detached {
@@ -203,6 +212,7 @@ impl Detached {
             enable4k_movie: self.enable4k_movie,
             enable4k_show: self.enable4k_show,
             locks: Arc::clone(&self.locks),
+            resets: Arc::clone(&self.resets),
         }
     }
 }
@@ -248,6 +258,7 @@ impl<'a> Scan<'a> {
             enable4k_movie,
             enable4k_show,
             locks: Arc::default(),
+            resets: Arc::default(),
         }
     }
 
@@ -261,6 +272,7 @@ impl<'a> Scan<'a> {
             enable4k_movie: self.enable4k_movie,
             enable4k_show: self.enable4k_show,
             locks: Arc::clone(&self.locks),
+            resets: Arc::clone(&self.resets),
         }
     }
 

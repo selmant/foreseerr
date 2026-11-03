@@ -24,6 +24,10 @@ const MANAGE_USERS: i64 = 8;
 const MANAGE_REQUESTS: i64 = 16;
 const REQUEST_ADVANCED: i64 = 8192;
 
+/// `MediaStatus.UNKNOWN` and `DELETED`.
+const M_UNKNOWN: i64 = 1;
+const M_DELETED: i64 = 7;
+
 /// This module's routes.
 pub(super) const ROUTES: &Table = &[
     ("/api/v1/request/{id}", Method::PUT, edit),
@@ -51,6 +55,23 @@ pub(super) struct Body {
     pub(super) tags: Option<Vec<i64>>,
     /// `episodeSelection`, when sent.
     pub(super) episode_selection: Option<Value>,
+    /// Whether the handler assigns the routing fields (server, profiles,
+    /// root folder, tags) from the body; off for a series edit by someone
+    /// who may not make advanced requests.
+    pub(super) routing: bool,
+}
+
+impl Body {
+    /// Leave the request's routing as it is: the requester may not pick it.
+    fn keep_routing(&mut self) {
+        self.server_id = None;
+        self.profile_id = None;
+        self.root_folder = None;
+        self.language_profile_id = None;
+        self.metadata_language_id = super::params::Assign::Keep;
+        self.tags = None;
+        self.routing = false;
+    }
 }
 
 fn int_list(value: &Value, what: &str) -> Result<Vec<i64>, String> {
@@ -113,6 +134,7 @@ fn parse_body(ctx: &Ready<'_>) -> Result<Body, super::Fallback> {
         user_id: user_id.filter(|id| *id != 0),
         tags: body.get("tags").map(|v| int_list(v, "tags")).transpose()?,
         episode_selection: body.get("episodeSelection").cloned(),
+        routing: true,
     })
 }
 
@@ -220,32 +242,57 @@ async fn season_edit(
         })
         .flat_map(|r| r.seasons.iter().map(|s| s.season_number))
         .collect();
+    // Seasons the library already has (in this quality) can't be added.
+    let covered: Vec<i64> = media
+        .seasons
+        .iter()
+        .filter(|s| {
+            let status = if e.row.is4k { s.status4k } else { s.status };
+            status != M_UNKNOWN && status != M_DELETED
+        })
+        .map(|s| s.season_number)
+        .collect();
+    Ok(
+        plan_season_edit(requested, &existing, &e.row.seasons, &covered)
+            .ok_or_else(|| ctx.error(202, "No seasons available to request")),
+    )
+}
+
+/// The seasons a series edit ends up with: those requested that no other
+/// request holds, minus seasons the library covers unless this request
+/// holds them already. `None` when nothing is left.
+fn plan_season_edit(
+    requested: &[i64],
+    elsewhere: &[i64],
+    current: &[SeasonRequestRow],
+    covered: &[i64],
+) -> Option<SeasonEdit> {
+    let held: Vec<i64> = current.iter().map(|s| s.season_number).collect();
     let filtered: Vec<i64> = requested
         .iter()
         .copied()
-        .filter(|s| !existing.contains(s))
+        .filter(|s| !elsewhere.contains(s))
         .collect();
-    if filtered.is_empty() {
-        return Ok(Err(ctx.error(202, "No seasons available to request")));
-    }
-    let current: Vec<i64> = e.row.seasons.iter().map(|s| s.season_number).collect();
+    let kept = filtered.iter().filter(|s| held.contains(s)).count();
     let add: Vec<i64> = filtered
         .iter()
         .copied()
-        .filter(|s| !current.contains(s))
+        .filter(|s| !held.contains(s) && !covered.contains(s))
         .collect();
-    let (keep, orphaned): (Vec<SeasonRequestRow>, Vec<SeasonRequestRow>) = e
-        .row
-        .seasons
+    let units = kept + add.len();
+    if units == 0 {
+        return None;
+    }
+    let (keep, orphaned): (Vec<SeasonRequestRow>, Vec<SeasonRequestRow>) = current
         .iter()
         .cloned()
         .partition(|s| filtered.contains(&s.season_number));
-    Ok(Ok(SeasonEdit {
+    Some(SeasonEdit {
         keep,
         add,
         orphaned: orphaned.iter().map(|s| s.id).collect(),
-        units: i64::try_from(filtered.len()).unwrap_or(i64::MAX),
-    }))
+        units: i64::try_from(units).unwrap_or(i64::MAX),
+    })
 }
 
 /// `PUT /request/{id}`.
@@ -254,7 +301,10 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         forward_on_err!(ctx.no_query());
         let user = forward_on_err!(ctx.authenticated(0));
         let id = forward_on_err!(super::params::path_int(ctx, 0));
-        let body = forward_on_err!(parse_body(ctx));
+        let mut body = forward_on_err!(parse_body(ctx));
+        // Serialized with request creation, so an edit and a new request
+        // can't both claim the same season or the same quota.
+        let _guard = super::requestcreate::REQUEST_LOCK.lock().await;
         let lc = lc(ctx);
         let mut e = match lc.load(id).await {
             Ok(Some(e)) => e,
@@ -279,6 +329,12 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         if e.row.status != PENDING {
             return ctx.error(409, "Only pending requests can be modified.");
         }
+        // A movie edit is only open to advanced requesters (above); a series
+        // owner without the permission may change the seasons, not where
+        // the request goes.
+        if tv && !user.has_permission(MANAGE_REQUESTS | REQUEST_ADVANCED) {
+            body.keep_routing();
+        }
         let mut request_user: Option<UserRel> = e.requested_by.clone();
         if let Some(uid) = body.user_id {
             if uid != owner && !has_all(user.permissions, MANAGE_USERS | MANAGE_REQUESTS) {
@@ -297,6 +353,8 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some(request_user) = request_user else {
             return Outcome::forward(String::from("the requester is gone"));
         };
+        // A new owner's quota is charged for the whole request.
+        let owner_changing = request_user.0.id != owner;
         let episodic = e
             .row
             .episode_selection_type
@@ -312,7 +370,7 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let seasons = if tv {
             let Some(requested) = body.seasons.clone().filter(|s| !s.is_empty()) else {
                 return ctx.error(
-                    500,
+                    400,
                     "Missing seasons. If you want to cancel a series request, use the DELETE method.",
                 );
             };
@@ -322,11 +380,24 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             };
             let (_, tv_quota) =
                 forward_on_err!(super::requestcreate::quotas(ctx, &request_user).await);
-            if tv_quota.edit_exceeds(e.row.ignore_quota, edit.units, e.row.tv_quota_units) {
+            let held = tv_quota.held_units(
+                owner_changing,
+                e.row.created_at.as_deref(),
+                e.row.tv_quota_units,
+            );
+            if tv_quota.edit_exceeds(e.row.ignore_quota, edit.units, held) {
                 return ctx.error(403, "Series Quota exceeded.");
             }
             Some(edit)
         } else {
+            // Moving a movie request onto another user charges their quota.
+            if owner_changing && !e.row.ignore_quota {
+                let (movie_quota, _) =
+                    forward_on_err!(super::requestcreate::quotas(ctx, &request_user).await);
+                if movie_quota.restricted {
+                    return ctx.error(403, "Movie Quota exceeded.");
+                }
+            }
             None
         };
         let mut sets = changed_columns(&e, &body, tv, request_user.0.id);
@@ -472,27 +543,31 @@ fn edited_json(
     seasons: Option<&SeasonEdit>,
 ) -> Value {
     let number = |n: Option<i64>| n.map_or(Value::Null, Value::from);
-    out.insert(String::from("serverId"), number(body.server_id));
-    out.insert(String::from("profileId"), number(body.profile_id));
-    out.insert(
-        String::from("rootFolder"),
-        body.root_folder.as_deref().map_or(Value::Null, Value::from),
-    );
-    out.insert(
-        String::from("tags"),
-        body.tags.as_ref().map_or(Value::Null, |t| {
-            Value::Array(t.iter().copied().map(Value::from).collect())
-        }),
-    );
+    if body.routing {
+        out.insert(String::from("serverId"), number(body.server_id));
+        out.insert(String::from("profileId"), number(body.profile_id));
+        out.insert(
+            String::from("rootFolder"),
+            body.root_folder.as_deref().map_or(Value::Null, Value::from),
+        );
+        out.insert(
+            String::from("tags"),
+            body.tags.as_ref().map_or(Value::Null, |t| {
+                Value::Array(t.iter().copied().map(Value::from).collect())
+            }),
+        );
+    }
     out.insert(
         String::from("updatedAt"),
         e.row.updated_at.as_deref().map_or(Value::Null, Value::from),
     );
     if tv {
-        out.insert(
-            String::from("languageProfileId"),
-            number(body.language_profile_id),
-        );
+        if body.routing {
+            out.insert(
+                String::from("languageProfileId"),
+                number(body.language_profile_id),
+            );
+        }
         if body.metadata_language_id != super::params::Assign::Keep {
             out.insert(
                 String::from("metadataLanguageId"),
@@ -583,6 +658,34 @@ mod tests {
     use anyhow::Context;
 
     use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
+
+    #[test]
+    fn an_edit_never_adds_seasons_the_library_covers() -> anyhow::Result<()> {
+        let held = |n: i64| SeasonRequestRow {
+            id: n * 10,
+            season_number: n,
+            ..SeasonRequestRow::default()
+        };
+        let current = [held(1), held(2)];
+        // Season 2 is held and available: it stays. Season 3 is available
+        // and not held: it isn't added. Season 4 is new.
+        let edit =
+            plan_season_edit(&[2, 3, 4], &[], &current, &[2, 3]).context("seasons are left")?;
+        let kept: Vec<i64> = edit.keep.iter().map(|s| s.season_number).collect();
+        assert_eq!(kept, [2], "the held season stays");
+        assert_eq!(edit.add, [4], "only the uncovered season is added");
+        assert_eq!(edit.orphaned, [10], "season 1 is let go");
+        assert_eq!(edit.units, 2, "charged for what the request ends up with");
+        assert!(
+            plan_season_edit(&[3], &[], &current, &[3]).is_none(),
+            "only covered seasons: nothing to request"
+        );
+        assert!(
+            plan_season_edit(&[4], &[4], &current, &[]).is_none(),
+            "held by another request"
+        );
+        Ok(())
+    }
 
     #[test]
     fn tags_transformer() {
