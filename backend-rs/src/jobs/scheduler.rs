@@ -99,7 +99,7 @@ const PLEX_JOBS: [JobDef; 4] = [
         "plex-watchlist-sync",
         "Plex Watchlist Sync",
         "Plex Watchlist Sync",
-        "seconds",
+        "minutes",
         Weight::Light,
         Cancel::None,
     ),
@@ -819,6 +819,11 @@ mod tests {
             definition("download-sync").map(|d| (d.kind, d.interval)),
             Some(("command", "seconds")),
             "commands"
+        );
+        assert_eq!(
+            definition("plex-watchlist-sync").map(|d| d.interval),
+            Some("minutes"),
+            "the watchlist sync runs every few minutes"
         );
         assert!(definition("nope").is_none(), "unknown");
     }
