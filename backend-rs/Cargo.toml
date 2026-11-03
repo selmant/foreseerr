@@ -36,7 +36,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-normalization = "0.1.25"
 unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
-pgp = "0.17.0"
+pgp = "0.19.0"
 rand = "0.8"
 yaml-rust2 = { version = "0.13", default-features = false }
 regex = "1.13"
