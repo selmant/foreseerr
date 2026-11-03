@@ -209,7 +209,9 @@ impl Arr<'_> {
                 .send(Method::PUT, "/movie", &Value::Object(body))
                 .await?;
             if crate::settings::public::truthy(updated.get("monitored")) {
-                if o.search_now {
+                // Radarr refuses to grab a movie it doesn't consider
+                // available yet; it searches by itself once it is.
+                if o.search_now && crate::settings::public::truthy(updated.get("isAvailable")) {
                     let id = updated.get("id").cloned().unwrap_or(Value::Null);
                     self.search_movie(&id).await;
                 }
@@ -218,7 +220,7 @@ impl Arr<'_> {
             bail!("Failed to update existing movie in Radarr");
         }
         if truthy("id") {
-            if o.search_now && !truthy("hasFile") {
+            if o.search_now && !truthy("hasFile") && truthy("isAvailable") {
                 self.search_movie(&id).await;
             }
             return Ok(movie);
@@ -1003,6 +1005,63 @@ mod tests {
     ) -> Result<Vec<Seen>> {
         let (seen, _) = add_to(api, existing, dvd_episodes(), &aired_order(), o).await?;
         Ok(seen.into_iter().filter(|(m, _, _)| m != "GET").collect())
+    }
+
+    /// `addMovie` with `searchNow` for a monitored movie without a file
+    /// that Radarr's lookup answers with; the commands Radarr got.
+    async fn search_existing_movie(movie: Value) -> Result<Vec<Seen>> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let (port, seen) = fake_sonarr(
+            "v3",
+            vec![("GET", String::from("/api/v3/movie/lookup"), json!([movie]))],
+        )
+        .await?;
+        let client = ServarrClient::new(reqwest::Client::new());
+        let server = json!({
+            "hostname": "127.0.0.1", "port": port, "apiKey": "k", "useSsl": false,
+            "baseUrl": "",
+        });
+        let arr = Arr {
+            client: &client,
+            server: &server,
+            timeout: None,
+        };
+        let o = MovieOptions {
+            quality_profile: Value::from(1),
+            root_folder: Value::from("/movies"),
+            minimum_availability: Value::from("released"),
+            title: Value::from("Film"),
+            tmdb_id: 603,
+            year: Value::from(1999),
+            tags: Vec::new(),
+            search_now: true,
+        };
+        arr.add_movie(&o).await?;
+        let seen = crate::sync::lock(&seen).clone();
+        Ok(seen
+            .into_iter()
+            .filter(|(_, path, _)| path.ends_with("/command"))
+            .collect())
+    }
+
+    #[tokio::test]
+    async fn radarr_searches_only_movies_it_considers_available() -> Result<()> {
+        let movie = |available: bool| json!({"id": 5, "tmdbId": 603, "monitored": true, "hasFile": false, "isAvailable": available});
+        assert!(
+            search_existing_movie(movie(false)).await?.is_empty(),
+            "an unreleased movie isn't searched"
+        );
+        assert_eq!(
+            search_existing_movie(movie(true)).await?.len(),
+            1,
+            "an available one is"
+        );
+        Ok(())
     }
 
     /// `addSeries` of `o` against an existing series 7, whose episodes
