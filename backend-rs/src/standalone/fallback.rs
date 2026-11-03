@@ -192,6 +192,18 @@ fn api(parts: &Parts) -> Response<Body> {
     internal_error(parts)
 }
 
+/// Every documented operation as `(method, template)`, for the test that
+/// each one has a handler.
+#[cfg(test)]
+pub(crate) fn documented() -> impl Iterator<Item = (&'static str, &'static str)> {
+    super::apiroutes::ROUTES.iter().flat_map(|route| {
+        route
+            .methods
+            .iter()
+            .map(move |&(method, _)| (method, route.template))
+    })
+}
+
 /// The first documented route matching `path`, as path-to-regexp 8 matches
 /// (case-insensitive, an optional trailing slash, non-empty parameters).
 fn find(path: &str) -> Option<&'static ApiRoute> {
