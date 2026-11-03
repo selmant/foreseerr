@@ -17,6 +17,7 @@ import useDiscover from '@app/hooks/useDiscover';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import { useRegisterHideWatchedRevalidation } from '@app/hooks/useRegisterHideWatchedRevalidation';
 import useRouteQuery from '@app/hooks/useRouteQuery';
+import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
@@ -42,12 +43,27 @@ type MediaType = 'all' | 'movie' | 'tv';
 
 type TimeWindow = 'day' | 'week';
 
+const parseMediaType = (value: string | string[] | undefined): MediaType => {
+  const mediaType = Array.isArray(value) ? value[0] : value;
+
+  return mediaType === 'movie' || mediaType === 'tv' || mediaType === 'all'
+    ? mediaType
+    : 'all';
+};
+
+const parseTimeWindow = (value: string | string[] | undefined): TimeWindow => {
+  const timeWindow = Array.isArray(value) ? value[0] : value;
+
+  return timeWindow === 'week' || timeWindow === 'day' ? timeWindow : 'day';
+};
+
 const Trending = () => {
   const intl = useIntl();
   const query = useRouteQuery();
   const { user } = useUser();
-  const [currentMediaType, setCurrentMediaType] = useState<MediaType>('all');
-  const [currentTimeWindow, setCurrentTimeWindow] = useState<TimeWindow>('day');
+  const updateQueryParams = useUpdateQueryParams({});
+  const currentMediaType = parseMediaType(query.mediaType);
+  const currentTimeWindow = parseTimeWindow(query.timeWindow);
   const [showFilters, setShowFilters] = useState(false);
   const { data: discoverDefaults } = useDiscoverFilterDefaults();
   const preparedFilters = mergeFilterDefaults(
@@ -105,7 +121,7 @@ const Trending = () => {
             <select
               id="mediaType"
               name="mediaType"
-              onChange={(e) => setCurrentMediaType(e.target.value as MediaType)}
+              onChange={(e) => updateQueryParams('mediaType', e.target.value)}
               value={currentMediaType}
               className="rounded-r-only"
             >
@@ -127,9 +143,7 @@ const Trending = () => {
             <select
               id="timeWindow"
               name="timeWindow"
-              onChange={(e) =>
-                setCurrentTimeWindow(e.target.value as TimeWindow)
-              }
+              onChange={(e) => updateQueryParams('timeWindow', e.target.value)}
               value={currentTimeWindow}
               className="rounded-r-only"
             >
