@@ -2,6 +2,4 @@
 # in oasdiff's --err-ignore format: METHOD /path and the oasdiff message.
 # Each line is a compatibility gap: give the reason and remove it once fixed.
 #
-# Not implemented yet; tracked by the feat/seerr-missing-endpoints PR.
-GET /movie/{movieId}/ratingscombined api path removed without deprecation
-POST /overrideRule/advancedRequest api path removed without deprecation
+# None at the moment.
