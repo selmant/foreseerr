@@ -44,6 +44,7 @@ const AUTO_APPROVE_TV: i64 = 512;
 const REQUEST_4K: i64 = 1024;
 const REQUEST_4K_MOVIE: i64 = 2048;
 const REQUEST_4K_TV: i64 = 4096;
+const REQUEST_ADVANCED: i64 = 8192;
 const AUTO_APPROVE_4K: i64 = 32_768;
 const AUTO_APPROVE_4K_MOVIE: i64 = 65_536;
 const AUTO_APPROVE_4K_TV: i64 = 131_072;
@@ -387,37 +388,81 @@ fn rule_applies(
     Ok(true)
 }
 
-/// The override rules for the default server of this kind and quality,
-/// most specific first; the first one that applies is used.
-async fn apply_rules(
+/// The `serverId` an advanced requester asked for, when it is a configured
+/// server of the request's kind and quality; anything else (or a requester
+/// who may not pick one) goes to the default server.
+fn requested_server(ctx: &Ready<'_>, body: &Body, advanced: bool) -> Option<i64> {
+    let id = body.server_id.filter(|id| advanced && *id >= 0)?;
+    let section = if body.media_type == "movie" {
+        "/radarr"
+    } else {
+        "/sonarr"
+    };
+    ctx.settings
+        .get(section)
+        .and_then(Value::as_array)?
+        .iter()
+        .any(|s| {
+            s.get("id").and_then(Value::as_i64) == Some(id)
+                && s.get("is4k").and_then(Value::as_bool) == Some(body.is4k)
+        })
+        .then_some(id)
+}
+
+/// The routing the body asks for, as far as the requester may choose it:
+/// none of it unless they may make advanced requests, and none of it when
+/// the server they picked was refused.
+fn requested_routing(body: &Body, advanced: bool, server_id: Option<i64>) -> Routing {
+    let asked_for_server = advanced && body.server_id.is_some_and(|id| id >= 0);
+    let allowed = advanced && (!asked_for_server || server_id.is_some());
+    Routing {
+        server_id,
+        profile_id: body.profile_id.filter(|_| allowed),
+        root_folder: body.root_folder.clone().filter(|_| allowed),
+        language_profile_id: body.language_profile_id.filter(|_| allowed),
+        metadata_language_id: body
+            .metadata_language_id
+            .filter(|_| allowed && body.media_type != "movie"),
+        tags: body.tags.clone().filter(|_| allowed),
+    }
+}
+
+/// The override rules for the server the request goes to (the requested
+/// one, or the default for its kind and quality), most specific first; the
+/// first one that applies is used.
+async fn matching_rule(
     ctx: &Ready<'_>,
     body: &Body,
     details: &Value,
     anime: bool,
     user_id: i64,
-    routing: &mut Routing,
-) -> Result<(), String> {
+    service_id: Option<i64>,
+) -> Result<Option<OverrideRuleRow>, String> {
     let (section, field) = if body.media_type == "movie" {
         ("/radarr", "radarr")
     } else {
         ("/sonarr", "sonarr")
     };
-    let default_id = ctx
-        .settings
-        .get(section)
-        .and_then(Value::as_array)
-        .and_then(|servers| {
-            servers.iter().find(|s| {
-                s.get("is4k").and_then(Value::as_bool) == Some(body.is4k)
-                    && truthy(s.get("isDefault"))
+    let server_id = if let Some(id) = service_id {
+        id
+    } else {
+        let default_id = ctx
+            .settings
+            .get(section)
+            .and_then(Value::as_array)
+            .and_then(|servers| {
+                servers.iter().find(|s| {
+                    s.get("is4k").and_then(Value::as_bool) == Some(body.is4k)
+                        && truthy(s.get("isDefault"))
+                })
             })
-        })
-        .and_then(|s| s.get("id"));
-    let Some(default_id) = default_id else {
-        return Ok(());
-    };
-    let Some(default_id) = default_id.as_i64() else {
-        return Err(String::from("a server id that isn't a whole number"));
+            .and_then(|s| s.get("id"));
+        let Some(default_id) = default_id else {
+            return Ok(None);
+        };
+        default_id
+            .as_i64()
+            .ok_or_else(|| String::from("a server id that isn't a whole number"))?
     };
     let rules = ctx
         .state
@@ -432,7 +477,7 @@ async fn apply_rules(
         } else {
             rule.sonarr_service_id
         };
-        if service == Some(default_id)
+        if service == Some(server_id)
             && rule_applies(&rule, details, body.media_type == "tv" && anime, user_id)?
         {
             applied.push(rule);
@@ -445,16 +490,29 @@ async fn apply_rules(
             .count()
     };
     applied.sort_by_key(|r| std::cmp::Reverse(specificity(r)));
-    let Some(rule) = applied.first() else {
-        return Ok(());
-    };
-    if let Some(root) = rule.root_folder.as_ref().filter(|r| !r.is_empty()) {
+    Ok(applied.into_iter().next())
+}
+
+/// An override rule's values on top of the routing. An advanced requester
+/// picked their values in the request modal, so the rule only fills in
+/// what they left unset.
+fn apply_rule(rule: &OverrideRuleRow, advanced: bool, routing: &mut Routing) -> Result<(), String> {
+    let keep_root = advanced && routing.root_folder.as_ref().is_some_and(|r| !r.is_empty());
+    let keep_profile = advanced && routing.profile_id.is_some_and(|p| p != 0);
+    let keep_tags = advanced && routing.tags.is_some();
+    let root = rule
+        .root_folder
+        .as_ref()
+        .filter(|r| !keep_root && !r.is_empty());
+    let profile = rule.profile_id.filter(|p| !keep_profile && *p != 0);
+    let tags = rule.tags.as_ref().filter(|t| !keep_tags && !t.is_empty());
+    if let Some(root) = root {
         routing.root_folder = Some(root.clone());
     }
-    if let Some(profile) = rule.profile_id.filter(|p| *p != 0) {
+    if let Some(profile) = profile {
         routing.profile_id = Some(profile);
     }
-    if let Some(tags) = rule.tags.as_ref().filter(|t| !t.is_empty()) {
+    if let Some(tags) = tags {
         let mut merged = routing.tags.clone().unwrap_or_default();
         merged.extend(rule_numbers(tags)?);
         let mut unique: Vec<i64> = Vec::with_capacity(merged.len());
@@ -465,7 +523,9 @@ async fn apply_rules(
         }
         routing.tags = Some(unique);
     }
-    tracing::debug!("Override rule applied.");
+    if root.is_some() || profile.is_some() || tags.is_some() {
+        tracing::debug!("Override rule applied.");
+    }
     Ok(())
 }
 
@@ -971,22 +1031,14 @@ async fn prepare(ctx: &Ready<'_>, user: &CurrentUser, body: &Body) -> Result<Pre
     if let Some(message) = duplicate(&rows, body, request_user.0.id) {
         return Err(ctx.error(409, message));
     }
-    let mut routing = Routing {
-        server_id: body.server_id,
-        profile_id: body.profile_id,
-        root_folder: body.root_folder.clone(),
-        language_profile_id: body.language_profile_id,
-        metadata_language_id: if movie {
-            None
-        } else {
-            body.metadata_language_id
-        },
-        tags: body.tags.clone(),
-    };
-    if !user.has_permission(MANAGE_REQUESTS) {
-        answer_on_err!(
-            apply_rules(ctx, body, &details, anime, request_user.0.id, &mut routing).await
-        );
+    let advanced = user.has_permission(MANAGE_REQUESTS | REQUEST_ADVANCED);
+    let server_id = requested_server(ctx, body, advanced);
+    let mut routing = requested_routing(body, advanced, server_id);
+    let rule = answer_on_err!(
+        matching_rule(ctx, body, &details, anime, request_user.0.id, server_id).await
+    );
+    if let Some(rule) = rule {
+        answer_on_err!(apply_rule(&rule, advanced, &mut routing));
     }
     if !movie {
         answer_on_err!(sonarr_defaults(ctx, body, anime, &mut routing));
@@ -1676,6 +1728,79 @@ async fn write(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn routed_body(value: &Value) -> Result<Body, String> {
+        value
+            .as_object()
+            .and_then(|map| parse_body(map).ok())
+            .ok_or_else(|| String::from("the body didn't parse"))
+    }
+
+    #[test]
+    fn only_advanced_requesters_route_their_request() -> Result<(), String> {
+        let body = routed_body(&json!({
+            "mediaType": "tv", "mediaId": 1, "serverId": 3, "profileId": 4,
+            "rootFolder": "/x", "languageProfileId": 5, "metadataLanguageId": 6,
+            "tags": [7]
+        }))?;
+        let plain = requested_routing(&body, false, None);
+        assert_eq!(plain.server_id, None);
+        assert_eq!(plain.profile_id, None, "no profile");
+        assert_eq!(plain.root_folder, None, "no root folder");
+        assert_eq!(plain.language_profile_id, None, "no language profile");
+        assert_eq!(plain.metadata_language_id, None, "no metadata language");
+        assert_eq!(plain.tags, None, "no tags");
+        let advanced = requested_routing(&body, true, Some(3));
+        assert_eq!(advanced.server_id, Some(3));
+        assert_eq!(advanced.profile_id, Some(4));
+        assert_eq!(advanced.root_folder.as_deref(), Some("/x"));
+        assert_eq!(advanced.language_profile_id, Some(5));
+        assert_eq!(advanced.metadata_language_id, Some(6));
+        assert_eq!(advanced.tags, Some(vec![7]));
+        let refused = requested_routing(&body, true, None);
+        assert_eq!(refused.server_id, None, "a refused server");
+        assert_eq!(refused.profile_id, None, "takes the options with it");
+        assert_eq!(refused.tags, None, "tags too");
+        let no_server = routed_body(&json!({"mediaType": "movie", "mediaId": 1, "profileId": 4}))?;
+        assert_eq!(
+            requested_routing(&no_server, true, None).profile_id,
+            Some(4),
+            "no server asked for keeps the options"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rules_fill_in_what_advanced_requesters_left_unset() {
+        let rule = OverrideRuleRow {
+            profile_id: Some(9),
+            root_folder: Some(String::from("/rule")),
+            tags: Some(String::from("1,2")),
+            ..Default::default()
+        };
+        let mut plain = Routing::default();
+        assert!(apply_rule(&rule, false, &mut plain).is_ok());
+        assert_eq!(plain.profile_id, Some(9));
+        assert_eq!(plain.root_folder.as_deref(), Some("/rule"));
+        assert_eq!(plain.tags, Some(vec![1, 2]));
+        let mut picked = Routing {
+            profile_id: Some(4),
+            tags: Some(Vec::new()),
+            ..Routing::default()
+        };
+        assert!(apply_rule(&rule, true, &mut picked).is_ok());
+        assert_eq!(picked.profile_id, Some(4), "the picked profile stays");
+        assert_eq!(
+            picked.tags,
+            Some(Vec::new()),
+            "picked tags, even none, stay"
+        );
+        assert_eq!(
+            picked.root_folder.as_deref(),
+            Some("/rule"),
+            "an unset root folder comes from the rule"
+        );
+    }
 
     #[test]
     fn an_edit_may_reuse_its_own_units() {

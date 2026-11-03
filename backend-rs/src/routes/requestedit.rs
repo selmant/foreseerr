@@ -51,6 +51,23 @@ pub(super) struct Body {
     pub(super) tags: Option<Vec<i64>>,
     /// `episodeSelection`, when sent.
     pub(super) episode_selection: Option<Value>,
+    /// Whether the handler assigns the routing fields (server, profiles,
+    /// root folder, tags) from the body; off for a series edit by someone
+    /// who may not make advanced requests.
+    pub(super) routing: bool,
+}
+
+impl Body {
+    /// Leave the request's routing as it is: the requester may not pick it.
+    fn keep_routing(&mut self) {
+        self.server_id = None;
+        self.profile_id = None;
+        self.root_folder = None;
+        self.language_profile_id = None;
+        self.metadata_language_id = super::params::Assign::Keep;
+        self.tags = None;
+        self.routing = false;
+    }
 }
 
 fn int_list(value: &Value, what: &str) -> Result<Vec<i64>, String> {
@@ -113,6 +130,7 @@ fn parse_body(ctx: &Ready<'_>) -> Result<Body, super::Fallback> {
         user_id: user_id.filter(|id| *id != 0),
         tags: body.get("tags").map(|v| int_list(v, "tags")).transpose()?,
         episode_selection: body.get("episodeSelection").cloned(),
+        routing: true,
     })
 }
 
@@ -254,7 +272,7 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         forward_on_err!(ctx.no_query());
         let user = forward_on_err!(ctx.authenticated(0));
         let id = forward_on_err!(super::params::path_int(ctx, 0));
-        let body = forward_on_err!(parse_body(ctx));
+        let mut body = forward_on_err!(parse_body(ctx));
         let lc = lc(ctx);
         let mut e = match lc.load(id).await {
             Ok(Some(e)) => e,
@@ -278,6 +296,12 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         if e.row.status != PENDING {
             return ctx.error(409, "Only pending requests can be modified.");
+        }
+        // A movie edit is only open to advanced requesters (above); a series
+        // owner without the permission may change the seasons, not where
+        // the request goes.
+        if tv && !user.has_permission(MANAGE_REQUESTS | REQUEST_ADVANCED) {
+            body.keep_routing();
         }
         let mut request_user: Option<UserRel> = e.requested_by.clone();
         if let Some(uid) = body.user_id {
@@ -312,7 +336,7 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let seasons = if tv {
             let Some(requested) = body.seasons.clone().filter(|s| !s.is_empty()) else {
                 return ctx.error(
-                    500,
+                    400,
                     "Missing seasons. If you want to cancel a series request, use the DELETE method.",
                 );
             };
@@ -472,27 +496,31 @@ fn edited_json(
     seasons: Option<&SeasonEdit>,
 ) -> Value {
     let number = |n: Option<i64>| n.map_or(Value::Null, Value::from);
-    out.insert(String::from("serverId"), number(body.server_id));
-    out.insert(String::from("profileId"), number(body.profile_id));
-    out.insert(
-        String::from("rootFolder"),
-        body.root_folder.as_deref().map_or(Value::Null, Value::from),
-    );
-    out.insert(
-        String::from("tags"),
-        body.tags.as_ref().map_or(Value::Null, |t| {
-            Value::Array(t.iter().copied().map(Value::from).collect())
-        }),
-    );
+    if body.routing {
+        out.insert(String::from("serverId"), number(body.server_id));
+        out.insert(String::from("profileId"), number(body.profile_id));
+        out.insert(
+            String::from("rootFolder"),
+            body.root_folder.as_deref().map_or(Value::Null, Value::from),
+        );
+        out.insert(
+            String::from("tags"),
+            body.tags.as_ref().map_or(Value::Null, |t| {
+                Value::Array(t.iter().copied().map(Value::from).collect())
+            }),
+        );
+    }
     out.insert(
         String::from("updatedAt"),
         e.row.updated_at.as_deref().map_or(Value::Null, Value::from),
     );
     if tv {
-        out.insert(
-            String::from("languageProfileId"),
-            number(body.language_profile_id),
-        );
+        if body.routing {
+            out.insert(
+                String::from("languageProfileId"),
+                number(body.language_profile_id),
+            );
+        }
         if body.metadata_language_id != super::params::Assign::Keep {
             out.insert(
                 String::from("metadataLanguageId"),

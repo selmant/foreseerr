@@ -259,30 +259,40 @@ fn edited_json(
     fresh: &RequestRow,
     updated: bool,
 ) -> Value {
-    assign(
-        &mut out,
-        "serverId",
-        body.server_id.map(Value::from),
-        updated,
-    );
-    assign(
-        &mut out,
-        "profileId",
-        body.profile_id.map(Value::from),
-        updated,
-    );
-    assign(
-        &mut out,
-        "rootFolder",
-        body.root_folder.clone().map(Value::from),
-        updated,
-    );
-    assign(
-        &mut out,
-        "languageProfileId",
-        body.language_profile_id.map(Value::from),
-        updated,
-    );
+    if body.routing {
+        assign(
+            &mut out,
+            "serverId",
+            body.server_id.map(Value::from),
+            updated,
+        );
+        assign(
+            &mut out,
+            "profileId",
+            body.profile_id.map(Value::from),
+            updated,
+        );
+        assign(
+            &mut out,
+            "rootFolder",
+            body.root_folder.clone().map(Value::from),
+            updated,
+        );
+        assign(
+            &mut out,
+            "languageProfileId",
+            body.language_profile_id.map(Value::from),
+            updated,
+        );
+        assign(
+            &mut out,
+            "tags",
+            body.tags
+                .as_ref()
+                .map(|t| Value::Array(t.iter().copied().map(Value::from).collect())),
+            updated,
+        );
+    }
     if body.metadata_language_id != super::params::Assign::Keep {
         out.insert(
             String::from("metadataLanguageId"),
@@ -291,14 +301,6 @@ fn edited_json(
                 .map_or(Value::Null, Value::from),
         );
     }
-    assign(
-        &mut out,
-        "tags",
-        body.tags
-            .as_ref()
-            .map(|t| Value::Array(t.iter().copied().map(Value::from).collect())),
-        updated,
-    );
     out.insert(
         String::from("episodes"),
         episodeselect::episodes_json(&r.episodes, PENDING, &fresh.episodes),
