@@ -48,6 +48,7 @@ pub mod mediawrite;
 pub mod metadata;
 pub mod movie;
 pub mod nodestate;
+pub mod overriderule;
 mod params;
 pub mod person;
 pub mod plexdiscover;
@@ -158,6 +159,7 @@ const TABLES: &[&Table] = &[
     issuewrite::ROUTES,
     requestcreate::ROUTES,
     requestedit::ROUTES,
+    overriderule::ROUTES,
     sonarrstorage::ROUTES,
 ];
 
@@ -241,7 +243,7 @@ fn method_router(methods: &[(Method, Native)]) -> MethodRouter<Shared> {
 }
 
 /// Every route answered here, with the function that answers it.
-const ROUTES: [(&str, Native); 74] = [
+const ROUTES: [(&str, Native); 75] = [
     ("/api/v1/status", status_native),
     ("/api/v1/status/appdata", status_appdata_native),
     ("/api/v1/settings/public", settings_public_native),
@@ -301,6 +303,10 @@ const ROUTES: [(&str, Native); 74] = [
     ("/api/v1/movie/{id}/recommendations", movie::recommendations),
     ("/api/v1/movie/{id}/similar", movie::similar),
     ("/api/v1/movie/{id}/ratings", movie::rt_ratings),
+    (
+        "/api/v1/movie/{id}/ratingscombined",
+        movie::combined_ratings,
+    ),
     ("/api/v1/tv/{id}", tv::detail),
     ("/api/v1/tv/{id}/recommendations", tv::recommendations),
     ("/api/v1/tv/{id}/similar", tv::similar),
@@ -1058,4 +1064,96 @@ fn settings_discover_native<'a>(
             .collect();
         ctx.json(&Value::Array(body))
     })
+}
+
+/// Calling a native handler directly, as the router would after the
+/// validator.
+#[cfg(test)]
+pub(super) mod testkit {
+    use std::sync::Arc;
+
+    use axum::http::Method;
+    use http_body_util::BodyExt;
+    use serde_json::Value;
+
+    use super::{Native, Outcome, Ready};
+    use crate::auth::CurrentUser;
+    use crate::db::Db;
+    use crate::settings::Settings;
+    use crate::state::AppState;
+
+    /// A state over `db` and the settings handlers read.
+    pub(in crate::routes) struct Kit {
+        pub(in crate::routes) state: Arc<AppState>,
+        pub(in crate::routes) settings: Arc<Settings>,
+        dir: std::path::PathBuf,
+    }
+
+    impl Drop for Kit {
+        fn drop(&mut self) {
+            if let Err(e) = std::fs::remove_dir_all(&self.dir) {
+                tracing::trace!("{e}");
+            }
+        }
+    }
+
+    impl Kit {
+        /// A kit over `db` with these settings.
+        pub(in crate::routes) fn new(tag: &str, db: Db, settings: Value) -> anyhow::Result<Self> {
+            let dir = std::env::temp_dir().join(format!(
+                "foreseerr-routes-{tag}-{}-{}",
+                std::process::id(),
+                crate::clock::now_millis()
+            ));
+            std::fs::create_dir_all(&dir)?;
+            let state = Arc::new(AppState::for_tests(db, &dir)?);
+            let settings = Arc::new(Settings::from_file_value(settings, None)?);
+            Ok(Self {
+                state,
+                settings,
+                dir,
+            })
+        }
+
+        /// `native` for `method uri` by a user with these permissions
+        /// (none signed in for `None`): the status and the JSON body.
+        pub(in crate::routes) async fn call(
+            &self,
+            native: Native,
+            (method, uri): (Method, &str),
+            user: Option<(i64, i64)>,
+            body: Option<Value>,
+        ) -> anyhow::Result<(u16, Value)> {
+            let (parts, ()) = axum::http::Request::builder()
+                .method(method)
+                .uri(uri)
+                .body(())?
+                .into_parts();
+            let ready = Ready {
+                state: &self.state,
+                shared: Arc::clone(&self.state),
+                settings: Arc::clone(&self.settings),
+                user: user.map(|(id, permissions)| CurrentUser {
+                    id,
+                    permissions,
+                    webpush_enabled: false,
+                    locale: None,
+                }),
+                req: &parts,
+                body,
+            };
+            let response = match native(&ready).await {
+                Outcome::Done(response) => response,
+                Outcome::Forward(fallback) => fallback.respond(&parts),
+            };
+            let status = response.status().as_u16();
+            let bytes = response.into_body().collect().await?.to_bytes();
+            let json = if bytes.is_empty() {
+                Value::Null
+            } else {
+                serde_json::from_slice(&bytes)?
+            };
+            Ok((status, json))
+        }
+    }
 }

@@ -10336,6 +10336,63 @@ paths:
                   audienceRating:
                     type: string
                     enum: ['Spilled', 'Upright']
+  /movie/{movieId}/ratingscombined:
+    get:
+      summary: Get RT and IMDB movie ratings combined
+      description: Returns ratings from RottenTomatoes and IMDB based on the provided movieId in a JSON object.
+      tags:
+        - movies
+      parameters:
+        - in: path
+          name: movieId
+          required: true
+          schema:
+            type: number
+            example: 337401
+      responses:
+        '200':
+          description: Ratings returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rt:
+                    type: object
+                    properties:
+                      title:
+                        type: string
+                        example: Mulan
+                      year:
+                        type: number
+                        example: 2020
+                      url:
+                        type: string
+                        example: 'http://www.rottentomatoes.com/m/mulan_2020/'
+                      criticsScore:
+                        type: number
+                        example: 85
+                      criticsRating:
+                        type: string
+                        enum: ['Rotten', 'Fresh', 'Certified Fresh']
+                      audienceScore:
+                        type: number
+                        example: 65
+                      audienceRating:
+                        type: string
+                        enum: ['Spilled', 'Upright']
+                  imdb:
+                    type: object
+                    properties:
+                      title:
+                        type: string
+                        example: I am Legend
+                      url:
+                        type: string
+                        example: 'https://www.imdb.com/title/tt0480249'
+                      criticsScore:
+                        type: number
+                        example: 6.5
   /tv/{tvId}:
     get:
       summary: Get TV details
@@ -12887,6 +12944,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OverrideRule'
+  /overrideRule/advancedRequest:
+    post:
+      summary: Advanced override rule request
+      description: Processes an advanced override rule request.
+      tags:
+        - overriderule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - mediaType
+                - tmdbId
+              properties:
+                mediaType:
+                  type: string
+                tmdbId:
+                  type: number
+                  example: 1
+                is4k:
+                  type: boolean
+                  example: false
+                requestId:
+                  type: number
+                  nullable: true
+                requestUser:
+                  type: number
+                  nullable: true
+                tags:
+                  type: array
+                  items:
+                    type: number
+                  nullable: true
+                serviceId:
+                  type: number
+                  nullable: true
+      responses:
+        '200':
+          description: Advanced override rule request processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rootFolder:
+                    type: string
+                    nullable: true
+                  profileId:
+                    type: number
+                    nullable: true
+                  tags:
+                    type: array
+                    items:
+                      type: number
+                    nullable: true
+        '403':
+          description: User does not have permission to modify the request user
+        '404':
+          description: User, media or request not found
+        '500':
+          description: Unable to evaluate override rules
+
 security:
   - cookieAuth: []
   - apiKey: []
