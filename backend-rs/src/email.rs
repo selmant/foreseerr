@@ -612,7 +612,7 @@ fn pgp_wrap(raw: &[u8], public_key: &str, signing_key: &str, password: &str) -> 
     };
     use pgp::crypto::hash::HashAlgorithm;
     use pgp::crypto::sym::SymmetricKeyAlgorithm;
-    use pgp::types::{Password, PublicKeyTrait};
+    use pgp::types::{KeyDetails, Password};
 
     const DELIMITER: &str = "\r\n\r\n";
     let message = String::from_utf8_lossy(raw).into_owned();
@@ -689,7 +689,7 @@ fn pgp_wrap(raw: &[u8], public_key: &str, signing_key: &str, password: &str) -> 
     let subkey = public
         .public_subkeys
         .iter()
-        .find(|k| PublicKeyTrait::is_encryption_key(*k));
+        .find(|k| k.algorithm().can_encrypt());
     match subkey {
         Some(subkey) => builder.encrypt_to_key(rand::thread_rng(), subkey),
         None => builder.encrypt_to_key(rand::thread_rng(), &public.primary_key),
@@ -755,5 +755,55 @@ mod tests {
         );
         assert!(is_email("a@b"), "no tld needed");
         assert!(!is_email("nope"), "not an address");
+    }
+
+    #[test]
+    fn pgp_wrap_encrypts_and_signs_for_the_recipient() -> Result<()> {
+        const END: &str = "-----END PGP MESSAGE-----";
+        use pgp::composed::{
+            ArmorOptions, Deserializable, EncryptionCaps, KeyType, Message, SecretKeyParamsBuilder,
+            SignedSecretKey, SubkeyParamsBuilder,
+        };
+        use pgp::crypto::ecc_curve::ECCCurve;
+        use pgp::types::Password;
+
+        let mut rng = rand::thread_rng();
+        let subkey = SubkeyParamsBuilder::default()
+            .key_type(KeyType::ECDH(ECCCurve::Curve25519))
+            .can_encrypt(EncryptionCaps::All)
+            .passphrase(Some("hunter2".into()))
+            .build()?;
+        let key = SecretKeyParamsBuilder::default()
+            .key_type(KeyType::Ed25519Legacy)
+            .can_certify(true)
+            .can_sign(true)
+            .primary_user_id("Test <test@example.com>".into())
+            .passphrase(Some("hunter2".into()))
+            .subkeys(vec![subkey])
+            .build()?
+            .generate(&mut rng)?;
+        let armored_secret = key.to_armored_string(ArmorOptions::default())?;
+        let armored_public = key
+            .to_public_key()
+            .to_armored_string(ArmorOptions::default())?;
+
+        let raw = b"To: a@b\r\nSubject: hi\r\nContent-Type: text/plain\r\n\r\nsecret body";
+        let out = String::from_utf8(pgp_wrap(raw, &armored_public, &armored_secret, "hunter2")?)?;
+        assert!(out.contains("Content-Type: multipart/encrypted"), "{out}");
+        assert!(!out.contains("secret body"), "body left in the clear");
+
+        let start = out
+            .find("-----BEGIN PGP MESSAGE-----")
+            .ok_or_else(|| anyhow!("no armored message"))?;
+        let end = out.find(END).ok_or_else(|| anyhow!("no armor end"))? + END.len();
+        let (message, _) =
+            Message::from_string(out.get(start..end).ok_or_else(|| anyhow!("bad armor"))?)?;
+        let (secret, _) = SignedSecretKey::from_string(&armored_secret)?;
+        let mut decrypted = message.decrypt(&Password::from("hunter2"), &secret)?;
+        let plain = String::from_utf8(decrypted.as_data_vec()?)?;
+        assert_eq!(plain, "Content-Type: text/plain\r\n\r\nsecret body");
+        assert!(decrypted.is_signed(), "message is not signed");
+        decrypted.verify(&secret.to_public_key().primary_key)?;
+        Ok(())
     }
 }
