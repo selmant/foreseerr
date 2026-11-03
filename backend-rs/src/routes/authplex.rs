@@ -277,6 +277,9 @@ async fn existing(ctx: &Ready<'_>, account: &Account, token: &str, user: Option<
         entity.set("plexUsername", Value::from(account.username.as_str()));
         entity.set("userType", Value::from(USER_PLEX));
         entity.set("updatedAt", updated_at);
+        if let Some(failed) = claim_plex(ctx, id).await? {
+            return Ok(failed);
+        }
         return respond(ctx, &entity).await;
     }
     if !truthy(ctx.settings.get("/main/newPlexLogin")) {
@@ -295,9 +298,44 @@ async fn existing(ctx: &Ready<'_>, account: &Account, token: &str, user: Option<
         user_type: USER_PLEX,
         ..NewUser::default()
     };
-    match new_user.insert(&ctx.state.db).await {
-        Ok(entity) => respond(ctx, &entity).await,
-        Err(e) => Ok(unable(ctx, &format!("{e:#}"))),
+    let entity = match new_user.insert(&ctx.state.db).await {
+        Ok(entity) => entity,
+        Err(e) => return Ok(unable(ctx, &format!("{e:#}"))),
+    };
+    if let Some(id) = entity.get("id").and_then(Value::as_i64) {
+        if let Some(failed) = claim_plex(ctx, id).await? {
+            return Ok(failed);
+        }
+    }
+    respond(ctx, &entity).await
+}
+
+/// The admin signing in with Plex while no media server is set (users
+/// exist, say from a restored database): the server becomes Plex and the
+/// jobs start again for it. `Some` is the answer when saving failed.
+async fn claim_plex(
+    ctx: &Ready<'_>,
+    user_id: i64,
+) -> Result<Option<super::Outcome>, super::Fallback> {
+    if user_id != 1 || media_server_type(ctx)? != NOT_CONFIGURED {
+        return Ok(None);
+    }
+    let saved = ctx
+        .mutate_settings(|doc| {
+            let Some(main) = doc.get_mut("main").and_then(Value::as_object_mut) else {
+                return ControlFlow::Break(());
+            };
+            main.insert(String::from("mediaServerType"), Value::from(PLEX));
+            ControlFlow::Continue(())
+        })
+        .await;
+    match saved {
+        Ok(ControlFlow::Continue(())) => {
+            start_jobs(ctx).await;
+            Ok(None)
+        }
+        Ok(ControlFlow::Break(())) => Err(String::from("settings.main isn't an object").into()),
+        Err(e) => Ok(Some(unable(ctx, &format!("{e:#}")))),
     }
 }
 
