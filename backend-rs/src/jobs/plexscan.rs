@@ -839,7 +839,7 @@ mod tests {
         let row = first
             .and_then(|o| crate::jobs::scanmedia::new_movie(603, o, true))
             .context("a new movie")?;
-        let row = crate::jobs::scanmedia::apply_movie(&row, second.context("4K")?).0;
+        let row = crate::jobs::scanmedia::apply_movie(&row, second.context("4K")?, false).0;
         assert_eq!((row.status, row.status4k), (5, 5), "both available");
         assert_eq!(
             (row.rating_key.as_deref(), row.rating_key4k.as_deref()),
