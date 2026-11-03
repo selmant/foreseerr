@@ -1598,7 +1598,9 @@ fn request_json(
 }
 
 /// The loaded media's JSON before the save: columns, `requests` (each with
-/// its own media and users, as eager relations nest) and `seasons`.
+/// its own media and users, as eager relations nest) and `seasons`. The
+/// other requests' users go through `User.filter()`: the requester isn't
+/// owed their email or Plex id (as for `mediaInfo`, GHSA-xc6j-6p6h-p799).
 async fn existing_media_json(
     ctx: &Ready<'_>,
     media: Option<&MediaRow>,
@@ -1628,11 +1630,11 @@ async fn existing_media_json(
         );
         item.insert(
             String::from("requestedBy"),
-            related.user_json(r.requested_by_id)?,
+            related.public_user_json(r.requested_by_id)?,
         );
         item.insert(
             String::from("modifiedBy"),
-            related.user_json(r.modified_by_id)?,
+            related.public_user_json(r.modified_by_id)?,
         );
         item.insert(
             String::from("seasons"),
