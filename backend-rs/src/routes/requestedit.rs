@@ -24,6 +24,10 @@ const MANAGE_USERS: i64 = 8;
 const MANAGE_REQUESTS: i64 = 16;
 const REQUEST_ADVANCED: i64 = 8192;
 
+/// `MediaStatus.UNKNOWN` and `DELETED`.
+const M_UNKNOWN: i64 = 1;
+const M_DELETED: i64 = 7;
+
 /// This module's routes.
 pub(super) const ROUTES: &Table = &[
     ("/api/v1/request/{id}", Method::PUT, edit),
@@ -238,32 +242,57 @@ async fn season_edit(
         })
         .flat_map(|r| r.seasons.iter().map(|s| s.season_number))
         .collect();
+    // Seasons the library already has (in this quality) can't be added.
+    let covered: Vec<i64> = media
+        .seasons
+        .iter()
+        .filter(|s| {
+            let status = if e.row.is4k { s.status4k } else { s.status };
+            status != M_UNKNOWN && status != M_DELETED
+        })
+        .map(|s| s.season_number)
+        .collect();
+    Ok(
+        plan_season_edit(requested, &existing, &e.row.seasons, &covered)
+            .ok_or_else(|| ctx.error(202, "No seasons available to request")),
+    )
+}
+
+/// The seasons a series edit ends up with: those requested that no other
+/// request holds, minus seasons the library covers unless this request
+/// holds them already. `None` when nothing is left.
+fn plan_season_edit(
+    requested: &[i64],
+    elsewhere: &[i64],
+    current: &[SeasonRequestRow],
+    covered: &[i64],
+) -> Option<SeasonEdit> {
+    let held: Vec<i64> = current.iter().map(|s| s.season_number).collect();
     let filtered: Vec<i64> = requested
         .iter()
         .copied()
-        .filter(|s| !existing.contains(s))
+        .filter(|s| !elsewhere.contains(s))
         .collect();
-    if filtered.is_empty() {
-        return Ok(Err(ctx.error(202, "No seasons available to request")));
-    }
-    let current: Vec<i64> = e.row.seasons.iter().map(|s| s.season_number).collect();
+    let kept = filtered.iter().filter(|s| held.contains(s)).count();
     let add: Vec<i64> = filtered
         .iter()
         .copied()
-        .filter(|s| !current.contains(s))
+        .filter(|s| !held.contains(s) && !covered.contains(s))
         .collect();
-    let (keep, orphaned): (Vec<SeasonRequestRow>, Vec<SeasonRequestRow>) = e
-        .row
-        .seasons
+    let units = kept + add.len();
+    if units == 0 {
+        return None;
+    }
+    let (keep, orphaned): (Vec<SeasonRequestRow>, Vec<SeasonRequestRow>) = current
         .iter()
         .cloned()
         .partition(|s| filtered.contains(&s.season_number));
-    Ok(Ok(SeasonEdit {
+    Some(SeasonEdit {
         keep,
         add,
         orphaned: orphaned.iter().map(|s| s.id).collect(),
-        units: i64::try_from(filtered.len()).unwrap_or(i64::MAX),
-    }))
+        units: i64::try_from(units).unwrap_or(i64::MAX),
+    })
 }
 
 /// `PUT /request/{id}`.
@@ -273,6 +302,9 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let user = forward_on_err!(ctx.authenticated(0));
         let id = forward_on_err!(super::params::path_int(ctx, 0));
         let mut body = forward_on_err!(parse_body(ctx));
+        // Serialized with request creation, so an edit and a new request
+        // can't both claim the same season or the same quota.
+        let _guard = super::requestcreate::REQUEST_LOCK.lock().await;
         let lc = lc(ctx);
         let mut e = match lc.load(id).await {
             Ok(Some(e)) => e,
@@ -321,6 +353,8 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let Some(request_user) = request_user else {
             return Outcome::forward(String::from("the requester is gone"));
         };
+        // A new owner's quota is charged for the whole request.
+        let owner_changing = request_user.0.id != owner;
         let episodic = e
             .row
             .episode_selection_type
@@ -346,11 +380,24 @@ fn edit<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             };
             let (_, tv_quota) =
                 forward_on_err!(super::requestcreate::quotas(ctx, &request_user).await);
-            if tv_quota.edit_exceeds(e.row.ignore_quota, edit.units, e.row.tv_quota_units) {
+            let held = tv_quota.held_units(
+                owner_changing,
+                e.row.created_at.as_deref(),
+                e.row.tv_quota_units,
+            );
+            if tv_quota.edit_exceeds(e.row.ignore_quota, edit.units, held) {
                 return ctx.error(403, "Series Quota exceeded.");
             }
             Some(edit)
         } else {
+            // Moving a movie request onto another user charges their quota.
+            if owner_changing && !e.row.ignore_quota {
+                let (movie_quota, _) =
+                    forward_on_err!(super::requestcreate::quotas(ctx, &request_user).await);
+                if movie_quota.restricted {
+                    return ctx.error(403, "Movie Quota exceeded.");
+                }
+            }
             None
         };
         let mut sets = changed_columns(&e, &body, tv, request_user.0.id);
@@ -611,6 +658,34 @@ mod tests {
     use anyhow::Context;
 
     use crate::dbtx::scratch::{self, ints, PENDING_SEASON_ONE};
+
+    #[test]
+    fn an_edit_never_adds_seasons_the_library_covers() -> anyhow::Result<()> {
+        let held = |n: i64| SeasonRequestRow {
+            id: n * 10,
+            season_number: n,
+            ..SeasonRequestRow::default()
+        };
+        let current = [held(1), held(2)];
+        // Season 2 is held and available: it stays. Season 3 is available
+        // and not held: it isn't added. Season 4 is new.
+        let edit =
+            plan_season_edit(&[2, 3, 4], &[], &current, &[2, 3]).context("seasons are left")?;
+        let kept: Vec<i64> = edit.keep.iter().map(|s| s.season_number).collect();
+        assert_eq!(kept, [2], "the held season stays");
+        assert_eq!(edit.add, [4], "only the uncovered season is added");
+        assert_eq!(edit.orphaned, [10], "season 1 is let go");
+        assert_eq!(edit.units, 2, "charged for what the request ends up with");
+        assert!(
+            plan_season_edit(&[3], &[], &current, &[3]).is_none(),
+            "only covered seasons: nothing to request"
+        );
+        assert!(
+            plan_season_edit(&[4], &[4], &current, &[]).is_none(),
+            "held by another request"
+        );
+        Ok(())
+    }
 
     #[test]
     fn tags_transformer() {

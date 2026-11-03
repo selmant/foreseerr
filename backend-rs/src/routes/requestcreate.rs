@@ -62,8 +62,8 @@ const M_DELETED: i64 = 7;
 /// TMDB's `anime` keyword.
 const ANIME_KEYWORD_ID: i64 = 210_024;
 
-/// `requestLock`: one request created at a time.
-static CREATE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// `requestLock` and `mediaLock`: one request created or edited at a time.
+pub(super) static REQUEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// This module's routes.
 pub(super) const ROUTES: &Table = &[("/api/v1/request", Method::POST, create)];
@@ -209,7 +209,7 @@ fn create<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let user = forward_on_err!(ctx.authenticated(0));
         let raw = forward_on_err!(body_object(ctx));
         let body = forward_on_err!(parse_body(raw));
-        let _guard = CREATE_LOCK.lock().await;
+        let _guard = REQUEST_LOCK.lock().await;
         create_request(ctx, user, &body).await
     })
 }
@@ -221,7 +221,7 @@ pub(super) async fn create_auto_request(ctx: &Ready<'_>, raw: &Map<String, Value
     let user = forward_on_err!(ctx.authenticated(0));
     let mut body = forward_on_err!(parse_body(raw));
     body.is_auto_request = true;
-    let _guard = CREATE_LOCK.lock().await;
+    let _guard = REQUEST_LOCK.lock().await;
     create_request(ctx, user, &body).await
 }
 
@@ -230,10 +230,33 @@ pub(super) async fn create_auto_request(ctx: &Ready<'_>, raw: &Map<String, Value
 pub(super) struct Quota {
     pub(super) limit: i64,
     pub(super) remaining: Option<i64>,
-    restricted: bool,
+    pub(super) restricted: bool,
+    /// The start of the quota window (Unix milliseconds), when it has one.
+    window_start: Option<i64>,
 }
 
 impl Quota {
+    /// The units of a request being edited that `used` already counts:
+    /// none when it moves to another owner (their quota never counted it)
+    /// or was created before the window, otherwise all it holds.
+    pub(super) fn held_units(
+        &self,
+        owner_changing: bool,
+        created_at: Option<&str>,
+        units: i64,
+    ) -> i64 {
+        let in_window = self.window_start.is_none_or(|start| {
+            created_at
+                .and_then(crate::clock::parse_date_millis)
+                .is_some_and(|created| created > start)
+        });
+        if !owner_changing && in_window {
+            units
+        } else {
+            0
+        }
+    }
+
     /// Whether an edit of a request that already counts `held` units, to
     /// `units`, goes past the quota; the edits' `Series Quota exceeded.`.
     pub(super) fn edit_exceeds(&self, ignore_quota: bool, units: i64, held: i64) -> bool {
@@ -289,12 +312,18 @@ pub(super) async fn quotas(ctx: &Ready<'_>, rel: &UserRel) -> Result<(Quota, Quo
             .await
             .map_err(|e| format!("summing tv requests failed: {e:#}"))?
     };
-    let quota = |limit: i64, used: i64| Quota {
+    let quota = |limit: i64, used: i64, days: Option<i64>| Quota {
         limit,
         remaining: (limit != 0).then(|| (limit - used).max(0)),
         restricted: limit != 0 && limit - used <= 0,
+        window_start: days
+            .filter(|d| *d != 0)
+            .map(|d| crate::clock::local_days_before(&chrono::Local, now, d)),
     };
-    Ok((quota(movie_limit, movie_used), quota(tv_limit, tv_used)))
+    Ok((
+        quota(movie_limit, movie_used, movie_days),
+        quota(tv_limit, tv_used, tv_days),
+    ))
 }
 
 /// What the request will be written with.
@@ -1808,6 +1837,7 @@ mod tests {
             limit: 2,
             remaining: Some(1),
             restricted: false,
+            window_start: None,
         };
         assert!(!tv.edit_exceeds(false, 2, 1), "one more season fits");
         assert!(tv.edit_exceeds(false, 3, 1), "two more do not");
@@ -1816,6 +1846,7 @@ mod tests {
             limit: 1,
             remaining: Some(0),
             restricted: true,
+            window_start: None,
         };
         assert!(!spent.edit_exceeds(false, 1, 1), "keeping its own season");
         assert!(
@@ -1823,6 +1854,31 @@ mod tests {
             "growing past a spent quota"
         );
         assert!(!Quota::default().edit_exceeds(false, 9, 0), "no limit");
+    }
+
+    #[test]
+    fn an_edit_reuses_only_the_units_the_quota_counted() {
+        let start = crate::clock::parse_date_millis("2026-10-01T00:00:00.000Z");
+        let windowed = Quota {
+            limit: 2,
+            remaining: Some(0),
+            restricted: true,
+            window_start: start,
+        };
+        let inside = Some("2026-10-05T00:00:00.000Z");
+        let before = Some("2026-09-05T00:00:00.000Z");
+        assert_eq!(windowed.held_units(false, inside, 2), 2, "counted");
+        assert_eq!(
+            windowed.held_units(false, before, 2),
+            0,
+            "before the window"
+        );
+        assert_eq!(windowed.held_units(true, inside, 2), 0, "a new owner");
+        assert_eq!(
+            Quota::default().held_units(false, before, 2),
+            2,
+            "no window"
+        );
     }
 
     #[test]

@@ -207,7 +207,12 @@ pub(super) async fn edit(
     };
     let units = episodeselect::quota_units(&resolved.episodes);
     let (_, tv_quota) = forward_on_err!(super::requestcreate::quotas(ctx, request_user).await);
-    if tv_quota.edit_exceeds(e.row.ignore_quota, units, e.row.tv_quota_units) {
+    let held = tv_quota.held_units(
+        e.row.requested_by_id != Some(request_user.0.id),
+        e.row.created_at.as_deref(),
+        e.row.tv_quota_units,
+    );
+    if tv_quota.edit_exceeds(e.row.ignore_quota, units, held) {
         return ctx.error(403, "Series Quota exceeded.");
     }
     let tmdb_id = e.media.as_ref().map_or(0, |m| m.tmdb_id);
