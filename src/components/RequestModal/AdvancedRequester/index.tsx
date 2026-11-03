@@ -2,6 +2,7 @@
 import CachedImage from '@app/components/Common/CachedImage';
 import { SmallLoadingSpinner } from '@app/components/Common/LoadingSpinner';
 import SlideCheckbox from '@app/components/Common/SlideCheckbox';
+import useToasts from '@app/hooks/useToasts';
 import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -16,12 +17,14 @@ import {
   Transition,
 } from '@headlessui/react';
 import { CheckIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
+import type { OverrideRulesResult } from '@shared/interfaces/api/overrideRuleInterfaces';
 import type {
   ServiceCommonServer,
   ServiceCommonServerWithDetails,
 } from '@shared/interfaces/api/serviceInterfaces';
 import type { UserResultsResponse } from '@shared/interfaces/api/userInterfaces';
 import { hasPermission } from '@shared/lib/permissions';
+import axios from 'axios';
 import { isEqual } from 'lodash';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -69,24 +72,31 @@ export type RequestOverrides = {
 
 interface AdvancedRequesterProps {
   type: 'movie' | 'tv';
+  /** The title the override rules are evaluated for. */
+  tmdbId?: number;
   is4k: boolean;
   isAnime?: boolean;
   defaultOverrides?: RequestOverrides;
   requestUser?: User;
+  /** The request being edited, if any. */
+  requestId?: number;
   quota?: { movie: { limit?: number }; tv: { limit?: number } };
   onChange: (overrides: RequestOverrides) => void;
 }
 
 const AdvancedRequester = ({
   type,
+  tmdbId,
   is4k = false,
   isAnime = false,
   defaultOverrides,
   requestUser,
+  requestId,
   quota,
   onChange,
 }: AdvancedRequesterProps) => {
   const intl = useIntl();
+  const { addToast } = useToasts();
   const { user: currentUser, hasPermission: currentHasPermission } = useUser();
   const { data, error } = useSWR<ServiceCommonServer[]>(
     `/api/v1/service/${type === 'movie' ? 'radarr' : 'sonarr'}`,
@@ -357,6 +367,71 @@ const AdvancedRequester = ({
     selectedTags,
     ignoreQuota,
     isIgnoreQuotaVisible,
+  ]);
+
+  // Start from what the override rules would pick for this title, server
+  // and requester, unless the request being edited already set it.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (tmdbId && serverData?.server.id === selectedServer) {
+        try {
+          const { data: override } = await axios.post<OverrideRulesResult>(
+            '/api/v1/overrideRule/advancedRequest',
+            {
+              mediaType: type,
+              is4k,
+              requestUser:
+                selectedUser?.id ?? requestUser?.id ?? currentUser?.id,
+              tmdbId,
+              tags: selectedTags.length > 0 ? selectedTags : undefined,
+              serviceId: selectedServer ?? undefined,
+              requestId: requestId ?? undefined,
+            }
+          );
+          if (cancelled) {
+            return;
+          }
+          if (!defaultOverrides?.folder && override.rootFolder) {
+            setSelectedFolder(override.rootFolder);
+          }
+          if (!defaultOverrides?.profile && override.profileId) {
+            setSelectedProfile(override.profileId);
+          }
+          if (
+            !defaultOverrides?.tags &&
+            override.tags &&
+            !isEqual(override.tags, selectedTags)
+          ) {
+            setSelectedTags(override.tags);
+          }
+        } catch {
+          if (cancelled) {
+            return;
+          }
+          addToast(intl.formatMessage(globalMessages.error), {
+            appearance: 'error',
+            autoDismiss: true,
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    tmdbId,
+    type,
+    is4k,
+    serverData?.server.id,
+    selectedServer,
+    selectedUserId,
+    requestUser?.id,
+    currentUser?.id,
+    requestId,
+    defaultOverrides?.folder,
+    defaultOverrides?.profile,
+    defaultOverrides?.tags,
   ]);
 
   // Sonarr 5: what an empty choice means, the server's setting or else

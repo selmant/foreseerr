@@ -448,9 +448,7 @@ impl Lib<'_> {
         let mut ids = Vec::new();
         for library in libraries {
             if !library.is_object() {
-                return Err(String::from(
-                    "a jellyfin library entry Node would trip over",
-                ));
+                return Err(String::from("a jellyfin library entry isn't an object"));
             }
             if !truthy(library.get("enabled"))
                 || library.get("type").and_then(Value::as_str) != Some("show")

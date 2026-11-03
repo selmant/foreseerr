@@ -55,10 +55,12 @@ pub async fn before_state() -> Result<Boot> {
         create_sqlite(&env.config_dir).await?;
     }
     let version = AppVersion::load(&env.app_root);
-    let http = reqwest::Client::builder()
-        .user_agent(version.user_agent())
-        .build()
-        .context("building the client for the settings migrations")?;
+    let http = crate::outbound::trust_extra_ca(
+        reqwest::Client::builder().user_agent(version.user_agent()),
+        env.extra_ca_file.as_deref(),
+    )?
+    .build()
+    .context("building the client for the settings migrations")?;
     let ctx = MigrationCtx {
         db: &db,
         http: &http,

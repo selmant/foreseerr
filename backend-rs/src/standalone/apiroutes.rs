@@ -4,7 +4,7 @@
 use super::fallback::ApiRoute;
 
 /// Every documented route.
-pub(super) static ROUTES: [ApiRoute; 254] = [
+pub(super) static ROUTES: [ApiRoute; 257] = [
     ApiRoute {
         template: "/api/v1/auth/jellyfin/plugin",
         segments: &[Some("api"), Some("v1"), Some("auth"), Some("jellyfin"), Some("plugin")],
@@ -486,6 +486,11 @@ pub(super) static ROUTES: [ApiRoute; 254] = [
         methods: &[("GET", true)],
     },
     ApiRoute {
+        template: "/api/v1/media/{mediaId}/servarr/imports/options",
+        segments: &[Some("api"), Some("v1"), Some("media"), None, Some("servarr"), Some("imports"), Some("options")],
+        methods: &[("GET", true)],
+    },
+    ApiRoute {
         template: "/api/v1/media/{mediaId}/servarr/imports/reprocess",
         segments: &[Some("api"), Some("v1"), Some("media"), None, Some("servarr"), Some("imports"), Some("reprocess")],
         methods: &[("POST", true)],
@@ -531,6 +536,11 @@ pub(super) static ROUTES: [ApiRoute; 254] = [
         methods: &[("GET", true)],
     },
     ApiRoute {
+        template: "/api/v1/movie/{movieId}/ratingscombined",
+        segments: &[Some("api"), Some("v1"), Some("movie"), None, Some("ratingscombined")],
+        methods: &[("GET", true)],
+    },
+    ApiRoute {
         template: "/api/v1/movie/{movieId}/ratings",
         segments: &[Some("api"), Some("v1"), Some("movie"), None, Some("ratings")],
         methods: &[("GET", true)],
@@ -554,6 +564,11 @@ pub(super) static ROUTES: [ApiRoute; 254] = [
         template: "/api/v1/network/{networkId}",
         segments: &[Some("api"), Some("v1"), Some("network"), None],
         methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/overrideRule/advancedRequest",
+        segments: &[Some("api"), Some("v1"), Some("overrideRule"), Some("advancedRequest")],
+        methods: &[("POST", true)],
     },
     ApiRoute {
         template: "/api/v1/overrideRule/{ruleId}",

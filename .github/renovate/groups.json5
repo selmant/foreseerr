@@ -8,11 +8,5 @@
       groupName: 'Bun',
       commitMessageTopic: 'Bun',
     },
-
-    // Database packages
-    {
-      matchPackageNames: ['pg', 'typeorm'],
-      groupName: 'Database',
-    },
   ],
 }

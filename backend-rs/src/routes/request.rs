@@ -148,11 +148,11 @@ pub(super) fn request_json(
     out.insert(String::from("episodes"), episodes_json(&request.episodes));
     out.insert(
         String::from("modifiedBy"),
-        related.user_json(request.modified_by_id, false)?,
+        related.user_json(request.modified_by_id)?,
     );
     out.insert(
         String::from("requestedBy"),
-        related.user_json(request.requested_by_id, false)?,
+        related.user_json(request.requested_by_id)?,
     );
     out.insert(String::from("seasonCount"), count_of(&request.seasons));
     if let Some(name) = profile_name(servers, request) {
@@ -296,10 +296,10 @@ fn validated_query(q: &Map<String, Value>) -> Result<(RequestListQuery, JsPage),
             query.media_statuses = media;
         }
     }
-    query.sort = if q.get("sort").and_then(Value::as_str) == Some("modified") {
-        RequestSort::UpdatedAt
-    } else {
-        RequestSort::Id
+    query.sort = match q.get("sort").and_then(Value::as_str) {
+        Some("modified") => RequestSort::UpdatedAt,
+        Some("added") => RequestSort::CreatedAt,
+        _ => RequestSort::Id,
     };
     query.ascending = q.get("sortDirection").and_then(Value::as_str) == Some("asc");
     query.media_type = match q.get("mediaType").and_then(Value::as_str) {
@@ -406,12 +406,12 @@ pub(super) fn detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let request = &request;
         let mut out = Map::new();
         columns(&mut out, request);
-        let requested_by = match related.user_json(request.requested_by_id, true) {
+        let requested_by = match related.user_json(request.requested_by_id) {
             Ok(json) => json,
             Err(why) => return Outcome::forward(why),
         };
         out.insert(String::from("requestedBy"), requested_by);
-        let modified_by = match related.user_json(request.modified_by_id, true) {
+        let modified_by = match related.user_json(request.modified_by_id) {
             Ok(json) => json,
             Err(why) => return Outcome::forward(why),
         };
@@ -648,7 +648,8 @@ fn parse_query(raw: &str) -> Result<RequestListQuery, String> {
             MEDIA_AVAILABLE,
             MEDIA_DELETED,
         ],
-        sort: RequestSort::Id,
+        // The spec's default `sort=added`.
+        sort: RequestSort::CreatedAt,
         ascending: false,
         requested_by: None,
         media_type: None,
@@ -693,7 +694,7 @@ fn parse_query(raw: &str) -> Result<RequestListQuery, String> {
             },
             "sort" => {
                 query.sort = match value.as_str() {
-                    "added" => RequestSort::Id,
+                    "added" => RequestSort::CreatedAt,
                     "modified" => RequestSort::UpdatedAt,
                     _ => return forward("sort outside the enum"),
                 };
@@ -793,6 +794,11 @@ mod tests {
                 .map(|q| (q.statuses, q.media_statuses)),
             Some((vec![COMPLETED], vec![MEDIA_AVAILABLE])),
             "available narrows the media status too"
+        );
+        assert_eq!(
+            parse_query("sort=added").ok().map(|q| q.sort),
+            Some(RequestSort::CreatedAt),
+            "added sorts by creation date"
         );
         for raw in [
             "take=-1",

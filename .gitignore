@@ -86,10 +86,6 @@ config/cache
 # Docker compose
 compose.override.yaml
 
-# Devenv
-.devenv*
-devenv.local.nix
-devenv.local.yaml
 
 .direnv
 

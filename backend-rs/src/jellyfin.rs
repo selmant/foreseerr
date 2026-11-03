@@ -48,7 +48,7 @@ pub enum JfError {
 
 impl JfError {
     fn unsure(why: &str) -> Self {
-        Self::Unsure(format!("{why}; Node handles that Jellyfin answer"))
+        Self::Unsure(format!("{why}; Foreseerr can't read that Jellyfin answer"))
     }
 }
 

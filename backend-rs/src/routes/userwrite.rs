@@ -17,7 +17,7 @@ use crate::auth::CurrentUser;
 use crate::db::{Bind, UserRecord, UserSettingsRecord};
 use crate::settings::public::truthy;
 use crate::typeorm::{self, Changes, USER_HIDDEN_COLUMNS};
-use crate::user::filtered_json;
+use crate::user::{embedded_json, filtered_json};
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
@@ -418,7 +418,7 @@ pub(super) fn stored_permissions(user: &UserRecord) -> Value {
 }
 
 /// `PUT /user`: the same permissions for many users; each comes back as
-/// the saved object, unfiltered.
+/// the saved object, unfiltered but (`User.toJSON`) without its settings.
 fn bulk_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         try_forward!(ctx.no_query());
@@ -460,7 +460,7 @@ fn bulk_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         // By id; Node answers in the order the database returns them.
         let mut out = Vec::with_capacity(users.len());
-        for (mut user, settings) in users {
+        for (mut user, _settings) in users {
             let mut changes = Changes::default();
             changes.assign(
                 "permissions",
@@ -489,16 +489,11 @@ fn bulk_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                     Err(e) => return ctx.error(500, &format!("{e:#}")),
                 }
             }
-            let mut json = match filtered_json(&user, Some(settings.as_ref()), true) {
+            let mut json = match embedded_json(&user) {
                 Ok(Value::Object(map)) => map,
                 Ok(_) => Map::new(),
                 Err(why) => return ctx.error(500, why),
             };
-            if let (Some(Value::Object(s)), Some(record)) =
-                (json.get_mut("settings"), settings.as_ref())
-            {
-                saved_settings_json(s, record);
-            }
             if dirty {
                 for key in USER_HIDDEN_COLUMNS {
                     json.insert(String::from(key), Value::Null);
@@ -511,20 +506,6 @@ fn bulk_update<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         ctx.json(&Value::Array(out))
     })
-}
-
-/// The eager settings object after a cascaded `save()`: the transformer
-/// dropped unknown notification agents from it, and when the row compared
-/// as changed the hidden columns were set to `null`.
-pub(super) fn saved_settings_json(s: &mut Map<String, Value>, record: &UserSettingsRecord) {
-    if let Some(Value::Object(types)) = s.get_mut("notificationTypes") {
-        typeorm::strip_unknown_agents(types);
-    }
-    if typeorm::settings_change_by_itself(record) {
-        for key in typeorm::SETTINGS_HIDDEN_COLUMNS {
-            s.insert(String::from(key), Value::Null);
-        }
-    }
 }
 
 /// `PUT /user/{id}`: username and permissions.

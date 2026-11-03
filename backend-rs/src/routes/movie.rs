@@ -10,6 +10,7 @@ use super::blocklist::plain_integer;
 use super::ratingsenrich::enrich_results_with_ratings;
 use super::related::Related;
 use super::{issue, request, Outcome, Ready};
+use crate::auth::CurrentUser;
 use crate::db::{IssueRow, MediaRow, RelatedMedia, RequestRow, WatchlistRow};
 use crate::ratings::Title;
 
@@ -55,7 +56,7 @@ pub(super) fn detail<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             }
         };
         let media_info = match &media {
-            Some(media) => match media_info_json(ctx, media).await {
+            Some(media) => match media_info_json(ctx, media, user).await {
                 Ok(json) => Some(json),
                 Err(why) => return Outcome::forward(why),
             },
@@ -212,6 +213,54 @@ pub(super) fn rt_ratings<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(None) => ctx.error(404, "Rotten Tomatoes ratings not found."),
             Err(e) => {
                 tracing::debug!("RT ratings for movie {id} failed: {e:#}");
+                ctx.error(500, "Unable to retrieve movie ratings.")
+            }
+        }
+    })
+}
+
+/// `GET /movie/{id}/ratingscombined`: Rotten Tomatoes and `IMDb` together
+/// (`MDBList`'s ratings instead when it is configured), as the details
+/// page gets them.
+pub(super) fn combined_ratings<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    Box::pin(async move {
+        if let Err(why) = ctx
+            .no_query()
+            .and_then(|()| ctx.authenticated(0).map(|_| ()))
+        {
+            return Outcome::forward(why);
+        }
+        let id = match path_number(ctx, 1) {
+            Ok(id) => id,
+            Err(why) => return Outcome::forward(why),
+        };
+        let (main_locale, _) = languages(ctx, None, None);
+        let movie = match ctx.state.tmdb.movie(id, &main_locale).await {
+            Ok(movie) => movie,
+            Err(e) => {
+                tracing::debug!("TMDB movie {id} failed: {e:#}");
+                return ctx.error(500, "Unable to retrieve movie ratings.");
+            }
+        };
+        let release_date = movie
+            .get("release_date")
+            .and_then(Value::as_str)
+            .filter(|d| !d.is_empty());
+        let title = Title {
+            media_type: "movie",
+            tmdb_id: movie.get("id").and_then(Value::as_i64).unwrap_or(id),
+            title: movie.get("title").and_then(Value::as_str).unwrap_or(""),
+            year: release_date
+                .and_then(|d| d.get(..4))
+                .and_then(|y| y.parse::<i64>().ok()),
+            release_date,
+            imdb_id: movie.get("imdb_id").and_then(Value::as_str),
+        };
+        match ctx.state.ratings.combined(&ctx.settings, &title).await {
+            Ok(Some(ratings)) => ctx.json(&ratings),
+            Ok(None) => ctx.error(404, "No ratings found."),
+            Err(e) => {
+                tracing::debug!("combined ratings for movie {id} failed: {e:#}");
                 ctx.error(500, "Unable to retrieve movie ratings.")
             }
         }
@@ -551,22 +600,34 @@ pub(super) fn language_query(raw: &str) -> Result<Option<String>, String> {
     Ok(language)
 }
 
-/// `Media.getMedia` as `mediaInfo`: the media with its `requests` (each
-/// with its own media, users, seasons and episodes), `issues` (with
-/// media, users and comments) and `seasons`.
-pub(super) async fn media_info_json(ctx: &Ready<'_>, media: &MediaRow) -> Result<Value, String> {
+/// `Media.getMedia(...).filter(req.user)` as `mediaInfo`: the media with
+/// its `requests` (each with its own media, seasons, episodes and users
+/// passed through `User.filter()`), `issues` and `seasons`.
+///
+/// Every signed-in user may read a title's details, so the nested users
+/// lose their email and Plex id, and the issues are only included for a
+/// viewer who may read issues at all, without their comments or problem
+/// season and episode (GHSA-xc6j-6p6h-p799).
+pub(super) async fn media_info_json(
+    ctx: &Ready<'_>,
+    media: &MediaRow,
+    viewer: &CurrentUser,
+) -> Result<Value, String> {
     let mut requests = ctx
         .state
         .db
         .requests_of_media(media.id)
         .await
         .map_err(|e| format!("loading the media's requests failed: {e:#}"))?;
-    let mut issues = ctx
-        .state
-        .db
-        .issues_of_media(media.id)
-        .await
-        .map_err(|e| format!("loading the media's issues failed: {e:#}"))?;
+    let mut issues = if can_view_issues(viewer) {
+        ctx.state
+            .db
+            .issues_of_media(media.id)
+            .await
+            .map_err(|e| format!("loading the media's issues failed: {e:#}"))?
+    } else {
+        Vec::new()
+    };
     let mut media = media.clone();
     crate::pgorder::media_details(&ctx.state.db, &mut media, &mut requests, &mut issues)
         .await
@@ -611,7 +672,7 @@ pub(super) async fn media_info_json(ctx: &Ready<'_>, media: &MediaRow) -> Result
 }
 
 /// A request as the eager relation of its media prints it: its own copy
-/// of the media (without seasons), users without settings.
+/// of the media (without seasons), users through `User.filter()`.
 fn nested_request_json(
     ctx: &Ready<'_>,
     related: &Related,
@@ -625,11 +686,11 @@ fn nested_request_json(
     );
     out.insert(
         String::from("requestedBy"),
-        related.user_json(request.requested_by_id, false)?,
+        related.public_user_json(request.requested_by_id)?,
     );
     out.insert(
         String::from("modifiedBy"),
-        related.user_json(request.modified_by_id, false)?,
+        related.public_user_json(request.modified_by_id)?,
     );
     out.insert(
         String::from("seasons"),
@@ -646,37 +707,42 @@ fn nested_request_json(
     Ok(Value::Object(out))
 }
 
-/// An issue as the eager relation of its media prints it.
+/// `Media.filter`'s issue gate: the permissions `GET /issue` asks for.
+const fn can_view_issues(viewer: &CurrentUser) -> bool {
+    viewer.has_permission(issue::MANAGE_ISSUES | issue::VIEW_ISSUES | issue::CREATE_ISSUES)
+}
+
+/// An issue as `Media.filter` prints it: the columns without the problem
+/// season and episode, its media, users through `User.filter()`, and no
+/// comments.
 fn nested_issue_json(
     ctx: &Ready<'_>,
     related: &Related,
     issue: &IssueRow,
 ) -> Result<Value, String> {
+    Ok(filtered_issue_json(
+        issue,
+        related.media_json(ctx, issue.media_id, false),
+        related.public_user_json(issue.created_by_id)?,
+        related.public_user_json(issue.modified_by_id)?,
+    ))
+}
+
+/// [`nested_issue_json`] once its relations are rendered.
+fn filtered_issue_json(
+    issue: &IssueRow,
+    media: Value,
+    created_by: Value,
+    modified_by: Value,
+) -> Value {
     let mut out = Map::new();
     issue::columns(&mut out, issue);
-    out.insert(
-        String::from("media"),
-        related.media_json(ctx, issue.media_id, false),
-    );
-    out.insert(
-        String::from("createdBy"),
-        related.user_json(issue.created_by_id, false)?,
-    );
-    out.insert(
-        String::from("modifiedBy"),
-        related.user_json(issue.modified_by_id, false)?,
-    );
-    out.insert(
-        String::from("comments"),
-        Value::Array(
-            issue
-                .comments
-                .iter()
-                .map(|c| issue::comment_json(c, None))
-                .collect(),
-        ),
-    );
-    Ok(Value::Object(out))
+    out.shift_remove("problemSeason");
+    out.shift_remove("problemEpisode");
+    out.insert(String::from("media"), media);
+    out.insert(String::from("createdBy"), created_by);
+    out.insert(String::from("modifiedBy"), modified_by);
+    Value::Object(out)
 }
 
 /// `mapMovieDetails`, in its key order; a property TMDB left out stays out
@@ -989,7 +1055,55 @@ pub(super) fn map_watch_providers(results: Option<&Value>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::Method;
     use serde_json::json;
+
+    use crate::routes::testkit::Kit;
+
+    fn viewer(permissions: i64) -> CurrentUser {
+        CurrentUser {
+            id: 2,
+            permissions,
+            webpush_enabled: true,
+            locale: None,
+        }
+    }
+
+    #[test]
+    fn media_issues_need_an_issue_permission() {
+        assert!(!can_view_issues(&viewer(32)), "REQUEST only");
+        assert!(can_view_issues(&viewer(issue::VIEW_ISSUES)), "view");
+        assert!(can_view_issues(&viewer(issue::CREATE_ISSUES)), "create");
+        assert!(can_view_issues(&viewer(issue::MANAGE_ISSUES)), "manage");
+        assert!(can_view_issues(&viewer(2)), "admin");
+    }
+
+    #[test]
+    fn media_issues_leave_comments_and_problem_out() {
+        let issue = IssueRow {
+            id: 4,
+            issue_type: 1,
+            status: 1,
+            problem_season: 2,
+            problem_episode: 3,
+            created_at: Some(String::from("2026-01-01T00:00:00.000Z")),
+            comments: vec![crate::db::IssueCommentRow {
+                id: 9,
+                message: String::from("secret"),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let out = filtered_issue_json(&issue, json!(null), json!({"id": 1}), json!(null));
+        assert_eq!(
+            out,
+            json!({
+                "id": 4, "issueType": 1, "status": 1,
+                "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": null,
+                "media": null, "createdBy": {"id": 1}, "modifiedBy": null
+            })
+        );
+    }
 
     #[test]
     fn maps_details_in_order() {
@@ -1068,6 +1182,88 @@ mod tests {
             Some(&json!([{"id": 2, "name": "Co", "originCountry": "US", "logoPath": null}])),
             "companies"
         );
+    }
+
+    async fn ratings_kit(tag: &str) -> anyhow::Result<(crate::dbtx::scratch::Scratch, Kit)> {
+        let scratch = crate::dbtx::scratch::sqlite(tag).await?;
+        let kit = Kit::new(tag, scratch.db.clone(), json!({}))?;
+        Ok((scratch, kit))
+    }
+
+    async fn combined(
+        kit: &Kit,
+        id: i64,
+        user: Option<(i64, i64)>,
+    ) -> anyhow::Result<(u16, Value)> {
+        let uri = format!("/api/v1/movie/{id}/ratingscombined");
+        kit.call(combined_ratings, (Method::GET, &uri), user, None)
+            .await
+    }
+
+    #[tokio::test]
+    async fn combined_ratings_need_a_user() -> anyhow::Result<()> {
+        let (_scratch, kit) = ratings_kit("ratingscombined-auth").await?;
+        let (status, json) = combined(&kit, 9_200_009, None).await?;
+        assert_eq!(status, 403, "nobody signed in");
+        assert_eq!(
+            json.get("error").and_then(Value::as_str),
+            Some("You do not have permission to access this endpoint"),
+            "isAuthenticated's answer"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn combined_ratings_from_rt_and_imdb() -> anyhow::Result<()> {
+        let (_scratch, kit) = ratings_kit("ratingscombined-ok").await?;
+        let id = 9_200_001;
+        crate::tmdb::remember_title_for_tests(
+            "movie",
+            id,
+            "en",
+            json!({"id": id, "title": "Zyzzyva Quest", "release_date": "2001-05-04", "imdb_id": "tt9200001"}),
+        );
+        crate::ratings::remember_movie_for_tests(
+            "Zyzzyva Quest",
+            &json!([{"title": "Zyzzyva Quest", "releaseYear": 2001, "vanity": "zyzzyva_quest", "rottenTomatoes": {"criticsScore": 90, "audienceScore": 50}}]),
+            Some((
+                "tt9200001",
+                json!([{"ImdbId": "tt9200001", "Title": "Zyzzyva Quest", "MovieRatings": {"Imdb": {"Value": 7.5, "Count": 1000}}}]),
+            )),
+        );
+        let (status, json) = combined(&kit, id, Some((5, 32))).await?;
+        assert_eq!(status, 200, "found");
+        assert_eq!(
+            json,
+            json!({
+                "provider": "legacy",
+                "rt": {"title": "Zyzzyva Quest", "url": "https://www.rottentomatoes.com/m/zyzzyva_quest", "criticsRating": "Fresh", "criticsScore": 90, "audienceRating": "Spilled", "audienceScore": 50, "year": 2001},
+                "imdb": {"title": "Zyzzyva Quest", "url": "https://www.imdb.com/title/tt9200001", "criticsScore": 7.5, "criticsScoreCount": 1000},
+            }),
+            "both sources"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn combined_ratings_not_found() -> anyhow::Result<()> {
+        let (_scratch, kit) = ratings_kit("ratingscombined-none").await?;
+        let id = 9_200_002;
+        crate::tmdb::remember_title_for_tests(
+            "movie",
+            id,
+            "en",
+            json!({"id": id, "title": "Qwxlpt Unrated", "release_date": "", "imdb_id": null}),
+        );
+        crate::ratings::remember_movie_for_tests("Qwxlpt Unrated", &json!([]), None);
+        let (status, json) = combined(&kit, id, Some((5, 32))).await?;
+        assert_eq!(status, 404, "no source knows it");
+        assert_eq!(
+            json.get("message").and_then(Value::as_str),
+            Some("No ratings found."),
+            "the message"
+        );
+        Ok(())
     }
 
     #[test]

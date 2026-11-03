@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Seerr API compatibility
+
+# Foreseerr keeps Seerr's /api/v1 working for existing clients. The spec
+# pinned in upstream/ is the Seerr contract; seerr-api.yml must not break it
+# (oasdiff), and every operation Seerr doesn't have is marked x-foreseerr.
+# That every documented operation has a Rust handler is a cargo test
+# (routes::spec_coverage) in the Rust backend workflow.
+
+on:
+  pull_request:
+    paths:
+      - 'seerr-api.yml'
+      - 'upstream/**'
+      - 'scripts/check-seerr-api.ts'
+      - '.github/workflows/seerr-api-compat.yml'
+  push:
+    branches:
+      - develop
+    paths:
+      - 'seerr-api.yml'
+      - 'upstream/**'
+      - 'scripts/check-seerr-api.ts'
+      - '.github/workflows/seerr-api-compat.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compat:
+    name: No breaking changes to the Seerr API
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Foreseerr-only operations are marked x-foreseerr
+        run: bun scripts/check-seerr-api.ts
+
+      # Accepted differences, each with a reason, are in
+      # upstream/accepted-breaking.txt.
+      - name: No breaking changes against the pinned Seerr spec
+        run: |
+          docker run --rm -v "$PWD:/w:ro" -w /w \
+            tufin/oasdiff:v1.11.7@sha256:d6f1e645251cc1da527311955347d8ce8bd2b7ed09bcce07176b2577b8daf19c \
+            breaking upstream/seerr-api.yml seerr-api.yml \
+            --err-ignore upstream/accepted-breaking.txt \
+            --fail-on WARN --format githubactions

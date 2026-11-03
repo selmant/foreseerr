@@ -288,6 +288,22 @@ pub fn filtered_json(
     Ok(Value::Object(out))
 }
 
+/// `User.toJSON`: a user as it serializes inside another entity's response.
+///
+/// That covers a request's `requestedBy`, an issue's `createdBy`, a
+/// comment's `user`, a watchlist or blocklist entry's user. The eager
+/// `settings` relation never rides along: it carries the user's
+/// notification credentials (GHSA-8j73-j6rc-q8xh). Only a top-level
+/// `User.filter(true)` (the user's own profile, or a user manager's view)
+/// includes it.
+///
+/// # Errors
+///
+/// Returns the reason when a stored value would make Node throw.
+pub fn embedded_json(user: &crate::db::UserRecord) -> Result<Value, &'static str> {
+    filtered_json(user, None, true)
+}
+
 /// The `UserSettings` entity as loaded, in column order.
 fn settings_record_json(s: &crate::db::UserSettingsRecord) -> Result<Value, &'static str> {
     let text = |v: &Option<String>| v.as_deref().map_or(Value::Null, Value::from);
@@ -388,6 +404,31 @@ pub fn discord_ids(stored: Option<&str>) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn nested_users_never_carry_settings() {
+        let user = crate::db::UserRecord {
+            id: 3,
+            email: Some(String::from("A@b.c")),
+            plex_id: Some(77),
+            ..Default::default()
+        };
+        let settings = crate::db::UserSettingsRecord {
+            pushbullet_access_token: Some(String::from("token")),
+            ..Default::default()
+        };
+        let own = filtered_json(&user, Some(Some(&settings)), true).unwrap_or_default();
+        assert!(
+            own.get("settings").is_some(),
+            "User.filter(true) keeps them"
+        );
+        let nested = embedded_json(&user).unwrap_or_default();
+        assert!(nested.get("settings").is_none(), "User.toJSON drops them");
+        assert_eq!(nested.get("email"), Some(&json!("a@b.c")), "email kept");
+        let public = filtered_json(&user, None, false).unwrap_or_default();
+        assert!(public.get("email").is_none(), "User.filter() drops email");
+        assert!(public.get("plexId").is_none(), "and plexId");
+    }
 
     #[test]
     fn notification_defaults() {

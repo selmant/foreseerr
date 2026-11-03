@@ -123,7 +123,7 @@ async fn local_watchlist(ctx: &Ready<'_>, user_id: i64, page: i64, offset: i64) 
         item.insert(String::from("updatedAt"), text(w.updated_at.as_ref()));
         item.insert(
             String::from("requestedBy"),
-            try_forward!(related.user_json(Some(user_id), true)),
+            try_forward!(related.user_json(Some(user_id))),
         );
         item.insert(
             String::from("media"),

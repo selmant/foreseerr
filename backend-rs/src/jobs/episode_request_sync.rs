@@ -10,6 +10,8 @@
 //! `crate::lifecycle`, which runs the request hooks). Watch-ahead episodes
 //! are monitored once; one that is unmonitored again before it has a file
 //! was removed by someone else, so it is marked instead of fetched again.
+//! One that was downloaded and then lost its file while Sonarr still
+//! monitors it is unmonitored, once, so Sonarr doesn't download it again.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,7 +23,7 @@ use serde_json::{Map, Value};
 
 use super::syncutil::{axios_message, date_ph, int, iso, now_ms, opt_date_bind, parse_js_date, Tx};
 use super::JobCtx;
-use crate::db::{Bind, Db, EpisodeRequestRow};
+use crate::db::{Bind, Db, EpisodeRequestRow, RequestRow};
 use crate::library::{Lib, Link};
 use crate::lifecycle::{
     episode_code, episodes_done, log_out_of_order, Entity, EpisodesDone, Lc, APPROVED, COMPLETED,
@@ -457,6 +459,22 @@ const fn removed_externally(
     !has_file && !monitored && (status == COMPLETED || monitored_at)
 }
 
+/// Whether Foreseerr takes back its monitor of a watch-ahead child: it
+/// monitored the episode, the episode was downloaded, and the file is gone
+/// while Sonarr still monitors it. A cleanup app that deletes the file
+/// without unmonitoring the episode (Maintainerr's season delete, as
+/// watch-ahead seasons are already unmonitored) leaves it to Sonarr's RSS
+/// sync, which downloads it again. Done once: `monitoredAt` is cleared
+/// with it, so an episode monitored again in Sonarr is left alone.
+const fn takes_back_monitor(
+    has_file: bool,
+    monitored: bool,
+    status: i64,
+    monitored_at: bool,
+) -> bool {
+    !has_file && monitored && status == COMPLETED && monitored_at
+}
+
 /// Whether a child missing from the order its series uses in Sonarr was
 /// missing the last time too (and so is `FAILED` now); remembered as
 /// missed once otherwise.
@@ -531,6 +549,7 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
     let now = now_ms();
     let mut unmonitored: Vec<Value> = Vec::new();
     let mut newly_monitored: Vec<i64> = Vec::new();
+    let mut deleted: Vec<(i64, Value, String)> = Vec::new();
     let mut searchable: Vec<(i64, Value)> = Vec::new();
     let mut removed_changed: Vec<(i64, Option<i64>)> = Vec::new();
     let mut removed: HashSet<i64> = HashSet::new();
@@ -577,6 +596,13 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         }
         if awaiting {
             newly_monitored.push(child.id);
+        }
+        if takes_back_monitor(has_file, monitored, child.status, monitored_at) {
+            deleted.push((
+                child.id,
+                episode.get("id").cloned().unwrap_or(Value::Null),
+                episode_code(child),
+            ));
         }
         if let Some(window) = &window {
             let gone = window.contains(&child.tvdb_id)
@@ -626,6 +652,7 @@ async fn reconcile(job: &JobCtx, lc: &Lc, request: &mut Entity, context: &Contex
         }
     }
     monitor_and_search(job, context, unmonitored, &newly_monitored, &searchable).await?;
+    unmonitor_deleted(job, context, &request.row, &deleted).await?;
     let done = episodes_done(&request.row.episodes);
     let reads_status = match selection.as_deref() {
         Some("after") => true,
@@ -844,6 +871,88 @@ async fn monitor_and_search(
     let searched: Vec<(i64, Option<i64>)> =
         searchable.iter().map(|(c, _)| (*c, searched_at)).collect();
     save_child_dates(&job.state.db, "searchTriggeredAt", &searched).await
+}
+
+/// Whether another approved request is for the same series, 4K or not as
+/// this one. Sonarr's monitor flag is shared: an episode this request is
+/// done with may be one the other still waits for, so it is left alone.
+async fn shared_series(db: &Db, row: &RequestRow) -> Result<bool> {
+    let Some(media_id) = row.media_id else {
+        return Ok(false);
+    };
+    let others = db
+        .scalar(
+            r#"SELECT COUNT(*) FROM "media_request" WHERE "mediaId" = ?1 AND "is4k" = ?2 AND "status" = ?3 AND "id" != ?4"#,
+            &[
+                Bind::Int(media_id),
+                Bind::Bool(row.is4k),
+                Bind::Int(APPROVED),
+                Bind::Int(row.id),
+            ],
+        )
+        .await?;
+    Ok(others > 0)
+}
+
+/// Unmonitor the `deleted` children's episodes in Sonarr (child id, Sonarr
+/// episode id, code; see [`takes_back_monitor`]) and clear their
+/// `monitoredAt`, unless another request shares the series.
+async fn unmonitor_deleted(
+    job: &JobCtx,
+    context: &Context,
+    request: &RequestRow,
+    deleted: &[(i64, Value, String)],
+) -> Result<()> {
+    if deleted.is_empty() {
+        return Ok(());
+    }
+    if shared_series(&job.state.db, request).await? {
+        tracing::debug!(
+            label = "Episode Request Sync",
+            request_id = request.id,
+            "Another approved request is for the series; its deleted episodes stay monitored"
+        );
+        return Ok(());
+    }
+    let ids = Value::Array(deleted.iter().map(|(_, id, _)| id.clone()).collect());
+    let mut body = Map::new();
+    body.insert(String::from("episodeIds"), ids.clone());
+    body.insert(String::from("monitored"), Value::Bool(false));
+    if let Err(e) = job
+        .state
+        .servarr
+        .call(
+            &context.server,
+            Method::PUT,
+            "/episode/monitor",
+            &[],
+            Some(&Value::Object(body)),
+            crate::servarr::api_timeout(&job.settings),
+        )
+        .await
+    {
+        tracing::error!(
+            label = "Sonarr API",
+            error_message = %axios_message(&e),
+            episode_ids = %ids,
+            "Failed to unmonitor episodes"
+        );
+        return Err(anyhow!("Failed to unmonitor episodes"));
+    }
+    let codes: Vec<String> = deleted.iter().map(|(_, _, code)| code.clone()).collect();
+    let (files, they) = if codes.len() == 1 {
+        ("its file", "it isn't")
+    } else {
+        ("their files", "they aren't")
+    };
+    tracing::info!(
+        label = "Episode Request Sync",
+        "{} of request {} lost {files} after being downloaded; unmonitored in Sonarr so {they} downloaded again",
+        crate::lifecycle::listed(&codes),
+        request.id
+    );
+    let cleared: Vec<(i64, Option<i64>)> = deleted.iter().map(|(c, _, _)| (*c, None)).collect();
+    save_child_dates(&job.state.db, "monitoredAt", &cleared).await
 }
 
 /// Set a date column of episode children (`None` clears it), in one
@@ -1368,6 +1477,212 @@ mod tests {
             !removed_externally(true, false, COMPLETED, true),
             "still has its file"
         );
+    }
+
+    #[test]
+    fn downloaded_episodes_that_lost_their_file_are_let_go() {
+        assert!(
+            takes_back_monitor(false, true, COMPLETED, true),
+            "monitored by Foreseerr, downloaded, file deleted, still monitored"
+        );
+        assert!(
+            !takes_back_monitor(true, true, COMPLETED, true),
+            "still has its file"
+        );
+        assert!(
+            !takes_back_monitor(false, false, COMPLETED, true),
+            "the cleanup app unmonitored it already"
+        );
+        assert!(
+            !takes_back_monitor(false, true, APPROVED, true),
+            "never downloaded, so still wanted"
+        );
+        assert!(
+            !takes_back_monitor(false, true, COMPLETED, false),
+            "monitored by someone else, or again after Foreseerr let it go"
+        );
+    }
+
+    /// A Sonarr 4 that answers every request with `{}`; its port and the
+    /// writes it got (method, path, body).
+    async fn fake_sonarr() -> Result<(u16, Arc<Mutex<Vec<(String, String, Value)>>>)> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let port = listener.local_addr()?.port();
+        let writes: Arc<Mutex<Vec<(String, String, Value)>>> = Arc::default();
+        let log = Arc::clone(&writes);
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut buf: Vec<u8> = Vec::new();
+                let mut chunk = [0_u8; 4096];
+                let mut wanted: Option<usize> = None;
+                while wanted.is_none_or(|w| buf.len() < w) {
+                    match stream.read(&mut chunk).await {
+                        Ok(n) if n > 0 => buf.extend_from_slice(chunk.get(..n).unwrap_or_default()),
+                        _ => break,
+                    }
+                    if let Some(at) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(buf.get(..at).unwrap_or_default());
+                        let length = head
+                            .lines()
+                            .filter_map(|l| l.split_once(':'))
+                            .find(|(k, _)| k.trim().eq_ignore_ascii_case("content-length"))
+                            .and_then(|(_, v)| v.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        wanted = Some(at + 4 + length);
+                    }
+                }
+                let text = String::from_utf8_lossy(&buf).into_owned();
+                let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+                let mut line = head.split(' ');
+                let method = line.next().unwrap_or_default().to_owned();
+                let path = line
+                    .next()
+                    .unwrap_or_default()
+                    .split('?')
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned();
+                let answer = if path == "/api" {
+                    serde_json::json!({ "current": "v3" })
+                } else {
+                    if method != "GET" {
+                        let body = serde_json::from_str(body).unwrap_or(Value::Null);
+                        crate::sync::lock(&log).push((method, path, body));
+                    }
+                    serde_json::json!({})
+                };
+                let answer = answer.to_string();
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}",
+                    answer.len()
+                );
+                stream.write_all(reply.as_bytes()).await.ok();
+            }
+        });
+        Ok((port, writes))
+    }
+
+    /// What Sonarr was sent (method, path, body).
+    type Writes = Vec<(String, String, Value)>;
+
+    /// Two syncs of watch-ahead request 1, whose five children are each a
+    /// case of [`takes_back_monitor`], after `seed`; what Sonarr was sent
+    /// and which children still have `monitoredAt`.
+    async fn sync_deleted(tag: &str, seed: &[&str]) -> Result<(Writes, Vec<bool>)> {
+        use crate::dbtx::scratch;
+        use anyhow::Context as _;
+        use serde_json::json;
+
+        let scratch = scratch::sqlite(tag).await?;
+        let db = &scratch.db;
+        scratch::run(
+            db,
+            &[
+                r#"INSERT INTO "user" ("id", "email", "avatar", "permissions") VALUES (1, 'owner@example.test', '', 2)"#,
+                // No TMDB id, so the run doesn't read the window, which this
+                // doesn't need.
+                r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status") VALUES (1, 'tv', 0, 3)"#,
+                r#"INSERT INTO "media_request" ("id", "status", "type", "mediaId", "requestedById", "episodeSelectionType") VALUES (1, 2, 'tv', 1, 1, 'watchAhead')"#,
+                r#"INSERT INTO "episode_request" ("id", "tvdbId", "seasonNumber", "episodeNumber", "status", "requestId") VALUES (1, 101, 1, 1, 5, 1), (2, 102, 1, 2, 5, 1), (3, 103, 1, 3, 5, 1), (4, 104, 1, 4, 2, 1), (5, 105, 1, 5, 5, 1)"#,
+            ],
+        )
+        .await?;
+        scratch::run(db, seed).await?;
+        let at = Some(1_789_000_000_000);
+        // 3 was downloaded before the request: Foreseerr never monitored it.
+        save_child_dates(db, "monitoredAt", &[(1, at), (2, at), (4, at), (5, at)]).await?;
+        save_child_dates(db, "searchTriggeredAt", &[(4, at)]).await?;
+
+        let (port, writes) = fake_sonarr().await?;
+        // Sonarr's episode `n` is child `n`'s, TVDB id 100 + n.
+        let episode = |n: i64, has_file: bool, monitored: bool| {
+            json!({
+                "id": 10 + n, "tvdbId": 100 + n, "seasonNumber": 1, "episodeNumber": n,
+                "hasFile": has_file, "monitored": monitored,
+            })
+        };
+        let context = Context {
+            server: json!({"hostname": "127.0.0.1", "port": port, "apiKey": "k", "useSsl": false, "baseUrl": ""}),
+            series: json!({"id": 7, "tvdbId": 72227, "status": "continuing"}),
+            episodes: vec![
+                episode(1, false, true),
+                episode(2, true, true),
+                episode(3, false, true),
+                episode(4, false, true),
+                episode(5, false, false),
+            ],
+            prevent_search: false,
+        };
+        let dir = std::env::temp_dir().join(format!(
+            "foreseerr-{tag}-{}-{}",
+            std::process::id(),
+            crate::clock::now_millis()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(dir.join("settings.json"), "{}")?;
+        let state = Arc::new(crate::state::AppState::for_tests(db.clone(), &dir)?);
+        let settings = Arc::new(crate::settings::Settings::from_file_value(json!({}), None)?);
+        let job = JobCtx::new(Arc::clone(&state), Arc::clone(&settings));
+        let lc = Lc { state, settings };
+        // Sonarr answers the same both times: the second run sees the
+        // episode monitored again, as if someone had.
+        for _ in 0..2 {
+            let mut request = lc.load(1).await?.context("request 1")?;
+            reconcile(&job, &lc, &mut request, &context).await?;
+        }
+        std::fs::remove_dir_all(&dir)?;
+
+        let row = db.request_by_id(1).await?.context("request 1")?;
+        let monitored = row
+            .episodes
+            .iter()
+            .map(|e| e.monitored_at.is_some())
+            .collect();
+        let writes = crate::sync::lock(&writes).clone();
+        Ok((writes, monitored))
+    }
+
+    #[tokio::test]
+    async fn deleted_files_are_unmonitored_once() -> Result<()> {
+        let (writes, monitored) = sync_deleted("episode-sync-deleted", &[]).await?;
+        assert_eq!(
+            writes,
+            vec![(
+                String::from("PUT"),
+                String::from("/api/v3/episode/monitor"),
+                serde_json::json!({"episodeIds": [11], "monitored": false})
+            )],
+            "only the downloaded one Foreseerr monitored, and once"
+        );
+        assert_eq!(
+            monitored,
+            [false, true, false, true, true],
+            "its monitoredAt cleared, the others kept"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn deleted_files_of_a_shared_series_stay_monitored() -> Result<()> {
+        let (writes, monitored) = sync_deleted(
+            "episode-sync-shared",
+            &[
+                r#"INSERT INTO "media_request" ("id", "status", "type", "mediaId", "requestedById") VALUES (2, 2, 'tv', 1, 1)"#,
+            ],
+        )
+        .await?;
+        assert!(
+            writes.is_empty(),
+            "another approved request may still want the episode"
+        );
+        assert_eq!(
+            monitored,
+            [true, true, false, true, true],
+            "nothing cleared"
+        );
+        Ok(())
     }
 
     #[test]

@@ -30,7 +30,7 @@ Foreseerr supports migrating in place from:
 2. **A fresh Foreseerr installation**, with no prior data.
 3. **A previous stable Foreseerr release** (`v0.1.0` or later). Alpha builds are not included.
 
-If your Seerr instance is **newer than Foreseerr’s last upstream sync**, migration is **not guaranteed**. Prefer waiting for a Foreseerr release that includes that Seerr sync, or clone-test at your own risk and keep the original Seerr instance and backup.
+If your Seerr instance is **newer than Foreseerr’s last upstream sync** (the `reviewedThrough` commit in [`upstream/sync.json`](https://github.com/selmant/foreseerr/blob/develop/upstream/sync.json)), migration is **not guaranteed**. Prefer waiting for a Foreseerr release that includes that Seerr sync, or clone-test at your own risk and keep the original Seerr instance and backup.
 
 This guide does not list Seerr version numbers. There is also no supported downgrade path: if an upgrade fails, restore the pre-migration backup. See [Backups](/using-seerr/backups).
 

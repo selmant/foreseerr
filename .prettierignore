@@ -3,7 +3,6 @@
 dist/
 config/
 cache/config.json
-pnpm-lock.yaml
 .github
 .vscode
 next-env.d.ts
@@ -25,3 +24,6 @@ backend-rs/src/standalone/apidocs.html
 
 # Rust build output
 backend-rs/target/
+
+# Upstream Seerr's spec, kept byte-for-byte (upstream/README.md)
+upstream/seerr-api.yml

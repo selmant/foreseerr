@@ -97,6 +97,12 @@ quick buffer of 5, 10, or 20 episodes, or enter any number from 1 to 50.
 The dialog links to your default buffer in General settings. This is opt-in
 per title and requires episode requests to be enabled.
 
+Watch Ahead downloads each episode once. If a cleanup app such as Maintainerr
+deletes a downloaded episode, Foreseerr doesn't request it again, and it
+unmonitors the episode in Sonarr if the cleanup app left it monitored, so
+Sonarr doesn't download it again. To get an episode back, monitor it in
+Sonarr; Foreseerr leaves it alone after that.
+
 In **Episodes**, choose a season and search by episode name or number. Select
 the first episode, then **Add More Episodes** to choose the end of a range, or
 **Include Future Episodes** to keep requesting new episodes from that point.

@@ -87,7 +87,9 @@ const GUARDED_MOUNTS: [(&str, i64); 20] = [
     ("/api/v1/service", 0),
     ("/api/v1/issue", 0),
     ("/api/v1/issueComment", 0),
-    ("/api/v1/overrideRule", ADMIN),
+    // Each route checks its own permission (`ADMIN` for the rules
+    // themselves, advanced requests for `/advancedRequest`).
+    ("/api/v1/overrideRule", 0),
 ];
 
 /// `Permission.ADMIN`.
@@ -188,6 +190,18 @@ fn api(parts: &Parts) -> Response<Body> {
         return validator_error(parts, 401, "cookie 'connect.sid' required", &template);
     }
     internal_error(parts)
+}
+
+/// Every documented operation as `(method, template)`, for the test that
+/// each one has a handler.
+#[cfg(test)]
+pub(crate) fn documented() -> impl Iterator<Item = (&'static str, &'static str)> {
+    super::apiroutes::ROUTES.iter().flat_map(|route| {
+        route
+            .methods
+            .iter()
+            .map(move |&(method, _)| (method, route.template))
+    })
 }
 
 /// The first documented route matching `path`, as path-to-regexp 8 matches

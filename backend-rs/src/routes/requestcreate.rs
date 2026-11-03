@@ -21,6 +21,7 @@ use super::draft::{
 };
 use super::episodeselect::{self, Refused, Resolved, Selection};
 use super::listwrite::{insert_media_in, main_locale, media_row};
+use super::overriderule::{self, RuleInput};
 use super::related::Related;
 use super::{Outcome, Ready, Table};
 use crate::auth::CurrentUser;
@@ -44,6 +45,7 @@ const AUTO_APPROVE_TV: i64 = 512;
 const REQUEST_4K: i64 = 1024;
 const REQUEST_4K_MOVIE: i64 = 2048;
 const REQUEST_4K_TV: i64 = 4096;
+const REQUEST_ADVANCED: i64 = 8192;
 const AUTO_APPROVE_4K: i64 = 32_768;
 const AUTO_APPROVE_4K_MOVIE: i64 = 65_536;
 const AUTO_APPROVE_4K_TV: i64 = 131_072;
@@ -58,11 +60,8 @@ const M_AVAILABLE: i64 = 5;
 const M_BLOCKLISTED: i64 = 6;
 const M_DELETED: i64 = 7;
 
-/// TMDB's `anime` keyword.
-const ANIME_KEYWORD_ID: i64 = 210_024;
-
-/// `requestLock`: one request created at a time.
-static CREATE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// `requestLock` and `mediaLock`: one request created or edited at a time.
+pub(super) static REQUEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// This module's routes.
 pub(super) const ROUTES: &Table = &[("/api/v1/request", Method::POST, create)];
@@ -208,7 +207,7 @@ fn create<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let user = forward_on_err!(ctx.authenticated(0));
         let raw = forward_on_err!(body_object(ctx));
         let body = forward_on_err!(parse_body(raw));
-        let _guard = CREATE_LOCK.lock().await;
+        let _guard = REQUEST_LOCK.lock().await;
         create_request(ctx, user, &body).await
     })
 }
@@ -220,7 +219,7 @@ pub(super) async fn create_auto_request(ctx: &Ready<'_>, raw: &Map<String, Value
     let user = forward_on_err!(ctx.authenticated(0));
     let mut body = forward_on_err!(parse_body(raw));
     body.is_auto_request = true;
-    let _guard = CREATE_LOCK.lock().await;
+    let _guard = REQUEST_LOCK.lock().await;
     create_request(ctx, user, &body).await
 }
 
@@ -229,10 +228,33 @@ pub(super) async fn create_auto_request(ctx: &Ready<'_>, raw: &Map<String, Value
 pub(super) struct Quota {
     pub(super) limit: i64,
     pub(super) remaining: Option<i64>,
-    restricted: bool,
+    pub(super) restricted: bool,
+    /// The start of the quota window (Unix milliseconds), when it has one.
+    window_start: Option<i64>,
 }
 
 impl Quota {
+    /// The units of a request being edited that `used` already counts:
+    /// none when it moves to another owner (their quota never counted it)
+    /// or was created before the window, otherwise all it holds.
+    pub(super) fn held_units(
+        &self,
+        owner_changing: bool,
+        created_at: Option<&str>,
+        units: i64,
+    ) -> i64 {
+        let in_window = self.window_start.is_none_or(|start| {
+            created_at
+                .and_then(crate::clock::parse_date_millis)
+                .is_some_and(|created| created > start)
+        });
+        if !owner_changing && in_window {
+            units
+        } else {
+            0
+        }
+    }
+
     /// Whether an edit of a request that already counts `held` units, to
     /// `units`, goes past the quota; the edits' `Series Quota exceeded.`.
     pub(super) fn edit_exceeds(&self, ignore_quota: bool, units: i64, held: i64) -> bool {
@@ -288,12 +310,18 @@ pub(super) async fn quotas(ctx: &Ready<'_>, rel: &UserRel) -> Result<(Quota, Quo
             .await
             .map_err(|e| format!("summing tv requests failed: {e:#}"))?
     };
-    let quota = |limit: i64, used: i64| Quota {
+    let quota = |limit: i64, used: i64, days: Option<i64>| Quota {
         limit,
         remaining: (limit != 0).then(|| (limit - used).max(0)),
         restricted: limit != 0 && limit - used <= 0,
+        window_start: days
+            .filter(|d| *d != 0)
+            .map(|d| crate::clock::local_days_before(&chrono::Local, now, d)),
     };
-    Ok((quota(movie_limit, movie_used), quota(tv_limit, tv_used)))
+    Ok((
+        quota(movie_limit, movie_used, movie_days),
+        quota(tv_limit, tv_used, tv_days),
+    ))
 }
 
 /// What the request will be written with.
@@ -309,154 +337,89 @@ struct Routing {
     tags: Option<Vec<i64>>,
 }
 
-/// `Number(piece)` for the id lists override rules store; anything but
-/// digits (or nothing, which is 0) is left to Node.
-fn rule_number(piece: &str) -> Result<i64, String> {
-    let trimmed = piece.trim();
-    if trimmed.is_empty() {
-        return Ok(0);
-    }
-    trimmed
-        .strip_prefix('-')
-        .unwrap_or(trimmed)
-        .bytes()
-        .all(|b| b.is_ascii_digit())
-        .then(|| trimmed.parse::<i64>().ok())
-        .flatten()
-        .ok_or_else(|| format!("an override rule id {trimmed:?} Number() reads oddly"))
-}
-
-fn rule_numbers(list: &str) -> Result<Vec<i64>, String> {
-    list.split(',').map(rule_number).collect()
-}
-
-/// The ids of a list of `{ id }` objects.
-fn ids_of(list: Option<&Value>) -> Vec<i64> {
-    list.and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|i| i.get("id").and_then(Value::as_i64))
-                .collect()
+/// The `serverId` an advanced requester asked for, when it is a configured
+/// server of the request's kind and quality; anything else (or a requester
+/// who may not pick one) goes to the default server.
+fn requested_server(ctx: &Ready<'_>, body: &Body, advanced: bool) -> Option<i64> {
+    let id = body.server_id.filter(|id| advanced && *id >= 0)?;
+    let section = if body.media_type == "movie" {
+        "/radarr"
+    } else {
+        "/sonarr"
+    };
+    ctx.settings
+        .get(section)
+        .and_then(Value::as_array)?
+        .iter()
+        .any(|s| {
+            s.get("id").and_then(Value::as_i64) == Some(id)
+                && s.get("is4k").and_then(Value::as_bool) == Some(body.is4k)
         })
-        .unwrap_or_default()
+        .then_some(id)
 }
 
-/// Whether a rule applies to this title and user.
-fn rule_applies(
-    rule: &OverrideRuleRow,
-    details: &Value,
-    tv_anime: bool,
-    user_id: i64,
-) -> Result<bool, String> {
-    let set = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
-    if tv_anime {
-        match set(&rule.keywords) {
-            Some(k) if rule_numbers(&k)?.contains(&ANIME_KEYWORD_ID) => {}
-            _ => return Ok(false),
-        }
+/// The routing the body asks for, as far as the requester may choose it:
+/// none of it unless they may make advanced requests, and none of it when
+/// the server they picked was refused.
+fn requested_routing(body: &Body, advanced: bool, server_id: Option<i64>) -> Routing {
+    let asked_for_server = advanced && body.server_id.is_some_and(|id| id >= 0);
+    let allowed = advanced && (!asked_for_server || server_id.is_some());
+    Routing {
+        server_id,
+        profile_id: body.profile_id.filter(|_| allowed),
+        root_folder: body.root_folder.clone().filter(|_| allowed),
+        language_profile_id: body.language_profile_id.filter(|_| allowed),
+        metadata_language_id: body
+            .metadata_language_id
+            .filter(|_| allowed && body.media_type != "movie"),
+        tags: body.tags.clone().filter(|_| allowed),
     }
-    if let Some(users) = set(&rule.users) {
-        if !rule_numbers(&users)?.contains(&user_id) {
-            return Ok(false);
-        }
-    }
-    if let Some(genres) = set(&rule.genre) {
-        let ids = ids_of(details.get("genres"));
-        if !rule_numbers(&genres)?.iter().any(|g| ids.contains(g)) {
-            return Ok(false);
-        }
-    }
-    if let Some(languages) = set(&rule.language) {
-        let original = details.get("original_language").and_then(Value::as_str);
-        if !languages.split('|').any(|l| Some(l) == original) {
-            return Ok(false);
-        }
-    }
-    if let Some(keywords) = set(&rule.keywords) {
-        let list = details.get("keywords").and_then(|k| {
-            k.get("keywords")
-                .filter(|v| v.is_array())
-                .or_else(|| k.get("results"))
-        });
-        let ids = ids_of(list);
-        if !rule_numbers(&keywords)?.iter().any(|k| ids.contains(k)) {
-            return Ok(false);
-        }
-    }
-    Ok(true)
 }
 
-/// The override rules for the default server of this kind and quality,
-/// most specific first; the first one that applies is used.
-async fn apply_rules(
+/// The most specific override rule of the server the request goes to (the
+/// requested one, or the default for its kind and quality) that applies to
+/// this title and user (`super::overriderule`).
+async fn matching_rule(
     ctx: &Ready<'_>,
     body: &Body,
     details: &Value,
     anime: bool,
     user_id: i64,
-    routing: &mut Routing,
-) -> Result<(), String> {
-    let (section, field) = if body.media_type == "movie" {
-        ("/radarr", "radarr")
-    } else {
-        ("/sonarr", "sonarr")
+    service_id: Option<i64>,
+) -> Result<Option<OverrideRuleRow>, String> {
+    let input = RuleInput {
+        movie: body.media_type == "movie",
+        is4k: body.is4k,
+        service_id,
+        details,
+        anime,
+        user_id,
     };
-    let default_id = ctx
-        .settings
-        .get(section)
-        .and_then(Value::as_array)
-        .and_then(|servers| {
-            servers.iter().find(|s| {
-                s.get("is4k").and_then(Value::as_bool) == Some(body.is4k)
-                    && truthy(s.get("isDefault"))
-            })
-        })
-        .and_then(|s| s.get("id"));
-    let Some(default_id) = default_id else {
-        return Ok(());
-    };
-    let Some(default_id) = default_id.as_i64() else {
-        return Err(String::from("a server id that isn't a whole number"));
-    };
-    let rules = ctx
-        .state
-        .db
-        .override_rules()
-        .await
-        .map_err(|e| format!("loading override rules failed: {e:#}"))?;
-    let mut applied = Vec::new();
-    for rule in rules {
-        let service = if field == "radarr" {
-            rule.radarr_service_id
-        } else {
-            rule.sonarr_service_id
-        };
-        if service == Some(default_id)
-            && rule_applies(&rule, details, body.media_type == "tv" && anime, user_id)?
-        {
-            applied.push(rule);
-        }
-    }
-    let specificity = |r: &OverrideRuleRow| {
-        [&r.genre, &r.language, &r.keywords]
-            .iter()
-            .filter(|v| v.is_some())
-            .count()
-    };
-    applied.sort_by_key(|r| std::cmp::Reverse(specificity(r)));
-    let Some(rule) = applied.first() else {
-        return Ok(());
-    };
-    if let Some(root) = rule.root_folder.as_ref().filter(|r| !r.is_empty()) {
+    overriderule::matching_rule(ctx, input).await
+}
+
+/// An override rule's values on top of the routing. An advanced requester
+/// picked their values in the request modal, so the rule only fills in
+/// what they left unset.
+fn apply_rule(rule: &OverrideRuleRow, advanced: bool, routing: &mut Routing) -> Result<(), String> {
+    let keep_root = advanced && routing.root_folder.as_ref().is_some_and(|r| !r.is_empty());
+    let keep_profile = advanced && routing.profile_id.is_some_and(|p| p != 0);
+    let keep_tags = advanced && routing.tags.is_some();
+    let root = rule
+        .root_folder
+        .as_ref()
+        .filter(|r| !keep_root && !r.is_empty());
+    let profile = rule.profile_id.filter(|p| !keep_profile && *p != 0);
+    let tags = rule.tags.as_ref().filter(|t| !keep_tags && !t.is_empty());
+    if let Some(root) = root {
         routing.root_folder = Some(root.clone());
     }
-    if let Some(profile) = rule.profile_id.filter(|p| *p != 0) {
+    if let Some(profile) = profile {
         routing.profile_id = Some(profile);
     }
-    if let Some(tags) = rule.tags.as_ref().filter(|t| !t.is_empty()) {
+    if let Some(tags) = tags {
         let mut merged = routing.tags.clone().unwrap_or_default();
-        merged.extend(rule_numbers(tags)?);
+        merged.extend(overriderule::rule_numbers(tags)?);
         let mut unique: Vec<i64> = Vec::with_capacity(merged.len());
         for tag in merged {
             if !unique.contains(&tag) {
@@ -465,7 +428,9 @@ async fn apply_rules(
         }
         routing.tags = Some(unique);
     }
-    tracing::debug!("Override rule applied.");
+    if root.is_some() || profile.is_some() || tags.is_some() {
+        tracing::debug!("Override rule applied.");
+    }
     Ok(())
 }
 
@@ -971,22 +936,14 @@ async fn prepare(ctx: &Ready<'_>, user: &CurrentUser, body: &Body) -> Result<Pre
     if let Some(message) = duplicate(&rows, body, request_user.0.id) {
         return Err(ctx.error(409, message));
     }
-    let mut routing = Routing {
-        server_id: body.server_id,
-        profile_id: body.profile_id,
-        root_folder: body.root_folder.clone(),
-        language_profile_id: body.language_profile_id,
-        metadata_language_id: if movie {
-            None
-        } else {
-            body.metadata_language_id
-        },
-        tags: body.tags.clone(),
-    };
-    if !user.has_permission(MANAGE_REQUESTS) {
-        answer_on_err!(
-            apply_rules(ctx, body, &details, anime, request_user.0.id, &mut routing).await
-        );
+    let advanced = user.has_permission(MANAGE_REQUESTS | REQUEST_ADVANCED);
+    let server_id = requested_server(ctx, body, advanced);
+    let mut routing = requested_routing(body, advanced, server_id);
+    let rule = answer_on_err!(
+        matching_rule(ctx, body, &details, anime, request_user.0.id, server_id).await
+    );
+    if let Some(rule) = rule {
+        answer_on_err!(apply_rule(&rule, advanced, &mut routing));
     }
     if !movie {
         answer_on_err!(sonarr_defaults(ctx, body, anime, &mut routing));
@@ -1517,7 +1474,9 @@ fn request_json(
 }
 
 /// The loaded media's JSON before the save: columns, `requests` (each with
-/// its own media and users, as eager relations nest) and `seasons`.
+/// its own media and users, as eager relations nest) and `seasons`. The
+/// other requests' users go through `User.filter()`: the requester isn't
+/// owed their email or Plex id (as for `mediaInfo`, GHSA-xc6j-6p6h-p799).
 async fn existing_media_json(
     ctx: &Ready<'_>,
     media: Option<&MediaRow>,
@@ -1547,11 +1506,11 @@ async fn existing_media_json(
         );
         item.insert(
             String::from("requestedBy"),
-            related.user_json(r.requested_by_id, false)?,
+            related.public_user_json(r.requested_by_id)?,
         );
         item.insert(
             String::from("modifiedBy"),
-            related.user_json(r.modified_by_id, false)?,
+            related.public_user_json(r.modified_by_id)?,
         );
         item.insert(
             String::from("seasons"),
@@ -1677,12 +1636,86 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn routed_body(value: &Value) -> Result<Body, String> {
+        value
+            .as_object()
+            .and_then(|map| parse_body(map).ok())
+            .ok_or_else(|| String::from("the body didn't parse"))
+    }
+
+    #[test]
+    fn only_advanced_requesters_route_their_request() -> Result<(), String> {
+        let body = routed_body(&json!({
+            "mediaType": "tv", "mediaId": 1, "serverId": 3, "profileId": 4,
+            "rootFolder": "/x", "languageProfileId": 5, "metadataLanguageId": 6,
+            "tags": [7]
+        }))?;
+        let plain = requested_routing(&body, false, None);
+        assert_eq!(plain.server_id, None);
+        assert_eq!(plain.profile_id, None, "no profile");
+        assert_eq!(plain.root_folder, None, "no root folder");
+        assert_eq!(plain.language_profile_id, None, "no language profile");
+        assert_eq!(plain.metadata_language_id, None, "no metadata language");
+        assert_eq!(plain.tags, None, "no tags");
+        let advanced = requested_routing(&body, true, Some(3));
+        assert_eq!(advanced.server_id, Some(3));
+        assert_eq!(advanced.profile_id, Some(4));
+        assert_eq!(advanced.root_folder.as_deref(), Some("/x"));
+        assert_eq!(advanced.language_profile_id, Some(5));
+        assert_eq!(advanced.metadata_language_id, Some(6));
+        assert_eq!(advanced.tags, Some(vec![7]));
+        let refused = requested_routing(&body, true, None);
+        assert_eq!(refused.server_id, None, "a refused server");
+        assert_eq!(refused.profile_id, None, "takes the options with it");
+        assert_eq!(refused.tags, None, "tags too");
+        let no_server = routed_body(&json!({"mediaType": "movie", "mediaId": 1, "profileId": 4}))?;
+        assert_eq!(
+            requested_routing(&no_server, true, None).profile_id,
+            Some(4),
+            "no server asked for keeps the options"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rules_fill_in_what_advanced_requesters_left_unset() {
+        let rule = OverrideRuleRow {
+            profile_id: Some(9),
+            root_folder: Some(String::from("/rule")),
+            tags: Some(String::from("1,2")),
+            ..Default::default()
+        };
+        let mut plain = Routing::default();
+        assert!(apply_rule(&rule, false, &mut plain).is_ok());
+        assert_eq!(plain.profile_id, Some(9));
+        assert_eq!(plain.root_folder.as_deref(), Some("/rule"));
+        assert_eq!(plain.tags, Some(vec![1, 2]));
+        let mut picked = Routing {
+            profile_id: Some(4),
+            tags: Some(Vec::new()),
+            ..Routing::default()
+        };
+        assert!(apply_rule(&rule, true, &mut picked).is_ok());
+        assert_eq!(picked.profile_id, Some(4), "the picked profile stays");
+        assert_eq!(
+            picked.tags,
+            Some(Vec::new()),
+            "picked tags, even none, stay"
+        );
+        assert_eq!(
+            picked.root_folder.as_deref(),
+            Some("/rule"),
+            "an unset root folder comes from the rule"
+        );
+    }
+
     #[test]
     fn an_edit_may_reuse_its_own_units() {
         let tv = Quota {
             limit: 2,
             remaining: Some(1),
             restricted: false,
+            window_start: None,
         };
         assert!(!tv.edit_exceeds(false, 2, 1), "one more season fits");
         assert!(tv.edit_exceeds(false, 3, 1), "two more do not");
@@ -1691,6 +1724,7 @@ mod tests {
             limit: 1,
             remaining: Some(0),
             restricted: true,
+            window_start: None,
         };
         assert!(!spent.edit_exceeds(false, 1, 1), "keeping its own season");
         assert!(
@@ -1701,9 +1735,28 @@ mod tests {
     }
 
     #[test]
-    fn rule_numbers_read_like_number() {
-        assert_eq!(rule_numbers("1, 2,").ok(), Some(vec![1, 2, 0]), "lists");
-        assert!(rule_numbers("1e2").is_err(), "odd shapes go to Node");
+    fn an_edit_reuses_only_the_units_the_quota_counted() {
+        let start = crate::clock::parse_date_millis("2026-10-01T00:00:00.000Z");
+        let windowed = Quota {
+            limit: 2,
+            remaining: Some(0),
+            restricted: true,
+            window_start: start,
+        };
+        let inside = Some("2026-10-05T00:00:00.000Z");
+        let before = Some("2026-09-05T00:00:00.000Z");
+        assert_eq!(windowed.held_units(false, inside, 2), 2, "counted");
+        assert_eq!(
+            windowed.held_units(false, before, 2),
+            0,
+            "before the window"
+        );
+        assert_eq!(windowed.held_units(true, inside, 2), 0, "a new owner");
+        assert_eq!(
+            Quota::default().held_units(false, before, 2),
+            2,
+            "no window"
+        );
     }
 
     #[test]

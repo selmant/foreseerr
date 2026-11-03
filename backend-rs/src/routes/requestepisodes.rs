@@ -207,7 +207,12 @@ pub(super) async fn edit(
     };
     let units = episodeselect::quota_units(&resolved.episodes);
     let (_, tv_quota) = forward_on_err!(super::requestcreate::quotas(ctx, request_user).await);
-    if tv_quota.edit_exceeds(e.row.ignore_quota, units, e.row.tv_quota_units) {
+    let held = tv_quota.held_units(
+        e.row.requested_by_id != Some(request_user.0.id),
+        e.row.created_at.as_deref(),
+        e.row.tv_quota_units,
+    );
+    if tv_quota.edit_exceeds(e.row.ignore_quota, units, held) {
         return ctx.error(403, "Series Quota exceeded.");
     }
     let tmdb_id = e.media.as_ref().map_or(0, |m| m.tmdb_id);
@@ -259,30 +264,40 @@ fn edited_json(
     fresh: &RequestRow,
     updated: bool,
 ) -> Value {
-    assign(
-        &mut out,
-        "serverId",
-        body.server_id.map(Value::from),
-        updated,
-    );
-    assign(
-        &mut out,
-        "profileId",
-        body.profile_id.map(Value::from),
-        updated,
-    );
-    assign(
-        &mut out,
-        "rootFolder",
-        body.root_folder.clone().map(Value::from),
-        updated,
-    );
-    assign(
-        &mut out,
-        "languageProfileId",
-        body.language_profile_id.map(Value::from),
-        updated,
-    );
+    if body.routing {
+        assign(
+            &mut out,
+            "serverId",
+            body.server_id.map(Value::from),
+            updated,
+        );
+        assign(
+            &mut out,
+            "profileId",
+            body.profile_id.map(Value::from),
+            updated,
+        );
+        assign(
+            &mut out,
+            "rootFolder",
+            body.root_folder.clone().map(Value::from),
+            updated,
+        );
+        assign(
+            &mut out,
+            "languageProfileId",
+            body.language_profile_id.map(Value::from),
+            updated,
+        );
+        assign(
+            &mut out,
+            "tags",
+            body.tags
+                .as_ref()
+                .map(|t| Value::Array(t.iter().copied().map(Value::from).collect())),
+            updated,
+        );
+    }
     if body.metadata_language_id != super::params::Assign::Keep {
         out.insert(
             String::from("metadataLanguageId"),
@@ -291,14 +306,6 @@ fn edited_json(
                 .map_or(Value::Null, Value::from),
         );
     }
-    assign(
-        &mut out,
-        "tags",
-        body.tags
-            .as_ref()
-            .map(|t| Value::Array(t.iter().copied().map(Value::from).collect())),
-        updated,
-    );
     out.insert(
         String::from("episodes"),
         episodeselect::episodes_json(&r.episodes, PENDING, &fresh.episodes),

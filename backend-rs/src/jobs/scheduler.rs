@@ -99,7 +99,7 @@ const PLEX_JOBS: [JobDef; 4] = [
         "plex-watchlist-sync",
         "Plex Watchlist Sync",
         "Plex Watchlist Sync",
-        "seconds",
+        "minutes",
         Weight::Light,
         Cancel::None,
     ),
@@ -364,6 +364,22 @@ impl Inner {
         }
     }
 
+    /// A rerun of `startJobs()`: every timer cancelled and `scheduledJobs`
+    /// emptied, runs left alone. The generation each job id must be
+    /// scheduled with next, so a timer of the dropped schedule that still
+    /// fires finds itself stale and stops.
+    fn drop_schedule(&mut self) -> HashMap<&'static str, u64> {
+        self.jobs
+            .drain(..)
+            .map(|job| {
+                if let Some(timer) = job.timer {
+                    timer.abort();
+                }
+                (job.def.id, job.generation + 1)
+            })
+            .collect()
+    }
+
     /// `Slots::admit`, refused outright once stopped.
     fn admit(&mut self, id: &str, weight: Weight) -> Option<bool> {
         if self.stopped {
@@ -378,7 +394,11 @@ fn spec_of(value: &Value) -> String {
     crate::media::js_string(Some(value)).into_owned()
 }
 
-/// `startJobs()`: schedule the jobs for the configured media server, once.
+/// `startJobs()`: schedule the jobs for the configured media server.
+///
+/// A later call (a media server was set up after boot) drops the jobs
+/// scheduled before and schedules them again, for the new server; runs in
+/// progress carry on.
 pub async fn start(state: Arc<AppState>) {
     let settings = match state.settings.current().await {
         Ok(settings) => settings,
@@ -400,10 +420,12 @@ pub async fn start(state: Arc<AppState>) {
     };
     let now = crate::clock::now_millis();
     let mut inner = inner();
-    if inner.stopped || !inner.jobs.is_empty() {
+    if inner.stopped {
         return;
     }
+    let previous = inner.drop_schedule();
     for def in server_jobs.iter().chain(COMMON_JOBS.iter()) {
+        let generation = previous.get(def.id).copied().unwrap_or(0);
         let cron_schedule = settings
             .get(&format!("/jobs/{}/schedule", def.id))
             .cloned()
@@ -413,7 +435,13 @@ pub async fn start(state: Arc<AppState>) {
             (
                 false,
                 Some(first),
-                Some(spawn_timer(Arc::clone(&state), def, 0, plan, first)),
+                Some(spawn_timer(
+                    Arc::clone(&state),
+                    def,
+                    generation,
+                    plan,
+                    first,
+                )),
             )
         } else {
             tracing::error!(
@@ -428,7 +456,7 @@ pub async fn start(state: Arc<AppState>) {
             cron_schedule,
             broken,
             next,
-            generation: 0,
+            generation,
             timer,
         });
     }
@@ -820,6 +848,11 @@ mod tests {
             Some(("command", "seconds")),
             "commands"
         );
+        assert_eq!(
+            definition("plex-watchlist-sync").map(|d| d.interval),
+            Some("minutes"),
+            "the watchlist sync runs every few minutes"
+        );
         assert!(definition("nope").is_none(), "unknown");
     }
 
@@ -867,6 +900,35 @@ mod tests {
             inner.job_json(&job).get("nextExecutionTime"),
             Some(&Value::Null),
             "not scheduled"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rerun_replaces_the_schedule() {
+        let Some(def) = definition("plex-watchlist-sync") else {
+            return;
+        };
+        let timer = tokio::spawn(std::future::pending::<()>());
+        let mut inner = Inner::default();
+        inner.jobs.push(Scheduled {
+            def,
+            cron_schedule: Value::from("0 */3 * * * *"),
+            broken: false,
+            next: None,
+            generation: 4,
+            timer: Some(timer.abort_handle()),
+        });
+        let previous = inner.drop_schedule();
+        assert!(
+            timer.await.is_err_and(|e| e.is_cancelled()),
+            "the old timer is cancelled"
+        );
+        assert!(inner.jobs.is_empty(), "scheduledJobs emptied");
+        assert!(!inner.stopped, "jobs can be scheduled again");
+        assert_eq!(
+            previous.get("plex-watchlist-sync"),
+            Some(&5),
+            "the next schedule is a newer generation"
         );
     }
 

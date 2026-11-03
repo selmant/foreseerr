@@ -206,23 +206,8 @@ impl Ratings {
             axios_encode(RT_API_KEY),
             axios_encode(RT_APP_ID)
         );
-        let mut request = Map::new();
-        request.insert(String::from("indexName"), Value::from("content_rt"));
-        request.insert(String::from("query"), Value::from(query));
-        request.insert(
-            String::from("params"),
-            Value::from(format!(
-                "filters={}&hitsPerPage=20",
-                encode_uri_component(filters)
-            )),
-        );
-        let mut body = Map::new();
-        body.insert(
-            String::from("requests"),
-            Value::Array(vec![Value::Object(request)]),
-        );
-        let body = Value::Object(body);
-        let key = format!("{RT_BASE}/queries {body}");
+        let body = rt_search_body(query, filters);
+        let key = rt_search_key(&body);
         let data = if let Some(data) = cached(CacheId::Rt, &key) {
             data
         } else {
@@ -328,6 +313,44 @@ impl Ratings {
             )
             .await?;
         Some(parse_mdblist(&payload))
+    }
+}
+
+/// The body of one Rotten Tomatoes search.
+fn rt_search_body(query: &str, filters: &str) -> Value {
+    let mut request = Map::new();
+    request.insert(String::from("indexName"), Value::from("content_rt"));
+    request.insert(String::from("query"), Value::from(query));
+    request.insert(
+        String::from("params"),
+        Value::from(format!(
+            "filters={}&hitsPerPage=20",
+            encode_uri_component(filters)
+        )),
+    );
+    let mut body = Map::new();
+    body.insert(
+        String::from("requests"),
+        Value::Array(vec![Value::Object(request)]),
+    );
+    Value::Object(body)
+}
+
+/// The `rt` cache key of a search with this body.
+fn rt_search_key(body: &Value) -> String {
+    format!("{RT_BASE}/queries {body}")
+}
+
+/// Put a movie search's hits in the `rt` cache, and the `IMDb` proxy's
+/// answer for `imdb` in its cache, for tests that must not reach them.
+#[cfg(test)]
+pub fn remember_movie_for_tests(name: &str, hits: &Value, imdb: Option<(&str, Value)>) {
+    let body = rt_search_body(&strip_the(name), "isEmsSearchable=1 AND type:\"movie\"");
+    let answer = serde_json::json!({"results": [{"index": "content_rt", "hits": hits}]});
+    memcache::set(CacheId::Rt, rt_search_key(&body), answer, DEFAULT_TTL);
+    if let Some((imdb_id, value)) = imdb {
+        let key = format!("{IMDB_BASE}/movie/imdb/{imdb_id}");
+        memcache::set(CacheId::Imdb, key, value, DEFAULT_TTL);
     }
 }
 

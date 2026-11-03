@@ -40,6 +40,11 @@ pub(super) const ROUTES: &Table = &[
         super::mediaimports::scan,
     ),
     (
+        "/api/v1/media/{id}/servarr/imports/options",
+        Method::GET,
+        super::mediaimports::options,
+    ),
+    (
         "/api/v1/media/{id}/servarr/imports/reprocess",
         Method::POST,
         super::mediaimports::reprocess,

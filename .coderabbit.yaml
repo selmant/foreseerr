@@ -14,7 +14,6 @@ reviews:
   path_filters:
     - '!bun.lock'
     - '!**/bun.lock'
-    - '!devenv.lock'
     - '!dist/**'
     - '!src/i18n/locale/**'
   path_instructions:

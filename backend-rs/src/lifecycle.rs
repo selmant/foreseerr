@@ -445,30 +445,16 @@ impl Lc {
         update_parent_status(&self.state.db, e).await
     }
 
-    /// The configured server for a request: the default for its quality,
-    /// or the request's override.
-    fn pick_server(&self, section: &str, e: &Entity) -> Option<Value> {
+    /// The configured server for a request (see [`pick_server`]).
+    fn pick_server(&self, section: &str, e: &Entity) -> Option<(Value, bool)> {
         let servers = self.settings.get(section).and_then(Value::as_array)?;
-        let mut server = servers
-            .iter()
-            .find(|s| {
-                truthy(s.get("isDefault"))
-                    && s.get("is4k").and_then(Value::as_bool) == Some(e.row.is4k)
-            })
-            .cloned();
-        if let Some(id) = e.row.server_id.filter(|id| *id >= 0) {
-            let has_id = |s: &Value| s.get("id").and_then(Value::as_i64) == Some(id);
-            if !server.as_ref().is_some_and(has_id) {
-                server = servers.iter().find(|s| has_id(s)).cloned();
-            }
-        }
-        server
+        pick_server(servers, e.row.server_id, e.row.is4k, e.row.id)
     }
 
     /// The TVDB id of a show TMDB has none for, from the request's Sonarr:
     /// its `tmdb:` lookup, trusting only a series with the same TMDB id.
     async fn tvdb_from_sonarr(&self, e: &Entity, tmdb_id: i64) -> Option<i64> {
-        let server = self.pick_server("/sonarr", e)?;
+        let (server, _) = self.pick_server("/sonarr", e)?;
         let arr = Arr {
             client: &self.state.servarr,
             server: &server,
@@ -588,7 +574,7 @@ impl Lc {
             tracing::info!("No Radarr server configured, skipping request processing");
             return Ok(());
         }
-        let Some(server) = self.pick_server("/radarr", e) else {
+        let Some((server, overrides)) = self.pick_server("/radarr", e) else {
             tracing::warn!("There is no default Radarr server configured.");
             return Ok(());
         };
@@ -605,19 +591,23 @@ impl Lc {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
-        if let Some(r) = e.row.root_folder.as_ref().filter(|r| !r.is_empty()) {
+        let row = &e.row;
+        if let Some(r) = row
+            .root_folder
+            .as_ref()
+            .filter(|r| overrides && !r.is_empty())
+        {
             if Some(r.as_str()) != server.get("activeDirectory").and_then(Value::as_str) {
                 root = Value::from(r.as_str());
             }
         }
-        if let Some(p) = e.row.profile_id.filter(|p| *p != 0) {
+        if let Some(p) = row.profile_id.filter(|p| overrides && *p != 0) {
             if server.get("activeProfileId").and_then(Value::as_i64) != Some(p) {
                 profile = Value::from(p);
             }
         }
-        if let Value::Array(request_tags) = crate::routes::request::tags_json(e.row.tags.as_deref())
-        {
-            if Some(&request_tags) != server.get("tags").and_then(Value::as_array) {
+        if let Value::Array(request_tags) = crate::routes::request::tags_json(row.tags.as_deref()) {
+            if overrides && Some(&request_tags) != server.get("tags").and_then(Value::as_array) {
                 tags = request_tags;
             }
         }
@@ -817,7 +807,7 @@ impl Lc {
             anyhow::bail!("TVDB ID not found");
         };
         let anime = crate::routes::tv::is_anime(&series);
-        let Some(server) = self.pick_server("/sonarr", e) else {
+        let Some((server, overrides)) = self.pick_server("/sonarr", e) else {
             tracing::warn!("There is no default Sonarr server configured.");
             return Ok(());
         };
@@ -851,24 +841,28 @@ impl Lc {
             .cloned()
             .unwrap_or_default();
         let mut tags = routing_tags.clone();
-        if let Some(r) = e.row.root_folder.as_ref().filter(|r| !r.is_empty()) {
+        let row = &e.row;
+        if let Some(r) = row
+            .root_folder
+            .as_ref()
+            .filter(|r| overrides && !r.is_empty())
+        {
             if Some(r.as_str()) != root.as_str() {
                 root = Value::from(r.as_str());
             }
         }
-        if let Some(p) = e.row.profile_id.filter(|p| *p != 0) {
+        if let Some(p) = row.profile_id.filter(|p| overrides && *p != 0) {
             if profile.as_i64() != Some(p) {
                 profile = Value::from(p);
             }
         }
-        if let Some(l) = e.row.language_profile_id.filter(|l| *l != 0) {
+        if let Some(l) = row.language_profile_id.filter(|l| overrides && *l != 0) {
             if language.as_i64() != Some(l) {
                 language = Value::from(l);
             }
         }
-        if let Value::Array(request_tags) = crate::routes::request::tags_json(e.row.tags.as_deref())
-        {
-            if request_tags != routing_tags {
+        if let Value::Array(request_tags) = crate::routes::request::tags_json(row.tags.as_deref()) {
+            if overrides && request_tags != routing_tags {
                 tags = request_tags;
             }
         }
@@ -895,7 +889,7 @@ impl Lc {
             metadata_language: crate::sonarrmeta::chosen_metadata_language(
                 &server,
                 anime,
-                e.row.metadata_language_id,
+                e.row.metadata_language_id.filter(|_| overrides),
             ),
             root_folder: root,
             title: series.get("name").cloned().unwrap_or(Value::Null),
@@ -1104,7 +1098,8 @@ pub fn episode_code(e: &EpisodeRequestRow) -> String {
 }
 
 /// The first few of `codes` for a log line.
-fn listed(codes: &[String]) -> String {
+#[must_use]
+pub fn listed(codes: &[String]) -> String {
     const SHOWN: usize = 10;
     let shown = codes
         .iter()
@@ -1639,9 +1634,79 @@ fn requested_extra(row: &RequestRow) -> (String, String) {
     }
 }
 
+/// The configured server for a request: the default for its quality, or
+/// the request's override when that is a server of the same quality.
+/// The flag says whether the request's own root folder, profiles and tags
+/// apply: an override id that isn't a server of this quality falls back to
+/// the default server and its settings.
+fn pick_server(
+    servers: &[Value],
+    server_id: Option<i64>,
+    is4k: bool,
+    request_id: i64,
+) -> Option<(Value, bool)> {
+    let same_quality = |s: &Value| s.get("is4k").and_then(Value::as_bool) == Some(is4k);
+    let default = servers
+        .iter()
+        .find(|s| truthy(s.get("isDefault")) && same_quality(s))
+        .cloned();
+    let Some(id) = server_id.filter(|id| *id >= 0) else {
+        return default.map(|s| (s, true));
+    };
+    let has_id = |s: &Value| s.get("id").and_then(Value::as_i64) == Some(id);
+    if default.as_ref().is_some_and(has_id) {
+        return default.map(|s| (s, true));
+    }
+    if let Some(server) = servers.iter().find(|s| has_id(s) && same_quality(s)) {
+        let name = server.get("name").and_then(Value::as_str).unwrap_or("");
+        tracing::info!("Request {request_id} has an override server: {name}");
+        return Some((server.clone(), true));
+    }
+    let quality = if is4k { "4K" } else { "non-4K" };
+    tracing::warn!(
+        "Request {request_id} server ID {id} is not a configured {quality} server, falling back to the default server"
+    );
+    default.map(|s| (s, false))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn override_servers_must_match_the_request_quality() {
+        let servers = vec![
+            serde_json::json!({"id": 0, "isDefault": true, "is4k": false}),
+            serde_json::json!({"id": 1, "isDefault": false, "is4k": false}),
+            serde_json::json!({"id": 2, "isDefault": true, "is4k": true}),
+        ];
+        let id = |picked: Option<(Value, bool)>| {
+            picked.map(|(s, overrides)| (s.get("id").and_then(Value::as_i64), overrides))
+        };
+        assert_eq!(
+            id(pick_server(&servers, None, false, 1)),
+            Some((Some(0), true))
+        );
+        assert_eq!(
+            id(pick_server(&servers, None, true, 1)),
+            Some((Some(2), true))
+        );
+        assert_eq!(
+            id(pick_server(&servers, Some(1), false, 1)),
+            Some((Some(1), true)),
+            "an override of the same quality"
+        );
+        assert_eq!(
+            id(pick_server(&servers, Some(1), true, 1)),
+            Some((Some(2), false)),
+            "a non-4K server for a 4K request falls back without the overrides"
+        );
+        assert_eq!(
+            id(pick_server(&servers, Some(9), false, 1)),
+            Some((Some(0), false)),
+            "an unknown server falls back without the overrides"
+        );
+    }
 
     #[test]
     fn episodes_settle_when_downloaded_or_out_of_reach() {
