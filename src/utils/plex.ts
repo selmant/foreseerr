@@ -156,6 +156,7 @@ class PlexOAuth {
           setTimeout(executePoll, 1000, resolve, reject);
         }
       } catch (e) {
+        // plex.tv intermittently answers 404 for a PIN that is still valid
         const status = axios.isAxiosError(e) ? e.response?.status : undefined;
         if (status === 404 && Date.now() < deadline) {
           setTimeout(executePoll, 1000, resolve, reject);
