@@ -14,7 +14,9 @@ helm install foreseerr oci://ghcr.io/selmant/foreseerr/foreseerr-chart
 
 See [`values.yaml`](./values.yaml) for all options. The chart supports custom
 `dnsPolicy` and `dnsConfig` settings, pod user namespaces through `hostUsers`,
-and scheduling through `priorityClassName`.
+and scheduling through `priorityClassName`. `replicaCount` may be `0` (scaled
+down, for example during a migration) or `1`; Foreseerr does not run as
+multiple replicas.
 
 ## Update Notes
 

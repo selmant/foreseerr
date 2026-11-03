@@ -5,6 +5,11 @@ metadata:
   labels:
     {{- include "foreseerr.labels" . | nindent 4 }}
 spec:
+  {{- $replicas := toString .Values.replicaCount }}
+  {{- if not (or (eq $replicas "0") (eq $replicas "1")) }}
+  {{- fail "replicaCount must be 0 or 1; Foreseerr does not support multiple replicas" }}
+  {{- end }}
+  replicas: {{ .Values.replicaCount | int }}
   serviceName: {{ include "foreseerr.fullname" . }}
   selector:
     matchLabels:
