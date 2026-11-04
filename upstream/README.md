@@ -40,3 +40,24 @@ To work through it:
 5. Once everything is ported or deliberately skipped, run `scripts/upstream-sync.sh bump <sha>`. This pins upstream's spec at that commit, updates `sync.json` and fixes the `x-foreseerr` markers. Commit the result. If CI then reports a breaking change, implement the missing piece; add it to `accepted-breaking.txt` only if the difference is intended, and give the reason.
 
 The weekly issue is regenerated from `sync.json`. Ticking its boxes doesn't change the list; bumping the reviewed commit does.
+
+## The fork's "behind" count
+
+GitHub shows Foreseerr as some number of commits behind `seerr-team/seerr`, because ported and cherry-picked fixes are new commits, not merges. After a sync is bumped, an "ours" merge can mark upstream as merged without changing any files:
+
+```sh
+git fetch upstream develop
+git switch -c chore/mark-upstream-merged github/develop
+git merge -s ours --no-ff upstream/develop -m "chore: record upstream Seerr develop as merged"
+# Continue only if that made a merge commit onto upstream's head that changes no files.
+if [ "$(git rev-parse HEAD^1)" = "$(git rev-parse github/develop)" ] &&
+  [ "$(git rev-parse HEAD^2)" = "$(git rev-parse upstream/develop)" ] &&
+  git diff --quiet github/develop HEAD; then
+  { echo; echo "# Upstream through $(git rev-parse --short HEAD^2), recorded as merged on $(date +%F)"; git rev-parse HEAD; git rev-list HEAD^1..HEAD^2; } >> .cliffignore
+  git commit -am "docs(upstream): keep merged upstream commits out of release notes"
+else
+  echo "Nothing recorded: no new upstream commits, or the merge changed files." >&2
+fi
+```
+
+Merge that PR with **Create a merge commit**. Squash or rebase drops the upstream parent and undoes the effect. The `.cliffignore` lines keep upstream's commit messages out of git-cliff's release notes.
