@@ -15,6 +15,9 @@ import type {
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
+// Set to an invite URL to show a Discord link under Getting Support.
+const DISCORD_URL: string | undefined = undefined;
+
 const messages = defineMessages('components.Settings.SettingsAbout', {
   about: 'About',
   aboutseerr: 'About Foreseerr',
@@ -181,16 +184,18 @@ const SettingsAbout = () => {
               https://github.com/selmant/foreseerr/discussions
             </a>
           </List.Item>
-          <List.Item title="Discord">
-            <a
-              href="https://discord.gg/seerr"
-              target="_blank"
-              rel="noreferrer"
-              className="text-indigo-500 transition duration-300 hover:underline"
-            >
-              https://discord.gg/seerr
-            </a>
-          </List.Item>
+          {DISCORD_URL && (
+            <List.Item title="Discord">
+              <a
+                href={DISCORD_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-indigo-500 transition duration-300 hover:underline"
+              >
+                {DISCORD_URL}
+              </a>
+            </List.Item>
+          )}
         </List>
       </div>
       <div className="section">
