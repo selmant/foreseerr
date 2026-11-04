@@ -25,8 +25,6 @@ const messages = defineMessages('components.Settings.SettingsAbout', {
   githubdiscussions: 'GitHub Discussions',
   timezone: 'Time Zone',
   appDataPath: 'Data Directory',
-  supportseerr: 'Support Foreseerr',
-  contribute: 'Make a Contribution',
   documentation: 'Documentation',
   outofdate: 'Out of Date',
   uptodate: 'Up to Date',
@@ -191,20 +189,6 @@ const SettingsAbout = () => {
               className="text-indigo-500 transition duration-300 hover:underline"
             >
               https://discord.gg/seerr
-            </a>
-          </List.Item>
-        </List>
-      </div>
-      <div className="section">
-        <List title={intl.formatMessage(messages.supportseerr)}>
-          <List.Item title={intl.formatMessage(messages.contribute)}>
-            <a
-              href="https://opencollective.com/seerr"
-              target="_blank"
-              rel="noreferrer"
-              className="text-indigo-500 transition duration-300 hover:underline"
-            >
-              https://opencollective.com/seerr
             </a>
           </List.Item>
         </List>
