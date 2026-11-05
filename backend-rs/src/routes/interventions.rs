@@ -614,6 +614,7 @@ pub(super) async fn rejection_work(
     record: Intervention,
     api_timeout: u64,
     timeout: u64,
+    message: String,
 ) -> Result<(), RejectError> {
     let radarr = record.service_type == "radarr";
     let arr = ArrServer {
@@ -651,12 +652,18 @@ pub(super) async fn rejection_work(
         ));
     }
     let path = format!("/queue/{}", record.queue_id);
+    // Sonarr 5 keeps the message on the blocklist entry; older APIs
+    // don't take one, and the call drops it for them.
     let params = |blocklist: bool| {
-        [
+        let mut params = vec![
             ("removeFromClient", String::from("true")),
             ("blocklist", blocklist.to_string()),
             ("skipRedownload", String::from("false")),
-        ]
+        ];
+        if !radarr {
+            params.push(("message", message.clone()));
+        }
+        params
     };
     match arr
         .request(Method::DELETE, &path, &params(true), None, timeout)
@@ -687,6 +694,36 @@ pub(super) async fn rejection_work(
         }
         Err(e) => Err(RejectError::Arr(e)),
     }
+}
+
+/// The most of a warning the blocklist message quotes.
+const MESSAGE_WARNING_CHARS: usize = 200;
+
+/// Why a download was rejected, as Sonarr 5 keeps it on the blocklist
+/// entry: who rejected it (`None` for the automatic cleanup, blank when
+/// the name couldn't be read) and the first queue warning.
+pub(super) fn rejection_message(actor: Option<&str>, warnings: &Value) -> String {
+    let mut message = match actor.map(str::trim) {
+        Some("") => String::from("Rejected in Foreseerr"),
+        Some(name) => format!("Rejected in Foreseerr by {name}"),
+        None => String::from("Rejected automatically by Foreseerr"),
+    };
+    let warning = warnings.as_array().and_then(|list| {
+        list.iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .find(|w| !w.is_empty())
+    });
+    if let Some(warning) = warning {
+        message.push_str(": ");
+        if warning.chars().count() > MESSAGE_WARNING_CHARS {
+            message.extend(warning.chars().take(MESSAGE_WARNING_CHARS - 1));
+            message.push('…');
+        } else {
+            message.push_str(warning);
+        }
+    }
+    message
 }
 
 /// `mappedToService`.
@@ -743,14 +780,29 @@ fn reject<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         }
         record.state = String::from("rejecting");
         record.cleanup_error = None;
-        let outcome = run_rejection(ctx, &record).await;
+        // Only the blocklist message needs the name: a failed read leaves it out.
+        let actor = db
+            .user_record(user.id)
+            .await
+            .ok()
+            .flatten()
+            .map(|(user, _)| display_name(&user));
+        let message = rejection_message(
+            Some(actor.as_deref().unwrap_or_default()),
+            &record.warning_messages,
+        );
+        let outcome = run_rejection(ctx, &record, message).await;
         finish_rejection(ctx, record, user.id, outcome).await
     })
 }
 
 /// The Arr side of a rejection under the rejection timeout. On timeout the
 /// calls carry on in the background, as Node's `withTimeout` leaves them.
-async fn run_rejection(ctx: &Ready<'_>, record: &Intervention) -> Result<(), RejectError> {
+async fn run_rejection(
+    ctx: &Ready<'_>,
+    record: &Intervention,
+    message: String,
+) -> Result<(), RejectError> {
     let section = if record.service_type == "radarr" {
         "/radarr"
     } else {
@@ -780,6 +832,7 @@ async fn run_rejection(ctx: &Ready<'_>, record: &Intervention) -> Result<(), Rej
         record.clone(),
         timeout_ms(&ctx.settings),
         timeout,
+        message,
     ));
     match tokio::time::timeout(Duration::from_millis(timeout), work).await {
         Ok(Ok(result)) => result,
@@ -871,5 +924,31 @@ mod tests {
             "bad json"
         );
         assert_eq!(string_array(None), serde_json::json!([]), "null");
+    }
+
+    #[test]
+    fn rejection_messages() {
+        let warnings =
+            serde_json::json!(["", "  No files found are eligible for import  ", "second"]);
+        assert_eq!(
+            rejection_message(Some("ann"), &warnings),
+            "Rejected in Foreseerr by ann: No files found are eligible for import"
+        );
+        assert_eq!(
+            rejection_message(None, &serde_json::json!([])),
+            "Rejected automatically by Foreseerr"
+        );
+        assert_eq!(
+            rejection_message(Some(" "), &Value::Null),
+            "Rejected in Foreseerr",
+            "a name that couldn't be read"
+        );
+        let long = "w".repeat(300);
+        let message = rejection_message(Some("bo"), &serde_json::json!([long]));
+        assert_eq!(
+            message.chars().count(),
+            "Rejected in Foreseerr by bo: ".len() + MESSAGE_WARNING_CHARS
+        );
+        assert!(message.ends_with('…'));
     }
 }
