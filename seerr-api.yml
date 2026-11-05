@@ -1321,6 +1321,34 @@ components:
           type: number
           nullable: true
           description: The anime override of `metadataLanguageId`; `metadataLanguageId` applies when null.
+        requiredAudioLanguages:
+          type: array
+          nullable: true
+          items: { type: string }
+          example: ['eng']
+          description: |
+            ISO 639 codes of audio languages; every imported episode file must
+            have at least one of them. A file that has none becomes a `tracks`
+            intervention. Sonarr
+            itself can refuse releases by audio language with a custom format;
+            this check reads the imported file's tracks.
+        requiredSubtitleLanguages:
+          type: array
+          nullable: true
+          items: { type: string }
+          description: ISO 639 codes of subtitle languages; every imported episode file must have at least one of them (embedded tracks only).
+        animeRequiredAudioLanguages:
+          type: array
+          nullable: true
+          items: { type: string }
+          example: ['jpn']
+          description: The anime override of `requiredAudioLanguages`; that applies when null or empty.
+        animeRequiredSubtitleLanguages:
+          type: array
+          nullable: true
+          items: { type: string }
+          example: ['eng']
+          description: The anime override of `requiredSubtitleLanguages`; that applies when null or empty.
         activeAnimeProfileName:
           type: string
           example: 720p/1080p
@@ -1411,6 +1439,7 @@ components:
           state,
           firstSeenAt,
           cleanupDeadlineAt,
+          kind,
         ]
       properties:
         id: { type: integer }
@@ -1426,7 +1455,18 @@ components:
           type: array
           items: { type: string }
         manualImportCapable: { type: boolean }
-        state: { type: string, enum: [active, rejecting, importing, resolved] }
+        state:
+          type: string
+          enum: [active, rejecting, importing, resolved]
+          description: '`rejecting` also covers a `tracks` record being replaced.'
+        kind:
+          type: string
+          enum: [queue, tracks]
+          description: |
+            `queue`: a Radarr or Sonarr queue warning. `tracks`: an imported
+            Sonarr episode file without a required audio or subtitle language
+            (`warningMessages` names what is missing); it is replaced or kept,
+            not rejected.
         resolution:
           type: string
           nullable: true
@@ -1437,6 +1477,8 @@ components:
               manual_blocklist,
               automatic_blocklist,
               manual_import,
+              replaced,
+              kept,
             ]
         cleanupError: { type: string, nullable: true }
         firstSeenAt: { type: string, format: date-time }
@@ -11624,6 +11666,62 @@ paths:
         '200': { description: Seen timestamp updated }
         '401': { description: Unauthorized }
         '403': { description: Insufficient permission }
+  /servarr/interventions/{interventionId}/replace:
+    post:
+      x-foreseerr: true
+      summary: Replace the file of a tracks intervention
+      description: |
+        Deletes the imported episode file, marks its import failed in Sonarr
+        (which blocklists the release), monitors its episodes again and
+        searches for them unless the server prevents searches. Watch-ahead
+        episodes the file completed wait for the new file. Requires
+        `MANAGE_REQUESTS`.
+      tags: [service]
+      parameters:
+        - in: path
+          name: interventionId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: File replaced
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServarrIntervention' }
+        '400': { description: Invalid intervention ID }
+        '401': { description: Unauthorized }
+        '403': { description: Insufficient permission }
+        '404': { description: No tracks intervention with this ID }
+        '409':
+          {
+            description: The record is no longer active or is already being replaced,
+          }
+        '502':
+          {
+            description: Sonarr refused or failed a call; the record stays active with `cleanupError`,
+          }
+  /servarr/interventions/{interventionId}/keep:
+    post:
+      x-foreseerr: true
+      summary: Keep the file of a tracks intervention
+      description: Resolves the record as kept; the file isn't flagged again. Requires `MANAGE_REQUESTS`.
+      tags: [service]
+      parameters:
+        - in: path
+          name: interventionId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: File kept
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServarrIntervention' }
+        '400': { description: Invalid intervention ID }
+        '401': { description: Unauthorized }
+        '403': { description: Insufficient permission }
+        '404': { description: No tracks intervention with this ID }
+        '409': { description: The record is no longer active }
   /servarr/interventions/{interventionId}/reject:
     post:
       x-foreseerr: true

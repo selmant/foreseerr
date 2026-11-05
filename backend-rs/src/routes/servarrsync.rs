@@ -156,7 +156,7 @@ async fn existing_records(db: &Db, service: Service, server_id: i64) -> Result<V
     let rows = db
         .rows(
             &format!(
-                r#"SELECT CAST("id" AS BIGINT) AS "id", "state", CAST("queueId" AS BIGINT) AS "queueId", CAST("actedByUserId" AS BIGINT) AS "actedByUserId", "releaseTitle", "warningMessages", "manualImportCapable", "downloadId", "outputPath", "cleanupError", {} AS "updatedAt" FROM "servarr_intervention" WHERE "serviceType" = ?1 AND "serviceId" = ?2 ORDER BY "id""#,
+                r#"SELECT CAST("id" AS BIGINT) AS "id", "state", CAST("queueId" AS BIGINT) AS "queueId", CAST("actedByUserId" AS BIGINT) AS "actedByUserId", "releaseTitle", "warningMessages", "manualImportCapable", "downloadId", "outputPath", "cleanupError", {} AS "updatedAt" FROM "servarr_intervention" WHERE "serviceType" = ?1 AND "serviceId" = ?2 AND "kind" = 'queue' ORDER BY "id""#,
                 db.iso_sql(r#""updatedAt""#)
             ),
             &[Bind::Text(service.key().to_owned()), Bind::Int(server_id)],
@@ -547,7 +547,7 @@ async fn clean_up_overdue(
     let rows = db
         .rows(
             &format!(
-                r#"SELECT CAST("id" AS BIGINT) AS "id", {} AS "cleanupDeadlineAt" FROM "servarr_intervention" WHERE "serviceType" = ?1 AND "serviceId" = ?2 AND "state" = ?3 ORDER BY "id""#,
+                r#"SELECT CAST("id" AS BIGINT) AS "id", {} AS "cleanupDeadlineAt" FROM "servarr_intervention" WHERE "serviceType" = ?1 AND "serviceId" = ?2 AND "state" = ?3 AND "kind" = 'queue' ORDER BY "id""#,
                 db.iso_sql(r#""cleanupDeadlineAt""#)
             ),
             &[

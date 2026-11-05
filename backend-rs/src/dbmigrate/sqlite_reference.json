@@ -242,6 +242,12 @@
     },
     {
       "type": "index",
+      "name": "IDX_servarr_intervention_file",
+      "tbl_name": "servarr_intervention",
+      "sql": "CREATE INDEX \"IDX_servarr_intervention_file\" ON \"servarr_intervention\" (\"serviceId\", \"episodeFileId\")"
+    },
+    {
+      "type": "index",
       "name": "IDX_servarr_intervention_queue",
       "tbl_name": "servarr_intervention",
       "sql": "CREATE INDEX \"IDX_servarr_intervention_queue\" ON \"servarr_intervention\" (\"serviceType\", \"serviceId\", \"queueId\")"
@@ -406,7 +412,7 @@
       "type": "table",
       "name": "servarr_intervention",
       "tbl_name": "servarr_intervention",
-      "sql": "CREATE TABLE \"servarr_intervention\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"serviceType\" varchar NOT NULL, \"serviceId\" integer NOT NULL, \"serviceName\" varchar NOT NULL, \"is4k\" boolean NOT NULL DEFAULT (0), \"queueId\" integer NOT NULL, \"downloadId\" varchar, \"outputPath\" varchar, \"externalServiceId\" integer NOT NULL, \"mediaId\" integer NOT NULL, \"tmdbId\" integer NOT NULL, \"mediaType\" varchar NOT NULL, \"releaseTitle\" varchar NOT NULL, \"warningMessages\" text NOT NULL, \"manualImportCapable\" boolean NOT NULL DEFAULT (0), \"state\" varchar NOT NULL DEFAULT ('active'), \"resolution\" varchar, \"actedByUserId\" integer, \"cleanupError\" text, \"firstSeenAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"cleanupDeadlineAt\" datetime NOT NULL, \"resolvedAt\" datetime, \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP))"
+      "sql": "CREATE TABLE \"servarr_intervention\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"serviceType\" varchar NOT NULL, \"serviceId\" integer NOT NULL, \"serviceName\" varchar NOT NULL, \"is4k\" boolean NOT NULL DEFAULT (0), \"queueId\" integer NOT NULL, \"downloadId\" varchar, \"outputPath\" varchar, \"externalServiceId\" integer NOT NULL, \"mediaId\" integer NOT NULL, \"tmdbId\" integer NOT NULL, \"mediaType\" varchar NOT NULL, \"releaseTitle\" varchar NOT NULL, \"warningMessages\" text NOT NULL, \"manualImportCapable\" boolean NOT NULL DEFAULT (0), \"state\" varchar NOT NULL DEFAULT ('active'), \"resolution\" varchar, \"actedByUserId\" integer, \"cleanupError\" text, \"firstSeenAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"cleanupDeadlineAt\" datetime NOT NULL, \"resolvedAt\" datetime, \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"kind\" varchar NOT NULL DEFAULT ('queue'), \"episodeFileId\" integer, \"historyId\" integer)"
     },
     {
       "type": "table",
@@ -891,6 +897,11 @@
       "id": 88,
       "timestamp": 1789800000000,
       "name": "AddRequestMetadataLanguage1789800000000"
+    },
+    {
+      "id": 89,
+      "timestamp": 1789900000000,
+      "name": "AddInterventionTrackChecks1789900000000"
     }
   ]
 }

@@ -79,6 +79,7 @@ pub mod simkldiscover;
 mod simklunconfigured;
 mod sonarrstorage;
 pub mod tmdb;
+pub mod trackcheck;
 pub mod trakt;
 pub mod traktpages;
 pub mod traktrecs;
@@ -145,6 +146,7 @@ const TABLES: &[&Table] = &[
     mediawrite::ROUTES,
     mediaservarr::ROUTES,
     interventions::ROUTES,
+    trackcheck::ROUTES,
     library::ROUTES,
     mediaactions::ROUTES,
     metadata::ROUTES,

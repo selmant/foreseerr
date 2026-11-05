@@ -4,7 +4,7 @@
 use super::fallback::ApiRoute;
 
 /// Every documented route.
-pub(super) static ROUTES: [ApiRoute; 257] = [
+pub(super) static ROUTES: [ApiRoute; 259] = [
     ApiRoute {
         template: "/api/v1/auth/jellyfin/plugin",
         segments: &[Some("api"), Some("v1"), Some("auth"), Some("jellyfin"), Some("plugin")],
@@ -646,8 +646,18 @@ pub(super) static ROUTES: [ApiRoute; 257] = [
         methods: &[("POST", true)],
     },
     ApiRoute {
+        template: "/api/v1/servarr/interventions/{interventionId}/keep",
+        segments: &[Some("api"), Some("v1"), Some("servarr"), Some("interventions"), None, Some("keep")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
         template: "/api/v1/servarr/interventions/{interventionId}/reject",
         segments: &[Some("api"), Some("v1"), Some("servarr"), Some("interventions"), None, Some("reject")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/servarr/interventions/{interventionId}/replace",
+        segments: &[Some("api"), Some("v1"), Some("servarr"), Some("interventions"), None, Some("replace")],
         methods: &[("POST", true)],
     },
     ApiRoute {

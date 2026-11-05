@@ -671,4 +671,14 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "AddRequestMetadataLanguage1789800000000",
         queries: &["ALTER TABLE \"media_request\" ADD \"metadataLanguageId\" integer"],
     },
+    Migration {
+        timestamp: 1_789_900_000_000,
+        name: "AddInterventionTrackChecks1789900000000",
+        queries: &[
+            "ALTER TABLE \"servarr_intervention\" ADD \"kind\" character varying NOT NULL DEFAULT 'queue'",
+            "ALTER TABLE \"servarr_intervention\" ADD \"episodeFileId\" integer",
+            "ALTER TABLE \"servarr_intervention\" ADD \"historyId\" integer",
+            "CREATE INDEX \"IDX_servarr_intervention_file\" ON \"servarr_intervention\" (\"serviceId\", \"episodeFileId\")",
+        ],
+    },
 ];
