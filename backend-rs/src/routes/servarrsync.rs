@@ -15,8 +15,8 @@ use serde_json::{Map, Value};
 
 use super::arrcall::ArrServer;
 use super::interventions::{
-    date_bind, date_param, js_slice, load, mapped_to_service, rejection_timeout, rejection_work,
-    save, RejectError,
+    date_bind, date_param, js_slice, load, mapped_to_service, rejection_message, rejection_timeout,
+    rejection_work, save, RejectError,
 };
 use super::mediawrite::timeout_ms;
 use crate::clock::Utc;
@@ -627,6 +627,7 @@ async fn reject_automatically(state: &Arc<AppState>, settings: &Settings, id: i6
                 record.clone(),
                 timeout_ms(settings),
                 timeout,
+                rejection_message(None, &record.warning_messages),
             ));
             match tokio::time::timeout(Duration::from_millis(timeout), work).await {
                 Ok(Ok(result)) => result,

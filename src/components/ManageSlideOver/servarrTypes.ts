@@ -6,12 +6,33 @@ export type Episode = {
   hasFile: boolean;
   monitored: boolean;
   queueStatus?: 'downloading' | 'queued' | 'importing' | 'manual-import';
+  /** Sonarr 5: when the episode was last grabbed. */
+  grabDate?: string;
+  /** Monitored, no file, grabbed over 6 hours ago and no longer queued. */
+  grabStalled?: boolean;
+  /** The embedded tracks of the episode's file, when Sonarr read them. */
+  tracks?: EpisodeTracks;
+};
+
+/** Lowercased ISO 639-2 codes (`jpn`, `eng`; `und` for none named). */
+export type EpisodeTracks = {
+  audioLanguages: string[];
+  subtitleLanguages: string[];
+};
+
+export type ServarrSeason = {
+  seasonNumber: number;
+  episodes: Episode[];
+  /** Sonarr 5: the quality names of the season's files. */
+  fileQualities?: string[];
+  /** Sonarr 5: `singleEpisode`, `multiEpisode`, `seasonPack`, ... */
+  releaseTypes?: string[];
 };
 
 export type ServarrContext = {
   mediaType: 'movie' | 'tv';
   service: { type: string; name: string };
-  seasons?: { seasonNumber: number; episodes: Episode[] }[];
+  seasons?: ServarrSeason[];
   nativeUrl?: string;
   /** The series' episode order, where Sonarr reports one (Sonarr 5). */
   seasonOrder?: { type: string; name?: string };
