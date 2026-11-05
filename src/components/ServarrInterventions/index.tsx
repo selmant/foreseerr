@@ -58,11 +58,11 @@ const messages = defineMessages('components.ServarrInterventions', {
   description:
     'Review Sonarr and Radarr download warnings and resolve blocked imports.',
   active: 'Active',
-  history: 'Blocklist history',
+  history: 'History',
   allServices: 'All',
   allTypes: 'All',
   emptyActive: 'No active warnings.',
-  emptyHistory: 'No Foreseerr blocklist history.',
+  emptyHistory: 'No Foreseerr intervention history.',
   loadError: 'Unable to load interventions.',
   firstSeen: 'First seen {date}',
   overdue: 'Automatic rejection due',
@@ -87,13 +87,13 @@ const messages = defineMessages('components.ServarrInterventions', {
   emptyActiveDescription:
     'Queue warnings from mapped Sonarr and Radarr downloads will appear here.',
   emptyHistoryDescription:
-    'Releases Foreseerr rejects and blocklists will be listed here.',
+    'Releases Foreseerr rejects, blocklists or replaces, and files kept, will be listed here.',
   activeHelp:
     'Use Manual Import to choose files to add to your library. Reject and Blocklist removes the download and prevents this release from being grabbed again.',
   historyHelp:
-    'Releases blocklisted by Foreseerr, with the time and reason for each action.',
+    'Releases Foreseerr blocklisted or replaced, and files kept, with the time and reason for each action.',
   actionGuide: 'How to resolve warnings',
-  historyGuide: 'About blocklist history',
+  historyGuide: 'About intervention history',
   cleanupEnabled:
     'Automatic cleanup is on. Overdue warnings will be rejected and blocklisted.',
   cleanupDisabled:
@@ -123,6 +123,23 @@ const messages = defineMessages('components.ServarrInterventions', {
   importRelease: 'Manual Import: {release}',
   rejectRelease: 'Reject and Blocklist: {release}',
   manageRelease: 'Manage downloads: {release}',
+  tracksReason: 'Missing required languages',
+  tracksHelp:
+    'This imported file lacks a language {service} requires. Replace deletes the file, blocklists its release and searches again; Keep leaves the file and stops flagging it.',
+  replace: 'Replace',
+  replacing: 'Replacing…',
+  keep: 'Keep',
+  replaceTitle: 'Replace this file?',
+  replaceExplanation:
+    'This deletes the file, blocklists the release in {service} and searches for the episode again.',
+  replaced: 'File deleted; searching for another release.',
+  replaceFailed: 'Replacing the file failed.',
+  kept: 'File kept.',
+  keepFailed: 'Keeping the file failed.',
+  replacedBy: 'Replaced{actor}',
+  keptBy: 'Kept{actor}',
+  replaceRelease: 'Replace: {release}',
+  keepRelease: 'Keep: {release}',
 });
 
 const InterventionTitle = ({ item }: { item: ServarrIntervention }) => {
@@ -273,11 +290,24 @@ const ServarrInterventions = () => {
       .catch(() => undefined);
   }, []);
 
-  const reject = async (item: ServarrIntervention) => {
+  const act = async (
+    item: ServarrIntervention,
+    action: 'reject' | 'replace' | 'keep'
+  ) => {
+    const done = {
+      reject: messages.rejected,
+      replace: messages.replaced,
+      keep: messages.kept,
+    }[action];
+    const failed = {
+      reject: messages.rejectFailed,
+      replace: messages.replaceFailed,
+      keep: messages.keepFailed,
+    }[action];
     setPendingIds((current) => new Set(current).add(item.id));
     try {
-      await axios.post(`/api/v1/servarr/interventions/${item.id}/reject`);
-      addToast(intl.formatMessage(messages.rejected), {
+      await axios.post(`/api/v1/servarr/interventions/${item.id}/${action}`);
+      addToast(intl.formatMessage(done), {
         appearance: 'success',
         autoDismiss: true,
       });
@@ -288,9 +318,8 @@ const ServarrInterventions = () => {
     } catch (requestError) {
       addToast(
         axios.isAxiosError(requestError)
-          ? (requestError.response?.data?.message ??
-              intl.formatMessage(messages.rejectFailed))
-          : intl.formatMessage(messages.rejectFailed),
+          ? (requestError.response?.data?.message ?? intl.formatMessage(failed))
+          : intl.formatMessage(failed),
         { appearance: 'error', autoDismiss: true }
       );
       await refresh();
@@ -514,9 +543,11 @@ const ServarrInterventions = () => {
                     <div className="mt-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3 text-sm">
                       <h3 className="mb-1 font-medium text-yellow-100">
                         {intl.formatMessage(
-                          mode === 'active'
-                            ? messages.warningReason
-                            : messages.historicalWarning
+                          item.kind === 'tracks'
+                            ? messages.tracksReason
+                            : mode === 'active'
+                              ? messages.warningReason
+                              : messages.historicalWarning
                         )}
                       </h3>
                       {item.warningMessages.length > 0 ? (
@@ -547,12 +578,13 @@ const ServarrInterventions = () => {
                               timeStyle: 'short',
                             }),
                           })}
-                          {cleanupSettings?.automaticCleanupEnabled && (
-                            <>
-                              {' · '}
-                              <Countdown deadline={item.cleanupDeadlineAt} />
-                            </>
-                          )}
+                          {cleanupSettings?.automaticCleanupEnabled &&
+                            item.kind !== 'tracks' && (
+                              <>
+                                {' · '}
+                                <Countdown deadline={item.cleanupDeadlineAt} />
+                              </>
+                            )}
                         </>
                       ) : (
                         <>
@@ -565,13 +597,20 @@ const ServarrInterventions = () => {
                           ·{' '}
                           {item.resolution === 'automatic_blocklist'
                             ? intl.formatMessage(messages.automaticCleanup)
-                            : intl.formatMessage(messages.manualRejection, {
-                                actor: item.actor
-                                  ? intl.formatMessage(messages.byActor, {
-                                      name: item.actor.displayName,
-                                    })
-                                  : '',
-                              })}
+                            : intl.formatMessage(
+                                item.resolution === 'replaced'
+                                  ? messages.replacedBy
+                                  : item.resolution === 'kept'
+                                    ? messages.keptBy
+                                    : messages.manualRejection,
+                                {
+                                  actor: item.actor
+                                    ? intl.formatMessage(messages.byActor, {
+                                        name: item.actor.displayName,
+                                      })
+                                    : '',
+                                }
+                              )}
                         </>
                       )}
                     </div>
@@ -583,9 +622,11 @@ const ServarrInterventions = () => {
                   {!inProgress(item) && (
                     <p className="max-w-2xl text-sm leading-6 text-gray-400">
                       {intl.formatMessage(
-                        item.manualImportCapable
-                          ? messages.reviewFiles
-                          : messages.importUnavailable,
+                        item.kind === 'tracks'
+                          ? messages.tracksHelp
+                          : item.manualImportCapable
+                            ? messages.reviewFiles
+                            : messages.importUnavailable,
                         { service: item.serviceName }
                       )}
                     </p>
@@ -603,7 +644,45 @@ const ServarrInterventions = () => {
                         {intl.formatMessage(messages.manageDownloads)}
                       </span>
                     </LinkButton>
-                    {item.manualImportCapable && (
+                    {item.kind === 'tracks' && (
+                      <>
+                        <Button
+                          className="min-h-11"
+                          disabled={inProgress(item)}
+                          onClick={() => void act(item, 'keep')}
+                          aria-label={intl.formatMessage(messages.keepRelease, {
+                            release: item.releaseTitle,
+                          })}
+                        >
+                          <CheckCircleIcon />
+                          <span>{intl.formatMessage(messages.keep)}</span>
+                        </Button>
+                        <Button
+                          buttonType="danger"
+                          className="min-h-11"
+                          disabled={inProgress(item)}
+                          onClick={() => setRejectItem(item)}
+                          aria-label={intl.formatMessage(
+                            messages.replaceRelease,
+                            { release: item.releaseTitle }
+                          )}
+                        >
+                          {inProgress(item) ? (
+                            <ArrowPathIcon className="animate-spin" />
+                          ) : (
+                            <NoSymbolIcon />
+                          )}
+                          <span>
+                            {intl.formatMessage(
+                              inProgress(item)
+                                ? messages.replacing
+                                : messages.replace
+                            )}
+                          </span>
+                        </Button>
+                      </>
+                    )}
+                    {item.kind !== 'tracks' && item.manualImportCapable && (
                       <Button
                         buttonType="primary"
                         className="min-h-11"
@@ -627,7 +706,7 @@ const ServarrInterventions = () => {
                         </span>
                       </Button>
                     )}
-                    {inProgress(item) ? (
+                    {item.kind === 'tracks' ? null : inProgress(item) ? (
                       <Button buttonType="danger" className="min-h-11" disabled>
                         {item.state === 'importing' ? (
                           <span>{intl.formatMessage(messages.reject)}</span>
@@ -709,12 +788,19 @@ const ServarrInterventions = () => {
         <div className="fixed inset-0 flex items-center justify-center overflow-y-auto p-4">
           <DialogPanel className="w-full max-w-lg space-y-4 rounded-xl bg-gray-800 p-5 shadow-xl ring-1 ring-gray-700">
             <DialogTitle className="text-xl font-semibold text-white">
-              {intl.formatMessage(messages.rejectTitle)}
+              {intl.formatMessage(
+                rejectItem?.kind === 'tracks'
+                  ? messages.replaceTitle
+                  : messages.rejectTitle
+              )}
             </DialogTitle>
             <Description className="text-sm leading-6 text-gray-300">
-              {intl.formatMessage(messages.rejectExplanation, {
-                service: rejectItem?.serviceName ?? '',
-              })}
+              {intl.formatMessage(
+                rejectItem?.kind === 'tracks'
+                  ? messages.replaceExplanation
+                  : messages.rejectExplanation,
+                { service: rejectItem?.serviceName ?? '' }
+              )}
             </Description>
             <p className="break-all rounded-lg bg-gray-900/70 p-3 font-mono text-xs text-gray-300">
               {rejectItem?.releaseTitle}
@@ -731,11 +817,20 @@ const ServarrInterventions = () => {
                 buttonType="danger"
                 className="min-h-11"
                 onClick={() => {
-                  if (rejectItem) void reject(rejectItem);
+                  if (rejectItem) {
+                    void act(
+                      rejectItem,
+                      rejectItem.kind === 'tracks' ? 'replace' : 'reject'
+                    );
+                  }
                   setRejectItem(undefined);
                 }}
               >
-                {intl.formatMessage(messages.reject)}
+                {intl.formatMessage(
+                  rejectItem?.kind === 'tracks'
+                    ? messages.replace
+                    : messages.reject
+                )}
               </Button>
             </div>
           </DialogPanel>

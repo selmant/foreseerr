@@ -11,12 +11,16 @@ export type ServarrIntervention = {
   warningMessages: string[];
   manualImportCapable: boolean;
   state: 'active' | 'rejecting' | 'importing' | 'resolved';
+  /** `tracks`: an imported file without a required audio or subtitle language. */
+  kind: 'queue' | 'tracks';
   resolution?:
     | 'recovered'
     | 'disappeared'
     | 'manual_blocklist'
     | 'automatic_blocklist'
-    | 'manual_import';
+    | 'manual_import'
+    | 'replaced'
+    | 'kept';
   cleanupError?: string;
   firstSeenAt: string;
   cleanupDeadlineAt: string;

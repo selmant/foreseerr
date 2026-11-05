@@ -84,6 +84,13 @@ Enable this setting if you would like to scan your Radarr/Sonarr server for exis
 
 Enable this setting to have Radarr/Sonarr automatically search for media upon approval of a request.
 
+#### Required Audio and Subtitle Languages (Sonarr, optional)
+
+Languages an imported episode's tracks must include: at least one from each
+list, with separate lists for anime. A file without one shows up in
+[Interventions](/using-seerr/interventions#required-languages) to replace or
+keep. The check needs **Enable Scan**. Only subtitles inside the file count.
+
 ## Intervention cleanup
 
 On the same Integrations page, **Intervention cleanup** can automatically

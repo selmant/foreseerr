@@ -136,6 +136,13 @@ export interface SonarrSettings extends DVRSettings {
   activeAnimeProfileName?: string;
   activeAnimeDirectory?: string;
   activeAnimeLanguageProfileId?: number;
+  /** ISO 639-2 codes; an imported episode file's audio must include one. */
+  requiredAudioLanguages?: string[] | null;
+  /** ISO 639-2 codes; an imported episode file's subtitles must include one. */
+  requiredSubtitleLanguages?: string[] | null;
+  /** Anime overrides of the two above; those apply when null or empty. */
+  animeRequiredAudioLanguages?: string[] | null;
+  animeRequiredSubtitleLanguages?: string[] | null;
   activeLanguageProfileId?: number;
   /** Sonarr 5: the metadata language series are added with. */
   metadataLanguageId?: number | null;

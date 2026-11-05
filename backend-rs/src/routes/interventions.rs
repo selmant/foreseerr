@@ -72,12 +72,25 @@ pub(super) struct Intervention {
     pub(super) first_seen_at: Value,
     pub(super) cleanup_deadline_at: Value,
     pub(super) resolved_at: Option<String>,
+    /// `queue` for a queue warning, `tracks` for an imported file that
+    /// lacks a required audio or subtitle language.
+    pub(super) kind: String,
+    /// The imported file a `tracks` record is about.
+    pub(super) episode_file_id: Option<i64>,
+    /// The import's history record, which Sonarr marks failed to
+    /// blocklist the release.
+    pub(super) history_id: Option<i64>,
 }
+
+/// A queue warning.
+pub(super) const QUEUE: &str = "queue";
+/// An imported file without a required language.
+pub(super) const TRACKS: &str = "tracks";
 
 /// The select list, dates as `Date.toJSON` prints them.
 fn columns(db: &Db) -> String {
     format!(
-        r#"CAST("id" AS BIGINT) AS "id", "serviceType", CAST("serviceId" AS BIGINT) AS "serviceId", "serviceName", "is4k", CAST("queueId" AS BIGINT) AS "queueId", "downloadId", CAST("externalServiceId" AS BIGINT) AS "externalServiceId", CAST("mediaId" AS BIGINT) AS "mediaId", CAST("tmdbId" AS BIGINT) AS "tmdbId", "mediaType", "releaseTitle", "warningMessages", "manualImportCapable", "state", "resolution", CAST("actedByUserId" AS BIGINT) AS "actedByUserId", "cleanupError", {} AS "firstSeenAt", {} AS "cleanupDeadlineAt", {} AS "resolvedAt""#,
+        r#"CAST("id" AS BIGINT) AS "id", "serviceType", CAST("serviceId" AS BIGINT) AS "serviceId", "serviceName", "is4k", CAST("queueId" AS BIGINT) AS "queueId", "downloadId", CAST("externalServiceId" AS BIGINT) AS "externalServiceId", CAST("mediaId" AS BIGINT) AS "mediaId", CAST("tmdbId" AS BIGINT) AS "tmdbId", "mediaType", "releaseTitle", "warningMessages", "manualImportCapable", "state", "resolution", CAST("actedByUserId" AS BIGINT) AS "actedByUserId", "cleanupError", {} AS "firstSeenAt", {} AS "cleanupDeadlineAt", {} AS "resolvedAt", "kind", CAST("episodeFileId" AS BIGINT) AS "episodeFileId", CAST("historyId" AS BIGINT) AS "historyId""#,
         db.iso_sql(r#""firstSeenAt""#),
         db.iso_sql(r#""cleanupDeadlineAt""#),
         db.iso_sql(r#""resolvedAt""#)
@@ -127,6 +140,9 @@ fn from_row(row: &Map<String, Value>) -> Option<Intervention> {
         first_seen_at: raw("firstSeenAt"),
         cleanup_deadline_at: raw("cleanupDeadlineAt"),
         resolved_at: text("resolvedAt"),
+        kind: text("kind").unwrap_or_else(|| String::from(QUEUE)),
+        episode_file_id: int("episodeFileId"),
+        history_id: int("historyId"),
     })
 }
 
@@ -174,6 +190,7 @@ pub(super) fn public_json(i: &Intervention) -> Map<String, Value> {
         i.cleanup_deadline_at.clone(),
     );
     out.insert(String::from("resolvedAt"), opt_text(&i.resolved_at));
+    out.insert(String::from("kind"), Value::from(i.kind.as_str()));
     out
 }
 
@@ -374,7 +391,7 @@ fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let q = try_forward!(list_query(ctx.req.uri.query().unwrap_or("")));
         let db = &ctx.state.db;
         let mut sql = String::from(if q.history {
-            r#" WHERE "resolution" IN ('manual_blocklist', 'automatic_blocklist')"#
+            r#" WHERE "resolution" IN ('manual_blocklist', 'automatic_blocklist', 'replaced', 'kept')"#
         } else {
             r#" WHERE "state" IN ('active', 'rejecting', 'importing')"#
         });
@@ -761,6 +778,9 @@ fn reject<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 return ctx.json(&Value::Object(public_json(&record)));
             }
             return ctx.error(409, "This warning is no longer active.");
+        }
+        if record.kind != QUEUE {
+            return ctx.error(409, "This file is replaced or kept, not rejected.");
         }
         // The claim is a write: its failure is answered here.
         let claimed = fail_on_err!(ctx, db

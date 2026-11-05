@@ -58,7 +58,7 @@ const RADARR_FIELDS: [Field; 16] = [
 ];
 
 /// `SonarrSettings` in the spec.
-const SONARR_FIELDS: [Field; 23] = [
+const SONARR_FIELDS: [Field; 27] = [
     req("name", Ty::Str),
     req("hostname", Ty::Str),
     req("port", Ty::Num),
@@ -75,6 +75,10 @@ const SONARR_FIELDS: [Field; 23] = [
     nullable("activeAnimeDirectory", Ty::Str),
     nullable("metadataLanguageId", Ty::Num),
     nullable("animeMetadataLanguageId", Ty::Num),
+    nullable("requiredAudioLanguages", Ty::StrList),
+    nullable("requiredSubtitleLanguages", Ty::StrList),
+    nullable("animeRequiredAudioLanguages", Ty::StrList),
+    nullable("animeRequiredSubtitleLanguages", Ty::StrList),
     req("is4k", Ty::Bool),
     req("enableSeasonFolders", Ty::Bool),
     req("isDefault", Ty::Bool),
