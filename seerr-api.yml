@@ -11628,7 +11628,7 @@ paths:
     post:
       x-foreseerr: true
       summary: Reject and release-blocklist one warning
-      description: "Revalidates the exact mapped warning before deleting it from the client and blocklisting it in Arr. On Sonarr 5 the blocklist entry keeps why: `Rejected in Foreseerr by <user>: <first queue warning>` (`Rejected automatically by Foreseerr: ...` for the cleanup deadline). Requires `MANAGE_REQUESTS`."
+      description: 'Revalidates the exact mapped warning before deleting it from the client and blocklisting it in Arr. On Sonarr 5 the blocklist entry keeps why: `Rejected in Foreseerr by <user>: <first queue warning>` (`Rejected automatically by Foreseerr: ...` for the cleanup deadline). Requires `MANAGE_REQUESTS`.'
       tags: [service]
       parameters:
         - in: path
