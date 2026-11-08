@@ -43,7 +43,7 @@ const PLAN_SCOPE: &str = "chatgpt.tokens.use.direct";
 const FIRST_CLIENT: &str = "dynamic_agent_client";
 const AGENT_NAME: &str = "Foreseerr";
 /// How long a started sign-in stays valid.
-const ATTEMPT_TTL: Duration = Duration::from_secs(15 * 60);
+const ATTEMPT_TTL: Duration = Duration::from_mins(15);
 /// Started sign-ins one user may have open at once.
 const ATTEMPTS_PER_USER: usize = 3;
 /// Refresh this long before the access token expires.
@@ -75,7 +75,7 @@ static REFRESHING: LazyLock<Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>> =
 
 /// `OpenAI`'s signing keys, with when they were fetched.
 static JWKS: LazyLock<Mutex<Option<(Instant, Value)>>> = LazyLock::new(Mutex::default);
-const JWKS_TTL: Duration = Duration::from_secs(3600);
+const JWKS_TTL: Duration = Duration::from_hours(1);
 
 fn random_token(bytes: usize) -> Result<String, AiError> {
     let mut buf = vec![0u8; bytes];
