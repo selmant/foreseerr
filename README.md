@@ -41,8 +41,8 @@ the web through SearXNG, and explains why each pick fits.
 - **Your connection.** Use the admin's OpenAI-compatible endpoint, connect your
   own endpoint when allowed, or link your own ChatGPT account. The active
   connection and model are always visible.
-- **Your taste.** Like, pass, or mark a title seen. Requests and later watches
-  can inform an editable taste card; watch-history sharing is opt-in.
+- **Your taste.** Like, pass, or mark a title seen. Requests and feedback
+  inform an editable taste card; watch-history sharing is opt-in.
 - **Useful filters.** Choose movies, series or anime, and narrow picks to your
   library or titles you still need to request. Refine with a chip or your own words.
 - **Less waiting.** Save prompts as personal Discover rows. A nightly job
@@ -105,6 +105,49 @@ You still click Request on a title. Discover and AI picks never request titles a
 ![Discover with a personalized AI row and trending titles](docs/images/screenshots/discover.png)
 
 See [Discover](docs/using-seerr/discover.md), [Library](docs/using-seerr/library.md), [Calendar](docs/using-seerr/calendar.md), [Integrations](docs/using-seerr/settings/integrations.md), and [Mapping](docs/using-seerr/settings/mapping.md).
+
+## Browse Trakt, Simkl and AniList
+
+Explore community charts and seasonal anime, or link an account to bring your
+own lists and watch history into Discover. Provider titles map to TMDB so you
+can open their details and request them through the same workflow.
+
+![Trakt Trending with content filters and community rating badges on posters](docs/images/screenshots/trakt.png)
+
+<details>
+<summary>Simkl: trending movies, series and anime</summary>
+
+Choose a content type and time period, or switch to a linked account's watching,
+plan-to-watch and completed views.
+
+![Simkl Trending with content-type and time-period controls](docs/images/screenshots/simkl.png)
+
+</details>
+
+<details>
+<summary>AniList: trending, seasonal picks and personal lists</summary>
+
+![AniList Trending with anime posters and navigation to seasonal and personal views](docs/images/screenshots/anilist.png)
+
+</details>
+
+These screenshots use public chart data in a demo account. Personal library
+status and account details are omitted.
+
+## Ratings where you browse
+
+Compare TMDB, IMDb, Rotten Tomatoes critics and audience, Metacritic and Trakt
+community scores on title pages. MDBList supplies the external ratings; choose
+which badges appear on posters and use rating ranges to narrow Discover results.
+
+![A series detail page showing ratings from multiple sources beside its overview](docs/images/screenshots/ratings.png)
+
+<details>
+<summary>Filter Discover by external ratings</summary>
+
+![Discover filters for IMDb score and votes, Rotten Tomatoes, Metacritic and Trakt community ratings](docs/images/screenshots/rating-filters.png)
+
+</details>
 
 ## Installation
 
