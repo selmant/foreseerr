@@ -1,10 +1,11 @@
+import { visibleAiPicks } from '@shared/lib/aiVisibility';
+import { Permission } from '@shared/lib/permissions';
 import AiPickCard from '@app/components/Ai/AiPickCard';
 import { aiErrorOf } from '@app/components/Ai/aiError';
 import {
   isWorking,
-  sendFeedback,
+  useAiFeedback,
   useAiRun,
-  withFeedback,
 } from '@app/components/Ai/useAiRun';
 import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
@@ -14,7 +15,7 @@ import type { SegmentedOption } from '@app/components/Common/SegmentedControl';
 import SegmentedControl from '@app/components/Common/SegmentedControl';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
-import { Permission, useUser } from '@app/hooks/useUser';
+import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -212,12 +213,13 @@ const AiPicks = () => {
   const { data: me, mutate: mutateMe } = useSWR<AiMe>('/api/v1/ai/me');
   const { data: recent, mutate: mutateRecent } =
     useSWR<AiRunSummary[]>('/api/v1/ai/runs');
-  const { data: run, mutate: mutateRun } = useAiRun(runParam);
+  const { data: run, error: runError, mutate: mutateRun } = useAiRun(runParam);
   const { data: seedTitle } = useSWR<{ title?: string; name?: string }>(
     seed && !runParam ? `/api/v1/${seed.mediaType}/${seed.tmdbId}` : null
   );
 
   const working = starting || isWorking(run);
+  const saveFeedback = useAiFeedback(run, mutateRun);
 
   const start = async (request: AiRecommendRequest) => {
     setStarting(true);
@@ -273,28 +275,9 @@ const AiPicks = () => {
   }
 
   const onFeedback = async (pick: AiPick, verdict: AiVerdict | null) => {
-    if (!run) {
-      return;
-    }
-    const previous = pick.feedback;
-    mutateRun((current) => withFeedback(current ?? run, pick, verdict), {
-      revalidate: false,
-    });
     try {
-      await sendFeedback(pick, verdict);
+      await saveFeedback(pick, verdict);
     } catch {
-      mutateRun(
-        (current) => {
-          const latest = current ?? run;
-          const feedback = latest.result?.picks.find(
-            (p) => p.mediaType === pick.mediaType && p.tmdbId === pick.tmdbId
-          )?.feedback;
-          return feedback === verdict
-            ? withFeedback(latest, pick, previous)
-            : latest;
-        },
-        { revalidate: false }
-      );
       addToast(intl.formatMessage(messages.feedbackFailed), {
         appearance: 'error',
         autoDismiss: true,
@@ -553,6 +536,23 @@ const AiPicks = () => {
         ) : null}
       </div>
 
+      {runError ? (
+        <div className="mb-4">
+          <Alert
+            type="error"
+            title={
+              aiErrorOf(runError, intl.formatMessage(globalMessages.error))
+                .message
+            }
+          />
+          <Button onClick={() => void mutateRun()}>
+            {intl.formatMessage(globalMessages.retry)}
+          </Button>
+          <Button onClick={() => setSearchParams({})}>
+            {intl.formatMessage(messages.startOver)}
+          </Button>
+        </div>
+      ) : null}
       {working ? (
         <div className="mt-8" data-testid="ai-working">
           <div className="max-w-5xl">
@@ -646,7 +646,14 @@ const AiPicks = () => {
             {intl.formatMessage(messages.feedbackHint)}
           </p>
           <ul className="cards-vertical">
-            {run.result.picks.map((pick) => (
+            {visibleAiPicks(
+              run.result.picks,
+              settings.currentSettings,
+              hasPermission(
+                [Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST],
+                { type: 'or' }
+              )
+            ).map((pick) => (
               <li key={`${pick.mediaType}-${pick.tmdbId}`}>
                 <AiPickCard pick={pick} onFeedback={onFeedback} canExpand />
               </li>

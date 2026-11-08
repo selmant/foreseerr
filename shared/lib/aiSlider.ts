@@ -16,6 +16,12 @@ export const parseAiSlider = (data?: string): AiSliderConfig => {
       value.request &&
       typeof value.request === 'object'
     ) {
+      if (
+        typeof value.request.prompt !== 'string' &&
+        value.request.prompt != null
+      ) {
+        return { version: 1, request: { prompt: '' } };
+      }
       return value as AiSliderConfig;
     }
   } catch {

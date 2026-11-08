@@ -174,7 +174,7 @@ mod tests {
             store::create_run(db, 1, &other.to_json(None), "own", None).await?;
         }
         store::create_run(db, 2, &request.to_json(None), "own", None).await?;
-        let found = store::row_runs(db, 1, &request.cache_key()).await?;
+        let found = store::row_runs(db, 1, &request).await?;
         assert_eq!(found.iter().map(|r| r.id).collect::<Vec<_>>(), [wanted]);
         assert_ne!(
             request.cache_key(),
@@ -199,7 +199,7 @@ mod tests {
             ],
         )
         .await?;
-        let legacy = store::row_runs(db, 1, &request.cache_key()).await?;
+        let legacy = store::row_runs(db, 1, &request).await?;
         assert!(legacy.first().is_some_and(|r| matches_request(r, &request)));
         Ok(())
     }

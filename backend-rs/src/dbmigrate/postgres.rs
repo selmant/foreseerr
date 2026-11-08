@@ -693,7 +693,18 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         timestamp: 1_790_100_000_000,
         name: "UniqueAiServerConnection1790100000000",
         queries: &[
+            "DELETE FROM \"ai_connection\" WHERE \"userId\" IS NULL AND \"id\" <> (SELECT MIN(\"id\") FROM \"ai_connection\" WHERE \"userId\" IS NULL)",
             "CREATE UNIQUE INDEX \"UQ_ai_connection_server\" ON \"ai_connection\" ((1)) WHERE \"userId\" IS NULL",
+        ],
+    },
+    Migration {
+        timestamp: 1_790_200_000_000,
+        name: "AiStateVersions1790200000000",
+        queries: &[
+            "ALTER TABLE \"ai_connection\" ADD \"sessionVersion\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE \"ai_feedback\" ADD \"version\" integer NOT NULL DEFAULT 1",
+            "ALTER TABLE \"ai_feedback\" ADD \"learnedVersion\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE \"ai_taste\" ADD \"version\" integer NOT NULL DEFAULT 1",
         ],
     },
 ];

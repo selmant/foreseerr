@@ -201,4 +201,8 @@ pub(super) const STATEMENTS: &[&str] = &[
     "CREATE INDEX \"IDX_ai_run_user_created\" ON \"ai_run\" (\"userId\", \"createdAt\") ",
     "CREATE TABLE \"ai_feedback\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" varchar NOT NULL, \"title\" varchar NOT NULL DEFAULT (''), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_feedback_user_title\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_feedback_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
     "CREATE TABLE \"ai_taste\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"card\" text NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_taste_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_taste_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
+    "ALTER TABLE \"ai_connection\" ADD \"sessionVersion\" integer NOT NULL DEFAULT 0",
+    "ALTER TABLE \"ai_feedback\" ADD \"version\" integer NOT NULL DEFAULT 1",
+    "ALTER TABLE \"ai_feedback\" ADD \"learnedVersion\" integer NOT NULL DEFAULT 0",
+    "ALTER TABLE \"ai_taste\" ADD \"version\" integer NOT NULL DEFAULT 1",
 ];

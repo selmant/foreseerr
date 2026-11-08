@@ -1,3 +1,4 @@
+import { normalizedChatgptCallback } from '@shared/lib/chatgptCallback';
 import { aiErrorOf } from '@app/components/Ai/aiError';
 import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
@@ -77,31 +78,6 @@ const isTouch = () =>
   typeof window !== 'undefined' &&
   window.matchMedia?.('(pointer: coarse)').matches === true;
 
-/**
- * The `state` of a pasted callback address, or null when the text isn't one.
- * Accepts the address with or without its `http://` scheme.
- */
-const callbackState = (text: string, redirectUri: string): string | null => {
-  let candidate = text.trim();
-  if (!/^https?:\/\//i.test(candidate)) {
-    candidate = `http://${candidate}`;
-  }
-  try {
-    const url = new URL(candidate);
-    const expected = new URL(redirectUri);
-    if (
-      url.host !== expected.host ||
-      url.pathname !== expected.pathname ||
-      url.protocol !== expected.protocol
-    ) {
-      return null;
-    }
-    return url.searchParams.get('state');
-  } catch {
-    return null;
-  }
-};
-
 /** Opens the sign-in as a small window, or a tab where windows aren't used. */
 const openSignIn = (url: string) => {
   const width = 520;
@@ -132,6 +108,20 @@ const ChatgptConnectModal = forwardRef<
   const [result, setResult] = useState<AiMe | null>(null);
   // Guards against the same address arriving twice (paste plus focus).
   const busy = useRef(false);
+  const alive = useRef(true);
+  const generation = useRef(0);
+  const cancel = () => {
+    alive.current = false;
+    generation.current += 1;
+    onClose();
+  };
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      generation.current += 1;
+    };
+  }, []);
 
   const pasteKeys = isApple() ? '⌘V' : 'Ctrl+V';
   const copyKeys = isApple() ? '⌘L, ⌘C' : 'Ctrl+L, Ctrl+C';
@@ -140,6 +130,8 @@ const ChatgptConnectModal = forwardRef<
     : null;
 
   const start = useCallback(async () => {
+    const attempt = ++generation.current;
+    setAuthorizeUrl(null);
     setStarting(true);
     setError(null);
     setHint(null);
@@ -148,11 +140,13 @@ const ChatgptConnectModal = forwardRef<
         '/api/v1/ai/me/chatgpt/start',
         consent ? { consent: true } : {}
       );
-      setAuthorizeUrl(res.data.authorizeUrl);
+      if (alive.current && attempt === generation.current)
+        setAuthorizeUrl(res.data.authorizeUrl);
     } catch (e) {
-      setError(aiErrorOf(e, intl.formatMessage(globalMessages.error)));
+      if (alive.current && attempt === generation.current)
+        setError(aiErrorOf(e, intl.formatMessage(globalMessages.error)));
     } finally {
-      setStarting(false);
+      if (alive.current && attempt === generation.current) setStarting(false);
     }
   }, [intl, consent]);
 
@@ -162,7 +156,7 @@ const ChatgptConnectModal = forwardRef<
 
   const finish = useCallback(
     async (callbackUrl: string) => {
-      if (busy.current) {
+      if (busy.current || !alive.current) {
         return;
       }
       busy.current = true;
@@ -193,9 +187,14 @@ const ChatgptConnectModal = forwardRef<
    */
   const accept = useCallback(
     (text: string, explain: boolean) => {
-      const state = callbackState(text, redirectUri);
-      if (state && expectedState && state === expectedState) {
-        void finish(text.trim());
+      if (!alive.current) return false;
+      const normalized = normalizedChatgptCallback(
+        text,
+        redirectUri,
+        expectedState
+      );
+      if (normalized) {
+        void finish(normalized);
         return true;
       }
       if (explain && text.trim()) {
@@ -212,6 +211,8 @@ const ChatgptConnectModal = forwardRef<
     if (step !== 'waiting' || error) {
       return;
     }
+    let active = true;
+    const attempt = generation.current;
     const onPaste = (e: ClipboardEvent) => {
       if ((e.target as HTMLElement | null)?.id === 'chatgpt-callback') {
         return; // the field's own onChange handles it
@@ -233,7 +234,9 @@ const ChatgptConnectModal = forwardRef<
         if (permission?.state !== 'granted') {
           return;
         }
-        accept(await navigator.clipboard.readText(), false);
+        const text = await navigator.clipboard.readText();
+        if (active && alive.current && attempt === generation.current)
+          accept(text, false);
       } catch {
         // Not supported or not allowed; the Paste button still works.
       }
@@ -242,6 +245,7 @@ const ChatgptConnectModal = forwardRef<
     window.addEventListener('focus', checkClipboard);
     document.addEventListener('visibilitychange', checkClipboard);
     return () => {
+      active = false;
       document.removeEventListener('paste', onPaste);
       window.removeEventListener('focus', checkClipboard);
       document.removeEventListener('visibilitychange', checkClipboard);
@@ -250,8 +254,10 @@ const ChatgptConnectModal = forwardRef<
 
   const pasteFromClipboard = async () => {
     setHint(null);
+    const attempt = generation.current;
     try {
-      accept(await navigator.clipboard.readText(), true);
+      const text = await navigator.clipboard.readText();
+      if (alive.current && attempt === generation.current) accept(text, true);
     } catch {
       setHint(
         intl.formatMessage(messages.clipboardBlocked, { keys: pasteKeys })
@@ -330,7 +336,7 @@ const ChatgptConnectModal = forwardRef<
         ref={ref}
         title={intl.formatMessage(messages.waitTitle)}
         backgroundClickable={false}
-        onCancel={onClose}
+        onCancel={cancel}
       >
         <ol className="space-y-4 text-gray-300">
           <li className="flex gap-3">
@@ -438,7 +444,12 @@ const ChatgptConnectModal = forwardRef<
                   onChange={(e) => {
                     setPasted(e.target.value);
                     setHint(null);
-                    accept(e.target.value, false);
+                  }}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    const text = e.clipboardData.getData('text');
+                    setPasted(text);
+                    accept(text, true);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -447,6 +458,13 @@ const ChatgptConnectModal = forwardRef<
                     }
                   }}
                 />
+                <Button
+                  buttonSize="sm"
+                  disabled={!pasted.trim() || submitting}
+                  onClick={() => accept(pasted, true)}
+                >
+                  {intl.formatMessage(messages.continue)}
+                </Button>
               </div>
             </div>
           )}
@@ -471,7 +489,7 @@ const ChatgptConnectModal = forwardRef<
       ref={ref}
       title={intl.formatMessage(messages.title)}
       backgroundClickable={false}
-      onCancel={onClose}
+      onCancel={cancel}
     >
       <p className="font-semibold text-white">
         {intl.formatMessage(messages.intro)}
@@ -499,7 +517,11 @@ const ChatgptConnectModal = forwardRef<
             <span>{intl.formatMessage(messages.continue)}</span>
             <ArrowTopRightOnSquareIcon className="ml-2 h-4 w-4" />
           </Button>
-        ) : null}
+        ) : (
+          <Button onClick={restart}>
+            {intl.formatMessage(messages.startAgain)}
+          </Button>
+        )}
       </div>
     </Modal>
   );

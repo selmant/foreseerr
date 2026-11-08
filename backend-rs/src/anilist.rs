@@ -55,7 +55,7 @@ const PAGE_MEDIA_QUERY: &str = concat!(
 
 /// Anime by genres and tags, best rated first, for AI recommendations.
 const SEARCH_MEDIA_QUERY: &str = concat!(
-    "\n  query SearchMedia(\n    $page: Int\n    $perPage: Int\n    $genres: [String]\n    $tags: [String]\n    $search: String\n    $from: FuzzyDateInt\n    $to: FuzzyDateInt\n  ) {\n    Page(page: $page, perPage: $perPage) {\n      media(\n        type: ANIME\n        isAdult: false\n        sort: [SCORE_DESC, POPULARITY_DESC]\n        genre_in: $genres\n        tag_in: $tags\n        search: $search\n        startDate_greater: $from\n        startDate_lesser: $to\n        popularity_greater: 2000\n      ) {\n        ",
+    "\n  query SearchMedia(\n    $page: Int\n    $perPage: Int\n    $genres: [String]\n    $tags: [String]\n    $search: String\n    $from: FuzzyDateInt\n    $to: FuzzyDateInt\n  ) {\n    Page(page: $page, perPage: $perPage) {\n      media(\n        type: ANIME\n        isAdult: false\n        format_not: MUSIC\n        sort: [SCORE_DESC, POPULARITY_DESC]\n        genre_in: $genres\n        tag_in: $tags\n        search: $search\n        startDate_greater: $from\n        startDate_lesser: $to\n        popularity_greater: 2000\n      ) {\n        ",
     media_fields!(),
     "\n        genres\n        averageScore\n      }\n    }\n  }\n"
 );
@@ -416,7 +416,7 @@ impl Anilist {
         if let Some(from) = years.0 {
             variables.insert(
                 String::from("from"),
-                Value::from(from.saturating_mul(10_000)),
+                Value::from(from.saturating_mul(10_000).saturating_sub(1)),
             );
         }
         if let Some(to) = years.1 {

@@ -73,6 +73,10 @@ static ATTEMPTS: LazyLock<Mutex<HashMap<String, Attempt>>> = LazyLock::new(Mutex
 static REFRESHING: LazyLock<Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>> =
     LazyLock::new(Mutex::default);
 
+fn session_gate(id: i64) -> Arc<tokio::sync::Mutex<()>> {
+    Arc::clone(lock(&REFRESHING).entry(id).or_default())
+}
+
 /// `OpenAI`'s signing keys, with when they were fetched.
 static JWKS: LazyLock<Mutex<Option<(Instant, Value)>>> = LazyLock::new(Mutex::default);
 const JWKS_TTL: Duration = Duration::from_hours(1);
@@ -183,7 +187,12 @@ pub fn start(
 /// just its query string.
 fn callback_params(pasted: &str) -> Option<HashMap<String, String>> {
     let pasted = pasted.trim();
-    let url = reqwest::Url::parse(pasted).ok().or_else(|| {
+    let normalized = if pasted.starts_with("127.0.0.1:") {
+        format!("http://{pasted}")
+    } else {
+        pasted.to_owned()
+    };
+    let url = reqwest::Url::parse(&normalized).ok().or_else(|| {
         let query = pasted.trim_start_matches('?');
         reqwest::Url::parse(&format!("http://127.0.0.1/?{query}")).ok()
     })?;
@@ -199,6 +208,8 @@ fn callback_params(pasted: &str) -> Option<HashMap<String, String>> {
 pub struct Finished {
     /// Whose connection it is.
     pub owner: Owner,
+    /// Login revision, unaffected by token refresh.
+    pub session_version: i64,
     /// Whether the `ChatGPT` plan may be used (the scope was granted).
     pub plan_enabled: bool,
 }
@@ -220,6 +231,11 @@ pub async fn complete(
     let params = callback_params(pasted).ok_or_else(|| {
         AiError::input("That doesn't look like the address from the sign-in page. Copy the whole address from the browser's address bar.")
     })?;
+    if !params.contains_key("code") && !params.contains_key("error") {
+        return Err(AiError::input(
+            "The pasted address is incomplete. Copy the whole address.",
+        ));
+    }
     let state = params.get("state").ok_or_else(|| {
         AiError::input("The pasted address has no state. Copy the whole address.")
     })?;
@@ -286,9 +302,14 @@ pub async fn complete(
     // first-time sign-ins can't have the later one replace the earlier
     // account's tokens without revoking them.
     let held = store::lock().await;
-    let current = store::load(db, attempt.owner)
-        .await
-        .map_err(|e| AiError::internal(format!("{e:#}")))?;
+    let current = match store::load(db, attempt.owner).await {
+        Ok(current) => current,
+        Err(e) => {
+            drop(held);
+            revoke_token(client, &tokens.refresh_token, &client_id).await;
+            return Err(AiError::internal(format!("{e:#}")));
+        }
+    };
     if current
         .as_ref()
         .filter(|c| c.kind == store::Kind::ChatGpt)
@@ -298,6 +319,17 @@ pub async fn complete(
         drop(held);
         revoke_token(client, &tokens.refresh_token, &client_id).await;
         return Err(different_account());
+    }
+    if current.as_ref().is_some_and(|c| {
+        c.kind == store::Kind::ChatGpt
+            && c.has_credentials()
+            && c.client_id.as_deref() != Some(client_id.as_str())
+    }) {
+        drop(held);
+        revoke_token(client, &tokens.refresh_token, &client_id).await;
+        return Err(AiError::input(
+            "Another ChatGPT sign-in finished first. Start again.",
+        ));
     }
     let refresh = tokens.refresh_token.clone();
     let saved = store::save(
@@ -334,6 +366,7 @@ pub async fn complete(
     }
     Ok(Finished {
         owner: attempt.owner,
+        session_version: current.as_ref().map_or(0, |c| c.session_version + 1),
         plan_enabled,
     })
 }
@@ -556,16 +589,18 @@ pub async fn access_token(
     if tokens.expires_at.saturating_sub(now_secs()) > REFRESH_MARGIN_SECS {
         return Ok(tokens.access_token);
     }
-    let gate = {
-        let mut map = lock(&REFRESHING);
-        Arc::clone(map.entry(conn.id).or_default())
-    };
+    let gate = session_gate(conn.id);
     let _held = gate.lock().await;
     // Another request may have refreshed while this one waited.
     let fresh = store::load(db, conn.owner)
         .await
         .map_err(|e| AiError::internal(format!("{e:#}")))?
         .ok_or_else(AiError::not_configured)?;
+    if fresh.id != conn.id || fresh.session_version != conn.session_version {
+        return Err(AiError::reauth(
+            "This ChatGPT connection changed. Try again.",
+        ));
+    }
     let tokens = tokens_of(vault, &fresh)?;
     if tokens.expires_at.saturating_sub(now_secs()) > REFRESH_MARGIN_SECS {
         return Ok(tokens.access_token);
@@ -713,7 +748,7 @@ pub async fn revoke(client: &reqwest::Client, vault: &Vault, conn: &Connection) 
     }
 }
 
-/// Sign out: revoke the session at `OpenAI`, then drop the tokens.
+/// Sign out: detach the stored session atomically, then revoke it at `OpenAI`.
 ///
 /// The registration is kept for the next sign-in. Returns whether `OpenAI`
 /// confirmed the revocation. A sign-in that lands while the revocation is
@@ -728,8 +763,12 @@ pub async fn sign_out(
     vault: &Vault,
     conn: &Connection,
 ) -> anyhow::Result<bool> {
-    let confirmed = revoke(client, vault, conn).await;
-    store::set_status(db, conn, Status::SignedOut, None, true).await?;
+    let gate = session_gate(conn.id);
+    let _held = gate.lock().await;
+    let Some(current) = store::take_session_for_signout(db, conn).await? else {
+        return Ok(true);
+    };
+    let confirmed = revoke(client, vault, &current).await;
     Ok(confirmed)
 }
 

@@ -5282,10 +5282,54 @@ paths:
     get:
       x-foreseerr: true
       summary: Get my picks for an AI Discover row
+      description: Reuses this person’s cached picks for the saved slider request, including the initial run selected by its creator. A GET never starts a model request.
+      tags:
+        - ai
+      parameters:
+        - in: query
+          name: sliderId
+          description: Saved AI slider whose full request and initial cache should be used.
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: prompt
+          schema:
+            type: string
+            maxLength: 300
+        - in: query
+          name: only
+          schema:
+            type: string
+            enum: [movie, tv]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run:
+                    allOf:
+                      - $ref: '#/components/schemas/AiRun'
+                    nullable: true
+                  notice:
+                    type: object
+                    nullable: true
+    post:
+      x-foreseerr: true
+      summary: Refresh my picks for an AI Discover row
       description: Reuses this person’s cached picks for the saved slider request, including the initial run selected by its creator. Otherwise starts a personalized run, counted toward the daily limit.
       tags:
         - ai
       parameters:
+        - in: header
+          name: X-Foreseerr-AI
+          required: true
+          schema:
+            type: string
+            enum: ['1']
         - in: query
           name: sliderId
           description: Saved AI slider whose full request and initial cache should be used.

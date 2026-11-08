@@ -89,6 +89,8 @@ const messages = defineMessages('components.Settings.SettingsAi', {
   allowUserModelChoiceTip:
     'On the server connection. People with their own account always pick their model.',
   dailyLimit: 'Daily AI requests per person',
+  dailyLimitRequired:
+    'Enter a whole number from 0 to 1000. Use 0 for unlimited.',
   dailyLimitTip:
     'On the server connection, counted per person and reset at midnight UTC. Each AI Picks request and each AI Discover row refresh counts as one. Admins and people using their own account aren’t limited. 0 means no limit.',
   webSearch: 'Web search',
@@ -304,6 +306,15 @@ const SettingsAi = () => {
           searxngEnabled: data.searxng.enabled,
           searxngUrl: data.searxng.url,
         }}
+        validate={(values) => {
+          const limit = Number(values.dailyLimit);
+          return !values.dailyLimit.trim() ||
+            !Number.isInteger(limit) ||
+            limit < 0 ||
+            limit > 1000
+            ? { dailyLimit: intl.formatMessage(messages.dailyLimitRequired) }
+            : {};
+        }}
         onSubmit={async (values) => {
           try {
             if (connection && values.balanced !== (connection.model ?? '')) {
@@ -317,10 +328,7 @@ const SettingsAi = () => {
               allowUserChatgpt: values.allowUserChatgpt,
               allowUserEndpoints: values.allowUserEndpoints,
               allowUserModelChoice: values.allowUserModelChoice,
-              dailyLimit: Math.min(
-                1000,
-                Math.max(0, Math.round(Number(values.dailyLimit) || 0))
-              ),
+              dailyLimit: Number(values.dailyLimit),
               models: {
                 fast: values.fast.trim() || null,
                 best: values.best.trim() || null,
@@ -345,7 +353,7 @@ const SettingsAi = () => {
           }
         }}
       >
-        {({ values, setFieldValue, isSubmitting, dirty }) => (
+        {({ values, setFieldValue, isSubmitting, dirty, isValid, errors }) => (
           <Form data-testid="settings-ai-form">
             <Section title={intl.formatMessage(messages.ai)}>
               <div className="form-row">
@@ -591,8 +599,22 @@ const SettingsAi = () => {
                       max={1000}
                       id="dailyLimit"
                       name="dailyLimit"
+                      required
+                      aria-invalid={!!errors.dailyLimit}
+                      aria-describedby={
+                        errors.dailyLimit ? 'daily-limit-error' : undefined
+                      }
                       className="short"
                     />
+                    {errors.dailyLimit ? (
+                      <p
+                        id="daily-limit-error"
+                        role="alert"
+                        className="mt-1 text-sm text-red-400"
+                      >
+                        {errors.dailyLimit}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -701,7 +723,7 @@ const SettingsAi = () => {
                   <Button
                     buttonType="primary"
                     type="submit"
-                    disabled={isSubmitting || !dirty}
+                    disabled={isSubmitting || !dirty || !isValid}
                   >
                     <span>
                       {intl.formatMessage(

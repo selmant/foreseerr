@@ -53,7 +53,7 @@ pub(super) static ROUTES: [ApiRoute; 276] = [
     ApiRoute {
         template: "/api/v1/ai/row",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("row")],
-        methods: &[("GET", true)],
+        methods: &[("GET", true), ("POST", true)],
     },
     ApiRoute {
         template: "/api/v1/ai/runs/{runId}",

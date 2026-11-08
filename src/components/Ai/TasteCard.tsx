@@ -1,5 +1,6 @@
 import { aiErrorOf } from '@app/components/Ai/aiError';
 import Button from '@app/components/Common/Button';
+import Alert from '@app/components/Common/Alert';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
@@ -38,7 +39,9 @@ const messages = defineMessages('components.Ai.TasteCard', {
   feedbackCount:
     '{count, plural, =0 {No ratings yet} one {# rating} other {# ratings}}',
   pending:
-    '{count, plural, one {# new rating} other {# new ratings}} will update the card after your next request.',
+    '{count, plural, one {# new rating} other {# new ratings}} pending. After at least 3 new ratings, your next request can update the card.',
+  loadFailed: 'Your taste card could not be loaded.',
+  retry: 'Retry',
   forget: 'Forget all ratings',
   forgetConfirm: 'Forget all ratings?',
   recent: 'Recent ratings',
@@ -67,7 +70,11 @@ const MAX_CHARS = 1200;
 const TasteCard = () => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const { data: taste, mutate } = useSWR<AiTaste>('/api/v1/ai/taste');
+  const {
+    data: taste,
+    error: loadError,
+    mutate,
+  } = useSWR<AiTaste>('/api/v1/ai/taste');
   const { data: feedback, mutate: mutateFeedback } = useSWR<AiFeedbackItem[]>(
     '/api/v1/ai/feedback'
   );
@@ -155,6 +162,14 @@ const TasteCard = () => {
         ) : null}
       </div>
 
+      {loadError ? (
+        <div className="mt-4">
+          <Alert type="error" title={intl.formatMessage(messages.loadFailed)} />
+          <Button buttonSize="sm" onClick={() => void mutate()}>
+            {intl.formatMessage(messages.retry)}
+          </Button>
+        </div>
+      ) : null}
       {editing ? (
         <div className="mt-4">
           <textarea
@@ -190,14 +205,15 @@ const TasteCard = () => {
         </div>
       ) : (
         <div className="mt-4 whitespace-pre-line rounded-lg bg-gray-900/60 p-4 text-sm leading-relaxed text-gray-200 ring-1 ring-gray-700">
-          {taste?.card || (
-            <span className="text-gray-500">
-              {intl.formatMessage(messages.empty)}{' '}
-              <Link to="/discover/ai" className="text-indigo-300 underline">
-                {intl.formatMessage(messages.openPicks)}
-              </Link>
-            </span>
-          )}
+          {taste?.card ||
+            (!loadError && (
+              <span className="text-gray-500">
+                {intl.formatMessage(messages.empty)}{' '}
+                <Link to="/discover/ai" className="text-indigo-300 underline">
+                  {intl.formatMessage(messages.openPicks)}
+                </Link>
+              </span>
+            ))}
         </div>
       )}
 

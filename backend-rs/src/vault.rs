@@ -272,6 +272,7 @@ fn load_master(config_dir: &Path) -> Result<([u8; 32], KeySource)> {
     match std::fs::read_to_string(&path) {
         Ok(text) => {
             let key = parse_key(&text).with_context(|| format!("the key in {}", path.display()))?;
+            sync_key_directory(&path)?;
             Ok((key, KeySource::ConfigFile(path)))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -321,6 +322,12 @@ fn hex_decode(text: &str) -> Result<Vec<u8>> {
         .collect())
 }
 
+fn sync_key_directory(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    std::fs::File::open(path.parent().unwrap_or_else(|| Path::new(".")))?.sync_all()?;
+    Ok(())
+}
+
 /// Create the key file with owner-only access. The key is written and
 /// synced to a temporary file first, then published with a hard link,
 /// which fails if the key already exists: a reader never sees a half
@@ -366,11 +373,16 @@ fn generate_key_file(path: &Path) -> Result<[u8; 32]> {
         }
     }
     match written {
-        Ok(()) => Ok(key),
+        Ok(()) => {
+            sync_key_directory(path)?;
+            Ok(key)
+        }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             let text = std::fs::read_to_string(path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            parse_key(&text)
+            let key = parse_key(&text)?;
+            sync_key_directory(path)?;
+            Ok(key)
         }
         Err(e) => Err(e).with_context(|| format!("creating {}", path.display())),
     }

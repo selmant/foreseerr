@@ -20,6 +20,7 @@ use crate::jellyfin::{join_all, Job};
 use crate::mappinglayer::{discover::tmdb_for_anilist, Ctx as MapCtx, MediaType};
 use crate::settings::Settings;
 use crate::state::AppState;
+use std::time::Duration;
 
 /// The most candidates handed to the ranker.
 pub const MAX_CANDIDATES: usize = 70;
@@ -728,7 +729,10 @@ pub async fn gather<S: BuildHasher + Sync>(
             k
         }
     };
-    let keywords = keyword_ids(state, &plan.keywords).await;
+    let deadline = tokio::time::Instant::now() + super::SEARCH_TIMEOUT;
+    let keywords = tokio::time::timeout(Duration::from_secs(5), keyword_ids(state, &plan.keywords))
+        .await
+        .unwrap_or_default();
 
     let mut jobs: Vec<Job<'_, Vec<Candidate>>> = Vec::new();
     let ideas: Vec<Idea> = plan
@@ -795,7 +799,11 @@ pub async fn gather<S: BuildHasher + Sync>(
             None => Vec::new(),
         }
     };
-    let (found, web) = tokio::join!(join_all(jobs), web_job);
+    let (found, web) = tokio::join!(
+        collect_before(jobs, deadline),
+        tokio::time::timeout_at(deadline, web_job),
+    );
+    let web = web.unwrap_or_default();
 
     let mut seen: HashSet<Key> = HashSet::new();
     let mut candidates = Vec::new();
@@ -816,10 +824,42 @@ pub async fn gather<S: BuildHasher + Sync>(
     Gathered { candidates, web }
 }
 
+async fn collect_before<T: Default + Send>(
+    jobs: Vec<Job<'_, T>>,
+    deadline: tokio::time::Instant,
+) -> Vec<T> {
+    let jobs: Vec<Job<'_, T>> = jobs
+        .into_iter()
+        .map(|job| {
+            let job: Job<'_, T> = Box::pin(async move {
+                tokio::time::timeout_at(deadline, job)
+                    .await
+                    .unwrap_or_default()
+            });
+            job
+        })
+        .collect();
+    join_all(jobs).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn slow_source_does_not_discard_ready_candidates() {
+        let jobs: Vec<Job<'_, Vec<i64>>> = vec![
+            Box::pin(async { vec![42] }),
+            Box::pin(std::future::pending()),
+        ];
+        let got = collect_before(
+            jobs,
+            tokio::time::Instant::now() + Duration::from_millis(20),
+        )
+        .await;
+        assert_eq!(got, [vec![42], vec![]]);
+    }
 
     #[test]
     fn enabled_web_search_falls_back_and_normalizes_queries() {

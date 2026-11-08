@@ -1,9 +1,12 @@
+import { useUser } from '@app/hooks/useUser';
+import axios from 'axios';
+import { visibleAiPicks } from '@shared/lib/aiVisibility';
+import { Permission } from '@shared/lib/permissions';
 import AiPickCard from '@app/components/Ai/AiPickCard';
 import {
   isWorking,
-  sendFeedback,
+  useAiFeedback,
   useAiRun,
-  withFeedback,
 } from '@app/components/Ai/useAiRun';
 import Slider from '@app/components/Slider';
 import TitleCard from '@app/components/TitleCard';
@@ -21,6 +24,7 @@ import type {
   AiVerdict,
 } from '@shared/interfaces/api/aiInterfaces';
 import { useIntl } from 'react-intl';
+import { useRef } from 'react';
 import { Link } from 'react-router';
 import useSWR from 'swr';
 
@@ -44,45 +48,39 @@ interface RowResponse {
 /** A Discover row of AI picks for a prompt, personal to whoever views it. */
 const AiPicksSlider = ({ sliderKey, title, sliderId }: AiPicksSliderProps) => {
   const intl = useIntl();
+  const { hasPermission } = useUser();
   const settings = useSettings();
   const { addToast } = useToasts();
   const enabled = settings.currentSettings.aiEnabled === true;
   const { data: row, error } = useSWR<RowResponse>(
     enabled ? `/api/v1/ai/row?sliderId=${sliderId}` : null,
+    (url: string) =>
+      axios
+        .post<RowResponse>(url, {}, { headers: { 'X-Foreseerr-AI': '1' } })
+        .then((res) => res.data),
     { revalidateOnFocus: false }
   );
   const rowRun = row?.run ?? null;
   // Polls while the row's run works; also carries feedback edits.
   const { data: polled, mutate } = useAiRun(rowRun?.id ?? null);
   const run = polled ?? rowRun;
+  const saveFeedback = useAiFeedback(run, mutate);
+  // Keep cards edited here mounted while their feedback panel is open.
+  // Ratings arriving from either fetch still hide picks on cache reuse.
+  const editedHere = useRef({ id: run?.id ?? null, keys: new Set<string>() });
+  if (editedHere.current.id !== (run?.id ?? null)) {
+    editedHere.current = { id: run?.id ?? null, keys: new Set() };
+  }
 
   if (!enabled) {
     return null;
   }
 
   const onFeedback = async (pick: AiPick, verdict: AiVerdict | null) => {
-    if (!run) {
-      return;
-    }
-    const previous = pick.feedback;
-    mutate((current) => withFeedback(current ?? run, pick, verdict), {
-      revalidate: false,
-    });
+    editedHere.current.keys.add(`${pick.mediaType}-${pick.tmdbId}`);
     try {
-      await sendFeedback(pick, verdict);
+      await saveFeedback(pick, verdict);
     } catch {
-      mutate(
-        (current) => {
-          const latest = current ?? run;
-          const feedback = latest.result?.picks.find(
-            (p) => p.mediaType === pick.mediaType && p.tmdbId === pick.tmdbId
-          )?.feedback;
-          return feedback === verdict
-            ? withFeedback(latest, pick, previous)
-            : latest;
-        },
-        { revalidate: false }
-      );
       addToast(intl.formatMessage(messages.feedbackFailed), {
         appearance: 'error',
         autoDismiss: true,
@@ -91,18 +89,21 @@ const AiPicksSlider = ({ sliderKey, title, sliderId }: AiPicksSliderProps) => {
   };
 
   const working = !row && !error ? true : isWorking(run);
-  // Titles passed on before the row loaded stay out of it; ones passed on
-  // now just fade, so the open popover isn't pulled away.
-  const passedAtLoad = new Set(
-    (rowRun?.result?.picks ?? [])
-      .filter(
-        (p) => p.feedback === 'dislike' || p.feedback === 'not_interested'
-      )
-      .map((p) => `${p.mediaType}-${p.tmdbId}`)
+  const rated = new Set(
+    [...(rowRun?.result?.picks ?? []), ...(run?.result?.picks ?? [])]
+      .filter((pick) => pick.feedback != null)
+      .map((pick) => `${pick.mediaType}-${pick.tmdbId}`)
   );
-  const picks = (run?.result?.picks ?? []).filter(
-    (p) => !passedAtLoad.has(`${p.mediaType}-${p.tmdbId}`)
-  );
+  const picks = visibleAiPicks(
+    run?.result?.picks ?? [],
+    settings.currentSettings,
+    hasPermission([Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST], {
+      type: 'or',
+    })
+  ).filter((p) => {
+    const key = `${p.mediaType}-${p.tmdbId}`;
+    return !rated.has(key) || editedHere.current.keys.has(key);
+  });
   const linkUrl = run ? `/discover/ai?run=${run.id}` : '/discover/ai';
   const emptyMessage =
     row?.notice?.message ??

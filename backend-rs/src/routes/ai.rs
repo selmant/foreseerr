@@ -430,6 +430,7 @@ async fn load_required(ctx: &Ready<'_>, owner: Owner) -> Result<Connection, AiEr
 }
 
 async fn set_model(ctx: &Ready<'_>, owner: Owner) -> Result<Value, AiError> {
+    let _held = store::lock().await;
     let conn = load_required(ctx, owner).await?;
     // An omitted field keeps the model; `null` or blank clears it.
     let model = match model_field(&body(ctx), "model")? {
@@ -693,8 +694,8 @@ fn me_put<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 ));
             }
             save_endpoint(ctx, Owner::User(user.id), &body(ctx), &held).await?;
-            drop(held);
             use_own(ctx, user.id, true).await?;
+            drop(held);
             tracing::info!("User {} saved their own AI endpoint", user.id);
             me_view(ctx, user).await
         }
@@ -845,8 +846,17 @@ async fn default_model(ctx: &Ready<'_>, owner: Owner) {
     match ai::models(ctx.state, &conn).await {
         Ok(list) => {
             if let Some((first, _)) = list.first() {
-                if let Err(e) = store::set_model(&ctx.state.db, &conn, Some(first)).await {
-                    tracing::warn!("setting a default AI model failed: {e:#}");
+                let _held = store::lock().await;
+                if let Ok(Some(current)) = store::load(&ctx.state.db, owner).await {
+                    if current.id == conn.id
+                        && current.session_version == conn.session_version
+                        && current.model.is_none()
+                    {
+                        if let Err(e) = store::set_model(&ctx.state.db, &current, Some(first)).await
+                        {
+                            tracing::warn!("setting a default AI model failed: {e:#}");
+                        }
+                    }
                 }
             }
         }
@@ -898,7 +908,18 @@ fn me_chatgpt_complete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 finished.plan_enabled
             );
             default_model(ctx, owner).await;
+            let held = store::lock().await;
+            let current = load_required(ctx, owner).await?;
+            if current.kind != Kind::ChatGpt
+                || current.status == Status::SignedOut
+                || current.session_version != finished.session_version
+            {
+                return Err(AiError::input(
+                    "The ChatGPT connection changed. Start again.",
+                ));
+            }
             use_own(ctx, user.id, true).await?;
+            drop(held);
             let mut view = me_view(ctx, user).await?;
             if let Some(obj) = view.as_object_mut() {
                 obj.insert(

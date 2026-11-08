@@ -36,7 +36,7 @@ pub async fn lock() -> WriteGuard {
 /// a request read, so a write based on that read can't undo a newer
 /// sign-in, sign-out or refresh.
 fn same_generation(conn: &Connection, param: usize) -> (String, Option<Bind>) {
-    conn.sealed.as_ref().map_or_else(
+    let (condition, bind) = conn.sealed.as_ref().map_or_else(
         || (String::from(r#""credentials" IS NULL"#), None),
         |sealed| {
             (
@@ -44,6 +44,13 @@ fn same_generation(conn: &Connection, param: usize) -> (String, Option<Bind>) {
                 Some(Bind::Text(sealed.clone())),
             )
         },
+    );
+    (
+        format!(
+            r#""sessionVersion" = {} AND ({condition})"#,
+            conn.session_version
+        ),
+        bind,
     )
 }
 
@@ -144,6 +151,8 @@ impl Status {
 pub struct Connection {
     /// Row id.
     pub id: i64,
+    /// Changes on sign-in or endpoint save, but not token refresh.
+    pub session_version: i64,
     /// Whose it is.
     pub owner: Owner,
     /// Provider kind.
@@ -277,6 +286,10 @@ impl Connection {
         Some(Self {
             id: row.get("id").and_then(Value::as_i64)?,
             owner,
+            session_version: row
+                .get("sessionVersion")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
             kind: Kind::parse(row.get("kind").and_then(Value::as_str)?)?,
             base_url: text("baseUrl"),
             model: text("model").filter(|m| !m.is_empty()),
@@ -313,13 +326,20 @@ pub struct Identity {
 /// Fails on database errors.
 pub async fn load(db: &Db, owner: Owner) -> Result<Option<Connection>> {
     let (filter, binds) = owner.filter();
-    let updated = db.iso_sql(r#""updatedAt""#);
-    let used = db.iso_sql(r#""lastUsedAt""#);
     let sql = format!(
-        r#"SELECT "id", "userId", "kind", "baseUrl", "model", "credentials", "clientId", "accountSubject", "accountEmail", "accountName", "status", "lastError", {updated} AS "updatedAt", {used} AS "lastUsedAt" FROM "ai_connection" WHERE {filter} ORDER BY "id" LIMIT 1"#
+        r#"SELECT {} FROM "ai_connection" WHERE {filter} ORDER BY "id" LIMIT 1"#,
+        connection_columns(db)
     );
     let rows = db.rows(&sql, &binds).await?;
     Ok(rows.first().and_then(Connection::from_row))
+}
+
+fn connection_columns(db: &Db) -> String {
+    let updated = db.iso_sql(r#""updatedAt""#);
+    let used = db.iso_sql(r#""lastUsedAt""#);
+    format!(
+        r#""id", CAST("sessionVersion" AS BIGINT) AS "sessionVersion", "userId", "kind", "baseUrl", "model", "credentials", "clientId", "accountSubject", "accountEmail", "accountName", "status", "lastError", {updated} AS "updatedAt", {used} AS "lastUsedAt""#
+    )
 }
 
 /// What a write sets on an owner's connection.
@@ -404,7 +424,7 @@ pub async fn save(
         let mut binds = binds.to_vec();
         binds.push(Bind::Int(row.id));
         db.execute(
-            r#"UPDATE "ai_connection" SET "kind" = ?1, "baseUrl" = ?2, "model" = ?3, "credentials" = ?4, "clientId" = ?5, "accountSubject" = ?6, "accountEmail" = ?7, "accountName" = ?8, "status" = ?9, "lastError" = NULL, "userId" = ?10, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?11"#,
+            r#"UPDATE "ai_connection" SET "sessionVersion" = "sessionVersion" + 1, "kind" = ?1, "baseUrl" = ?2, "model" = ?3, "credentials" = ?4, "clientId" = ?5, "accountSubject" = ?6, "accountEmail" = ?7, "accountName" = ?8, "status" = ?9, "lastError" = NULL, "userId" = ?10, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?11"#,
             &binds,
         )
         .await?;
@@ -416,6 +436,34 @@ pub async fn save(
         .await?;
     }
     Ok(())
+}
+
+/// Atomically detach a login, including any refresh that committed first.
+/// A later sign-in has a different revision and is preserved.
+///
+/// # Errors
+/// Fails on database errors.
+pub async fn take_session_for_signout(db: &Db, conn: &Connection) -> Result<Option<Connection>> {
+    let mut tx = crate::jobs::syncutil::Tx::begin(db).await?;
+    let suffix = if db.is_postgres() { " FOR UPDATE" } else { "" };
+    let rows = tx
+        .rows(
+            &format!(
+                r#"SELECT {} FROM "ai_connection" WHERE "id" = ?1{suffix}"#,
+                connection_columns(db)
+            ),
+            &[Bind::Int(conn.id)],
+        )
+        .await?;
+    let current = rows
+        .first()
+        .and_then(Connection::from_row)
+        .filter(|c| c.session_version == conn.session_version && c.owner == conn.owner);
+    if current.is_some() {
+        tx.execute(r#"UPDATE "ai_connection" SET "credentials" = NULL, "status" = 'signed_out', "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?1"#, &[Bind::Int(conn.id)]).await?;
+    }
+    tx.commit().await?;
+    Ok(current)
 }
 
 /// Replace a `ChatGPT` connection's token set after a refresh.
@@ -535,8 +583,8 @@ pub async fn touch(db: &Db, conn: &Connection) -> Result<()> {
 /// Fails on database errors.
 pub async fn set_model(db: &Db, conn: &Connection, model: Option<&str>) -> Result<()> {
     db.execute(
-        r#"UPDATE "ai_connection" SET "model" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
-        &[Bind::OptText(model.map(str::to_owned)), Bind::Int(conn.id)],
+        r#"UPDATE "ai_connection" SET "model" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2 AND "sessionVersion" = ?3"#,
+        &[Bind::OptText(model.map(str::to_owned)), Bind::Int(conn.id), Bind::Int(conn.session_version)],
     )
     .await?;
     Ok(())
@@ -728,6 +776,52 @@ mod tests {
         load(db, Owner::User(1))
             .await?
             .ok_or_else(|| anyhow!("missing saved connection"))
+    }
+
+    #[tokio::test]
+    async fn current_refresh_replaces_tokens_and_clears_the_error() -> Result<()> {
+        let db = database().await?;
+        let vault = Vault::from_master(&[7; 32], KeySource::Env)?;
+        let conn = save_session(&db, &vault, "original").await?;
+        set_error(&db, &conn, Some("old failure")).await?;
+        assert!(replace_tokens(&db, &vault, &conn, &tokens("refreshed"), Status::Ok).await?);
+        let saved = load(&db, conn.owner)
+            .await?
+            .ok_or_else(|| anyhow!("missing"))?;
+        assert_eq!(saved.session_version, conn.session_version);
+        assert_eq!(saved.status, Status::Ok);
+        assert!(saved.last_error.is_none());
+        assert!(
+            matches!(saved.credentials(&vault)?, Some(Credentials::ChatGpt(t)) if t.access_token == tokens("refreshed").access_token)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn signout_detaches_a_rotated_session_but_keeps_a_new_login() -> Result<()> {
+        let db = database().await?;
+        let vault = Vault::from_master(&[7; 32], KeySource::Env)?;
+        let old = save_session(&db, &vault, "original").await?;
+        assert!(replace_tokens(&db, &vault, &old, &tokens("rotated"), Status::Ok).await?);
+        let revoked = take_session_for_signout(&db, &old)
+            .await?
+            .ok_or_else(|| anyhow!("missing detached session"))?;
+        assert!(
+            matches!(revoked.credentials(&vault)?, Some(Credentials::ChatGpt(t)) if t.access_token == tokens("rotated").access_token)
+        );
+        let signed_out = load(&db, old.owner)
+            .await?
+            .ok_or_else(|| anyhow!("missing"))?;
+        assert_eq!(signed_out.status, Status::SignedOut);
+        assert!(!signed_out.has_credentials());
+        assert!(!replace_tokens(&db, &vault, &revoked, &tokens("late"), Status::Ok).await?);
+        let new = save_session(&db, &vault, "new-login").await?;
+        assert!(take_session_for_signout(&db, &old).await?.is_none());
+        assert_eq!(
+            load(&db, old.owner).await?.map(|c| c.sealed),
+            Some(new.sealed)
+        );
+        Ok(())
     }
 
     #[tokio::test]

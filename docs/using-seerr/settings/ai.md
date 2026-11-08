@@ -64,6 +64,10 @@ anime setting and refinements for future refreshes. Other people get their own
 personalized results. Picks are cached for a day per person, and each refresh counts as one request
 toward that person's daily limit.
 
+For API clients, `GET /api/v1/ai/row` reads cached picks only. To allow a new
+run when the cache has expired, use `POST` with the same query parameters and
+the header `X-Foreseerr-AI: 1`.
+
 ## Connections
 
 Personal AI accounts live alongside your other linked accounts. The account card

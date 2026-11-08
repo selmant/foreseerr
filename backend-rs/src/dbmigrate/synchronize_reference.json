@@ -292,13 +292,13 @@
       "type": "table",
       "name": "ai_connection",
       "tbl_name": "ai_connection",
-      "sql": "CREATE TABLE \"ai_connection\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"kind\" varchar NOT NULL, \"baseUrl\" varchar, \"model\" varchar, \"credentials\" text, \"clientId\" varchar, \"accountSubject\" varchar, \"accountEmail\" varchar, \"accountName\" varchar, \"status\" varchar NOT NULL DEFAULT ('ok'), \"lastError\" text, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"lastUsedAt\" datetime, \"userId\" integer, CONSTRAINT \"REL_ai_connection_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_connection_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+      "sql": "CREATE TABLE \"ai_connection\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"kind\" varchar NOT NULL, \"baseUrl\" varchar, \"model\" varchar, \"credentials\" text, \"clientId\" varchar, \"accountSubject\" varchar, \"accountEmail\" varchar, \"accountName\" varchar, \"status\" varchar NOT NULL DEFAULT ('ok'), \"lastError\" text, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"lastUsedAt\" datetime, \"userId\" integer, \"sessionVersion\" integer NOT NULL DEFAULT 0, CONSTRAINT \"REL_ai_connection_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_connection_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
     },
     {
       "type": "table",
       "name": "ai_feedback",
       "tbl_name": "ai_feedback",
-      "sql": "CREATE TABLE \"ai_feedback\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" varchar NOT NULL, \"title\" varchar NOT NULL DEFAULT (''), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_feedback_user_title\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_feedback_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+      "sql": "CREATE TABLE \"ai_feedback\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" varchar NOT NULL, \"title\" varchar NOT NULL DEFAULT (''), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, \"version\" integer NOT NULL DEFAULT 1, \"learnedVersion\" integer NOT NULL DEFAULT 0, CONSTRAINT \"UQ_ai_feedback_user_title\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_feedback_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
     },
     {
       "type": "table",
@@ -310,7 +310,7 @@
       "type": "table",
       "name": "ai_taste",
       "tbl_name": "ai_taste",
-      "sql": "CREATE TABLE \"ai_taste\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"card\" text NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_taste_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_taste_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+      "sql": "CREATE TABLE \"ai_taste\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"card\" text NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, \"version\" integer NOT NULL DEFAULT 1, CONSTRAINT \"REL_ai_taste_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_taste_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
     },
     {
       "type": "table",

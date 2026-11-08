@@ -58,6 +58,12 @@ pub async fn complete(
             .await
             .map_err(|_| AiError::network("The connection to OpenAI dropped mid-answer."))?;
         let Some(chunk) = chunk else {
+            reader.finish();
+            while let Some(event) = reader.next_event() {
+                if let Some(done) = reader.handle(&event)? {
+                    return Ok(done);
+                }
+            }
             break;
         };
         reader.push_bytes(&chunk);
@@ -117,6 +123,12 @@ impl Sse {
         }
         self.buffer
             .push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+    }
+
+    fn finish(&mut self) {
+        if std::mem::take(&mut self.pending_cr) {
+            self.buffer.push('\n');
+        }
     }
 
     /// The `data:` payload of the next complete event, if one is buffered.
@@ -250,6 +262,17 @@ mod tests {
             }
         }
         Ok(None)
+    }
+
+    #[test]
+    fn flushes_a_cr_only_completion_at_eof() {
+        let mut sse = Sse::default();
+        sse.push("data: {\"type\":\"response.completed\"}\r\r");
+        assert!(sse.next_event().is_none());
+        sse.finish();
+        assert!(sse
+            .next_event()
+            .is_some_and(|e| sse.handle(&e).ok().flatten().is_some()));
     }
 
     #[test]

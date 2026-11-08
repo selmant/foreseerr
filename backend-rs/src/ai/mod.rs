@@ -611,7 +611,28 @@ pub async fn models(state: &AppState, conn: &Connection) -> Result<Vec<(String, 
     match conn.kind {
         Kind::ChatGpt => {
             let token = chatgpt::access_token(&state.outbound, &state.db, &vault, conn).await?;
-            chatgpt::models(&state.outbound, &token).await
+            let result = chatgpt::models(&state.outbound, &token).await;
+            if let Err(e) = &result {
+                if e.kind == ErrorKind::Reauth {
+                    if let Ok(Some(current)) = store::load(&state.db, conn.owner).await {
+                        if matches!(current.credentials(&vault), Ok(Some(Credentials::ChatGpt(t))) if t.access_token == token)
+                        {
+                            if let Err(err) = store::set_status(
+                                &state.db,
+                                &current,
+                                Status::Reauth,
+                                Some(&e.message),
+                                false,
+                            )
+                            .await
+                            {
+                                tracing::warn!("recording model-list rejection failed: {err:#}");
+                            }
+                        }
+                    }
+                }
+            }
+            result
         }
         Kind::OpenAi => {
             let base = conn

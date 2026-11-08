@@ -45,3 +45,13 @@ describe('Saved AI slider editing', () => {
     assert.equal(updated.savedAt, undefined);
   });
 });
+
+it('never exposes a structured non-text prompt to React or the editor', () => {
+  for (const prompt of [{ bad: true }, ['bad'], 42, false]) {
+    assert.equal(
+      parseAiSlider(JSON.stringify({ version: 1, request: { prompt } })).request
+        .prompt,
+      ''
+    );
+  }
+});

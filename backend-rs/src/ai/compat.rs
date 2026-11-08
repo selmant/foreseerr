@@ -336,3 +336,62 @@ mod tests {
         assert!(said.message.contains("model crashed"), "upstream message");
     }
 }
+
+#[cfg(test)]
+mod completion_review_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rejects_an_invalid_plan_through_the_fallback_completion_path() -> anyhow::Result<()> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}", listener.local_addr()?);
+        let app = axum::Router::new().route(
+            "/chat/completions",
+            axum::routing::post(|axum::Json(body): axum::Json<Value>| async move {
+                if body
+                    .pointer("/response_format/type")
+                    .and_then(Value::as_str)
+                    == Some("json_schema")
+                {
+                    return (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        axum::Json(json!({"error": {"message": "unsupported response_format"}})),
+                    );
+                }
+                let plan = json!({"summary":"test", "mediaTypes":["movie"], "anime":false,
+                "titleIdeas":[{"title":"Bad idea", "year":null, "mediaType":"book"}],
+                "genres":[], "keywords":[], "yearFrom":null, "yearTo":null, "webQueries":[]});
+                (
+                    axum::http::StatusCode::OK,
+                    axum::Json(json!({"choices":[{"message":{"content":plan.to_string()}}]})),
+                )
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let schema = crate::ai::recs::prompts::plan_schema();
+        let result = complete(
+            &reqwest::Client::new(),
+            &url,
+            None,
+            "test",
+            &Prompt {
+                instructions: "plan",
+                input: "test",
+                schema: Some(("plan", &schema)),
+            },
+        )
+        .await;
+        server.abort();
+        assert!(
+            result.is_err(),
+            "invalid enum must be rejected through complete, including fallback modes"
+        );
+        Ok(())
+    }
+}

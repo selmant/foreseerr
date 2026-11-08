@@ -54,7 +54,8 @@ create the Secret yourself, set `searxng.existingSecret`, and set
 `searxng.gitOps=true` so the chart rejects a missing Secret name:
 
 ```bash
-kubectl create secret generic foreseerr-searxng \
+# Set RELEASE_NAMESPACE to the namespace of your Helm release.
+kubectl --namespace "$RELEASE_NAMESPACE" create secret generic foreseerr-searxng \
   --from-literal=secret-key="$(openssl rand -hex 32)"
 ```
 

@@ -252,26 +252,7 @@ pub async fn start(
         return Err(AiError::not_configured());
     }
     let policy = Policy::of(&settings);
-    if let Some(limit) = daily_limit(&policy, &eff, &user) {
-        let spent = store::server_runs_since(&state.db, user.id, &iso_since(None))
-            .await
-            .map_err(db_err)?;
-        if spent >= i64::from(limit) {
-            return Err(AiError::daily_limit(limit));
-        }
-    }
     sweep_stale(&state).await;
-    // One request of their own at a time; Discover rows run alongside.
-    if !request.row
-        && store::active_run(&state.db, user.id, &iso_since(Some(STALE_AFTER_MINUTES)))
-            .await
-            .map_err(db_err)?
-            .is_some()
-    {
-        return Err(AiError::input(
-            "Your last request is still working. Wait for it to finish.",
-        ));
-    }
     let seed_title = match request.seed {
         Some((kind, id)) => {
             let details = state
@@ -287,17 +268,26 @@ pub async fn start(
         Source::Own => "own",
         Source::Server => "server",
     };
-    let run_id = store::create_run(
+    let (run_id, created) = store::reserve_run(
         &state.db,
         user.id,
-        &request.to_json(seed_title.as_deref()),
+        &request,
+        seed_title.as_deref(),
         source,
         eff.model.as_deref(),
+        daily_limit(&policy, &eff, &user),
     )
-    .await
-    .map_err(db_err)?;
+    .await?;
+    if !created {
+        return Ok(run_id);
+    }
     tokio::spawn(async move {
-        let result = work(&state, &settings, &user, &eff, run_id, &request).await;
+        let result = tokio::time::timeout(
+            Duration::from_mins(9),
+            work(&state, &settings, &user, &eff, run_id, &request),
+        )
+        .await
+        .unwrap_or_else(|_| Err(AiError::network("This request took too long. Try again.")));
         let saved = match &result {
             Ok(done) => store::finish(&state.db, run_id, done).await,
             Err(e) => {
@@ -308,8 +298,10 @@ pub async fn start(
         if let Err(e) = saved {
             tracing::warn!("saving AI run {run_id} failed: {e:#}");
         }
-        if result.is_ok() {
-            if let Err(e) = maybe_update_taste(&state, &eff, user.id).await {
+        if result.is_ok()
+            && matches!(store::run(&state.db, user.id, run_id).await, Ok(Some(r)) if r.stage == "done")
+        {
+            if let Err(e) = maybe_update_taste(&state, &eff, &user).await {
                 tracing::info!(
                     "updating the taste card of user {} failed: {}",
                     user.id,
@@ -346,7 +338,7 @@ async fn person(
     let mut liked_lines = Vec::new();
     let mut avoid_lines = Vec::new();
     let mut liked = Vec::new();
-    let mut excluded: HashSet<Key> = HashSet::new();
+    let mut excluded = store::feedback_keys(&state.db, user_id).await?;
     for f in &feedback {
         let key = (kind_of(&f.media_type), f.tmdb_id);
         let label = if f.title.is_empty() {
@@ -381,18 +373,24 @@ async fn person(
     }
     // Hiding what they already watched happens here, on this server; it
     // sends nothing to the model.
-    if let Ok(Ok(watched)) = tokio::time::timeout(
+    let watched = tokio::time::timeout(
         Duration::from_secs(10),
         crate::mappinglayer::watched::load_combined(state, settings, user_id),
     )
     .await
-    {
-        for (kind, ids) in [("movie", &watched.movie), ("tv", &watched.tv)] {
-            for id in ids {
-                if let Some(id) = whole(*id) {
-                    excluded.insert((kind, id));
-                }
+    .map_err(|_| anyhow::anyhow!("Watch history took too long to load. Try again."))?
+    .map_err(|_| anyhow::anyhow!("Watch history could not be loaded. Try again."))?;
+    for (kind, ids) in [("movie", &watched.movie), ("tv", &watched.tv)] {
+        for id in ids {
+            if let Some(id) = whole(*id) {
+                excluded.insert((kind, id));
             }
+        }
+    }
+    for row in state.db.rows(r#"SELECT "simklType", "animeType", CAST("tmdbId" AS BIGINT) AS "tmdbId" FROM "simkl_sync_item" WHERE "userId" = ?1 AND "lastWatchedAt" IS NOT NULL AND "tmdbId" IS NOT NULL"#, &[Bind::Int(user_id)]).await? {
+        if let Some(id) = row.get("tmdbId").and_then(Value::as_i64) {
+            let kind = if row.get("simklType").and_then(Value::as_str) == Some("movie") || row.get("simklType").and_then(Value::as_str) == Some("anime") && row.get("animeType").and_then(Value::as_str) == Some("movie") { "movie" } else { "tv" };
+            excluded.insert((kind, id));
         }
     }
     let history = if prefs.use_history {
@@ -522,17 +520,59 @@ async fn history(state: &AppState, settings: &Settings, user_id: i64) -> Vec<Str
     lines
 }
 
+async fn current_access(
+    state: &AppState,
+    eff: &Effective,
+    user: &CurrentUser,
+) -> Result<Effective, AiError> {
+    let err = |e: anyhow::Error| AiError::internal(format!("{e:#}"));
+    let settings = state.settings.current().await.map_err(err)?;
+    let mut user = user.clone();
+    user.permissions = state
+        .db
+        .user(user.id)
+        .await
+        .map_err(err)?
+        .ok_or_else(AiError::not_configured)?
+        .permissions;
+    let current = super::effective(state, &settings, &user)
+        .await
+        .map_err(err)?
+        .map_err(unavailable_error)?;
+    if current.connection.id != eff.connection.id
+        || current.connection.session_version != eff.connection.session_version
+        || current.source != eff.source
+        || current.model != eff.model
+    {
+        return Err(AiError::input(
+            "Your AI connection changed while this request was working. Try again.",
+        ));
+    }
+    Ok(current)
+}
+
 async fn ask<T: for<'de> serde::Deserialize<'de>>(
     state: &AppState,
     eff: &Effective,
+    user: &CurrentUser,
+    run_id: Option<i64>,
     instructions: &str,
     input: &str,
     schema: (&str, &Value),
 ) -> Result<T, AiError> {
+    let current = current_access(state, eff, user).await?;
+    if let Some(id) = run_id {
+        let run = store::run(&state.db, user.id, id)
+            .await
+            .map_err(|e| AiError::internal(format!("{e:#}")))?;
+        if !run.is_some_and(|r| matches!(r.stage.as_str(), "planning" | "searching" | "ranking")) {
+            return Err(AiError::input("This recommendation request has stopped."));
+        }
+    }
     let answer = super::complete(
         state,
-        &eff.connection,
-        eff.model.as_deref(),
+        &current.connection,
+        current.model.as_deref(),
         &Prompt {
             instructions,
             input,
@@ -578,7 +618,7 @@ async fn work(
             line.overview
         )
     });
-    let person = person(state, settings, user.id, request, seed_line)
+    let mut person = person(state, settings, user.id, request, seed_line)
         .await
         .map_err(db_err)?;
 
@@ -588,6 +628,8 @@ async fn work(
         ask(
             state,
             eff,
+            user,
+            Some(run_id),
             prompts::PLAN_INSTRUCTIONS,
             &prompts::plan_input(&person.ctx, &genres.all_names()),
             ("recommendation_plan", &plan_schema),
@@ -598,6 +640,7 @@ async fn work(
         AiError::network("The model took too long to answer. Try again, or pick a faster model.")
     })??;
 
+    current_access(state, eff, user).await?;
     store::set_stage(&state.db, run_id, Stage::Searching)
         .await
         .map_err(db_err)?;
@@ -610,23 +653,19 @@ async fn work(
         only: request.only,
         anime_only: request.anime,
     };
-    let gathered = tokio::time::timeout(
-        SEARCH_TIMEOUT,
-        retrieve::gather(
-            &retrieve::Env {
-                state,
-                settings,
-                user_id: user.id,
-                language: &lang,
-                genres: &genres,
-            },
-            &plan,
-            &sources,
-            &person.excluded,
-        ),
+    let gathered = retrieve::gather(
+        &retrieve::Env {
+            state,
+            settings,
+            user_id: user.id,
+            language: &lang,
+            genres: &genres,
+        },
+        &plan,
+        &sources,
+        &person.excluded,
     )
-    .await
-    .unwrap_or_default();
+    .await;
     if gathered.candidates.is_empty() {
         return Err(AiError::input(
             "Nothing matching turned up. Try wording it differently or widening it.",
@@ -642,9 +681,18 @@ async fn work(
         .map(|c| c.line(&genres))
         .collect();
     let rank_schema = prompts::rank_schema();
+    if !super::store::prefs(&state.db, user.id)
+        .await
+        .map_err(db_err)?
+        .use_history
+    {
+        person.ctx.history.clear();
+    }
     let ranking: Ranking = ask(
         state,
         eff,
+        user,
+        Some(run_id),
         prompts::RANK_INSTRUCTIONS,
         &prompts::rank_input(&person.ctx, &lines, &gathered.web),
         ("recommendation_picks", &rank_schema),
@@ -673,7 +721,10 @@ async fn work(
         if let Some(c) =
             retrieve::search_title(state, &lang, &extra.title, extra.year, kind, "idea").await
         {
-            if !person.excluded.contains(&c.key()) && taken.insert(c.key()) {
+            if (!request.anime || c.is_anime())
+                && !person.excluded.contains(&c.key())
+                && taken.insert(c.key())
+            {
                 picked.push((c, clip_why(&extra.why)));
             }
         }
@@ -714,21 +765,16 @@ fn clip_why(why: &str) -> String {
 async fn maybe_update_taste(
     state: &AppState,
     eff: &Effective,
-    user_id: i64,
+    user: &CurrentUser,
 ) -> Result<(), AiError> {
+    let user_id = user.id;
     let db_err = |e: anyhow::Error| AiError::internal(format!("{e:#}"));
-    let current = store::taste(&state.db, user_id).await.map_err(db_err)?;
-    let feedback = store::feedback(&state.db, user_id, 60)
+    let (current, version) = store::taste_snapshot(&state.db, user_id)
         .await
         .map_err(db_err)?;
-    let since = current
-        .as_ref()
-        .map(|(_, at)| at.as_str())
-        .unwrap_or_default();
-    let new: Vec<&store::Feedback> = feedback
-        .iter()
-        .filter(|f| f.updated_at.as_str() > since)
-        .collect();
+    let new = store::pending_batch(&state.db, user_id)
+        .await
+        .map_err(db_err)?;
     if new.len() < TASTE_AFTER_FEEDBACK {
         return Ok(());
     }
@@ -756,8 +802,10 @@ async fn maybe_update_taste(
     let update: TasteUpdate = ask(
         state,
         eff,
+        user,
+        None,
         prompts::TASTE_INSTRUCTIONS,
-        &prompts::taste_input(current.as_ref().map(|(c, _)| c.as_str()), &lines, &requests),
+        &prompts::taste_input(Some(current.as_str()), &lines, &requests),
         ("taste_card", &schema),
     )
     .await?;
@@ -765,8 +813,9 @@ async fn maybe_update_taste(
     if card.is_empty() {
         return Ok(());
     }
-    store::save_taste(&state.db, user_id, &card)
+    store::apply_taste(&state.db, user_id, version, &card, &new)
         .await
+        .map(drop)
         .map_err(db_err)
 }
 
@@ -785,17 +834,7 @@ pub async fn sweep_stale(state: &AppState) {
 ///
 /// Fails on database errors.
 pub async fn pending_feedback(state: &AppState, user_id: i64) -> anyhow::Result<(usize, usize)> {
-    let current = store::taste(&state.db, user_id).await?;
-    let feedback = store::feedback(&state.db, user_id, 1000).await?;
-    let since = current
-        .as_ref()
-        .map(|(_, at)| at.as_str())
-        .unwrap_or_default();
-    let pending = feedback
-        .iter()
-        .filter(|f| f.updated_at.as_str() > since)
-        .count();
-    Ok((feedback.len(), pending))
+    store::feedback_counts(&state.db, user_id).await
 }
 
 #[cfg(test)]
@@ -836,5 +875,159 @@ mod tests {
     fn whole_ids() {
         assert_eq!(whole(603.0), Some(603), "integral float");
         assert_eq!(whole(-1.0), None, "negative");
+    }
+}
+
+#[cfg(test)]
+mod worker_review_tests {
+    use super::*;
+    use crate::ai::store::{Kind, Owner, Status, Write};
+    use crate::dbtx::scratch;
+
+    #[tokio::test]
+    async fn worker_passes_fallback_web_results_to_ranking_and_stops_after_disconnect(
+    ) -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("worker-web-handoff").await?;
+        scratch.db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'worker@example.test', 0, 1, '')"#, &[]).await?;
+        let dir = std::env::temp_dir().join(format!(
+            "foreseerr-ai-worker-{}",
+            crate::standalone::settingsfile::uuid_v4()?
+        ));
+        std::fs::create_dir_all(&dir)?;
+        let state = AppState::for_tests(scratch.db.clone(), &dir)?;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}", listener.local_addr()?);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = axum::Router::new()
+            .route("/search", axum::routing::get(|| async { axum::Json(json!({"results": [{"title":"Test search", "url":"https://example.test/", "content":"WEB_HANDOFF_SENTINEL"}]})) }))
+            .route("/chat/completions", axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+                let tx = tx.clone();
+                async move {
+                    let schema = body.pointer("/response_format/json_schema/name").and_then(Value::as_str);
+                    let answer = if schema == Some("recommendation_plan") {
+                        json!({"summary":"Worker mystery test", "mediaTypes":["movie"], "anime":false,
+                            "titleIdeas":[{"title":"PR55 Worker Fixture", "year":2026, "mediaType":"movie"}],
+                            "genres":[], "keywords":[], "yearFrom":null, "yearTo":null, "webQueries":[]})
+                    } else {
+                        drop(tx.send(body.clone()));
+                        json!({"headline":"Test", "picks":[{"ref":"m955001", "why":"A matching mystery"}], "extra":[], "refinements":[]})
+                    };
+                    axum::Json(json!({"choices":[{"message":{"content":answer.to_string()}}]}))
+                }
+            }));
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        state
+            .settings
+            .update(|doc| {
+                doc["ai"] = json!({"enabled":true, "searxng":{"enabled":true,"url":url}});
+            })
+            .await?;
+        let vault = super::super::vault(&state).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let held = super::super::store::lock().await;
+        super::super::store::save(
+            &state.db,
+            &vault,
+            Owner::Server,
+            Write {
+                kind: Kind::OpenAi,
+                base_url: Some(url),
+                model: Some(String::from("test")),
+                credentials: None,
+                identity: None,
+                status: Status::Ok,
+            },
+            &held,
+        )
+        .await?;
+        drop(held);
+        let settings = state.settings.current().await?;
+        let user = CurrentUser {
+            id: 1,
+            permissions: 0,
+            webpush_enabled: false,
+            locale: None,
+        };
+        let eff = super::super::effective(&state, &settings, &user)
+            .await?
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        for kind in ["movie", "tv"] {
+            crate::tmdb::remember_for_tests(
+                &format!("/genre/{kind}/list"),
+                &[("language", "en")],
+                json!({"genres":[]}),
+            );
+        }
+        crate::tmdb::remember_for_tests(
+            "/search/movie",
+            &[
+                ("query", "PR55 Worker Fixture"),
+                ("page", "1"),
+                ("include_adult", "false"),
+                ("language", "en"),
+                ("primary_release_year", "2026"),
+            ],
+            json!({"results":[{"id":955_001,"title":"PR55 Worker Fixture","release_date":"2026-01-01","original_language":"en","genre_ids":[]}]}),
+        );
+        let request = Request {
+            prompt: String::from("Mystery"),
+            only: Some("movie"),
+            ..Request::default()
+        };
+        let id =
+            store::create_run(&state.db, 1, &request.to_json(None), "server", Some("test")).await?;
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            work(&state, &settings, &user, &eff, id, &request),
+        )
+        .await?;
+        let result = result.map_err(|e| anyhow::anyhow!("{e}"))?;
+        assert_eq!(result.get("usedWeb"), Some(&Value::Bool(true)));
+        let ranking = rx.try_recv()?;
+        assert!(
+            ranking.to_string().contains("WEB_HANDOFF_SENTINEL"),
+            "fallback web result reaches the actual ranking model request"
+        );
+        super::super::store::delete(&state.db, Owner::Server).await?;
+        let schema = prompts::taste_schema();
+        let stopped = ask::<TasteUpdate>(
+            &state,
+            &eff,
+            &user,
+            None,
+            "test",
+            "private",
+            ("taste_card", &schema),
+        )
+        .await;
+        assert!(
+            stopped.is_err(),
+            "removed endpoint cannot receive a subsequent model call"
+        );
+        assert!(rx.try_recv().is_err());
+        server.abort();
+        std::fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn simkl_watches_are_excluded_without_history_consent() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("simkl-exclusion").await?;
+        scratch.db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'simkl@example.test', 0, 1, '')"#, &[]).await?;
+        for (kind, anime, id) in [
+            ("movie", None, 101),
+            ("show", None, 102),
+            ("anime", Some("movie"), 103),
+            ("anime", Some("tv"), 104),
+        ] {
+            scratch.db.execute(r#"INSERT INTO "simkl_sync_item" ("userId", "simklId", "simklType", "animeType", "tmdbId", "title", "status", "lastWatchedAt") VALUES (1, ?1, ?2, ?3, ?4, 'Watched', 'completed', CURRENT_TIMESTAMP)"#, &[Bind::Text(id.to_string()), Bind::Text(kind.to_owned()), Bind::OptText(anime.map(str::to_owned)), Bind::Int(id)]).await?;
+        }
+        let state = AppState::for_tests(scratch.db.clone(), &std::env::temp_dir())?;
+        let settings = Settings::from_file_value(json!({}), None)?;
+        let person = person(&state, &settings, 1, &Request::default(), None).await?;
+        assert!(person.ctx.history.is_empty());
+        for key in [("movie", 101), ("tv", 102), ("movie", 103), ("tv", 104)] {
+            assert!(person.excluded.contains(&key), "{key:?}");
+        }
+        Ok(())
     }
 }

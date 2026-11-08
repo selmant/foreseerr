@@ -1,3 +1,4 @@
+import { AiFeedbackQueue } from '@shared/lib/aiFeedback';
 import type {
   AiPick,
   AiRun,
@@ -5,7 +6,7 @@ import type {
   AiVerdict,
 } from '@shared/interfaces/api/aiInterfaces';
 import axios from 'axios';
-import useSWR, { mutate as globalMutate } from 'swr';
+import useSWR, { useSWRConfig, type KeyedMutator } from 'swr';
 
 export const isWorking = (run?: AiRun | null): boolean =>
   !!run && ['planning', 'searching', 'ranking'].includes(run.stage);
@@ -45,6 +46,57 @@ export const sendFeedback = async (pick: AiPick, kind: AiVerdict | null) => {
     kind,
     title: item.title ?? item.name ?? '',
   });
-  globalMutate('/api/v1/ai/taste', res.data, { revalidate: false });
   return res.data;
+};
+
+const feedbackQueue = new AiFeedbackQueue();
+const isAiCache = (key: unknown): boolean =>
+  typeof key === 'string' &&
+  (key.startsWith('/api/v1/ai/runs/') || key.startsWith('/api/v1/ai/row?'));
+
+type CachedPicks = AiRun | { run: AiRun | null };
+const updateCachedPick = (
+  current: CachedPicks | undefined,
+  pick: AiPick,
+  kind: AiVerdict | null
+) => {
+  if (!current) return current;
+  if ('run' in current)
+    return {
+      ...current,
+      run: current.run ? withFeedback(current.run, pick, kind) : null,
+    };
+  return withFeedback(current, pick, kind);
+};
+
+/** One edit identity per title, ordered writes, and synchronized SWR run/row caches. */
+export const useAiFeedback = (
+  run: AiRun | null | undefined,
+  mutateRun: KeyedMutator<AiRun>
+) => {
+  const { mutate } = useSWRConfig();
+  return async (pick: AiPick, kind: AiVerdict | null) => {
+    if (!run) return;
+    const taste = await feedbackQueue.submit(
+      `${pick.mediaType}-${pick.tmdbId}`,
+      pick.feedback ?? null,
+      kind,
+      () => sendFeedback(pick, kind),
+      async (value, isCurrent) => {
+        await mutateRun(
+          (current) =>
+            isCurrent() ? withFeedback(current ?? run, pick, value) : current,
+          { revalidate: false }
+        );
+        await mutate(
+          isAiCache,
+          (current: CachedPicks | undefined) =>
+            isCurrent() ? updateCachedPick(current, pick, value) : current,
+          { revalidate: false }
+        );
+      }
+    );
+    await mutate('/api/v1/ai/taste', taste, { revalidate: false });
+    await mutate('/api/v1/ai/feedback');
+  };
 };

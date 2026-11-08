@@ -35,9 +35,14 @@ const DiscoverNavigation = () => {
   const aiEnabled = currentSettings.aiEnabled === true;
   const tabsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    tabsRef.current
-      ?.querySelector('[aria-current="page"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const strip = tabsRef.current;
+    const tab = strip?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!strip || !tab) return;
+    const left =
+      tab.getBoundingClientRect().left - strip.getBoundingClientRect().left;
+    if (left < 0) strip.scrollLeft += left;
+    else if (left + tab.offsetWidth > strip.clientWidth)
+      strip.scrollLeft += left + tab.offsetWidth - strip.clientWidth;
   }, [location.pathname, aiEnabled]);
   const current: DiscoverSection = location.pathname.startsWith(
     '/discover/movies'

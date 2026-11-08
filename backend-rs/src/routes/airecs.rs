@@ -28,7 +28,8 @@ pub(super) const ROUTES: &Table = &[
     ("/api/v1/ai/recommend", Method::POST, recommend),
     ("/api/v1/ai/runs", Method::GET, runs),
     ("/api/v1/ai/runs/{runId}", Method::GET, run_get),
-    ("/api/v1/ai/row", Method::GET, row),
+    ("/api/v1/ai/row", Method::GET, row_cached),
+    ("/api/v1/ai/row", Method::POST, row),
     ("/api/v1/ai/feedback", Method::GET, feedback_list),
     ("/api/v1/ai/feedback", Method::POST, feedback_set),
     ("/api/v1/ai/feedback", Method::DELETE, feedback_clear),
@@ -109,12 +110,18 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Value {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let verdicts: HashMap<(String, i64), String> = store::feedback(&ctx.state.db, user_id, 2000)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|f| ((f.media_type, f.tmdb_id), f.kind))
+    let keys: Vec<(String, i64)> = picks
+        .iter()
+        .filter_map(|p| {
+            Some((
+                p.get("mediaType")?.as_str()?.to_owned(),
+                p.get("tmdbId")?.as_i64()?,
+            ))
+        })
         .collect();
+    let verdicts = store::feedback_for(&ctx.state.db, user_id, &keys)
+        .await
+        .unwrap_or_default();
     let mut related: HashMap<&'static str, Option<RelatedTitles>> = HashMap::new();
     for kind in ["movie", "tv"] {
         let raws: Vec<Value> = picks
@@ -186,6 +193,7 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Value {
 }
 
 async fn load_run(ctx: &Ready<'_>, user_id: i64, run_id: i64) -> Result<Value, AiError> {
+    recs::sweep_stale(ctx.state).await;
     let run = store::run(&ctx.state.db, user_id, run_id)
         .await
         .map_err(|e| db_err(&e))?
@@ -221,7 +229,8 @@ fn run_get<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 /// `GET /ai/runs`: recent requests of their own (not Discover rows).
 fn runs<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     answer(ctx, |ctx, user| async move {
-        let list = store::recent_runs(&ctx.state.db, user.id, 60)
+        recs::sweep_stale(ctx.state).await;
+        let list = store::personal_runs(&ctx.state.db, user.id, 20)
             .await
             .map_err(|e| db_err(&e))?;
         let items: Vec<Value> = list
@@ -245,8 +254,28 @@ fn runs<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 
 /// `GET /ai/row?sliderId=` (or legacy prompt/only parameters).
 /// A saved run seeds the owner's cache; refreshes repeat the full request.
+fn row_cached<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    row_response(ctx, false)
+}
+
 fn row<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
-    answer(ctx, |ctx, user| async move {
+    row_response(ctx, true)
+}
+
+fn row_response<'a>(ctx: &'a Ready<'a>, create: bool) -> Native<'a> {
+    answer(ctx, move |ctx, user| async move {
+        if create
+            && ctx
+                .req
+                .headers
+                .get("x-foreseerr-ai")
+                .and_then(|v| v.to_str().ok())
+                != Some("1")
+        {
+            return Err(AiError::not_eligible(
+                "AI row refreshes require the X-Foreseerr-AI header.",
+            ));
+        }
         let query = params::query(ctx).unwrap_or_default();
         let (config, enabled) = if let Some(id) = query.get("sliderId").and_then(Value::as_i64) {
             let slider = ctx
@@ -271,7 +300,7 @@ fn row<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             )
         };
         let request = &config.request;
-        let recent = store::row_runs(&ctx.state.db, user.id, &request.cache_key())
+        let recent = store::row_runs(&ctx.state.db, user.id, request)
             .await
             .map_err(|e| db_err(&e))?;
         let mut matching: Vec<(store::Run, String)> = recent
@@ -312,7 +341,7 @@ fn row<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             return Ok(json!({"run": run_view(ctx, user.id, run).await, "notice": null}));
         }
         let last = matching.iter().find(|(r, _)| r.stage == "done");
-        if !enabled {
+        if !enabled || !create {
             let run = match last {
                 Some((r, _)) => Some(run_view(ctx, user.id, r).await),
                 None => None,
@@ -456,4 +485,43 @@ fn taste_put<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             .map_err(|e| db_err(&e))?;
         taste_view(ctx, user.id).await
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dbtx::scratch;
+    use crate::routes::testkit::Kit;
+
+    #[tokio::test]
+    async fn row_get_is_read_only_and_post_requires_the_custom_header() -> anyhow::Result<()> {
+        let scratch = scratch::sqlite("ai-row-methods").await?;
+        scratch.db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'row@example.test', 0, 1, '')"#, &[]).await?;
+        let kit = Kit::new(
+            "ai-row-methods",
+            scratch.db.clone(),
+            json!({"ai":{"enabled":true}}),
+        )?;
+        let (status, body) = kit
+            .call(
+                row_cached,
+                (Method::GET, "/api/v1/ai/row?prompt=cozy"),
+                Some((1, 0)),
+                None,
+            )
+            .await?;
+        assert_eq!(status, 200);
+        assert_eq!(body, json!({"run":null,"notice":null}));
+        let (status, _) = kit
+            .call(
+                row,
+                (Method::POST, "/api/v1/ai/row?prompt=cozy"),
+                Some((1, 0)),
+                Some(json!({})),
+            )
+            .await?;
+        assert_eq!(status, 403);
+        assert_eq!(store::server_runs_since(&scratch.db, 1, "2000").await?, 0);
+        Ok(())
+    }
 }
