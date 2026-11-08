@@ -1,0 +1,152 @@
+{{- if .Values.searxng.enabled }}
+{{- $name := include "foreseerr.searxngName" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "foreseerr.searxngLabels" . | nindent 4 }}
+data:
+  settings.yml: |
+    {{- toYaml .Values.searxng.settings | nindent 4 }}
+{{- if not .Values.searxng.existingSecret }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "foreseerr.searxngLabels" . | nindent 4 }}
+type: Opaque
+data:
+  {{- $current := lookup "v1" "Secret" .Release.Namespace $name }}
+  {{- if and $current $current.data (index $current.data .Values.searxng.secretKey) }}
+  {{ .Values.searxng.secretKey }}: {{ index $current.data .Values.searxng.secretKey }}
+  {{- else }}
+  {{ .Values.searxng.secretKey }}: {{ randAlphaNum 48 | b64enc | quote }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "foreseerr.searxngLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "foreseerr.searxngSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/settings: {{ toYaml .Values.searxng.settings | sha256sum }}
+      labels:
+        {{- include "foreseerr.searxngLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.searxng.podSecurityContext | nindent 8 }}
+      containers:
+        - name: searxng
+          securityContext:
+            {{- toYaml .Values.searxng.securityContext | nindent 12 }}
+          image: "{{ .Values.searxng.image.registry }}/{{ .Values.searxng.image.repository }}:{{ .Values.searxng.image.tag }}"
+          imagePullPolicy: {{ .Values.searxng.image.pullPolicy }}
+          env:
+            - name: SEARXNG_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.searxng.existingSecret | default $name }}
+                  key: {{ .Values.searxng.secretKey }}
+            # The settings file is a read-only ConfigMap mount.
+            - name: FORCE_OWNERSHIP
+              value: 'false'
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.searxng.resources | nindent 12 }}
+          volumeMounts:
+            - name: settings
+              mountPath: /etc/searxng/settings.yml
+              subPath: settings.yml
+              readOnly: true
+            - name: cache
+              mountPath: /var/cache/searxng
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: settings
+          configMap:
+            name: {{ $name }}
+        - name: cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "foreseerr.searxngLabels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "foreseerr.searxngSelectorLabels" . | nindent 4 }}
+{{- if .Values.searxng.networkPolicy.enabled }}
+---
+# SearXNG has no login: only Foreseerr's pods may reach it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "foreseerr.searxngLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "foreseerr.searxngSelectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "foreseerr.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: http
+          protocol: TCP
+{{- end }}
+{{- end }}

@@ -1,5 +1,8 @@
 # Builds and runs Foreseerr from this checkout. For development without
 # Docker, run `bun run dev` (Vite on :3000 in front of the backend on :5055).
+#
+# Optional web search for the AI features: add compose.searxng.yaml
+# (instructions inside).
 services:
   foreseerr:
     build:
@@ -8,3 +11,15 @@ services:
       - 5055:5055
     volumes:
       - ./config:/app/config
+    # Saved AI credentials are encrypted with ./config/secret.key, which
+    # Foreseerr creates on first use. To keep the key out of ./config (so a
+    # copy of that folder alone can't decrypt them), use a secret instead:
+    # `openssl rand -hex 32 > foreseerr_secret_key`, or copy the existing
+    # ./config/secret.key there to keep credentials already saved.
+    # environment:
+    #   FORESEERR_SECRET_KEY_FILE: /run/secrets/foreseerr_secret_key
+    # secrets:
+    #   - foreseerr_secret_key
+# secrets:
+#   foreseerr_secret_key:
+#     file: ./foreseerr_secret_key

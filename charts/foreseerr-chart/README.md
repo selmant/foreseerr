@@ -4,8 +4,7 @@ Helm chart for deploying [Foreseerr](https://github.com/selmant/foreseerr) on Ku
 
 Foreseerr is a Seerr fork with Discover sources (Trakt, AniList, Simkl,
 MDBList), a TMDB mapping layer, Library, Calendar, and Servarr interventions.
-Config mounts remain Seerr-compatible at `/app/config`. The current app
-version for this chart is `v0.12.0`.
+Config mounts remain Seerr-compatible at `/app/config`.
 
 ## Installation
 
@@ -20,6 +19,28 @@ See [`values.yaml`](./values.yaml) for all options. The chart supports custom
 and scheduling through `priorityClassName`. `replicaCount` may be `0` (scaled
 down, for example during a migration) or `1`; Foreseerr does not run as
 multiple replicas.
+
+### AI features
+
+Saved AI credentials (API keys, ChatGPT sign-ins) are encrypted with a key that
+Foreseerr creates as `secret.key` on the config volume. To keep the key apart
+from the database, store it in a Secret and set `secretKey.existingSecret`:
+
+```bash
+# A new install, or one without saved AI credentials yet:
+kubectl create secret generic foreseerr-secret-key \
+  --from-literal=secret-key="$(openssl rand -hex 32)"
+# An install that already saved credentials: reuse the current key instead,
+# or they can no longer be opened.
+kubectl exec foreseerr-0 -- cat /app/config/secret.key > secret.key
+kubectl create secret generic foreseerr-secret-key --from-file=secret-key=secret.key
+```
+
+Set `searxng.enabled=true` to run a private [SearXNG](https://docs.searxng.org)
+instance for web search. It runs unprivileged with a read-only root filesystem,
+and by default a NetworkPolicy lets only Foreseerr reach it, since SearXNG has
+no login. Then turn it on in Settings → AI → Web search with the URL the
+install notes print.
 
 ## Update Notes
 
