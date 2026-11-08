@@ -591,31 +591,23 @@ const SettingsAi = () => {
                   </span>
                 </label>
                 <div className="form-input-area">
-                  <div className="form-input-field">
-                    <Field
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      max={1000}
-                      id="dailyLimit"
-                      name="dailyLimit"
-                      required
-                      aria-invalid={!!errors.dailyLimit}
-                      aria-describedby={
-                        errors.dailyLimit ? 'daily-limit-error' : undefined
-                      }
-                      className="short"
-                    />
-                    {errors.dailyLimit ? (
-                      <p
-                        id="daily-limit-error"
-                        role="alert"
-                        className="mt-1 text-sm text-red-400"
-                      >
-                        {errors.dailyLimit}
-                      </p>
-                    ) : null}
-                  </div>
+                  <Field
+                    type="text"
+                    inputMode="numeric"
+                    id="dailyLimit"
+                    name="dailyLimit"
+                    required
+                    aria-invalid={!!errors.dailyLimit}
+                    aria-describedby={
+                      errors.dailyLimit ? 'daily-limit-error' : undefined
+                    }
+                    className="short"
+                  />
+                  {errors.dailyLimit ? (
+                    <div id="daily-limit-error" role="alert" className="error">
+                      {errors.dailyLimit}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </Section>
