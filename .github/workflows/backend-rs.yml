@@ -70,7 +70,20 @@ jobs:
       # src/mappinglayer/dbtests.rs needs; under CI that test fails
       # instead of skipping without one.
       - name: Build the scratch mapping database
-        run: python3 scripts/ci-smoke.py --bin target/debug/foreseerr --mapping-db "$RUNNER_TEMP/mapping.sqlite3"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The release download URL can return 504 while the asset API works.
+          # Supply the same release as an extra mirror, keeping the backend's
+          # download, validation and import paths under test.
+          mirror_dir="$RUNNER_TEMP/mapping-mirrors"
+          mkdir -p "$mirror_dir"
+          gh release download v3 --repo anibridge/anibridge-mappings --pattern mappings.min.json --output "$mirror_dir/anibridge.json"
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$mirror_dir" &
+          mirror_pid=$!
+          trap 'kill "$mirror_pid"' EXIT
+          curl --fail --silent --show-error --retry 5 --retry-connrefused --retry-delay 1 --head http://127.0.0.1:8765/anibridge.json > /dev/null
+          MAPPING_MIRROR_TEMPLATES='http://127.0.0.1:8765/{key}.json' python3 scripts/ci-smoke.py --bin target/debug/foreseerr --mapping-db "$RUNNER_TEMP/mapping.sqlite3"
 
       - name: Test
         run: FORESEERR_MAPPING_TEST_DB="$RUNNER_TEMP/mapping.sqlite3" cargo test --locked

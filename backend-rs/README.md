@@ -412,7 +412,9 @@ what it compiles in or reads from outside it (`package.json`,
 - format, lint and test: `cargo fmt --check`, `cargo clippy --all-targets
   --locked -- -D warnings`, the SQLite startup smoke that also builds the
   scratch mapping database (`scripts/ci-smoke.py --mapping-db`), then
-  `cargo test --locked` with `FORESEERR_MAPPING_TEST_DB` set;
+  `cargo test --locked` with `FORESEERR_MAPPING_TEST_DB` set. The job fetches
+  AniBridge's release through GitHub's API and serves it as an extra local
+  mirror, so release download URL failures do not block the import test;
 - the API route table: `scripts/gen-api-routes.ts` runs again (Bun only,
   no `node_modules`), and the job fails if `src/standalone/apiroutes.rs`
   changed;
