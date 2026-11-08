@@ -15,7 +15,7 @@ use crate::state::AppState;
 
 /// `Tvdb.DEFAULT_CACHE_TTL` is the client's; calls that name no TTL use
 /// `ExternalAPI`'s five minutes.
-const DEFAULT_GET_TTL: Duration = Duration::from_secs(300);
+const DEFAULT_GET_TTL: Duration = Duration::from_mins(5);
 /// Episode pages a season reads at most.
 const MAX_PAGES: i64 = 50;
 const ARTWORK_BASE: &str = "https://artworks.thetvdb.com";

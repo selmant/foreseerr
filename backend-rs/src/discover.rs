@@ -19,6 +19,8 @@ const TMDB_TV_STREAMING_SERVICES: i64 = 21;
 const TRAKT_LIST: i64 = 1003;
 const ANILIST_LIST: i64 = 1010;
 const MDBLIST_LIST: i64 = 1014;
+/// AI picks for a prompt (empty: from each person's taste).
+const AI_PICKS: i64 = 1027;
 
 /// `retiredDiscoverSliderTypes`: Simkl rows without ids.
 const RETIRED: [i64; 6] = [1017, 1018, 1019, 1020, 1021, 1022];
@@ -70,7 +72,15 @@ pub fn response(slider: &DiscoverSliderRow) -> Value {
     out.insert(String::from("createdAt"), text(&slider.created_at));
     out.insert(String::from("updatedAt"), text(&slider.updated_at));
     let kind = Some(slider.slider_type);
-    if let Some(endpoint) = kind.and_then(|t| endpoint(t, slider.data.as_deref())) {
+    let row_endpoint = if slider.slider_type == AI_PICKS {
+        Some(with_query(
+            &format!("{API}/ai/row"),
+            &[("sliderId", &slider.id.to_string())],
+        ))
+    } else {
+        kind.and_then(|t| endpoint(t, slider.data.as_deref()))
+    };
+    if let Some(endpoint) = row_endpoint {
         out.insert(String::from("endpoint"), Value::from(endpoint));
     }
     if let Some(title) = kind.and_then(default_title) {

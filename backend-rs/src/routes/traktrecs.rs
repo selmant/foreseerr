@@ -14,7 +14,7 @@ use super::traktpages::{anime_filter, filter_watched};
 use crate::sync::lock;
 
 /// `TRAKT_RECOMMENDATIONS_CACHE_TTL_SECONDS`.
-const POOL_TTL: Duration = Duration::from_secs(3600);
+const POOL_TTL: Duration = Duration::from_hours(1);
 /// `TRAKT_RECS_CLASSIFY_CHUNK`.
 const CLASSIFY_CHUNK: usize = 20;
 

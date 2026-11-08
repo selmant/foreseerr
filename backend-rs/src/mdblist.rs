@@ -267,7 +267,7 @@ impl Mdblist {
 
     /// `isConfigured()`.
     #[must_use]
-    pub fn is_configured(&self) -> bool {
+    pub const fn is_configured(&self) -> bool {
         !self.key.is_empty()
     }
 

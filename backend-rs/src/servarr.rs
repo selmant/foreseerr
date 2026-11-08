@@ -18,7 +18,7 @@ use crate::tmdb::axios_encode;
 
 /// `getProfiles`, `getRootFolders` and `getLanguageProfiles` cache for an
 /// hour.
-const PROFILES_TTL: Duration = Duration::from_secs(3600);
+const PROFILES_TTL: Duration = Duration::from_hours(1);
 /// `DEFAULT_ROLLING_BUFFER`: a cached answer older than this is refreshed in
 /// the background while it is served.
 const ROLLING_BUFFER: Duration = Duration::from_secs(10);

@@ -13,14 +13,10 @@ use super::Ctx;
 use crate::sync::lock;
 
 static NEGATIVE: LazyLock<Mutex<BoundedLru<String, ()>>> =
-    LazyLock::new(|| Mutex::new(BoundedLru::new(50_000, Some(Duration::from_secs(6 * 3600)))));
+    LazyLock::new(|| Mutex::new(BoundedLru::new(50_000, Some(Duration::from_hours(6)))));
 
-static ALIVE: LazyLock<Mutex<BoundedLru<String, Probe>>> = LazyLock::new(|| {
-    Mutex::new(BoundedLru::new(
-        20_000,
-        Some(Duration::from_secs(24 * 3600)),
-    ))
-});
+static ALIVE: LazyLock<Mutex<BoundedLru<String, Probe>>> =
+    LazyLock::new(|| Mutex::new(BoundedLru::new(20_000, Some(Duration::from_hours(24)))));
 
 /// `TmdbFindResult`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -29,7 +29,7 @@ use crate::mappinglayer::lru::BoundedLru;
 
 /// `PROVIDER_ROW_MAX_AGE_SECONDS`: older than this, a row is a miss
 /// however it got there.
-pub const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+pub const MAX_AGE: Duration = Duration::from_hours(24);
 
 /// Rows kept per cache: pages of a handful of rows per user.
 const MAX_ROWS: usize = 500;
@@ -392,7 +392,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
-    const MIN: Duration = Duration::from_secs(60);
+    const MIN: Duration = Duration::from_mins(1);
 
     #[tokio::test]
     async fn fresh_rows_are_served_as_is() {
@@ -515,7 +515,7 @@ mod tests {
             "k",
             MIN,
             async {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                tokio::time::sleep(Duration::from_mins(1)).await;
                 Ok(1)
             },
             never,
@@ -571,7 +571,7 @@ mod tests {
     async fn marked_rows_are_served_once_more_and_refreshed() {
         let (c, marks) = cache(MAX_AGE);
         let calls = Arc::new(AtomicUsize::new(0));
-        let hour = Duration::from_secs(3600);
+        let hour = Duration::from_hours(1);
         read(c, "k", hour, async { Ok(1) }, never).await.ok();
         marks.mark_stale();
         let served = read(c, "k", hour, async { Ok(9) }, || counted(&calls, Ok(2))).await;

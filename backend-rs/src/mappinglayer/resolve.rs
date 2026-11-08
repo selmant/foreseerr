@@ -62,9 +62,9 @@ const MISS_TTL_MSEC: i64 = 12 * 3600 * 1000;
 type Hot = BoundedLru<String, Option<Resolution>>;
 
 static HOT: LazyLock<Mutex<Hot>> =
-    LazyLock::new(|| Mutex::new(BoundedLru::new(20_000, Some(Duration::from_secs(15 * 60)))));
+    LazyLock::new(|| Mutex::new(BoundedLru::new(20_000, Some(Duration::from_mins(15)))));
 static FAILED: LazyLock<Mutex<BoundedLru<String, ()>>> =
-    LazyLock::new(|| Mutex::new(BoundedLru::new(20_000, Some(Duration::from_secs(2 * 60)))));
+    LazyLock::new(|| Mutex::new(BoundedLru::new(20_000, Some(Duration::from_mins(2)))));
 
 /// `invalidateResolutions`: drop cached answers.
 pub fn invalidate_resolutions() {

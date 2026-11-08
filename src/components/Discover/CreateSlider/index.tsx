@@ -1,3 +1,4 @@
+import { parseAiSlider, editAiSliderPrompt } from '@shared/lib/aiSlider';
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
 import MdblistListSlider from '@app/components/Discover/MdblistListSlider';
@@ -45,6 +46,9 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   anilistListNotLinked:
     'Link AniList in Linked Accounts to pick from your anime lists.',
   providemdblistlisturl: 'Paste a link to a public MDBList list',
+  aiPrompt: 'What should this row find? e.g. Cozy mysteries for a rainy night',
+  aiPromptHint:
+    'Each person sees their own picks for this prompt, based on their taste. Picks refresh daily and count toward each person’s daily AI limit.',
   searchMdblistLists: 'Search MDBList lists or paste a list URL…',
   customMdblistList: 'Use: {value}',
   liked: 'liked',
@@ -291,9 +295,12 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       intl.formatMessage(messages.validationTitlerequired)
     ),
     sliderType: Yup.number().required(),
-    data: Yup.string().required(
-      intl.formatMessage(messages.validationDatarequired)
-    ),
+    data: Yup.string().when('sliderType', {
+      is: DiscoverSliderType.AI_PICKS,
+      then: (schema) => schema,
+      otherwise: (schema) =>
+        schema.required(intl.formatMessage(messages.validationDatarequired)),
+    }),
   });
 
   const loadKeywordOptions = async (inputValue: string) => {
@@ -586,6 +593,14 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
       dataPlaceholderText: intl.formatMessage(messages.providemdblistlisturl),
     },
+    {
+      type: DiscoverSliderType.AI_PICKS,
+      title: intl.formatMessage(sliderTitles.aipicks),
+      dataUrl: '/api/v1/ai/row',
+      params: 'prompt=$value',
+      titlePlaceholderText: intl.formatMessage(messages.slidernameplaceholder),
+      dataPlaceholderText: intl.formatMessage(messages.aiPrompt),
+    },
   ];
 
   const visibleOptions = options.filter((option) => {
@@ -598,6 +613,9 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
     if (option.type === DiscoverSliderType.MDBLIST_LIST) {
       return settings.currentSettings.mdblistConfigured;
     }
+    if (option.type === DiscoverSliderType.AI_PICKS) {
+      return settings.currentSettings.aiEnabled === true;
+    }
 
     return true;
   });
@@ -609,7 +627,10 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
           ? {
               sliderType: slider.type,
               title: slider.title,
-              data: slider.data,
+              data:
+                slider.type === DiscoverSliderType.AI_PICKS
+                  ? (parseAiSlider(slider.data).request.prompt ?? '')
+                  : slider.data,
             }
           : {
               sliderType: DiscoverSliderType.TMDB_MOVIE_KEYWORD,
@@ -625,7 +646,11 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
             await axios.put(`/api/v1/settings/discover/${slider.id}`, {
               type: Number(values.sliderType),
               title: values.title,
-              data: values.data,
+              data:
+                Number(values.sliderType) === DiscoverSliderType.AI_PICKS &&
+                slider.type === DiscoverSliderType.AI_PICKS
+                  ? editAiSliderPrompt(slider.data, values.data ?? '')
+                  : values.data,
             });
           } else {
             await axios.post('/api/v1/settings/discover/add', {
@@ -671,7 +696,8 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         );
         const submitBlocker = !values.title?.trim()
           ? messages.validationTitlerequired
-          : !values.data?.trim()
+          : Number(values.sliderType) !== DiscoverSliderType.AI_PICKS &&
+              !values.data?.trim()
             ? messages.validationDatarequired
             : null;
         const canSubmit = isValid && !submitBlocker;
@@ -941,6 +967,22 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
               </div>
             );
             break;
+          case DiscoverSliderType.AI_PICKS:
+            dataInput = (
+              <div>
+                <Field
+                  type="text"
+                  name="data"
+                  id="data"
+                  maxLength={300}
+                  placeholder={activeOption?.dataPlaceholderText}
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  {intl.formatMessage(messages.aiPromptHint)}
+                </p>
+              </div>
+            );
+            break;
           default:
             dataInput = (
               <Field
@@ -1016,59 +1058,62 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
               )}
             </div>
 
-            {activeOption && values.title && values.data && (
-              <div className="relative py-4">
-                {activeOption.type === DiscoverSliderType.TRAKT_LIST ? (
-                  <TraktListSlider
-                    sliderKey={`preview-${values.title}`}
-                    title={values.title}
-                    url={values.data ?? ''}
-                    hideTitle
-                  />
-                ) : activeOption.type === DiscoverSliderType.MDBLIST_LIST ? (
-                  <MdblistListSlider
-                    sliderKey={`preview-${values.title}`}
-                    title={values.title}
-                    url={values.data ?? ''}
-                    hideTitle
-                  />
-                ) : (
-                  <MediaSlider
-                    sliderKey={`preview-${values.title}`}
-                    title={values.title}
-                    url={
-                      activeOption?.dataUrl?.replace(
-                        '$value',
-                        encodeURIExtraParams(values.data ?? '')
-                      ) ?? ''
-                    }
-                    extraParams={
-                      activeOption.type ===
-                        DiscoverSliderType.TMDB_MOVIE_STREAMING_SERVICES ||
-                      activeOption.type ===
-                        DiscoverSliderType.TMDB_TV_STREAMING_SERVICES
-                        ? activeOption.params
-                            ?.replace(
-                              '$regionValue',
-                              encodeURIExtraParams(
-                                values?.data?.split(',')[0] ?? ''
+            {activeOption &&
+              activeOption.type !== DiscoverSliderType.AI_PICKS &&
+              values.title &&
+              values.data && (
+                <div className="relative py-4">
+                  {activeOption.type === DiscoverSliderType.TRAKT_LIST ? (
+                    <TraktListSlider
+                      sliderKey={`preview-${values.title}`}
+                      title={values.title}
+                      url={values.data ?? ''}
+                      hideTitle
+                    />
+                  ) : activeOption.type === DiscoverSliderType.MDBLIST_LIST ? (
+                    <MdblistListSlider
+                      sliderKey={`preview-${values.title}`}
+                      title={values.title}
+                      url={values.data ?? ''}
+                      hideTitle
+                    />
+                  ) : (
+                    <MediaSlider
+                      sliderKey={`preview-${values.title}`}
+                      title={values.title}
+                      url={
+                        activeOption?.dataUrl?.replace(
+                          '$value',
+                          encodeURIExtraParams(values.data ?? '')
+                        ) ?? ''
+                      }
+                      extraParams={
+                        activeOption.type ===
+                          DiscoverSliderType.TMDB_MOVIE_STREAMING_SERVICES ||
+                        activeOption.type ===
+                          DiscoverSliderType.TMDB_TV_STREAMING_SERVICES
+                          ? activeOption.params
+                              ?.replace(
+                                '$regionValue',
+                                encodeURIExtraParams(
+                                  values?.data?.split(',')[0] ?? ''
+                                )
                               )
-                            )
-                            .replace(
-                              '$providersValue',
-                              encodeURIExtraParams(
-                                values?.data?.split(',')[1] ?? ''
+                              .replace(
+                                '$providersValue',
+                                encodeURIExtraParams(
+                                  values?.data?.split(',')[1] ?? ''
+                                )
                               )
+                          : activeOption.params?.replace(
+                              '$value',
+                              encodeURIExtraParams(values.data ?? '')
                             )
-                        : activeOption.params?.replace(
-                            '$value',
-                            encodeURIExtraParams(values.data ?? '')
-                          )
-                    }
-                  />
-                )}
-              </div>
-            )}
+                      }
+                    />
+                  )}
+                </div>
+              )}
           </Form>
         );
       }}

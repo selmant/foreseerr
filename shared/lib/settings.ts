@@ -378,7 +378,8 @@ export type JobId =
   | 'process-blocklisted-tags'
   | 'episode-request-sync'
   | 'release-calendar-sync'
-  | 'mapping-pack-refresh';
+  | 'mapping-pack-refresh'
+  | 'ai-picks-refresh';
 
 export interface AllSettings {
   clientId: string;

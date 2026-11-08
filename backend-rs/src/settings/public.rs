@@ -209,6 +209,15 @@ fn integration_fields(settings: &Settings, plugin_mode: bool) -> Vec<(&'static s
             "mdblistConfigured",
             Value::Bool(non_blank(settings.get("/mdblist/apiKey"))),
         ),
+        (
+            "aiEnabled",
+            Value::Bool(
+                settings
+                    .get("/ai/enabled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            ),
+        ),
         ("pluginMode", Value::Bool(plugin_mode)),
         ("ratingBadges", Value::Object(rating_badges(settings))),
     ]

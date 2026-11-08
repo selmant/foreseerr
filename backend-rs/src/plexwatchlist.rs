@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 use crate::memcache::{self, CacheId};
 
 const DISCOVER_URL: &str = "https://discover.provider.plex.tv";
-const TTL: Duration = Duration::from_secs(300);
+const TTL: Duration = Duration::from_mins(5);
 const ROLLING_BUFFER: Duration = Duration::from_secs(10);
 /// How many items' metadata are fetched at once.
 const METADATA_CONCURRENCY: usize = 5;

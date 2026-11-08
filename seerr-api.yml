@@ -44,6 +44,8 @@ tags:
     description: Unified Sonarr and Radarr release calendar.
   - name: library
     description: Owned-media Watch Now shelves and available library browse.
+  - name: ai
+    description: AI connections (server and personal), model presets and web search.
 servers:
   - url: '{server}/api/v1'
     variables:
@@ -1099,6 +1101,575 @@ components:
         posterTraktCommunity:
           type: boolean
           example: false
+    AiConnection:
+      type: object
+      description: An AI connection as its owner sees it. Credentials are never returned, only whether a key is set.
+      properties:
+        kind:
+          type: string
+          enum: [chatgpt, openai]
+        status:
+          type: string
+          enum: [ok, reauth, plan_disabled, signed_out]
+        model:
+          type: string
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          nullable: true
+        lastUsedAt:
+          type: string
+          nullable: true
+        providerLabel:
+          type: string
+          description: Friendly provider name for an OpenAI-compatible endpoint
+        baseUrl:
+          type: string
+          nullable: true
+        hasApiKey:
+          type: boolean
+        accountEmail:
+          type: string
+          nullable: true
+        accountName:
+          type: string
+          nullable: true
+        manageUsageUrl:
+          type: string
+    AiModel:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+    AiPresets:
+      type: object
+      properties:
+        fast:
+          type: string
+          nullable: true
+        balanced:
+          type: string
+          nullable: true
+        best:
+          type: string
+          nullable: true
+    AiUsage:
+      type: object
+      properties:
+        dailyLimit:
+          type: integer
+          nullable: true
+          description: Runs allowed per day on the server connection; null when there's no limit.
+        usedToday:
+          type: integer
+    AiRecommendRequest:
+      type: object
+      properties:
+        prompt:
+          type: string
+          maxLength: 300
+          example: A cozy mystery for a rainy night
+        seed:
+          type: object
+          nullable: true
+          required: [mediaType, tmdbId]
+          properties:
+            mediaType:
+              type: string
+              enum: [movie, tv]
+            tmdbId:
+              type: integer
+        only:
+          type: string
+          nullable: true
+          enum: [movie, tv, null]
+        anime:
+          type: boolean
+        availability:
+          type: string
+          nullable: true
+          enum: [library, new, null]
+          description: library keeps only titles already in the library; new keeps only titles not available, requested or downloading yet.
+        refinements:
+          type: array
+          maxItems: 6
+          items:
+            type: string
+    AiRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        stage:
+          type: string
+          enum: [planning, searching, ranking, done, failed]
+        createdAt:
+          type: string
+        request:
+          type: object
+        source:
+          type: string
+          enum: [own, server]
+        model:
+          type: string
+          nullable: true
+        origin:
+          type: string
+          enum: [manual, row, scheduled, weekly]
+          description: What started the run
+        result:
+          type: object
+          nullable: true
+          properties:
+            headline:
+              type: string
+            summary:
+              type: string
+            picks:
+              type: array
+              items:
+                type: object
+                properties:
+                  mediaType:
+                    type: string
+                    enum: [movie, tv]
+                  tmdbId:
+                    type: integer
+                  why:
+                    type: string
+                  source:
+                    type: string
+                  feedback:
+                    type: string
+                    nullable: true
+                  item:
+                    type: object
+            refinements:
+              type: array
+              items:
+                type: string
+            candidates:
+              type: integer
+            usedWeb:
+              type: boolean
+        error:
+          type: object
+          nullable: true
+    AiTaste:
+      type: object
+      properties:
+        card:
+          type: string
+        updatedAt:
+          type: string
+          nullable: true
+        feedbackCount:
+          type: integer
+        pendingFeedback:
+          type: integer
+        outcomes:
+          $ref: '#/components/schemas/AiOutcomes'
+    AiOutcomes:
+      type: object
+      description: How picks went over the last 30 days.
+      properties:
+        picks:
+          type: integer
+          description: Distinct titles suggested
+        requested:
+          type: integer
+          description: Requested after being suggested
+        watched:
+          type: integer
+          description: Watched after being suggested
+        liked:
+          type: integer
+          description: Liked, or rated 7 or more, after being suggested
+    AiRunSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        stage:
+          type: string
+        createdAt:
+          type: string
+        prompt:
+          type: string
+        seedTitle:
+          type: string
+          nullable: true
+        seed:
+          type: object
+          nullable: true
+          properties:
+            mediaType:
+              type: string
+              enum: [movie, tv]
+            tmdbId:
+              type: integer
+        error:
+          type: string
+          nullable: true
+          description: Why a failed request failed.
+        only:
+          type: string
+          nullable: true
+        anime:
+          type: boolean
+          nullable: true
+        availability:
+          type: string
+          nullable: true
+        refinements:
+          type: array
+          nullable: true
+          items:
+            type: string
+        headline:
+          type: string
+          nullable: true
+        pickCount:
+          type: integer
+        posters:
+          type: array
+          items:
+            type: string
+        requested:
+          type: integer
+        liked:
+          type: integer
+        model:
+          type: string
+          nullable: true
+    AiUsageReport:
+      type: object
+      properties:
+        days:
+          type: integer
+        month:
+          type: object
+          properties:
+            serverTokens:
+              type: integer
+            budget:
+              type: integer
+        people:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: integer
+              name:
+                type: string
+              avatar:
+                type: string
+                nullable: true
+              runs:
+                type: integer
+              manual:
+                type: integer
+              automatic:
+                type: integer
+              failed:
+                type: integer
+              today:
+                type: integer
+              tokens:
+                type: integer
+              serverTokens:
+                type: integer
+              lastRunAt:
+                type: string
+                nullable: true
+              outcomes:
+                $ref: '#/components/schemas/AiOutcomes'
+        models:
+          type: array
+          items:
+            type: object
+            properties:
+              model:
+                type: string
+                nullable: true
+              runs:
+                type: integer
+              failed:
+                type: integer
+              inputTokens:
+                type: integer
+              outputTokens:
+                type: integer
+              picks:
+                type: integer
+              requested:
+                type: integer
+              watched:
+                type: integer
+              ratedWell:
+                type: integer
+        failures:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              createdAt:
+                type: string
+              model:
+                type: string
+                nullable: true
+              origin:
+                type: string
+              message:
+                type: string
+                nullable: true
+    AiSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        shareServerConnection:
+          type: boolean
+        allowUserChatgpt:
+          type: boolean
+        allowUserEndpoints:
+          type: boolean
+        allowUserModelChoice:
+          type: boolean
+        models:
+          type: object
+          properties:
+            fast:
+              type: string
+              nullable: true
+            best:
+              type: string
+              nullable: true
+        presets:
+          $ref: '#/components/schemas/AiPresets'
+        dailyLimit:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        monthlyTokenBudget:
+          type: integer
+          minimum: 0
+          description: Tokens the server connection may use per month; 0 means no budget.
+        rowRefreshDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+        autoPicks:
+          type: boolean
+          description: The nightly job prepares Discover rows and weekly picks for active people.
+        historyDays:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Finished requests are deleted after this many days; 0 keeps them.
+        searxng:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            url:
+              type: string
+        connection:
+          allOf:
+            - $ref: '#/components/schemas/AiConnection'
+          nullable: true
+        secretKey:
+          type: object
+          properties:
+            source:
+              type: string
+              enum: [env, file, config]
+            besideDatabase:
+              type: boolean
+    AiSettingsUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        shareServerConnection:
+          type: boolean
+        allowUserChatgpt:
+          type: boolean
+        allowUserEndpoints:
+          type: boolean
+        allowUserModelChoice:
+          type: boolean
+        models:
+          type: object
+          properties:
+            fast:
+              type: string
+              nullable: true
+            best:
+              type: string
+              nullable: true
+        dailyLimit:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        monthlyTokenBudget:
+          type: integer
+          minimum: 0
+          description: Tokens the server connection may use per month; 0 means no budget.
+        rowRefreshDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+        autoPicks:
+          type: boolean
+          description: The nightly job prepares Discover rows and weekly picks for active people.
+        historyDays:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Finished requests are deleted after this many days; 0 keeps them.
+        searxng:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            url:
+              type: string
+    AiEndpointRequest:
+      type: object
+      required: [baseUrl]
+      properties:
+        baseUrl:
+          type: string
+          example: https://api.openai.com/v1
+        apiKey:
+          type: string
+          description: Write-only. Omit or leave blank to keep the stored key.
+        clearApiKey:
+          type: boolean
+        model:
+          type: string
+          nullable: true
+    AiModelRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          nullable: true
+    AiMe:
+      type: object
+      properties:
+        usage:
+          $ref: '#/components/schemas/AiUsage'
+        enabled:
+          type: boolean
+        policy:
+          type: object
+          properties:
+            allowChatgpt:
+              type: boolean
+            allowEndpoints:
+              type: boolean
+            allowModelChoice:
+              type: boolean
+        server:
+          type: object
+          nullable: true
+          properties:
+            kind:
+              type: string
+            status:
+              type: string
+            providerLabel:
+              type: string
+            presets:
+              $ref: '#/components/schemas/AiPresets'
+        own:
+          allOf:
+            - $ref: '#/components/schemas/AiConnection'
+          nullable: true
+        preferences:
+          type: object
+          properties:
+            useOwnConnection:
+              type: boolean
+            model:
+              type: string
+              nullable: true
+            useHistory:
+              type: boolean
+            historyConsentAt:
+              type: string
+              nullable: true
+            weeklyPicks:
+              type: boolean
+        effective:
+          type: object
+          description: The connection the user's AI requests use right now.
+          properties:
+            available:
+              type: boolean
+            reason:
+              type: string
+              enum:
+                [disabled, own_missing, own_needs_sign_in, no_server_connection]
+            source:
+              type: string
+              enum: [own, server]
+            kind:
+              type: string
+            model:
+              type: string
+              nullable: true
+            preset:
+              type: string
+              nullable: true
+            accountEmail:
+              type: string
+              nullable: true
+            usesChatgptPlan:
+              type: boolean
+            manageUsageUrl:
+              type: string
+              nullable: true
+        chatgptRedirectUri:
+          type: string
+        revoked:
+          type: boolean
+          nullable: true
+        planEnabled:
+          type: boolean
+    AiError:
+      type: object
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+          enum:
+            [
+              input,
+              not_configured,
+              reauth,
+              usage_limit,
+              not_eligible,
+              unavailable,
+              upstream,
+              internal,
+              daily_limit,
+            ]
+        manageUsageUrl:
+          type: string
     MdbListSettings:
       type: object
       properties:
@@ -1485,6 +2056,10 @@ components:
         mdblistConfigured:
           type: boolean
           description: Whether an MDBList API key is configured
+          example: false
+        aiEnabled:
+          type: boolean
+          description: Whether an admin turned on AI features
           example: false
         pluginMode:
           type: boolean
@@ -4541,6 +5116,614 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MdbListSettings'
+  /settings/ai:
+    get:
+      x-foreseerr: true
+      summary: Get AI settings
+      description: The AI policy, model presets, web search and the server connection (without credentials). Admins only.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+    post:
+      x-foreseerr: true
+      summary: Update AI settings
+      description: Changes the AI policy switches, preset models and SearXNG web search. Admins only.
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiSettingsUpdate'
+      responses:
+        '200':
+          description: The updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+  /settings/ai/connection:
+    put:
+      x-foreseerr: true
+      summary: Save the server AI connection
+      description: Sets the server's OpenAI-compatible endpoint. The API key is write-only and stored encrypted. Admins only.
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiEndpointRequest'
+      responses:
+        '200':
+          description: The updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+    delete:
+      x-foreseerr: true
+      summary: Remove the server AI connection
+      tags:
+        - ai
+      responses:
+        '200':
+          description: The updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+  /settings/ai/connection/model:
+    post:
+      x-foreseerr: true
+      summary: Set the server connection's default model
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelRequest'
+      responses:
+        '200':
+          description: The updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+  /settings/ai/connection/test:
+    post:
+      x-foreseerr: true
+      summary: Test the server AI connection
+      description: Lists the endpoint's models and, when a model is chosen, sends a tiny prompt.
+      tags:
+        - ai
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelRequest'
+      responses:
+        '200':
+          description: The connection works
+  /settings/ai/connection/models:
+    get:
+      x-foreseerr: true
+      summary: List the server connection's models
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiModel'
+  /settings/ai/searxng/test:
+    post:
+      x-foreseerr: true
+      summary: Test a SearXNG instance
+      description: Runs a real query against the given (or saved) SearXNG address.
+      tags:
+        - ai
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+      responses:
+        '200':
+          description: SearXNG answered with JSON
+  /ai/me:
+    get:
+      x-foreseerr: true
+      summary: Get my AI connection and preferences
+      description: Which connection the signed-in user's AI requests use, their own connection (without credentials) and preferences.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+    post:
+      x-foreseerr: true
+      summary: Update my AI preferences
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                useOwnConnection:
+                  type: boolean
+                model:
+                  type: string
+                  nullable: true
+                  enum: [fast, balanced, best, null]
+                useHistory:
+                  type: boolean
+                weeklyPicks:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+  /ai/me/connection:
+    put:
+      x-foreseerr: true
+      summary: Save my own AI endpoint
+      description: Only when the admin allows personal endpoints. The API key is write-only and stored encrypted.
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiEndpointRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+    delete:
+      x-foreseerr: true
+      summary: Disconnect my own AI connection
+      description: Signs out of ChatGPT (revoking the session) or removes the endpoint.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+  /ai/me/connection/model:
+    post:
+      x-foreseerr: true
+      summary: Set my own connection's model
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+  /ai/me/connection/test:
+    post:
+      x-foreseerr: true
+      summary: Test my own AI connection
+      tags:
+        - ai
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelRequest'
+      responses:
+        '200':
+          description: The connection works
+  /ai/me/connection/models:
+    get:
+      x-foreseerr: true
+      summary: List my own connection's models
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiModel'
+  /ai/me/chatgpt/start:
+    post:
+      x-foreseerr: true
+      summary: Start a ChatGPT sign-in
+      description: Returns the ChatGPT authorization URL to open. OpenAI only redirects to a loopback address, so the user pastes the address the browser lands on into /ai/me/chatgpt/complete.
+      tags:
+        - ai
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                consent:
+                  type: boolean
+                  description: Ask ChatGPT to show the consent screen again (to allow plan use after declining it).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorizeUrl:
+                    type: string
+                  redirectUri:
+                    type: string
+  /ai/me/chatgpt/complete:
+    post:
+      x-foreseerr: true
+      summary: Finish a ChatGPT sign-in
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [callbackUrl]
+              properties:
+                callbackUrl:
+                  type: string
+                  description: The full address the browser landed on after signing in.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+  /ai/recommend:
+    post:
+      x-foreseerr: true
+      summary: Start a recommendation run
+      description: Starts a run for the signed-in user and answers it while it works. Follow it with GET /ai/runs/{runId}.
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiRecommendRequest'
+      responses:
+        '200':
+          description: The run, still working
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiRun'
+        '429':
+          description: The daily limit was reached
+  /ai/runs:
+    get:
+      x-foreseerr: true
+      summary: List my recent recommendation requests
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiRunSummary'
+    delete:
+      x-foreseerr: true
+      summary: Delete my AI request history
+      description: Deletes every finished request of the signed-in user, Discover rows and weekly picks included. Feedback and the taste card are kept.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+  /ai/weekly:
+    get:
+      x-foreseerr: true
+      summary: Get my latest weekly picks
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run:
+                    allOf:
+                      - $ref: '#/components/schemas/AiRun'
+                    nullable: true
+  /settings/ai/usage:
+    get:
+      x-foreseerr: true
+      summary: Get AI usage
+      description: Requests, tokens and how picks went per person and per model over the last 30 days, the server connection's tokens this month and recent failures. Admins only.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiUsageReport'
+  /ai/runs/{runId}:
+    get:
+      x-foreseerr: true
+      summary: Get one of my recommendation runs
+      tags:
+        - ai
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiRun'
+    delete:
+      x-foreseerr: true
+      summary: Delete one of my recommendation requests
+      tags:
+        - ai
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+  /ai/row:
+    get:
+      x-foreseerr: true
+      summary: Get my picks for an AI Discover row
+      description: Reuses this person’s cached picks for the saved slider request, including the initial run selected by its creator. A GET never starts a model request.
+      tags:
+        - ai
+      parameters:
+        - in: query
+          name: sliderId
+          description: Saved AI slider whose full request and initial cache should be used.
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: prompt
+          schema:
+            type: string
+            maxLength: 300
+        - in: query
+          name: only
+          schema:
+            type: string
+            enum: [movie, tv]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run:
+                    allOf:
+                      - $ref: '#/components/schemas/AiRun'
+                    nullable: true
+                  notice:
+                    type: object
+                    nullable: true
+    post:
+      x-foreseerr: true
+      summary: Refresh my picks for an AI Discover row
+      description: Reuses this person’s cached picks for the saved slider request, including the initial run selected by its creator. Otherwise starts a personalized run, counted toward the daily limit. Requires the `X-Foreseerr-AI` request header set to `1` (checked by the handler, so the validator keeps the query).
+      tags:
+        - ai
+      parameters:
+        - in: query
+          name: sliderId
+          description: Saved AI slider whose full request and initial cache should be used.
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: prompt
+          schema:
+            type: string
+            maxLength: 300
+        - in: query
+          name: only
+          schema:
+            type: string
+            enum: [movie, tv]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run:
+                    allOf:
+                      - $ref: '#/components/schemas/AiRun'
+                    nullable: true
+                  notice:
+                    type: object
+                    nullable: true
+  /ai/feedback:
+    get:
+      x-foreseerr: true
+      summary: List my feedback on titles
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      x-foreseerr: true
+      summary: Set or clear my feedback on a title
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mediaType, tmdbId]
+              properties:
+                mediaType:
+                  type: string
+                  enum: [movie, tv]
+                tmdbId:
+                  type: integer
+                kind:
+                  type: string
+                  nullable: true
+                  enum: [like, dislike, seen, not_interested, null]
+                title:
+                  type: string
+      responses:
+        '200':
+          description: My taste card and feedback counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiTaste'
+    delete:
+      x-foreseerr: true
+      summary: Forget all my feedback
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiTaste'
+  /ai/taste:
+    get:
+      x-foreseerr: true
+      summary: Get my taste card
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiTaste'
+    put:
+      x-foreseerr: true
+      summary: Replace my taste card
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card]
+              properties:
+                card:
+                  type: string
+                  maxLength: 1200
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiTaste'
   /settings/radarr:
     get:
       summary: Get Radarr settings
@@ -5964,6 +7147,10 @@ paths:
                 type:
                   type: number
                   example: 1
+                aiRunId:
+                  type: integer
+                  minimum: 1
+                  description: For AI sliders, reuse one of the caller’s completed runs and retain its full request.
                 data:
                   type: string
                   example: '1'

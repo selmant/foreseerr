@@ -51,6 +51,8 @@ pub struct AppState {
     pub servarr: ServarrClient,
     /// The outgoing HTTP client (proxy and CA settings applied).
     pub outbound: reqwest::Client,
+    /// Provider dispatch and connection removal are ordered per owner.
+    pub ai_dispatch: crate::ai::dispatch::Dispatches,
     /// Rotten Tomatoes, `IMDb` and `MDBList` ratings.
     pub ratings: Ratings,
     startup_network: NetworkSnapshot,
@@ -86,6 +88,7 @@ impl AppState {
             servarr,
             ratings,
             outbound: outbound_shared,
+            ai_dispatch: crate::ai::dispatch::Dispatches::default(),
             startup_network,
         })
     }
@@ -126,6 +129,7 @@ impl AppState {
             servarr: ServarrClient::new(outbound.clone()),
             ratings: Ratings::new(outbound.clone()),
             outbound,
+            ai_dispatch: crate::ai::dispatch::Dispatches::default(),
             startup_network: NetworkSnapshot::of(&current),
             env,
             version,

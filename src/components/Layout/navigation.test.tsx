@@ -32,6 +32,20 @@ const navigationFor = (permissions: number) => {
 };
 
 describe('Shared application navigation', () => {
+  it('selects Discover for AI Picks without a separate sidebar destination', () => {
+    const links = navigationFor(0);
+    assert.equal(
+      links.some((link) => link.href === '/discover/ai'),
+      false
+    );
+    assert.equal(
+      links
+        .find((link) => link.href === '/')
+        ?.activeRegExp.test('/discover/ai'),
+      true
+    );
+  });
+
   it('makes personal features available without administration permissions', () => {
     const links = navigationFor(0);
     assert.deepEqual(

@@ -155,6 +155,7 @@ const defaultSettings: PublicSettingsResponse = {
   mediaActionsAnilistEnabled: true,
   mediaActionsSimklEnabled: true,
   mdblistConfigured: false,
+  aiEnabled: false,
   ratingBadges: { ...DEFAULT_RATING_BADGE_SETTINGS },
 };
 

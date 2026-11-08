@@ -39,6 +39,17 @@ extraEnv: []
 # -- Environment variables from secrets or configmaps to add to the foreseerr pods
 extraEnvFrom: []
 
+# -- The key that encrypts saved AI credentials (API keys, ChatGPT sign-ins).
+# By default Foreseerr creates `secret.key` on the config volume, next to the
+# database. Point this at a Secret to keep them apart, so a copy of the volume
+# alone can't decrypt them. To keep credentials already saved, put the current
+# `/app/config/secret.key` contents in the Secret; a new key can't open them.
+secretKey:
+  # -- Existing Secret holding the key: 32 random bytes as hex or base64 (`openssl rand -hex 32`)
+  existingSecret: ''
+  # -- Key in the Secret
+  key: secret-key
+
 serviceAccount:
   # -- Specifies whether a service account should be created
   create: true
@@ -206,3 +217,51 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+# Optional private SearXNG instance for the AI features' web search. Once it
+# runs, set its URL in Settings → AI → Web search: `http://<fullname>-searxng:8080`
+# (the install notes print it).
+searxng:
+  # -- Deploy SearXNG next to Foreseerr
+  enabled: false
+  image:
+    registry: docker.io
+    repository: searxng/searxng
+    # -- SearXNG publishes date-based tags only
+    tag: '2026.11.6-ac11e14c5'
+    pullPolicy: IfNotPresent
+  # -- Existing Secret with SearXNG's cookie-signing key; when empty, the chart generates one and keeps it across upgrades. Set it with Argo CD or other `helm template` GitOps tools, which would otherwise generate a new key on every render
+  existingSecret: ''
+  # -- Require an existing signing Secret for deterministic GitOps renders (Argo CD and other helm template workflows)
+  gitOps: false
+  # -- Key in the Secret
+  secretKey: secret-key
+  networkPolicy:
+    # -- Only let Foreseerr's pods reach SearXNG, which has no login. Needs a CNI that enforces NetworkPolicy.
+    enabled: true
+  # -- SearXNG's settings.yml. Foreseerr needs `json` in `search.formats`; the limiter is for public instances and needs Valkey.
+  settings:
+    use_default_settings: true
+    server:
+      limiter: false
+      public_instance: false
+      image_proxy: false
+    search:
+      safe_search: 1
+      formats:
+        - html
+        - json
+  resources: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 977
+    runAsGroup: 977
+    fsGroup: 977
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL

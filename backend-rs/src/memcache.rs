@@ -628,7 +628,7 @@ mod tests {
         }
     }
 
-    const MIN: Duration = Duration::from_secs(60);
+    const MIN: Duration = Duration::from_mins(1);
 
     #[test]
     fn counts_hits_misses_and_sizes_like_node() {
@@ -862,7 +862,7 @@ mod tests {
         assert_eq!(CacheId::parse("dns"), None, "unknown");
         assert_eq!(
             CacheId::Mdblist.default_ttl(),
-            Duration::from_secs(172_800),
+            Duration::from_hours(48),
             "48h"
         );
     }

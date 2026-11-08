@@ -301,7 +301,7 @@ fn strip_manifest_links(html: &str) -> String {
 }
 
 /// `\s` in a JavaScript regular expression.
-fn is_js_space(c: char) -> bool {
+const fn is_js_space(c: char) -> bool {
     c.is_whitespace() || c == '\u{feff}'
 }
 

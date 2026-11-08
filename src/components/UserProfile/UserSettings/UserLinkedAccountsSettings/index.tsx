@@ -34,14 +34,16 @@ import { useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 import LinkJellyfinModal from './LinkJellyfinModal';
+import AiAccount from './AiAccount';
 
 const messages = defineMessages(
   'components.UserProfile.UserSettings.UserLinkedAccountsSettings',
   {
     linkedAccounts: 'Linked Accounts',
     linkedAccountsHint:
-      'Manage connections for library playback, personal lists, and watch/rating sync.',
+      'Manage connections for playback, personal lists, watch sync, and AI recommendations.',
     availableConnections: 'Available connections',
+    aiAccount: 'AI account',
     linkService: 'Link {service}',
     jellyfinDescription: 'Browse your library and play movies and episodes.',
     mediaServerDescription:
@@ -650,6 +652,11 @@ const UserLinkedAccountsSettings = () => {
                 {intl.formatMessage(messages.watchTrackers)}
               </LinkButton>
             ) : null}
+            {settings.currentSettings.aiEnabled ? (
+              <LinkButton to="#ai-account" className="min-h-11">
+                {intl.formatMessage(messages.aiAccount)}
+              </LinkButton>
+            ) : null}
             <LinkButton to="/discover/sources" className="min-h-11">
               {intl.formatMessage(messages.browseSources)}
             </LinkButton>
@@ -847,6 +854,8 @@ const UserLinkedAccountsSettings = () => {
           </h3>
         </div>
       ) : null}
+
+      {user && currentUser?.id === user.id ? <AiAccount /> : null}
 
       {(settings.currentSettings.traktConfigured ||
         settings.currentSettings.anilistConfigured ||

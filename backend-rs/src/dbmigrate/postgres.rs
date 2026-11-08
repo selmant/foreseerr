@@ -671,4 +671,61 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "AddRequestMetadataLanguage1789800000000",
         queries: &["ALTER TABLE \"media_request\" ADD \"metadataLanguageId\" integer"],
     },
+    Migration {
+        timestamp: 1_789_900_000_000,
+        name: "AddAiConnections1789900000000",
+        queries: &[
+            "CREATE TABLE \"ai_connection\" (\"id\" SERIAL NOT NULL, \"kind\" character varying NOT NULL, \"baseUrl\" character varying, \"model\" character varying, \"credentials\" text, \"clientId\" character varying, \"accountSubject\" character varying, \"accountEmail\" character varying, \"accountName\" character varying, \"status\" character varying NOT NULL DEFAULT 'ok', \"lastError\" text, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"lastUsedAt\" TIMESTAMP WITH TIME ZONE, \"userId\" integer, CONSTRAINT \"REL_ai_connection_user\" UNIQUE (\"userId\"), CONSTRAINT \"PK_ai_connection\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_connection_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+            "CREATE TABLE \"ai_user_settings\" (\"id\" SERIAL NOT NULL, \"useOwnConnection\" boolean NOT NULL DEFAULT false, \"model\" character varying, \"useHistory\" boolean NOT NULL DEFAULT false, \"historyConsentAt\" TIMESTAMP WITH TIME ZONE, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_user_settings_user\" UNIQUE (\"userId\"), CONSTRAINT \"PK_ai_user_settings\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_user_settings_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+        ],
+    },
+    Migration {
+        timestamp: 1_790_000_000_000,
+        name: "AddAiRecommendations1790000000000",
+        queries: &[
+            "CREATE TABLE \"ai_run\" (\"id\" SERIAL NOT NULL, \"stage\" character varying NOT NULL, \"request\" text NOT NULL, \"result\" text, \"error\" text, \"source\" character varying NOT NULL, \"model\" character varying, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"PK_ai_run\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_run_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+            "CREATE INDEX \"IDX_ai_run_user_created\" ON \"ai_run\" (\"userId\", \"createdAt\") ",
+            "CREATE TABLE \"ai_feedback\" (\"id\" SERIAL NOT NULL, \"mediaType\" character varying NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" character varying NOT NULL, \"title\" character varying NOT NULL DEFAULT '', \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_feedback_user_title\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"PK_ai_feedback\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_feedback_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+            "CREATE TABLE \"ai_taste\" (\"id\" SERIAL NOT NULL, \"card\" text NOT NULL, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_taste_user\" UNIQUE (\"userId\"), CONSTRAINT \"PK_ai_taste\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_taste_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+        ],
+    },
+    Migration {
+        timestamp: 1_790_100_000_000,
+        name: "UniqueAiServerConnection1790100000000",
+        queries: &[
+            "DELETE FROM \"ai_connection\" WHERE \"userId\" IS NULL AND \"id\" <> (SELECT MIN(\"id\") FROM \"ai_connection\" WHERE \"userId\" IS NULL)",
+            "CREATE UNIQUE INDEX \"UQ_ai_connection_server\" ON \"ai_connection\" ((1)) WHERE \"userId\" IS NULL",
+        ],
+    },
+    Migration {
+        timestamp: 1_790_200_000_000,
+        name: "AiStateVersions1790200000000",
+        queries: &[
+            "ALTER TABLE \"ai_connection\" ADD \"sessionVersion\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE \"ai_feedback\" ADD \"version\" integer NOT NULL DEFAULT 1",
+            "ALTER TABLE \"ai_feedback\" ADD \"learnedVersion\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE \"ai_taste\" ADD \"version\" integer NOT NULL DEFAULT 1",
+        ],
+    },
+    Migration {
+        timestamp: 1_790_300_000_000,
+        name: "AiInsights1790300000000",
+        queries: &[
+            "ALTER TABLE \"ai_run\" ADD \"origin\" character varying NOT NULL DEFAULT 'manual'",
+            "ALTER TABLE \"ai_run\" ADD \"inputTokens\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE \"ai_run\" ADD \"outputTokens\" integer NOT NULL DEFAULT 0",
+            "UPDATE \"ai_run\" SET \"origin\" = 'row' WHERE \"request\" LIKE '%\"row\":true%'",
+            "ALTER TABLE \"ai_user_settings\" ADD \"weeklyPicks\" boolean NOT NULL DEFAULT true",
+            "ALTER TABLE \"ai_user_settings\" ADD \"lastActiveAt\" TIMESTAMP WITH TIME ZONE",
+            "CREATE TABLE \"ai_pick\" (\"id\" SERIAL NOT NULL, \"mediaType\" character varying NOT NULL, \"tmdbId\" integer NOT NULL, \"title\" character varying NOT NULL DEFAULT '', \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"runId\" integer NOT NULL, \"userId\" integer NOT NULL, CONSTRAINT \"PK_ai_pick\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_pick_run\" FOREIGN KEY (\"runId\") REFERENCES \"ai_run\"(\"id\") ON DELETE CASCADE, CONSTRAINT \"FK_ai_pick_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+            "CREATE INDEX \"IDX_ai_pick_user_title\" ON \"ai_pick\" (\"userId\", \"mediaType\", \"tmdbId\") ",
+            "CREATE INDEX \"IDX_ai_pick_run\" ON \"ai_pick\" (\"runId\") ",
+            "CREATE TABLE \"ai_signal\" (\"id\" SERIAL NOT NULL, \"mediaType\" character varying NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" character varying NOT NULL, \"rating\" integer, \"title\" character varying NOT NULL DEFAULT '', \"model\" character varying, \"learned\" boolean NOT NULL DEFAULT false, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_signal_user_title_kind\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\", \"kind\"), CONSTRAINT \"PK_ai_signal\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_signal_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+        ],
+    },
+    Migration {
+        timestamp: 1_790_400_000_000,
+        name: "AiHistoryIgnore1790400000000",
+        queries: &["CREATE TABLE \"ai_history_ignore\" (\"userId\" integer NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, PRIMARY KEY (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_history_ignore_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"],
+    },
 ];
