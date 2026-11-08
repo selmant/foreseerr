@@ -157,6 +157,10 @@ const TitleCard = ({
   const cardRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const pointerOverSurface = useRef<Event | null>(null);
+  // Whether the card was open when the current press began. Focus (fired
+  // between pointerdown and click) opens the card, so reading showDetail in
+  // the click handler would make a first touch tap navigate.
+  const openAtPress = useRef(false);
   useEffect(() => {
     setCurrentStatus(status);
   }, [status]);
@@ -565,7 +569,15 @@ const TitleCard = ({
     }
   };
 
-  const openDetail = () => {
+  const isLibrarySeries = Boolean(
+    libraryMode && mediaType === 'tv' && jellyfinSeriesId && onLibraryOpenSeries
+  );
+
+  const openDetail = (newTab = false) => {
+    if (newTab && !isLibrarySeries) {
+      window.open(detailHref, '_blank', 'noopener');
+      return;
+    }
     if (
       libraryMode &&
       mediaType === 'tv' &&
@@ -585,8 +597,9 @@ const TitleCard = ({
   const onSurfaceClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     if (
-      !showDetail ||
+      !openAtPress.current ||
       event.defaultPrevented ||
+      isUpdating ||
       showTvMenu ||
       showRequestModal ||
       showBlocklistModal ||
@@ -596,7 +609,7 @@ const TitleCard = ({
       setShowDetail(true);
       return;
     }
-    openDetail();
+    openDetail(event.ctrlKey || event.metaKey || event.shiftKey);
   };
 
   const onLibraryCardNavigate = (event: React.MouseEvent) => {
@@ -674,6 +687,9 @@ const TitleCard = ({
           if (!keepDetailOpen(e.currentTarget)) {
             setShowDetail(false);
           }
+        }}
+        onPointerDownCapture={() => {
+          openAtPress.current = showDetail;
         }}
         onPointerOver={(event) => {
           // Portaled children (tooltips) count as the card, as for mouseleave.
