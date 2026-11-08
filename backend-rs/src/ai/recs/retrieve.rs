@@ -687,9 +687,13 @@ const LIBRARY_SAMPLE: i64 = 60;
 
 /// Titles in the library (available or partly available) or, with
 /// `wanted_too`, also requested or downloading.
-async fn library_keys(state: &AppState, wanted_too: bool) -> HashSet<Key> {
+///
+/// # Errors
+///
+/// Fails on database errors, so a library filter never runs on a guess.
+async fn library_keys(state: &AppState, wanted_too: bool) -> anyhow::Result<HashSet<Key>> {
     let statuses = if wanted_too { "2, 3, 4, 5" } else { "4, 5" };
-    state
+    Ok(state
         .db
         .rows(
             &format!(
@@ -697,8 +701,7 @@ async fn library_keys(state: &AppState, wanted_too: bool) -> HashSet<Key> {
             ),
             &[],
         )
-        .await
-        .unwrap_or_default()
+        .await?
         .iter()
         .filter_map(|r| {
             let kind = match r.get("mediaType")?.as_str()? {
@@ -708,18 +711,20 @@ async fn library_keys(state: &AppState, wanted_too: bool) -> HashSet<Key> {
             };
             Some((kind, r.get("tmdbId")?.as_i64()?))
         })
-        .collect()
+        .collect())
 }
 
 /// A random sample of library titles of these kinds, as candidates.
 async fn library_sample(
     state: &AppState,
     language: &str,
+    library: &HashSet<Key>,
     kinds: &[&'static str],
+    deadline: tokio::time::Instant,
 ) -> Vec<Candidate> {
-    let mut keys: Vec<Key> = library_keys(state, false)
-        .await
-        .into_iter()
+    let mut keys: Vec<Key> = library
+        .iter()
+        .copied()
         .filter(|(kind, _)| kinds.contains(kind))
         .collect();
     // A different handful each time, so repeated requests don't repeat.
@@ -731,7 +736,13 @@ async fn library_sample(
     });
     keys.truncate(usize::try_from(LIBRARY_SAMPLE).unwrap_or(60));
     map_with_concurrency(keys, 8, |(kind, id): Key| async move {
-        let details = state.tmdb.title_summary(kind, id, language).await.ok()?;
+        // Each lookup has its own deadline, so one slow title doesn't
+        // throw away the ones already found.
+        let details =
+            tokio::time::timeout_at(deadline, state.tmdb.title_summary(kind, id, language))
+                .await
+                .ok()?
+                .ok()?;
         candidate(&details, kind, "library")
     })
     .await
@@ -747,6 +758,19 @@ pub struct Gathered {
     pub candidates: Vec<Candidate>,
     /// Web result lines.
     pub web: Vec<String>,
+    /// With an availability filter: whether titles must be in `keys`
+    /// (`true`) or not (`false`), so later additions follow it too.
+    pub library: Option<(bool, HashSet<Key>)>,
+}
+
+impl Gathered {
+    /// Whether this title passes the request's availability filter.
+    #[must_use]
+    pub fn allows(&self, key: &Key) -> bool {
+        self.library
+            .as_ref()
+            .is_none_or(|(inside, keys)| keys.contains(key) == *inside)
+    }
 }
 
 /// Who and what a lookup is for.
@@ -766,12 +790,16 @@ pub struct Env<'a> {
 
 /// Look everything up at once, then merge: drop excluded and duplicate
 /// titles and titles of the wrong kind, keep the first source per title.
+///
+/// # Errors
+///
+/// Fails when the library can't be read for an availability filter.
 pub async fn gather<S: BuildHasher + Sync>(
     env: &Env<'_>,
     plan: &Plan,
     sources: &Sources,
     excluded: &HashSet<Key, S>,
-) -> Gathered {
+) -> anyhow::Result<Gathered> {
     let Env {
         state,
         settings,
@@ -803,15 +831,21 @@ pub async fn gather<S: BuildHasher + Sync>(
         .collect();
     jobs.push(Box::pin(async move {
         map_with_concurrency(ideas, 6, |idea: Idea| async move {
-            search_title(
-                state,
-                language,
-                &idea.title,
-                idea.year,
-                kind_of(&idea.media_type),
-                "idea",
+            // Per title, so the ones already found survive a slow one.
+            tokio::time::timeout_at(
+                deadline,
+                search_title(
+                    state,
+                    language,
+                    &idea.title,
+                    idea.year,
+                    kind_of(&idea.media_type),
+                    "idea",
+                ),
             )
             .await
+            .ok()
+            .flatten()
         })
         .await
         .into_iter()
@@ -854,13 +888,15 @@ pub async fn gather<S: BuildHasher + Sync>(
     }
     let library = match sources.availability {
         Some("library") => {
+            let keys = library_keys(state, false).await?;
             let wanted = kinds.clone();
+            let sample_keys = keys.clone();
             jobs.push(Box::pin(async move {
-                library_sample(state, language, &wanted).await
+                library_sample(state, language, &sample_keys, &wanted, deadline).await
             }));
-            Some((true, library_keys(state, false).await))
+            Some((true, keys))
         }
-        Some(_) => Some((false, library_keys(state, true).await)),
+        Some(_) => Some((false, library_keys(state, true).await?)),
         None => None,
     };
     let queries = web_queries(plan, sources);
@@ -897,7 +933,11 @@ pub async fn gather<S: BuildHasher + Sync>(
             break;
         }
     }
-    Gathered { candidates, web }
+    Ok(Gathered {
+        candidates,
+        web,
+        library,
+    })
 }
 
 async fn collect_before<T: Default + Send>(

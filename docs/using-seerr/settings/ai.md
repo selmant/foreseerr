@@ -34,10 +34,15 @@ one line on why each pick fits. Titles it suggests beyond those are checked
 against TMDB first, so every pick is a real, requestable title.
 
 Under the results, **Refine** chips ("lighter tone", "only movies") run the
-request again with that change. **Recent** reopens your earlier requests and
+request again with that change, or type your own change in the box next to
+them. **Recent** reopens your earlier requests and
 shows when you asked, the filters, a few posters, and how many of the picks
-you requested or liked. Delete one with its trash button, or **Clear history**
-to delete them all.
+you requested or liked. Requests that failed are listed too, marked as failed.
+Delete one with its trash button, or **Clear history** to delete them all,
+including one that is still working. Deleting removes what you asked and the
+picks; only a count stays behind (for the daily limit and the monthly budget),
+and that goes after 40 days. Deleting works even when an admin has turned AI
+off.
 
 ### Weekly picks
 
@@ -52,7 +57,9 @@ Weekly picks**. Only people who used AI picks in the last week get them.
 AI picks look like any other poster, with the same rating badges. Hover over
 or tap one, then press the lightbulb badge under the ratings. A small panel shows
 why it was picked, with **Like**, **Not for me**, **Seen it** and **Don't
-suggest** buttons; select a choice again to take it back. This works on the AI
+suggest** buttons; select a choice again to take it back. **Seen it** goes
+with **Like** or **Not for me** ("watched it and loved it"), which tells the
+model more than either alone; **Don't suggest** stands on its own. This works on the AI
 Picks page and in Discover AI rows. Once you rate a pick, its badge shows your
 choice. This feedback only tunes AI suggestions; it does not change your
 tracker ratings or watch status. Titles you rated never come back as picks, and
@@ -67,10 +74,20 @@ Foreseerr also notices what you do with picks, without you pressing anything:
   liked, 4 or less as disliked). These are watch history, so they only go to
   the model when **Use my watch history** is on.
 
-These stay on your server. **Forget all ratings** forgets them too.
+A watch or rating counts when it came after the pick. Trakt ratings and Simkl
+watches carry dates; other watches and Simkl ratings don't, so they count when
+they show up after the title was suggested (titles you'd already watched are
+never suggested). Changing a rating replaces the old one.
+
+These stay on your server. **Forget all ratings** forgets them too, along with
+the record of which titles were suggested, so ratings still on Trakt or Simkl
+don't bring them back.
 
 After a few new ratings, Foreseerr rewrites your **taste card**, a short note
-about what you enjoy that goes with each request. You can read, edit or clear
+about what you enjoy that goes with each request. It learns from your ratings
+and from picks you requested; watches and tracker ratings never go into the
+card, so turning **Use my watch history** off takes them out of every request
+right away. You can read, edit or clear
 it in **Profile → Discover → AI recommendations**, and forget all your ratings there too.
 
 Titles you've already watched on your media server or linked trackers are
@@ -163,8 +180,13 @@ connection pick any model it offers.
 | Daily AI requests per person                   | 30      | On the server connection, reset at midnight UTC. Admins and people using their own account aren't limited. 0 means no limit. |
 | Prepare picks overnight                        | On      | Refreshes Discover AI rows ahead of time and makes weekly picks for people active in the last week. |
 | Refresh Discover AI rows every (days)          | 3       | How long a person's row picks are kept. Longer means fewer AI requests. |
-| Keep request history (days)                    | 90      | Finished requests and their picks are deleted after this. 0 keeps them. |
-| Monthly token budget for the server connection | 0       | When the server connection has used this many tokens this month, new requests on it stop until the 1st. Own accounts aren't affected. 0 means no budget. |
+| Keep request history (days)                    | 90      | Finished requests and their picks are deleted after this, but never before a Discover row's picks are due for a refresh. 0 keeps them. |
+| Monthly token budget for the server connection | 0       | When the server connection has used this many tokens this month, new requests on it stop until the 1st. Requests still working count as an average one. Own accounts aren't affected. 0 means no budget. |
+
+The budget counts the tokens the provider reports. OpenAI and most compatible
+providers report them; if yours doesn't, Foreseerr records zero and the budget
+never stops anything. Either way, also set a spending limit with the provider;
+Foreseerr's budget is a guard, not a bill.
 
 Admins can always use the server connection and connect their own accounts.
 Each person sees how many requests they have left on the AI Picks page and in

@@ -88,7 +88,9 @@ const AiPreferences = ({ draft, onDraftChange }: AiPreferencesProps) => {
     }
   };
 
-  if (data && !data.enabled && !data.preferences.useHistory) return null;
+  // With AI off only the way to turn history sharing off (when it is on)
+  // and to delete saved requests remain.
+  const showHistory = !!data && (data.enabled || data.preferences.useHistory);
 
   return (
     <section id="ai-preferences" className="section scroll-mt-24">
@@ -111,33 +113,35 @@ const AiPreferences = ({ draft, onDraftChange }: AiPreferencesProps) => {
           {!data.enabled ? (
             <Alert type="info" title={intl.formatMessage(messages.disabled)} />
           ) : null}
-          <div className="form-row">
-            <label htmlFor="ai-history" className="checkbox-label">
-              {intl.formatMessage(messages.history)}
-              <span className="label-tip">
-                {intl.formatMessage(messages.historyHint)}
-              </span>
-              {data.preferences.useHistory &&
-              data.preferences.historyConsentAt ? (
+          {showHistory ? (
+            <div className="form-row">
+              <label htmlFor="ai-history" className="checkbox-label">
+                {intl.formatMessage(messages.history)}
                 <span className="label-tip">
-                  {intl.formatMessage(messages.historySince, {
-                    date: intl.formatDate(data.preferences.historyConsentAt, {
-                      dateStyle: 'medium',
-                    }),
-                  })}
+                  {intl.formatMessage(messages.historyHint)}
                 </span>
-              ) : null}
-            </label>
-            <div className="form-input-area">
-              <input
-                id="ai-history"
-                type="checkbox"
-                checked={value('useHistory')}
-                disabled={!data.enabled && !data.preferences.useHistory}
-                onChange={(e) => change('useHistory', e.target.checked)}
-              />
+                {data.preferences.useHistory &&
+                data.preferences.historyConsentAt ? (
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.historySince, {
+                      date: intl.formatDate(data.preferences.historyConsentAt, {
+                        dateStyle: 'medium',
+                      }),
+                    })}
+                  </span>
+                ) : null}
+              </label>
+              <div className="form-input-area">
+                <input
+                  id="ai-history"
+                  type="checkbox"
+                  checked={value('useHistory')}
+                  disabled={!data.enabled && !data.preferences.useHistory}
+                  onChange={(e) => change('useHistory', e.target.checked)}
+                />
+              </div>
             </div>
-          </div>
+          ) : null}
           {data.enabled ? (
             <div className="form-row">
               <label htmlFor="ai-weekly" className="checkbox-label">

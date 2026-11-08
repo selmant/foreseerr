@@ -11,6 +11,7 @@ const messages = defineMessages('components.Settings.SettingsAi.AiUsagePanel', {
   loadFailed: 'Usage couldn’t be loaded.',
   monthTokens: 'Server tokens this month',
   ofBudget: 'of {budget}',
+  meterText: '{used} of {budget} tokens',
   noBudget: 'No monthly budget',
   requests: 'Requests',
   hitRate: 'Picks requested',
@@ -40,11 +41,14 @@ const Tile = ({
   value,
   sub,
   meter,
+  meterText,
 }: {
   label: string;
   value: string;
   sub?: string;
   meter?: number;
+  /** What the meter shows, read out by assistive technology. */
+  meterText?: string;
 }) => (
   <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-3">
     <div className="text-xs text-gray-400">{label}</div>
@@ -56,7 +60,8 @@ const Tile = ({
         role="meter"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.round(meter * 100)}
+        aria-valuenow={Math.min(100, Math.round(meter * 100))}
+        aria-valuetext={meterText}
         aria-label={label}
       >
         <div
@@ -130,6 +135,10 @@ const AiUsagePanel = () => {
                   ? data.month.serverTokens / data.month.budget
                   : undefined
               }
+              meterText={intl.formatMessage(messages.meterText, {
+                used: num(data.month.serverTokens),
+                budget: num(data.month.budget),
+              })}
             />
             <Tile
               label={intl.formatMessage(messages.requests)}

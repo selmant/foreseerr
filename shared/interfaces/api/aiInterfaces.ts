@@ -136,7 +136,14 @@ export type AiRunStage =
   | 'done'
   | 'failed';
 
-export type AiVerdict = 'like' | 'dislike' | 'seen' | 'not_interested';
+/** `seen_like` / `seen_dislike`: watched it, and liked or disliked it. */
+export type AiVerdict =
+  | 'like'
+  | 'dislike'
+  | 'seen'
+  | 'seen_like'
+  | 'seen_dislike'
+  | 'not_interested';
 
 export interface AiRecommendRequest {
   prompt?: string;
@@ -195,6 +202,8 @@ export interface AiRunSummary {
   stage: AiRunStage;
   createdAt: string;
   prompt: string;
+  /** The title "more like" was asked for, when it was. */
+  seed?: { mediaType: 'movie' | 'tv'; tmdbId: number } | null;
   seedTitle: string | null;
   only: 'movie' | 'tv' | null;
   anime: boolean | null;
@@ -208,6 +217,8 @@ export interface AiRunSummary {
   requested: number;
   liked: number;
   model: string | null;
+  /** Why a failed run failed. */
+  error?: string | null;
 }
 
 /** How picks went over the last 30 days. */

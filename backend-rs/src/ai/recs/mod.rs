@@ -363,6 +363,9 @@ pub async fn start(
 /// titles never to suggest.
 struct Person {
     ctx: Context,
+    /// Lines in `ctx.liked` / `ctx.avoid` that come from watch history,
+    /// dropped if consent is withdrawn while the request works.
+    history_lines: HashSet<String>,
     liked: Vec<Key>,
     excluded: HashSet<Key>,
     trakt: bool,
@@ -392,26 +395,21 @@ async fn person(
         } else {
             f.title.clone()
         };
-        match Verdict::parse(&f.kind) {
-            Some(Verdict::Like) => {
-                excluded.insert(key);
-                liked.push(key);
-                if liked_lines.len() < 25 {
-                    liked_lines.push(label);
-                }
+        let Some(verdict) = Verdict::parse(&f.kind) else {
+            continue;
+        };
+        excluded.insert(key);
+        if verdict.opinion() == Some(true) {
+            liked.push(key);
+            if liked_lines.len() < 25 {
+                liked_lines.push(if verdict == Verdict::Like {
+                    label
+                } else {
+                    format!("{label} ({})", verdict.describe())
+                });
             }
-            Some(v @ (Verdict::Dislike | Verdict::Seen | Verdict::NotInterested)) => {
-                excluded.insert(key);
-                if avoid_lines.len() < 40 {
-                    let why = match v {
-                        Verdict::Dislike => "disliked",
-                        Verdict::Seen => "already seen",
-                        Verdict::Like | Verdict::NotInterested => "not interested",
-                    };
-                    avoid_lines.push(format!("{label} ({why})"));
-                }
-            }
-            None => {}
+        } else if avoid_lines.len() < 40 {
+            avoid_lines.push(format!("{label} ({})", verdict.describe()));
         }
     }
     if let Some(seed) = request.seed {
@@ -452,11 +450,22 @@ async fn person(
             excluded.insert((kind_of(kind), id));
         }
     }
+    let mut history_lines = HashSet::new();
     for signal in signals::recent(&state.db, user_id, prefs.use_history, 40).await? {
-        match signal.line() {
-            Some((true, line)) if liked_lines.len() < 35 => liked_lines.push(line),
-            Some((false, line)) if avoid_lines.len() < 50 => avoid_lines.push(line),
-            Some(_) | None => {}
+        let from_history = signal.is_history();
+        let line = match signal.line() {
+            Some((true, line)) if liked_lines.len() < 35 => {
+                liked_lines.push(line.clone());
+                line
+            }
+            Some((false, line)) if avoid_lines.len() < 50 => {
+                avoid_lines.push(line.clone());
+                line
+            }
+            Some(_) | None => continue,
+        };
+        if from_history {
+            history_lines.insert(line);
         }
     }
     let history = if prefs.use_history {
@@ -479,6 +488,7 @@ async fn person(
             history,
             web_search_enabled: policy.searxng_enabled && !policy.searxng_url.is_empty(),
         },
+        history_lines,
         liked,
         excluded,
         trakt: prefs.use_history,
@@ -626,7 +636,6 @@ async fn ask<T: for<'de> serde::Deserialize<'de>>(
     input: &str,
     schema: (&str, &Value),
 ) -> Result<T, AiError> {
-    let current = current_access(state, eff, user).await?;
     if let Some(id) = run_id {
         let run = store::run(&state.db, user.id, id)
             .await
@@ -635,6 +644,9 @@ async fn ask<T: for<'de> serde::Deserialize<'de>>(
             return Err(AiError::input("This recommendation request has stopped."));
         }
     }
+    // Checked last, right before sending, so a connection removed while
+    // this run worked gets nothing new.
+    let current = current_access(state, eff, user).await?;
     let answer = super::complete(
         state,
         &current.connection,
@@ -732,7 +744,8 @@ async fn work(
         &sources,
         &person.excluded,
     )
-    .await;
+    .await
+    .map_err(|e| AiError::internal(format!("looking up the library failed: {e:#}")))?;
     if gathered.candidates.is_empty() {
         return Err(AiError::input(
             "Nothing matching turned up. Try wording it differently or widening it.",
@@ -753,7 +766,12 @@ async fn work(
         .map_err(db_err)?
         .use_history
     {
+        // Consent was withdrawn while this request worked: nothing from
+        // their history goes out, explicit feedback still does.
         person.ctx.history.clear();
+        let from_history = &person.history_lines;
+        person.ctx.liked.retain(|l| !from_history.contains(l));
+        person.ctx.avoid.retain(|l| !from_history.contains(l));
     }
     let ranking: Ranking = ask(
         state,
@@ -790,6 +808,7 @@ async fn work(
         {
             if (!request.anime || c.is_anime())
                 && !person.excluded.contains(&c.key())
+                && gathered.allows(&c.key())
                 && taken.insert(c.key())
             {
                 picked.push((c, clip_why(&extra.why)));
@@ -842,11 +861,10 @@ async fn maybe_update_taste(
     let new = store::pending_batch(&state.db, user_id)
         .await
         .map_err(db_err)?;
-    let consent = super::store::prefs(&state.db, user_id)
-        .await
-        .map_err(db_err)?
-        .use_history;
-    let actions = signals::unlearned(&state.db, user_id, consent)
+    // Only requests: watches and ratings would stay in the card after
+    // consent to use history is withdrawn, so they reach the model only
+    // per request, while consent lasts.
+    let actions = signals::unlearned(&state.db, user_id, false)
         .await
         .map_err(db_err)?;
     if new.len() + actions.len() < TASTE_AFTER_FEEDBACK {
@@ -855,12 +873,7 @@ async fn maybe_update_taste(
     let mut lines: Vec<String> = new
         .iter()
         .map(|f| {
-            let verdict = match Verdict::parse(&f.kind) {
-                Some(Verdict::Like) => "liked",
-                Some(Verdict::Dislike) => "disliked",
-                Some(Verdict::Seen) => "already seen",
-                Some(Verdict::NotInterested) | None => "not interested",
-            };
+            let verdict = Verdict::parse(&f.kind).map_or("not interested", Verdict::describe);
             format!("{} ({}): {verdict}", f.title, f.media_type)
         })
         .collect();

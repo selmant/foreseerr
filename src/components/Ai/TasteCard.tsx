@@ -17,6 +17,7 @@ import type {
   AiTaste,
   AiVerdict,
 } from '@shared/interfaces/api/aiInterfaces';
+import { seenIn } from '@shared/lib/aiFeedback';
 import axios from 'axios';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -54,6 +55,8 @@ const VERDICT_ICON: Record<AiVerdict, typeof HandThumbUpIcon> = {
   like: HandThumbUpIcon,
   dislike: HandThumbDownIcon,
   seen: EyeIcon,
+  seen_like: HandThumbUpIcon,
+  seen_dislike: HandThumbDownIcon,
   not_interested: NoSymbolIcon,
 };
 
@@ -61,6 +64,8 @@ const VERDICT_COLOR: Record<AiVerdict, string> = {
   like: 'text-green-400',
   dislike: 'text-red-400',
   seen: 'text-indigo-300',
+  seen_like: 'text-green-400',
+  seen_dislike: 'text-red-400',
   not_interested: 'text-gray-400',
 };
 
@@ -267,6 +272,9 @@ const TasteCard = () => {
                     <Icon
                       className={`h-3.5 w-3.5 shrink-0 ${VERDICT_COLOR[f.kind]}`}
                     />
+                    {seenIn(f.kind) && f.kind !== 'seen' ? (
+                      <EyeIcon className="-ml-1 h-3.5 w-3.5 shrink-0 text-indigo-300" />
+                    ) : null}
                     <span className="truncate">
                       {f.title || `${f.mediaType} ${f.tmdbId}`}
                     </span>

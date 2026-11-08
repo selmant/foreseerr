@@ -53,3 +53,37 @@ export class AiFeedbackQueue {
     }
   }
 }
+
+/** The opinion in a verdict, if any. */
+export const opinionOf = (
+  verdict: AiVerdict | null
+): 'like' | 'dislike' | null => {
+  if (verdict === 'like' || verdict === 'seen_like') return 'like';
+  if (verdict === 'dislike' || verdict === 'seen_dislike') return 'dislike';
+  return null;
+};
+
+/** Whether a verdict says they watched it. */
+export const seenIn = (verdict: AiVerdict | null): boolean =>
+  verdict === 'seen' || verdict === 'seen_like' || verdict === 'seen_dislike';
+
+/**
+ * The verdict after tapping one feedback button. "Seen it" combines with
+ * Like or Not for me; "Don't suggest" stands alone; tapping a chosen
+ * button takes it back.
+ */
+export const toggleVerdict = (
+  current: AiVerdict | null,
+  tapped: 'like' | 'dislike' | 'seen' | 'not_interested'
+): AiVerdict | null => {
+  if (tapped === 'not_interested') {
+    return current === 'not_interested' ? null : 'not_interested';
+  }
+  let opinion = opinionOf(current);
+  let seen = seenIn(current);
+  if (tapped === 'seen') seen = !seen;
+  else opinion = opinion === tapped ? null : tapped;
+  if (opinion === 'like') return seen ? 'seen_like' : 'like';
+  if (opinion === 'dislike') return seen ? 'seen_dislike' : 'dislike';
+  return seen ? 'seen' : null;
+};

@@ -64,12 +64,30 @@ where
     F: FnOnce(&'a Ready<'a>, &'a CurrentUser) -> Fut + Send + 'a,
     Fut: Future<Output = Result<Value, AiError>> + Send + 'a,
 {
+    respond(ctx, true, work)
+}
+
+/// [`answer`] for deleting someone's own data, which works with AI turned
+/// off too.
+fn answer_always<'a, F, Fut>(ctx: &'a Ready<'a>, work: F) -> Native<'a>
+where
+    F: FnOnce(&'a Ready<'a>, &'a CurrentUser) -> Fut + Send + 'a,
+    Fut: Future<Output = Result<Value, AiError>> + Send + 'a,
+{
+    respond(ctx, false, work)
+}
+
+fn respond<'a, F, Fut>(ctx: &'a Ready<'a>, needs_ai: bool, work: F) -> Native<'a>
+where
+    F: FnOnce(&'a Ready<'a>, &'a CurrentUser) -> Fut + Send + 'a,
+    Fut: Future<Output = Result<Value, AiError>> + Send + 'a,
+{
     Box::pin(async move {
         let user = match ctx.require(0) {
             Ok(u) => u,
             Err(out) => return *out,
         };
-        if !Policy::of(&ctx.settings).enabled {
+        if needs_ai && !Policy::of(&ctx.settings).enabled {
             return fail(
                 ctx,
                 &AiError::not_eligible("AI features are turned off on this server."),
@@ -84,16 +102,19 @@ where
 
 /// A run as the API returns it, its picks as title cards with the
 /// person's current feedback on each.
-async fn run_view(ctx: &Ready<'_>, user_id: i64, run: &store::Run) -> Value {
+///
+/// Fails when the picks' library status can't be read: without it the
+/// blocklist and availability filters can't hide anything.
+async fn run_view(ctx: &Ready<'_>, user_id: i64, run: &store::Run) -> Result<Value, AiError> {
     let mut request = run.request.clone();
     if let Some(obj) = request.as_object_mut() {
         obj.remove("row");
     }
     let result = match &run.result {
-        Some(result) => Some(hydrate(ctx, user_id, result).await),
+        Some(result) => Some(hydrate(ctx, user_id, result).await?),
         None => None,
     };
-    json!({
+    Ok(json!({
         "id": run.id,
         "stage": run.stage,
         "createdAt": run.created_at,
@@ -103,10 +124,10 @@ async fn run_view(ctx: &Ready<'_>, user_id: i64, run: &store::Run) -> Value {
         "origin": run.origin,
         "result": result,
         "error": run.error,
-    })
+    }))
 }
 
-async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Value {
+async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Result<Value, AiError> {
     let picks: Vec<Value> = result
         .get("picks")
         .and_then(Value::as_array)
@@ -123,8 +144,8 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Value {
         .collect();
     let verdicts = store::feedback_for(&ctx.state.db, user_id, &keys)
         .await
-        .unwrap_or_default();
-    let mut related: HashMap<&'static str, Option<RelatedTitles>> = HashMap::new();
+        .map_err(|e| db_err(&e))?;
+    let mut related: HashMap<&'static str, RelatedTitles> = HashMap::new();
     for kind in ["movie", "tv"] {
         let raws: Vec<Value> = picks
             .iter()
@@ -132,12 +153,10 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Value {
             .filter_map(|p| p.get("tmdb").cloned())
             .collect();
         if !raws.is_empty() {
-            related.insert(
-                kind,
-                RelatedTitles::load(ctx, &raws, kind, Some(user_id))
-                    .await
-                    .ok(),
-            );
+            let loaded = RelatedTitles::load(ctx, &raws, kind, Some(user_id))
+                .await
+                .map_err(|_| AiError::internal("loading the picks' library status failed"))?;
+            related.insert(kind, loaded);
         }
     }
     let mut out_picks = Vec::new();
@@ -155,7 +174,6 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Value {
         };
         let info = related
             .get(kind)
-            .and_then(Option::as_ref)
             .and_then(|r| r.media_info_last(ctx, raw, kind));
         let item = if kind == "tv" {
             map_tv_result(raw, info)
@@ -191,7 +209,7 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Value {
     if let Some(obj) = out.as_object_mut() {
         obj.insert(String::from("picks"), Value::Array(out_picks));
     }
-    out
+    Ok(out)
 }
 
 async fn load_run(ctx: &Ready<'_>, user_id: i64, run_id: i64) -> Result<Value, AiError> {
@@ -200,7 +218,7 @@ async fn load_run(ctx: &Ready<'_>, user_id: i64, run_id: i64) -> Result<Value, A
         .await
         .map_err(|e| db_err(&e))?
         .ok_or_else(|| AiError::input("That request wasn't found."))?;
-    Ok(run_view(ctx, user_id, &run).await)
+    run_view(ctx, user_id, &run).await
 }
 
 /// `POST /ai/recommend`: start a run; answer it (still working).
@@ -247,7 +265,7 @@ async fn run_outcomes(ctx: &Ready<'_>, user_id: i64) -> Result<HashMap<i64, (i64
             false,
         ),
         (
-            r#"SELECT CAST(p."runId" AS BIGINT) AS "runId", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_pick" p JOIN "ai_feedback" f ON f."userId" = p."userId" AND f."mediaType" = p."mediaType" AND f."tmdbId" = p."tmdbId" AND f."kind" = 'like' WHERE p."userId" = ?1 GROUP BY p."runId""#,
+            r#"SELECT CAST(p."runId" AS BIGINT) AS "runId", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_pick" p JOIN "ai_feedback" f ON f."userId" = p."userId" AND f."mediaType" = p."mediaType" AND f."tmdbId" = p."tmdbId" AND f."kind" IN ('like', 'seen_like') WHERE p."userId" = ?1 GROUP BY p."runId""#,
             true,
         ),
     ] {
@@ -306,6 +324,11 @@ fn runs<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                     "createdAt": r.created_at,
                     "prompt": r.request.get("prompt").cloned().unwrap_or_else(|| Value::from("")),
                     "seedTitle": r.request.pointer("/seed/title").cloned(),
+                    "seed": r.request.get("seed").filter(|s| s.is_object()).map(|s| json!({
+                        "mediaType": s.get("mediaType"),
+                        "tmdbId": s.get("tmdbId"),
+                    })),
+                    "error": r.error.as_ref().and_then(|e| e.get("message")).cloned(),
                     "only": r.request.get("only").cloned(),
                     "anime": r.request.get("anime").cloned(),
                     "availability": r.request.get("availability").cloned(),
@@ -325,7 +348,7 @@ fn runs<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 
 /// `DELETE /ai/runs/{runId}`: forget one request and its picks.
 fn run_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
-    answer(ctx, |ctx, user| async move {
+    answer_always(ctx, |ctx, user| async move {
         let run_id = ctx
             .path_id(0)
             .map_err(|_| AiError::input("The request id must be a number."))?;
@@ -342,7 +365,7 @@ fn run_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 /// `DELETE /ai/runs`: forget every request, Discover rows and weekly picks
 /// included (feedback and the taste card stay; they have their own reset).
 fn runs_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
-    answer(ctx, |ctx, user| async move {
+    answer_always(ctx, |ctx, user| async move {
         let deleted = store::delete_runs(&ctx.state.db, user.id)
             .await
             .map_err(|e| db_err(&e))?;
@@ -359,7 +382,7 @@ fn weekly<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             .await
             .map_err(|e| db_err(&e))?;
         Ok(json!({"run": match run {
-            Some(r) => Some(run_view(ctx, user.id, &r).await),
+            Some(r) => Some(run_view(ctx, user.id, &r).await?),
             None => None,
         }}))
     })
@@ -453,12 +476,12 @@ fn row_response<'a>(ctx: &'a Ready<'a>, create: bool) -> Native<'a> {
                     && r.created_at >= working_since)
         });
         if let Some((run, _)) = current {
-            return Ok(json!({"run": run_view(ctx, user.id, run).await, "notice": null}));
+            return Ok(json!({"run": run_view(ctx, user.id, run).await?, "notice": null}));
         }
         let last = matching.iter().find(|(r, _)| r.stage == "done");
         if !enabled || !create {
             let run = match last {
-                Some((r, _)) => Some(run_view(ctx, user.id, r).await),
+                Some((r, _)) => Some(run_view(ctx, user.id, r).await?),
                 None => None,
             };
             return Ok(json!({"run": run, "notice": null}));
@@ -477,7 +500,7 @@ fn row_response<'a>(ctx: &'a Ready<'a>, create: bool) -> Native<'a> {
             Ok(run_id) => Ok(json!({"run": load_run(ctx, user.id, run_id).await?, "notice": null})),
             Err(e) => {
                 let run = match last {
-                    Some((r, _)) => Some(run_view(ctx, user.id, r).await),
+                    Some((r, _)) => Some(run_view(ctx, user.id, r).await?),
                     None => None,
                 };
                 Ok(json!({"run": run, "notice": e.to_json()}))
@@ -550,7 +573,7 @@ fn feedback_set<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 
 /// `DELETE /ai/feedback`: forget all their feedback.
 fn feedback_clear<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
-    answer(ctx, |ctx, user| async move {
+    answer_always(ctx, |ctx, user| async move {
         store::clear_all_feedback(&ctx.state.db, user.id)
             .await
             .map_err(|e| db_err(&e))?;

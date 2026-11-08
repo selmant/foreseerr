@@ -3,11 +3,15 @@ import { describe, it } from 'node:test';
 import { MediaStatus } from '@shared/constants/media';
 import type { AiPick } from '@shared/interfaces/api/aiInterfaces';
 import { visibleAiPicks } from './aiVisibility';
-const pick = (status: MediaStatus, hasActiveRequest = false) =>
+const pick = (
+  status: MediaStatus,
+  hasActiveRequest = false,
+  status4k = MediaStatus.UNKNOWN
+) =>
   ({
     tmdbId: status,
     mediaType: 'movie',
-    item: { mediaInfo: { status, hasActiveRequest } },
+    item: { mediaInfo: { status, status4k, hasActiveRequest } },
   }) as unknown as AiPick;
 const settings = {
   hideAvailable: false,
@@ -39,6 +43,26 @@ describe('AI recommendation visibility', () => {
         true
       ).map((p) => p.tmdbId),
       [MediaStatus.UNKNOWN]
+    );
+  });
+  it('hides titles available only in 4K', () => {
+    const only4k = pick(MediaStatus.UNKNOWN, false, MediaStatus.AVAILABLE);
+    assert.equal(
+      visibleAiPicks([only4k], { ...settings, hideAvailable: true }, true)
+        .length,
+      0
+    );
+  });
+  it('keeps available titles for library-only runs', () => {
+    const picks = [pick(MediaStatus.AVAILABLE), pick(MediaStatus.BLOCKLISTED)];
+    assert.equal(
+      visibleAiPicks(
+        picks,
+        { ...settings, hideAvailable: true },
+        false,
+        'library'
+      ).length,
+      1
     );
   });
 });

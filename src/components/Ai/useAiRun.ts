@@ -77,7 +77,7 @@ export const useAiFeedback = (
   const { mutate } = useSWRConfig();
   return async (pick: AiPick, kind: AiVerdict | null) => {
     if (!run) return;
-    const taste = await feedbackQueue.submit(
+    await feedbackQueue.submit(
       `${pick.mediaType}-${pick.tmdbId}`,
       pick.feedback ?? null,
       kind,
@@ -96,7 +96,9 @@ export const useAiFeedback = (
         );
       }
     );
-    await mutate('/api/v1/ai/taste', taste, { revalidate: false });
+    // Refetch rather than install this response: answers for different
+    // titles can arrive out of order and carry older counts.
+    await mutate('/api/v1/ai/taste');
     await mutate('/api/v1/ai/feedback');
   };
 };

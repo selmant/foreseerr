@@ -192,10 +192,14 @@ pub async fn run(
 ) -> anyhow::Result<Summary> {
     let policy = Policy::of(&settings);
     let mut summary = Summary::default();
-    if policy.history_days > 0 {
-        summary.pruned =
-            store::prune_runs(&state.db, &iso_since(Some(policy.history_days * 24 * 60))).await?;
-    }
+    // Never sooner than a Discover row's picks are meant to last, so
+    // pruning doesn't force a fresh AI request for a row.
+    let keep_before = (policy.history_days > 0).then(|| {
+        iso_since(Some(
+            policy.history_days.max(policy.row_refresh_days) * 24 * 60,
+        ))
+    });
+    summary.pruned = store::prune_runs(&state.db, keep_before.as_deref()).await?;
     if !policy.enabled {
         return Ok(summary);
     }

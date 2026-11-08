@@ -99,7 +99,8 @@ const AiPicksSlider = ({ sliderKey, title, sliderId }: AiPicksSliderProps) => {
     settings.currentSettings,
     hasPermission([Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST], {
       type: 'or',
-    })
+    }),
+    run?.request.availability
   ).filter((p) => {
     const key = `${p.mediaType}-${p.tmdbId}`;
     return !rated.has(key) || editedHere.current.keys.has(key);

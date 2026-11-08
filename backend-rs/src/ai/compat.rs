@@ -241,13 +241,15 @@ pub async fn complete(
                 .pointer("/choices/0/message/content")
                 .and_then(Value::as_str)
                 .ok_or_else(|| AiError::upstream("The endpoint's answer had no text."))?;
-            validate_answer(text, prompt.schema.map(|(_, schema)| schema))?;
+            // Counted even when the answer is then rejected: the provider
+            // billed it.
             let used = |key: &str| {
                 body.pointer(&format!("/usage/{key}"))
                     .and_then(Value::as_i64)
                     .unwrap_or(0)
             };
             super::note_tokens(used("prompt_tokens"), used("completion_tokens"));
+            validate_answer(text, prompt.schema.map(|(_, schema)| schema))?;
             return Ok(text.to_owned());
         }
         last = failure(status, &body);

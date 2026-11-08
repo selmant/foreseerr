@@ -27,13 +27,15 @@ Foreseerr creates as `secret.key` on the config volume. To keep the key apart
 from the database, store it in a Secret and set `secretKey.existingSecret`:
 
 ```bash
+# Set RELEASE_NAMESPACE to the namespace of your Helm release.
+RELEASE_NAMESPACE=media
 # A new install, or one without saved AI credentials yet:
-kubectl create secret generic foreseerr-secret-key \
+kubectl --namespace "$RELEASE_NAMESPACE" create secret generic foreseerr-secret-key \
   --from-literal=secret-key="$(openssl rand -hex 32)"
 # An install that already saved credentials: reuse the current key instead,
 # or they can no longer be opened.
-kubectl exec foreseerr-0 -- cat /app/config/secret.key > secret.key
-kubectl create secret generic foreseerr-secret-key --from-file=secret-key=secret.key
+kubectl --namespace "$RELEASE_NAMESPACE" exec foreseerr-0 -- cat /app/config/secret.key > secret.key
+kubectl --namespace "$RELEASE_NAMESPACE" create secret generic foreseerr-secret-key --from-file=secret-key=secret.key
 ```
 
 The key is mounted read-only for group `podSecurityContext.fsGroup` (mode

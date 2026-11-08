@@ -23,6 +23,7 @@ import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import {
   ArrowPathIcon,
+  ArrowRightIcon,
   CheckIcon,
   GlobeAltIcon,
   MagnifyingGlassIcon,
@@ -94,6 +95,9 @@ const messages = defineMessages('components.Ai.AiPicks', {
   pickedFrom: '{picks} picks from {candidates} titles found',
   usedWeb: 'Web search used',
   refine: 'Refine',
+  refineOwn: 'Or type a change…',
+  refineOwnLabel: 'Your own change to these picks',
+  refineSend: 'Refine with this',
   tryAgain: 'Try again',
   startOver: 'Start over',
   addToDiscover: 'Add to Discover',
@@ -165,6 +169,50 @@ const Chip = ({
     {children}
   </button>
 );
+
+/** A change of their own, sent like a refine chip. */
+const RefineInput = ({
+  onRefine,
+  disabled,
+}: {
+  onRefine: (text: string) => void;
+  disabled?: boolean;
+}) => {
+  const intl = useIntl();
+  const [text, setText] = useState('');
+  return (
+    <form
+      className="flex min-w-0 max-w-full flex-1 basis-56 items-center gap-1 rounded-full border border-gray-600 bg-gray-800/70 py-0.5 pl-3.5 pr-1 focus-within:border-indigo-400 sm:max-w-xs"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const change = text.trim();
+        if (change) {
+          onRefine(change);
+          setText('');
+        }
+      }}
+    >
+      <input
+        type="text"
+        value={text}
+        maxLength={60}
+        disabled={disabled}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={intl.formatMessage(messages.refineOwn)}
+        aria-label={intl.formatMessage(messages.refineOwnLabel)}
+        className="min-w-0 flex-1 border-0 bg-transparent p-0 py-1 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-0"
+      />
+      <button
+        type="submit"
+        disabled={disabled || !text.trim()}
+        aria-label={intl.formatMessage(messages.refineSend)}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-gray-300 transition hover:bg-indigo-600 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-40 disabled:hover:bg-transparent"
+      >
+        <ArrowRightIcon className="h-4 w-4" />
+      </button>
+    </form>
+  );
+};
 
 const StageSteps = ({ stage }: { stage: AiRunStage }) => {
   const intl = useIntl();
@@ -670,18 +718,17 @@ const AiPicks = () => {
             </div>
           </div>
 
-          {run.result.refinements.length > 0 ? (
-            <div className="mb-5 flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-gray-300">
-                {intl.formatMessage(messages.refine)}
-              </span>
-              {run.result.refinements.map((chip) => (
-                <Chip key={chip} onClick={() => refine(chip)}>
-                  {chip}
-                </Chip>
-              ))}
-            </div>
-          ) : null}
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-gray-300">
+              {intl.formatMessage(messages.refine)}
+            </span>
+            {run.result.refinements.map((chip) => (
+              <Chip key={chip} onClick={() => refine(chip)}>
+                {chip}
+              </Chip>
+            ))}
+            <RefineInput onRefine={refine} disabled={starting} />
+          </div>
 
           <p className="mb-3 text-xs text-gray-500">
             {intl.formatMessage(messages.feedbackHint)}
@@ -693,7 +740,8 @@ const AiPicks = () => {
               hasPermission(
                 [Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST],
                 { type: 'or' }
-              )
+              ),
+              run.request.availability
             ).map((pick) => (
               <li key={`${pick.mediaType}-${pick.tmdbId}`}>
                 <AiPickCard pick={pick} onFeedback={onFeedback} canExpand />
@@ -708,9 +756,23 @@ const AiPicks = () => {
           runs={recent}
           currentId={runParam}
           onOpen={openRun}
-          onChanged={() => {
+          onChanged={(all) => {
             void mutateRecent();
             void globalMutate('/api/v1/ai/weekly');
+            if (!all) {
+              return;
+            }
+            // Clearing history deletes every run, a working one too: close
+            // the one on screen and refetch cached runs and AI rows.
+            if (run) {
+              setSearchParams(new URLSearchParams());
+            }
+            void globalMutate(
+              (key) =>
+                typeof key === 'string' &&
+                (key.startsWith('/api/v1/ai/runs/') ||
+                  key.startsWith('/api/v1/ai/row'))
+            );
           }}
         />
       ) : null}

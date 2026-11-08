@@ -1,7 +1,11 @@
 import CachedImage from '@app/components/Common/CachedImage';
+import useSettings from '@app/hooks/useSettings';
+import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { CalendarDaysIcon } from '@heroicons/react/24/outline';
 import type { AiRun } from '@shared/interfaces/api/aiInterfaces';
+import { visibleAiPicks } from '@shared/lib/aiVisibility';
+import { Permission } from '@shared/lib/permissions';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
 
@@ -14,9 +18,18 @@ const messages = defineMessages('components.Ai.AiPicks.WeeklyPicks', {
 /** The person's latest weekly picks, as a small strip that opens them. */
 const WeeklyPicks = ({ onOpen }: { onOpen: (id: number) => void }) => {
   const intl = useIntl();
+  const settings = useSettings();
+  const { hasPermission } = useUser();
   const { data } = useSWR<{ run: AiRun | null }>('/api/v1/ai/weekly');
   const run = data?.run;
-  const picks = run?.result?.picks ?? [];
+  const picks = visibleAiPicks(
+    run?.result?.picks ?? [],
+    settings.currentSettings,
+    hasPermission([Permission.MANAGE_BLOCKLIST, Permission.VIEW_BLOCKLIST], {
+      type: 'or',
+    }),
+    run?.request.availability
+  );
   if (!run || picks.length === 0) {
     return null;
   }

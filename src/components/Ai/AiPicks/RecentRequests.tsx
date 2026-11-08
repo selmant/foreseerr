@@ -25,6 +25,7 @@ const messages = defineMessages('components.Ai.AiPicks.RecentRequests', {
   library: 'In library',
   notInLibrary: 'Not in library',
   refined: '{count, plural, one {# refinement} other {# refinements}}',
+  runFailed: 'Failed',
 });
 
 interface RecentRequestsProps {
@@ -32,8 +33,8 @@ interface RecentRequestsProps {
   /** The run on screen, left out of the list. */
   currentId: number | null;
   onOpen: (id: number) => void;
-  /** Called after deleting, to reload the list. */
-  onChanged: () => void;
+  /** Called after deleting, to reload the list; `all` after clearing it. */
+  onChanged: (all: boolean) => void;
 }
 
 const titleOf = (
@@ -55,33 +56,37 @@ const RecentRequests = ({
   const moreLike = (title: string) =>
     intl.formatMessage(messages.moreLike, { title });
 
+  const finished = (r: AiRunSummary) =>
+    r.stage === 'done' || r.stage === 'failed';
+  const sameRequest = (a: AiRunSummary, b: AiRunSummary) =>
+    a.prompt === b.prompt &&
+    (a.seed
+      ? a.seed.mediaType === b.seed?.mediaType &&
+        a.seed.tmdbId === b.seed.tmdbId
+      : !b.seed && a.seedTitle === b.seedTitle) &&
+    a.only === b.only &&
+    a.anime === b.anime &&
+    a.availability === b.availability &&
+    (a.refinements ?? []).join('|') === (b.refinements ?? []).join('|');
+
   const shown = runs
     .filter(
       (r, i, all) =>
         r.id !== currentId &&
-        r.stage === 'done' &&
-        // Only the latest run of each request.
-        all.findIndex(
-          (o) =>
-            o.stage === 'done' &&
-            o.prompt === r.prompt &&
-            o.seedTitle === r.seedTitle &&
-            o.only === r.only &&
-            o.anime === r.anime &&
-            o.availability === r.availability &&
-            (o.refinements ?? []).join('|') === (r.refinements ?? []).join('|')
-        ) === i
+        finished(r) &&
+        // Only the latest finished run of each request.
+        all.findIndex((o) => finished(o) && sameRequest(o, r)) === i
     )
     .slice(0, 10);
 
-  const remove = async (path: string, done?: string) => {
+  const remove = async (path: string, all: boolean, done?: string) => {
     setBusy(true);
     try {
       await axios.delete(path);
       if (done) {
         addToast(done, { appearance: 'success', autoDismiss: true });
       }
-      onChanged();
+      onChanged(all);
     } catch {
       addToast(intl.formatMessage(messages.failed), {
         appearance: 'error',
@@ -108,7 +113,11 @@ const RecentRequests = ({
         </h3>
         <ConfirmButton
           onClick={() =>
-            void remove('/api/v1/ai/runs', intl.formatMessage(messages.cleared))
+            void remove(
+              '/api/v1/ai/runs',
+              true,
+              intl.formatMessage(messages.cleared)
+            )
           }
           confirmText={intl.formatMessage(messages.clearConfirm)}
           disabled={busy}
@@ -121,6 +130,7 @@ const RecentRequests = ({
       <ul className="grid grid-cols-1 gap-2 lg:grid-cols-2">
         {shown.map((r) => {
           const title = titleOf(r, moreLike);
+          const failed = r.stage === 'failed';
           const meta: string[] = [];
           if (r.anime) meta.push(intl.formatMessage(messages.anime));
           else if (r.only === 'movie')
@@ -172,7 +182,13 @@ const RecentRequests = ({
                   <span className="block truncate text-sm font-semibold text-white">
                     {title}
                   </span>
-                  {r.headline && r.headline !== title ? (
+                  {failed ? (
+                    r.error ? (
+                      <span className="block truncate text-xs text-red-300/80">
+                        {r.error}
+                      </span>
+                    ) : null
+                  ) : r.headline && r.headline !== title ? (
                     <span className="block truncate text-xs text-gray-400">
                       {r.headline}
                     </span>
@@ -185,11 +201,17 @@ const RecentRequests = ({
                       updateIntervalInSeconds={60}
                       numeric="auto"
                     />
-                    <span>
-                      {intl.formatMessage(messages.picks, {
-                        count: r.pickCount,
-                      })}
-                    </span>
+                    {failed ? (
+                      <span className="font-medium text-red-400">
+                        {intl.formatMessage(messages.runFailed)}
+                      </span>
+                    ) : (
+                      <span>
+                        {intl.formatMessage(messages.picks, {
+                          count: r.pickCount,
+                        })}
+                      </span>
+                    )}
                     {meta.map((m) => (
                       <span key={m}>{m}</span>
                     ))}
@@ -213,7 +235,7 @@ const RecentRequests = ({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void remove(`/api/v1/ai/runs/${r.id}`)}
+                onClick={() => void remove(`/api/v1/ai/runs/${r.id}`, false)}
                 aria-label={intl.formatMessage(messages.deleteOne, { title })}
                 className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-700 hover:text-red-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50"
               >
