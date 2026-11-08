@@ -19,6 +19,7 @@
 
 pub mod chatgpt;
 pub mod compat;
+pub mod recs;
 pub mod responses;
 pub mod store;
 
@@ -48,6 +49,8 @@ pub enum ErrorKind {
     UsageLimit,
     /// The account or workspace can't use `ChatGPT` plan usage.
     NotEligible,
+    /// This server's daily limit on recommendation runs was reached.
+    DailyLimit,
     /// Couldn't reach the provider, or it is temporarily unavailable.
     Network,
     /// The provider returned an error.
@@ -64,6 +67,7 @@ impl ErrorKind {
             Self::Reauth => "reauth",
             Self::UsageLimit => "usage_limit",
             Self::NotEligible => "not_eligible",
+            Self::DailyLimit => "daily_limit",
             Self::Network => "unavailable",
             Self::Upstream => "upstream",
             Self::Internal => "internal",
@@ -122,6 +126,15 @@ impl AiError {
         )
     }
 
+    /// This server's daily limit for the person was reached.
+    #[must_use]
+    pub fn daily_limit(limit: u32) -> Self {
+        Self::new(
+            ErrorKind::DailyLimit,
+            format!("You've used today's {limit} AI requests on the server connection. They reset at midnight UTC, or connect your own account in Profile → AI."),
+        )
+    }
+
     /// Not eligible for plan usage.
     pub fn not_eligible(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::NotEligible, message)
@@ -176,7 +189,7 @@ impl AiError {
         match self.kind {
             ErrorKind::Input => 400,
             ErrorKind::NotConfigured | ErrorKind::Reauth => 409,
-            ErrorKind::UsageLimit => 429,
+            ErrorKind::UsageLimit | ErrorKind::DailyLimit => 429,
             ErrorKind::NotEligible => 403,
             ErrorKind::Network | ErrorKind::Upstream => 502,
             ErrorKind::Internal => 500,
@@ -212,6 +225,12 @@ pub fn clip(text: &str, max: usize) -> String {
     }
     out
 }
+
+/// Recommendation runs per person per day on the server connection, unless
+/// the admin sets another limit.
+pub const DEFAULT_DAILY_LIMIT: u32 = 30;
+/// The highest daily limit an admin may set.
+pub const MAX_DAILY_LIMIT: u64 = 1000;
 
 /// One request to a model.
 #[derive(Debug, Clone, Copy)]
@@ -280,6 +299,9 @@ pub struct Policy {
     pub searxng_enabled: bool,
     /// The `SearXNG` base URL.
     pub searxng_url: String,
+    /// Recommendation runs per person per day on the server connection
+    /// (0: no limit). Admins and own connections aren't limited.
+    pub daily_limit: u32,
 }
 
 impl Policy {
@@ -313,6 +335,11 @@ impl Policy {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
             searxng_url: text("/ai/searxng/url").unwrap_or_default(),
+            daily_limit: settings
+                .get("/ai/dailyLimit")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok())
+                .unwrap_or(DEFAULT_DAILY_LIMIT),
         }
     }
 

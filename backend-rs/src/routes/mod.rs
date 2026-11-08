@@ -4,6 +4,7 @@
 
 pub mod accountlink;
 pub mod ai;
+pub mod airecs;
 pub mod anilistdiscover;
 mod arrcall;
 pub mod arrsettings;
@@ -163,6 +164,7 @@ const TABLES: &[&Table] = &[
     overriderule::ROUTES,
     sonarrstorage::ROUTES,
     ai::ROUTES,
+    airecs::ROUTES,
 ];
 
 /// The router: the handlers first, the fallback for the rest. HEAD goes to

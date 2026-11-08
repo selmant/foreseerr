@@ -12,6 +12,49 @@ allows it) their watch history. Foreseerr finds real titles in its catalogs
 first; the model plans the search and ranks what was found, so it can't invent
 titles.
 
+## AI Picks
+
+Once AI is on, everyone gets **AI Picks** in the sidebar. There's no chat:
+
+- **Describe a mood** ("a cozy mystery for a rainy night") or tap a mood chip.
+  **Just for me** asks for picks from your taste alone.
+- **Choose All, Movies, Series or Anime** to narrow the search.
+- **More like this** on any movie or series page starts AI Picks from that
+  title.
+
+A request takes a few seconds. Foreseerr asks the model for a search plan,
+gathers candidates from TMDB (recommendations, similar titles, genres and
+keywords), AniList for anime, Trakt recommendations when you've linked Trakt,
+and SearXNG when it's on. The model then ranks only what was found and writes
+one line on why each pick fits. Titles it suggests beyond those are checked
+against TMDB first, so every pick is a real, requestable title.
+
+Under the results, **Refine** chips ("lighter tone", "only movies") run the
+request again with that change. **Recent** reopens your earlier requests.
+
+### Feedback and your taste card
+
+Each pick has four buttons: 👍 **More like this**, 👎 **Not for me**, 👁
+**Already seen** and 🚫 **Don't suggest this**. Tap one again to undo it. Titles
+you rated never come back as picks, and liked and disliked ones steer later
+requests.
+
+After a few new ratings, Foreseerr rewrites your **taste card**, a short note
+about what you enjoy that goes with each request. You can read, edit or clear
+it in **Profile → AI**, and forget all your ratings there too.
+
+Titles you've already watched on your media server or linked trackers are
+skipped even when **Use my watch history** is off. That check happens on the
+server; nothing about your history is sent to the model.
+
+### Discover rows
+
+Admins can turn a request into a Discover row: **Add to Discover** on the
+results, or **Customize Discover → Add slider → AI Picks** with a prompt. The
+row is the same for everyone, but each person sees picks for their own taste.
+Picks are cached for a day per person, and each refresh counts as one request
+toward that person's daily limit.
+
 ## Connections
 
 Every request goes through one connection, and each person can see which one
@@ -69,8 +112,11 @@ connection pick any model it offers.
 | People can connect their own ChatGPT account   | On      |                                                                                                                         |
 | People can choose Fast, Balanced or Best       | On      |                                                                                                                         |
 | People can add their own endpoint              | Off     | This lets a user make the server call any address they enter, including ones on your network. Leave it off unless you trust every user. |
+| Daily AI requests per person                   | 30      | On the server connection, reset at midnight UTC. Admins and people using their own account aren't limited. 0 means no limit. |
 
 Admins can always use the server connection and connect their own accounts.
+Each person sees how many requests they have left on the AI Picks page and in
+Profile → AI.
 
 ## Watch history
 

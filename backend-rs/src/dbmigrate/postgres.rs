@@ -679,4 +679,14 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "CREATE TABLE \"ai_user_settings\" (\"id\" SERIAL NOT NULL, \"useOwnConnection\" boolean NOT NULL DEFAULT false, \"model\" character varying, \"useHistory\" boolean NOT NULL DEFAULT false, \"historyConsentAt\" TIMESTAMP WITH TIME ZONE, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_user_settings_user\" UNIQUE (\"userId\"), CONSTRAINT \"PK_ai_user_settings\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_user_settings_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
         ],
     },
+    Migration {
+        timestamp: 1_790_000_000_000,
+        name: "AddAiRecommendations1790000000000",
+        queries: &[
+            "CREATE TABLE \"ai_run\" (\"id\" SERIAL NOT NULL, \"stage\" character varying NOT NULL, \"request\" text NOT NULL, \"result\" text, \"error\" text, \"source\" character varying NOT NULL, \"model\" character varying, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"PK_ai_run\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_run_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+            "CREATE INDEX \"IDX_ai_run_user_created\" ON \"ai_run\" (\"userId\", \"createdAt\") ",
+            "CREATE TABLE \"ai_feedback\" (\"id\" SERIAL NOT NULL, \"mediaType\" character varying NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" character varying NOT NULL, \"title\" character varying NOT NULL DEFAULT '', \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_feedback_user_title\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"PK_ai_feedback\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_feedback_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+            "CREATE TABLE \"ai_taste\" (\"id\" SERIAL NOT NULL, \"card\" text NOT NULL, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_taste_user\" UNIQUE (\"userId\"), CONSTRAINT \"PK_ai_taste\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_taste_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+        ],
+    },
 ];

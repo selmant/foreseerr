@@ -19,6 +19,8 @@ const TMDB_TV_STREAMING_SERVICES: i64 = 21;
 const TRAKT_LIST: i64 = 1003;
 const ANILIST_LIST: i64 = 1010;
 const MDBLIST_LIST: i64 = 1014;
+/// AI picks for a prompt (empty: from each person's taste).
+const AI_PICKS: i64 = 1027;
 
 /// `retiredDiscoverSliderTypes`: Simkl rows without ids.
 const RETIRED: [i64; 6] = [1017, 1018, 1019, 1020, 1021, 1022];
@@ -93,6 +95,12 @@ fn endpoint(slider_type: i64, data: Option<&str>) -> Option<String> {
     }
     if let Some((_, _, path)) = FIXED.iter().find(|(t, _, _)| *t == slider_type) {
         return Some(provider(path, &[]));
+    }
+    if slider_type == AI_PICKS {
+        return Some(with_query(
+            &format!("{API}/ai/row"),
+            &[("prompt", data.unwrap_or_default().trim())],
+        ));
     }
     let data = data?.trim();
     if data.is_empty() {

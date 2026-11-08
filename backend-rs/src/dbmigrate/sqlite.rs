@@ -1301,6 +1301,16 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "CREATE TABLE \"ai_user_settings\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"useOwnConnection\" boolean NOT NULL DEFAULT (0), \"model\" varchar, \"useHistory\" boolean NOT NULL DEFAULT (0), \"historyConsentAt\" datetime, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_user_settings_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_user_settings_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
         ],
     },
+    Migration {
+        timestamp: 1_790_000_000_000,
+        name: "AddAiRecommendations1790000000000",
+        queries: &[
+            "CREATE TABLE \"ai_run\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"stage\" varchar NOT NULL, \"request\" text NOT NULL, \"result\" text, \"error\" text, \"source\" varchar NOT NULL, \"model\" varchar, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"FK_ai_run_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
+            "CREATE INDEX \"IDX_ai_run_user_created\" ON \"ai_run\" (\"userId\", \"createdAt\") ",
+            "CREATE TABLE \"ai_feedback\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" varchar NOT NULL, \"title\" varchar NOT NULL DEFAULT (''), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_feedback_user_title\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_feedback_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
+            "CREATE TABLE \"ai_taste\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"card\" text NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_taste_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_taste_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
+        ],
+    },
 ];
 
 /// `SeerrMigration1759769291608` from `server/lib/overseerrMerge.ts`,

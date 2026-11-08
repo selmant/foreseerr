@@ -4,7 +4,12 @@
 use super::fallback::ApiRoute;
 
 /// Every documented route.
-pub(super) static ROUTES: [ApiRoute; 270] = [
+pub(super) static ROUTES: [ApiRoute; 276] = [
+    ApiRoute {
+        template: "/api/v1/ai/feedback",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("feedback")],
+        methods: &[("GET", true), ("POST", true), ("DELETE", true)],
+    },
     ApiRoute {
         template: "/api/v1/ai/me/chatgpt/complete",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("me"), Some("chatgpt"), Some("complete")],
@@ -39,6 +44,31 @@ pub(super) static ROUTES: [ApiRoute; 270] = [
         template: "/api/v1/ai/me",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("me")],
         methods: &[("GET", true), ("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/recommend",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("recommend")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/row",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("row")],
+        methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/runs/{runId}",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("runs"), None],
+        methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/runs",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("runs")],
+        methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/taste",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("taste")],
+        methods: &[("GET", true), ("PUT", true)],
     },
     ApiRoute {
         template: "/api/v1/auth/jellyfin/plugin",

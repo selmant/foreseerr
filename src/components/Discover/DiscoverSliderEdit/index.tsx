@@ -14,7 +14,7 @@ import { isUsableForeseerNative } from '@app/context/nativeRuntimeProtocol';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import {
   ArrowUturnLeftIcon,
   Bars3Icon,
@@ -235,6 +235,8 @@ const DiscoverSliderEdit = ({
         return slider.title || intl.formatMessage(sliderTitles.anilistlist);
       case DiscoverSliderType.MDBLIST_LIST:
         return slider.title || intl.formatMessage(sliderTitles.mdblistlist);
+      case DiscoverSliderType.AI_PICKS:
+        return slider.title || intl.formatMessage(sliderTitles.aipicks);
       case DiscoverSliderType.SIMKL_TRENDING:
         return intl.formatMessage(sliderTitles.simkltrending);
       case DiscoverSliderType.SIMKL_PLAN_TO_WATCH:
@@ -337,6 +339,9 @@ const DiscoverSliderEdit = ({
             <Tag iconSvg={<SliderSourceMark source="anilist" />}>
               {slider.data}
             </Tag>
+          )}
+          {slider.type === DiscoverSliderType.AI_PICKS && slider.data && (
+            <Tag iconSvg={<SparklesIcon />}>{slider.data}</Tag>
           )}
           {slider.type === DiscoverSliderType.MDBLIST_LIST && slider.data && (
             <Tag iconSvg={<SliderSourceMark source="mdblist" />}>

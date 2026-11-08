@@ -175,6 +175,7 @@ async fn admin_view(ctx: &Ready<'_>) -> Result<Value, AiError> {
         "models": {"fast": policy.fast_model, "best": policy.best_model},
         "presets": policy.presets_json(server.as_ref()),
         "searxng": {"enabled": policy.searxng_enabled, "url": policy.searxng_url},
+        "dailyLimit": policy.daily_limit,
         "connection": server.as_ref().map(|c| ai::connection_json(c, &vault)),
         "secretKey": key_source(vault.source()),
     }))
@@ -210,6 +211,15 @@ fn policy_changes(body: &Map<String, Value>) -> Result<Map<String, Value>, AiErr
         "allowUserModelChoice",
     ] {
         bool_field(body, key, &mut out);
+    }
+    if let Some(limit) = body.get("dailyLimit") {
+        let n = limit
+            .as_u64()
+            .filter(|n| *n <= ai::MAX_DAILY_LIMIT)
+            .ok_or_else(|| {
+                AiError::input("The daily limit must be a whole number from 0 to 1000.")
+            })?;
+        out.insert(String::from("dailyLimit"), Value::from(n));
     }
     if let Some(models) = body.get("models").and_then(Value::as_object) {
         let mut m = Map::new();
@@ -489,6 +499,13 @@ async fn me_view(ctx: &Ready<'_>, user: &CurrentUser) -> Result<Value, AiError> 
     let effective = ai::effective(ctx.state, &settings, user)
         .await
         .map_err(|e| db_err(&e))?;
+    let used_today = ai::recs::store::server_runs_since(db, user.id, &ai::recs::iso_since(None))
+        .await
+        .map_err(|e| db_err(&e))?;
+    let daily_limit = effective
+        .as_ref()
+        .ok()
+        .and_then(|eff| ai::recs::daily_limit(&policy, eff, user));
     let server_view = server.as_ref().map(|c| {
         json!({
             "kind": c.kind.as_str(),
@@ -509,6 +526,7 @@ async fn me_view(ctx: &Ready<'_>, user: &CurrentUser) -> Result<Value, AiError> 
         "preferences": prefs.to_json(),
         "effective": ai::effective_json(&effective),
         "chatgptRedirectUri": chatgpt::REDIRECT_URI,
+        "usage": {"dailyLimit": daily_limit, "usedToday": used_today},
     }))
 }
 

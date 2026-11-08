@@ -183,7 +183,9 @@ const Layout = ({ children }: LayoutProps) => {
                   </div>
                 )}
               {(location.pathname === '/' ||
-                location.pathname.startsWith('/discover')) && (
+                (location.pathname.startsWith('/discover') &&
+                  // AI Picks has its own sidebar entry.
+                  !/^\/discover\/ai(?:\/|$)/.test(location.pathname))) && (
                 <DiscoverNavigation />
               )}
               {location.pathname.startsWith('/library') && <LibraryModeNav />}

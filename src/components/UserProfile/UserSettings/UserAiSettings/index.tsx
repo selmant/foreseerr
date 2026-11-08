@@ -1,3 +1,4 @@
+import TasteCard from '@app/components/Ai/TasteCard';
 import { aiErrorOf } from '@app/components/Ai/aiError';
 import { fetchModels } from '@app/components/Ai/fetchModels';
 import EndpointModal from '@app/components/Ai/EndpointModal';
@@ -118,6 +119,8 @@ const messages = defineMessages(
       'Signed out here, but OpenAI didn’t confirm the revocation. You can also remove Foreseerr in ChatGPT settings.',
     toastRemoved: 'Your own connection was removed.',
     toastSaved: 'Saved.',
+    usageToday:
+      '{used} of {limit} AI requests used today on the server connection. They reset at midnight UTC.',
     toastEndpointSaved: 'Your endpoint was saved. Pick its model below.',
   }
 );
@@ -404,6 +407,14 @@ const UserAiSettings = () => {
                   : messages.ownEndpointWho
             )}
           </div>
+          {data.usage.dailyLimit != null ? (
+            <div className="mt-1 text-sm text-gray-400">
+              {intl.formatMessage(messages.usageToday, {
+                used: data.usage.usedToday,
+                limit: data.usage.dailyLimit,
+              })}
+            </div>
+          ) : null}
         </div>
         {effective.manageUsageUrl ? (
           <Button
@@ -713,6 +724,8 @@ const UserAiSettings = () => {
             </div>
           ) : null}
         </Card>
+
+        <TasteCard />
 
         <Card active={false}>
           <div className="flex items-start justify-between gap-4">

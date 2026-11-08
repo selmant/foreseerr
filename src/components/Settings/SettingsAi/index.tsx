@@ -88,6 +88,9 @@ const messages = defineMessages('components.Settings.SettingsAi', {
   allowUserModelChoice: 'People can choose Fast, Balanced or Best',
   allowUserModelChoiceTip:
     'On the server connection. People with their own account always pick their model.',
+  dailyLimit: 'Daily AI requests per person',
+  dailyLimitTip:
+    'On the server connection, counted per person and reset at midnight UTC. Each AI Picks request and each AI Discover row refresh counts as one. Admins and people using their own account aren’t limited. 0 means no limit.',
   webSearch: 'Web search',
   webSearchDescription:
     'With a SearXNG instance, Foreseerr can look up titles too new or too niche for the catalogs. Searches run from this server; no search provider account is needed.',
@@ -134,6 +137,7 @@ type Values = {
   allowUserChatgpt: boolean;
   allowUserEndpoints: boolean;
   allowUserModelChoice: boolean;
+  dailyLimit: string;
   balanced: string;
   fast: string;
   best: string;
@@ -293,6 +297,7 @@ const SettingsAi = () => {
           allowUserChatgpt: data.allowUserChatgpt,
           allowUserEndpoints: data.allowUserEndpoints,
           allowUserModelChoice: data.allowUserModelChoice,
+          dailyLimit: String(data.dailyLimit),
           balanced: connection?.model ?? '',
           fast: data.models.fast ?? '',
           best: data.models.best ?? '',
@@ -312,6 +317,10 @@ const SettingsAi = () => {
               allowUserChatgpt: values.allowUserChatgpt,
               allowUserEndpoints: values.allowUserEndpoints,
               allowUserModelChoice: values.allowUserModelChoice,
+              dailyLimit: Math.min(
+                1000,
+                Math.max(0, Math.round(Number(values.dailyLimit) || 0))
+              ),
               models: {
                 fast: values.fast.trim() || null,
                 best: values.best.trim() || null,
@@ -566,6 +575,27 @@ const SettingsAi = () => {
                   </div>
                 </div>
               ))}
+              <div className="form-row">
+                <label htmlFor="dailyLimit" className="text-label">
+                  <span>{intl.formatMessage(messages.dailyLimit)}</span>
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.dailyLimitTip)}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <div className="form-input-field">
+                    <Field
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={1000}
+                      id="dailyLimit"
+                      name="dailyLimit"
+                      className="short"
+                    />
+                  </div>
+                </div>
+              </div>
             </Section>
 
             <Section
