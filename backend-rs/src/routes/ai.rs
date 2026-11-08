@@ -609,6 +609,17 @@ fn me_put<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                     "Your admin hasn't allowed personal endpoints.",
                 ));
             }
+            // Replacing a live ChatGPT sign-in would drop its tokens without
+            // revoking them at OpenAI; signing out first does.
+            let signed_in_chatgpt = store::load(&ctx.state.db, Owner::User(user.id))
+                .await
+                .map_err(|e| db_err(&e))?
+                .is_some_and(|c| c.kind == Kind::ChatGpt && c.status != Status::SignedOut);
+            if signed_in_chatgpt {
+                return Err(AiError::input(
+                    "Sign out of ChatGPT before adding an endpoint.",
+                ));
+            }
             save_endpoint(ctx, Owner::User(user.id), &body(ctx)).await?;
             use_own(ctx, user.id, true).await?;
             tracing::info!("User {} saved their own AI endpoint", user.id);
