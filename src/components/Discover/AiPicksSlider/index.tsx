@@ -33,7 +33,7 @@ const messages = defineMessages('components.Discover.AiPicksSlider', {
 interface AiPicksSliderProps {
   sliderKey: string;
   title: string;
-  prompt: string;
+  sliderId: number;
 }
 
 interface RowResponse {
@@ -42,13 +42,13 @@ interface RowResponse {
 }
 
 /** A Discover row of AI picks for a prompt, personal to whoever views it. */
-const AiPicksSlider = ({ sliderKey, title, prompt }: AiPicksSliderProps) => {
+const AiPicksSlider = ({ sliderKey, title, sliderId }: AiPicksSliderProps) => {
   const intl = useIntl();
   const settings = useSettings();
   const { addToast } = useToasts();
   const enabled = settings.currentSettings.aiEnabled === true;
   const { data: row, error } = useSWR<RowResponse>(
-    enabled ? `/api/v1/ai/row?prompt=${encodeURIComponent(prompt)}` : null,
+    enabled ? `/api/v1/ai/row?sliderId=${sliderId}` : null,
     { revalidateOnFocus: false }
   );
   const rowRun = row?.run ?? null;

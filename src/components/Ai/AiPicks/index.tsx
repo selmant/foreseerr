@@ -205,6 +205,7 @@ const AiPicks = () => {
   const [prompt, setPrompt] = useState(searchParams.get('q') ?? '');
   const [kind, setKind] = useState<Kind>('any');
   const [starting, setStarting] = useState(false);
+  const [addingSlider, setAddingSlider] = useState(false);
   const [startError, setStartError] = useState<AiErrorBody | null>(null);
   const autoStarted = useRef(false);
 
@@ -325,9 +326,10 @@ const AiPicks = () => {
   };
 
   const addToDiscover = async () => {
-    if (!run) {
+    if (!run || run.stage !== 'done' || addingSlider) {
       return;
     }
+    setAddingSlider(true);
     const text = run.request.prompt;
     try {
       const added = await axios.post<DiscoverSlider>(
@@ -336,6 +338,7 @@ const AiPicks = () => {
           type: DiscoverSliderType.AI_PICKS,
           title: (run.result?.headline || text).slice(0, 80),
           data: text,
+          aiRunId: run.id,
         }
       );
       // New rows start hidden at the end; show this one first.
@@ -356,6 +359,8 @@ const AiPicks = () => {
         appearance: 'error',
         autoDismiss: true,
       });
+    } finally {
+      setAddingSlider(false);
     }
   };
 
@@ -584,10 +589,12 @@ const AiPicks = () => {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {hasPermission(Permission.ADMIN) &&
-              run.request.prompt &&
-              !run.request.seed ? (
-                <Button buttonSize="sm" onClick={addToDiscover}>
+              {hasPermission(Permission.ADMIN) ? (
+                <Button
+                  buttonSize="sm"
+                  disabled={addingSlider}
+                  onClick={addToDiscover}
+                >
                   <PlusIcon className="mr-1 h-4 w-4" />
                   <span>{intl.formatMessage(messages.addToDiscover)}</span>
                 </Button>

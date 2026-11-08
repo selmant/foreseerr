@@ -226,53 +226,84 @@ fn runs<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-fn same_row(run: &store::Run, prompt: &str, only: Option<&str>) -> bool {
-    run.request.get("row").and_then(Value::as_bool) == Some(true)
-        && run.request.get("prompt").and_then(Value::as_str) == Some(prompt)
-        && run.request.get("only").and_then(Value::as_str) == only
-}
-
-/// `GET /ai/row?prompt=&only=`: a Discover row's picks for this person.
-/// Reuses today's picks for the same prompt; otherwise starts a run
-/// (counting toward their daily limit) and answers it while it works.
-/// When a new run can't start, answers the last picks (if any) and why.
+/// `GET /ai/row?sliderId=` (or legacy prompt/only parameters).
+/// A saved run seeds the owner's cache; refreshes repeat the full request.
 fn row<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     answer(ctx, |ctx, user| async move {
         let query = params::query(ctx).unwrap_or_default();
-        let prompt = query
-            .get("prompt")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .unwrap_or_default()
-            .to_owned();
-        let only = match query.get("only").and_then(Value::as_str) {
-            Some("movie") => Some("movie"),
-            Some("tv") => Some("tv"),
-            Some(_) | None => None,
+        let (config, enabled) = if let Some(id) = query.get("sliderId").and_then(Value::as_i64) {
+            let slider = ctx
+                .state
+                .db
+                .discover_slider(id)
+                .await
+                .map_err(|e| db_err(&e))?
+                .filter(|s| s.slider_type == recs::rows::SLIDER_TYPE)
+                .ok_or_else(|| AiError::input("This AI slider no longer exists."))?;
+            (
+                recs::rows::Config::parse(slider.data.as_deref().unwrap_or_default())?,
+                slider.enabled,
+            )
+        } else {
+            (
+                recs::rows::Config {
+                    request: Request::parse(&query)?,
+                    ..recs::rows::Config::default()
+                },
+                true,
+            )
         };
-        let recent = store::recent_runs(&ctx.state.db, user.id, 100)
+        let request = &config.request;
+        let recent = store::row_runs(&ctx.state.db, user.id, &request.cache_key())
             .await
             .map_err(|e| db_err(&e))?;
+        let mut matching: Vec<(store::Run, String)> = recent
+            .into_iter()
+            .filter(|r| recs::rows::matches_request(r, request))
+            .map(|r| {
+                let at = r.created_at.clone();
+                (r, at)
+            })
+            .collect();
+        if let Some(id) = config.initial_run {
+            // A global slider must never share its creator's results with another user.
+            if let Some(run) = store::run(&ctx.state.db, user.id, id)
+                .await
+                .map_err(|e| db_err(&e))?
+                .filter(|r| {
+                    r.stage == "done"
+                        && r.result.is_some()
+                        && recs::rows::matches_request(r, request)
+                })
+            {
+                let at = config
+                    .saved_at
+                    .clone()
+                    .unwrap_or_else(|| run.created_at.clone());
+                matching.push((run, at));
+            }
+        }
+        matching.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.id.cmp(&a.0.id)));
         let fresh_since = recs::iso_since(Some(ROW_FRESH_MINUTES));
         let working_since = recs::iso_since(Some(10));
-        let matching: Vec<&store::Run> = recent
-            .iter()
-            .filter(|r| same_row(r, &prompt, only))
-            .collect();
-        let current = matching.iter().find(|r| {
-            (r.stage == "done" && r.created_at >= fresh_since)
+        let current = matching.iter().find(|(r, at)| {
+            (r.stage == "done" && at >= &fresh_since)
                 || (matches!(r.stage.as_str(), "planning" | "searching" | "ranking")
                     && r.created_at >= working_since)
         });
-        if let Some(run) = current {
+        if let Some((run, _)) = current {
             return Ok(json!({"run": run_view(ctx, user.id, run).await, "notice": null}));
         }
-        let request = Request {
-            prompt: prompt.chars().take(recs::MAX_PROMPT_CHARS).collect(),
-            only,
-            row: true,
-            ..Request::default()
-        };
+        let last = matching.iter().find(|(r, _)| r.stage == "done");
+        if !enabled {
+            let run = match last {
+                Some((r, _)) => Some(run_view(ctx, user.id, r).await),
+                None => None,
+            };
+            return Ok(json!({"run": run, "notice": null}));
+        }
+        let mut request = config.request.clone();
+        request.row = true;
         match recs::start(
             Arc::clone(&ctx.shared),
             Arc::clone(&ctx.settings),
@@ -283,9 +314,8 @@ fn row<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         {
             Ok(run_id) => Ok(json!({"run": load_run(ctx, user.id, run_id).await?, "notice": null})),
             Err(e) => {
-                let last = matching.iter().find(|r| r.stage == "done");
                 let run = match last {
-                    Some(r) => Some(run_view(ctx, user.id, r).await),
+                    Some((r, _)) => Some(run_view(ctx, user.id, r).await),
                     None => None,
                 };
                 Ok(json!({"run": run, "notice": e.to_json()}))

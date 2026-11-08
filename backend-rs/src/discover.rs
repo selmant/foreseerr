@@ -72,7 +72,15 @@ pub fn response(slider: &DiscoverSliderRow) -> Value {
     out.insert(String::from("createdAt"), text(&slider.created_at));
     out.insert(String::from("updatedAt"), text(&slider.updated_at));
     let kind = Some(slider.slider_type);
-    if let Some(endpoint) = kind.and_then(|t| endpoint(t, slider.data.as_deref())) {
+    let row_endpoint = if slider.slider_type == AI_PICKS {
+        Some(with_query(
+            &format!("{API}/ai/row"),
+            &[("sliderId", &slider.id.to_string())],
+        ))
+    } else {
+        kind.and_then(|t| endpoint(t, slider.data.as_deref()))
+    };
+    if let Some(endpoint) = row_endpoint {
         out.insert(String::from("endpoint"), Value::from(endpoint));
     }
     if let Some(title) = kind.and_then(default_title) {
@@ -95,12 +103,6 @@ fn endpoint(slider_type: i64, data: Option<&str>) -> Option<String> {
     }
     if let Some((_, _, path)) = FIXED.iter().find(|(t, _, _)| *t == slider_type) {
         return Some(provider(path, &[]));
-    }
-    if slider_type == AI_PICKS {
-        return Some(with_query(
-            &format!("{API}/ai/row"),
-            &[("prompt", data.unwrap_or_default().trim())],
-        ));
     }
     let data = data?.trim();
     if data.is_empty() {

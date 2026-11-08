@@ -1,3 +1,4 @@
+import { parseAiSlider, editAiSliderPrompt } from '@shared/lib/aiSlider';
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
 import MdblistListSlider from '@app/components/Discover/MdblistListSlider';
@@ -294,9 +295,12 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
       intl.formatMessage(messages.validationTitlerequired)
     ),
     sliderType: Yup.number().required(),
-    data: Yup.string().required(
-      intl.formatMessage(messages.validationDatarequired)
-    ),
+    data: Yup.string().when('sliderType', {
+      is: DiscoverSliderType.AI_PICKS,
+      then: (schema) => schema,
+      otherwise: (schema) =>
+        schema.required(intl.formatMessage(messages.validationDatarequired)),
+    }),
   });
 
   const loadKeywordOptions = async (inputValue: string) => {
@@ -623,7 +627,10 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
           ? {
               sliderType: slider.type,
               title: slider.title,
-              data: slider.data,
+              data:
+                slider.type === DiscoverSliderType.AI_PICKS
+                  ? (parseAiSlider(slider.data).request.prompt ?? '')
+                  : slider.data,
             }
           : {
               sliderType: DiscoverSliderType.TMDB_MOVIE_KEYWORD,
@@ -639,7 +646,11 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
             await axios.put(`/api/v1/settings/discover/${slider.id}`, {
               type: Number(values.sliderType),
               title: values.title,
-              data: values.data,
+              data:
+                Number(values.sliderType) === DiscoverSliderType.AI_PICKS &&
+                slider.type === DiscoverSliderType.AI_PICKS
+                  ? editAiSliderPrompt(slider.data, values.data ?? '')
+                  : values.data,
             });
           } else {
             await axios.post('/api/v1/settings/discover/add', {
@@ -685,7 +696,8 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         );
         const submitBlocker = !values.title?.trim()
           ? messages.validationTitlerequired
-          : !values.data?.trim()
+          : Number(values.sliderType) !== DiscoverSliderType.AI_PICKS &&
+              !values.data?.trim()
             ? messages.validationDatarequired
             : null;
         const canSubmit = isValid && !submitBlocker;

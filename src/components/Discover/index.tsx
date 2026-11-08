@@ -612,13 +612,14 @@ const Discover = () => {
             );
             break;
           case DiscoverSliderType.AI_PICKS:
-            sliderComponent = (
-              <AiPicksSlider
-                sliderKey={`custom-slider-${slider.id}`}
-                title={slider.title ?? ''}
-                prompt={slider.data ?? ''}
-              />
-            );
+            sliderComponent =
+              !slider.enabled || !slider.id ? null : (
+                <AiPicksSlider
+                  sliderKey={`custom-slider-${slider.id}`}
+                  title={slider.title ?? ''}
+                  sliderId={slider.id}
+                />
+              );
             break;
           case DiscoverSliderType.MDBLIST_LIST:
             sliderComponent = (

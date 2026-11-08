@@ -201,6 +201,23 @@ pub async fn recent_runs(db: &Db, user_id: i64, limit: i64) -> Result<Vec<Run>> 
     Ok(rows.iter().filter_map(run_of).collect())
 }
 
+/// Matching row runs, without allowing unrelated runs to exhaust a scan limit.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn row_runs(db: &Db, user_id: i64, key: &str) -> Result<Vec<Run>> {
+    let key_sql = if db.is_postgres() {
+        r#"CAST("request" AS JSONB)->>'rowKey'"#
+    } else {
+        r#"json_extract("request", '$.rowKey')"#
+    };
+    let rows = db.rows(&format!(
+        r#"SELECT {} FROM "ai_run" WHERE "userId" = ?1 AND ({key_sql} = ?2 OR ({key_sql} IS NULL AND "request" LIKE '%"row":true%')) ORDER BY "id" DESC"#,
+        run_columns(db)), &[Bind::Int(user_id), Bind::Text(key.to_owned())]).await?;
+    Ok(rows.iter().filter_map(run_of).collect())
+}
+
 /// A request of this user's own (not a Discover row's) that's still
 /// working and started in the last few minutes, if any.
 ///

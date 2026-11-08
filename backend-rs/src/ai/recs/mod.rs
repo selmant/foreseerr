@@ -15,13 +15,16 @@
 
 pub mod prompts;
 pub mod retrieve;
+pub mod rows;
 pub mod store;
 
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 use self::prompts::{Context, Plan, Ranking, TasteUpdate};
 use self::retrieve::{kind_of, Candidate, Genres, Key, Sources};
@@ -122,6 +125,14 @@ impl Request {
         })
     }
 
+    /// A stable identity for every recommendation constraint.
+    #[must_use]
+    pub fn cache_key(&self) -> String {
+        let value = json!({"prompt": self.prompt, "seed": self.seed,
+            "only": self.only, "anime": self.anime, "refinements": self.refinements});
+        URL_SAFE_NO_PAD.encode(Sha256::digest(value.to_string().as_bytes()))
+    }
+
     /// As stored with the run (the seed's title added for display).
     #[must_use]
     pub fn to_json(&self, seed_title: Option<&str>) -> Value {
@@ -132,6 +143,7 @@ impl Request {
             "anime": self.anime,
             "refinements": self.refinements,
             "row": self.row,
+            "rowKey": self.row.then(|| self.cache_key()),
         })
     }
 }

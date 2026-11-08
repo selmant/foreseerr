@@ -52,7 +52,10 @@ server; nothing about your history is sent to the model.
 Admins can turn a request into a Discover row: **Add to Discover** on the
 results, or **Customize Discover → Add slider → AI Picks** with a prompt. The
 row is the same for everyone, but each person sees picks for their own taste.
-Picks are cached for a day per person, and each refresh counts as one request
+Adding completed picks reuses that run for your slider's first day, without
+another AI request. The saved row keeps the original seed title, media filter,
+anime setting and refinements for future refreshes. Other people get their own
+personalized results. Picks are cached for a day per person, and each refresh counts as one request
 toward that person's daily limit.
 
 ## Connections

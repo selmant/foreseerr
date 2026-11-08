@@ -5282,10 +5282,16 @@ paths:
     get:
       x-foreseerr: true
       summary: Get my picks for an AI Discover row
-      description: Reuses today's picks for this prompt, or starts a run (counted toward the daily limit).
+      description: Reuses this person’s cached picks for the saved slider request, including the initial run selected by its creator. Otherwise starts a personalized run, counted toward the daily limit.
       tags:
         - ai
       parameters:
+        - in: query
+          name: sliderId
+          description: Saved AI slider whose full request and initial cache should be used.
+          schema:
+            type: integer
+            minimum: 1
         - in: query
           name: prompt
           schema:
@@ -6828,6 +6834,10 @@ paths:
                 type:
                   type: number
                   example: 1
+                aiRunId:
+                  type: integer
+                  minimum: 1
+                  description: For AI sliders, reuse one of the caller’s completed runs and retain its full request.
                 data:
                   type: string
                   example: '1'
