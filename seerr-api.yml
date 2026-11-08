@@ -1302,7 +1302,8 @@ components:
               type: boolean
             reason:
               type: string
-              enum: [disabled, own_missing, own_needs_sign_in, no_server_connection]
+              enum:
+                [disabled, own_missing, own_needs_sign_in, no_server_connection]
             source:
               type: string
               enum: [own, server]
@@ -1336,7 +1337,17 @@ components:
           type: string
         code:
           type: string
-          enum: [input, not_configured, reauth, usage_limit, not_eligible, unavailable, upstream, internal]
+          enum:
+            [
+              input,
+              not_configured,
+              reauth,
+              usage_limit,
+              not_eligible,
+              unavailable,
+              upstream,
+              internal,
+            ]
         manageUsageUrl:
           type: string
     MdbListSettings:
