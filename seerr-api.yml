@@ -12815,7 +12815,7 @@ paths:
     post:
       x-foreseerr: true
       summary: Reject and release-blocklist one warning
-      description: Revalidates the exact mapped warning before deleting it from the client and blocklisting it in Arr. Requires `MANAGE_REQUESTS`.
+      description: 'Revalidates the exact mapped warning before deleting it from the client and blocklisting it in Arr. On Sonarr 5 the blocklist entry keeps why: `Rejected in Foreseerr by <user>: <first queue warning>` (`Rejected automatically by Foreseerr: ...` for the cleanup deadline). Requires `MANAGE_REQUESTS`.'
       tags: [service]
       parameters:
         - in: path
@@ -12840,7 +12840,7 @@ paths:
     get:
       x-foreseerr: true
       summary: Get mapped Servarr management context
-      description: Returns the mapped Radarr movie or Sonarr seasons and episodes, with the series' episode order (`seasonOrder`, `{ type, name }`) where Sonarr reports one (Sonarr 5). Requires `MANAGE_REQUESTS`.
+      description: "Returns the mapped Radarr movie or Sonarr seasons and episodes, with the series' episode order (`seasonOrder`, `{ type, name }`) where Sonarr reports one (Sonarr 5). Each Sonarr episode with a file carries `tracks` (`audioLanguages` and `subtitleLanguages`, the lowercased ISO 639-2 codes of the file's embedded tracks, `und` for a track without one) when Sonarr has read the file's media info. From Sonarr 5 each season may also carry `fileQualities` (the quality names of its files, in quality profile order) and `releaseTypes` (`singleEpisode`, `multiEpisode`, `seasonPack`, `multiSeasonPack`), and an episode carries Sonarr's `grabDate` and `grabStalled: true` when it is monitored, has no file, was grabbed over 6 hours ago and is no longer in Sonarr's queue. Requires `MANAGE_REQUESTS`."
       tags:
         - media
       parameters:

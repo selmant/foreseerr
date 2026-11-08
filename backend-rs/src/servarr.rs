@@ -223,7 +223,10 @@ impl ServarrClient {
             .map(|(k, v)| ((*k).to_owned(), v.clone()))
             .collect();
         let (query, body) = match api {
-            ApiVersion::V3 => (query, body.cloned()),
+            ApiVersion::V3 => (
+                sonarrv5::to_v3_query(method.as_str(), path, query),
+                body.cloned(),
+            ),
             ApiVersion::V5 => sonarrv5::to_v5_request(method.as_str(), path, query, body.cloned()),
         };
         let mut url = with_api_key(
