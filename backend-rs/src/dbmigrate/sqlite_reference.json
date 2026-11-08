@@ -290,6 +290,18 @@
     },
     {
       "type": "table",
+      "name": "ai_connection",
+      "tbl_name": "ai_connection",
+      "sql": "CREATE TABLE \"ai_connection\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"kind\" varchar NOT NULL, \"baseUrl\" varchar, \"model\" varchar, \"credentials\" text, \"clientId\" varchar, \"accountSubject\" varchar, \"accountEmail\" varchar, \"accountName\" varchar, \"status\" varchar NOT NULL DEFAULT ('ok'), \"lastError\" text, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"lastUsedAt\" datetime, \"userId\" integer, CONSTRAINT \"REL_ai_connection_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_connection_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
+      "name": "ai_user_settings",
+      "tbl_name": "ai_user_settings",
+      "sql": "CREATE TABLE \"ai_user_settings\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"useOwnConnection\" boolean NOT NULL DEFAULT (0), \"model\" varchar, \"useHistory\" boolean NOT NULL DEFAULT (0), \"historyConsentAt\" datetime, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_user_settings_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_user_settings_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
       "name": "blocklist",
       "tbl_name": "blocklist",
       "sql": "CREATE TABLE \"blocklist\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"title\" varchar, \"tmdbId\" integer NOT NULL, \"blocklistedTags\" varchar, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer, \"mediaId\" integer, CONSTRAINT \"REL_62b7ade94540f9f8d8bede54b9\" UNIQUE (\"mediaId\"), CONSTRAINT \"UQ_81504e02db89b4c1e3152729fa6\" UNIQUE (\"tmdbId\", \"mediaType\"), CONSTRAINT \"FK_5c8af2d0e83b3be6d250eccc19d\" FOREIGN KEY (\"mediaId\") REFERENCES \"media\" (\"id\") ON DELETE CASCADE ON UPDATE NO ACTION, CONSTRAINT \"FK_356721a49f145aa439c16e6b999\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE NO ACTION ON UPDATE NO ACTION)"
@@ -891,6 +903,11 @@
       "id": 88,
       "timestamp": 1789800000000,
       "name": "AddRequestMetadataLanguage1789800000000"
+    },
+    {
+      "id": 89,
+      "timestamp": 1789900000000,
+      "name": "AddAiConnections1789900000000"
     }
   ]
 }

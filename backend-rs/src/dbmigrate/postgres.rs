@@ -671,4 +671,12 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "AddRequestMetadataLanguage1789800000000",
         queries: &["ALTER TABLE \"media_request\" ADD \"metadataLanguageId\" integer"],
     },
+    Migration {
+        timestamp: 1_789_900_000_000,
+        name: "AddAiConnections1789900000000",
+        queries: &[
+            "CREATE TABLE \"ai_connection\" (\"id\" SERIAL NOT NULL, \"kind\" character varying NOT NULL, \"baseUrl\" character varying, \"model\" character varying, \"credentials\" text, \"clientId\" character varying, \"accountSubject\" character varying, \"accountEmail\" character varying, \"accountName\" character varying, \"status\" character varying NOT NULL DEFAULT 'ok', \"lastError\" text, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"lastUsedAt\" TIMESTAMP WITH TIME ZONE, \"userId\" integer, CONSTRAINT \"REL_ai_connection_user\" UNIQUE (\"userId\"), CONSTRAINT \"PK_ai_connection\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_connection_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+            "CREATE TABLE \"ai_user_settings\" (\"id\" SERIAL NOT NULL, \"useOwnConnection\" boolean NOT NULL DEFAULT false, \"model\" character varying, \"useHistory\" boolean NOT NULL DEFAULT false, \"historyConsentAt\" TIMESTAMP WITH TIME ZONE, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_user_settings_user\" UNIQUE (\"userId\"), CONSTRAINT \"PK_ai_user_settings\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_user_settings_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+        ],
+    },
 ];

@@ -4,7 +4,42 @@
 use super::fallback::ApiRoute;
 
 /// Every documented route.
-pub(super) static ROUTES: [ApiRoute; 257] = [
+pub(super) static ROUTES: [ApiRoute; 270] = [
+    ApiRoute {
+        template: "/api/v1/ai/me/chatgpt/complete",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("me"), Some("chatgpt"), Some("complete")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/me/chatgpt/start",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("me"), Some("chatgpt"), Some("start")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/me/connection/models",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("me"), Some("connection"), Some("models")],
+        methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/me/connection/model",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("me"), Some("connection"), Some("model")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/me/connection/test",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("me"), Some("connection"), Some("test")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/me/connection",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("me"), Some("connection")],
+        methods: &[("PUT", true), ("DELETE", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/me",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("me")],
+        methods: &[("GET", true), ("POST", true)],
+    },
     ApiRoute {
         template: "/api/v1/auth/jellyfin/plugin",
         segments: &[Some("api"), Some("v1"), Some("auth"), Some("jellyfin"), Some("plugin")],
@@ -684,6 +719,36 @@ pub(super) static ROUTES: [ApiRoute; 257] = [
         template: "/api/v1/settings/about",
         segments: &[Some("api"), Some("v1"), Some("settings"), Some("about")],
         methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/settings/ai/connection/models",
+        segments: &[Some("api"), Some("v1"), Some("settings"), Some("ai"), Some("connection"), Some("models")],
+        methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/settings/ai/connection/model",
+        segments: &[Some("api"), Some("v1"), Some("settings"), Some("ai"), Some("connection"), Some("model")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/settings/ai/connection/test",
+        segments: &[Some("api"), Some("v1"), Some("settings"), Some("ai"), Some("connection"), Some("test")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/settings/ai/connection",
+        segments: &[Some("api"), Some("v1"), Some("settings"), Some("ai"), Some("connection")],
+        methods: &[("PUT", true), ("DELETE", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/settings/ai/searxng/test",
+        segments: &[Some("api"), Some("v1"), Some("settings"), Some("ai"), Some("searxng"), Some("test")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/settings/ai",
+        segments: &[Some("api"), Some("v1"), Some("settings"), Some("ai")],
+        methods: &[("GET", true), ("POST", true)],
     },
     ApiRoute {
         template: "/api/v1/settings/anilist/actions",

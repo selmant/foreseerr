@@ -3,6 +3,7 @@
 //! (`src/standalone/fallback.rs`).
 
 pub mod accountlink;
+pub mod ai;
 pub mod anilistdiscover;
 mod arrcall;
 pub mod arrsettings;
@@ -161,6 +162,7 @@ const TABLES: &[&Table] = &[
     requestedit::ROUTES,
     overriderule::ROUTES,
     sonarrstorage::ROUTES,
+    ai::ROUTES,
 ];
 
 /// The router: the handlers first, the fallback for the rest. HEAD goes to

@@ -44,6 +44,8 @@ tags:
     description: Unified Sonarr and Radarr release calendar.
   - name: library
     description: Owned-media Watch Now shelves and available library browse.
+  - name: ai
+    description: AI connections (server and personal), model presets and web search.
 servers:
   - url: '{server}/api/v1'
     variables:
@@ -1099,6 +1101,244 @@ components:
         posterTraktCommunity:
           type: boolean
           example: false
+    AiConnection:
+      type: object
+      description: An AI connection as its owner sees it. Credentials are never returned, only whether a key is set.
+      properties:
+        kind:
+          type: string
+          enum: [chatgpt, openai]
+        status:
+          type: string
+          enum: [ok, reauth, plan_disabled, signed_out]
+        model:
+          type: string
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          nullable: true
+        lastUsedAt:
+          type: string
+          nullable: true
+        providerLabel:
+          type: string
+          description: Friendly provider name for an OpenAI-compatible endpoint
+        baseUrl:
+          type: string
+          nullable: true
+        hasApiKey:
+          type: boolean
+        accountEmail:
+          type: string
+          nullable: true
+        accountName:
+          type: string
+          nullable: true
+        manageUsageUrl:
+          type: string
+    AiModel:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+    AiPresets:
+      type: object
+      properties:
+        fast:
+          type: string
+          nullable: true
+        balanced:
+          type: string
+          nullable: true
+        best:
+          type: string
+          nullable: true
+    AiSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        shareServerConnection:
+          type: boolean
+        allowUserChatgpt:
+          type: boolean
+        allowUserEndpoints:
+          type: boolean
+        allowUserModelChoice:
+          type: boolean
+        models:
+          type: object
+          properties:
+            fast:
+              type: string
+              nullable: true
+            best:
+              type: string
+              nullable: true
+        presets:
+          $ref: '#/components/schemas/AiPresets'
+        searxng:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            url:
+              type: string
+        connection:
+          allOf:
+            - $ref: '#/components/schemas/AiConnection'
+          nullable: true
+        secretKey:
+          type: object
+          properties:
+            source:
+              type: string
+              enum: [env, file, config]
+            besideDatabase:
+              type: boolean
+    AiSettingsUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        shareServerConnection:
+          type: boolean
+        allowUserChatgpt:
+          type: boolean
+        allowUserEndpoints:
+          type: boolean
+        allowUserModelChoice:
+          type: boolean
+        models:
+          type: object
+          properties:
+            fast:
+              type: string
+              nullable: true
+            best:
+              type: string
+              nullable: true
+        searxng:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            url:
+              type: string
+    AiEndpointRequest:
+      type: object
+      required: [baseUrl]
+      properties:
+        baseUrl:
+          type: string
+          example: https://api.openai.com/v1
+        apiKey:
+          type: string
+          description: Write-only. Omit or leave blank to keep the stored key.
+        clearApiKey:
+          type: boolean
+        model:
+          type: string
+          nullable: true
+    AiModelRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          nullable: true
+    AiMe:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        policy:
+          type: object
+          properties:
+            allowChatgpt:
+              type: boolean
+            allowEndpoints:
+              type: boolean
+            allowModelChoice:
+              type: boolean
+        server:
+          type: object
+          nullable: true
+          properties:
+            kind:
+              type: string
+            status:
+              type: string
+            providerLabel:
+              type: string
+            presets:
+              $ref: '#/components/schemas/AiPresets'
+        own:
+          allOf:
+            - $ref: '#/components/schemas/AiConnection'
+          nullable: true
+        preferences:
+          type: object
+          properties:
+            useOwnConnection:
+              type: boolean
+            model:
+              type: string
+              nullable: true
+            useHistory:
+              type: boolean
+            historyConsentAt:
+              type: string
+              nullable: true
+        effective:
+          type: object
+          description: The connection the user's AI requests use right now.
+          properties:
+            available:
+              type: boolean
+            reason:
+              type: string
+              enum: [disabled, own_missing, own_needs_sign_in, no_server_connection]
+            source:
+              type: string
+              enum: [own, server]
+            kind:
+              type: string
+            model:
+              type: string
+              nullable: true
+            preset:
+              type: string
+              nullable: true
+            accountEmail:
+              type: string
+              nullable: true
+            usesChatgptPlan:
+              type: boolean
+            manageUsageUrl:
+              type: string
+              nullable: true
+        chatgptRedirectUri:
+          type: string
+        revoked:
+          type: boolean
+          nullable: true
+        planEnabled:
+          type: boolean
+    AiError:
+      type: object
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+          enum: [input, not_configured, reauth, usage_limit, not_eligible, unavailable, upstream, internal]
+        manageUsageUrl:
+          type: string
     MdbListSettings:
       type: object
       properties:
@@ -1485,6 +1725,10 @@ components:
         mdblistConfigured:
           type: boolean
           description: Whether an MDBList API key is configured
+          example: false
+        aiEnabled:
+          type: boolean
+          description: Whether an admin turned on AI features
           example: false
         pluginMode:
           type: boolean
@@ -4541,6 +4785,316 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MdbListSettings'
+  /settings/ai:
+    get:
+      x-foreseerr: true
+      summary: Get AI settings
+      description: The AI policy, model presets, web search and the server connection (without credentials). Admins only.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+    post:
+      x-foreseerr: true
+      summary: Update AI settings
+      description: Changes the AI policy switches, preset models and SearXNG web search. Admins only.
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiSettingsUpdate'
+      responses:
+        '200':
+          description: The updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+  /settings/ai/connection:
+    put:
+      x-foreseerr: true
+      summary: Save the server AI connection
+      description: Sets the server's OpenAI-compatible endpoint. The API key is write-only and stored encrypted. Admins only.
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiEndpointRequest'
+      responses:
+        '200':
+          description: The updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+    delete:
+      x-foreseerr: true
+      summary: Remove the server AI connection
+      tags:
+        - ai
+      responses:
+        '200':
+          description: The updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+  /settings/ai/connection/model:
+    post:
+      x-foreseerr: true
+      summary: Set the server connection's default model
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelRequest'
+      responses:
+        '200':
+          description: The updated settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiSettings'
+  /settings/ai/connection/test:
+    post:
+      x-foreseerr: true
+      summary: Test the server AI connection
+      description: Lists the endpoint's models and, when a model is chosen, sends a tiny prompt.
+      tags:
+        - ai
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelRequest'
+      responses:
+        '200':
+          description: The connection works
+  /settings/ai/connection/models:
+    get:
+      x-foreseerr: true
+      summary: List the server connection's models
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiModel'
+  /settings/ai/searxng/test:
+    post:
+      x-foreseerr: true
+      summary: Test a SearXNG instance
+      description: Runs a real query against the given (or saved) SearXNG address.
+      tags:
+        - ai
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+      responses:
+        '200':
+          description: SearXNG answered with JSON
+  /ai/me:
+    get:
+      x-foreseerr: true
+      summary: Get my AI connection and preferences
+      description: Which connection the signed-in user's AI requests use, their own connection (without credentials) and preferences.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+    post:
+      x-foreseerr: true
+      summary: Update my AI preferences
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                useOwnConnection:
+                  type: boolean
+                model:
+                  type: string
+                  nullable: true
+                  enum: [fast, balanced, best, null]
+                useHistory:
+                  type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+  /ai/me/connection:
+    put:
+      x-foreseerr: true
+      summary: Save my own AI endpoint
+      description: Only when the admin allows personal endpoints. The API key is write-only and stored encrypted.
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiEndpointRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+    delete:
+      x-foreseerr: true
+      summary: Disconnect my own AI connection
+      description: Signs out of ChatGPT (revoking the session) or removes the endpoint.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+  /ai/me/connection/model:
+    post:
+      x-foreseerr: true
+      summary: Set my own connection's model
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
+  /ai/me/connection/test:
+    post:
+      x-foreseerr: true
+      summary: Test my own AI connection
+      tags:
+        - ai
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiModelRequest'
+      responses:
+        '200':
+          description: The connection works
+  /ai/me/connection/models:
+    get:
+      x-foreseerr: true
+      summary: List my own connection's models
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiModel'
+  /ai/me/chatgpt/start:
+    post:
+      x-foreseerr: true
+      summary: Start a ChatGPT sign-in
+      description: Returns the ChatGPT authorization URL to open. OpenAI only redirects to a loopback address, so the user pastes the address the browser lands on into /ai/me/chatgpt/complete.
+      tags:
+        - ai
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                consent:
+                  type: boolean
+                  description: Ask ChatGPT to show the consent screen again (to allow plan use after declining it).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorizeUrl:
+                    type: string
+                  redirectUri:
+                    type: string
+  /ai/me/chatgpt/complete:
+    post:
+      x-foreseerr: true
+      summary: Finish a ChatGPT sign-in
+      tags:
+        - ai
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [callbackUrl]
+              properties:
+                callbackUrl:
+                  type: string
+                  description: The full address the browser landed on after signing in.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiMe'
   /settings/radarr:
     get:
       summary: Get Radarr settings

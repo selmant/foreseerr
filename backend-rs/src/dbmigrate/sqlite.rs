@@ -1293,6 +1293,14 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "AddRequestMetadataLanguage1789800000000",
         queries: &["ALTER TABLE \"media_request\" ADD \"metadataLanguageId\" integer"],
     },
+    Migration {
+        timestamp: 1_789_900_000_000,
+        name: "AddAiConnections1789900000000",
+        queries: &[
+            "CREATE TABLE \"ai_connection\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"kind\" varchar NOT NULL, \"baseUrl\" varchar, \"model\" varchar, \"credentials\" text, \"clientId\" varchar, \"accountSubject\" varchar, \"accountEmail\" varchar, \"accountName\" varchar, \"status\" varchar NOT NULL DEFAULT ('ok'), \"lastError\" text, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"lastUsedAt\" datetime, \"userId\" integer, CONSTRAINT \"REL_ai_connection_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_connection_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
+            "CREATE TABLE \"ai_user_settings\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"useOwnConnection\" boolean NOT NULL DEFAULT (0), \"model\" varchar, \"useHistory\" boolean NOT NULL DEFAULT (0), \"historyConsentAt\" datetime, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_user_settings_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_user_settings_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
+        ],
+    },
 ];
 
 /// `SeerrMigration1759769291608` from `server/lib/overseerrMerge.ts`,
