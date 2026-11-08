@@ -678,6 +678,66 @@ pub struct Sources {
     pub only: Option<&'static str>,
     /// Anime only.
     pub anime_only: bool,
+    /// `library` or `new` (see [`super::Request::availability`]).
+    pub availability: Option<&'static str>,
+}
+
+/// Library titles offered as candidates when only the library is wanted.
+const LIBRARY_SAMPLE: i64 = 60;
+
+/// Titles in the library (available or partly available) or, with
+/// `wanted_too`, also requested or downloading.
+async fn library_keys(state: &AppState, wanted_too: bool) -> HashSet<Key> {
+    let statuses = if wanted_too { "2, 3, 4, 5" } else { "4, 5" };
+    state
+        .db
+        .rows(
+            &format!(
+                r#"SELECT "mediaType", CAST("tmdbId" AS BIGINT) AS "tmdbId" FROM "media" WHERE "status" IN ({statuses}) OR "status4k" IN ({statuses})"#
+            ),
+            &[],
+        )
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|r| {
+            let kind = match r.get("mediaType")?.as_str()? {
+                "movie" => "movie",
+                "tv" => "tv",
+                _ => return None,
+            };
+            Some((kind, r.get("tmdbId")?.as_i64()?))
+        })
+        .collect()
+}
+
+/// A random sample of library titles of these kinds, as candidates.
+async fn library_sample(
+    state: &AppState,
+    language: &str,
+    kinds: &[&'static str],
+) -> Vec<Candidate> {
+    let mut keys: Vec<Key> = library_keys(state, false)
+        .await
+        .into_iter()
+        .filter(|(kind, _)| kinds.contains(kind))
+        .collect();
+    // A different handful each time, so repeated requests don't repeat.
+    let seed = crate::clock::now_millis();
+    keys.sort_by_key(|(kind, id)| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&(kind, id, seed), &mut h);
+        std::hash::Hasher::finish(&h)
+    });
+    keys.truncate(usize::try_from(LIBRARY_SAMPLE).unwrap_or(60));
+    map_with_concurrency(keys, 8, |(kind, id): Key| async move {
+        let details = state.tmdb.title_summary(kind, id, language).await.ok()?;
+        candidate(&details, kind, "library")
+    })
+    .await
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// The candidates and web snippets for a plan.
@@ -792,6 +852,17 @@ pub async fn gather<S: BuildHasher + Sync>(
             trakt(state, settings, user_id, language).await
         }));
     }
+    let library = match sources.availability {
+        Some("library") => {
+            let wanted = kinds.clone();
+            jobs.push(Box::pin(async move {
+                library_sample(state, language, &wanted).await
+            }));
+            Some((true, library_keys(state, false).await))
+        }
+        Some(_) => Some((false, library_keys(state, true).await)),
+        None => None,
+    };
     let queries = web_queries(plan, sources);
     let web_job = async {
         match &sources.searxng {
@@ -813,6 +884,11 @@ pub async fn gather<S: BuildHasher + Sync>(
         }
         if sources.anime_only && !c.is_anime() {
             continue;
+        }
+        if let Some((inside, keys)) = &library {
+            if keys.contains(&c.key()) != *inside {
+                continue;
+            }
         }
         if seen.insert(c.key()) {
             candidates.push(c);

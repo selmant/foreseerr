@@ -135,6 +135,15 @@ impl AiError {
         )
     }
 
+    /// The server connection's monthly token budget is used up.
+    #[must_use]
+    pub fn monthly_budget() -> Self {
+        Self::new(
+            ErrorKind::DailyLimit,
+            "This server's AI budget for the month is used up. It resets on the 1st, or connect your own account in Profile → AI.",
+        )
+    }
+
     /// Not eligible for plan usage.
     pub fn not_eligible(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::NotEligible, message)
@@ -229,6 +238,10 @@ pub fn clip(text: &str, max: usize) -> String {
 /// Recommendation runs per person per day on the server connection, unless
 /// the admin sets another limit.
 pub const DEFAULT_DAILY_LIMIT: u32 = 30;
+/// Discover AI rows are refreshed every this many days unless set.
+pub const DEFAULT_ROW_REFRESH_DAYS: i64 = 3;
+/// Finished requests are kept this many days unless set.
+pub const DEFAULT_HISTORY_DAYS: i64 = 90;
 /// The highest daily limit an admin may set.
 pub const MAX_DAILY_LIMIT: u64 = 1000;
 
@@ -302,6 +315,14 @@ pub struct Policy {
     /// Recommendation runs per person per day on the server connection
     /// (0: no limit). Admins and own connections aren't limited.
     pub daily_limit: u32,
+    /// Tokens the server connection may use per month (0: no budget).
+    pub monthly_token_budget: i64,
+    /// Discover AI rows are refreshed after this many days.
+    pub row_refresh_days: i64,
+    /// The nightly job prepares rows ahead of time and makes weekly picks.
+    pub auto_picks: bool,
+    /// Finished requests are deleted after this many days (0: kept).
+    pub history_days: i64,
 }
 
 impl Policy {
@@ -340,6 +361,22 @@ impl Policy {
                 .and_then(Value::as_u64)
                 .and_then(|n| u32::try_from(n).ok())
                 .unwrap_or(DEFAULT_DAILY_LIMIT),
+            monthly_token_budget: settings
+                .get("/ai/monthlyTokenBudget")
+                .and_then(Value::as_i64)
+                .unwrap_or(0)
+                .max(0),
+            row_refresh_days: settings
+                .get("/ai/rowRefreshDays")
+                .and_then(Value::as_i64)
+                .unwrap_or(DEFAULT_ROW_REFRESH_DAYS)
+                .clamp(1, 30),
+            auto_picks: flag("autoPicks", true),
+            history_days: settings
+                .get("/ai/historyDays")
+                .and_then(Value::as_i64)
+                .unwrap_or(DEFAULT_HISTORY_DAYS)
+                .max(0),
         }
     }
 
@@ -643,6 +680,44 @@ pub async fn models(state: &AppState, conn: &Connection) -> Result<Vec<(String, 
             compat::models(&state.outbound, base, key.as_ref()).await
         }
     }
+}
+
+/// Tokens a provider reported for the prompts of one task.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Tokens {
+    /// Prompt (input) tokens.
+    pub input: i64,
+    /// Answer (output) tokens.
+    pub output: i64,
+}
+
+tokio::task_local! {
+    static TOKENS: std::cell::Cell<Tokens>;
+}
+
+/// Add the usage a provider reported to the current [`counting`] scope (no
+/// scope: nothing is kept).
+pub fn note_tokens(input: i64, output: i64) {
+    // Outside a scope there is nothing to add to.
+    TOKENS
+        .try_with(|cell| {
+            let t = cell.get();
+            cell.set(Tokens {
+                input: t.input.saturating_add(input.max(0)),
+                output: t.output.saturating_add(output.max(0)),
+            });
+        })
+        .unwrap_or_default();
+}
+
+/// Run `work`, also returning the tokens its prompts used.
+pub async fn counting<F: std::future::Future>(work: F) -> (F::Output, Tokens) {
+    TOKENS
+        .scope(std::cell::Cell::new(Tokens::default()), async {
+            let out = work.await;
+            (out, TOKENS.with(std::cell::Cell::get))
+        })
+        .await
 }
 
 /// Run one prompt on a connection and model. Records success (last used)

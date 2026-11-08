@@ -1190,6 +1190,11 @@ components:
           enum: [movie, tv, null]
         anime:
           type: boolean
+        availability:
+          type: string
+          nullable: true
+          enum: [library, new, null]
+          description: library keeps only titles already in the library; new keeps only titles not available, requested or downloading yet.
         refinements:
           type: array
           maxItems: 6
@@ -1213,6 +1218,10 @@ components:
         model:
           type: string
           nullable: true
+        origin:
+          type: string
+          enum: [manual, row, scheduled, weekly]
+          description: What started the run
         result:
           type: object
           nullable: true
@@ -1263,6 +1272,154 @@ components:
           type: integer
         pendingFeedback:
           type: integer
+        outcomes:
+          $ref: '#/components/schemas/AiOutcomes'
+    AiOutcomes:
+      type: object
+      description: How picks went over the last 30 days.
+      properties:
+        picks:
+          type: integer
+          description: Distinct titles suggested
+        requested:
+          type: integer
+          description: Requested after being suggested
+        watched:
+          type: integer
+          description: Watched after being suggested
+        liked:
+          type: integer
+          description: Liked, or rated 7 or more, after being suggested
+    AiRunSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        stage:
+          type: string
+        createdAt:
+          type: string
+        prompt:
+          type: string
+        seedTitle:
+          type: string
+          nullable: true
+        only:
+          type: string
+          nullable: true
+        anime:
+          type: boolean
+          nullable: true
+        availability:
+          type: string
+          nullable: true
+        refinements:
+          type: array
+          nullable: true
+          items:
+            type: string
+        headline:
+          type: string
+          nullable: true
+        pickCount:
+          type: integer
+        posters:
+          type: array
+          items:
+            type: string
+        requested:
+          type: integer
+        liked:
+          type: integer
+        model:
+          type: string
+          nullable: true
+    AiUsageReport:
+      type: object
+      properties:
+        days:
+          type: integer
+        month:
+          type: object
+          properties:
+            serverTokens:
+              type: integer
+            budget:
+              type: integer
+        people:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: integer
+              name:
+                type: string
+              avatar:
+                type: string
+                nullable: true
+              runs:
+                type: integer
+              manual:
+                type: integer
+              automatic:
+                type: integer
+              failed:
+                type: integer
+              today:
+                type: integer
+              tokens:
+                type: integer
+              serverTokens:
+                type: integer
+              lastRunAt:
+                type: string
+                nullable: true
+              outcomes:
+                $ref: '#/components/schemas/AiOutcomes'
+        models:
+          type: array
+          items:
+            type: object
+            properties:
+              model:
+                type: string
+                nullable: true
+              runs:
+                type: integer
+              failed:
+                type: integer
+              inputTokens:
+                type: integer
+              outputTokens:
+                type: integer
+              picks:
+                type: integer
+              requested:
+                type: integer
+              watched:
+                type: integer
+              ratedWell:
+                type: integer
+        failures:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              createdAt:
+                type: string
+              model:
+                type: string
+                nullable: true
+              origin:
+                type: string
+              message:
+                type: string
+                nullable: true
     AiSettings:
       type: object
       properties:
@@ -1291,6 +1448,22 @@ components:
           type: integer
           minimum: 0
           maximum: 1000
+        monthlyTokenBudget:
+          type: integer
+          minimum: 0
+          description: Tokens the server connection may use per month; 0 means no budget.
+        rowRefreshDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+        autoPicks:
+          type: boolean
+          description: The nightly job prepares Discover rows and weekly picks for active people.
+        historyDays:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Finished requests are deleted after this many days; 0 keeps them.
         searxng:
           type: object
           properties:
@@ -1336,6 +1509,22 @@ components:
           type: integer
           minimum: 0
           maximum: 1000
+        monthlyTokenBudget:
+          type: integer
+          minimum: 0
+          description: Tokens the server connection may use per month; 0 means no budget.
+        rowRefreshDays:
+          type: integer
+          minimum: 1
+          maximum: 30
+        autoPicks:
+          type: boolean
+          description: The nightly job prepares Discover rows and weekly picks for active people.
+        historyDays:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Finished requests are deleted after this many days; 0 keeps them.
         searxng:
           type: object
           properties:
@@ -1409,6 +1598,8 @@ components:
             historyConsentAt:
               type: string
               nullable: true
+            weeklyPicks:
+              type: boolean
         effective:
           type: object
           description: The connection the user's AI requests use right now.
@@ -5080,6 +5271,8 @@ paths:
                   enum: [fast, balanced, best, null]
                 useHistory:
                   type: boolean
+                weeklyPicks:
+                  type: boolean
       responses:
         '200':
           description: OK
@@ -5258,7 +5451,55 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
+                  $ref: '#/components/schemas/AiRunSummary'
+    delete:
+      x-foreseerr: true
+      summary: Delete my AI request history
+      description: Deletes every finished request of the signed-in user, Discover rows and weekly picks included. Feedback and the taste card are kept.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+  /ai/weekly:
+    get:
+      x-foreseerr: true
+      summary: Get my latest weekly picks
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run:
+                    allOf:
+                      - $ref: '#/components/schemas/AiRun'
+                    nullable: true
+  /settings/ai/usage:
+    get:
+      x-foreseerr: true
+      summary: Get AI usage
+      description: Requests, tokens and how picks went per person and per model over the last 30 days, the server connection's tokens this month and recent failures. Admins only.
+      tags:
+        - ai
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiUsageReport'
   /ai/runs/{runId}:
     get:
       x-foreseerr: true
@@ -5278,6 +5519,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AiRun'
+    delete:
+      x-foreseerr: true
+      summary: Delete one of my recommendation requests
+      tags:
+        - ai
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
   /ai/row:
     get:
       x-foreseerr: true

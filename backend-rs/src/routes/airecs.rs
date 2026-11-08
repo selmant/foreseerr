@@ -16,10 +16,11 @@ use super::ratingsenrich::enrich_results_with_ratings;
 use super::tv::map_tv_result;
 use super::{params, Outcome, Ready, Table};
 use crate::ai::recs::retrieve::kind_of;
-use crate::ai::recs::store::{self, Verdict};
+use crate::ai::recs::store::{self, Origin, Verdict};
 use crate::ai::recs::{self, prompts::TASTE_MAX_CHARS, Request};
 use crate::ai::{AiError, Policy};
 use crate::auth::CurrentUser;
+use crate::db::Bind;
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
@@ -27,7 +28,10 @@ type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 pub(super) const ROUTES: &Table = &[
     ("/api/v1/ai/recommend", Method::POST, recommend),
     ("/api/v1/ai/runs", Method::GET, runs),
+    ("/api/v1/ai/runs", Method::DELETE, runs_delete),
     ("/api/v1/ai/runs/{runId}", Method::GET, run_get),
+    ("/api/v1/ai/runs/{runId}", Method::DELETE, run_delete),
+    ("/api/v1/ai/weekly", Method::GET, weekly),
     ("/api/v1/ai/row", Method::GET, row_cached),
     ("/api/v1/ai/row", Method::POST, row),
     ("/api/v1/ai/feedback", Method::GET, feedback_list),
@@ -36,9 +40,6 @@ pub(super) const ROUTES: &Table = &[
     ("/api/v1/ai/taste", Method::GET, taste_get),
     ("/api/v1/ai/taste", Method::PUT, taste_put),
 ];
-
-/// A Discover row's picks are reused for this long (minutes).
-const ROW_FRESH_MINUTES: i64 = 24 * 60;
 
 fn fail(ctx: &Ready<'_>, e: &AiError) -> Outcome {
     ctx.json_with(e.status(), &e.to_json())
@@ -99,6 +100,7 @@ async fn run_view(ctx: &Ready<'_>, user_id: i64, run: &store::Run) -> Value {
         "request": request,
         "source": run.source,
         "model": run.model,
+        "origin": run.origin,
         "result": result,
         "error": run.error,
     })
@@ -205,11 +207,13 @@ async fn load_run(ctx: &Ready<'_>, user_id: i64, run_id: i64) -> Result<Value, A
 fn recommend<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     answer(ctx, |ctx, user| async move {
         let request = Request::parse(&body(ctx))?;
+        active(ctx, user.id).await;
         let run_id = recs::start(
             Arc::clone(&ctx.shared),
             Arc::clone(&ctx.settings),
             user.clone(),
             request,
+            Origin::Manual,
         )
         .await?;
         load_run(ctx, user.id, run_id).await
@@ -226,29 +230,138 @@ fn run_get<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// `GET /ai/runs`: recent requests of their own (not Discover rows).
+/// Note that someone uses AI picks (the nightly job prepares picks only for
+/// people who do). Failures only lose that note.
+async fn active(ctx: &Ready<'_>, user_id: i64) {
+    if let Err(e) = store::touch_active(&ctx.state.db, user_id).await {
+        tracing::info!("noting AI activity for user {user_id} failed: {e:#}");
+    }
+}
+
+/// Per run, how many of its titles this person requested and liked.
+async fn run_outcomes(ctx: &Ready<'_>, user_id: i64) -> Result<HashMap<i64, (i64, i64)>, AiError> {
+    let mut out: HashMap<i64, (i64, i64)> = HashMap::new();
+    for (sql, liked) in [
+        (
+            r#"SELECT CAST(p."runId" AS BIGINT) AS "runId", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_pick" p JOIN "ai_signal" s ON s."userId" = p."userId" AND s."mediaType" = p."mediaType" AND s."tmdbId" = p."tmdbId" AND s."kind" = 'requested' WHERE p."userId" = ?1 GROUP BY p."runId""#,
+            false,
+        ),
+        (
+            r#"SELECT CAST(p."runId" AS BIGINT) AS "runId", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_pick" p JOIN "ai_feedback" f ON f."userId" = p."userId" AND f."mediaType" = p."mediaType" AND f."tmdbId" = p."tmdbId" AND f."kind" = 'like' WHERE p."userId" = ?1 GROUP BY p."runId""#,
+            true,
+        ),
+    ] {
+        for r in ctx
+            .state
+            .db
+            .rows(sql, &[Bind::Int(user_id)])
+            .await
+            .map_err(|e| db_err(&e))?
+        {
+            if let (Some(id), Some(n)) = (
+                r.get("runId").and_then(Value::as_i64),
+                r.get("n").and_then(Value::as_i64),
+            ) {
+                let entry = out.entry(id).or_default();
+                if liked {
+                    entry.1 = n;
+                } else {
+                    entry.0 = n;
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// `GET /ai/runs`: recent requests of their own (not Discover rows or
+/// weekly picks), with what they asked, a few posters and how they went.
 fn runs<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     answer(ctx, |ctx, user| async move {
         recs::sweep_stale(ctx.state).await;
+        active(ctx, user.id).await;
         let list = store::personal_runs(&ctx.state.db, user.id, 20)
             .await
             .map_err(|e| db_err(&e))?;
+        let outcomes = run_outcomes(ctx, user.id).await?;
         let items: Vec<Value> = list
             .iter()
-            .filter(|r| r.request.get("row").and_then(Value::as_bool) != Some(true))
-            .take(20)
             .map(|r| {
+                let picks = r
+                    .result
+                    .as_ref()
+                    .and_then(|x| x.get("picks"))
+                    .and_then(Value::as_array);
+                let posters: Vec<Value> = picks
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| p.pointer("/tmdb/poster_path").cloned())
+                    .filter(Value::is_string)
+                    .take(4)
+                    .collect();
+                let (requested, liked) = outcomes.get(&r.id).copied().unwrap_or_default();
                 json!({
                     "id": r.id,
                     "stage": r.stage,
                     "createdAt": r.created_at,
                     "prompt": r.request.get("prompt").cloned().unwrap_or_else(|| Value::from("")),
                     "seedTitle": r.request.pointer("/seed/title").cloned(),
+                    "only": r.request.get("only").cloned(),
+                    "anime": r.request.get("anime").cloned(),
+                    "availability": r.request.get("availability").cloned(),
+                    "refinements": r.request.get("refinements").cloned(),
                     "headline": r.result.as_ref().and_then(|x| x.get("headline")).cloned(),
+                    "pickCount": picks.map_or(0, Vec::len),
+                    "posters": posters,
+                    "requested": requested,
+                    "liked": liked,
+                    "model": r.model,
                 })
             })
             .collect();
         Ok(Value::Array(items))
+    })
+}
+
+/// `DELETE /ai/runs/{runId}`: forget one request and its picks.
+fn run_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    answer(ctx, |ctx, user| async move {
+        let run_id = ctx
+            .path_id(0)
+            .map_err(|_| AiError::input("The request id must be a number."))?;
+        let deleted = store::delete_run(&ctx.state.db, user.id, run_id)
+            .await
+            .map_err(|e| db_err(&e))?;
+        if !deleted {
+            return Err(AiError::input("That request wasn't found."));
+        }
+        Ok(json!({"deleted": 1}))
+    })
+}
+
+/// `DELETE /ai/runs`: forget every request, Discover rows and weekly picks
+/// included (feedback and the taste card stay; they have their own reset).
+fn runs_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    answer(ctx, |ctx, user| async move {
+        let deleted = store::delete_runs(&ctx.state.db, user.id)
+            .await
+            .map_err(|e| db_err(&e))?;
+        tracing::info!("user {} deleted their AI request history", user.id);
+        Ok(json!({"deleted": deleted}))
+    })
+}
+
+/// `GET /ai/weekly`: their latest weekly picks, if any.
+fn weekly<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    answer(ctx, |ctx, user| async move {
+        active(ctx, user.id).await;
+        let run = store::latest_weekly(&ctx.state.db, user.id)
+            .await
+            .map_err(|e| db_err(&e))?;
+        Ok(json!({"run": match run {
+            Some(r) => Some(run_view(ctx, user.id, &r).await),
+            None => None,
+        }}))
     })
 }
 
@@ -300,6 +413,7 @@ fn row_response<'a>(ctx: &'a Ready<'a>, create: bool) -> Native<'a> {
             )
         };
         let request = &config.request;
+        active(ctx, user.id).await;
         let recent = store::row_runs(&ctx.state.db, user.id, request)
             .await
             .map_err(|e| db_err(&e))?;
@@ -330,7 +444,8 @@ fn row_response<'a>(ctx: &'a Ready<'a>, create: bool) -> Native<'a> {
             }
         }
         matching.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.id.cmp(&a.0.id)));
-        let fresh_since = recs::iso_since(Some(ROW_FRESH_MINUTES));
+        let fresh_since =
+            recs::iso_since(Some(Policy::of(&ctx.settings).row_refresh_days * 24 * 60));
         let working_since = recs::iso_since(Some(10));
         let current = matching.iter().find(|(r, at)| {
             (r.stage == "done" && at >= &fresh_since)
@@ -355,6 +470,7 @@ fn row_response<'a>(ctx: &'a Ready<'a>, create: bool) -> Native<'a> {
             Arc::clone(&ctx.settings),
             user.clone(),
             request,
+            Origin::Row,
         )
         .await
         {
@@ -450,11 +566,17 @@ async fn taste_view(ctx: &Ready<'_>, user_id: i64) -> Result<Value, AiError> {
     let (count, pending) = recs::pending_feedback(ctx.state, user_id)
         .await
         .map_err(|e| db_err(&e))?;
+    let outcomes = recs::signals::outcomes(&ctx.state.db, &recs::iso_since(Some(30 * 24 * 60)))
+        .await
+        .map_err(|e| db_err(&e))?
+        .remove(&user_id)
+        .unwrap_or_default();
     Ok(json!({
         "card": taste.as_ref().map(|(c, _)| c.as_str()).unwrap_or_default(),
         "updatedAt": taste.as_ref().map(|(_, at)| at.as_str()),
         "feedbackCount": count,
         "pendingFeedback": pending,
+        "outcomes": outcomes.to_json(),
     }))
 }
 

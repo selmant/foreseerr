@@ -259,6 +259,9 @@
     },
     "mapping-pack-refresh": {
       "schedule": "0 15 4 * * *"
+    },
+    "ai-picks-refresh": {
+      "schedule": "0 30 4 * * *"
     }
   },
   "network": {

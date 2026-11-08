@@ -170,11 +170,20 @@ impl Sse {
                 }
                 Ok(None)
             }
-            "response.completed" => Ok(Some(
-                self.final_text
-                    .take()
-                    .unwrap_or_else(|| std::mem::take(&mut self.text)),
-            )),
+            "response.completed" => {
+                let used = |key: &str| {
+                    event
+                        .pointer(&format!("/response/usage/{key}"))
+                        .and_then(Value::as_i64)
+                        .unwrap_or(0)
+                };
+                super::note_tokens(used("input_tokens"), used("output_tokens"));
+                Ok(Some(
+                    self.final_text
+                        .take()
+                        .unwrap_or_else(|| std::mem::take(&mut self.text)),
+                ))
+            }
             "response.failed" => {
                 let error = event
                     .pointer("/response/error")

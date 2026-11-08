@@ -279,6 +279,30 @@ pub async fn send(env: Env, kind: Kind, payload: Arc<Payload>) -> Result<()> {
     Ok(())
 }
 
+/// Push a message that is none of the notification types (weekly AI picks)
+/// to one user's devices, when web push is on.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn send_to_user(env: &Env, user_id: i64, body: &Value) -> Result<()> {
+    if !truthy(env.settings.get("/notifications/agents/webpush/enabled")) {
+        return Ok(());
+    }
+    let db = &env.state.db;
+    let Some(email) = db
+        .user_record(1)
+        .await?
+        .map(|(u, _)| u.email.unwrap_or_default().to_lowercase())
+    else {
+        return Ok(());
+    };
+    for sub in db.push_subscriptions(user_id, None).await? {
+        deliver(env, &email, &sub, body).await;
+    }
+    Ok(())
+}
+
 /// Send one push; a 404 or 410 removes the subscription.
 async fn deliver(env: &Env, email: &str, sub: &PushSubscriptionRow, body: &Value) {
     match push(env, email, sub, body.to_string().as_bytes()).await {

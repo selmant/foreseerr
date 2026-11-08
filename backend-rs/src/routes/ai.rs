@@ -27,6 +27,7 @@ pub(super) const ROUTES: &Table = &[
     ("/api/v1/settings/ai", Method::GET, admin_get),
     ("/api/v1/settings/ai", Method::POST, admin_policy),
     ("/api/v1/settings/ai/connection", Method::PUT, admin_put),
+    ("/api/v1/settings/ai/usage", Method::GET, admin_usage),
     (
         "/api/v1/settings/ai/connection",
         Method::DELETE,
@@ -177,9 +178,109 @@ async fn admin_view(ctx: &Ready<'_>) -> Result<Value, AiError> {
         "presets": policy.presets_json(server.as_ref()),
         "searxng": {"enabled": policy.searxng_enabled, "url": policy.searxng_url},
         "dailyLimit": policy.daily_limit,
+        "monthlyTokenBudget": policy.monthly_token_budget,
+        "rowRefreshDays": policy.row_refresh_days,
+        "autoPicks": policy.auto_picks,
+        "historyDays": policy.history_days,
         "connection": server.as_ref().map(|c| ai::connection_json(c, &vault)),
         "secretKey": key_source(vault.source()),
     }))
+}
+
+/// Who used AI and how it went over the last 30 days: per person, per
+/// model, the month's server tokens against the budget, recent failures.
+async fn usage_view(ctx: &Ready<'_>) -> Result<Value, AiError> {
+    use crate::ai::recs::{iso_since, month_start, signals};
+    use crate::db::Bind;
+    let db = &ctx.state.db;
+    let err = |e: anyhow::Error| db_err(&e);
+    let settings = ctx.state.settings.current().await.map_err(err)?;
+    let policy = Policy::of(&settings);
+    let since = iso_since(Some(30 * 24 * 60));
+    let today = iso_since(None);
+    let created = db.iso_sql(r#"r."createdAt""#);
+    let name = r#"COALESCE(NULLIF(u."username", ''), NULLIF(u."jellyfinUsername", ''), NULLIF(u."plexUsername", ''), u."email")"#;
+    let people = db
+        .rows(
+            &format!(
+                r#"SELECT CAST(r."userId" AS BIGINT) AS "userId", {name} AS "name", u."avatar" AS "avatar",
+                CAST(COUNT(*) AS BIGINT) AS "runs",
+                CAST(SUM(CASE WHEN r."origin" = 'manual' THEN 1 ELSE 0 END) AS BIGINT) AS "manual",
+                CAST(SUM(CASE WHEN r."origin" IN ('scheduled', 'weekly') THEN 1 ELSE 0 END) AS BIGINT) AS "automatic",
+                CAST(SUM(CASE WHEN r."stage" = 'failed' THEN 1 ELSE 0 END) AS BIGINT) AS "failed",
+                CAST(SUM(CASE WHEN r."source" = 'server' AND r."origin" NOT IN ('scheduled', 'weekly') AND {created} >= ?2 THEN 1 ELSE 0 END) AS BIGINT) AS "today",
+                CAST(COALESCE(SUM(r."inputTokens" + r."outputTokens"), 0) AS BIGINT) AS "tokens",
+                CAST(COALESCE(SUM(CASE WHEN r."source" = 'server' THEN r."inputTokens" + r."outputTokens" ELSE 0 END), 0) AS BIGINT) AS "serverTokens",
+                MAX({created}) AS "lastRunAt"
+                FROM "ai_run" r JOIN "user" u ON u."id" = r."userId"
+                WHERE {created} >= ?1
+                GROUP BY r."userId", u."username", u."jellyfinUsername", u."plexUsername", u."email", u."avatar"
+                ORDER BY COUNT(*) DESC"#
+            ),
+            &[Bind::Text(since.clone()), Bind::Text(today)],
+        )
+        .await
+        .map_err(err)?;
+    let outcomes = signals::outcomes(db, &since).await.map_err(err)?;
+    let people: Vec<Value> = people
+        .into_iter()
+        .map(|mut row| {
+            let id = row.get("userId").and_then(Value::as_i64).unwrap_or(0);
+            row.insert(
+                String::from("outcomes"),
+                outcomes.get(&id).copied().unwrap_or_default().to_json(),
+            );
+            Value::Object(row)
+        })
+        .collect();
+    let models = signals::by_model(db, &since).await.map_err(err)?;
+    let failures = db
+        .rows(
+            &format!(
+                r#"SELECT CAST(r."id" AS BIGINT) AS "id", {name} AS "name", {created} AS "createdAt", r."model", r."origin", r."error"
+                FROM "ai_run" r JOIN "user" u ON u."id" = r."userId"
+                WHERE r."stage" = 'failed' AND {created} >= ?1 ORDER BY r."id" DESC LIMIT 10"#
+            ),
+            &[Bind::Text(since)],
+        )
+        .await
+        .map_err(err)?
+        .into_iter()
+        .map(|mut row| {
+            // Only the message: errors never hold credentials, but keep it short.
+            let message = row
+                .get("error")
+                .and_then(Value::as_str)
+                .and_then(|e| serde_json::from_str::<Value>(e).ok())
+                .and_then(|e| e.get("message").and_then(Value::as_str).map(|m| ai::clip(m, 200)));
+            row.remove("error");
+            row.insert(String::from("message"), Value::from(message));
+            Value::Object(row)
+        })
+        .collect::<Vec<_>>();
+    let month_tokens = ai::recs::store::server_tokens_since(db, &month_start())
+        .await
+        .map_err(err)?;
+    Ok(json!({
+        "days": 30,
+        "month": {"serverTokens": month_tokens, "budget": policy.monthly_token_budget},
+        "people": people,
+        "models": models,
+        "failures": failures,
+    }))
+}
+
+/// `GET /settings/ai/usage`.
+fn admin_usage<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    Box::pin(async move {
+        if let Err(out) = admin(ctx) {
+            return *out;
+        }
+        match usage_view(ctx).await {
+            Ok(v) => ctx.json(&v),
+            Err(e) => fail(ctx, &e),
+        }
+    })
 }
 
 /// `GET /settings/ai`.
@@ -210,8 +311,34 @@ fn policy_changes(body: &Map<String, Value>) -> Result<Map<String, Value>, AiErr
         "allowUserChatgpt",
         "allowUserEndpoints",
         "allowUserModelChoice",
+        "autoPicks",
     ] {
         bool_field(body, key, &mut out);
+    }
+    for (key, max, what) in [
+        (
+            "monthlyTokenBudget",
+            1_000_000_000_000,
+            "The monthly token budget must be a whole number of 0 or more.",
+        ),
+        (
+            "rowRefreshDays",
+            30,
+            "Discover rows refresh every 1 to 30 days.",
+        ),
+        (
+            "historyDays",
+            3650,
+            "Keep history from 0 (forever) to 3650 days.",
+        ),
+    ] {
+        if let Some(v) = body.get(key) {
+            let n = v
+                .as_u64()
+                .filter(|n| *n <= max && (key != "rowRefreshDays" || *n >= 1))
+                .ok_or_else(|| AiError::input(what))?;
+            out.insert(key.to_owned(), Value::from(n));
+        }
     }
     if let Some(limit) = body.get("dailyLimit") {
         let n = limit
@@ -596,6 +723,9 @@ async fn save_prefs(ctx: &Ready<'_>, user: &CurrentUser) -> Result<(), AiError> 
     }
     if let Some(Value::Bool(history)) = body.get("useHistory") {
         change.use_history = Some(*history);
+    }
+    if let Some(Value::Bool(weekly)) = body.get("weeklyPicks") {
+        change.weekly_picks = Some(*weekly);
     }
     // Held so a removal can't land between the check and the switch.
     let held = store::lock().await;

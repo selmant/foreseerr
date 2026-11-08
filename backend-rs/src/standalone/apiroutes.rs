@@ -4,7 +4,7 @@
 use super::fallback::ApiRoute;
 
 /// Every documented route.
-pub(super) static ROUTES: [ApiRoute; 276] = [
+pub(super) static ROUTES: [ApiRoute; 278] = [
     ApiRoute {
         template: "/api/v1/ai/feedback",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("feedback")],
@@ -58,17 +58,22 @@ pub(super) static ROUTES: [ApiRoute; 276] = [
     ApiRoute {
         template: "/api/v1/ai/runs/{runId}",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("runs"), None],
-        methods: &[("GET", true)],
+        methods: &[("GET", true), ("DELETE", true)],
     },
     ApiRoute {
         template: "/api/v1/ai/runs",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("runs")],
-        methods: &[("GET", true)],
+        methods: &[("GET", true), ("DELETE", true)],
     },
     ApiRoute {
         template: "/api/v1/ai/taste",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("taste")],
         methods: &[("GET", true), ("PUT", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/ai/weekly",
+        segments: &[Some("api"), Some("v1"), Some("ai"), Some("weekly")],
+        methods: &[("GET", true)],
     },
     ApiRoute {
         template: "/api/v1/auth/jellyfin/plugin",
@@ -774,6 +779,11 @@ pub(super) static ROUTES: [ApiRoute; 276] = [
         template: "/api/v1/settings/ai/searxng/test",
         segments: &[Some("api"), Some("v1"), Some("settings"), Some("ai"), Some("searxng"), Some("test")],
         methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/settings/ai/usage",
+        segments: &[Some("api"), Some("v1"), Some("settings"), Some("ai"), Some("usage")],
+        methods: &[("GET", true)],
     },
     ApiRoute {
         template: "/api/v1/settings/ai",

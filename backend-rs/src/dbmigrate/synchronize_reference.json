@@ -188,6 +188,18 @@
     },
     {
       "type": "index",
+      "name": "IDX_ai_pick_run",
+      "tbl_name": "ai_pick",
+      "sql": "CREATE INDEX \"IDX_ai_pick_run\" ON \"ai_pick\" (\"runId\") "
+    },
+    {
+      "type": "index",
+      "name": "IDX_ai_pick_user_title",
+      "tbl_name": "ai_pick",
+      "sql": "CREATE INDEX \"IDX_ai_pick_user_title\" ON \"ai_pick\" (\"userId\", \"mediaType\", \"tmdbId\") "
+    },
+    {
+      "type": "index",
       "name": "IDX_ai_run_user_created",
       "tbl_name": "ai_run",
       "sql": "CREATE INDEX \"IDX_ai_run_user_created\" ON \"ai_run\" (\"userId\", \"createdAt\") "
@@ -302,9 +314,21 @@
     },
     {
       "type": "table",
+      "name": "ai_pick",
+      "tbl_name": "ai_pick",
+      "sql": "CREATE TABLE \"ai_pick\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"title\" varchar NOT NULL DEFAULT (''), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"runId\" integer NOT NULL, \"userId\" integer NOT NULL, CONSTRAINT \"FK_ai_pick_run\" FOREIGN KEY (\"runId\") REFERENCES \"ai_run\" (\"id\") ON DELETE CASCADE, CONSTRAINT \"FK_ai_pick_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
       "name": "ai_run",
       "tbl_name": "ai_run",
-      "sql": "CREATE TABLE \"ai_run\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"stage\" varchar NOT NULL, \"request\" text NOT NULL, \"result\" text, \"error\" text, \"source\" varchar NOT NULL, \"model\" varchar, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"FK_ai_run_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+      "sql": "CREATE TABLE \"ai_run\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"stage\" varchar NOT NULL, \"request\" text NOT NULL, \"result\" text, \"error\" text, \"source\" varchar NOT NULL, \"model\" varchar, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, \"origin\" varchar NOT NULL DEFAULT ('manual'), \"inputTokens\" integer NOT NULL DEFAULT (0), \"outputTokens\" integer NOT NULL DEFAULT (0), CONSTRAINT \"FK_ai_run_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
+      "name": "ai_signal",
+      "tbl_name": "ai_signal",
+      "sql": "CREATE TABLE \"ai_signal\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" varchar NOT NULL, \"rating\" integer, \"title\" varchar NOT NULL DEFAULT (''), \"model\" varchar, \"learned\" boolean NOT NULL DEFAULT (0), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_signal_user_title_kind\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\", \"kind\"), CONSTRAINT \"FK_ai_signal_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
     },
     {
       "type": "table",
@@ -316,7 +340,7 @@
       "type": "table",
       "name": "ai_user_settings",
       "tbl_name": "ai_user_settings",
-      "sql": "CREATE TABLE \"ai_user_settings\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"useOwnConnection\" boolean NOT NULL DEFAULT (0), \"model\" varchar, \"useHistory\" boolean NOT NULL DEFAULT (0), \"historyConsentAt\" datetime, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_user_settings_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_user_settings_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+      "sql": "CREATE TABLE \"ai_user_settings\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"useOwnConnection\" boolean NOT NULL DEFAULT (0), \"model\" varchar, \"useHistory\" boolean NOT NULL DEFAULT (0), \"historyConsentAt\" datetime, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, \"weeklyPicks\" boolean NOT NULL DEFAULT (1), \"lastActiveAt\" datetime, CONSTRAINT \"REL_ai_user_settings_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_user_settings_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
     },
     {
       "type": "table",

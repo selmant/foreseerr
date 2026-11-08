@@ -1329,6 +1329,22 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "ALTER TABLE \"ai_taste\" ADD \"version\" integer NOT NULL DEFAULT 1",
         ],
     },
+    Migration {
+        timestamp: 1_790_300_000_000,
+        name: "AiInsights1790300000000",
+        queries: &[
+            "ALTER TABLE \"ai_run\" ADD \"origin\" varchar NOT NULL DEFAULT ('manual')",
+            "ALTER TABLE \"ai_run\" ADD \"inputTokens\" integer NOT NULL DEFAULT (0)",
+            "ALTER TABLE \"ai_run\" ADD \"outputTokens\" integer NOT NULL DEFAULT (0)",
+            "UPDATE \"ai_run\" SET \"origin\" = 'row' WHERE \"request\" LIKE '%\"row\":true%'",
+            "ALTER TABLE \"ai_user_settings\" ADD \"weeklyPicks\" boolean NOT NULL DEFAULT (1)",
+            "ALTER TABLE \"ai_user_settings\" ADD \"lastActiveAt\" datetime",
+            "CREATE TABLE \"ai_pick\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"title\" varchar NOT NULL DEFAULT (''), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"runId\" integer NOT NULL, \"userId\" integer NOT NULL, CONSTRAINT \"FK_ai_pick_run\" FOREIGN KEY (\"runId\") REFERENCES \"ai_run\" (\"id\") ON DELETE CASCADE, CONSTRAINT \"FK_ai_pick_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
+            "CREATE INDEX \"IDX_ai_pick_user_title\" ON \"ai_pick\" (\"userId\", \"mediaType\", \"tmdbId\") ",
+            "CREATE INDEX \"IDX_ai_pick_run\" ON \"ai_pick\" (\"runId\") ",
+            "CREATE TABLE \"ai_signal\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" varchar NOT NULL, \"rating\" integer, \"title\" varchar NOT NULL DEFAULT (''), \"model\" varchar, \"learned\" boolean NOT NULL DEFAULT (0), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_signal_user_title_kind\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\", \"kind\"), CONSTRAINT \"FK_ai_signal_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
+        ],
+    },
 ];
 
 /// `SeerrMigration1759769291608` from `server/lib/overseerrMerge.ts`,

@@ -242,6 +242,12 @@ pub async fn complete(
                 .and_then(Value::as_str)
                 .ok_or_else(|| AiError::upstream("The endpoint's answer had no text."))?;
             validate_answer(text, prompt.schema.map(|(_, schema)| schema))?;
+            let used = |key: &str| {
+                body.pointer(&format!("/usage/{key}"))
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0)
+            };
+            super::note_tokens(used("prompt_tokens"), used("completion_tokens"));
             return Ok(text.to_owned());
         }
         last = failure(status, &body);

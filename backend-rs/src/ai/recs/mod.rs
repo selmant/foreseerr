@@ -13,9 +13,11 @@
 //! they can read, edit or clear. Runs on the server connection count
 //! toward the admin's daily limit.
 
+pub mod auto;
 pub mod prompts;
 pub mod retrieve;
 pub mod rows;
+pub mod signals;
 pub mod store;
 
 use std::collections::HashSet;
@@ -28,7 +30,7 @@ use sha2::{Digest, Sha256};
 
 use self::prompts::{Context, Plan, Ranking, TasteUpdate};
 use self::retrieve::{kind_of, Candidate, Genres, Key, Sources};
-use self::store::{Stage, Verdict};
+use self::store::{Origin, Reserve, Stage, Verdict};
 use super::{AiError, Effective, ErrorKind, Policy, Prompt, Source, Unavailable};
 use crate::auth::CurrentUser;
 use crate::db::Bind;
@@ -64,6 +66,9 @@ pub struct Request {
     pub refinements: Vec<String>,
     /// Started by a Discover row (not listed with their own requests).
     pub row: bool,
+    /// `library`: only titles already in the library; `new`: only titles
+    /// not in it yet (not available, requested or being downloaded).
+    pub availability: Option<&'static str>,
 }
 
 impl Request {
@@ -115,6 +120,11 @@ impl Request {
                     .collect()
             })
             .unwrap_or_default();
+        let availability = match body.get("availability").and_then(Value::as_str) {
+            Some("library") => Some("library"),
+            Some("new") => Some("new"),
+            Some(_) | None => None,
+        };
         Ok(Self {
             prompt,
             seed,
@@ -122,14 +132,19 @@ impl Request {
             anime: body.get("anime").and_then(Value::as_bool).unwrap_or(false),
             refinements,
             row: false,
+            availability,
         })
     }
 
     /// A stable identity for every recommendation constraint.
     #[must_use]
     pub fn cache_key(&self) -> String {
-        let value = json!({"prompt": self.prompt, "seed": self.seed,
+        let mut value = json!({"prompt": self.prompt, "seed": self.seed,
             "only": self.only, "anime": self.anime, "refinements": self.refinements});
+        // Only when set, so rows saved before the filter keep their cache.
+        if let (Some(a), Some(obj)) = (self.availability, value.as_object_mut()) {
+            obj.insert(String::from("availability"), Value::from(a));
+        }
         URL_SAFE_NO_PAD.encode(Sha256::digest(value.to_string().as_bytes()))
     }
 
@@ -142,6 +157,7 @@ impl Request {
             "only": self.only,
             "anime": self.anime,
             "refinements": self.refinements,
+            "availability": self.availability,
             "row": self.row,
             "rowKey": self.row.then(|| self.cache_key()),
         })
@@ -172,6 +188,14 @@ pub fn iso_since(minutes_ago: Option<i64>) -> String {
                 .to_string()
         },
     )
+}
+
+/// The start of this month in UTC (ISO), comparable with `Db::iso_sql` columns.
+#[must_use]
+pub fn month_start() -> String {
+    chrono::Utc::now()
+        .format("%Y-%m-01T00:00:00.000Z")
+        .to_string()
 }
 
 /// The error for a user without a usable connection.
@@ -239,6 +263,7 @@ pub async fn start(
     settings: Arc<Settings>,
     user: CurrentUser,
     request: Request,
+    origin: Origin,
 ) -> Result<i64, AiError> {
     let db_err = |e: anyhow::Error| AiError::internal(format!("{e:#}"));
     let eff = match super::effective(&state, &settings, &user)
@@ -273,21 +298,38 @@ pub async fn start(
         user.id,
         &request,
         seed_title.as_deref(),
-        source,
-        eff.model.as_deref(),
-        daily_limit(&policy, &eff, &user),
+        Reserve {
+            source,
+            model: eff.model.as_deref(),
+            daily_limit: daily_limit(&policy, &eff, &user),
+            monthly_tokens: (policy.monthly_token_budget > 0)
+                .then_some(policy.monthly_token_budget),
+            origin,
+            // The nightly job refreshes rows that would go stale during the day.
+            fresh_minutes: if origin == Origin::Scheduled {
+                (policy.row_refresh_days * 24 * 60 - auto::REFRESH_AHEAD_MINUTES).max(60)
+            } else {
+                policy.row_refresh_days * 24 * 60
+            },
+        },
     )
     .await?;
     if !created {
         return Ok(run_id);
     }
     tokio::spawn(async move {
-        let result = tokio::time::timeout(
-            Duration::from_mins(9),
-            work(&state, &settings, &user, &eff, run_id, &request),
-        )
-        .await
-        .unwrap_or_else(|_| Err(AiError::network("This request took too long. Try again.")));
+        let (result, tokens) = super::counting(Box::pin(async {
+            tokio::time::timeout(
+                Duration::from_mins(9),
+                work(&state, &settings, &user, &eff, run_id, &request),
+            )
+            .await
+            .unwrap_or_else(|_| Err(AiError::network("This request took too long. Try again.")))
+        }))
+        .await;
+        if let Err(e) = store::add_tokens(&state.db, run_id, tokens).await {
+            tracing::warn!("recording AI run {run_id} tokens failed: {e:#}");
+        }
         let saved = match &result {
             Ok(done) => store::finish(&state.db, run_id, done).await,
             Err(e) => {
@@ -301,12 +343,16 @@ pub async fn start(
         if result.is_ok()
             && matches!(store::run(&state.db, user.id, run_id).await, Ok(Some(r)) if r.stage == "done")
         {
-            if let Err(e) = maybe_update_taste(&state, &eff, &user).await {
+            let (updated, tokens) = super::counting(maybe_update_taste(&state, &eff, &user)).await;
+            if let Err(e) = updated {
                 tracing::info!(
                     "updating the taste card of user {} failed: {}",
                     user.id,
                     e.message
                 );
+            }
+            if let Err(e) = store::add_tokens(&state.db, run_id, tokens).await {
+                tracing::warn!("recording taste card tokens failed: {e:#}");
             }
         }
     });
@@ -391,6 +437,26 @@ async fn person(
         if let Some(id) = row.get("tmdbId").and_then(Value::as_i64) {
             let kind = if row.get("simklType").and_then(Value::as_str) == Some("movie") || row.get("simklType").and_then(Value::as_str) == Some("anime") && row.get("animeType").and_then(Value::as_str) == Some("movie") { "movie" } else { "tv" };
             excluded.insert((kind, id));
+        }
+    }
+    // What they did with earlier picks: requested them always counts,
+    // watching or rating them only with consent to use their history.
+    if let Err(e) = signals::sync(state, settings, user_id, Some(&watched), false).await {
+        tracing::info!("finding what user {user_id} did with their picks failed: {e:#}");
+    }
+    for row in state.db.rows(r#"SELECT "mediaType", CAST("tmdbId" AS BIGINT) AS "tmdbId" FROM "ai_signal" WHERE "userId" = ?1 AND "kind" = 'requested'"#, &[Bind::Int(user_id)]).await? {
+        if let (Some(kind), Some(id)) = (
+            row.get("mediaType").and_then(Value::as_str),
+            row.get("tmdbId").and_then(Value::as_i64),
+        ) {
+            excluded.insert((kind_of(kind), id));
+        }
+    }
+    for signal in signals::recent(&state.db, user_id, prefs.use_history, 40).await? {
+        match signal.line() {
+            Some((true, line)) if liked_lines.len() < 35 => liked_lines.push(line),
+            Some((false, line)) if avoid_lines.len() < 50 => avoid_lines.push(line),
+            Some(_) | None => {}
         }
     }
     let history = if prefs.use_history {
@@ -652,6 +718,7 @@ async fn work(
             .then(|| policy.searxng_url.clone()),
         only: request.only,
         anime_only: request.anime,
+        availability: request.availability,
     };
     let gathered = retrieve::gather(
         &retrieve::Env {
@@ -775,10 +842,17 @@ async fn maybe_update_taste(
     let new = store::pending_batch(&state.db, user_id)
         .await
         .map_err(db_err)?;
-    if new.len() < TASTE_AFTER_FEEDBACK {
+    let consent = super::store::prefs(&state.db, user_id)
+        .await
+        .map_err(db_err)?
+        .use_history;
+    let actions = signals::unlearned(&state.db, user_id, consent)
+        .await
+        .map_err(db_err)?;
+    if new.len() + actions.len() < TASTE_AFTER_FEEDBACK {
         return Ok(());
     }
-    let lines: Vec<String> = new
+    let mut lines: Vec<String> = new
         .iter()
         .map(|f| {
             let verdict = match Verdict::parse(&f.kind) {
@@ -790,6 +864,10 @@ async fn maybe_update_taste(
             format!("{} ({}): {verdict}", f.title, f.media_type)
         })
         .collect();
+    lines.extend(actions.iter().filter_map(|a| {
+        a.line()
+            .map(|(liked, line)| format!("{line}: {}", if liked { "liked" } else { "disliked" }))
+    }));
     let requests: Vec<String> = store::recent_runs(&state.db, user_id, 8)
         .await
         .map_err(db_err)?
@@ -813,10 +891,16 @@ async fn maybe_update_taste(
     if card.is_empty() {
         return Ok(());
     }
-    store::apply_taste(&state.db, user_id, version, &card, &new)
+    let applied = store::apply_taste(&state.db, user_id, version, &card, &new)
         .await
-        .map(drop)
-        .map_err(db_err)
+        .map_err(db_err)?;
+    if applied {
+        let ids: Vec<i64> = actions.iter().map(|a| a.id).collect();
+        signals::mark_learned(&state.db, user_id, &ids)
+            .await
+            .map_err(db_err)?;
+    }
+    Ok(())
 }
 
 /// Fail runs a restart left working.

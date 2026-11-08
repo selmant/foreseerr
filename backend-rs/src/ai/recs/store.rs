@@ -46,6 +46,57 @@ impl Stage {
     }
 }
 
+/// What started a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Origin {
+    /// The person asked on the AI Picks page.
+    #[default]
+    Manual,
+    /// A Discover row, refreshed when they viewed it.
+    Row,
+    /// A Discover row, refreshed ahead of time by the nightly job.
+    Scheduled,
+    /// Their weekly picks, made by the nightly job.
+    Weekly,
+}
+
+impl Origin {
+    /// The stored and API name.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Row => "row",
+            Self::Scheduled => "scheduled",
+            Self::Weekly => "weekly",
+        }
+    }
+
+    /// Started by Foreseerr rather than by the person (not counted toward
+    /// their daily limit).
+    #[must_use]
+    pub const fn is_automatic(self) -> bool {
+        matches!(self, Self::Scheduled | Self::Weekly)
+    }
+}
+
+/// How one run may be reserved.
+#[derive(Debug, Clone, Copy)]
+pub struct Reserve<'a> {
+    /// `own` or `server`.
+    pub source: &'a str,
+    /// The model it uses.
+    pub model: Option<&'a str>,
+    /// The person's daily limit (None: unlimited).
+    pub daily_limit: Option<u32>,
+    /// The server connection's monthly token budget (None: unlimited).
+    pub monthly_tokens: Option<i64>,
+    /// What started it.
+    pub origin: Origin,
+    /// A Discover row's picks are reused for this long (minutes).
+    pub fresh_minutes: i64,
+}
+
 /// One run as stored.
 #[derive(Debug, Clone)]
 pub struct Run {
@@ -65,6 +116,12 @@ pub struct Run {
     pub model: Option<String>,
     /// When it started (ISO).
     pub created_at: String,
+    /// What started it (`manual`, `row`, `scheduled`, `weekly`).
+    pub origin: String,
+    /// Prompt tokens the provider reported.
+    pub input_tokens: i64,
+    /// Answer tokens the provider reported.
+    pub output_tokens: i64,
 }
 
 fn text(row: &Map<String, Value>, key: &str) -> Option<String> {
@@ -87,6 +144,9 @@ fn run_of(row: &Map<String, Value>) -> Option<Run> {
         source: text(row, "source").unwrap_or_default(),
         model: text(row, "model"),
         created_at: text(row, "createdAt").unwrap_or_default(),
+        origin: text(row, "origin").unwrap_or_else(|| String::from("manual")),
+        input_tokens: row.get("inputTokens").and_then(Value::as_i64).unwrap_or(0),
+        output_tokens: row.get("outputTokens").and_then(Value::as_i64).unwrap_or(0),
     })
 }
 
@@ -104,13 +164,22 @@ pub async fn create_run(
 ) -> Result<i64> {
     let rows = db
         .rows(
-            r#"INSERT INTO "ai_run" ("userId", "stage", "request", "source", "model") VALUES (?1, ?2, ?3, ?4, ?5) RETURNING CAST("id" AS BIGINT) AS "id""#,
+            r#"INSERT INTO "ai_run" ("userId", "stage", "request", "source", "model", "origin") VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING CAST("id" AS BIGINT) AS "id""#,
             &[
                 Bind::Int(user_id),
                 Bind::Text(Stage::Planning.as_str().to_owned()),
                 Bind::Text(request.to_string()),
                 Bind::Text(source.to_owned()),
                 Bind::OptText(model.map(str::to_owned)),
+                Bind::Text(
+                    if request.get("row").and_then(Value::as_bool) == Some(true) {
+                        Origin::Row
+                    } else {
+                        Origin::Manual
+                    }
+                    .as_str()
+                    .to_owned(),
+                ),
             ],
         )
         .await?;
@@ -141,12 +210,214 @@ pub async fn set_stage(db: &Db, run_id: i64, stage: Stage) -> Result<()> {
 ///
 /// Fails on database errors.
 pub async fn finish(db: &Db, run_id: i64, result: &Value) -> Result<()> {
-    db.execute(
+    let mut tx = Tx::begin(db).await?;
+    let changed = tx.execute(
         r#"UPDATE "ai_run" SET "stage" = 'done', "result" = ?1, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2 AND "stage" IN ('planning', 'searching', 'ranking')"#,
         &[Bind::Text(result.to_string()), Bind::Int(run_id)],
     )
     .await?;
+    if changed > 0 {
+        // One row per pick, so "requested after it was suggested" and hit
+        // rates are plain joins instead of re-reading result blobs.
+        for pick in result
+            .get("picks")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let (Some(kind), Some(id)) = (
+                pick.get("mediaType").and_then(Value::as_str),
+                pick.get("tmdbId").and_then(Value::as_i64),
+            ) else {
+                continue;
+            };
+            let title = pick
+                .pointer("/tmdb/title")
+                .or_else(|| pick.pointer("/tmdb/name"))
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            tx.execute(
+                r#"INSERT INTO "ai_pick" ("runId", "userId", "mediaType", "tmdbId", "title") SELECT "id", "userId", ?2, ?3, ?4 FROM "ai_run" WHERE "id" = ?1"#,
+                &[
+                    Bind::Int(run_id),
+                    Bind::Text(kind.to_owned()),
+                    Bind::Int(id),
+                    Bind::Text(super::super::clip(title, 200)),
+                ],
+            )
+            .await?;
+        }
+    }
+    tx.commit().await
+}
+
+/// Add the tokens a prompt used to a run.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn add_tokens(db: &Db, run_id: i64, tokens: crate::ai::Tokens) -> Result<()> {
+    if tokens == crate::ai::Tokens::default() {
+        return Ok(());
+    }
+    db.execute(
+        r#"UPDATE "ai_run" SET "inputTokens" = "inputTokens" + ?1, "outputTokens" = "outputTokens" + ?2 WHERE "id" = ?3"#,
+        &[Bind::Int(tokens.input), Bind::Int(tokens.output), Bind::Int(run_id)],
+    )
+    .await?;
     Ok(())
+}
+
+/// Delete one of a user's runs (and its picks). Returns whether it existed.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn delete_run(db: &Db, user_id: i64, run_id: i64) -> Result<bool> {
+    let mut tx = Tx::begin(db).await?;
+    tx.execute(
+        r#"DELETE FROM "ai_pick" WHERE "runId" = ?1 AND "userId" = ?2"#,
+        &[Bind::Int(run_id), Bind::Int(user_id)],
+    )
+    .await?;
+    let n = tx
+        .execute(
+            r#"DELETE FROM "ai_run" WHERE "id" = ?1 AND "userId" = ?2"#,
+            &[Bind::Int(run_id), Bind::Int(user_id)],
+        )
+        .await?;
+    tx.commit().await?;
+    Ok(n > 0)
+}
+
+/// Delete all of a user's runs, Discover rows and weekly picks included.
+/// Returns how many.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn delete_runs(db: &Db, user_id: i64) -> Result<u64> {
+    let mut tx = Tx::begin(db).await?;
+    tx.execute(
+        r#"DELETE FROM "ai_pick" WHERE "userId" = ?1"#,
+        &[Bind::Int(user_id)],
+    )
+    .await?;
+    let n = tx
+        .execute(
+            r#"DELETE FROM "ai_run" WHERE "userId" = ?1 AND "stage" NOT IN ('planning', 'searching', 'ranking')"#,
+            &[Bind::Int(user_id)],
+        )
+        .await?;
+    tx.commit().await?;
+    Ok(n)
+}
+
+/// Delete everyone's finished runs older than `before_iso`. Returns how many.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn prune_runs(db: &Db, before_iso: &str) -> Result<u64> {
+    let created = db.iso_sql(r#""createdAt""#);
+    let mut tx = Tx::begin(db).await?;
+    tx.execute(
+        &format!(
+            r#"DELETE FROM "ai_pick" WHERE "runId" IN (SELECT "id" FROM "ai_run" WHERE "stage" NOT IN ('planning', 'searching', 'ranking') AND {created} < ?1)"#
+        ),
+        &[Bind::Text(before_iso.to_owned())],
+    )
+    .await?;
+    let n = tx
+        .execute(
+            &format!(
+                r#"DELETE FROM "ai_run" WHERE "stage" NOT IN ('planning', 'searching', 'ranking') AND {created} < ?1"#
+            ),
+            &[Bind::Text(before_iso.to_owned())],
+        )
+        .await?;
+    tx.commit().await?;
+    Ok(n)
+}
+
+/// A user's latest finished weekly picks.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn latest_weekly(db: &Db, user_id: i64) -> Result<Option<Run>> {
+    Ok(db
+        .rows(
+            &format!(
+                r#"SELECT {} FROM "ai_run" WHERE "userId" = ?1 AND "origin" = 'weekly' AND "stage" = 'done' ORDER BY "id" DESC LIMIT 1"#,
+                run_columns(db)
+            ),
+            &[Bind::Int(user_id)],
+        )
+        .await?
+        .first()
+        .and_then(run_of))
+}
+
+/// When this user's last weekly picks started (ISO), finished or not.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn last_weekly_at(db: &Db, user_id: i64) -> Result<Option<String>> {
+    let created = db.iso_sql(r#""createdAt""#);
+    Ok(db
+        .rows(
+            &format!(
+                r#"SELECT {created} AS "at" FROM "ai_run" WHERE "userId" = ?1 AND "origin" = 'weekly' ORDER BY "id" DESC LIMIT 1"#
+            ),
+            &[Bind::Int(user_id)],
+        )
+        .await?
+        .first()
+        .and_then(|r| text(r, "at")))
+}
+
+/// Note that the user looked at AI picks (the nightly job only prepares
+/// picks for people who do).
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn touch_active(db: &Db, user_id: i64) -> Result<()> {
+    db.execute(
+        r#"INSERT INTO "ai_user_settings" ("useOwnConnection", "model", "useHistory", "historyConsentAt", "userId") VALUES (?1, NULL, ?1, NULL, ?2) ON CONFLICT ("userId") DO NOTHING"#,
+        &[Bind::Bool(false), Bind::Int(user_id)],
+    )
+    .await?;
+    db.execute(
+        r#"UPDATE "ai_user_settings" SET "lastActiveAt" = CURRENT_TIMESTAMP WHERE "userId" = ?1"#,
+        &[Bind::Int(user_id)],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Tokens used on the server connection since `since_iso`.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn server_tokens_since(db: &Db, since_iso: &str) -> Result<i64> {
+    let created = db.iso_sql(r#""createdAt""#);
+    let rows = db
+        .rows(
+            &format!(
+                r#"SELECT CAST(COALESCE(SUM("inputTokens" + "outputTokens"), 0) AS BIGINT) AS "n" FROM "ai_run" WHERE "source" = 'server' AND {created} >= ?1"#
+            ),
+            &[Bind::Text(since_iso.to_owned())],
+        )
+        .await?;
+    Ok(rows
+        .first()
+        .and_then(|r| r.get("n"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0))
 }
 
 /// Finish a run with an error (the AI error's JSON).
@@ -166,7 +437,7 @@ pub async fn fail(db: &Db, run_id: i64, error: &Value) -> Result<()> {
 fn run_columns(db: &Db) -> String {
     let created = db.iso_sql(r#""createdAt""#);
     format!(
-        r#"CAST("id" AS BIGINT) AS "id", "stage", "request", "result", "error", "source", "model", {created} AS "createdAt""#
+        r#"CAST("id" AS BIGINT) AS "id", "stage", "request", "result", "error", "source", "model", {created} AS "createdAt", "origin", CAST("inputTokens" AS BIGINT) AS "inputTokens", CAST("outputTokens" AS BIGINT) AS "outputTokens""#
     )
 }
 
@@ -310,10 +581,16 @@ pub async fn reserve_run(
     user_id: i64,
     request: &Request,
     seed_title: Option<&str>,
-    source: &str,
-    model: Option<&str>,
-    limit: Option<u32>,
+    how: Reserve<'_>,
 ) -> Result<(i64, bool), crate::ai::AiError> {
+    let Reserve {
+        source,
+        model,
+        daily_limit: limit,
+        monthly_tokens,
+        origin,
+        fresh_minutes,
+    } = how;
     let err = |e: anyhow::Error| crate::ai::AiError::internal(format!("{e:#}"));
     let mut tx = Tx::begin(db).await.map_err(err)?;
     // SQLite begins IMMEDIATE; on PostgreSQL this locks the user across processes.
@@ -330,7 +607,7 @@ pub async fn reserve_run(
     let created = db.iso_sql(r#""createdAt""#);
     let mut exec = Exec::Tx(&mut tx);
     if request.row {
-        let fresh = super::iso_since(Some(24 * 60));
+        let fresh = super::iso_since(Some(fresh_minutes));
         if let Some(run) = row_runs_in(db, &mut exec, user_id, request)
             .await
             .map_err(err)?
@@ -341,20 +618,26 @@ pub async fn reserve_run(
             return Ok((run.id, false));
         }
     } else {
-        let n = exec.scalar(&format!(r#"SELECT CAST(COUNT(*) AS BIGINT) FROM "ai_run" WHERE "userId" = ?1 AND "stage" IN ('planning', 'searching', 'ranking') AND "request" NOT LIKE '%"row":true%' AND {created} >= ?2"#), &[Bind::Int(user_id), Bind::Text(super::iso_since(Some(10)))]).await.map_err(err)?;
+        let n = exec.scalar(&format!(r#"SELECT CAST(COUNT(*) AS BIGINT) FROM "ai_run" WHERE "userId" = ?1 AND "stage" IN ('planning', 'searching', 'ranking') AND "origin" = ?3 AND {created} >= ?2"#), &[Bind::Int(user_id), Bind::Text(super::iso_since(Some(10))), Bind::Text(origin.as_str().to_owned())]).await.map_err(err)?;
         if n > 0 {
             return Err(crate::ai::AiError::input(
                 "Your last request is still working. Wait for it to finish.",
             ));
         }
     }
-    if let Some(limit) = limit {
-        let n = exec.scalar(&format!(r#"SELECT CAST(COUNT(*) AS BIGINT) FROM "ai_run" WHERE "userId" = ?1 AND "source" = 'server' AND {created} >= ?2"#), &[Bind::Int(user_id), Bind::Text(super::iso_since(None))]).await.map_err(err)?;
+    if let Some(limit) = limit.filter(|_| !origin.is_automatic()) {
+        let n = exec.scalar(&format!(r#"SELECT CAST(COUNT(*) AS BIGINT) FROM "ai_run" WHERE "userId" = ?1 AND "source" = 'server' AND "origin" NOT IN ('scheduled', 'weekly') AND {created} >= ?2"#), &[Bind::Int(user_id), Bind::Text(super::iso_since(None))]).await.map_err(err)?;
         if n >= i64::from(limit) {
             return Err(crate::ai::AiError::daily_limit(limit));
         }
     }
-    let id = exec.scalar(r#"INSERT INTO "ai_run" ("userId", "stage", "request", "source", "model") VALUES (?1, 'planning', ?2, ?3, ?4) RETURNING CAST("id" AS BIGINT)"#, &[Bind::Int(user_id), Bind::Text(request.to_json(seed_title).to_string()), Bind::Text(source.to_owned()), Bind::OptText(model.map(str::to_owned))]).await.map_err(err)?;
+    if let Some(budget) = monthly_tokens.filter(|_| source == "server") {
+        let used = exec.scalar(&format!(r#"SELECT CAST(COALESCE(SUM("inputTokens" + "outputTokens"), 0) AS BIGINT) FROM "ai_run" WHERE "source" = 'server' AND {created} >= ?1"#), &[Bind::Text(super::month_start())]).await.map_err(err)?;
+        if used >= budget {
+            return Err(crate::ai::AiError::monthly_budget());
+        }
+    }
+    let id = exec.scalar(r#"INSERT INTO "ai_run" ("userId", "stage", "request", "source", "model", "origin") VALUES (?1, 'planning', ?2, ?3, ?4, ?5) RETURNING CAST("id" AS BIGINT)"#, &[Bind::Int(user_id), Bind::Text(request.to_json(seed_title).to_string()), Bind::Text(source.to_owned()), Bind::OptText(model.map(str::to_owned)), Bind::Text(origin.as_str().to_owned())]).await.map_err(err)?;
     tx.commit().await.map_err(err)?;
     Ok((id, true))
 }
@@ -363,7 +646,7 @@ pub async fn reserve_run(
 /// # Errors
 /// Fails on database errors.
 pub async fn personal_runs(db: &Db, user_id: i64, limit: i64) -> Result<Vec<Run>> {
-    Ok(db.rows(&format!(r#"SELECT {} FROM "ai_run" WHERE "userId" = ?1 AND "request" NOT LIKE '%"row":true%' ORDER BY "id" DESC LIMIT ?2"#, run_columns(db)), &[Bind::Int(user_id), Bind::Int(limit)]).await?.iter().filter_map(run_of).collect())
+    Ok(db.rows(&format!(r#"SELECT {} FROM "ai_run" WHERE "userId" = ?1 AND "origin" = 'manual' ORDER BY "id" DESC LIMIT ?2"#, run_columns(db)), &[Bind::Int(user_id), Bind::Int(limit)]).await?.iter().filter_map(run_of).collect())
 }
 
 /// A request of this user's own (not a Discover row's) that's still
@@ -398,7 +681,7 @@ pub async fn server_runs_since(db: &Db, user_id: i64, since_iso: &str) -> Result
     let rows = db
         .rows(
             &format!(
-                r#"SELECT CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_run" WHERE "userId" = ?1 AND "source" = 'server' AND {created} >= ?2"#
+                r#"SELECT CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_run" WHERE "userId" = ?1 AND "source" = 'server' AND "origin" NOT IN ('scheduled', 'weekly') AND {created} >= ?2"#
             ),
             &[Bind::Int(user_id), Bind::Text(since_iso.to_owned())],
         )
@@ -545,6 +828,11 @@ pub async fn clear_all_feedback(db: &Db, user_id: i64) -> Result<()> {
     .await?;
     tx.execute(
         r#"DELETE FROM "ai_feedback" WHERE "userId" = ?1"#,
+        &[Bind::Int(user_id)],
+    )
+    .await?;
+    tx.execute(
+        r#"DELETE FROM "ai_signal" WHERE "userId" = ?1"#,
         &[Bind::Int(user_id)],
     )
     .await?;
@@ -723,6 +1011,17 @@ mod review_tests {
     use anyhow::Context;
     use serde_json::json;
 
+    const fn test_reserve() -> Reserve<'static> {
+        Reserve {
+            source: "server",
+            model: None,
+            daily_limit: Some(1),
+            monthly_tokens: None,
+            origin: Origin::Row,
+            fresh_minutes: 24 * 60,
+        }
+    }
+
     async fn database(tag: &str) -> Result<scratch::Scratch> {
         let scratch = scratch::sqlite(tag).await?;
         scratch.db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'ai@example.test', 0, 1, '')"#, &[]).await?;
@@ -757,8 +1056,8 @@ mod review_tests {
             ..Request::default()
         };
         let (a, b) = tokio::join!(
-            reserve_run(&db, 1, &request, None, "server", None, Some(1)),
-            reserve_run(&db, 1, &request, None, "server", None, Some(1))
+            reserve_run(&db, 1, &request, None, test_reserve()),
+            reserve_run(&db, 1, &request, None, test_reserve())
         );
         let a = a.map_err(|e| anyhow::anyhow!("{e}"))?;
         let b = b.map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -829,8 +1128,8 @@ mod review_tests {
             ..Request::default()
         };
         let (a, b) = tokio::join!(
-            reserve_run(&scratch.db, 1, &request, None, "server", None, Some(1)),
-            reserve_run(&scratch.db, 1, &request, None, "server", None, Some(1))
+            reserve_run(&scratch.db, 1, &request, None, test_reserve()),
+            reserve_run(&scratch.db, 1, &request, None, test_reserve())
         );
         let (a, b) = (
             a.map_err(|e| anyhow::anyhow!("{e}"))?,
@@ -856,13 +1155,69 @@ mod review_tests {
             ..Request::default()
         };
         let (a, b) = tokio::join!(
-            reserve_run(&scratch.db, 1, &a, None, "server", None, Some(1)),
-            reserve_run(&scratch.db, 1, &b, None, "server", None, Some(1))
+            reserve_run(&scratch.db, 1, &a, None, test_reserve()),
+            reserve_run(&scratch.db, 1, &b, None, test_reserve())
         );
         assert_ne!(a.is_ok(), b.is_ok());
         assert_eq!(
             a.err().or_else(|| b.err()).map(|e| e.kind),
             Some(crate::ai::ErrorKind::DailyLimit)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn automatic_runs_skip_the_daily_limit_and_the_budget_stops_server_runs() -> Result<()> {
+        let scratch = database("ai-budget").await?;
+        let db = &scratch.db;
+        let weekly = Reserve {
+            origin: Origin::Weekly,
+            ..test_reserve()
+        };
+        let (id, created) = reserve_run(db, 1, &Request::default(), None, weekly)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        assert!(created);
+        finish(db, id, &json!({"picks": []})).await?;
+        assert_eq!(server_runs_since(db, 1, "2000").await?, 0, "not counted");
+        let manual = Reserve {
+            origin: Origin::Manual,
+            ..test_reserve()
+        };
+        let (id, _) = reserve_run(db, 1, &Request::default(), None, manual)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        finish(db, id, &json!({"picks": []})).await?;
+        add_tokens(
+            db,
+            id,
+            crate::ai::Tokens {
+                input: 900,
+                output: 200,
+            },
+        )
+        .await?;
+        assert_eq!(server_tokens_since(db, "2000").await?, 1100);
+        let budgeted = Reserve {
+            origin: Origin::Weekly,
+            monthly_tokens: Some(1000),
+            ..test_reserve()
+        };
+        let refused = reserve_run(db, 1, &Request::default(), None, budgeted).await;
+        assert_eq!(
+            refused.err().map(|e| e.kind),
+            Some(crate::ai::ErrorKind::DailyLimit),
+            "over the monthly budget"
+        );
+        let own = Reserve {
+            source: "own",
+            ..budgeted
+        };
+        assert!(
+            reserve_run(db, 1, &Request::default(), None, own)
+                .await
+                .is_ok(),
+            "own connections aren't budgeted"
         );
         Ok(())
     }

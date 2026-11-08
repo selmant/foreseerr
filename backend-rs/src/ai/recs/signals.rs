@@ -1,0 +1,577 @@
+//! What people did with their picks, without pressing a button: they
+//! requested a pick, watched it later, or rated it on Trakt or Simkl.
+//!
+//! Signals are found by joining `ai_pick` (every title a run suggested)
+//! with requests, watch history and ratings, and kept in `ai_signal`, one
+//! per title and kind. They stay on this server; requests steer later picks
+//! like a "like", and watches and ratings only reach the model when the
+//! person allowed their watch history to be used.
+
+use std::collections::HashMap;
+
+use anyhow::Result;
+use serde_json::Value;
+
+use super::retrieve::{kind_of, Key};
+use crate::db::{Bind, Db};
+use crate::mappinglayer::watched::WatchedSets;
+use crate::settings::Settings;
+use crate::state::AppState;
+
+/// A rating at or above this (out of 10) counts as liking a pick.
+const LIKED_FROM: i64 = 7;
+/// A rating at or below this counts as disliking it.
+const DISLIKED_TO: i64 = 4;
+
+/// One signal.
+#[derive(Debug, Clone)]
+pub struct Signal {
+    /// Row id.
+    pub id: i64,
+    /// `requested`, `watched` or `rated`.
+    pub kind: String,
+    /// The rating out of 10, for `rated`.
+    pub rating: Option<i64>,
+    /// The title when it was suggested.
+    pub title: String,
+}
+
+impl Signal {
+    /// Whether it is history (watched or rated), which needs consent.
+    #[must_use]
+    pub fn is_history(&self) -> bool {
+        self.kind != "requested"
+    }
+
+    /// As a line for the model: liked (`true`) or to avoid (`false`), or
+    /// nothing for a middling rating.
+    #[must_use]
+    pub fn line(&self) -> Option<(bool, String)> {
+        let title = if self.title.is_empty() {
+            "A suggested title"
+        } else {
+            self.title.as_str()
+        };
+        match (self.kind.as_str(), self.rating) {
+            ("requested", _) => Some((
+                true,
+                format!("{title} (requested it after it was suggested)"),
+            )),
+            ("watched", _) => Some((true, format!("{title} (watched it after it was suggested)"))),
+            ("rated", Some(r)) if r >= LIKED_FROM => Some((
+                true,
+                format!("{title} (rated it {r}/10 after it was suggested)"),
+            )),
+            ("rated", Some(r)) if r <= DISLIKED_TO => Some((
+                false,
+                format!("{title} (rated it {r}/10 after it was suggested)"),
+            )),
+            _ => None,
+        }
+    }
+}
+
+fn signal_of(r: &serde_json::Map<String, Value>) -> Option<Signal> {
+    Some(Signal {
+        id: r.get("id")?.as_i64()?,
+        kind: r.get("kind")?.as_str()?.to_owned(),
+        rating: r.get("rating").and_then(Value::as_i64),
+        title: r
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    })
+}
+
+/// Titles this user was suggested, with the title and model of the latest
+/// suggestion.
+async fn picked(db: &Db, user_id: i64) -> Result<HashMap<Key, (String, Option<String>)>> {
+    let rows = db
+        .rows(
+            r#"SELECT p."mediaType", CAST(p."tmdbId" AS BIGINT) AS "tmdbId", MAX(p."title") AS "title", MAX(r."model") AS "model" FROM "ai_pick" p JOIN "ai_run" r ON r."id" = p."runId" WHERE p."userId" = ?1 GROUP BY p."mediaType", p."tmdbId""#,
+            &[Bind::Int(user_id)],
+        )
+        .await?;
+    Ok(rows
+        .iter()
+        .filter_map(|r| {
+            let key = (
+                kind_of(r.get("mediaType")?.as_str()?),
+                r.get("tmdbId")?.as_i64()?,
+            );
+            let title = r
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let model = r.get("model").and_then(Value::as_str).map(str::to_owned);
+            Some((key, (title, model)))
+        })
+        .collect())
+}
+
+async fn insert(
+    db: &Db,
+    user_id: i64,
+    key: Key,
+    kind: &str,
+    rating: Option<i64>,
+    (title, model): &(String, Option<String>),
+) -> Result<()> {
+    db.execute(
+        r#"INSERT INTO "ai_signal" ("userId", "mediaType", "tmdbId", "kind", "rating", "title", "model") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT ("userId", "mediaType", "tmdbId", "kind") DO NOTHING"#,
+        &[
+            Bind::Int(user_id),
+            Bind::Text(key.0.to_owned()),
+            Bind::Int(key.1),
+            Bind::Text(kind.to_owned()),
+            Bind::OptInt(rating),
+            Bind::Text(title.clone()),
+            Bind::OptText(model.clone()),
+        ],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Ratings out of 10 this user gave on Simkl and (with `trakt`) Trakt.
+async fn ratings(
+    state: &AppState,
+    settings: &Settings,
+    user_id: i64,
+    trakt: bool,
+) -> HashMap<Key, i64> {
+    let mut out = HashMap::new();
+    let simkl = state.db.rows(r#"SELECT "simklType", "animeType", CAST("tmdbId" AS BIGINT) AS "tmdbId", "userRating" FROM "simkl_sync_item" WHERE "userId" = ?1 AND "tmdbId" IS NOT NULL AND "userRating" IS NOT NULL"#, &[Bind::Int(user_id)]).await.unwrap_or_default();
+    for row in simkl {
+        let (Some(id), Some(rating)) = (
+            row.get("tmdbId").and_then(Value::as_i64),
+            row.get("userRating").and_then(Value::as_f64),
+        ) else {
+            continue;
+        };
+        let simkl_type = row.get("simklType").and_then(Value::as_str);
+        let movie = simkl_type == Some("movie")
+            || simkl_type == Some("anime")
+                && row.get("animeType").and_then(Value::as_str) == Some("movie");
+        if let Ok(rating) = format!("{rating:.0}").parse::<i64>() {
+            out.insert((if movie { "movie" } else { "tv" }, id), rating);
+        }
+    }
+    if trakt {
+        if let Ok(client) = crate::mediaactions::trakt::user_client(state, settings, user_id).await
+        {
+            if let Ok(snap) = crate::mappinglayer::synccache::warm_trakt(&client, user_id).await {
+                for (items, key, kind) in [
+                    (&snap.ratings_movies, "movie", "movie"),
+                    (&snap.ratings_shows, "show", "tv"),
+                ] {
+                    for r in items {
+                        let id = r
+                            .pointer(&format!("/{key}/ids/tmdb"))
+                            .and_then(Value::as_i64);
+                        let rating = r.get("rating").and_then(Value::as_i64);
+                        if let (Some(id), Some(rating)) = (id, rating) {
+                            out.insert((kind, id), rating);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Record what this user did with their picks since the last sync.
+/// `watched` is their combined watch history; `trakt` also reads Trakt
+/// ratings (a network call, so the nightly job does it).
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn sync(
+    state: &AppState,
+    settings: &Settings,
+    user_id: i64,
+    watched: Option<&WatchedSets>,
+    trakt: bool,
+) -> Result<()> {
+    let db = &state.db;
+    let at = |col: &str| db.iso_sql(col);
+    db.execute(
+        &format!(
+            r#"INSERT INTO "ai_signal" ("userId", "mediaType", "tmdbId", "kind", "title", "model") SELECT p."userId", p."mediaType", p."tmdbId", 'requested', MAX(p."title"), MAX(r."model") FROM "ai_pick" p JOIN "ai_run" r ON r."id" = p."runId" JOIN "media" m ON m."tmdbId" = p."tmdbId" AND m."mediaType" = p."mediaType" JOIN "media_request" q ON q."mediaId" = m."id" AND q."requestedById" = p."userId" WHERE p."userId" = ?1 AND {} >= {} GROUP BY p."userId", p."mediaType", p."tmdbId" ON CONFLICT ("userId", "mediaType", "tmdbId", "kind") DO NOTHING"#,
+            at(r#"q."createdAt""#),
+            at(r#"p."createdAt""#)
+        ),
+        &[Bind::Int(user_id)],
+    )
+    .await?;
+    let picks = picked(db, user_id).await?;
+    if picks.is_empty() {
+        return Ok(());
+    }
+    if let Some(watched) = watched {
+        for (kind, ids) in [("movie", &watched.movie), ("tv", &watched.tv)] {
+            for id in ids {
+                let Ok(id) = format!("{id:.0}").parse::<i64>() else {
+                    continue;
+                };
+                if let Some(pick) = picks.get(&(kind, id)) {
+                    insert(db, user_id, (kind, id), "watched", None, pick).await?;
+                }
+            }
+        }
+    }
+    for (key, rating) in ratings(state, settings, user_id, trakt).await {
+        if let Some(pick) = picks.get(&key) {
+            insert(db, user_id, key, "rated", Some(rating), pick).await?;
+        }
+    }
+    Ok(())
+}
+
+/// This user's signals, newest first. `history` includes watches and
+/// ratings (only with their consent to use watch history).
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn recent(db: &Db, user_id: i64, history: bool, limit: i64) -> Result<Vec<Signal>> {
+    let filter = if history {
+        ""
+    } else {
+        r#" AND "kind" = 'requested'"#
+    };
+    Ok(db
+        .rows(
+            &format!(
+                r#"SELECT CAST("id" AS BIGINT) AS "id", "kind", CAST("rating" AS BIGINT) AS "rating", "title" FROM "ai_signal" WHERE "userId" = ?1{filter} ORDER BY "id" DESC LIMIT ?2"#
+            ),
+            &[Bind::Int(user_id), Bind::Int(limit)],
+        )
+        .await?
+        .iter()
+        .filter_map(signal_of)
+        .collect())
+}
+
+/// Signals not yet folded into the taste card.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn unlearned(db: &Db, user_id: i64, history: bool) -> Result<Vec<Signal>> {
+    let filter = if history {
+        ""
+    } else {
+        r#" AND "kind" = 'requested'"#
+    };
+    Ok(db
+        .rows(
+            &format!(
+                r#"SELECT CAST("id" AS BIGINT) AS "id", "kind", CAST("rating" AS BIGINT) AS "rating", "title" FROM "ai_signal" WHERE "userId" = ?1 AND "learned" = ?2{filter} ORDER BY "id" LIMIT 40"#
+            ),
+            &[Bind::Int(user_id), Bind::Bool(false)],
+        )
+        .await?
+        .iter()
+        .filter_map(signal_of)
+        .collect())
+}
+
+/// Mark signals as folded into the taste card.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn mark_learned(db: &Db, user_id: i64, ids: &[i64]) -> Result<()> {
+    for id in ids {
+        db.execute(
+            r#"UPDATE "ai_signal" SET "learned" = ?1 WHERE "id" = ?2 AND "userId" = ?3"#,
+            &[Bind::Bool(true), Bind::Int(*id), Bind::Int(user_id)],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// How picks did since `since_iso`: titles suggested, and how many of
+/// them were requested, watched, liked or rated well.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Outcomes {
+    /// Distinct titles suggested.
+    pub picks: i64,
+    /// Requested after being suggested.
+    pub requested: i64,
+    /// Watched after being suggested.
+    pub watched: i64,
+    /// Liked (button) or rated 7+ after being suggested.
+    pub liked: i64,
+}
+
+impl Outcomes {
+    /// As the API returns it.
+    #[must_use]
+    pub fn to_json(self) -> Value {
+        serde_json::json!({
+            "picks": self.picks,
+            "requested": self.requested,
+            "watched": self.watched,
+            "liked": self.liked,
+        })
+    }
+}
+
+/// Outcomes per user (`None` key: everyone) since `since_iso`.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn outcomes(db: &Db, since_iso: &str) -> Result<HashMap<i64, Outcomes>> {
+    let created = |t: &str| db.iso_sql(&format!(r#"{t}."createdAt""#));
+    let mut out: HashMap<i64, Outcomes> = HashMap::new();
+    let picks = db
+        .rows(
+            &format!(
+                r#"SELECT CAST(p."userId" AS BIGINT) AS "userId", CAST(COUNT(DISTINCT p."mediaType" || ':' || CAST(p."tmdbId" AS VARCHAR)) AS BIGINT) AS "n" FROM "ai_pick" p WHERE {} >= ?1 GROUP BY p."userId""#,
+                created("p")
+            ),
+            &[Bind::Text(since_iso.to_owned())],
+        )
+        .await?;
+    for r in picks {
+        if let (Some(u), Some(n)) = (
+            r.get("userId").and_then(Value::as_i64),
+            r.get("n").and_then(Value::as_i64),
+        ) {
+            out.entry(u).or_default().picks = n;
+        }
+    }
+    let signals = db
+        .rows(
+            &format!(
+                r#"SELECT CAST(s."userId" AS BIGINT) AS "userId", s."kind", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_signal" s WHERE {} >= ?1 AND (s."kind" <> 'rated' OR s."rating" >= ?2) GROUP BY s."userId", s."kind""#,
+                created("s")
+            ),
+            &[Bind::Text(since_iso.to_owned()), Bind::Int(LIKED_FROM)],
+        )
+        .await?;
+    for r in signals {
+        let (Some(u), Some(kind), Some(n)) = (
+            r.get("userId").and_then(Value::as_i64),
+            r.get("kind").and_then(Value::as_str),
+            r.get("n").and_then(Value::as_i64),
+        ) else {
+            continue;
+        };
+        let o = out.entry(u).or_default();
+        match kind {
+            "requested" => o.requested += n,
+            "watched" => o.watched += n,
+            _ => o.liked += n,
+        }
+    }
+    let liked = db
+        .rows(
+            &format!(
+                r#"SELECT CAST(f."userId" AS BIGINT) AS "userId", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_feedback" f WHERE f."kind" = 'like' AND {} >= ?1 GROUP BY f."userId""#,
+                db.iso_sql(r#"f."updatedAt""#)
+            ),
+            &[Bind::Text(since_iso.to_owned())],
+        )
+        .await?;
+    for r in liked {
+        if let (Some(u), Some(n)) = (
+            r.get("userId").and_then(Value::as_i64),
+            r.get("n").and_then(Value::as_i64),
+        ) {
+            out.entry(u).or_default().liked += n;
+        }
+    }
+    Ok(out)
+}
+
+/// Outcomes per model since `since_iso`: (model, runs, picks, requested,
+/// watched, liked-by-rating, average tokens per run, failed runs).
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn by_model(db: &Db, since_iso: &str) -> Result<Vec<Value>> {
+    let runs = db
+        .rows(
+            &format!(
+                r#"SELECT COALESCE("model", '') AS "model", CAST(COUNT(*) AS BIGINT) AS "runs", CAST(SUM(CASE WHEN "stage" = 'failed' THEN 1 ELSE 0 END) AS BIGINT) AS "failed", CAST(COALESCE(SUM("inputTokens"), 0) AS BIGINT) AS "inputTokens", CAST(COALESCE(SUM("outputTokens"), 0) AS BIGINT) AS "outputTokens" FROM "ai_run" WHERE {} >= ?1 GROUP BY COALESCE("model", '') ORDER BY COUNT(*) DESC"#,
+                db.iso_sql(r#""createdAt""#)
+            ),
+            &[Bind::Text(since_iso.to_owned())],
+        )
+        .await?;
+    let picks = db
+        .rows(
+            &format!(
+                r#"SELECT COALESCE(r."model", '') AS "model", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_pick" p JOIN "ai_run" r ON r."id" = p."runId" WHERE {} >= ?1 GROUP BY COALESCE(r."model", '')"#,
+                db.iso_sql(r#"p."createdAt""#)
+            ),
+            &[Bind::Text(since_iso.to_owned())],
+        )
+        .await?;
+    let signals = db
+        .rows(
+            &format!(
+                r#"SELECT COALESCE("model", '') AS "model", "kind", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_signal" WHERE {} >= ?1 AND ("kind" <> 'rated' OR "rating" >= ?2) GROUP BY COALESCE("model", ''), "kind""#,
+                db.iso_sql(r#""createdAt""#)
+            ),
+            &[Bind::Text(since_iso.to_owned()), Bind::Int(LIKED_FROM)],
+        )
+        .await?;
+    let count = |rows: &[serde_json::Map<String, Value>], model: &str, kind: Option<&str>| {
+        rows.iter()
+            .filter(|r| r.get("model").and_then(Value::as_str) == Some(model))
+            .filter(|r| kind.is_none_or(|k| r.get("kind").and_then(Value::as_str) == Some(k)))
+            .filter_map(|r| r.get("n").and_then(Value::as_i64))
+            .sum::<i64>()
+    };
+    Ok(runs
+        .iter()
+        .filter_map(|r| {
+            let model = r.get("model")?.as_str()?;
+            let get = |k: &str| r.get(k).and_then(Value::as_i64).unwrap_or(0);
+            Some(serde_json::json!({
+                "model": if model.is_empty() { Value::Null } else { Value::from(model) },
+                "runs": get("runs"),
+                "failed": get("failed"),
+                "inputTokens": get("inputTokens"),
+                "outputTokens": get("outputTokens"),
+                "picks": count(&picks, model, None),
+                "requested": count(&signals, model, Some("requested")),
+                "watched": count(&signals, model, Some("watched")),
+                "ratedWell": count(&signals, model, Some("rated")),
+            }))
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::recs::store;
+    use crate::ai::recs::Request;
+    use crate::dbtx::scratch;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn picks_requests_and_watches_become_signals_and_outcomes() -> Result<()> {
+        let scratch = scratch::sqlite("ai-signals").await?;
+        let db = &scratch.db;
+        db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'sig@example.test', 0, 1, '')"#, &[]).await?;
+        let run = store::create_run(
+            db,
+            1,
+            &Request::default().to_json(None),
+            "server",
+            Some("m1"),
+        )
+        .await?;
+        store::finish(
+            db,
+            run,
+            &json!({"picks": [
+                {"mediaType": "movie", "tmdbId": 10, "tmdb": {"title": "Requested One"}},
+                {"mediaType": "tv", "tmdbId": 20, "tmdb": {"name": "Watched Show"}},
+                {"mediaType": "movie", "tmdbId": 30, "tmdb": {"title": "Ignored"}}
+            ]}),
+        )
+        .await?;
+        // Requested after the pick (same timestamp counts).
+        db.execute(r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status") VALUES (5, 'movie', 10, 2)"#, &[]).await?;
+        db.execute(r#"INSERT INTO "media_request" ("status", "type", "mediaId", "requestedById", "is4k", "isAutoRequest") VALUES (1, 'movie', 5, 1, 0, 0)"#, &[]).await?;
+        let state = AppState::for_tests(db.clone(), &std::env::temp_dir())?;
+        let settings = Settings::from_file_value(json!({}), None)?;
+        let watched = WatchedSets {
+            movie: vec![],
+            tv: vec![20.0],
+        };
+        sync(&state, &settings, 1, Some(&watched), false).await?;
+        sync(&state, &settings, 1, Some(&watched), false).await?;
+        let all = recent(db, 1, true, 10).await?;
+        let mut kinds: Vec<&str> = all.iter().map(|s| s.kind.as_str()).collect();
+        kinds.sort_unstable();
+        assert_eq!(
+            kinds,
+            ["requested", "watched"],
+            "one signal per title and kind"
+        );
+        assert!(
+            recent(db, 1, false, 10)
+                .await?
+                .iter()
+                .all(|s| !s.is_history()),
+            "without consent only requests"
+        );
+        let o = outcomes(db, "2000").await?.remove(&1).unwrap_or_default();
+        assert_eq!((o.picks, o.requested, o.watched), (3, 1, 1));
+        let models = by_model(db, "2000").await?;
+        assert_eq!(
+            models.first().and_then(|m| m.get("requested")),
+            Some(&json!(1))
+        );
+        // Learning marks them; forgetting ratings forgets them.
+        let ids: Vec<i64> = unlearned(db, 1, true).await?.iter().map(|s| s.id).collect();
+        mark_learned(db, 1, &ids).await?;
+        assert!(unlearned(db, 1, true).await?.is_empty());
+        store::clear_all_feedback(db, 1).await?;
+        assert!(recent(db, 1, true, 10).await?.is_empty());
+        // Deleting the run deletes its picks.
+        assert!(store::delete_run(db, 1, run).await?);
+        assert_eq!(outcomes(db, "2000").await?.get(&1).map(|o| o.picks), None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pruning_and_clearing_history() -> Result<()> {
+        let scratch = scratch::sqlite("ai-history").await?;
+        let db = &scratch.db;
+        db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'h@example.test', 0, 1, '')"#, &[]).await?;
+        let old = store::create_run(db, 1, &Request::default().to_json(None), "own", None).await?;
+        store::finish(
+            db,
+            old,
+            &json!({"picks": [{"mediaType": "movie", "tmdbId": 1}]}),
+        )
+        .await?;
+        db.execute(
+            r#"UPDATE "ai_run" SET "createdAt" = '2001-01-01 00:00:00' WHERE "id" = ?1"#,
+            &[Bind::Int(old)],
+        )
+        .await?;
+        let new = store::create_run(db, 1, &Request::default().to_json(None), "own", None).await?;
+        store::finish(db, new, &json!({"picks": []})).await?;
+        assert_eq!(store::prune_runs(db, "2010-01-01T00:00:00.000Z").await?, 1);
+        assert!(store::run(db, 1, old).await?.is_none());
+        assert!(store::run(db, 1, new).await?.is_some());
+        assert_eq!(store::delete_runs(db, 1).await?, 1);
+        assert!(store::personal_runs(db, 1, 20).await?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn rows_saved_before_the_filter_keep_their_cache() {
+        let plain = Request {
+            prompt: String::from("cozy"),
+            ..Request::default()
+        };
+        let mut library = plain.clone();
+        library.availability = Some("library");
+        assert_ne!(plain.cache_key(), library.cache_key());
+        // The key of a request without the filter didn't change.
+        assert_eq!(plain.cache_key(), {
+            use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+            use sha2::{Digest, Sha256};
+            let v = json!({"prompt": "cozy", "seed": null, "only": null, "anime": false, "refinements": []});
+            URL_SAFE_NO_PAD.encode(Sha256::digest(v.to_string().as_bytes()))
+        });
+    }
+}

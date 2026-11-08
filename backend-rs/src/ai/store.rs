@@ -606,7 +606,7 @@ pub async fn delete(db: &Db, owner: Owner) -> Result<()> {
 }
 
 /// A user's AI preferences.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prefs {
     /// Use their own connection instead of the server's.
     pub use_own_connection: bool,
@@ -616,6 +616,20 @@ pub struct Prefs {
     pub use_history: bool,
     /// When they agreed (ISO).
     pub history_consent_at: Option<String>,
+    /// They get weekly picks from the nightly job (on unless turned off).
+    pub weekly_picks: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            use_own_connection: false,
+            model: None,
+            use_history: false,
+            history_consent_at: None,
+            weekly_picks: true,
+        }
+    }
 }
 
 impl Prefs {
@@ -627,6 +641,7 @@ impl Prefs {
             "model": self.model,
             "useHistory": self.use_history,
             "historyConsentAt": self.history_consent_at,
+            "weeklyPicks": self.weekly_picks,
         })
     }
 }
@@ -649,7 +664,7 @@ pub async fn prefs(db: &Db, user_id: i64) -> Result<Prefs> {
     let rows = db
         .rows(
             &format!(
-                r#"SELECT "useOwnConnection", "model", "useHistory", {consent} AS "historyConsentAt" FROM "ai_user_settings" WHERE "userId" = ?1"#
+                r#"SELECT "useOwnConnection", "model", "useHistory", {consent} AS "historyConsentAt", "weeklyPicks" FROM "ai_user_settings" WHERE "userId" = ?1"#
             ),
             &[Bind::Int(user_id)],
         )
@@ -666,6 +681,7 @@ pub async fn prefs(db: &Db, user_id: i64) -> Result<Prefs> {
             .get("historyConsentAt")
             .and_then(Value::as_str)
             .map(str::to_owned),
+        weekly_picks: row.get("weeklyPicks").is_none_or(|v| truthy(Some(v))),
     }))
 }
 
@@ -678,6 +694,8 @@ pub struct PrefsChange {
     pub model: Option<Option<String>>,
     /// Send their history.
     pub use_history: Option<bool>,
+    /// Get weekly picks.
+    pub weekly_picks: Option<bool>,
 }
 
 /// Apply a change to a user's preferences in one statement.
@@ -715,6 +733,10 @@ pub async fn update_prefs(db: &Db, user_id: i64, change: &PrefsChange) -> Result
         }));
         binds.push(Bind::Bool(history));
         sets.push(format!(r#""useHistory" = ?{}"#, binds.len()));
+    }
+    if let Some(weekly) = change.weekly_picks {
+        binds.push(Bind::Bool(weekly));
+        sets.push(format!(r#""weeklyPicks" = ?{}"#, binds.len()));
     }
     if sets.is_empty() {
         return Ok(());

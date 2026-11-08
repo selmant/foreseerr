@@ -707,4 +707,20 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "ALTER TABLE \"ai_taste\" ADD \"version\" integer NOT NULL DEFAULT 1",
         ],
     },
+    Migration {
+        timestamp: 1_790_300_000_000,
+        name: "AiInsights1790300000000",
+        queries: &[
+            "ALTER TABLE \"ai_run\" ADD \"origin\" character varying NOT NULL DEFAULT 'manual'",
+            "ALTER TABLE \"ai_run\" ADD \"inputTokens\" integer NOT NULL DEFAULT 0",
+            "ALTER TABLE \"ai_run\" ADD \"outputTokens\" integer NOT NULL DEFAULT 0",
+            "UPDATE \"ai_run\" SET \"origin\" = 'row' WHERE \"request\" LIKE '%\"row\":true%'",
+            "ALTER TABLE \"ai_user_settings\" ADD \"weeklyPicks\" boolean NOT NULL DEFAULT true",
+            "ALTER TABLE \"ai_user_settings\" ADD \"lastActiveAt\" TIMESTAMP WITH TIME ZONE",
+            "CREATE TABLE \"ai_pick\" (\"id\" SERIAL NOT NULL, \"mediaType\" character varying NOT NULL, \"tmdbId\" integer NOT NULL, \"title\" character varying NOT NULL DEFAULT '', \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"runId\" integer NOT NULL, \"userId\" integer NOT NULL, CONSTRAINT \"PK_ai_pick\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_pick_run\" FOREIGN KEY (\"runId\") REFERENCES \"ai_run\"(\"id\") ON DELETE CASCADE, CONSTRAINT \"FK_ai_pick_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+            "CREATE INDEX \"IDX_ai_pick_user_title\" ON \"ai_pick\" (\"userId\", \"mediaType\", \"tmdbId\") ",
+            "CREATE INDEX \"IDX_ai_pick_run\" ON \"ai_pick\" (\"runId\") ",
+            "CREATE TABLE \"ai_signal\" (\"id\" SERIAL NOT NULL, \"mediaType\" character varying NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" character varying NOT NULL, \"rating\" integer, \"title\" character varying NOT NULL DEFAULT '', \"model\" character varying, \"learned\" boolean NOT NULL DEFAULT false, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_signal_user_title_kind\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\", \"kind\"), CONSTRAINT \"PK_ai_signal\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_signal_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
+        ],
+    },
 ];
