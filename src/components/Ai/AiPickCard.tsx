@@ -16,11 +16,16 @@ import {
 } from '@heroicons/react/24/outline';
 import type { AiPick, AiVerdict } from '@shared/interfaces/api/aiInterfaces';
 import type { MovieResult, TvResult } from '@shared/models/Search';
-import { useState, type ComponentType, type SVGProps } from 'react';
+import {
+  useCallback,
+  useState,
+  type ComponentType,
+  type SVGProps,
+} from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Ai.AiPickCard', {
-  why: 'Why?',
+  tip: 'Why it was picked',
   whyTitle: 'Why it’s here',
   open: 'Why {title} was picked, and feedback',
   close: 'Close',
@@ -69,13 +74,19 @@ interface AiPickCardProps {
 }
 
 /**
- * A pick as the app's usual poster. Like the rating badge, a small "Why?"
+ * A pick as the app's usual poster. Like the rating badge, a small lightbulb
  * badge shows on hover or tap; it opens a popover with the one-line reason
  * and feedback. Once rated, the badge stays visible with the rating.
  */
 const AiPickCard = ({ pick, onFeedback, canExpand }: AiPickCardProps) => {
   const intl = useIntl();
   const [saving, setSaving] = useState(false);
+  // Headless UI's `focus` prop focuses the panel before it is anchored, so the
+  // browser scrolls to the panel's unpositioned spot (the top of the page) and
+  // the opened popover ends up off screen. Focus it without scrolling instead.
+  const focusOnOpen = useCallback((el: HTMLButtonElement | null) => {
+    el?.focus({ preventScroll: true });
+  }, []);
   const item = pick.item as unknown as MovieResult | TvResult;
   const isMovie = pick.mediaType === 'movie';
   const title = isMovie ? (item as MovieResult).title : (item as TvResult).name;
@@ -98,20 +109,20 @@ const AiPickCard = ({ pick, onFeedback, canExpand }: AiPickCardProps) => {
       <Popover>
         <PopoverButton
           aria-label={intl.formatMessage(messages.open, { title })}
+          title={intl.formatMessage(messages.tip)}
           className="inline-flex items-center gap-1 rounded-lg border border-gray-600/70 bg-gray-800/85 px-2 py-1 text-[0.7rem] font-semibold leading-none text-white shadow-md backdrop-blur-[2px] transition hover:border-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 data-[open]:border-indigo-400"
         >
           {chosen ? (
-            <chosen.Icon className={`h-3.5 w-3.5 ${chosen.tone}`} />
+            <>
+              <chosen.Icon className={`h-3.5 w-3.5 ${chosen.tone}`} />
+              <span>{intl.formatMessage(messages[chosen.label])}</span>
+            </>
           ) : (
             <LightBulbIcon className="h-3.5 w-3.5 text-amber-300" />
           )}
-          <span>
-            {intl.formatMessage(chosen ? messages[chosen.label] : messages.why)}
-          </span>
         </PopoverButton>
         <PopoverPanel
           anchor={{ to: 'bottom start', gap: 6, padding: 8 }}
-          focus
           role="dialog"
           aria-label={intl.formatMessage(messages.whyTitle)}
           className="z-[100] w-72 max-w-[calc(100vw-16px)] rounded-xl border border-gray-600/80 bg-gray-900/95 p-3 shadow-2xl backdrop-blur-sm focus:outline-none"
@@ -127,6 +138,7 @@ const AiPickCard = ({ pick, onFeedback, canExpand }: AiPickCardProps) => {
               </p>
             </div>
             <CloseButton
+              ref={focusOnOpen}
               aria-label={intl.formatMessage(messages.close)}
               className="-mr-1 -mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >

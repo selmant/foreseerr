@@ -103,7 +103,7 @@ const messages = defineMessages('components.Ai.AiPicks', {
   unavailableNone:
     'There’s no AI connection you can use yet. Connect your own account, or ask your admin.',
   feedbackHint:
-    'Hover or tap a poster, then “Why?” to see why it was picked and rate it. Foreseerr learns your taste from it.',
+    'Hover or tap a poster, then its lightbulb to see why it was picked and rate it. Foreseerr learns your taste from it.',
   tasteLink: 'Your taste card',
 });
 

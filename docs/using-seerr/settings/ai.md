@@ -36,7 +36,7 @@ request again with that change. **Recent** reopens your earlier requests.
 ### Feedback and your taste card
 
 AI picks look like any other poster, with the same rating badges. Hover over
-or tap one, then press the **Why?** badge under the ratings. A small panel shows
+or tap one, then press the lightbulb badge under the ratings. A small panel shows
 why it was picked, with **Like**, **Not for me**, **Seen it** and **Don't
 suggest** buttons; select a choice again to take it back. This works on the AI
 Picks page and in Discover AI rows. Once you rate a pick, its badge shows your
