@@ -3168,7 +3168,7 @@
   "components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences.deleteHistory": "Delete all",
   "components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences.deleted": "Your AI request history was deleted.",
   "components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences.disabled": "AI features are turned off on this server.",
-  "components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences.hint": "Personalize AI Picks and your AI Discover rows. History changes save immediately.",
+  "components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences.hint": "Personalize AI Picks and your AI Discover rows.",
   "components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences.history": "Use my watch history",
   "components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences.historyData": "Request history",
   "components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences.historyDataHint": "Your AI requests, Discover row picks and weekly picks. Feedback and your taste card stay; reset them below.",

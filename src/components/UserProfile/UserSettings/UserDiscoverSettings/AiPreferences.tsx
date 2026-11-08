@@ -17,7 +17,7 @@ const messages = defineMessages(
   'components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences',
   {
     title: 'AI recommendations',
-    hint: 'Personalize AI Picks and your AI Discover rows. History changes save immediately.',
+    hint: 'Personalize AI Picks and your AI Discover rows.',
     account: 'Manage AI account',
     history: 'Use my watch history',
     historyHint:
@@ -39,12 +39,34 @@ const messages = defineMessages(
   }
 );
 
+/** AI preference changes not saved yet; a missing key is unchanged. */
+export type AiPrefsDraft = Partial<
+  Pick<AiMe['preferences'], 'useHistory' | 'weeklyPicks'>
+>;
+
+interface AiPreferencesProps {
+  /** Unsaved changes, saved with the page's Save button. */
+  draft: AiPrefsDraft;
+  onDraftChange: (draft: AiPrefsDraft) => void;
+}
+
 /** Personal recommendation preferences, separate from linked credentials. */
-const AiPreferences = () => {
+const AiPreferences = ({ draft, onDraftChange }: AiPreferencesProps) => {
   const intl = useIntl();
   const { addToast } = useToasts();
-  const { data, error, mutate } = useSWR<AiMe>('/api/v1/ai/me');
+  const { data, error } = useSWR<AiMe>('/api/v1/ai/me');
   const [saving, setSaving] = useState(false);
+
+  const value = (key: keyof AiPrefsDraft): boolean =>
+    draft[key] ?? data?.preferences[key] ?? false;
+  // Back to the saved value: no longer a change.
+  const change = (key: keyof AiPrefsDraft, next: boolean) => {
+    const rest = { ...draft };
+    delete rest[key];
+    onDraftChange(
+      data && data.preferences[key] === next ? rest : { ...rest, [key]: next }
+    );
+  };
 
   const deleteHistory = async () => {
     setSaving(true);
@@ -56,24 +78,6 @@ const AiPreferences = () => {
         appearance: 'success',
         autoDismiss: true,
       });
-    } catch (e) {
-      addToast(aiErrorOf(e, intl.formatMessage(globalMessages.error)).message, {
-        appearance: 'error',
-        autoDismiss: true,
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const save = async (change: {
-    useHistory?: boolean;
-    weeklyPicks?: boolean;
-  }) => {
-    setSaving(true);
-    try {
-      const res = await axios.post<AiMe>('/api/v1/ai/me', change);
-      await mutate(res.data, { revalidate: false });
     } catch (e) {
       addToast(aiErrorOf(e, intl.formatMessage(globalMessages.error)).message, {
         appearance: 'error',
@@ -128,11 +132,9 @@ const AiPreferences = () => {
               <input
                 id="ai-history"
                 type="checkbox"
-                checked={data.preferences.useHistory}
-                disabled={
-                  saving || (!data.enabled && !data.preferences.useHistory)
-                }
-                onChange={(e) => void save({ useHistory: e.target.checked })}
+                checked={value('useHistory')}
+                disabled={!data.enabled && !data.preferences.useHistory}
+                onChange={(e) => change('useHistory', e.target.checked)}
               />
             </div>
           </div>
@@ -148,9 +150,8 @@ const AiPreferences = () => {
                 <input
                   id="ai-weekly"
                   type="checkbox"
-                  checked={data.preferences.weeklyPicks}
-                  disabled={saving}
-                  onChange={(e) => void save({ weeklyPicks: e.target.checked })}
+                  checked={value('weeklyPicks')}
+                  onChange={(e) => change('weeklyPicks', e.target.checked)}
                 />
               </div>
             </div>

@@ -33,8 +33,9 @@ import type { DiscoverFilterDefaults } from '@shared/lib/discover/filterDefaults
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
-import useSWR from 'swr';
-import AiPreferences from './AiPreferences';
+import useSWR, { mutate as globalMutate } from 'swr';
+import type { AiMe } from '@shared/interfaces/api/aiInterfaces';
+import AiPreferences, { type AiPrefsDraft } from './AiPreferences';
 
 const messages = defineMessages(
   'components.UserProfile.UserSettings.UserDiscoverSettings',
@@ -125,6 +126,7 @@ const UserDiscoverSettings = () => {
     user ? `/api/v1/user/${user.id}/settings/discover` : null
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [aiDraft, setAiDraft] = useState<AiPrefsDraft>({});
   const [hiddenCount, setHiddenCount] = useState(0);
   const {
     draft,
@@ -152,11 +154,21 @@ const UserDiscoverSettings = () => {
     return <ErrorPage statusCode={500} />;
   }
 
+  const aiChanged = Object.keys(aiDraft).length > 0;
+  const unsaved = hasChanges || aiChanged;
+
   const save = async (payload: DiscoverFilterDefaults) => {
     setIsSaving(true);
     try {
-      await axios.post(`/api/v1/user/${user.id}/settings/discover`, payload);
-      await revalidate();
+      if (hasChanges) {
+        await axios.post(`/api/v1/user/${user.id}/settings/discover`, payload);
+        await revalidate();
+      }
+      if (aiChanged) {
+        const res = await axios.post<AiMe>('/api/v1/ai/me', aiDraft);
+        await globalMutate('/api/v1/ai/me', res.data, { revalidate: false });
+        setAiDraft({});
+      }
       addToast(intl.formatMessage(messages.toastSettingsSuccess), {
         appearance: 'success',
         autoDismiss: true,
@@ -739,28 +751,33 @@ const UserDiscoverSettings = () => {
           </div>
         </div>
       </div>
-      {currentUser?.id === user.id ? <AiPreferences /> : null}
+      {currentUser?.id === user.id ? (
+        <AiPreferences draft={aiDraft} onDraftChange={setAiDraft} />
+      ) : null}
       <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 border-t border-gray-700 bg-gray-900/95 px-4 py-3 shadow-lg backdrop-blur sm:bottom-0 lg:left-64">
         <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2 sm:gap-3">
           <p
             role="status"
-            className={`min-w-0 text-xs sm:text-sm ${hasChanges ? 'text-amber-200' : 'text-gray-400'}`}
+            className={`min-w-0 text-xs sm:text-sm ${unsaved ? 'text-amber-200' : 'text-gray-400'}`}
           >
             {intl.formatMessage(
-              hasChanges ? messages.unsavedChanges : messages.saved
+              unsaved ? messages.unsavedChanges : messages.saved
             )}
           </p>
           <Button
             className="min-h-11"
-            disabled={isSaving || !hasChanges}
-            onClick={discard}
+            disabled={isSaving || !unsaved}
+            onClick={() => {
+              discard();
+              setAiDraft({});
+            }}
           >
             {intl.formatMessage(messages.discard)}
           </Button>
           <Button
             buttonType="primary"
             className="min-h-11"
-            disabled={isSaving || !hasChanges}
+            disabled={isSaving || !unsaved}
             onClick={() => void save(draft)}
           >
             <ArrowDownOnSquareIcon className="hidden sm:block" />
