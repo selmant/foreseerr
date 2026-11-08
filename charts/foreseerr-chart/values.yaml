@@ -230,8 +230,10 @@ searxng:
     # -- SearXNG publishes date-based tags only
     tag: '2026.11.6-ac11e14c5'
     pullPolicy: IfNotPresent
-  # -- Existing Secret with SearXNG's cookie-signing key; when empty, the chart generates one and keeps it across upgrades
+  # -- Existing Secret with SearXNG's cookie-signing key; when empty, the chart generates one and keeps it across upgrades. Set it with Argo CD or other `helm template` GitOps tools, which would otherwise generate a new key on every render
   existingSecret: ''
+  # -- Require an existing signing Secret for deterministic GitOps renders (Argo CD and other helm template workflows)
+  gitOps: false
   # -- Key in the Secret
   secretKey: secret-key
   networkPolicy:

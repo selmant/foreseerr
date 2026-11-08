@@ -640,24 +640,54 @@ pub async fn complete(
         .filter(|m| !m.is_empty())
         .ok_or_else(|| AiError::input("No model is chosen for this connection yet."))?;
     let vault = vault(state)?;
-    let result = match conn.kind {
-        Kind::ChatGpt => {
-            let token = chatgpt::access_token(&state.outbound, &state.db, &vault, conn).await?;
-            responses::complete(&state.outbound, &token, model, prompt).await
+    let mut used_connection = conn.clone();
+    // Token refreshes run inside, so their failures are recorded too.
+    let result = async {
+        match conn.kind {
+            Kind::ChatGpt => {
+                let token = chatgpt::access_token(&state.outbound, &state.db, &vault, conn).await?;
+                // A refresh may have replaced the stored token set. Record
+                // rejection against that generation, without touching a
+                // different session that signed in meanwhile.
+                if let Ok(Some(current)) = store::load(&state.db, conn.owner).await {
+                    if matches!(current.credentials(&vault), Ok(Some(Credentials::ChatGpt(t))) if t.access_token == token) {
+                        used_connection = current;
+                    }
+                }
+                responses::complete(&state.outbound, &token, model, prompt).await
+            }
+            Kind::OpenAi => {
+                let base = conn
+                    .base_url
+                    .as_deref()
+                    .ok_or_else(AiError::not_configured)?;
+                let key = api_key(conn, &vault)?;
+                compat::complete(&state.outbound, base, key.as_ref(), model, prompt).await
+            }
         }
-        Kind::OpenAi => {
-            let base = conn
-                .base_url
-                .as_deref()
-                .ok_or_else(AiError::not_configured)?;
-            let key = api_key(conn, &vault)?;
-            compat::complete(&state.outbound, base, key.as_ref(), model, prompt).await
-        }
-    };
+    }
+    .await;
     let recorded = match &result {
-        Ok(_) => store::touch(&state.db, conn).await,
+        Ok(_) => store::touch(&state.db, &used_connection).await,
+        // OpenAI refused the token: show "Sign in again" instead of
+        // "Connected" (credentials kept; only a new sign-in replaces them).
+        Err(e)
+            if e.kind == ErrorKind::Reauth
+                && used_connection.kind == Kind::ChatGpt
+                && used_connection.status == Status::Ok =>
+        {
+            store::set_status(
+                &state.db,
+                &used_connection,
+                Status::Reauth,
+                Some(&e.message),
+                false,
+            )
+            .await
+            .map(drop)
+        }
         Err(e) if e.kind != ErrorKind::Input => {
-            store::set_error(&state.db, conn, Some(&e.message)).await
+            store::set_error(&state.db, &used_connection, Some(&e.message)).await
         }
         Err(_) => Ok(()),
     };
@@ -678,9 +708,19 @@ pub async fn test(
     conn: &Connection,
     model: Option<&str>,
 ) -> Result<Value, AiError> {
-    let listed = models(state, conn).await?;
-    let mut out = json!({"ok": true, "models": listed.len()});
-    if let Some(model) = model.filter(|m| !m.is_empty()) {
+    let model = model.filter(|m| !m.is_empty());
+    // Some endpoints serve completions but not the model list: with a
+    // model chosen, a listing failure doesn't stop the real check.
+    let listed = match models(state, conn).await {
+        Ok(list) => list.len(),
+        Err(e) if model.is_none() || e.kind == ErrorKind::Reauth => return Err(e),
+        Err(e) => {
+            tracing::info!("listing models failed during a connection test: {e}");
+            0
+        }
+    };
+    let mut out = json!({"ok": true, "models": listed});
+    if let Some(model) = model {
         let answer = complete(
             state,
             conn,
@@ -698,6 +738,33 @@ pub async fn test(
         }
     }
     Ok(out)
+}
+
+/// Before a user is deleted: revoke their `ChatGPT` session at `OpenAI`.
+///
+/// The row (and the refresh token) goes with the user and couldn't be
+/// revoked afterwards. Best effort; an unconfirmed revocation is logged so
+/// the admin can tell the person to remove Foreseerr in `ChatGPT`.
+pub async fn revoke_for_deleted_user(state: &AppState, user_id: i64) {
+    let conn = match store::load(&state.db, Owner::User(user_id)).await {
+        Ok(Some(c)) if c.kind == Kind::ChatGpt && c.has_credentials() => c,
+        Ok(_) => return,
+        Err(e) => {
+            tracing::warn!("loading the AI connection of deleted user {user_id} failed: {e:#}");
+            return;
+        }
+    };
+    let confirmed = match vault(state) {
+        Ok(v) => chatgpt::revoke(&state.outbound, &v, &conn).await,
+        Err(_) => false,
+    };
+    if confirmed {
+        tracing::info!("Revoked the ChatGPT session of deleted user {user_id}");
+    } else {
+        tracing::warn!(
+            "Couldn't confirm revoking the ChatGPT session of deleted user {user_id}. They can remove Foreseerr in their ChatGPT settings."
+        );
+    }
 }
 
 /// A user's preferences as the API returns them.

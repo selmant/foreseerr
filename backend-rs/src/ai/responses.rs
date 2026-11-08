@@ -60,7 +60,7 @@ pub async fn complete(
         let Some(chunk) = chunk else {
             break;
         };
-        reader.push(&String::from_utf8_lossy(&chunk));
+        reader.push_bytes(&chunk);
         while let Some(event) = reader.next_event() {
             if let Some(done) = reader.handle(&event)? {
                 return Ok(done);
@@ -78,11 +78,45 @@ struct Sse {
     buffer: String,
     text: String,
     final_text: Option<String>,
+    /// Bytes of a UTF-8 character split across chunks.
+    partial: Vec<u8>,
+    /// A `\r` that ended the last chunk: its `\n` may start the next one.
+    pending_cr: bool,
 }
 
 impl Sse {
+    /// Add raw bytes, keeping a character split across chunks whole.
+    fn push_bytes(&mut self, chunk: &[u8]) {
+        self.partial.extend_from_slice(chunk);
+        let bytes = std::mem::take(&mut self.partial);
+        let (text, rest) = match std::str::from_utf8(&bytes) {
+            Ok(text) => (text.to_owned(), &[][..]),
+            // Cut short at the end: keep the start of that character.
+            Err(e) if e.error_len().is_none() => {
+                let (valid, rest) = bytes.split_at(e.valid_up_to());
+                (String::from_utf8_lossy(valid).into_owned(), rest)
+            }
+            // Really invalid somewhere: replace it, as before.
+            Err(_) => (String::from_utf8_lossy(&bytes).into_owned(), &[][..]),
+        };
+        self.partial = rest.to_vec();
+        self.push(&text);
+    }
+
+    /// Add text. Line endings become `\n` (`\r\n` and a lone `\r`, as SSE
+    /// allows), including a `\r\n` split between two chunks.
     fn push(&mut self, chunk: &str) {
-        self.buffer.push_str(&chunk.replace("\r\n", "\n"));
+        let mut text = String::with_capacity(chunk.len().saturating_add(1));
+        if std::mem::take(&mut self.pending_cr) {
+            text.push('\r');
+        }
+        text.push_str(chunk);
+        if text.ends_with('\r') {
+            text.pop();
+            self.pending_cr = true;
+        }
+        self.buffer
+            .push_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
     }
 
     /// The `data:` payload of the next complete event, if one is buffered.
@@ -250,6 +284,53 @@ mod tests {
             err.map(|e| e.kind),
             Some(super::super::ErrorKind::UsageLimit),
             "usage limit"
+        );
+    }
+
+    #[test]
+    fn joins_line_endings_split_across_chunks() {
+        let mut sse = Sse::default();
+        sse.push("data: {\"type\":\"response.output_text.delta\",\"delta\":\"a\"}\r\n\r");
+        sse.push("\ndata: {\"type\":\"response.completed\"}\r\n\r\n");
+        let first = sse.next_event();
+        assert_eq!(
+            first
+                .as_ref()
+                .and_then(|e| e.get("delta"))
+                .and_then(Value::as_str),
+            Some("a"),
+            "first event ends at the split blank line"
+        );
+        let second = sse.next_event();
+        assert_eq!(
+            second
+                .as_ref()
+                .and_then(|e| e.get("type"))
+                .and_then(Value::as_str),
+            Some("response.completed"),
+            "second event stays separate"
+        );
+    }
+
+    #[test]
+    fn keeps_characters_split_across_chunks() {
+        let event = "data: {\"type\":\"response.output_text.done\",\"text\":\"Amélie ✓\"}\n\n";
+        let bytes = event.as_bytes();
+        let Some(cut) = event.find('é').map(|i| i.saturating_add(1)) else {
+            return;
+        };
+        let (head, tail) = bytes.split_at(cut);
+        let mut sse = Sse::default();
+        sse.push_bytes(head);
+        assert!(sse.next_event().is_none(), "partial");
+        sse.push_bytes(tail);
+        let done = sse.next_event();
+        assert_eq!(
+            done.as_ref()
+                .and_then(|e| e.get("text"))
+                .and_then(Value::as_str),
+            Some("Amélie ✓"),
+            "no replacement characters"
         );
     }
 

@@ -13,9 +13,39 @@ use serde_json::{json, Map, Value};
 use crate::db::{Bind, Db};
 use crate::vault::{Purpose, Secret, Vault};
 
-/// Serializes connection writes, so the server's single row can't be
-/// inserted twice by two admins at once.
+/// Serializes connection and preference writes that read before they
+/// write (check a destination or an account, then save), so two requests
+/// can't interleave: the server's single row can't be inserted twice, and a
+/// stale edit can't save over a newer one.
 static WRITES: LazyLock<tokio::sync::Mutex<()>> = LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+/// Proof that [`lock`] is held. Hold it across the read and the write it
+/// guards; never across a network call.
+#[derive(Debug)]
+pub struct WriteGuard(
+    #[expect(dead_code, reason = "held only for its drop, which releases the lock")]
+    tokio::sync::MutexGuard<'static, ()>,
+);
+
+/// Take the connection write lock.
+pub async fn lock() -> WriteGuard {
+    WriteGuard(WRITES.lock().await)
+}
+
+/// The SQL condition (and its bind) that a row still holds the credentials
+/// a request read, so a write based on that read can't undo a newer
+/// sign-in, sign-out or refresh.
+fn same_generation(conn: &Connection, param: usize) -> (String, Option<Bind>) {
+    conn.sealed.as_ref().map_or_else(
+        || (String::from(r#""credentials" IS NULL"#), None),
+        |sealed| {
+            (
+                format!(r#""credentials" = ?{param}"#),
+                Some(Bind::Text(sealed.clone())),
+            )
+        },
+    )
+}
 
 /// Who a connection belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -157,7 +187,7 @@ pub struct TokenSet {
     pub access_token: Secret,
     /// Rotating refresh token (30 days).
     pub refresh_token: Secret,
-    /// The last ID token, kept for `id_token_hint`.
+    /// The last ID token (refreshes may omit a new one).
     pub id_token: Secret,
     /// Access token expiry, Unix seconds.
     pub expires_at: i64,
@@ -309,14 +339,22 @@ pub struct Write {
     pub status: Status,
 }
 
-/// Insert or replace an owner's connection. Changing the kind drops the
-/// other kind's leftovers (credentials and identity).
+/// Insert or replace an owner's connection.
+///
+/// Changing the kind drops the other kind's leftovers (credentials and
+/// identity). The caller holds [`lock`] from the checks this write depends
+/// on until it returns.
 ///
 /// # Errors
 ///
 /// Fails on database errors or when sealing fails.
-pub async fn save(db: &Db, vault: &Vault, owner: Owner, write: Write) -> Result<()> {
-    let guard = WRITES.lock().await;
+pub async fn save(
+    db: &Db,
+    vault: &Vault,
+    owner: Owner,
+    write: Write,
+    _held: &WriteGuard,
+) -> Result<()> {
     let existing = load(db, owner).await?;
     let same_kind = existing.as_ref().is_some_and(|c| c.kind == write.kind);
     let sealed = match &write.credentials {
@@ -377,12 +415,14 @@ pub async fn save(db: &Db, vault: &Vault, owner: Owner, write: Write) -> Result<
         )
         .await?;
     }
-    drop(guard);
     Ok(())
 }
 
-/// Replace a `ChatGPT` connection's token set after a refresh, all fields
-/// together.
+/// Replace a `ChatGPT` connection's token set after a refresh.
+///
+/// All fields change together, unless the row changed since `conn` was
+/// read (signed out, signed in again, or refreshed by another request).
+/// Returns whether it was written.
 ///
 /// # Errors
 ///
@@ -392,21 +432,34 @@ pub async fn replace_tokens(
     vault: &Vault,
     conn: &Connection,
     tokens: &TokenSet,
-) -> Result<()> {
+    status: Status,
+) -> Result<bool> {
     let sealed = vault.seal(
         Purpose::AiCredential,
         &conn.owner.context(),
         &Credentials::ChatGpt(tokens.clone()).to_secret(),
     )?;
-    db.execute(
-        r#"UPDATE "ai_connection" SET "credentials" = ?1, "status" = 'ok', "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?2"#,
-        &[Bind::Text(sealed), Bind::Int(conn.id)],
-    )
-    .await?;
-    Ok(())
+    let (same, bind) = same_generation(conn, 4);
+    let mut binds = vec![
+        Bind::Text(sealed),
+        Bind::Text(status.as_str().to_owned()),
+        Bind::Int(conn.id),
+    ];
+    binds.extend(bind);
+    let written = db
+        .execute(
+            &format!(
+                r#"UPDATE "ai_connection" SET "credentials" = ?1, "status" = ?2, "lastError" = NULL, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3 AND {same}"#
+            ),
+            &binds,
+        )
+        .await?;
+    Ok(written > 0)
 }
 
-/// Set a connection's status, dropping its credentials when `clear`.
+/// Set a connection's status, dropping its credentials when `clear`,
+/// unless the row's credentials changed since `conn` was read. Returns
+/// whether it was written.
 ///
 /// # Errors
 ///
@@ -417,22 +470,28 @@ pub async fn set_status(
     status: Status,
     error: Option<&str>,
     clear: bool,
-) -> Result<()> {
-    let sql = if clear {
-        r#"UPDATE "ai_connection" SET "status" = ?1, "lastError" = ?2, "credentials" = NULL, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3"#
+) -> Result<bool> {
+    let creds = if clear {
+        r#", "credentials" = NULL"#
     } else {
-        r#"UPDATE "ai_connection" SET "status" = ?1, "lastError" = ?2, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3"#
+        ""
     };
-    db.execute(
-        sql,
-        &[
-            Bind::Text(status.as_str().to_owned()),
-            Bind::OptText(error.map(str::to_owned)),
-            Bind::Int(conn.id),
-        ],
-    )
-    .await?;
-    Ok(())
+    let (same, bind) = same_generation(conn, 4);
+    let mut binds = vec![
+        Bind::Text(status.as_str().to_owned()),
+        Bind::OptText(error.map(str::to_owned)),
+        Bind::Int(conn.id),
+    ];
+    binds.extend(bind);
+    let written = db
+        .execute(
+            &format!(
+                r#"UPDATE "ai_connection" SET "status" = ?1, "lastError" = ?2{creds}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ?3 AND {same}"#
+            ),
+            &binds,
+        )
+        .await?;
+    Ok(written > 0)
 }
 
 /// Record the last failure without changing the status.
@@ -441,9 +500,12 @@ pub async fn set_status(
 ///
 /// Fails on database errors.
 pub async fn set_error(db: &Db, conn: &Connection, error: Option<&str>) -> Result<()> {
+    let (same, bind) = same_generation(conn, 3);
+    let mut binds = vec![Bind::OptText(error.map(str::to_owned)), Bind::Int(conn.id)];
+    binds.extend(bind);
     db.execute(
-        r#"UPDATE "ai_connection" SET "lastError" = ?1 WHERE "id" = ?2"#,
-        &[Bind::OptText(error.map(str::to_owned)), Bind::Int(conn.id)],
+        &format!(r#"UPDATE "ai_connection" SET "lastError" = ?1 WHERE "id" = ?2 AND {same}"#),
+        &binds,
     )
     .await?;
     Ok(())
@@ -455,9 +517,12 @@ pub async fn set_error(db: &Db, conn: &Connection, error: Option<&str>) -> Resul
 ///
 /// Fails on database errors.
 pub async fn touch(db: &Db, conn: &Connection) -> Result<()> {
+    let (same, bind) = same_generation(conn, 2);
+    let mut binds = vec![Bind::Int(conn.id)];
+    binds.extend(bind);
     db.execute(
-        r#"UPDATE "ai_connection" SET "lastUsedAt" = CURRENT_TIMESTAMP, "lastError" = NULL WHERE "id" = ?1"#,
-        &[Bind::Int(conn.id)],
+        &format!(r#"UPDATE "ai_connection" SET "lastUsedAt" = CURRENT_TIMESTAMP, "lastError" = NULL WHERE "id" = ?1 AND {same}"#),
+        &binds,
     )
     .await?;
     Ok(())
@@ -556,46 +621,185 @@ pub async fn prefs(db: &Db, user_id: i64) -> Result<Prefs> {
     }))
 }
 
-/// Save a user's preferences. Turning history on stamps the consent time;
+/// A change to some of a user's preferences; `None` leaves a field as it is.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrefsChange {
+    /// Use their own connection.
+    pub use_own_connection: Option<bool>,
+    /// The preset on the server connection (`Some(None)` clears it).
+    pub model: Option<Option<String>>,
+    /// Send their history.
+    pub use_history: Option<bool>,
+}
+
+/// Apply a change to a user's preferences in one statement.
+///
+/// Fields the change doesn't name are never rewritten from a stale read.
+/// Turning history on stamps the consent time (kept if it was already on);
 /// turning it off clears it.
 ///
 /// # Errors
 ///
 /// Fails on database errors.
-pub async fn save_prefs(db: &Db, user_id: i64, prefs: &Prefs) -> Result<()> {
-    let previous = self::prefs(db, user_id).await?;
-    let consent_sql = match (previous.use_history, prefs.use_history) {
-        (false, true) => "CURRENT_TIMESTAMP",
-        (true, true) => r#""historyConsentAt""#,
-        (_, false) => "NULL",
-    };
-    let binds = [
-        Bind::Bool(prefs.use_own_connection),
-        Bind::OptText(prefs.model.clone()),
-        Bind::Bool(prefs.use_history),
-        Bind::Int(user_id),
-    ];
-    let updated = db
-        .execute(
-            &format!(
-                r#"UPDATE "ai_user_settings" SET "useOwnConnection" = ?1, "model" = ?2, "useHistory" = ?3, "historyConsentAt" = {consent_sql}, "updatedAt" = CURRENT_TIMESTAMP WHERE "userId" = ?4"#
-            ),
-            &binds,
-        )
-        .await?;
-    if updated == 0 {
-        let consent_sql = if prefs.use_history {
-            "CURRENT_TIMESTAMP"
-        } else {
-            "NULL"
-        };
-        db.execute(
-            &format!(
-                r#"INSERT INTO "ai_user_settings" ("useOwnConnection", "model", "useHistory", "historyConsentAt", "userId") VALUES (?1, ?2, ?3, {consent_sql}, ?4)"#
-            ),
-            &binds,
-        )
-        .await?;
+pub async fn update_prefs(db: &Db, user_id: i64, change: &PrefsChange) -> Result<()> {
+    // The row first, if missing; a concurrent first save just finds it.
+    db.execute(
+        r#"INSERT INTO "ai_user_settings" ("useOwnConnection", "model", "useHistory", "historyConsentAt", "userId") VALUES (?1, NULL, ?2, NULL, ?3) ON CONFLICT ("userId") DO NOTHING"#,
+        &[Bind::Bool(false), Bind::Bool(false), Bind::Int(user_id)],
+    )
+    .await?;
+    let mut sets: Vec<String> = Vec::new();
+    let mut binds = vec![Bind::Int(user_id)];
+    if let Some(own) = change.use_own_connection {
+        binds.push(Bind::Bool(own));
+        sets.push(format!(r#""useOwnConnection" = ?{}"#, binds.len()));
     }
+    if let Some(model) = &change.model {
+        binds.push(Bind::OptText(model.clone()));
+        sets.push(format!(r#""model" = ?{}"#, binds.len()));
+    }
+    if let Some(history) = change.use_history {
+        // SET reads the old row, so this sees whether it was already on.
+        sets.push(String::from(if history {
+            r#""historyConsentAt" = CASE WHEN "useHistory" THEN "historyConsentAt" ELSE CURRENT_TIMESTAMP END"#
+        } else {
+            r#""historyConsentAt" = NULL"#
+        }));
+        binds.push(Bind::Bool(history));
+        sets.push(format!(r#""useHistory" = ?{}"#, binds.len()));
+    }
+    if sets.is_empty() {
+        return Ok(());
+    }
+    db.execute(
+        &format!(
+            r#"UPDATE "ai_user_settings" SET {}, "updatedAt" = CURRENT_TIMESTAMP WHERE "userId" = ?1"#,
+            sets.join(", ")
+        ),
+        &binds,
+    )
+    .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vault::KeySource;
+
+    async fn database() -> Result<Db> {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await?;
+        let db = Db::Sqlite(pool);
+        crate::dbmigrate::run(&db, &crate::dbmigrate::migrations(&db)).await?;
+        db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'test@example.test', 0, 1, '')"#, &[]).await?;
+        Ok(db)
+    }
+
+    fn tokens(label: &str) -> TokenSet {
+        TokenSet {
+            access_token: Secret::new(format!("access-{label}")),
+            refresh_token: Secret::new(format!("refresh-{label}")),
+            id_token: Secret::new(format!("id-{label}")),
+            expires_at: i64::MAX,
+            scopes: vec![String::from("test")],
+        }
+    }
+
+    async fn save_session(db: &Db, vault: &Vault, label: &str) -> Result<Connection> {
+        let held = lock().await;
+        save(
+            db,
+            vault,
+            Owner::User(1),
+            Write {
+                kind: Kind::ChatGpt,
+                base_url: None,
+                model: None,
+                credentials: Some(Some(Credentials::ChatGpt(tokens(label)))),
+                identity: None,
+                status: Status::Ok,
+            },
+            &held,
+        )
+        .await?;
+        load(db, Owner::User(1))
+            .await?
+            .ok_or_else(|| anyhow!("missing saved connection"))
+    }
+
+    #[tokio::test]
+    async fn stale_refresh_and_signout_preserve_new_sessions() -> Result<()> {
+        let db = database().await?;
+        let vault = Vault::from_master(&[7; 32], KeySource::Env)?;
+        let old = save_session(&db, &vault, "old").await?;
+        assert!(set_status(&db, &old, Status::SignedOut, None, true).await?);
+        assert!(!replace_tokens(&db, &vault, &old, &tokens("stale"), Status::Ok).await?);
+        assert_eq!(
+            load(&db, old.owner).await?.map(|c| c.status),
+            Some(Status::SignedOut)
+        );
+        let new = save_session(&db, &vault, "new").await?;
+        assert!(!set_status(&db, &old, Status::SignedOut, None, true).await?);
+        assert!(!set_status(&db, &old, Status::Reauth, None, true).await?);
+        assert!(!replace_tokens(&db, &vault, &old, &tokens("stale"), Status::Ok).await?);
+        let current = load(&db, old.owner)
+            .await?
+            .ok_or_else(|| anyhow!("missing connection"))?;
+        assert_eq!(current.sealed, new.sealed);
+        assert_eq!(current.status, Status::Ok);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn overlapping_preference_changes_preserve_history_optout() -> Result<()> {
+        let db = database().await?;
+        let own = PrefsChange {
+            use_own_connection: Some(true),
+            ..PrefsChange::default()
+        };
+        let history = PrefsChange {
+            use_history: Some(true),
+            ..PrefsChange::default()
+        };
+        let (a, b) = tokio::join!(update_prefs(&db, 1, &own), update_prefs(&db, 1, &history));
+        a?;
+        b?;
+        let before = prefs(&db, 1).await?;
+        assert!(before.use_own_connection && before.use_history);
+        assert!(before.history_consent_at.is_some());
+        let model = PrefsChange {
+            model: Some(Some(String::from("fast"))),
+            ..PrefsChange::default()
+        };
+        let off = PrefsChange {
+            use_history: Some(false),
+            ..PrefsChange::default()
+        };
+        let (a, b) = tokio::join!(update_prefs(&db, 1, &model), update_prefs(&db, 1, &off));
+        a?;
+        b?;
+        let after = prefs(&db, 1).await?;
+        assert!(after.use_own_connection);
+        assert!(!after.use_history);
+        assert_eq!(after.history_consent_at, None);
+        assert_eq!(after.model.as_deref(), Some("fast"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn database_enforces_one_server_connection() -> Result<()> {
+        let db = database().await?;
+        let sql = r#"INSERT INTO "ai_connection" ("kind", "userId") VALUES ('openai', NULL)"#;
+        db.execute(sql, &[]).await?;
+        assert!(db.execute(sql, &[]).await.is_err());
+        db.execute(
+            r#"INSERT INTO "ai_connection" ("kind", "userId") VALUES ('openai', 1)"#,
+            &[],
+        )
+        .await?;
+        Ok(())
+    }
 }

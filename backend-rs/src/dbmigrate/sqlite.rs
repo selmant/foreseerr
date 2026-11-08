@@ -1311,6 +1311,13 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "CREATE TABLE \"ai_taste\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"card\" text NOT NULL, \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"updatedAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_taste_user\" UNIQUE (\"userId\"), CONSTRAINT \"FK_ai_taste_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
         ],
     },
+    Migration {
+        timestamp: 1_790_100_000_000,
+        name: "UniqueAiServerConnection1790100000000",
+        queries: &[
+            "CREATE UNIQUE INDEX \"UQ_ai_connection_server\" ON \"ai_connection\" ((1)) WHERE \"userId\" IS NULL",
+        ],
+    },
 ];
 
 /// `SeerrMigration1759769291608` from `server/lib/overseerrMerge.ts`,

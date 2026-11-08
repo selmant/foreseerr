@@ -8,13 +8,14 @@
 //! response carries a key or token, only whether one is set.
 
 use std::future::Future;
+use std::ops::ControlFlow;
 use std::pin::Pin;
 
 use axum::http::Method;
 use serde_json::{json, Map, Value};
 
 use super::{Outcome, Ready, Table, ADMIN};
-use crate::ai::store::{self, Connection, Credentials, Kind, Owner, Prefs, Status};
+use crate::ai::store::{self, Connection, Credentials, Kind, Owner, PrefsChange, Status};
 use crate::ai::{self, chatgpt, compat, AiError, Policy, Preset};
 use crate::auth::CurrentUser;
 use crate::vault::{KeySource, Secret};
@@ -274,19 +275,39 @@ fn admin_policy<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(c) => c,
             Err(e) => return fail(ctx, &e),
         };
+        // Checked on the merged result, under the settings lock: a partial
+        // update can't turn search on without an address, or clear the
+        // address while search stays on.
         let saved = ctx
             .state
             .settings
-            .update(|doc| {
-                if let Some(root) = doc.as_object_mut() {
-                    let mut current = root.get("ai").cloned().unwrap_or_else(|| json!({}));
-                    crate::settings::merge(&mut current, Value::Object(changes));
-                    root.insert(String::from("ai"), current);
+            .mutate(|doc| {
+                let Some(root) = doc.as_object_mut() else {
+                    return ControlFlow::Continue(());
+                };
+                let mut current = root.get("ai").cloned().unwrap_or_else(|| json!({}));
+                crate::settings::merge(&mut current, Value::Object(changes));
+                let search_on = current.pointer("/searxng/enabled") == Some(&Value::Bool(true));
+                let no_url = current
+                    .pointer("/searxng/url")
+                    .and_then(Value::as_str)
+                    .is_none_or(|u| u.trim().is_empty());
+                if search_on && no_url {
+                    return ControlFlow::Break(());
                 }
+                root.insert(String::from("ai"), current);
+                ControlFlow::Continue(())
             })
             .await;
-        if let Err(e) = saved {
-            return fail(ctx, &db_err(&e));
+        match saved {
+            Ok(ControlFlow::Continue(())) => {}
+            Ok(ControlFlow::Break(())) => {
+                return fail(
+                    ctx,
+                    &AiError::input("Enter the SearXNG address to turn web search on."),
+                );
+            }
+            Err(e) => return fail(ctx, &db_err(&e)),
         }
         tracing::info!("AI settings changed by user {user}");
         match admin_view(ctx).await {
@@ -297,12 +318,13 @@ fn admin_policy<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 }
 
 /// Save an endpoint connection for `owner` from a request body. A stored
-/// key is never sent to a different host: moving the endpoint means
+/// key is never sent to a different destination: moving the endpoint means
 /// entering the key again.
 async fn save_endpoint(
     ctx: &Ready<'_>,
     owner: Owner,
     body: &Map<String, Value>,
+    held: &store::WriteGuard,
 ) -> Result<(), AiError> {
     let base = compat::normalize_base_url(
         &text(body, "baseUrl").ok_or_else(|| AiError::input("Enter the endpoint's base URL."))?,
@@ -323,7 +345,7 @@ async fn save_endpoint(
     } else if !clearing && existing.is_some() {
         if moved && has_key {
             return Err(AiError::input(
-                "The endpoint moved to another host. Enter the API key again so the saved one isn't sent there.",
+                "The endpoint moved to another address. Enter the API key again so the saved one isn't sent there.",
             ));
         }
         None
@@ -344,6 +366,7 @@ async fn save_endpoint(
             identity: None,
             status: Status::Ok,
         },
+        held,
     )
     .await
     .map_err(|e| db_err(&e))
@@ -364,7 +387,10 @@ fn admin_put<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(u) => u.id,
             Err(out) => return *out,
         };
-        if let Err(e) = save_endpoint(ctx, Owner::Server, &body(ctx)).await {
+        let held = store::lock().await;
+        let saved = save_endpoint(ctx, Owner::Server, &body(ctx), &held).await;
+        drop(held);
+        if let Err(e) = saved {
             return fail(ctx, &e);
         }
         tracing::info!("AI server connection saved by user {user}");
@@ -382,7 +408,10 @@ fn admin_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(u) => u.id,
             Err(out) => return *out,
         };
-        if let Err(e) = store::delete(&ctx.state.db, Owner::Server).await {
+        let held = store::lock().await;
+        let removed = store::delete(&ctx.state.db, Owner::Server).await;
+        drop(held);
+        if let Err(e) = removed {
             return fail(ctx, &db_err(&e));
         }
         tracing::info!("AI server connection removed by user {user}");
@@ -402,7 +431,11 @@ async fn load_required(ctx: &Ready<'_>, owner: Owner) -> Result<Connection, AiEr
 
 async fn set_model(ctx: &Ready<'_>, owner: Owner) -> Result<Value, AiError> {
     let conn = load_required(ctx, owner).await?;
-    let model = model_field(&body(ctx), "model")?.or_keep(None);
+    // An omitted field keeps the model; `null` or blank clears it.
+    let model = match model_field(&body(ctx), "model")? {
+        Change::Keep => return connection_view(ctx, owner).await,
+        change @ (Change::Clear | Change::Set(_)) => change.or_keep(None),
+    };
     store::set_model(&ctx.state.db, &conn, model.as_deref())
         .await
         .map_err(|e| db_err(&e))?;
@@ -551,7 +584,20 @@ fn me_get<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 async fn save_prefs(ctx: &Ready<'_>, user: &CurrentUser) -> Result<(), AiError> {
     let body = body(ctx);
     let db = &ctx.state.db;
-    let mut prefs = store::prefs(db, user.id).await.map_err(|e| db_err(&e))?;
+    let mut change = PrefsChange::default();
+    match body.get("model") {
+        Some(Value::String(p)) if Preset::parse(p).is_some() => {
+            change.model = Some(Some(p.clone()));
+        }
+        Some(Value::Null) => change.model = Some(None),
+        Some(_) => return Err(AiError::input("Pick fast, balanced or best.")),
+        None => {}
+    }
+    if let Some(Value::Bool(history)) = body.get("useHistory") {
+        change.use_history = Some(*history);
+    }
+    // Held so a removal can't land between the check and the switch.
+    let held = store::lock().await;
     if let Some(Value::Bool(own)) = body.get("useOwnConnection") {
         if *own
             && store::load(db, Owner::User(user.id))
@@ -561,20 +607,13 @@ async fn save_prefs(ctx: &Ready<'_>, user: &CurrentUser) -> Result<(), AiError> 
         {
             return Err(AiError::input("Connect your own account first."));
         }
-        prefs.use_own_connection = *own;
+        change.use_own_connection = Some(*own);
     }
-    match body.get("model") {
-        Some(Value::String(p)) if Preset::parse(p).is_some() => prefs.model = Some(p.clone()),
-        Some(Value::Null) => prefs.model = None,
-        Some(_) => return Err(AiError::input("Pick fast, balanced or best.")),
-        None => {}
-    }
-    if let Some(Value::Bool(history)) = body.get("useHistory") {
-        prefs.use_history = *history;
-    }
-    store::save_prefs(db, user.id, &prefs)
+    store::update_prefs(db, user.id, &change)
         .await
-        .map_err(|e| db_err(&e))
+        .map_err(|e| db_err(&e))?;
+    drop(held);
+    Ok(())
 }
 
 /// `POST /ai/me`: which connection to use, the preset, and history consent.
@@ -593,13 +632,11 @@ fn me_prefs<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 
 /// Switch a user to their own connection after they set one up.
 async fn use_own(ctx: &Ready<'_>, user_id: i64, on: bool) -> Result<(), AiError> {
-    let db = &ctx.state.db;
-    let mut prefs: Prefs = store::prefs(db, user_id).await.map_err(|e| db_err(&e))?;
-    if prefs.use_own_connection == on {
-        return Ok(());
-    }
-    prefs.use_own_connection = on;
-    store::save_prefs(db, user_id, &prefs)
+    let change = PrefsChange {
+        use_own_connection: Some(on),
+        ..PrefsChange::default()
+    };
+    store::update_prefs(&ctx.state.db, user_id, &change)
         .await
         .map_err(|e| db_err(&e))
 }
@@ -610,6 +647,21 @@ fn require_enabled(ctx: &Ready<'_>) -> Result<Policy, AiError> {
         Ok(policy)
     } else {
         Err(AiError::input("AI features are turned off on this server."))
+    }
+}
+
+/// Their own connection, when AI is on and the admin still allows its
+/// provider: a provider turned off later can't be used to send requests.
+async fn usable_own(ctx: &Ready<'_>, user: &CurrentUser) -> Result<Connection, AiError> {
+    let policy = require_enabled(ctx)?;
+    let conn = load_required(ctx, Owner::User(user.id)).await?;
+    if policy.allows_own(conn.kind, user) {
+        Ok(conn)
+    } else {
+        Err(AiError::not_eligible(match conn.kind {
+            Kind::ChatGpt => "Your admin no longer allows connecting ChatGPT accounts.",
+            Kind::OpenAi => "Your admin no longer allows personal endpoints.",
+        }))
     }
 }
 
@@ -628,7 +680,9 @@ fn me_put<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 ));
             }
             // Replacing a live ChatGPT sign-in would drop its tokens without
-            // revoking them at OpenAI; signing out first does.
+            // revoking them at OpenAI; signing out first does. The lock keeps
+            // a sign-in from landing between this check and the save.
+            let held = store::lock().await;
             let signed_in_chatgpt = store::load(&ctx.state.db, Owner::User(user.id))
                 .await
                 .map_err(|e| db_err(&e))?
@@ -638,7 +692,8 @@ fn me_put<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                     "Sign out of ChatGPT before adding an endpoint.",
                 ));
             }
-            save_endpoint(ctx, Owner::User(user.id), &body(ctx)).await?;
+            save_endpoint(ctx, Owner::User(user.id), &body(ctx), &held).await?;
+            drop(held);
             use_own(ctx, user.id, true).await?;
             tracing::info!("User {} saved their own AI endpoint", user.id);
             me_view(ctx, user).await
@@ -659,9 +714,11 @@ fn me_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         let result = async {
             let owner = Owner::User(user.id);
+            let held = store::lock().await;
             let conn = load_required(ctx, owner).await?;
             let mut revoked = None;
             if conn.kind == Kind::ChatGpt && conn.status != Status::SignedOut {
+                drop(held);
                 let vault = ai::vault(ctx.state)?;
                 let confirmed =
                     chatgpt::sign_out(&ctx.state.outbound, &ctx.state.db, &vault, &conn)
@@ -677,6 +734,7 @@ fn me_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                     .await
                     .map_err(|e| db_err(&e))?;
                 use_own(ctx, user.id, false).await?;
+                drop(held);
                 tracing::info!("User {} removed their own AI connection", user.id);
             }
             let mut view = me_view(ctx, user).await?;
@@ -713,10 +771,12 @@ fn me_test<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(u) => u,
             Err(out) => return *out,
         };
-        let result = match require_enabled(ctx) {
-            Ok(_) => run_test(ctx, Owner::User(user.id)).await,
-            Err(e) => Err(e),
-        };
+        let result = async {
+            let conn = usable_own(ctx, user).await?;
+            let model = model_field(&body(ctx), "model")?.or_keep(conn.model.clone());
+            ai::test(ctx.state, &conn, model.as_deref()).await
+        }
+        .await;
         me_answer(ctx, result)
     })
 }
@@ -728,8 +788,8 @@ fn me_models<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(u) => u,
             Err(out) => return *out,
         };
-        let result = match require_enabled(ctx) {
-            Ok(_) => list_models(ctx, Owner::User(user.id)).await,
+        let result = match usable_own(ctx, user).await {
+            Ok(conn) => ai::models(ctx.state, &conn).await.map(|m| models_json(&m)),
             Err(e) => Err(e),
         };
         me_answer(ctx, result)
@@ -751,21 +811,16 @@ fn me_chatgpt_start<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 ));
             }
             let host = ai::host_id(ctx.state).await?;
-            let vault = ai::vault(ctx.state)?;
             let existing = store::load(&ctx.state.db, Owner::User(user.id))
                 .await
                 .map_err(|e| db_err(&e))?
                 .filter(|c| c.kind == Kind::ChatGpt);
-            let hint = existing
-                .as_ref()
-                .and_then(|c| chatgpt::id_token_hint(&vault, c));
             let consent = body(ctx).get("consent") == Some(&Value::Bool(true));
             let started = chatgpt::start(
                 Owner::User(user.id),
                 user.id,
                 &host,
                 existing.as_ref(),
-                hint.as_ref(),
                 consent,
             )?;
             Ok(json!({
@@ -807,7 +862,13 @@ fn me_chatgpt_complete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Err(out) => return *out,
         };
         let result = async {
-            require_enabled(ctx)?;
+            // Rechecked here: the admin may have turned ChatGPT off since
+            // this sign-in started.
+            if !require_enabled(ctx)?.allows_own(Kind::ChatGpt, user) {
+                return Err(AiError::not_eligible(
+                    "Your admin hasn't allowed connecting ChatGPT accounts.",
+                ));
+            }
             let pasted = text(&body(ctx), "callbackUrl")
                 .ok_or_else(|| AiError::input("Paste the address from the sign-in page."))?;
             let vault = ai::vault(ctx.state)?;

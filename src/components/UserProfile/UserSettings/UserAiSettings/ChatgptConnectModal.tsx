@@ -10,6 +10,7 @@ import {
   ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
   ClipboardDocumentIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/solid';
 import type { AiErrorBody, AiMe } from '@shared/interfaces/api/aiInterfaces';
 import axios from 'axios';
@@ -46,6 +47,7 @@ const messages = defineMessages(
     openAgain: 'Open ChatGPT again',
     startAgain: 'Start again',
     doneTitle: 'You’re using your ChatGPT plan',
+    doneNoPlanTitle: 'Signed in, but your plan can’t be used',
     doneSignedIn: 'Signed in as {email}.',
     doneBody:
       'Your Foreseerr requests now count toward your ChatGPT plan’s limits. Nobody else can use this connection.',
@@ -61,6 +63,8 @@ type Step = 'intro' | 'waiting' | 'done';
 
 type ChatgptConnectModalProps = {
   redirectUri: string;
+  /** Ask ChatGPT to show the consent screen again (plan use was declined). */
+  consent?: boolean;
   onClose: () => void;
   onConnected: (me: AiMe) => void;
 };
@@ -116,7 +120,7 @@ const openSignIn = (url: string) => {
 const ChatgptConnectModal = forwardRef<
   HTMLDivElement,
   ChatgptConnectModalProps
->(({ redirectUri, onClose, onConnected }, ref) => {
+>(({ redirectUri, consent = false, onClose, onConnected }, ref) => {
   const intl = useIntl();
   const [step, setStep] = useState<Step>('intro');
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
@@ -142,7 +146,7 @@ const ChatgptConnectModal = forwardRef<
     try {
       const res = await axios.post<{ authorizeUrl: string }>(
         '/api/v1/ai/me/chatgpt/start',
-        {}
+        consent ? { consent: true } : {}
       );
       setAuthorizeUrl(res.data.authorizeUrl);
     } catch (e) {
@@ -150,7 +154,7 @@ const ChatgptConnectModal = forwardRef<
     } finally {
       setStarting(false);
     }
-  }, [intl]);
+  }, [intl, consent]);
 
   useEffect(() => {
     void start();
@@ -272,31 +276,36 @@ const ChatgptConnectModal = forwardRef<
   if (step === 'done' && result) {
     const email = result.own?.accountEmail;
     const usageUrl = result.own?.manageUsageUrl;
+    const noPlan = result.planEnabled === false;
     return (
       <Modal
         ref={ref}
-        title={intl.formatMessage(messages.doneTitle)}
+        title={intl.formatMessage(
+          noPlan ? messages.doneNoPlanTitle : messages.doneTitle
+        )}
         onOk={onClose}
         okText={intl.formatMessage(messages.done)}
       >
         <div className="flex items-start gap-3">
-          <CheckCircleIcon className="h-8 w-8 shrink-0 text-green-400" />
+          {noPlan ? (
+            <ExclamationTriangleIcon className="h-8 w-8 shrink-0 text-yellow-400" />
+          ) : (
+            <CheckCircleIcon className="h-8 w-8 shrink-0 text-green-400" />
+          )}
           <div className="space-y-2 text-gray-300">
             {email ? (
               <p className="font-semibold text-white">
                 {intl.formatMessage(messages.doneSignedIn, { email })}
               </p>
             ) : null}
-            <p>{intl.formatMessage(messages.doneBody)}</p>
+            <p>
+              {intl.formatMessage(
+                noPlan ? messages.doneNoPlan : messages.doneBody
+              )}
+            </p>
             <p className="text-sm text-gray-400">
               {intl.formatMessage(messages.doneCloseWindow)}
             </p>
-            {result.planEnabled === false ? (
-              <Alert
-                type="warning"
-                title={intl.formatMessage(messages.doneNoPlan)}
-              />
-            ) : null}
             {usageUrl ? (
               <a
                 href={usageUrl}

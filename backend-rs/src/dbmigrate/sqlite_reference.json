@@ -278,6 +278,12 @@
     },
     {
       "type": "index",
+      "name": "UQ_ai_connection_server",
+      "tbl_name": "ai_connection",
+      "sql": "CREATE UNIQUE INDEX \"UQ_ai_connection_server\" ON \"ai_connection\" ((1)) WHERE \"userId\" IS NULL"
+    },
+    {
+      "type": "index",
       "name": "UQ_user_settings_anilistUserId",
       "tbl_name": "user_settings",
       "sql": "CREATE UNIQUE INDEX \"UQ_user_settings_anilistUserId\" ON \"user_settings\" (\"anilistUserId\") WHERE \"anilistUserId\" IS NOT NULL"
@@ -937,6 +943,11 @@
       "id": 90,
       "timestamp": 1790000000000,
       "name": "AddAiRecommendations1790000000000"
+    },
+    {
+      "id": 91,
+      "timestamp": 1790100000000,
+      "name": "UniqueAiServerConnection1790100000000"
     }
   ]
 }

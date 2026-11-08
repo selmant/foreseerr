@@ -283,6 +283,12 @@
       "sql": "CREATE INDEX \"IDX_release_sync_state_lease_expires_at\" ON \"release_sync_state\" (\"leaseExpiresAt\") "
     },
     {
+      "type": "index",
+      "name": "UQ_ai_connection_server",
+      "tbl_name": "ai_connection",
+      "sql": "CREATE UNIQUE INDEX \"UQ_ai_connection_server\" ON \"ai_connection\" ((1)) WHERE \"userId\" IS NULL"
+    },
+    {
       "type": "table",
       "name": "ai_connection",
       "tbl_name": "ai_connection",

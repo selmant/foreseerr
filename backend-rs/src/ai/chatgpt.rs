@@ -107,7 +107,6 @@ pub fn start(
     user_id: i64,
     host_id: &str,
     existing: Option<&Connection>,
-    id_token_hint: Option<&Secret>,
     force_consent: bool,
 ) -> Result<Started, AiError> {
     let state = random_token(32)?;
@@ -125,9 +124,6 @@ pub fn start(
         q.append_pair("response_type", "code");
         if let Some((client_id, conn)) = &returning {
             q.append_pair("client_id", client_id);
-            if let Some(hint) = id_token_hint {
-                q.append_pair("id_token_hint", hint.expose());
-            }
             if let Some(email) = conn.account_email.as_deref() {
                 q.append_pair("login_hint", email);
             }
@@ -276,13 +272,35 @@ pub async fn complete(
         verify_id_token(client, tokens.id_token.expose(), &client_id, &attempt.nonce).await?;
     let subject = claim(&claims, "sub")
         .ok_or_else(|| AiError::upstream("The ChatGPT ID token has no subject."))?;
-    if attempt.subject.as_deref().is_some_and(|s| s != subject) {
-        return Err(AiError::input(
+    let different_account = || {
+        AiError::input(
             "You signed in to a different ChatGPT account than the connected one. Disconnect first to switch accounts.",
-        ));
+        )
+    };
+    if attempt.subject.as_deref().is_some_and(|s| s != subject) {
+        revoke_token(client, &tokens.refresh_token, &client_id).await;
+        return Err(different_account());
     }
     let plan_enabled = tokens.scopes.iter().any(|s| s == PLAN_SCOPE);
-    store::save(
+    // Checked again under the write lock, against what's stored now: two
+    // first-time sign-ins can't have the later one replace the earlier
+    // account's tokens without revoking them.
+    let held = store::lock().await;
+    let current = store::load(db, attempt.owner)
+        .await
+        .map_err(|e| AiError::internal(format!("{e:#}")))?;
+    if current
+        .as_ref()
+        .filter(|c| c.kind == store::Kind::ChatGpt)
+        .and_then(|c| c.account_subject.as_deref())
+        .is_some_and(|s| s != subject)
+    {
+        drop(held);
+        revoke_token(client, &tokens.refresh_token, &client_id).await;
+        return Err(different_account());
+    }
+    let refresh = tokens.refresh_token.clone();
+    let saved = store::save(
         db,
         vault,
         attempt.owner,
@@ -292,7 +310,7 @@ pub async fn complete(
             model,
             credentials: Some(Some(Credentials::ChatGpt(tokens))),
             identity: Some(Identity {
-                client_id,
+                client_id: client_id.clone(),
                 subject,
                 email: claim(&claims, "email"),
                 name: claim(&claims, "name"),
@@ -303,9 +321,17 @@ pub async fn complete(
                 Status::PlanDisabled
             },
         },
+        &held,
     )
-    .await
-    .map_err(|e| AiError::internal(format!("saving the connection failed: {e:#}")))?;
+    .await;
+    drop(held);
+    if let Err(e) = saved {
+        // Tokens that couldn't be kept shouldn't stay live at OpenAI.
+        revoke_token(client, &refresh, &client_id).await;
+        return Err(AiError::internal(format!(
+            "saving the connection failed: {e:#}"
+        )));
+    }
     Ok(Finished {
         owner: attempt.owner,
         plan_enabled,
@@ -560,9 +586,30 @@ pub async fn access_token(
     match result {
         Ok(body) => {
             let next = token_set(&body, Some(&tokens))?;
-            store::replace_tokens(db, vault, &fresh, &next)
+            // The same scope check as after sign-in: a refresh that comes
+            // back without plan access can't be used for requests.
+            let plan_enabled = next.scopes.iter().any(|s| s == PLAN_SCOPE);
+            let status = if plan_enabled {
+                Status::Ok
+            } else {
+                Status::PlanDisabled
+            };
+            let written = store::replace_tokens(db, vault, &fresh, &next, status)
                 .await
                 .map_err(|e| AiError::internal(format!("{e:#}")))?;
+            if !written {
+                // Signed out or signed in again meanwhile: these tokens
+                // belong to a session that's no longer stored.
+                revoke_token(client, &next.refresh_token, &client_id).await;
+                return Err(AiError::reauth(
+                    "This ChatGPT connection changed while it was in use. Try again.",
+                ));
+            }
+            if !plan_enabled {
+                return Err(AiError::reauth(
+                    "ChatGPT plan use is no longer allowed for Foreseerr. Sign in again and allow it.",
+                ));
+            }
             Ok(next.access_token)
         }
         Err(e)
@@ -616,18 +663,61 @@ fn tokens_of(vault: &Vault, conn: &Connection) -> Result<TokenSet, AiError> {
     }
 }
 
-/// The ID token kept for `id_token_hint`, when it opens.
-#[must_use]
-pub fn id_token_hint(vault: &Vault, conn: &Connection) -> Option<Secret> {
-    match conn.credentials(vault) {
-        Ok(Some(Credentials::ChatGpt(t))) => Some(t.id_token),
-        Ok(Some(Credentials::ApiKey(_)) | None) | Err(_) => None,
+/// Revoke one refresh token at `OpenAI`, retrying transient failures.
+/// Returns whether `OpenAI` confirmed it.
+pub async fn revoke_token(
+    client: &reqwest::Client,
+    refresh_token: &Secret,
+    client_id: &str,
+) -> bool {
+    let body = form_body(&[
+        ("token", refresh_token.expose()),
+        ("token_type_hint", "refresh_token"),
+        ("client_id", client_id),
+    ]);
+    for attempt in 0..3u64 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(500 * attempt)).await;
+        }
+        let sent = client
+            .post(REVOKE_URL)
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .timeout(HTTP_TIMEOUT)
+            .body(body.clone())
+            .send()
+            .await;
+        match sent {
+            Ok(res) if res.status().is_success() => return true,
+            Ok(res) if res.status().is_client_error() => return false,
+            Ok(_) | Err(_) => {}
+        }
+    }
+    false
+}
+
+/// Revoke a connection's renewable session at `OpenAI`.
+///
+/// Returns whether that's confirmed: true only when `OpenAI` confirmed it
+/// or nothing was stored to revoke; false when the credentials don't open
+/// (the secret key changed) or have no registration, since nothing was sent.
+pub async fn revoke(client: &reqwest::Client, vault: &Vault, conn: &Connection) -> bool {
+    match (conn.credentials(vault), conn.client_id.as_deref()) {
+        (Ok(Some(Credentials::ChatGpt(tokens))), Some(client_id)) => {
+            revoke_token(client, &tokens.refresh_token, client_id).await
+        }
+        (Ok(None | Some(Credentials::ApiKey(_))), _) => true,
+        (Ok(Some(Credentials::ChatGpt(_))), None) | (Err(_), _) => false,
     }
 }
 
-/// Sign out: revoke the renewable session at `OpenAI`, then drop the tokens
-/// and keep the registration for the next sign-in. Returns whether `OpenAI`
-/// confirmed the revocation.
+/// Sign out: revoke the session at `OpenAI`, then drop the tokens.
+///
+/// The registration is kept for the next sign-in. Returns whether `OpenAI`
+/// confirmed the revocation. A sign-in that lands while the revocation is
+/// pending is kept: the local update only applies to the tokens it revoked.
 ///
 /// # Errors
 ///
@@ -638,40 +728,7 @@ pub async fn sign_out(
     vault: &Vault,
     conn: &Connection,
 ) -> anyhow::Result<bool> {
-    let mut confirmed = true;
-    if let (Ok(Some(Credentials::ChatGpt(tokens))), Some(client_id)) =
-        (conn.credentials(vault), conn.client_id.as_deref())
-    {
-        confirmed = false;
-        let body = form_body(&[
-            ("token", tokens.refresh_token.expose()),
-            ("token_type_hint", "refresh_token"),
-            ("client_id", client_id),
-        ]);
-        for attempt in 0..3u64 {
-            if attempt > 0 {
-                tokio::time::sleep(Duration::from_millis(500 * attempt)).await;
-            }
-            let sent = client
-                .post(REVOKE_URL)
-                .header(
-                    reqwest::header::CONTENT_TYPE,
-                    "application/x-www-form-urlencoded",
-                )
-                .timeout(HTTP_TIMEOUT)
-                .body(body.clone())
-                .send()
-                .await;
-            match sent {
-                Ok(res) if res.status().is_success() => {
-                    confirmed = true;
-                    break;
-                }
-                Ok(res) if res.status().is_client_error() => break,
-                Ok(_) | Err(_) => {}
-            }
-        }
-    }
+    let confirmed = revoke(client, vault, conn).await;
     store::set_status(db, conn, Status::SignedOut, None, true).await?;
     Ok(confirmed)
 }
@@ -777,7 +834,7 @@ mod tests {
 
     #[test]
     fn starts_with_pkce_and_registration() -> Result<(), AiError> {
-        let started = start(Owner::User(42), 42, "urn:uuid:test", None, None, false)?;
+        let started = start(Owner::User(42), 42, "urn:uuid:test", None, false)?;
         let url = reqwest::Url::parse(&started.authorize_url).ok();
         let params: HashMap<String, String> = url
             .map(|u| u.query_pairs().into_owned().collect())

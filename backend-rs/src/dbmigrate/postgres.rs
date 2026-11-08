@@ -689,4 +689,11 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "CREATE TABLE \"ai_taste\" (\"id\" SERIAL NOT NULL, \"card\" text NOT NULL, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"updatedAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"REL_ai_taste_user\" UNIQUE (\"userId\"), CONSTRAINT \"PK_ai_taste\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_taste_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
         ],
     },
+    Migration {
+        timestamp: 1_790_100_000_000,
+        name: "UniqueAiServerConnection1790100000000",
+        queries: &[
+            "CREATE UNIQUE INDEX \"UQ_ai_connection_server\" ON \"ai_connection\" ((1)) WHERE \"userId\" IS NULL",
+        ],
+    },
 ];

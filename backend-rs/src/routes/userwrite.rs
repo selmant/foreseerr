@@ -614,6 +614,9 @@ fn delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 return ctx.error(500, "Something went wrong deleting the user");
             }
         };
+        // Their AI connection goes with them; its ChatGPT session can only be
+        // revoked while the token is still stored.
+        crate::ai::revoke_for_deleted_user(ctx.state, user.id).await;
         if let Err(e) = ctx
             .state
             .db

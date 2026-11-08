@@ -23,7 +23,7 @@ const messages = defineMessages('components.Ai.EndpointModal', {
   encryptedNote:
     'Keys are encrypted on this server and never sent back to a browser, not even an admin’s.',
   moveWarning:
-    'This is a different server than before. Enter the key again; the saved one is never sent to a new address.',
+    'This is a different address than before (another server, port, or http instead of https). Enter the key again; the saved one is never sent to a new address.',
 });
 
 const PRESETS = [
@@ -33,9 +33,11 @@ const PRESETS = [
   { label: 'LM Studio', url: 'http://localhost:1234/v1' },
 ] as const;
 
+// Scheme, host and port: dropping to plain HTTP counts as a move too.
 const hostOf = (url: string) => {
   try {
-    return new URL(url.trim()).host;
+    const parsed = new URL(url.trim());
+    return `${parsed.protocol}//${parsed.host}`;
   } catch {
     return '';
   }

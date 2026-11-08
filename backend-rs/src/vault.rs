@@ -321,14 +321,29 @@ fn hex_decode(text: &str) -> Result<Vec<u8>> {
         .collect())
 }
 
-/// Create the key file with owner-only access. `create_new` keeps two
-/// processes from writing different keys; the loser reads the winner's.
+/// Create the key file with owner-only access. The key is written and
+/// synced to a temporary file first, then published with a hard link,
+/// which fails if the key already exists: a reader never sees a half
+/// written key, an interrupted write leaves no `secret.key`, and of two
+/// processes the second reads the first one's key.
 fn generate_key_file(path: &Path) -> Result<[u8; 32]> {
     use std::io::Write as _;
     let mut key = [0u8; 32];
     SystemRandom::new()
         .fill(&mut key)
         .map_err(|_| anyhow!("the system random source failed"))?;
+    let mut suffix = [0u8; 8];
+    SystemRandom::new()
+        .fill(&mut suffix)
+        .map_err(|_| anyhow!("the system random source failed"))?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let temp = path.with_file_name(format!(
+        ".{name}.{}.tmp",
+        BASE64_URL_SAFE_NO_PAD.encode(suffix)
+    ));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -336,14 +351,22 @@ fn generate_key_file(path: &Path) -> Result<[u8; 32]> {
         use std::os::unix::fs::OpenOptionsExt as _;
         options.mode(0o600);
     }
-    match options.open(path) {
-        Ok(mut file) => {
-            file.write_all(format!("{}\n", BASE64_STANDARD.encode(key)).as_bytes())
-                .with_context(|| format!("writing {}", path.display()))?;
+    let encoded = format!("{}\n", BASE64_STANDARD.encode(key));
+    let write_new = |target: &Path| {
+        options.open(target).and_then(|mut file| {
+            file.write_all(encoded.as_bytes())?;
             file.sync_all()
-                .with_context(|| format!("writing {}", path.display()))?;
-            Ok(key)
+        })
+    };
+    let written = write_new(&temp).and_then(|()| std::fs::hard_link(&temp, path));
+    // The temporary name is never needed again, published or not.
+    if let Err(e) = std::fs::remove_file(&temp) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            tracing::warn!("removing {} failed: {e}", temp.display());
         }
+    }
+    match written {
+        Ok(()) => Ok(key),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             let text = std::fs::read_to_string(path)
                 .with_context(|| format!("reading {}", path.display()))?;

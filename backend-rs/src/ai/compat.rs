@@ -65,12 +65,15 @@ pub fn provider_label(base_url: &str) -> &'static str {
     }
 }
 
-/// The host of a base URL, to notice when an endpoint moves elsewhere.
+/// Where a base URL sends credentials (scheme, host and port), to notice
+/// when an endpoint moves elsewhere. Dropping to plain HTTP counts as a
+/// move, since the key would then travel unencrypted.
 #[must_use]
 pub fn host_of(base_url: &str) -> Option<String> {
     reqwest::Url::parse(base_url).ok().map(|u| {
         format!(
-            "{}:{}",
+            "{}://{}:{}",
+            u.scheme(),
             u.host_str().unwrap_or(""),
             u.port_or_known_default().unwrap_or(0)
         )
@@ -182,11 +185,23 @@ pub async fn complete(
         &[JsonMode::Prompt]
     };
     let mut last = AiError::upstream("The endpoint returned nothing.");
+    // When the endpoint can't enforce the schema, the model still gets it
+    // in writing. Every schema-bearing answer is checked locally too.
+    let described = prompt.schema.map(|(_, schema)| {
+        format!(
+            "{}\n\nReply with only a JSON object (no prose, no code fence) that matches this JSON Schema:\n{schema}",
+            prompt.instructions
+        )
+    });
     for mode in json_modes {
+        let instructions = match (mode, described.as_deref()) {
+            (JsonMode::Object | JsonMode::Prompt, Some(text)) => text,
+            (JsonMode::Schema | JsonMode::Object | JsonMode::Prompt, _) => prompt.instructions,
+        };
         let mut body = json!({
             "model": model,
             "messages": [
-                {"role": "system", "content": prompt.instructions},
+                {"role": "system", "content": instructions},
                 {"role": "user", "content": prompt.input},
             ],
             "stream": false,
@@ -222,11 +237,12 @@ pub async fn complete(
         let status = res.status().as_u16();
         let body: Value = res.json().await.unwrap_or(Value::Null);
         if (200..300).contains(&status) {
-            return body
+            let text = body
                 .pointer("/choices/0/message/content")
                 .and_then(Value::as_str)
-                .map(str::to_owned)
-                .ok_or_else(|| AiError::upstream("The endpoint's answer had no text."));
+                .ok_or_else(|| AiError::upstream("The endpoint's answer had no text."))?;
+            validate_answer(text, prompt.schema.map(|(_, schema)| schema))?;
+            return Ok(text.to_owned());
         }
         last = failure(status, &body);
         // Only a rejected request shape is worth retrying in a looser mode.
@@ -237,9 +253,52 @@ pub async fn complete(
     Err(last)
 }
 
+fn validate_answer(text: &str, schema: Option<&Value>) -> Result<(), AiError> {
+    let Some(schema) = schema else { return Ok(()) };
+    let valid = serde_json::from_str::<Value>(text)
+        .is_ok_and(|value| crate::openapi::matches_schema(schema, &value));
+    if valid {
+        Ok(())
+    } else {
+        Err(AiError::upstream(
+            "The endpoint's answer didn't match the requested JSON schema.",
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_generated_json_without_coercion() {
+        let schema = json!({"type":"object","additionalProperties":false,"required":["card"],"properties":{"card":{"type":"string"}}});
+        assert!(validate_answer(r#"{"card":"Quiet sci-fi"}"#, Some(&schema)).is_ok());
+        for invalid in [
+            "plain text",
+            "{}",
+            r#"{"card":7}"#,
+            r#"{"card":"yes","extra":true}"#,
+        ] {
+            assert!(
+                validate_answer(invalid, Some(&schema)).is_err(),
+                "{invalid}"
+            );
+        }
+        assert!(validate_answer("plain text", None).is_ok());
+    }
+
+    #[test]
+    fn scheme_changes_move_the_credential_destination() {
+        assert_ne!(
+            host_of("https://example.test:8443/v1"),
+            host_of("http://example.test:8443/v1")
+        );
+        assert_eq!(
+            host_of("https://example.test/v1"),
+            host_of("https://example.test:443/other")
+        );
+    }
 
     #[test]
     fn normalizes_base_urls() {

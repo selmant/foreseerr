@@ -1,4 +1,7 @@
 {{- if .Values.searxng.enabled }}
+{{- if and .Values.searxng.gitOps (not .Values.searxng.existingSecret) }}
+{{- fail "searxng.existingSecret is required when searxng.gitOps=true; create a stable Secret before rendering" }}
+{{- end }}
 {{- $name := include "foreseerr.searxngName" . }}
 apiVersion: v1
 kind: ConfigMap

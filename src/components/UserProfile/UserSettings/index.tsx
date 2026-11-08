@@ -85,8 +85,7 @@ const UserSettings = ({ children }: UserSettingsProps) => {
       route: '/settings/ai',
       regex: /\/settings\/ai/,
       // AI connections are personal: only on your own profile.
-      hidden:
-        !settings.currentSettings.aiEnabled || currentUser?.id !== user?.id,
+      hidden: currentUser?.id !== user?.id,
     },
     {
       text: intl.formatMessage(messages.menuNotifications),

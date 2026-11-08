@@ -448,6 +448,34 @@ mod tests {
     }
 
     #[test]
+    fn generated_plans_are_checked_against_the_complete_schema() {
+        let schema = plan_schema();
+        let plan = |year: Value, media_type: &str| {
+            json!({
+                "summary":"cozy", "mediaTypes":["movie"], "anime":false,
+                "titleIdeas":[{"title":"Paddington 2", "year":year, "mediaType":media_type}],
+                "genres":[], "keywords":[], "yearFrom":null, "yearTo":null, "webQueries":[]
+            })
+        };
+        assert!(crate::openapi::matches_schema(
+            &schema,
+            &plan(json!(2017), "movie")
+        ));
+        assert!(crate::openapi::matches_schema(
+            &schema,
+            &plan(Value::Null, "movie")
+        ));
+        assert!(!crate::openapi::matches_schema(
+            &schema,
+            &plan(json!(2017), "book")
+        ));
+        assert!(!crate::openapi::matches_schema(
+            &schema,
+            &plan(json!("2017"), "movie")
+        ));
+    }
+
+    #[test]
     fn strict_schemas_require_every_property() {
         for schema in [plan_schema(), rank_schema(), taste_schema()] {
             let props: Vec<&String> = schema

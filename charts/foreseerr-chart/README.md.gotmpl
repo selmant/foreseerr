@@ -36,11 +36,27 @@ kubectl exec foreseerr-0 -- cat /app/config/secret.key > secret.key
 kubectl create secret generic foreseerr-secret-key --from-file=secret-key=secret.key
 ```
 
+The key is mounted read-only for group `podSecurityContext.fsGroup` (mode
+`0440`), which is how the non-root Foreseerr user reads it. Keep `fsGroup` set
+(the default is `1000`); without it the key can't be read and AI settings fail.
+
 Set `searxng.enabled=true` to run a private [SearXNG](https://docs.searxng.org)
 instance for web search. It runs unprivileged with a read-only root filesystem,
 and by default a NetworkPolicy lets only Foreseerr reach it, since SearXNG has
 no login. Then turn it on in Settings → AI → Web search with the URL the
 install notes print.
+
+Without `searxng.existingSecret`, the chart generates SearXNG's signing key and
+keeps it across `helm upgrade`. GitOps tools that render with `helm template`
+(Argo CD, Flux's post-renderers) can't look up the existing Secret, so each
+render would make a new key and the app would never settle. With those tools,
+create the Secret yourself, set `searxng.existingSecret`, and set
+`searxng.gitOps=true` so the chart rejects a missing Secret name:
+
+```bash
+kubectl create secret generic foreseerr-searxng \
+  --from-literal=secret-key="$(openssl rand -hex 32)"
+```
 
 ## Update Notes
 

@@ -149,7 +149,13 @@ const UserAiSettings = () => {
   const { user } = useUser();
   const { data, error, mutate } = useSWR<AiMe>('/api/v1/ai/me');
   const own = data?.own ?? null;
-  const ownUsable = own?.status === 'ok';
+  const ownAllowedByPolicy = Boolean(
+    data?.enabled &&
+    (own?.kind === 'chatgpt'
+      ? data.policy.allowChatgpt
+      : data?.policy.allowEndpoints)
+  );
+  const ownUsable = own?.status === 'ok' && ownAllowedByPolicy;
   const {
     data: ownModels,
     error: ownModelsError,
@@ -291,15 +297,6 @@ const UserAiSettings = () => {
       </div>
     </>
   );
-
-  if (!data.enabled) {
-    return (
-      <>
-        {title}
-        <Alert type="info" title={intl.formatMessage(messages.disabled)} />
-      </>
-    );
-  }
 
   const usingOwn = data.preferences.useOwnConnection;
   const effective = data.effective;
@@ -448,69 +445,76 @@ const UserAiSettings = () => {
     ),
   }));
 
-  const ownAllowed = data.policy.allowChatgpt || data.policy.allowEndpoints;
+  const ownAllowed =
+    data.enabled && (data.policy.allowChatgpt || data.policy.allowEndpoints);
   const ownModelChanged = (own?.model ?? '') !== model;
 
   return (
     <>
       {title}
       <div className="space-y-6">
-        {summary}
+        {data.enabled ? (
+          summary
+        ) : (
+          <Alert type="info" title={intl.formatMessage(messages.disabled)} />
+        )}
 
-        <Card active={!usingOwn && Boolean(data.server)}>
-          <div className="flex flex-wrap items-start gap-4">
-            <ServerIcon className="h-8 w-8 shrink-0 text-gray-300" />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h4 className="text-lg font-semibold text-white">
-                  {intl.formatMessage(messages.serverTitle)}
-                </h4>
-                {!usingOwn && data.server ? (
-                  <Badge badgeType="primary">
-                    {intl.formatMessage(messages.inUse)}
-                  </Badge>
-                ) : null}
+        {data.enabled ? (
+          <Card active={!usingOwn && Boolean(data.server)}>
+            <div className="flex flex-wrap items-start gap-4">
+              <ServerIcon className="h-8 w-8 shrink-0 text-gray-300" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-lg font-semibold text-white">
+                    {intl.formatMessage(messages.serverTitle)}
+                  </h4>
+                  {!usingOwn && data.server ? (
+                    <Badge badgeType="primary">
+                      {intl.formatMessage(messages.inUse)}
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="text-sm text-gray-400">
+                  {data.server
+                    ? intl.formatMessage(messages.serverCardHint, {
+                        provider: data.server.providerLabel,
+                      })
+                    : intl.formatMessage(messages.serverUnavailable)}
+                </p>
               </div>
-              <p className="text-sm text-gray-400">
-                {data.server
-                  ? intl.formatMessage(messages.serverCardHint, {
-                      provider: data.server.providerLabel,
-                    })
-                  : intl.formatMessage(messages.serverUnavailable)}
-              </p>
+              {usingOwn && data.server ? (
+                <Button
+                  className="min-h-11"
+                  disabled={busy}
+                  onClick={() => savePrefs({ useOwnConnection: false })}
+                >
+                  {intl.formatMessage(
+                    busy ? messages.switching : messages.useThis
+                  )}
+                </Button>
+              ) : null}
             </div>
-            {usingOwn && data.server ? (
-              <Button
-                className="min-h-11"
-                disabled={busy}
-                onClick={() => savePrefs({ useOwnConnection: false })}
-              >
-                {intl.formatMessage(
-                  busy ? messages.switching : messages.useThis
-                )}
-              </Button>
+            {data.server && data.policy.allowModelChoice ? (
+              <div className="mt-5">
+                <div className="group-label">
+                  {intl.formatMessage(messages.presetLabel)}
+                </div>
+                <SegmentedControl
+                  ariaLabel={intl.formatMessage(messages.presetLabel)}
+                  options={presetOptions}
+                  value={data.preferences.model ?? 'balanced'}
+                  disabled={busy}
+                  wrapLabels
+                  className="max-w-xl"
+                  onChange={(p) => savePrefs({ model: p })}
+                />
+                <p className="mt-2 text-sm text-gray-400">
+                  {intl.formatMessage(messages.presetHint)}
+                </p>
+              </div>
             ) : null}
-          </div>
-          {data.server && data.policy.allowModelChoice ? (
-            <div className="mt-5">
-              <div className="group-label">
-                {intl.formatMessage(messages.presetLabel)}
-              </div>
-              <SegmentedControl
-                ariaLabel={intl.formatMessage(messages.presetLabel)}
-                options={presetOptions}
-                value={data.preferences.model ?? 'balanced'}
-                disabled={busy}
-                wrapLabels
-                className="max-w-xl"
-                onChange={(p) => savePrefs({ model: p })}
-              />
-              <p className="mt-2 text-sm text-gray-400">
-                {intl.formatMessage(messages.presetHint)}
-              </p>
-            </div>
-          ) : null}
-        </Card>
+          </Card>
+        ) : null}
 
         <Card active={usingOwn && ownUsable}>
           <div className="flex flex-wrap items-start gap-4">
@@ -571,7 +575,9 @@ const UserAiSettings = () => {
                   </div>
                 </div>
                 <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-                  {own.kind === 'chatgpt' && !ownUsable ? (
+                  {own.kind === 'chatgpt' &&
+                  !ownUsable &&
+                  ownAllowedByPolicy ? (
                     <Button
                       buttonType="primary"
                       className="min-h-11"
@@ -594,7 +600,7 @@ const UserAiSettings = () => {
                       </span>
                     </Button>
                   ) : null}
-                  {own.kind === 'openai' && data.policy.allowEndpoints ? (
+                  {own.kind === 'openai' && ownAllowedByPolicy ? (
                     <Button
                       className="min-h-11"
                       onClick={() => setEndpointOpen(true)}
@@ -725,7 +731,7 @@ const UserAiSettings = () => {
           ) : null}
         </Card>
 
-        <TasteCard />
+        {data.enabled ? <TasteCard /> : null}
 
         <Card active={false}>
           <div className="flex items-start justify-between gap-4">
@@ -754,7 +760,7 @@ const UserAiSettings = () => {
               type="checkbox"
               className="mt-1 shrink-0"
               checked={data.preferences.useHistory}
-              disabled={busy}
+              disabled={busy || (!data.enabled && !data.preferences.useHistory)}
               onChange={(e) => savePrefs({ useHistory: e.target.checked })}
             />
           </div>
@@ -769,6 +775,7 @@ const UserAiSettings = () => {
       <Transition as={Fragment} show={connectOpen}>
         <ChatgptConnectModal
           redirectUri={data.chatgptRedirectUri}
+          consent={own?.kind === 'chatgpt' && own.status === 'plan_disabled'}
           onClose={() => setConnectOpen(false)}
           onConnected={(me) => {
             setTestResult(null);
