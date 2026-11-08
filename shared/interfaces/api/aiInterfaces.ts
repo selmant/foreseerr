@@ -136,14 +136,7 @@ export type AiRunStage =
   | 'done'
   | 'failed';
 
-/** `seen_like` / `seen_dislike`: watched it, and liked or disliked it. */
-export type AiVerdict =
-  | 'like'
-  | 'dislike'
-  | 'seen'
-  | 'seen_like'
-  | 'seen_dislike'
-  | 'not_interested';
+export type AiVerdict = 'like' | 'dislike' | 'seen' | 'not_interested';
 
 export interface AiRecommendRequest {
   prompt?: string;

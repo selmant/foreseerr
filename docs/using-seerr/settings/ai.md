@@ -57,9 +57,7 @@ Weekly picks**. Only people who used AI picks in the last week get them.
 AI picks look like any other poster, with the same rating badges. Hover over
 or tap one, then press the lightbulb badge under the ratings. A small panel shows
 why it was picked, with **Like**, **Not for me**, **Seen it** and **Don't
-suggest** buttons; select a choice again to take it back. **Seen it** goes
-with **Like** or **Not for me** ("watched it and loved it"), which tells the
-model more than either alone; **Don't suggest** stands on its own. This works on the AI
+suggest** buttons; select a choice again to take it back. This works on the AI
 Picks page and in Discover AI rows. Once you rate a pick, its badge shows your
 choice. This feedback only tunes AI suggestions; it does not change your
 tracker ratings or watch status. Titles you rated never come back as picks, and

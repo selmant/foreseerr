@@ -436,7 +436,7 @@ pub async fn outcomes(db: &Db, since_iso: &str) -> Result<HashMap<i64, Outcomes>
         .rows(
             &format!(
                 // Each title once, liked with the button, rated well, or both.
-                r#"SELECT CAST(t."userId" AS BIGINT) AS "userId", CAST(COUNT(*) AS BIGINT) AS "n" FROM (SELECT s."userId", s."mediaType", s."tmdbId" FROM "ai_signal" s WHERE s."kind" = 'rated' AND s."rating" >= ?2 AND {} >= ?1 UNION SELECT f."userId", f."mediaType", f."tmdbId" FROM "ai_feedback" f WHERE f."kind" IN ('like', 'seen_like') AND {} >= ?1) t GROUP BY t."userId""#,
+                r#"SELECT CAST(t."userId" AS BIGINT) AS "userId", CAST(COUNT(*) AS BIGINT) AS "n" FROM (SELECT s."userId", s."mediaType", s."tmdbId" FROM "ai_signal" s WHERE s."kind" = 'rated' AND s."rating" >= ?2 AND {} >= ?1 UNION SELECT f."userId", f."mediaType", f."tmdbId" FROM "ai_feedback" f WHERE f."kind" = 'like' AND {} >= ?1) t GROUP BY t."userId""#,
                 created("s"),
                 db.iso_sql(r#"f."updatedAt""#)
             ),
@@ -852,7 +852,7 @@ mod tests {
                 .and_then(|s| s.rating),
             Some(9)
         );
-        store::set_feedback(&db, 1, "movie", 10, store::Verdict::SeenLike, "A").await?;
+        store::set_feedback(&db, 1, "movie", 10, store::Verdict::Like, "A").await?;
         let o = outcomes(&db, "2000-01-01T00:00:00.000Z")
             .await?
             .remove(&1)

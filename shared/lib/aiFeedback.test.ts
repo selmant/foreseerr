@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AiFeedbackQueue, toggleVerdict } from './aiFeedback';
+import { AiFeedbackQueue } from './aiFeedback';
 import type { AiVerdict } from '@shared/interfaces/api/aiInterfaces';
 
 const deferred = () => {
@@ -93,26 +93,5 @@ describe('Concurrent AI feedback edits', () => {
     second.reject(new Error('second failed'));
     await b;
     assert.equal(visible, 'seen');
-  });
-});
-
-describe('Combining feedback', () => {
-  it('lets "Seen it" go with Like or Not for me', () => {
-    assert.equal(toggleVerdict('like', 'seen'), 'seen_like');
-    assert.equal(toggleVerdict('seen', 'dislike'), 'seen_dislike');
-    assert.equal(toggleVerdict('seen_like', 'dislike'), 'seen_dislike');
-    assert.equal(toggleVerdict('seen_like', 'seen'), 'like');
-    assert.equal(toggleVerdict('seen_like', 'like'), 'seen');
-  });
-
-  it('keeps "Don\u2019t suggest" on its own', () => {
-    assert.equal(
-      toggleVerdict('seen_like', 'not_interested'),
-      'not_interested'
-    );
-    assert.equal(toggleVerdict('not_interested', 'seen'), 'seen');
-    assert.equal(toggleVerdict('not_interested', 'not_interested'), null);
-    assert.equal(toggleVerdict(null, 'like'), 'like');
-    assert.equal(toggleVerdict('like', 'like'), null);
   });
 });

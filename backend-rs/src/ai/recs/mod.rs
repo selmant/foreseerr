@@ -399,14 +399,10 @@ async fn person(
             continue;
         };
         excluded.insert(key);
-        if verdict.opinion() == Some(true) {
+        if verdict == Verdict::Like {
             liked.push(key);
             if liked_lines.len() < 25 {
-                liked_lines.push(if verdict == Verdict::Like {
-                    label
-                } else {
-                    format!("{label} ({})", verdict.describe())
-                });
+                liked_lines.push(label);
             }
         } else if avoid_lines.len() < 40 {
             avoid_lines.push(format!("{label} ({})", verdict.describe()));

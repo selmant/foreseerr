@@ -15,7 +15,6 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import type { AiPick, AiVerdict } from '@shared/interfaces/api/aiInterfaces';
-import { opinionOf, seenIn, toggleVerdict } from '@shared/lib/aiFeedback';
 import type { MovieResult, TvResult } from '@shared/models/Search';
 import {
   useCallback,
@@ -38,10 +37,8 @@ const messages = defineMessages('components.Ai.AiPickCard', {
   scope: 'Only tunes AI picks; trackers aren’t changed.',
 });
 
-type Button = 'like' | 'dislike' | 'seen' | 'not_interested';
-
 const VERDICTS: {
-  kind: Button;
+  kind: AiVerdict;
   label: keyof typeof messages;
   Icon: ComponentType<SVGProps<SVGSVGElement>>;
   /** Badge colour once chosen. */
@@ -93,26 +90,15 @@ const AiPickCard = ({ pick, onFeedback, canExpand }: AiPickCardProps) => {
   const item = pick.item as unknown as MovieResult | TvResult;
   const isMovie = pick.mediaType === 'movie';
   const title = isMovie ? (item as MovieResult).title : (item as TvResult).name;
-  const verdict = pick.feedback;
-  const opinion = opinionOf(verdict);
-  const seen = seenIn(verdict);
-  const isOn = (kind: Button) =>
-    kind === 'seen'
-      ? seen
-      : kind === 'not_interested'
-        ? verdict === 'not_interested'
-        : opinion === kind;
-  // The badge shows the opinion, with an eye when they also saw it.
-  const chosen = VERDICTS.find((v) =>
-    opinion ? v.kind === opinion : v.kind === verdict
-  );
-  const passed = opinion === 'dislike' || verdict === 'not_interested';
+  const chosen = VERDICTS.find((v) => v.kind === pick.feedback);
+  const passed =
+    pick.feedback === 'dislike' || pick.feedback === 'not_interested';
 
-  const give = async (kind: Button) => {
+  const give = async (kind: AiVerdict) => {
     if (saving || !onFeedback) return;
     setSaving(true);
     try {
-      await onFeedback(pick, toggleVerdict(verdict, kind));
+      await onFeedback(pick, pick.feedback === kind ? null : kind);
     } finally {
       setSaving(false);
     }
@@ -129,12 +115,6 @@ const AiPickCard = ({ pick, onFeedback, canExpand }: AiPickCardProps) => {
           {chosen ? (
             <>
               <chosen.Icon className={`h-3.5 w-3.5 ${chosen.tone}`} />
-              {opinion && seen ? (
-                <EyeIcon
-                  className="h-3.5 w-3.5 text-indigo-300"
-                  aria-label={intl.formatMessage(messages.seen)}
-                />
-              ) : null}
               <span>{intl.formatMessage(messages[chosen.label])}</span>
             </>
           ) : (
@@ -174,7 +154,7 @@ const AiPickCard = ({ pick, onFeedback, canExpand }: AiPickCardProps) => {
                 className="mt-3 grid grid-cols-2 gap-1.5"
               >
                 {VERDICTS.map(({ kind, label, Icon }) => {
-                  const on = isOn(kind);
+                  const on = pick.feedback === kind;
                   return (
                     <button
                       key={kind}

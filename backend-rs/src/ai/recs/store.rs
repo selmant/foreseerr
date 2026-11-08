@@ -770,10 +770,6 @@ pub enum Verdict {
     Dislike,
     /// Already watched it.
     Seen,
-    /// Watched it and liked it.
-    SeenLike,
-    /// Watched it and didn't like it.
-    SeenDislike,
     /// Don't suggest it.
     NotInterested,
 }
@@ -786,19 +782,7 @@ impl Verdict {
             Self::Like => "like",
             Self::Dislike => "dislike",
             Self::Seen => "seen",
-            Self::SeenLike => "seen_like",
-            Self::SeenDislike => "seen_dislike",
             Self::NotInterested => "not_interested",
-        }
-    }
-
-    /// Liked (`Some(true)`), disliked (`Some(false)`) or neither.
-    #[must_use]
-    pub const fn opinion(self) -> Option<bool> {
-        match self {
-            Self::Like | Self::SeenLike => Some(true),
-            Self::Dislike | Self::SeenDislike => Some(false),
-            Self::Seen | Self::NotInterested => None,
         }
     }
 
@@ -809,8 +793,6 @@ impl Verdict {
             Self::Like => "liked",
             Self::Dislike => "disliked",
             Self::Seen => "already seen",
-            Self::SeenLike => "watched it and liked it",
-            Self::SeenDislike => "watched it and disliked it",
             Self::NotInterested => "not interested",
         }
     }
@@ -818,16 +800,9 @@ impl Verdict {
     /// From the API name.
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
-        [
-            Self::Like,
-            Self::Dislike,
-            Self::Seen,
-            Self::SeenLike,
-            Self::SeenDislike,
-            Self::NotInterested,
-        ]
-        .into_iter()
-        .find(|v| v.as_str() == text)
+        [Self::Like, Self::Dislike, Self::Seen, Self::NotInterested]
+            .into_iter()
+            .find(|v| v.as_str() == text)
     }
 }
 

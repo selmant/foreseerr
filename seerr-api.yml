@@ -5666,16 +5666,7 @@ paths:
                 kind:
                   type: string
                   nullable: true
-                  enum:
-                    [
-                      like,
-                      dislike,
-                      seen,
-                      seen_like,
-                      seen_dislike,
-                      not_interested,
-                      null,
-                    ]
+                  enum: [like, dislike, seen, not_interested, null]
                 title:
                   type: string
       responses:

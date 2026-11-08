@@ -265,7 +265,7 @@ async fn run_outcomes(ctx: &Ready<'_>, user_id: i64) -> Result<HashMap<i64, (i64
             false,
         ),
         (
-            r#"SELECT CAST(p."runId" AS BIGINT) AS "runId", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_pick" p JOIN "ai_feedback" f ON f."userId" = p."userId" AND f."mediaType" = p."mediaType" AND f."tmdbId" = p."tmdbId" AND f."kind" IN ('like', 'seen_like') WHERE p."userId" = ?1 GROUP BY p."runId""#,
+            r#"SELECT CAST(p."runId" AS BIGINT) AS "runId", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_pick" p JOIN "ai_feedback" f ON f."userId" = p."userId" AND f."mediaType" = p."mediaType" AND f."tmdbId" = p."tmdbId" AND f."kind" = 'like' WHERE p."userId" = ?1 GROUP BY p."runId""#,
             true,
         ),
     ] {
