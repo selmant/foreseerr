@@ -1,4 +1,6 @@
-import AiPickCard from '@app/components/Ai/AiPickCard';
+import AiPickCard, {
+  AiPickCardPlaceholder,
+} from '@app/components/Ai/AiPickCard';
 import { aiErrorOf } from '@app/components/Ai/aiError';
 import {
   isWorking,
@@ -11,7 +13,6 @@ import Button from '@app/components/Common/Button';
 import PageTitle from '@app/components/Common/PageTitle';
 import type { SegmentedOption } from '@app/components/Common/SegmentedControl';
 import SegmentedControl from '@app/components/Common/SegmentedControl';
-import Placeholder from '@app/components/TitleCard/Placeholder';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -103,7 +104,7 @@ const messages = defineMessages('components.Ai.AiPicks', {
   unavailableNone:
     'There’s no AI connection you can use yet. Connect your own account, or ask your admin.',
   feedbackHint:
-    'Tap 👍 or 👎 under a title, or mark it seen. Foreseerr learns your taste from it.',
+    'Like or pass on picks and Foreseerr learns your taste. This doesn’t change your tracker ratings or watch status.',
   tasteLink: 'Your taste card',
 });
 
@@ -558,10 +559,10 @@ const AiPicks = () => {
           <div className="max-w-5xl">
             <StageSteps stage={run?.stage ?? 'planning'} />
           </div>
-          <ul className="cards-vertical mt-6">
-            {[...Array(12)].map((_, i) => (
+          <ul className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+            {[...Array(6)].map((_, i) => (
               <li key={`ai-skeleton-${i}`}>
-                <Placeholder canExpand />
+                <AiPickCardPlaceholder />
               </li>
             ))}
           </ul>
@@ -645,10 +646,10 @@ const AiPicks = () => {
           <p className="mb-3 text-xs text-gray-500">
             {intl.formatMessage(messages.feedbackHint)}
           </p>
-          <ul className="cards-vertical">
+          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
             {run.result.picks.map((pick) => (
               <li key={`${pick.mediaType}-${pick.tmdbId}`}>
-                <AiPickCard pick={pick} onFeedback={onFeedback} canExpand />
+                <AiPickCard pick={pick} onFeedback={onFeedback} />
               </li>
             ))}
           </ul>

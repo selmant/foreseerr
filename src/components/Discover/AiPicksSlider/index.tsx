@@ -1,25 +1,14 @@
-import AiPickCard from '@app/components/Ai/AiPickCard';
-import {
-  isWorking,
-  sendFeedback,
-  useAiRun,
-  withFeedback,
-} from '@app/components/Ai/useAiRun';
+import { AiPickPoster } from '@app/components/Ai/AiPickCard';
+import { isWorking, useAiRun } from '@app/components/Ai/useAiRun';
 import Slider from '@app/components/Slider';
 import TitleCard from '@app/components/TitleCard';
 import useSettings from '@app/hooks/useSettings';
-import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
 import {
   ArrowRightCircleIcon,
   LightBulbIcon,
 } from '@heroicons/react/24/outline';
-import type {
-  AiErrorBody,
-  AiPick,
-  AiRun,
-  AiVerdict,
-} from '@shared/interfaces/api/aiInterfaces';
+import type { AiErrorBody, AiRun } from '@shared/interfaces/api/aiInterfaces';
 import { useIntl } from 'react-intl';
 import { Link } from 'react-router';
 import useSWR from 'swr';
@@ -27,7 +16,6 @@ import useSWR from 'swr';
 const messages = defineMessages('components.Discover.AiPicksSlider', {
   working: 'Finding picks for you…',
   empty: 'No picks yet. Open AI Picks to try a different idea.',
-  feedbackFailed: 'Couldn’t save that. Try again.',
 });
 
 interface AiPicksSliderProps {
@@ -45,53 +33,25 @@ interface RowResponse {
 const AiPicksSlider = ({ sliderKey, title, sliderId }: AiPicksSliderProps) => {
   const intl = useIntl();
   const settings = useSettings();
-  const { addToast } = useToasts();
   const enabled = settings.currentSettings.aiEnabled === true;
   const { data: row, error } = useSWR<RowResponse>(
     enabled ? `/api/v1/ai/row?sliderId=${sliderId}` : null,
     { revalidateOnFocus: false }
   );
   const rowRun = row?.run ?? null;
-  // Polls while the row's run works; also carries feedback edits.
-  const { data: polled, mutate } = useAiRun(rowRun?.id ?? null);
+  // Polls while the row's run works.
+  const { data: polled } = useAiRun(rowRun?.id ?? null);
   const run = polled ?? rowRun;
 
   if (!enabled) {
     return null;
   }
 
-  const onFeedback = async (pick: AiPick, verdict: AiVerdict | null) => {
-    if (!run) {
-      return;
-    }
-    const previous = pick.feedback;
-    mutate((current) => withFeedback(current ?? run, pick, verdict), {
-      revalidate: false,
-    });
-    try {
-      await sendFeedback(pick, verdict);
-    } catch {
-      mutate(
-        (current) => {
-          const latest = current ?? run;
-          const feedback = latest.result?.picks.find(
-            (p) => p.mediaType === pick.mediaType && p.tmdbId === pick.tmdbId
-          )?.feedback;
-          return feedback === verdict
-            ? withFeedback(latest, pick, previous)
-            : latest;
-        },
-        { revalidate: false }
-      );
-      addToast(intl.formatMessage(messages.feedbackFailed), {
-        appearance: 'error',
-        autoDismiss: true,
-      });
-    }
-  };
-
   const working = !row && !error ? true : isWorking(run);
-  const picks = run?.result?.picks ?? [];
+  // Titles they passed on stay out of the row.
+  const picks = (run?.result?.picks ?? []).filter(
+    (p) => p.feedback !== 'dislike' && p.feedback !== 'not_interested'
+  );
   const linkUrl = run ? `/discover/ai?run=${run.id}` : '/discover/ai';
   const emptyMessage =
     row?.notice?.message ??
@@ -125,11 +85,7 @@ const AiPicksSlider = ({ sliderKey, title, sliderId }: AiPicksSliderProps) => {
         emptyMessage={emptyMessage}
         placeholder={<TitleCard.Placeholder />}
         items={picks.map((pick) => (
-          <AiPickCard
-            key={`${pick.mediaType}-${pick.tmdbId}`}
-            pick={pick}
-            onFeedback={onFeedback}
-          />
+          <AiPickPoster key={`${pick.mediaType}-${pick.tmdbId}`} pick={pick} />
         ))}
       />
     </>
