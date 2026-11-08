@@ -18,7 +18,7 @@ import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages(
-  'components.UserProfile.UserSettings.UserAiSettings.ChatgptConnectModal',
+  'components.UserProfile.UserSettings.UserLinkedAccountsSettings.ChatgptConnectModal',
   {
     title: 'Connect ChatGPT',
     intro: 'Foreseerr will use your ChatGPT plan for your own requests.',

@@ -1,14 +1,8 @@
-import UserSettings from '@app/components/UserProfile/UserSettings';
-import UserAiSettings from '@app/components/UserProfile/UserSettings/UserAiSettings';
+import { Navigate } from 'react-router';
 
-// Only the signed-in user's own page: AI connections are personal, so
-// there is no /users/:id variant for admins.
-const ProfileAiSettingsPage = () => {
-  return (
-    <UserSettings>
-      <UserAiSettings />
-    </UserSettings>
-  );
-};
+// Preserve bookmarks to the former standalone AI settings page.
+const ProfileAiSettingsPage = () => (
+  <Navigate to="/profile/settings/linked-accounts#ai-account" replace />
+);
 
 export default ProfileAiSettingsPage;

@@ -41,7 +41,7 @@ requests.
 
 After a few new ratings, Foreseerr rewrites your **taste card**, a short note
 about what you enjoy that goes with each request. You can read, edit or clear
-it in **Profile → AI**, and forget all your ratings there too.
+it in **Profile → Discover → AI recommendations**, and forget all your ratings there too.
 
 Titles you've already watched on your media server or linked trackers are
 skipped even when **Use my watch history** is off. That check happens on the
@@ -57,15 +57,19 @@ toward that person's daily limit.
 
 ## Connections
 
+Personal AI accounts live alongside your other linked accounts. The account card
+shows the active provider and model; **Manage** opens connection and model controls.
+Taste and history preferences are in **Profile → Discover → AI recommendations**.
+
 Every request goes through one connection, and each person can see which one
-in **Profile → AI**: whose connection it is, the provider, the model, and whose
+in **Profile → Linked Accounts → AI account**: whose connection it is, the provider, the model, and whose
 quota it uses.
 
 - **The server connection.** An admin sets it up, and everyone uses it unless
   they connect their own. It is any OpenAI-compatible endpoint: OpenAI with an
   API key, OpenRouter, Ollama, LM Studio, vLLM, and so on. Usage counts against
   the admin's quota.
-- **A person's own ChatGPT account.** In **Profile → AI**, **Continue with
+- **A person's own ChatGPT account.** In **Profile → Linked Accounts → AI account**, **Continue with
   ChatGPT** signs in through OpenAI's _Sign in with ChatGPT_. That person's
   requests then count toward their own ChatGPT plan's limits. They can review
   usage, set a limit or remove Foreseerr at
@@ -95,13 +99,13 @@ Foreseerr only ever uses an address that belongs to the sign-in it started,
 so nothing else on your clipboard is sent anywhere. The address works once,
 for a few minutes.
 
-**Sign out** in Profile → AI revokes Foreseerr's access at OpenAI as well.
+**Sign out** in Profile → Linked Accounts → AI account revokes Foreseerr's access at OpenAI as well.
 
 ## Models
 
 On the server connection the admin picks a **Balanced** model (the default for
 everyone) and, optionally, **Fast** and **Best** models. When the admin allows
-it, people choose between these three in Profile → AI. People with their own
+it, people choose between these three in Profile → Linked Accounts → AI account. People with their own
 connection pick any model it offers.
 
 ## Who can use what
@@ -116,15 +120,15 @@ connection pick any model it offers.
 
 Admins can always use the server connection and connect their own accounts.
 Each person sees how many requests they have left on the AI Picks page and in
-Profile → AI.
+Profile → Linked Accounts → AI account.
 
 ## Watch history
 
-Each person decides whether their watch history is used, in **Profile → AI →
+Each person decides whether their watch history is used, in **Profile → Discover → AI recommendations →
 Use my watch history**. It is off by default. When it's on, a short summary of
 what they watched, rated and saved (from the media server and the trackers
 they linked) goes with their requests to the connection they use. When it's
-off, only what they type is sent.
+off, their prompt, taste card and feedback can still be sent to the AI provider. With web search enabled, searches based on their request and taste are sent through SearXNG.
 
 ## How keys are protected
 

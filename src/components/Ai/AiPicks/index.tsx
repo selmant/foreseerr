@@ -97,7 +97,7 @@ const messages = defineMessages('components.Ai.AiPicks', {
   usingOwnChatgpt: 'your ChatGPT plan',
   usingOwnEndpoint: 'your own endpoint',
   left: '{left} of {limit} left today',
-  setup: 'Set up AI in Profile → AI',
+  setup: 'Link an AI account',
   unavailableOwn:
     'Your own AI connection needs attention. Fix it, or switch back to the server connection.',
   unavailableNone:
@@ -417,7 +417,7 @@ const AiPicks = () => {
               )}
             >
               <Link
-                to="/profile/settings/ai"
+                to="/profile/settings/linked-accounts#ai-account"
                 className="font-semibold underline"
               >
                 {intl.formatMessage(messages.setup)}
@@ -513,7 +513,10 @@ const AiPicks = () => {
               })}
             </span>
           ) : null}
-          <Link to="/profile/settings/ai" className="hover:text-white">
+          <Link
+            to="/profile/settings/discover#ai-preferences"
+            className="hover:text-white"
+          >
             {intl.formatMessage(messages.tasteLink)} →
           </Link>
         </div>

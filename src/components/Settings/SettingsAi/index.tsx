@@ -63,7 +63,7 @@ const messages = defineMessages('components.Settings.SettingsAi', {
   testOk: 'Connected. {count, plural, one {# model} other {# models}} listed.',
   testReply: 'Connected. {model} replied “{reply}”.',
   chatgptNote:
-    'Why not a ChatGPT subscription here? OpenAI’s terms don’t allow one ChatGPT account to be used by other people. So ChatGPT plans connect per person, in each user’s Profile → AI, and only serve that person.',
+    'Why not a ChatGPT subscription here? OpenAI’s terms don’t allow one ChatGPT account to be used by other people. So ChatGPT plans connect per person, in each user’s Linked Accounts, and only serve that person.',
   models: 'Models',
   modelsDescription:
     'Everyone starts on Balanced. When you allow it, people can switch to Fast or Best on their AI page.',

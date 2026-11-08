@@ -23,7 +23,6 @@ const messages = defineMessages('components.UserProfile.UserSettings', {
   menuLinkedAccounts: 'Linked Accounts',
   menuNotifications: 'Notifications',
   menuPermissions: 'Permissions',
-  menuAi: 'AI',
   unauthorizedDescription:
     "You do not have permission to modify this user's settings.",
 });
@@ -81,13 +80,6 @@ const UserSettings = ({ children }: UserSettingsProps) => {
       regex: /\/settings\/linked-accounts/,
     },
     {
-      text: intl.formatMessage(messages.menuAi),
-      route: '/settings/ai',
-      regex: /\/settings\/ai/,
-      // AI connections are personal: only on your own profile.
-      hidden: currentUser?.id !== user?.id,
-    },
-    {
       text: intl.formatMessage(messages.menuNotifications),
       route: data?.emailEnabled
         ? '/settings/notifications/email'
@@ -128,11 +120,11 @@ const UserSettings = ({ children }: UserSettingsProps) => {
   }
 
   settingsRoutes.forEach((settingsRoute) => {
-    settingsRoute.route =
-      `${location.pathname}${location.search}`.includes('/profile') ||
-      settingsRoute.route === '/settings/ai'
-        ? `/profile${settingsRoute.route}`
-        : `/users/${user.id}${settingsRoute.route}`;
+    settingsRoute.route = `${location.pathname}${location.search}`.includes(
+      '/profile'
+    )
+      ? `/profile${settingsRoute.route}`
+      : `/users/${user.id}${settingsRoute.route}`;
   });
 
   return (
