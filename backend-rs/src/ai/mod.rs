@@ -19,9 +19,13 @@
 
 pub mod chatgpt;
 pub mod compat;
+pub mod dispatch;
 pub mod recs;
 pub mod responses;
 pub mod store;
+
+#[cfg(test)]
+mod dispatchtests;
 
 use std::fmt;
 
@@ -644,6 +648,36 @@ fn api_key(conn: &Connection, vault: &Vault) -> Result<Option<Secret>, AiError> 
 ///
 /// Fails when the provider can't be reached or refuses.
 pub async fn models(state: &AppState, conn: &Connection) -> Result<Vec<(String, String)>, AiError> {
+    let mut dispatch = state.ai_dispatch.request(conn.owner).await;
+    dispatch.run(Box::pin(models_inner(state, conn))).await
+}
+
+/// Reload under the dispatch gate; a request queued behind removal must not
+/// use its stale connection snapshot after that removal completes.
+async fn connected(state: &AppState, conn: &Connection) -> Result<Connection, AiError> {
+    let current = store::load(&state.db, conn.owner)
+        .await
+        .map_err(|e| AiError::internal(format!("{e:#}")))?
+        .ok_or_else(AiError::not_configured)?;
+    if current.id != conn.id
+        || current.session_version != conn.session_version
+        || current.base_url != conn.base_url
+        || current.kind != conn.kind
+        || current.status != conn.status
+    {
+        return Err(AiError::input(
+            "Your AI connection changed while this request was working. Try again.",
+        ));
+    }
+    Ok(current)
+}
+
+async fn models_inner(
+    state: &AppState,
+    conn: &Connection,
+) -> Result<Vec<(String, String)>, AiError> {
+    let current = connected(state, conn).await?;
+    let conn = &current;
     let vault = vault(state)?;
     match conn.kind {
         Kind::ChatGpt => {
@@ -732,6 +766,20 @@ pub async fn complete(
     model: Option<&str>,
     prompt: &Prompt<'_>,
 ) -> Result<String, AiError> {
+    let mut dispatch = state.ai_dispatch.request(conn.owner).await;
+    dispatch
+        .run(Box::pin(complete_inner(state, conn, model, prompt)))
+        .await
+}
+
+async fn complete_inner(
+    state: &AppState,
+    conn: &Connection,
+    model: Option<&str>,
+    prompt: &Prompt<'_>,
+) -> Result<String, AiError> {
+    let current = connected(state, conn).await?;
+    let conn = &current;
     let model = model
         .filter(|m| !m.is_empty())
         .ok_or_else(|| AiError::input("No model is chosen for this connection yet."))?;

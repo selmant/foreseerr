@@ -160,6 +160,10 @@ for a few minutes.
 
 **Sign out** in Profile → Linked Accounts → AI account revokes Foreseerr's access at OpenAI as well.
 
+Removing or replacing a connection cancels its active provider work and stops
+further attempts, including compatibility fallbacks. Requests already sent to
+a provider cannot be recalled.
+
 ## Models
 
 On the server connection the admin picks a **Balanced** model (the default for

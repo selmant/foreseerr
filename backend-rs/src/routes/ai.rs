@@ -489,6 +489,7 @@ fn admin_put<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(u) => u.id,
             Err(out) => return *out,
         };
+        let _dispatch = ctx.state.ai_dispatch.stop(Owner::Server).await;
         let held = store::lock().await;
         let saved = save_endpoint(ctx, Owner::Server, &body(ctx), &held).await;
         drop(held);
@@ -510,6 +511,7 @@ fn admin_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Ok(u) => u.id,
             Err(out) => return *out,
         };
+        let _dispatch = ctx.state.ai_dispatch.stop(Owner::Server).await;
         let held = store::lock().await;
         let removed = store::delete(&ctx.state.db, Owner::Server).await;
         drop(held);
@@ -788,6 +790,7 @@ fn me_put<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             // Replacing a live ChatGPT sign-in would drop its tokens without
             // revoking them at OpenAI; signing out first does. The lock keeps
             // a sign-in from landing between this check and the save.
+            let _dispatch = ctx.state.ai_dispatch.stop(Owner::User(user.id)).await;
             let held = store::lock().await;
             let signed_in_chatgpt = store::load(&ctx.state.db, Owner::User(user.id))
                 .await
@@ -820,6 +823,7 @@ fn me_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         let result = async {
             let owner = Owner::User(user.id);
+            let _dispatch = ctx.state.ai_dispatch.stop(owner).await;
             let held = store::lock().await;
             let conn = load_required(ctx, owner).await?;
             let mut revoked = None;

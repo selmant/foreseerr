@@ -640,8 +640,8 @@ async fn ask<T: for<'de> serde::Deserialize<'de>>(
             return Err(AiError::input("This recommendation request has stopped."));
         }
     }
-    // Checked last, right before sending, so a connection removed while
-    // this run worked gets nothing new.
+    // Check current policy here; complete also validates the connection
+    // under its dispatch gate, which orders removal against every attempt.
     let current = current_access(state, eff, user).await?;
     let answer = super::complete(
         state,

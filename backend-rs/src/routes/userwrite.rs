@@ -616,6 +616,11 @@ fn delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         };
         // Their AI connection goes with them; its ChatGPT session can only be
         // revoked while the token is still stored.
+        let _ai_dispatch = ctx
+            .state
+            .ai_dispatch
+            .stop(crate::ai::store::Owner::User(user.id))
+            .await;
         crate::ai::revoke_for_deleted_user(ctx.state, user.id).await;
         if let Err(e) = ctx
             .state
