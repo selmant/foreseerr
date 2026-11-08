@@ -153,7 +153,7 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Result<Value,
             .filter_map(|p| p.get("tmdb").cloned())
             .collect();
         if !raws.is_empty() {
-            let loaded = RelatedTitles::load(ctx, &raws, kind, Some(user_id))
+            let loaded = RelatedTitles::load_strict(ctx, &raws, kind, Some(user_id))
                 .await
                 .map_err(|_| AiError::internal("loading the picks' library status failed"))?;
             related.insert(kind, loaded);
@@ -636,6 +636,44 @@ mod tests {
     use super::*;
     use crate::dbtx::scratch;
     use crate::routes::testkit::Kit;
+
+    #[tokio::test]
+    async fn run_get_fails_when_inventory_or_active_request_lookup_fails() -> anyhow::Result<()> {
+        for table in ["media", "watchlist", "media_request"] {
+            let scratch = scratch::sqlite(&format!("ai-inventory-{table}")).await?;
+            let db = &scratch.db;
+            db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'inventory@example.test', 0, 1, '')"#, &[]).await?;
+            db.execute(r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status") VALUES (1, 'movie', 10, 2)"#, &[]).await?;
+            let id =
+                store::create_run(db, 1, &Request::default().to_json(None), "own", None).await?;
+            store::finish(db, id, &json!({"picks": [{"mediaType": "movie", "tmdbId": 10, "tmdb": {"id": 10, "title": "A pick", "media_type": "movie"}}]})).await?;
+            let kit = Kit::new(
+                "ai-inventory",
+                db.clone(),
+                json!({"ai": {"enabled": true}, "main": {"hideRequested": true}}),
+            )?;
+            let url = format!("/api/v1/ai/runs/{id}");
+            let (status, body) = kit
+                .call(run_get, (Method::GET, &url), Some((1, 0)), None)
+                .await?;
+            assert_eq!(status, 200);
+            assert!(body
+                .pointer("/result/picks/0/item/mediaInfo")
+                .is_some_and(Value::is_object));
+            // A failed nested query must never masquerade as missing mediaInfo.
+            db.execute(
+                &format!(r#"ALTER TABLE "{table}" RENAME TO "unavailable_{table}""#),
+                &[],
+            )
+            .await?;
+            let (status, body) = kit
+                .call(run_get, (Method::GET, &url), Some((1, 0)), None)
+                .await?;
+            assert_eq!(status, 500, "failure in {table}: {body}");
+            assert!(body.get("result").is_none());
+        }
+        Ok(())
+    }
 
     #[tokio::test]
     async fn row_get_is_read_only_and_post_requires_the_custom_header() -> anyhow::Result<()> {

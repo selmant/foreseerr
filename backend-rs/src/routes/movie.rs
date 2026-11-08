@@ -327,29 +327,56 @@ impl RelatedTitles {
         media_type: &str,
         user_id: Option<i64>,
     ) -> Result<Self, String> {
+        Self::load_inner(ctx, results, media_type, user_id, false).await
+    }
+
+    /// Load inventory for AI picks, failing if visibility data is unavailable.
+    pub(super) async fn load_strict(
+        ctx: &Ready<'_>,
+        results: &[Value],
+        media_type: &str,
+        user_id: Option<i64>,
+    ) -> Result<Self, String> {
+        Self::load_inner(ctx, results, media_type, user_id, true).await
+    }
+
+    async fn load_inner(
+        ctx: &Ready<'_>,
+        results: &[Value],
+        media_type: &str,
+        user_id: Option<i64>,
+        strict: bool,
+    ) -> Result<Self, String> {
         let mut tmdb_ids: Vec<i64> = results
             .iter()
             .filter_map(|r| r.get("id").and_then(Value::as_i64))
             .collect();
         tmdb_ids.sort_unstable();
         tmdb_ids.dedup();
-        // `getRelatedMedia` logs and returns [] on a database error.
-        let rows = ctx
+        // Legacy catalog routes tolerate lookup failures; AI must retain
+        // all inventory data needed by its visibility rules.
+        let rows = match ctx
             .state
             .db
             .related_media(&tmdb_ids, media_type, user_id)
             .await
-            .unwrap_or_default();
+        {
+            Ok(rows) => rows,
+            Err(e) if strict => return Err(format!("loading related media failed: {e:#}")),
+            Err(_) => Vec::new(),
+        };
         let media_ids: Vec<i64> = rows.iter().map(|r| r.media.id).collect();
         let active = if crate::settings::public::truthy(ctx.settings.get("/main/hideRequested"))
             && !rows.is_empty()
         {
             Some(
-                ctx.state
-                    .db
-                    .media_with_active_requests(&media_ids)
-                    .await
-                    .unwrap_or_default(),
+                match ctx.state.db.media_with_active_requests(&media_ids).await {
+                    Ok(ids) => ids,
+                    Err(e) if strict => {
+                        return Err(format!("loading active requests failed: {e:#}"))
+                    }
+                    Err(_) => Vec::new(),
+                },
             )
         } else {
             None
