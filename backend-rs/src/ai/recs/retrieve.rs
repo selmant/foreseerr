@@ -829,29 +829,26 @@ pub async fn gather<S: BuildHasher + Sync>(
         .take(super::prompts::MAX_IDEAS)
         .cloned()
         .collect();
-    jobs.push(Box::pin(async move {
-        map_with_concurrency(ideas, 6, |idea: Idea| async move {
-            // Per title, so the ones already found survive a slow one.
-            tokio::time::timeout_at(
-                deadline,
-                search_title(
-                    state,
-                    language,
-                    &idea.title,
-                    idea.year,
-                    kind_of(&idea.media_type),
-                    "idea",
-                ),
+    let idea_gate = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
+    for idea in ideas {
+        let gate = std::sync::Arc::clone(&idea_gate);
+        // Each outer deadline covers both the permit wait and lookup. A
+        // slow idea cannot discard another idea's completed candidates.
+        jobs.push(Box::pin(async move {
+            let _permit = gate.acquire().await.ok();
+            search_title(
+                state,
+                language,
+                &idea.title,
+                idea.year,
+                kind_of(&idea.media_type),
+                "idea",
             )
             .await
-            .ok()
-            .flatten()
-        })
-        .await
-        .into_iter()
-        .flatten()
-        .collect()
-    }));
+            .into_iter()
+            .collect()
+        }));
+    }
     if let Some(seed) = sources.seed {
         jobs.push(Box::pin(async move {
             let mut out = title_list(state, language, seed, "recommendations", 15, "similar").await;
@@ -975,6 +972,31 @@ mod tests {
         )
         .await;
         assert_eq!(got, [vec![42], vec![]]);
+    }
+
+    #[tokio::test]
+    async fn individual_ideas_keep_results_when_other_ideas_wait_or_time_out() {
+        let gate = tokio::sync::Semaphore::new(1);
+        let gate = &gate;
+        let jobs: Vec<Job<'_, Vec<i64>>> = (0..8)
+            .map(|index| {
+                let job: Job<'_, Vec<i64>> = Box::pin(async move {
+                    let _permit = gate.acquire().await.ok();
+                    if index > 0 {
+                        std::future::pending::<()>().await;
+                    }
+                    vec![index]
+                });
+                job
+            })
+            .collect();
+        let got = collect_before(
+            jobs,
+            tokio::time::Instant::now() + Duration::from_millis(20),
+        )
+        .await;
+        assert_eq!(got.first(), Some(&vec![0]));
+        assert!(got.iter().skip(1).all(Vec::is_empty));
     }
 
     #[test]

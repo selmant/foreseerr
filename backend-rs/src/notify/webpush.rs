@@ -289,6 +289,20 @@ pub async fn send_to_user(env: &Env, user_id: i64, body: &Value) -> Result<()> {
     if !truthy(env.settings.get("/notifications/agents/webpush/enabled")) {
         return Ok(());
     }
+    let Some(user) = env.state.db.user_record(user_id).await? else {
+        return Ok(());
+    };
+    let person = Person::from_records(&user.0, user.1.as_ref());
+    if person.settings.as_ref().is_some_and(|settings| {
+        settings
+            .types
+            .get("webpush")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            == 0
+    }) {
+        return Ok(());
+    }
     let db = &env.state.db;
     let Some(email) = db
         .user_record(1)

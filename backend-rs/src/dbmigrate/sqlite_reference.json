@@ -326,6 +326,12 @@
     },
     {
       "type": "table",
+      "name": "ai_history_ignore",
+      "tbl_name": "ai_history_ignore",
+      "sql": "CREATE TABLE \"ai_history_ignore\" (\"userId\" integer NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, PRIMARY KEY (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_history_ignore_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
+    },
+    {
+      "type": "table",
       "name": "ai_pick",
       "tbl_name": "ai_pick",
       "sql": "CREATE TABLE \"ai_pick\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"title\" varchar NOT NULL DEFAULT (''), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"runId\" integer NOT NULL, \"userId\" integer NOT NULL, CONSTRAINT \"FK_ai_pick_run\" FOREIGN KEY (\"runId\") REFERENCES \"ai_run\" (\"id\") ON DELETE CASCADE, CONSTRAINT \"FK_ai_pick_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"
@@ -982,6 +988,11 @@
       "id": 93,
       "timestamp": 1790300000000,
       "name": "AiInsights1790300000000"
+    },
+    {
+      "id": 94,
+      "timestamp": 1790400000000,
+      "name": "AiHistoryIgnore1790400000000"
     }
   ]
 }

@@ -284,17 +284,17 @@ pub const DELETED_KEEP_DAYS: i64 = 40;
 /// Fails on database errors.
 pub async fn delete_run(db: &Db, user_id: i64, run_id: i64) -> Result<bool> {
     let mut tx = Tx::begin(db).await?;
-    tx.execute(
-        r#"DELETE FROM "ai_pick" WHERE "runId" = ?1 AND "userId" = ?2"#,
-        &[Bind::Int(run_id), Bind::Int(user_id)],
-    )
-    .await?;
     let n = tx
         .execute(
             &format!(r#"UPDATE "ai_run" SET {SCRUB} WHERE "id" = ?1 AND "userId" = ?2 AND "stage" <> 'deleted'"#),
             &[Bind::Int(run_id), Bind::Int(user_id)],
         )
         .await?;
+    tx.execute(
+        r#"DELETE FROM "ai_pick" WHERE "runId" = ?1 AND "userId" = ?2"#,
+        &[Bind::Int(run_id), Bind::Int(user_id)],
+    )
+    .await?;
     tx.commit().await?;
     Ok(n > 0)
 }
@@ -307,11 +307,6 @@ pub async fn delete_run(db: &Db, user_id: i64, run_id: i64) -> Result<bool> {
 /// Fails on database errors.
 pub async fn delete_runs(db: &Db, user_id: i64) -> Result<u64> {
     let mut tx = Tx::begin(db).await?;
-    tx.execute(
-        r#"DELETE FROM "ai_pick" WHERE "userId" = ?1"#,
-        &[Bind::Int(user_id)],
-    )
-    .await?;
     // Running ones too: their workers find them stopped and save nothing.
     let n = tx
         .execute(
@@ -319,6 +314,11 @@ pub async fn delete_runs(db: &Db, user_id: i64) -> Result<u64> {
             &[Bind::Int(user_id)],
         )
         .await?;
+    tx.execute(
+        r#"DELETE FROM "ai_pick" WHERE "userId" = ?1"#,
+        &[Bind::Int(user_id)],
+    )
+    .await?;
     tx.commit().await?;
     Ok(n)
 }
@@ -332,20 +332,17 @@ pub async fn prune_runs(db: &Db, before_iso: Option<&str>) -> Result<u64> {
     let created = db.iso_sql(r#""createdAt""#);
     let mut tx = Tx::begin(db).await?;
     let n = if let Some(before) = before_iso {
-        tx.execute(
-            &format!(
-                r#"DELETE FROM "ai_pick" WHERE "runId" IN (SELECT "id" FROM "ai_run" WHERE "stage" IN ('done', 'failed') AND {created} < ?1)"#
-            ),
+        // Lock/scrub runs before deleting picks, matching finish's order.
+        // A completion cannot commit new picks behind the deletion.
+        let changed = tx.execute(
+            &format!(r#"UPDATE "ai_run" SET {SCRUB} WHERE "stage" IN ('done', 'failed') AND {created} < ?1"#),
             &[Bind::Text(before.to_owned())],
-        )
-        .await?;
+        ).await?;
         tx.execute(
-            &format!(
-                r#"UPDATE "ai_run" SET {SCRUB} WHERE "stage" IN ('done', 'failed') AND {created} < ?1"#
-            ),
+            &format!(r#"DELETE FROM "ai_pick" WHERE "runId" IN (SELECT "id" FROM "ai_run" WHERE "stage" = 'deleted' AND {created} < ?1)"#),
             &[Bind::Text(before.to_owned())],
-        )
-        .await?
+        ).await?;
+        changed
     } else {
         0
     };
@@ -879,6 +876,7 @@ pub async fn clear_feedback(db: &Db, user_id: i64, media_type: &str, tmdb_id: i6
 /// Fails on database errors.
 pub async fn clear_all_feedback(db: &Db, user_id: i64) -> Result<()> {
     let mut tx = Tx::begin(db).await?;
+    super::signals::lock_user(&mut tx, user_id).await?;
     tx.execute(
         r#"UPDATE "ai_taste" SET "version" = "version" + 1 WHERE "userId" = ?1"#,
         &[Bind::Int(user_id)],
@@ -889,15 +887,14 @@ pub async fn clear_all_feedback(db: &Db, user_id: i64) -> Result<()> {
         &[Bind::Int(user_id)],
     )
     .await?;
+    // Identifiers only: never reimport tracker history for forgotten titles.
+    // Picks/request outcomes remain available to usage and exclusion queries.
     tx.execute(
-        r#"DELETE FROM "ai_signal" WHERE "userId" = ?1"#,
+        r#"INSERT INTO "ai_history_ignore" ("userId", "mediaType", "tmdbId") SELECT "userId", "mediaType", "tmdbId" FROM "ai_pick" WHERE "userId" = ?1 UNION SELECT "userId", "mediaType", "tmdbId" FROM "ai_signal" WHERE "userId" = ?1 AND "kind" IN ('rated', 'watched') ON CONFLICT ("userId", "mediaType", "tmdbId") DO NOTHING"#,
         &[Bind::Int(user_id)],
-    )
-    .await?;
-    // Signals come from past picks; without them, a rating still on Simkl
-    // or Trakt can't bring a forgotten signal back. The requests stay.
+    ).await?;
     tx.execute(
-        r#"DELETE FROM "ai_pick" WHERE "userId" = ?1"#,
+        r#"DELETE FROM "ai_signal" WHERE "userId" = ?1 AND "kind" IN ('watched', 'rated')"#,
         &[Bind::Int(user_id)],
     )
     .await?;

@@ -57,7 +57,7 @@ create the Secret yourself, set `searxng.existingSecret`, and set
 
 ```bash
 # Set RELEASE_NAMESPACE to the namespace of your Helm release.
-kubectl --namespace "$RELEASE_NAMESPACE" create secret generic foreseerr-searxng \
+kubectl --namespace "${RELEASE_NAMESPACE:?Set RELEASE_NAMESPACE to your Helm release namespace}" create secret generic foreseerr-searxng \
   --from-literal=secret-key="$(openssl rand -hex 32)"
 ```
 

@@ -589,11 +589,10 @@ async fn taste_view(ctx: &Ready<'_>, user_id: i64) -> Result<Value, AiError> {
     let (count, pending) = recs::pending_feedback(ctx.state, user_id)
         .await
         .map_err(|e| db_err(&e))?;
-    let outcomes = recs::signals::outcomes(&ctx.state.db, &recs::iso_since(Some(30 * 24 * 60)))
-        .await
-        .map_err(|e| db_err(&e))?
-        .remove(&user_id)
-        .unwrap_or_default();
+    let outcomes =
+        recs::signals::user_outcomes(&ctx.state.db, &recs::iso_since(Some(30 * 24 * 60)), user_id)
+            .await
+            .map_err(|e| db_err(&e))?;
     Ok(json!({
         "card": taste.as_ref().map(|(c, _)| c.as_str()).unwrap_or_default(),
         "updatedAt": taste.as_ref().map(|(_, at)| at.as_str()),

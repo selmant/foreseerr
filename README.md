@@ -45,9 +45,10 @@ the web through SearXNG, and explains why each pick fits.
   inform an editable taste card; watch-history sharing is opt-in.
 - **Useful filters.** Choose movies, series or anime, and narrow picks to your
   library or titles you still need to request. Refine with a chip or your own words.
-- **Less waiting.** Save prompts as personal Discover rows. A nightly job
-  refreshes rows for active users and prepares weekly picks, with a weekly
-  web-push notification when configured.
+- **Less waiting.** Admins can save prompts as shared Discover rows, with
+  personalized picks for each person. A nightly job refreshes rows for active
+  users and prepares weekly picks, with a weekly web-push notification when
+  configured.
 - **Control over history and usage.** Delete past requests, choose retention,
   set daily limits and a server monthly token budget, and inspect usage by
   person and model. AI is off until an admin enables it.

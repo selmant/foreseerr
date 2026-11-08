@@ -14,6 +14,7 @@ use serde_json::Value;
 
 use super::retrieve::{kind_of, Key};
 use crate::db::{Bind, Db};
+use crate::jobs::syncutil::Tx;
 use crate::mappinglayer::watched::WatchedSets;
 use crate::settings::Settings;
 use crate::state::AppState;
@@ -95,11 +96,11 @@ struct Picked {
 
 /// Titles this user was suggested, with the title and model of the latest
 /// suggestion.
-async fn picked(db: &Db, user_id: i64) -> Result<HashMap<Key, Picked>> {
-    let rows = db
+async fn picked(db: &Db, tx: &mut Tx, user_id: i64) -> Result<HashMap<Key, Picked>> {
+    let rows = tx
         .rows(
             &format!(
-                r#"SELECT p."mediaType", CAST(p."tmdbId" AS BIGINT) AS "tmdbId", MAX(p."title") AS "title", MAX(r."model") AS "model", MIN({}) AS "at" FROM "ai_pick" p JOIN "ai_run" r ON r."id" = p."runId" WHERE p."userId" = ?1 GROUP BY p."mediaType", p."tmdbId""#,
+                r#"SELECT p."mediaType", CAST(p."tmdbId" AS BIGINT) AS "tmdbId", MAX(p."title") AS "title", MAX(r."model") AS "model", MIN({}) AS "at" FROM "ai_pick" p JOIN "ai_run" r ON r."id" = p."runId" WHERE p."userId" = ?1 AND NOT EXISTS (SELECT 1 FROM "ai_history_ignore" i WHERE i."userId" = p."userId" AND i."mediaType" = p."mediaType" AND i."tmdbId" = p."tmdbId") GROUP BY p."mediaType", p."tmdbId""#,
                 db.iso_sql(r#"p."createdAt""#)
             ),
             &[Bind::Int(user_id)],
@@ -127,14 +128,14 @@ async fn picked(db: &Db, user_id: i64) -> Result<HashMap<Key, Picked>> {
 /// Record a signal. A changed rating replaces the old one and is learned
 /// again.
 async fn insert(
-    db: &Db,
+    tx: &mut Tx,
     user_id: i64,
     key: Key,
     kind: &str,
     rating: Option<i64>,
     Picked { title, model, .. }: &Picked,
 ) -> Result<()> {
-    db.execute(
+    tx.execute(
         r#"INSERT INTO "ai_signal" ("userId", "mediaType", "tmdbId", "kind", "rating", "title", "model") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT ("userId", "mediaType", "tmdbId", "kind") DO UPDATE SET "rating" = excluded."rating", "learned" = ?8 WHERE "ai_signal"."rating" IS DISTINCT FROM excluded."rating""#,
         &[
             Bind::Int(user_id),
@@ -254,8 +255,14 @@ pub async fn sync(
     trakt: bool,
 ) -> Result<()> {
     let db = &state.db;
+    // Fetch network-backed data before locking. All writes then serialize
+    // with Forget all ratings, including writes from an already running sync.
+    let ratings = ratings(state, settings, user_id, trakt).await;
+    let simkl_seen = simkl_watched(db, user_id).await?;
+    let mut tx = Tx::begin(db).await?;
+    lock_user(&mut tx, user_id).await?;
     let at = |col: &str| db.iso_sql(col);
-    db.execute(
+    tx.execute(
         &format!(
             r#"INSERT INTO "ai_signal" ("userId", "mediaType", "tmdbId", "kind", "title", "model") SELECT p."userId", p."mediaType", p."tmdbId", 'requested', MAX(p."title"), MAX(r."model") FROM "ai_pick" p JOIN "ai_run" r ON r."id" = p."runId" JOIN "media" m ON m."tmdbId" = p."tmdbId" AND m."mediaType" = p."mediaType" JOIN "media_request" q ON q."mediaId" = m."id" AND q."requestedById" = p."userId" WHERE p."userId" = ?1 AND {} >= {} GROUP BY p."userId", p."mediaType", p."tmdbId" ON CONFLICT ("userId", "mediaType", "tmdbId", "kind") DO NOTHING"#,
             at(r#"q."createdAt""#),
@@ -264,9 +271,9 @@ pub async fn sync(
         &[Bind::Int(user_id)],
     )
     .await?;
-    let picks = picked(db, user_id).await?;
+    let picks = picked(db, &mut tx, user_id).await?;
     if picks.is_empty() {
-        return Ok(());
+        return tx.commit().await;
     }
     let mut seen: Vec<(Key, Option<String>)> = Vec::new();
     if let Some(watched) = watched {
@@ -278,16 +285,31 @@ pub async fn sync(
             }
         }
     }
-    seen.extend(simkl_watched(db, user_id).await?);
+    seen.extend(simkl_seen);
     for (key, at) in seen {
         if let Some(pick) = picks.get(&key).filter(|p| after(at.as_deref(), p)) {
-            insert(db, user_id, key, "watched", None, pick).await?;
+            insert(&mut tx, user_id, key, "watched", None, pick).await?;
         }
     }
-    for (key, (rating, at)) in ratings(state, settings, user_id, trakt).await {
+    for (key, (rating, at)) in ratings {
         if let Some(pick) = picks.get(&key).filter(|p| after(at.as_deref(), p)) {
-            insert(db, user_id, key, "rated", Some(rating), pick).await?;
+            insert(&mut tx, user_id, key, "rated", Some(rating), pick).await?;
         }
+    }
+    tx.commit().await
+}
+
+/// Serialize signal writes and resets for one user. `SQLite` already holds
+/// its writer lock; `PostgreSQL` uses the user row for the transaction's life.
+/// # Errors
+/// Fails on database errors.
+pub(super) async fn lock_user(tx: &mut Tx, user_id: i64) -> Result<()> {
+    if tx.is_postgres() {
+        tx.rows(
+            r#"SELECT "id" FROM "user" WHERE "id" = ?1 FOR UPDATE"#,
+            &[Bind::Int(user_id)],
+        )
+        .await?;
     }
     Ok(())
 }
@@ -390,15 +412,44 @@ impl Outcomes {
 ///
 /// Fails on database errors.
 pub async fn outcomes(db: &Db, since_iso: &str) -> Result<HashMap<i64, Outcomes>> {
+    outcomes_for(db, since_iso, None).await
+}
+
+/// One user's outcomes, filtered before aggregation.
+/// # Errors
+/// Fails on database errors.
+pub async fn user_outcomes(db: &Db, since_iso: &str, user_id: i64) -> Result<Outcomes> {
+    Ok(outcomes_for(db, since_iso, Some(user_id))
+        .await?
+        .remove(&user_id)
+        .unwrap_or_default())
+}
+
+async fn outcomes_for(
+    db: &Db,
+    since_iso: &str,
+    user_id: Option<i64>,
+) -> Result<HashMap<i64, Outcomes>> {
+    let filter = |alias: &str, position: i32| {
+        user_id.map_or_else(String::new, |_| {
+            format!(r#" AND {alias}."userId" = ?{position}"#)
+        })
+    };
+    let binds = |mut values: Vec<Bind>| {
+        if let Some(id) = user_id {
+            values.push(Bind::Int(id));
+        }
+        values
+    };
     let created = |t: &str| db.iso_sql(&format!(r#"{t}."createdAt""#));
     let mut out: HashMap<i64, Outcomes> = HashMap::new();
     let picks = db
         .rows(
             &format!(
-                r#"SELECT CAST(p."userId" AS BIGINT) AS "userId", CAST(COUNT(DISTINCT p."mediaType" || ':' || CAST(p."tmdbId" AS VARCHAR)) AS BIGINT) AS "n" FROM "ai_pick" p WHERE {} >= ?1 GROUP BY p."userId""#,
-                created("p")
+                r#"SELECT CAST(p."userId" AS BIGINT) AS "userId", CAST(COUNT(DISTINCT p."mediaType" || ':' || CAST(p."tmdbId" AS VARCHAR)) AS BIGINT) AS "n" FROM "ai_pick" p WHERE {} >= ?1{} GROUP BY p."userId""#,
+                created("p"), filter("p", 2)
             ),
-            &[Bind::Text(since_iso.to_owned())],
+            &binds(vec![Bind::Text(since_iso.to_owned())]),
         )
         .await?;
     for r in picks {
@@ -412,10 +463,10 @@ pub async fn outcomes(db: &Db, since_iso: &str) -> Result<HashMap<i64, Outcomes>
     let signals = db
         .rows(
             &format!(
-                r#"SELECT CAST(s."userId" AS BIGINT) AS "userId", s."kind", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_signal" s WHERE {} >= ?1 AND s."kind" IN ('requested', 'watched') GROUP BY s."userId", s."kind""#,
-                created("s")
+                r#"SELECT CAST(s."userId" AS BIGINT) AS "userId", s."kind", CAST(COUNT(*) AS BIGINT) AS "n" FROM "ai_signal" s WHERE {} >= ?1{} AND s."kind" IN ('requested', 'watched') GROUP BY s."userId", s."kind""#,
+                created("s"), filter("s", 2)
             ),
-            &[Bind::Text(since_iso.to_owned())],
+            &binds(vec![Bind::Text(since_iso.to_owned())]),
         )
         .await?;
     for r in signals {
@@ -436,11 +487,11 @@ pub async fn outcomes(db: &Db, since_iso: &str) -> Result<HashMap<i64, Outcomes>
         .rows(
             &format!(
                 // Each title once, liked with the button, rated well, or both.
-                r#"SELECT CAST(t."userId" AS BIGINT) AS "userId", CAST(COUNT(*) AS BIGINT) AS "n" FROM (SELECT s."userId", s."mediaType", s."tmdbId" FROM "ai_signal" s WHERE s."kind" = 'rated' AND s."rating" >= ?2 AND {} >= ?1 UNION SELECT f."userId", f."mediaType", f."tmdbId" FROM "ai_feedback" f WHERE f."kind" = 'like' AND {} >= ?1) t GROUP BY t."userId""#,
-                created("s"),
-                db.iso_sql(r#"f."updatedAt""#)
+                r#"SELECT CAST(t."userId" AS BIGINT) AS "userId", CAST(COUNT(*) AS BIGINT) AS "n" FROM (SELECT s."userId", s."mediaType", s."tmdbId" FROM "ai_signal" s WHERE s."kind" = 'rated' AND s."rating" >= ?2 AND {} >= ?1{} UNION SELECT f."userId", f."mediaType", f."tmdbId" FROM "ai_feedback" f WHERE f."kind" = 'like' AND {} >= ?1{}) t GROUP BY t."userId""#,
+                created("s"), filter("s", 3),
+                db.iso_sql(r#"f."updatedAt""#), filter("f", 3)
             ),
-            &[Bind::Text(since_iso.to_owned()), Bind::Int(LIKED_FROM)],
+            &binds(vec![Bind::Text(since_iso.to_owned()), Bind::Int(LIKED_FROM)]),
         )
         .await?;
     for r in liked {
@@ -693,9 +744,38 @@ mod tests {
         // Forgetting ratings forgets them, and the ratings still on Simkl
         // don't bring them back.
         store::clear_all_feedback(db, 1).await?;
-        assert!(recent(db, 1, true, 10).await?.is_empty());
+        let only_requests = |signals: Vec<Signal>| {
+            assert_eq!(signals.len(), 1);
+            assert_eq!(signals.first().map(|s| s.kind.as_str()), Some("requested"));
+        };
+        only_requests(recent(db, 1, true, 10).await?);
+        // Re-suggest the undated Simkl rating after forgetting it.
+        let again =
+            store::create_run(db, 1, &Request::default().to_json(None), "server", None).await?;
+        store::finish(
+            db,
+            again,
+            &json!({"picks": [{"mediaType": "movie", "tmdbId": 30}]}),
+        )
+        .await?;
         sync(&state, &settings, 1, Some(&watched), false).await?;
-        assert!(recent(db, 1, true, 10).await?.is_empty());
+        only_requests(recent(db, 1, true, 10).await?);
+        let o = user_outcomes(db, "2000", 1).await?;
+        assert_eq!((o.picks, o.requested, o.watched, o.liked), (3, 1, 0, 0));
+        assert_eq!(
+            by_model(db, "2000")
+                .await?
+                .first()
+                .and_then(|m| m.get("requested")),
+            Some(&json!(1))
+        );
+        assert_eq!(
+            user_outcomes(db, "2000", 999).await?.to_json(),
+            Outcomes::default().to_json()
+        );
+        // Explicit feedback can still express a new preference.
+        store::set_feedback(db, 1, "movie", 30, store::Verdict::Like, "Ignored").await?;
+        assert_eq!(user_outcomes(db, "2000", 1).await?.liked, 1);
         assert!(store::delete_run(db, 1, run).await?);
         Ok(())
     }
@@ -892,7 +972,53 @@ mod tests {
         );
         assert!(store::delete_run(&db, 1, run).await?);
         assert_eq!(store::delete_runs(&db, 1).await?, 0);
+        for all in [false, true] {
+            let run =
+                store::create_run(&db, 1, &Request::default().to_json(None), "own", None).await?;
+            let mut completion = Tx::begin(&db).await?;
+            completion
+                .execute(
+                    r#"UPDATE "ai_run" SET "stage" = 'done' WHERE "id" = ?1"#,
+                    &[Bind::Int(run)],
+                )
+                .await?;
+            let deleting_db = db.clone();
+            let mut deletion = tokio::spawn(async move {
+                if all {
+                    store::delete_runs(&deleting_db, 1).await.map(|_| ())
+                } else {
+                    store::delete_run(&deleting_db, 1, run).await.map(|_| ())
+                }
+            });
+            // Completion holds the run lock, so deletion must wait BEFORE
+            // deleting picks. With the old order the following pick survived.
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(50), &mut deletion)
+                    .await
+                    .is_err()
+            );
+            completion.execute(r#"INSERT INTO "ai_pick" ("userId", "runId", "mediaType", "tmdbId") VALUES (1, ?1, 'movie', 99)"#, &[Bind::Int(run)]).await?;
+            completion.commit().await?;
+            deletion.await??;
+            assert!(db
+                .rows(
+                    r#"SELECT "id" FROM "ai_pick" WHERE "runId" = ?1"#,
+                    &[Bind::Int(run)]
+                )
+                .await?
+                .is_empty());
+        }
         store::clear_all_feedback(&db, 1).await?;
+        assert_eq!(user_outcomes(&db, "2000", 1).await?.requested, 1);
+        assert!(recent(&db, 1, true, 10)
+            .await?
+            .iter()
+            .all(|s| s.kind == "requested"));
+        sync(&state, &settings, 1, None, false).await?;
+        assert!(recent(&db, 1, true, 10)
+            .await?
+            .iter()
+            .all(|s| s.kind == "requested"));
         Ok(())
     }
 

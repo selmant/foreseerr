@@ -77,9 +77,12 @@ watches carry dates; other watches and Simkl ratings don't, so they count when
 they show up after the title was suggested (titles you'd already watched are
 never suggested). Changing a rating replaces the old one.
 
-These stay on your server. **Forget all ratings** forgets them too, along with
-the record of which titles were suggested, so ratings still on Trakt or Simkl
-don't bring them back.
+These stay on your server. **Forget all ratings** clears explicit feedback,
+watches and tracker rating signals. Request outcomes and the record of suggested
+titles remain. Foreseerr keeps only title identifiers to prevent tracker history
+for those titles from being imported again, even if an undated Simkl rating is
+still present or the title is suggested again. New titles can still build tracker
+signals; you can always give new explicit feedback on a forgotten title.
 
 After a few new ratings, Foreseerr rewrites your **taste card**, a short note
 about what you enjoy that goes with each request. It learns from your ratings
@@ -182,7 +185,7 @@ connection pick any model it offers.
 | Daily AI requests per person                   | 30      | On the server connection, reset at midnight UTC. Admins and people using their own account aren't limited. 0 means no limit. |
 | Prepare picks overnight                        | On      | Refreshes Discover AI rows ahead of time and makes weekly picks for people active in the last week. |
 | Refresh Discover AI rows every (days)          | 3       | How long a person's row picks are kept. Longer means fewer AI requests. |
-| Keep request history (days)                    | 90      | Finished requests and their picks are deleted after this, but never before a Discover row's picks are due for a refresh. 0 keeps them. |
+| Keep request history (days)                    | 90      | Finished requests and their picks are deleted by the next nightly refresh after this period, even if a Discover row has a longer refresh interval. Deletion can take up to one additional day. 0 keeps them. |
 | Monthly token budget for the server connection | 0       | When the server connection has used this many tokens this month, new requests on it stop until the 1st. Requests still working count as an average one. Own accounts aren't affected. 0 means no budget. |
 
 The budget counts the tokens the provider reports. OpenAI and most compatible
@@ -241,8 +244,8 @@ again.
 ## Web search with SearXNG
 
 With a [SearXNG](https://docs.searxng.org) instance, every new recommendation
-run researches the web alongside the catalogs. This includes personal Discover
-rows when they regenerate. The model creates one or two searches from your
+run researches the web alongside the catalogs. This includes personalized picks
+in shared Discover rows when they regenerate. The model creates one or two searches from your
 request and taste, and Foreseerr supplies a search from the plan's summary if
 the model leaves them empty. Results guide ranking, and extra titles are
 checked against TMDB before they appear. Cached rows reuse their existing picks.

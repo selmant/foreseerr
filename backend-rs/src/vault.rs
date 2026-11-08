@@ -323,6 +323,8 @@ fn hex_decode(text: &str) -> Result<Vec<u8>> {
 }
 
 fn sync_key_directory(path: &Path) -> Result<()> {
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     std::fs::File::open(path.parent().unwrap_or_else(|| Path::new(".")))?.sync_all()?;
     Ok(())

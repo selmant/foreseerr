@@ -723,4 +723,9 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "CREATE TABLE \"ai_signal\" (\"id\" SERIAL NOT NULL, \"mediaType\" character varying NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" character varying NOT NULL, \"rating\" integer, \"title\" character varying NOT NULL DEFAULT '', \"model\" character varying, \"learned\" boolean NOT NULL DEFAULT false, \"createdAt\" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_signal_user_title_kind\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\", \"kind\"), CONSTRAINT \"PK_ai_signal\" PRIMARY KEY (\"id\"), CONSTRAINT \"FK_ai_signal_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\"(\"id\") ON DELETE CASCADE)",
         ],
     },
+    Migration {
+        timestamp: 1_790_400_000_000,
+        name: "AiHistoryIgnore1790400000000",
+        queries: &["CREATE TABLE \"ai_history_ignore\" (\"userId\" integer NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, PRIMARY KEY (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_history_ignore_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"],
+    },
 ];

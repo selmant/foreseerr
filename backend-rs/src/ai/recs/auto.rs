@@ -192,13 +192,8 @@ pub async fn run(
 ) -> anyhow::Result<Summary> {
     let policy = Policy::of(&settings);
     let mut summary = Summary::default();
-    // Never sooner than a Discover row's picks are meant to last, so
-    // pruning doesn't force a fresh AI request for a row.
-    let keep_before = (policy.history_days > 0).then(|| {
-        iso_since(Some(
-            policy.history_days.max(policy.row_refresh_days) * 24 * 60,
-        ))
-    });
+    let keep_before =
+        (policy.history_days > 0).then(|| iso_since(Some(policy.history_days * 24 * 60)));
     summary.pruned = store::prune_runs(&state.db, keep_before.as_deref()).await?;
     if !policy.enabled {
         return Ok(summary);
@@ -274,4 +269,54 @@ pub async fn run(
         }
     }
     Ok(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn history_expires_before_longer_row_refresh() -> anyhow::Result<()> {
+        let scratch = crate::dbtx::scratch::sqlite("ai-retention").await?;
+        let db = &scratch.db;
+        db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'retention@example.test', 0, 1, '')"#, &[]).await?;
+        let id = store::create_run(
+            db,
+            1,
+            &Request {
+                row: true,
+                ..Request::default()
+            }
+            .to_json(None),
+            "own",
+            None,
+        )
+        .await?;
+        store::finish(
+            db,
+            id,
+            &json!({"picks": [{"mediaType": "movie", "tmdbId": 1}]}),
+        )
+        .await?;
+        db.execute(
+            r#"UPDATE "ai_run" SET "createdAt" = ?2 WHERE "id" = ?1"#,
+            &[Bind::Int(id), Bind::Text(iso_since(Some(2 * 24 * 60)))],
+        )
+        .await?;
+        let state = Arc::new(AppState::for_tests(db.clone(), &std::env::temp_dir())?);
+        let settings = Arc::new(Settings::from_file_value(
+            json!({"ai": {"enabled": false, "historyDays": 1, "rowRefreshDays": 30}}),
+            None,
+        )?);
+        assert_eq!(run(state, settings, || false).await?.pruned, 1);
+        assert!(store::run(db, 1, id).await?.is_none());
+        assert!(db
+            .rows(
+                r#"SELECT "id" FROM "ai_pick" WHERE "runId" = ?1"#,
+                &[Bind::Int(id)]
+            )
+            .await?
+            .is_empty());
+        Ok(())
+    }
 }

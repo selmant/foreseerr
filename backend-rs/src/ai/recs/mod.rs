@@ -877,7 +877,7 @@ async fn maybe_update_taste(
         a.line()
             .map(|(liked, line)| format!("{line}: {}", if liked { "liked" } else { "disliked" }))
     }));
-    let requests: Vec<String> = store::recent_runs(&state.db, user_id, 8)
+    let requests: Vec<String> = store::personal_runs(&state.db, user_id, 8)
         .await
         .map_err(db_err)?
         .iter()

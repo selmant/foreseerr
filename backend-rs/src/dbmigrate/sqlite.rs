@@ -1345,6 +1345,11 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             "CREATE TABLE \"ai_signal\" (\"id\" integer PRIMARY KEY AUTOINCREMENT NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, \"kind\" varchar NOT NULL, \"rating\" integer, \"title\" varchar NOT NULL DEFAULT (''), \"model\" varchar, \"learned\" boolean NOT NULL DEFAULT (0), \"createdAt\" datetime NOT NULL DEFAULT (CURRENT_TIMESTAMP), \"userId\" integer NOT NULL, CONSTRAINT \"UQ_ai_signal_user_title_kind\" UNIQUE (\"userId\", \"mediaType\", \"tmdbId\", \"kind\"), CONSTRAINT \"FK_ai_signal_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)",
         ],
     },
+    Migration {
+        timestamp: 1_790_400_000_000,
+        name: "AiHistoryIgnore1790400000000",
+        queries: &["CREATE TABLE \"ai_history_ignore\" (\"userId\" integer NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, PRIMARY KEY (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_history_ignore_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"],
+    },
 ];
 
 /// `SeerrMigration1759769291608` from `server/lib/overseerrMerge.ts`,

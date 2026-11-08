@@ -12,12 +12,13 @@ title: Foreseerr v0.16.0 release notes
   plan and are never shared. Saved credentials are encrypted at rest.
 - Add optional **SearXNG** web research alongside TMDB, AniList and Trakt.
   Docker Compose and Helm include private SearXNG deployment options.
-- Feedback, requested picks, and later watches can build an editable taste
-  card. Watch-history sharing is opt-in; watched-title exclusions happen on
-  the server even without sharing history with the AI provider.
+- Feedback and requested picks can build an editable taste card. Later
+  watches and tracker ratings inform requests only with opt-in history
+  consent. Watched-title exclusions happen on the server even without sharing
+  history with the AI provider.
 - Filter picks by movie, series or anime, and by whether they are in your
-  library. Save completed requests as personalized Discover rows without
-  generating them again.
+  library. Admins can save completed requests as shared Discover rows with
+  personalized results, without generating the first results again.
 - A nightly **AI Picks Refresh** job prepares rows and weekly picks for active
   users. Users can turn weekly picks off. Automatic generation uses provider
   resources and respects the server monthly budget, but does not consume a
