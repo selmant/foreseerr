@@ -37,12 +37,20 @@ offers to sign in again or switch back to the server connection.
 
 ### Signing in with ChatGPT
 
-Foreseerr runs on your server, so ChatGPT can't send the sign-in straight back
-to it. After you approve, ChatGPT opens an address starting with
-`http://127.0.0.1:1455/auth/callback`, and that page doesn't load. This is
-expected. Copy the whole address from the address bar and paste it into
-Foreseerr. It works once, for a few minutes, and only with the sign-in that
-Foreseerr started.
+ChatGPT opens in a small window. OpenAI only sends a finished sign-in back to
+`127.0.0.1` on your own computer, never to a server, so after you approve,
+that window lands on a page that doesn't load
+(`http://127.0.0.1:1455/auth/callback?code=…`). This is expected:
+
+1. Copy that page's address (<kbd>Ctrl</kbd>+<kbd>L</kbd>, then
+   <kbd>Ctrl</kbd>+<kbd>C</kbd>; <kbd>⌘</kbd> on a Mac).
+2. Come back to Foreseerr. It finishes on its own when you paste anywhere on
+   the page or press **Paste address**. If your browser already lets
+   Foreseerr read the clipboard, coming back is enough.
+
+Foreseerr only ever uses an address that belongs to the sign-in it started,
+so nothing else on your clipboard is sent anywhere. The address works once,
+for a few minutes.
 
 **Sign out** in Profile → AI revokes Foreseerr's access at OpenAI as well.
 
