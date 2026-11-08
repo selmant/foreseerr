@@ -21,7 +21,7 @@ use crate::memcache::{self, CacheId};
 const GRAPHQL_URL: &str = "https://graphql.anilist.co";
 const PAGE_SIZE: i64 = 20;
 /// `PUBLIC_PAGE_CACHE_TTL_SECONDS`.
-pub const PAGE_TTL: Duration = Duration::from_secs(300);
+pub const PAGE_TTL: Duration = Duration::from_mins(5);
 /// `ANILIST_RATE_LIMIT_MAX_WAIT_SECONDS`: the longest a request waits out
 /// `AniList`'s rate limit before failing.
 const RATE_LIMIT_MAX_WAIT: Duration = Duration::from_secs(10);

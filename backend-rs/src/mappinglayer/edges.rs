@@ -41,7 +41,7 @@ pub struct Edge {
 }
 
 static CACHE: LazyLock<Mutex<BoundedLru<String, Vec<Edge>>>> =
-    LazyLock::new(|| Mutex::new(BoundedLru::new(20_000, Some(Duration::from_secs(15 * 60)))));
+    LazyLock::new(|| Mutex::new(BoundedLru::new(20_000, Some(Duration::from_mins(15)))));
 
 /// `clearEdgeCache`.
 pub fn clear_edge_cache() {
@@ -367,7 +367,7 @@ pub fn parse_episode_range(range: &str) -> Option<EpisodeRange> {
 }
 
 /// `\s` in a JavaScript regular expression.
-fn is_regex_space(c: char) -> bool {
+const fn is_regex_space(c: char) -> bool {
     c.is_whitespace() || c == '\u{feff}'
 }
 

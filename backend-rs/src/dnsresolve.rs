@@ -92,7 +92,7 @@ mod tests {
         assert_eq!((ttl.entry(), ttl.max), (DEFAULT_TTL, None), "defaults");
         assert_eq!(
             cache_ttl(Some(&json!(600)), None).entry(),
-            Duration::from_secs(600),
+            Duration::from_mins(10),
             "raised"
         );
         assert_eq!(

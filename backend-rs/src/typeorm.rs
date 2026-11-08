@@ -126,7 +126,7 @@ impl Changes {
 
     /// Whether anything changed.
     #[must_use]
-    pub fn any(&self) -> bool {
+    pub const fn any(&self) -> bool {
         !self.sets.is_empty()
     }
 
@@ -323,7 +323,7 @@ pub fn json_array_to(v: &Value) -> Value {
 }
 
 /// `v?.length` truthiness, the test `jsonArrayTransformer.to` applies.
-fn has_length(v: &Value) -> bool {
+const fn has_length(v: &Value) -> bool {
     match v {
         Value::Array(a) => !a.is_empty(),
         Value::String(s) => !s.is_empty(),

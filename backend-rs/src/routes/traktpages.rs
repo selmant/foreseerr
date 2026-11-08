@@ -25,7 +25,7 @@ const MAX_UPSTREAM_PAGES: i64 = 10;
 /// `ANIME_KEYWORD_ID`.
 const ANIME_KEYWORD_ID: f64 = 210_024.0;
 /// `ANIME_CACHE_TTL_SECONDS`: a week.
-const ANIME_CACHE_TTL: Duration = Duration::from_secs(604_800);
+const ANIME_CACHE_TTL: Duration = Duration::from_hours(168);
 /// `mediaHasKeyword`'s TMDB TTL, a week.
 const KEYWORDS_TTL_SECS: u64 = 604_800;
 /// The browse metadata TTL, twelve hours.

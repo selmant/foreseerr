@@ -24,11 +24,11 @@ const MANAGE_REQUESTS: i64 = 16;
 
 /// How long one server's statistics for a user are reused: a profile
 /// visit shouldn't walk every Sonarr server each time.
-const USAGE_TTL: Duration = Duration::from_secs(300);
+const USAGE_TTL: Duration = Duration::from_mins(5);
 
 /// How long "no tag there yet" is reused: the user's first series tags
 /// them, and the card should show it soon.
-const NO_TAG_TTL: Duration = Duration::from_secs(60);
+const NO_TAG_TTL: Duration = Duration::from_mins(1);
 
 /// This module's routes.
 pub(super) const ROUTES: &Table = &[("/api/v1/user/{id}/sonarr-storage", Method::GET, storage)];

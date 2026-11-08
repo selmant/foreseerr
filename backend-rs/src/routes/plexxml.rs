@@ -29,7 +29,7 @@ impl Element {
     }
 
     /// Whether xml2js gives this element a `$` (at least one attribute).
-    pub(super) fn has_attrs(&self) -> bool {
+    pub(super) const fn has_attrs(&self) -> bool {
         !self.attrs.is_empty()
     }
 }

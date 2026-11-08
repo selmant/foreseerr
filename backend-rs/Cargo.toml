@@ -9,7 +9,7 @@ repository = "https://github.com/selmant/SeerrSuggestArr"
 readme = "README.md"
 keywords = ["media", "requests", "jellyfin", "plex", "server"]
 categories = ["web-programming::http-server"]
-rust-version = "1.85"
+rust-version = "1.97"
 
 [dependencies]
 anyhow = "1"

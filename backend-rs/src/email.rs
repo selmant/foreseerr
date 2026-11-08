@@ -504,7 +504,7 @@ pub async fn send(
     let mut builder = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host)
         .port(port)
         .tls(tls)
-        .timeout(Some(Duration::from_secs(60)));
+        .timeout(Some(Duration::from_mins(1)));
     let (user, pass) = (text("authUser"), text("authPass"));
     if !user.is_empty() && !pass.is_empty() {
         builder = builder.credentials(Credentials::new(user, pass));

@@ -717,7 +717,7 @@ impl BrowseFilters {
     }
 
     /// `needsTmdbBrowseFilters`.
-    pub(super) fn needs_tmdb(&self) -> bool {
+    pub(super) const fn needs_tmdb(&self) -> bool {
         self.vote_average_gte.is_some()
             || self.vote_average_lte.is_some()
             || self.vote_count_gte.is_some()

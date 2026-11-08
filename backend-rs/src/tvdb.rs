@@ -24,7 +24,7 @@ const BASE_URL: &str = "https://api4.thetvdb.com/v4";
 /// The key every Foreseerr install logs in with.
 const API_KEY: &str = "d00d9ecb-a9d0-4860-958a-74b14a041405";
 /// `Tvdb.DEFAULT_CACHE_TTL`.
-const CACHE_TTL: Duration = Duration::from_secs(43_200);
+const CACHE_TTL: Duration = Duration::from_hours(12);
 /// `Tvdb.DEFAULT_LANGUAGE`.
 pub const DEFAULT_LANGUAGE: &str = "eng";
 /// A token is renewed when it expires within a week.
