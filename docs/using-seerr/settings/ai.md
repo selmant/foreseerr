@@ -1,0 +1,128 @@
+---
+title: AI
+description: Connect AI providers for suggestions, choose who can use them, and add SearXNG web search.
+sidebar_position: 10
+---
+
+# AI
+
+AI features are off until an admin turns them on in **Settings → AI**. They
+suggest titles from a mood, a title someone loves, or (only if that person
+allows it) their watch history. Foreseerr finds real titles in its catalogs
+first; the model plans the search and ranks what was found, so it can't invent
+titles.
+
+## Connections
+
+Every request goes through one connection, and each person can see which one
+in **Profile → AI**: whose connection it is, the provider, the model, and whose
+quota it uses.
+
+- **The server connection.** An admin sets it up, and everyone uses it unless
+  they connect their own. It is any OpenAI-compatible endpoint: OpenAI with an
+  API key, OpenRouter, Ollama, LM Studio, vLLM, and so on. Usage counts against
+  the admin's quota.
+- **A person's own ChatGPT account.** In **Profile → AI**, **Continue with
+  ChatGPT** signs in through OpenAI's _Sign in with ChatGPT_. That person's
+  requests then count toward their own ChatGPT plan's limits. They can review
+  usage, set a limit or remove Foreseerr at
+  [chatgpt.com/settings/usage](https://chatgpt.com/settings/usage).
+- **A person's own endpoint**, when the admin allows it.
+
+A ChatGPT account can't be the server connection. OpenAI's terms don't allow a
+ChatGPT account to be shared with other people, so a ChatGPT connection only
+ever serves the person who signed in. Nothing falls back to another connection
+silently. If someone's own connection stops working, their AI page says so and
+offers to sign in again or switch back to the server connection.
+
+### Signing in with ChatGPT
+
+Foreseerr runs on your server, so ChatGPT can't send the sign-in straight back
+to it. After you approve, ChatGPT opens an address starting with
+`http://127.0.0.1:1455/auth/callback`, and that page doesn't load. This is
+expected. Copy the whole address from the address bar and paste it into
+Foreseerr. It works once, for a few minutes, and only with the sign-in that
+Foreseerr started.
+
+**Sign out** in Profile → AI revokes Foreseerr's access at OpenAI as well.
+
+## Models
+
+On the server connection the admin picks a **Balanced** model (the default for
+everyone) and, optionally, **Fast** and **Best** models. When the admin allows
+it, people choose between these three in Profile → AI. People with their own
+connection pick any model it offers.
+
+## Who can use what
+
+| Setting                                        | Default | Effect                                                                                                                  |
+| ---------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Everyone can use the server connection         | On      | When off, only admins can use it.                                                                                       |
+| People can connect their own ChatGPT account   | On      |                                                                                                                         |
+| People can choose Fast, Balanced or Best       | On      |                                                                                                                         |
+| People can add their own endpoint              | Off     | This lets a user make the server call any address they enter, including ones on your network. Leave it off unless you trust every user. |
+
+Admins can always use the server connection and connect their own accounts.
+
+## Watch history
+
+Each person decides whether their watch history is used, in **Profile → AI →
+Use my watch history**. It is off by default. When it's on, a short summary of
+what they watched, rated and saved (from the media server and the trackers
+they linked) goes with their requests to the connection they use. When it's
+off, only what they type is sent.
+
+## How keys are protected
+
+API keys and ChatGPT sign-ins are encrypted at rest (AES-256-GCM). Foreseerr
+never returns them to a browser after they're saved: not to the admin, not to
+other admins. A key field only shows that a key is saved. Personal connections
+can only be seen and changed by their owner; there is no admin view of them.
+Someone with access to the server itself and its secret key could still decrypt
+them.
+
+The secret key is, in order of preference:
+
+1. `FORESEERR_SECRET_KEY`: 32 random bytes as hex or base64
+   (`openssl rand -hex 32`).
+2. `FORESEERR_SECRET_KEY_FILE`: a file holding that value, such as a Docker or
+   Kubernetes secret.
+3. Otherwise, `secret.key` in the config folder, created with owner-only access
+   the first time the AI settings are opened.
+
+The default keeps the key next to the database, so a copy of the config folder
+includes both. Use a secret to keep them apart. See
+[`compose.yaml`](https://github.com/selmant/foreseerr/blob/develop/compose.yaml)
+for Docker, and `secretKey.existingSecret` in the Helm chart. To move an
+existing key, copy the contents of `secret.key` into the secret. A new key
+can't open credentials saved with the old one; they would have to be entered
+again.
+
+## Web search with SearXNG
+
+With a [SearXNG](https://docs.searxng.org) instance, Foreseerr can also look up
+titles too new or too niche for the catalogs. Searches run from your server, so
+no search provider account is needed. In **Settings → AI → Web search**, turn
+it on, enter the instance's URL and use **Test**.
+
+The instance needs:
+
+- `json` in `search.formats` in its `settings.yml`. Without it, SearXNG
+  answers 403.
+- `server.limiter: false`. The limiter is for public instances and needs Valkey.
+  With it on, SearXNG rate-limits Foreseerr.
+
+SearXNG has no login, so keep it reachable only from Foreseerr.
+
+- **Docker Compose:** `compose.searxng.yaml` in the repository runs a private
+  instance with these settings and no published port:
+
+  ```bash
+  echo "SEARXNG_SECRET=$(openssl rand -hex 32)" >> .env
+  docker compose -f compose.yaml -f compose.searxng.yaml up -d
+  ```
+
+  Then use `http://searxng:8080`.
+
+- **Helm:** set `searxng.enabled=true`. A NetworkPolicy lets only Foreseerr's
+  pods reach it, and the install notes print the URL.

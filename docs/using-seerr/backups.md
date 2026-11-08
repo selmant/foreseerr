@@ -15,6 +15,10 @@ These settings are stored in the `settings.json` file located in the Foreseerr d
 
 Apart from the settings, all other data—including user accounts, media requests, blocklist etc. are stored in the database (either SQLite or PostgreSQL).
 
+## Secret key
+
+Saved AI credentials (API keys and ChatGPT sign-ins) are encrypted with a secret key. Unless you set `FORESEERR_SECRET_KEY` or `FORESEERR_SECRET_KEY_FILE`, it is `secret.key` in the config folder. Back it up along with the database: without it, those credentials can't be opened, and people have to enter them or sign in again. If you keep the key in a secret store instead, back it up there. See [AI settings](./settings/ai.md#how-keys-are-protected).
+
 # Backup
 
 ### SQLite
