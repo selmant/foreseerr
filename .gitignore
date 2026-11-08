@@ -97,3 +97,9 @@ compose.override.yaml
 
 # selmant/jellyfin-plugin-foreseerr checkout (.github/workflows/jellyfin-plugin.yml)
 /jellyfin-plugin/
+
+# Secrets: the key that encrypts saved AI credentials, and compose's
+# secret files and variables
+config/secret.key
+foreseerr_secret_key
+.env

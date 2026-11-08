@@ -14,7 +14,9 @@ charts
 config
 dist
 Dockerfile*
-compose.yaml
+compose*.yaml
+.env
+foreseerr_secret_key
 gen-docs
 docs
 LICENSE
