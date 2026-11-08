@@ -1,6 +1,4 @@
-import AiPickCard, {
-  AiPickCardPlaceholder,
-} from '@app/components/Ai/AiPickCard';
+import AiPickCard from '@app/components/Ai/AiPickCard';
 import { aiErrorOf } from '@app/components/Ai/aiError';
 import {
   isWorking,
@@ -10,6 +8,7 @@ import {
 } from '@app/components/Ai/useAiRun';
 import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';
+import TitleCard from '@app/components/TitleCard';
 import PageTitle from '@app/components/Common/PageTitle';
 import type { SegmentedOption } from '@app/components/Common/SegmentedControl';
 import SegmentedControl from '@app/components/Common/SegmentedControl';
@@ -104,7 +103,7 @@ const messages = defineMessages('components.Ai.AiPicks', {
   unavailableNone:
     'There’s no AI connection you can use yet. Connect your own account, or ask your admin.',
   feedbackHint:
-    'Like or pass on picks and Foreseerr learns your taste. This doesn’t change your tracker ratings or watch status.',
+    'Hover or tap a poster, then “Why?” to see why it was picked and rate it. Foreseerr learns your taste from it.',
   tasteLink: 'Your taste card',
 });
 
@@ -559,10 +558,10 @@ const AiPicks = () => {
           <div className="max-w-5xl">
             <StageSteps stage={run?.stage ?? 'planning'} />
           </div>
-          <ul className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-            {[...Array(6)].map((_, i) => (
+          <ul className="cards-vertical mt-6">
+            {[...Array(12)].map((_, i) => (
               <li key={`ai-skeleton-${i}`}>
-                <AiPickCardPlaceholder />
+                <TitleCard.Placeholder canExpand />
               </li>
             ))}
           </ul>
@@ -646,10 +645,10 @@ const AiPicks = () => {
           <p className="mb-3 text-xs text-gray-500">
             {intl.formatMessage(messages.feedbackHint)}
           </p>
-          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+          <ul className="cards-vertical">
             {run.result.picks.map((pick) => (
               <li key={`${pick.mediaType}-${pick.tmdbId}`}>
-                <AiPickCard pick={pick} onFeedback={onFeedback} />
+                <AiPickCard pick={pick} onFeedback={onFeedback} canExpand />
               </li>
             ))}
           </ul>

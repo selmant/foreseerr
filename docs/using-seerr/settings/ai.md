@@ -35,13 +35,15 @@ request again with that change. **Recent** reopens your earlier requests.
 
 ### Feedback and your taste card
 
-On the AI Picks page, each pick shows its poster, why it fits, and **Like** and
-**Not for me** buttons. The **⋯** menu adds **Already seen** and **Don't suggest
-this**. Select a choice again, or press **Undo**, to take it back. This feedback
-only tunes AI suggestions; it does not change your tracker ratings or watch
-status. Titles you rated never come back as picks, and liked and disliked ones
-steer later requests. In Discover rows, hover over or tap a poster to read why
-it was picked; titles you passed on are left out of the row.
+AI picks look like any other poster, with the same rating badges. Hover over
+or tap one, then press the **Why?** badge under the ratings. A small panel shows
+why it was picked, with **Like**, **Not for me**, **Seen it** and **Don't
+suggest** buttons; select a choice again to take it back. This works on the AI
+Picks page and in Discover AI rows. Once you rate a pick, its badge shows your
+choice. This feedback only tunes AI suggestions; it does not change your
+tracker ratings or watch status. Titles you rated never come back as picks, and
+liked and disliked ones steer later requests. Titles you passed on are left out
+of Discover rows.
 
 After a few new ratings, Foreseerr rewrites your **taste card**, a short note
 about what you enjoy that goes with each request. You can read, edit or clear

@@ -12,6 +12,7 @@ use axum::http::Method;
 use serde_json::{json, Map, Value};
 
 use super::movie::{map_movie_result, RelatedTitles};
+use super::ratingsenrich::enrich_results_with_ratings;
 use super::tv::map_tv_result;
 use super::{params, Outcome, Ready, Table};
 use crate::ai::recs::retrieve::kind_of;
@@ -160,6 +161,22 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Value {
             "feedback": verdicts.get(&(kind.to_owned(), tmdb_id)),
             "item": item,
         }));
+    }
+    // The same rating badges as any other poster (IMDb, Rotten Tomatoes…).
+    let items: Vec<Value> = out_picks
+        .iter()
+        .filter_map(|p| p.get("item").cloned())
+        .collect();
+    match enrich_results_with_ratings(ctx, items, None, true).await {
+        Ok(rated) if rated.len() == out_picks.len() => {
+            for (pick, item) in out_picks.iter_mut().zip(rated) {
+                if let Some(obj) = pick.as_object_mut() {
+                    obj.insert(String::from("item"), item);
+                }
+            }
+        }
+        Ok(_) => {}
+        Err(e) => tracing::info!("rating AI picks failed: {e}"),
     }
     let mut out = result.clone();
     if let Some(obj) = out.as_object_mut() {

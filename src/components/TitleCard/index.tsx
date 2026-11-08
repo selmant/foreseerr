@@ -69,8 +69,11 @@ interface TitleCardProps {
   onLibraryManage?: () => void;
   /** Hover, focus, or tap opened (true) or closed (false) the detail overlay. */
   onShowDetailChange?: (shown: boolean) => void;
-  /** Skip the title caption over the resting poster (shown beside it instead). */
-  hideCaption?: boolean;
+  /**
+   * An extra badge under the ratings, given whether the detail overlay is
+   * open (hover, focus or tap). Clicks on its buttons don't open the title.
+   */
+  extraBadge?: (shown: boolean) => React.ReactNode;
 }
 
 const messages = defineMessages('components.TitleCard', {
@@ -122,7 +125,7 @@ const TitleCard = ({
   onLibraryOpenSeries,
   onLibraryManage,
   onShowDetailChange,
-  hideCaption = false,
+  extraBadge,
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
@@ -738,25 +741,21 @@ const TitleCard = ({
             fill
             loading="lazy"
           />
-          {image &&
-            !hideCaption &&
-            !showDetail &&
-            !showRequestModal &&
-            !showTvMenu && (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-gray-950 via-gray-950/80 to-transparent px-2 pb-3 pt-10"
-              >
-                <p className="line-clamp-2 break-words text-sm font-semibold leading-5 text-white">
-                  {title}
+          {image && !showDetail && !showRequestModal && !showTvMenu && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-gray-950 via-gray-950/80 to-transparent px-2 pb-3 pt-10"
+            >
+              <p className="line-clamp-2 break-words text-sm font-semibold leading-5 text-white">
+                {title}
+              </p>
+              {(subtitle || displayYear) && (
+                <p className="mt-0.5 truncate text-xs text-gray-300">
+                  {subtitle || displayYear}
                 </p>
-                {(subtitle || displayYear) && (
-                  <p className="mt-0.5 truncate text-xs text-gray-300">
-                    {subtitle || displayYear}
-                  </p>
-                )}
-              </div>
-            )}
+              )}
+            </div>
+          )}
           {progressPercent != null && progressPercent > 0 ? (
             <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 h-1 bg-black/70">
               <div
@@ -788,6 +787,7 @@ const TitleCard = ({
                 compact
                 expanded={showDetail}
               />
+              {extraBadge?.(showDetail)}
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
               {showDetail && currentStatus !== MediaStatus.BLOCKLISTED && (
