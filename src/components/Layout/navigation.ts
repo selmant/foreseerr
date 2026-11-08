@@ -1,4 +1,3 @@
-import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import {
@@ -10,7 +9,6 @@ import {
   ExclamationTriangleIcon,
   EyeSlashIcon,
   InboxArrowDownIcon,
-  LightBulbIcon,
   LinkIcon,
   RectangleStackIcon,
   SparklesIcon,
@@ -21,7 +19,6 @@ import type { ComponentType, SVGProps } from 'react';
 export const menuMessages = defineMessages('components.Layout.Sidebar', {
   dashboard: 'Discover',
   library: 'Library',
-  aiPicks: 'AI Picks',
   browsemovies: 'Movies',
   browsetv: 'Series',
   requests: 'Requests',
@@ -57,8 +54,6 @@ export type NavigationLink = {
   requiredPermission?: Permission | Permission[];
   permissionType?: 'and' | 'or';
   dataTestId?: string;
-  /** Only when the admin turned AI features on. */
-  requiresAi?: boolean;
 };
 
 const navigationLinks: NavigationLink[] = [
@@ -66,17 +61,8 @@ const navigationLinks: NavigationLink[] = [
     href: '/',
     messagesKey: 'dashboard',
     Icon: SparklesIcon,
-    // Every Discover page except AI Picks, which has its own entry.
-    activeRegExp: /^\/(?:discover(?:\/(?!ai(?:[/?#]|$)).*)?)?$/,
+    activeRegExp: /^\/(?:discover(?:\/.*)?)?$/,
     group: 'explore',
-  },
-  {
-    href: '/discover/ai',
-    messagesKey: 'aiPicks',
-    Icon: LightBulbIcon,
-    activeRegExp: /^\/discover\/ai(?:[/?#]|$)/,
-    group: 'explore',
-    requiresAi: true,
   },
   {
     href: '/library',
@@ -176,10 +162,7 @@ const navigationLinks: NavigationLink[] = [
 /** Shared destinations and permissions keep desktop and mobile navigation in sync. */
 export const useAppNavigation = (counts: NavigationCounts) => {
   const { hasPermission } = useUser();
-  const settings = useSettings();
-  const aiEnabled = settings.currentSettings.aiEnabled === true;
   return navigationLinks
-    .filter((link) => !link.requiresAi || aiEnabled)
     .filter(
       (link) =>
         !link.requiredPermission ||

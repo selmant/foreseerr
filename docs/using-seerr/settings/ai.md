@@ -14,7 +14,8 @@ titles.
 
 ## AI Picks
 
-Once AI is on, everyone gets **AI Picks** in the sidebar. There's no chat:
+Once AI is on, everyone gets an **AI Picks** tab alongside Discover, Movies,
+Series and Sources. There's no chat:
 
 - **Describe a mood** ("a cozy mystery for a rainy night") or tap a mood chip.
   **Just for me** asks for picks from your taste alone.
@@ -34,8 +35,10 @@ request again with that change. **Recent** reopens your earlier requests.
 
 ### Feedback and your taste card
 
-Each pick has four buttons: 👍 **More like this**, 👎 **Not for me**, 👁
-**Already seen** and 🚫 **Don't suggest this**. Tap one again to undo it. Titles
+Each poster has a **Why this pick?** control below it. Open it to see the reason
+and give feedback: **More like this**, **Not for me**, **Already seen** or
+**Don't suggest this**. Select the same choice again to undo it. This feedback
+only tunes AI suggestions; it does not change your tracker ratings or watch status. Titles
 you rated never come back as picks, and liked and disliked ones steer later
 requests.
 

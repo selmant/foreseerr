@@ -1,3 +1,5 @@
+import useSettings from '@app/hooks/useSettings';
+import { useEffect, useRef } from 'react';
 import SegmentedControl from '@app/components/Common/SegmentedControl';
 import {
   getDiscoverSource,
@@ -8,6 +10,7 @@ import {
 import defineMessages from '@app/utils/defineMessages';
 import {
   FilmIcon,
+  LightBulbIcon,
   SparklesIcon,
   Squares2X2Icon,
   TvIcon,
@@ -19,14 +22,23 @@ const messages = defineMessages('components.Layout.Sidebar', {
   dashboard: 'Discover',
   browsemovies: 'Movies',
   browsetv: 'Series',
+  aiPicks: 'AI Picks',
 });
 
-type DiscoverSection = 'discover' | 'movies' | 'tv' | 'sources';
+type DiscoverSection = 'discover' | 'movies' | 'tv' | 'sources' | 'ai';
 
 const DiscoverNavigation = () => {
   const intl = useIntl();
   const location = useLocation();
   const source = getDiscoverSource(location.pathname);
+  const { currentSettings } = useSettings();
+  const aiEnabled = currentSettings.aiEnabled === true;
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabsRef.current
+      ?.querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [location.pathname, aiEnabled]);
   const current: DiscoverSection = location.pathname.startsWith(
     '/discover/movies'
   )
@@ -35,41 +47,55 @@ const DiscoverNavigation = () => {
       ? 'tv'
       : source || location.pathname === '/discover/sources'
         ? 'sources'
-        : 'discover';
+        : location.pathname.startsWith('/discover/ai')
+          ? 'ai'
+          : 'discover';
 
   return (
     <div className="mb-4">
-      <SegmentedControl<DiscoverSection>
-        ariaLabel={intl.formatMessage(messages.dashboard)}
-        className="w-full sm:inline-grid sm:w-auto sm:min-w-[30rem] [&_a]:px-1.5 [&_a]:text-xs sm:[&_a]:px-3 sm:[&_a]:text-sm [&_svg]:hidden sm:[&_svg]:block"
-        value={current}
-        options={[
-          {
-            value: 'discover',
-            href: '/',
-            label: intl.formatMessage(messages.dashboard),
-            icon: SparklesIcon,
-          },
-          {
-            value: 'movies',
-            href: '/discover/movies',
-            label: intl.formatMessage(messages.browsemovies),
-            icon: FilmIcon,
-          },
-          {
-            value: 'tv',
-            href: '/discover/tv',
-            label: intl.formatMessage(messages.browsetv),
-            icon: TvIcon,
-          },
-          {
-            value: 'sources',
-            href: '/discover/sources',
-            label: intl.formatMessage(sourceMessages.title),
-            icon: Squares2X2Icon,
-          },
-        ]}
-      />
+      <div className="overflow-x-auto pb-1" ref={tabsRef}>
+        <SegmentedControl<DiscoverSection>
+          ariaLabel={intl.formatMessage(messages.dashboard)}
+          className={`w-full sm:inline-grid sm:w-auto ${aiEnabled ? 'min-w-[24rem] sm:min-w-[38rem]' : 'sm:min-w-[30rem]'} [&_a]:px-1.5 [&_a]:text-xs sm:[&_a]:px-3 sm:[&_a]:text-sm [&_svg]:hidden sm:[&_svg]:block`}
+          value={current}
+          options={[
+            {
+              value: 'discover',
+              href: '/',
+              label: intl.formatMessage(messages.dashboard),
+              icon: SparklesIcon,
+            },
+            {
+              value: 'movies',
+              href: '/discover/movies',
+              label: intl.formatMessage(messages.browsemovies),
+              icon: FilmIcon,
+            },
+            {
+              value: 'tv',
+              href: '/discover/tv',
+              label: intl.formatMessage(messages.browsetv),
+              icon: TvIcon,
+            },
+            {
+              value: 'sources',
+              href: '/discover/sources',
+              label: intl.formatMessage(sourceMessages.title),
+              icon: Squares2X2Icon,
+            },
+            ...(aiEnabled
+              ? [
+                  {
+                    value: 'ai' as const,
+                    href: '/discover/ai',
+                    label: intl.formatMessage(messages.aiPicks),
+                    icon: LightBulbIcon,
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </div>
       {source && source.views.length > 0 && (
         <nav
           aria-label={intl.formatMessage(sourceMessages.navigation, {

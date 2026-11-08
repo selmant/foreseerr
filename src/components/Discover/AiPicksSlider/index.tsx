@@ -12,7 +12,7 @@ import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
 import {
   ArrowRightCircleIcon,
-  SparklesIcon,
+  LightBulbIcon,
 } from '@heroicons/react/24/outline';
 import type {
   AiErrorBody,
@@ -64,12 +64,25 @@ const AiPicksSlider = ({ sliderKey, title, sliderId }: AiPicksSliderProps) => {
     if (!run) {
       return;
     }
-    const previous = run;
-    mutate(withFeedback(run, pick, verdict), { revalidate: false });
+    const previous = pick.feedback;
+    mutate((current) => withFeedback(current ?? run, pick, verdict), {
+      revalidate: false,
+    });
     try {
       await sendFeedback(pick, verdict);
     } catch {
-      mutate(previous, { revalidate: false });
+      mutate(
+        (current) => {
+          const latest = current ?? run;
+          const feedback = latest.result?.picks.find(
+            (p) => p.mediaType === pick.mediaType && p.tmdbId === pick.tmdbId
+          )?.feedback;
+          return feedback === verdict
+            ? withFeedback(latest, pick, previous)
+            : latest;
+        },
+        { revalidate: false }
+      );
       addToast(intl.formatMessage(messages.feedbackFailed), {
         appearance: 'error',
         autoDismiss: true,
@@ -89,7 +102,7 @@ const AiPicksSlider = ({ sliderKey, title, sliderId }: AiPicksSliderProps) => {
     <>
       <div className="slider-header">
         <Link to={linkUrl} className="slider-title min-w-0">
-          <SparklesIcon className="!ml-0 mr-2 !h-6 !w-6 shrink-0 text-indigo-400" />
+          <LightBulbIcon className="!ml-0 mr-2 !h-6 !w-6 shrink-0 text-indigo-400" />
           <span className="truncate">{title}</span>
           <ArrowRightCircleIcon />
         </Link>

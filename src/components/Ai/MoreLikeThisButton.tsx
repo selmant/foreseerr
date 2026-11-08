@@ -2,7 +2,7 @@ import LinkButton from '@app/components/Common/LinkButton';
 import Tooltip from '@app/components/Common/Tooltip';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
-import { SparklesIcon } from '@heroicons/react/24/outline';
+import { LightBulbIcon } from '@heroicons/react/24/outline';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Ai.MoreLikeThisButton', {
@@ -38,7 +38,7 @@ const MoreLikeThisButton = ({
         className="z-40 mr-2 min-h-[44px]"
         data-testid="more-like-this"
       >
-        <SparklesIcon className="text-indigo-300" />
+        <LightBulbIcon className="text-indigo-300" />
         <span>{intl.formatMessage(messages.moreLikeThis)}</span>
       </LinkButton>
     </Tooltip>

@@ -25,7 +25,7 @@ import {
   GlobeAltIcon,
   MagnifyingGlassIcon,
   PlusIcon,
-  SparklesIcon,
+  LightBulbIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { DiscoverSliderType } from '@shared/constants/discover';
@@ -276,12 +276,25 @@ const AiPicks = () => {
     if (!run) {
       return;
     }
-    const previous = run;
-    mutateRun(withFeedback(run, pick, verdict), { revalidate: false });
+    const previous = pick.feedback;
+    mutateRun((current) => withFeedback(current ?? run, pick, verdict), {
+      revalidate: false,
+    });
     try {
       await sendFeedback(pick, verdict);
     } catch {
-      mutateRun(previous, { revalidate: false });
+      mutateRun(
+        (current) => {
+          const latest = current ?? run;
+          const feedback = latest.result?.picks.find(
+            (p) => p.mediaType === pick.mediaType && p.tmdbId === pick.tmdbId
+          )?.feedback;
+          return feedback === verdict
+            ? withFeedback(latest, pick, previous)
+            : latest;
+        },
+        { revalidate: false }
+      );
       addToast(intl.formatMessage(messages.feedbackFailed), {
         appearance: 'error',
         autoDismiss: true,
@@ -399,7 +412,7 @@ const AiPicks = () => {
       <PageTitle title={intl.formatMessage(messages.title)} />
       <div className="mt-4 max-w-5xl">
         <div className="flex items-start gap-3">
-          <SparklesIcon className="mt-1 h-7 w-7 shrink-0 text-indigo-400" />
+          <LightBulbIcon className="mt-1 h-7 w-7 shrink-0 text-indigo-400" />
           <div>
             <h1 className="text-2xl font-bold text-white sm:text-3xl">
               {intl.formatMessage(messages.heading)}
@@ -462,7 +475,7 @@ const AiPicks = () => {
                 working || !me?.effective.available || (!prompt.trim() && !seed)
               }
             >
-              <SparklesIcon className="mr-2 h-5 w-5" />
+              <LightBulbIcon className="mr-2 h-5 w-5" />
               <span>{intl.formatMessage(messages.find)}</span>
             </Button>
           </div>

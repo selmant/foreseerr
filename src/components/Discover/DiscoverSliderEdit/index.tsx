@@ -1,3 +1,4 @@
+import { parseAiSlider } from '@shared/lib/aiSlider';
 import Button from '@app/components/Common/Button';
 import SlideCheckbox from '@app/components/Common/SlideCheckbox';
 import Tag from '@app/components/Common/Tag';
@@ -14,7 +15,10 @@ import { isUsableForeseerNative } from '@app/context/nativeRuntimeProtocol';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { MagnifyingGlassIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import {
+  MagnifyingGlassIcon,
+  LightBulbIcon,
+} from '@heroicons/react/24/outline';
 import {
   ArrowUturnLeftIcon,
   Bars3Icon,
@@ -341,7 +345,9 @@ const DiscoverSliderEdit = ({
             </Tag>
           )}
           {slider.type === DiscoverSliderType.AI_PICKS && slider.data && (
-            <Tag iconSvg={<SparklesIcon />}>{slider.data}</Tag>
+            <Tag iconSvg={<LightBulbIcon />}>
+              {parseAiSlider(slider.data).request.prompt || slider.title}
+            </Tag>
           )}
           {slider.type === DiscoverSliderType.MDBLIST_LIST && slider.data && (
             <Tag iconSvg={<SliderSourceMark source="mdblist" />}>
