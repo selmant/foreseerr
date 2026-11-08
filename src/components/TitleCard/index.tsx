@@ -565,6 +565,40 @@ const TitleCard = ({
     }
   };
 
+  const openDetail = () => {
+    if (
+      libraryMode &&
+      mediaType === 'tv' &&
+      jellyfinSeriesId &&
+      onLibraryOpenSeries
+    ) {
+      onLibraryOpenSeries(jellyfinSeriesId);
+    } else {
+      navigate(detailHref);
+    }
+  };
+
+  // The badge row and button bar sit above the detail link and span the whole
+  // card width, so clicks on their padding, gaps, or the rating badges never
+  // reach the link. Treat a click on any non-control part of an open card as a
+  // click on the card. Closed cards (first tap on touch) only open.
+  const onSurfaceClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      !showDetail ||
+      event.defaultPrevented ||
+      showTvMenu ||
+      showRequestModal ||
+      showBlocklistModal ||
+      !event.currentTarget.contains(target) ||
+      target.closest('a, button, input, select, textarea, [role="menu"]')
+    ) {
+      setShowDetail(true);
+      return;
+    }
+    openDetail();
+  };
+
   const onLibraryCardNavigate = (event: React.MouseEvent) => {
     if (
       libraryMode &&
@@ -658,21 +692,12 @@ const TitleCard = ({
             setShowDetail(false);
           }
         }}
-        onClick={() => setShowDetail(true)}
+        onClick={onSurfaceClick}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) return;
           if (event.key === 'Enter') {
             event.preventDefault();
-            if (
-              libraryMode &&
-              mediaType === 'tv' &&
-              jellyfinSeriesId &&
-              onLibraryOpenSeries
-            ) {
-              onLibraryOpenSeries(jellyfinSeriesId);
-            } else {
-              navigate(detailHref);
-            }
+            openDetail();
           }
           if (event.key === 'Escape') setShowDetail(false);
         }}
