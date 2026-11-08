@@ -2,6 +2,7 @@ import { aiErrorOf } from '@app/components/Ai/aiError';
 import { fetchModels } from '@app/components/Ai/fetchModels';
 import EndpointModal from '@app/components/Ai/EndpointModal';
 import ModelPicker from '@app/components/Ai/ModelPicker';
+import AiUsagePanel from '@app/components/Settings/SettingsAi/AiUsagePanel';
 import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
@@ -93,6 +94,22 @@ const messages = defineMessages('components.Settings.SettingsAi', {
     'Enter a whole number from 0 to 1000. Use 0 for unlimited.',
   dailyLimitTip:
     'On the server connection, counted per person and reset at midnight UTC. Each AI Picks request and each AI Discover row refresh counts as one. Admins and people using their own account aren’t limited. 0 means no limit.',
+  automatic: 'Automatic picks and history',
+  automaticDescription:
+    'Foreseerr prepares picks overnight (the AI Picks Refresh job) so people rarely wait and the AI isn’t asked on every Discover visit.',
+  autoPicks: 'Prepare picks overnight',
+  autoPicksTip:
+    'For people who used AI picks in the last week: refreshes their Discover AI rows before they go stale and makes weekly picks (people can turn those off). These don’t count toward the daily limit.',
+  rowRefreshDays: 'Refresh Discover AI rows every (days)',
+  rowRefreshDaysTip:
+    'How long a person’s AI row picks are kept before new ones are made. Longer means fewer AI requests.',
+  historyDays: 'Keep request history (days)',
+  historyDaysTip:
+    'Finished requests and their picks are deleted after this many days. 0 keeps them. People can delete theirs any time.',
+  monthlyTokenBudget: 'Monthly token budget for the server connection',
+  monthlyTokenBudgetTip:
+    'When the server connection has used this many tokens this month, new requests on it stop until the 1st. People’s own accounts aren’t affected. 0 means no budget.',
+  numberRequired: 'Enter a whole number from {min} to {max}.',
   webSearch: 'Web search',
   webSearchDescription:
     'With a SearXNG instance, Foreseerr can look up titles too new or too niche for the catalogs. Searches run from this server; no search provider account is needed.',
@@ -140,12 +157,23 @@ type Values = {
   allowUserEndpoints: boolean;
   allowUserModelChoice: boolean;
   dailyLimit: string;
+  autoPicks: boolean;
+  rowRefreshDays: string;
+  historyDays: string;
+  monthlyTokenBudget: string;
   balanced: string;
   fast: string;
   best: string;
   searxngEnabled: boolean;
   searxngUrl: string;
 };
+
+/** Numeric settings: field, minimum and maximum. */
+const NUMBER_FIELDS = [
+  ['rowRefreshDays', 1, 30],
+  ['historyDays', 0, 3650],
+  ['monthlyTokenBudget', 0, 1_000_000_000_000],
+] as const;
 
 const SettingsAi = () => {
   const intl = useIntl();
@@ -300,6 +328,10 @@ const SettingsAi = () => {
           allowUserEndpoints: data.allowUserEndpoints,
           allowUserModelChoice: data.allowUserModelChoice,
           dailyLimit: String(data.dailyLimit),
+          autoPicks: data.autoPicks,
+          rowRefreshDays: String(data.rowRefreshDays),
+          historyDays: String(data.historyDays),
+          monthlyTokenBudget: String(data.monthlyTokenBudget),
           balanced: connection?.model ?? '',
           fast: data.models.fast ?? '',
           best: data.models.best ?? '',
@@ -307,13 +339,31 @@ const SettingsAi = () => {
           searxngUrl: data.searxng.url,
         }}
         validate={(values) => {
+          const errors: Partial<Record<keyof Values, string>> = {};
           const limit = Number(values.dailyLimit);
-          return !values.dailyLimit.trim() ||
+          if (
+            !values.dailyLimit.trim() ||
             !Number.isInteger(limit) ||
             limit < 0 ||
             limit > 1000
-            ? { dailyLimit: intl.formatMessage(messages.dailyLimitRequired) }
-            : {};
+          ) {
+            errors.dailyLimit = intl.formatMessage(messages.dailyLimitRequired);
+          }
+          for (const [name, min, max] of NUMBER_FIELDS) {
+            const n = Number(values[name]);
+            if (
+              !values[name].trim() ||
+              !Number.isInteger(n) ||
+              n < min ||
+              n > max
+            ) {
+              errors[name] = intl.formatMessage(messages.numberRequired, {
+                min,
+                max: intl.formatNumber(max),
+              });
+            }
+          }
+          return errors;
         }}
         onSubmit={async (values) => {
           try {
@@ -329,6 +379,10 @@ const SettingsAi = () => {
               allowUserEndpoints: values.allowUserEndpoints,
               allowUserModelChoice: values.allowUserModelChoice,
               dailyLimit: Number(values.dailyLimit),
+              autoPicks: values.autoPicks,
+              rowRefreshDays: Number(values.rowRefreshDays),
+              historyDays: Number(values.historyDays),
+              monthlyTokenBudget: Number(values.monthlyTokenBudget),
               models: {
                 fast: values.fast.trim() || null,
                 best: values.best.trim() || null,
@@ -613,6 +667,52 @@ const SettingsAi = () => {
             </Section>
 
             <Section
+              title={intl.formatMessage(messages.automatic)}
+              description={intl.formatMessage(messages.automaticDescription)}
+            >
+              <div className="form-row">
+                <label htmlFor="autoPicks" className="checkbox-label">
+                  <span>{intl.formatMessage(messages.autoPicks)}</span>
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.autoPicksTip)}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <Field type="checkbox" id="autoPicks" name="autoPicks" />
+                </div>
+              </div>
+              {NUMBER_FIELDS.map(([name]) => (
+                <div className="form-row" key={name}>
+                  <label htmlFor={name} className="text-label">
+                    <span>{intl.formatMessage(messages[name])}</span>
+                    <span className="label-tip">
+                      {intl.formatMessage(messages[`${name}Tip`])}
+                    </span>
+                  </label>
+                  <div className="form-input-area">
+                    <Field
+                      type="text"
+                      inputMode="numeric"
+                      id={name}
+                      name={name}
+                      required
+                      aria-invalid={!!errors[name]}
+                      aria-describedby={
+                        errors[name] ? `${name}-error` : undefined
+                      }
+                      className="short"
+                    />
+                    {errors[name] ? (
+                      <div id={`${name}-error`} role="alert" className="error">
+                        {errors[name]}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </Section>
+
+            <Section
               title={intl.formatMessage(messages.webSearch)}
               description={
                 <>
@@ -731,6 +831,7 @@ const SettingsAi = () => {
           </Form>
         )}
       </Formik>
+      <AiUsagePanel />
       <Transition as={Fragment} show={endpointOpen}>
         <EndpointModal
           title={intl.formatMessage(messages.endpointModalTitle)}

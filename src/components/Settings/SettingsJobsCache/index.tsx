@@ -94,6 +94,7 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
     'image-cache-cleanup': 'Image Cache Cleanup',
     'process-blocklisted-tags': 'Process Blocklisted Tags',
     'mapping-pack-refresh': 'Mapping Dataset Refresh',
+    'ai-picks-refresh': 'AI Picks Refresh',
     editJobSchedule: 'Modify Job',
     jobScheduleEditSaved: 'Job edited successfully!',
     jobScheduleEditFailed: 'Something went wrong while saving the job.',

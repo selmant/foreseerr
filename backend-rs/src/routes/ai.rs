@@ -191,34 +191,13 @@ async fn admin_view(ctx: &Ready<'_>) -> Result<Value, AiError> {
 /// model, the month's server tokens against the budget, recent failures.
 async fn usage_view(ctx: &Ready<'_>) -> Result<Value, AiError> {
     use crate::ai::recs::{iso_since, month_start, signals};
-    use crate::db::Bind;
     let db = &ctx.state.db;
     let err = |e: anyhow::Error| db_err(&e);
     let settings = ctx.state.settings.current().await.map_err(err)?;
     let policy = Policy::of(&settings);
     let since = iso_since(Some(30 * 24 * 60));
     let today = iso_since(None);
-    let created = db.iso_sql(r#"r."createdAt""#);
-    let name = r#"COALESCE(NULLIF(u."username", ''), NULLIF(u."jellyfinUsername", ''), NULLIF(u."plexUsername", ''), u."email")"#;
-    let people = db
-        .rows(
-            &format!(
-                r#"SELECT CAST(r."userId" AS BIGINT) AS "userId", {name} AS "name", u."avatar" AS "avatar",
-                CAST(COUNT(*) AS BIGINT) AS "runs",
-                CAST(SUM(CASE WHEN r."origin" = 'manual' THEN 1 ELSE 0 END) AS BIGINT) AS "manual",
-                CAST(SUM(CASE WHEN r."origin" IN ('scheduled', 'weekly') THEN 1 ELSE 0 END) AS BIGINT) AS "automatic",
-                CAST(SUM(CASE WHEN r."stage" = 'failed' THEN 1 ELSE 0 END) AS BIGINT) AS "failed",
-                CAST(SUM(CASE WHEN r."source" = 'server' AND r."origin" NOT IN ('scheduled', 'weekly') AND {created} >= ?2 THEN 1 ELSE 0 END) AS BIGINT) AS "today",
-                CAST(COALESCE(SUM(r."inputTokens" + r."outputTokens"), 0) AS BIGINT) AS "tokens",
-                CAST(COALESCE(SUM(CASE WHEN r."source" = 'server' THEN r."inputTokens" + r."outputTokens" ELSE 0 END), 0) AS BIGINT) AS "serverTokens",
-                MAX({created}) AS "lastRunAt"
-                FROM "ai_run" r JOIN "user" u ON u."id" = r."userId"
-                WHERE {created} >= ?1
-                GROUP BY r."userId", u."username", u."jellyfinUsername", u."plexUsername", u."email", u."avatar"
-                ORDER BY COUNT(*) DESC"#
-            ),
-            &[Bind::Text(since.clone()), Bind::Text(today)],
-        )
+    let people = signals::people_usage(db, &since, &today)
         .await
         .map_err(err)?;
     let outcomes = signals::outcomes(db, &since).await.map_err(err)?;
@@ -234,15 +213,7 @@ async fn usage_view(ctx: &Ready<'_>) -> Result<Value, AiError> {
         })
         .collect();
     let models = signals::by_model(db, &since).await.map_err(err)?;
-    let failures = db
-        .rows(
-            &format!(
-                r#"SELECT CAST(r."id" AS BIGINT) AS "id", {name} AS "name", {created} AS "createdAt", r."model", r."origin", r."error"
-                FROM "ai_run" r JOIN "user" u ON u."id" = r."userId"
-                WHERE r."stage" = 'failed' AND {created} >= ?1 ORDER BY r."id" DESC LIMIT 10"#
-            ),
-            &[Bind::Text(since)],
-        )
+    let failures = signals::recent_failures(db, &since)
         .await
         .map_err(err)?
         .into_iter()
@@ -252,7 +223,11 @@ async fn usage_view(ctx: &Ready<'_>) -> Result<Value, AiError> {
                 .get("error")
                 .and_then(Value::as_str)
                 .and_then(|e| serde_json::from_str::<Value>(e).ok())
-                .and_then(|e| e.get("message").and_then(Value::as_str).map(|m| ai::clip(m, 200)));
+                .and_then(|e| {
+                    e.get("message")
+                        .and_then(Value::as_str)
+                        .map(|m| ai::clip(m, 200))
+                });
             row.remove("error");
             row.insert(String::from("message"), Value::from(message));
             Value::Object(row)

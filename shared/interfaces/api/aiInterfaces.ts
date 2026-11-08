@@ -42,6 +42,13 @@ export interface AiSettings {
   allowUserEndpoints: boolean;
   allowUserModelChoice: boolean;
   dailyLimit: number;
+  /** Server connection tokens per month; 0 means no budget. */
+  monthlyTokenBudget: number;
+  rowRefreshDays: number;
+  /** The nightly job prepares rows and weekly picks for active people. */
+  autoPicks: boolean;
+  /** Finished requests are deleted after this many days; 0 keeps them. */
+  historyDays: number;
   models: { fast: string | null; best: string | null };
   presets: AiPresets;
   searxng: { enabled: boolean; url: string };
@@ -88,6 +95,7 @@ export interface AiMe {
     model: AiPreset | null;
     useHistory: boolean;
     historyConsentAt: string | null;
+    weeklyPicks: boolean;
   };
   effective: AiEffective;
   chatgptRedirectUri: string;
@@ -135,8 +143,14 @@ export interface AiRecommendRequest {
   seed?: { mediaType: 'movie' | 'tv'; tmdbId: number } | null;
   only?: 'movie' | 'tv' | null;
   anime?: boolean;
+  /** `library`: only titles in the library; `new`: only ones not in it yet. */
+  availability?: AiAvailability | null;
   refinements?: string[];
 }
+
+export type AiAvailability = 'library' | 'new';
+
+export type AiOrigin = 'manual' | 'row' | 'scheduled' | 'weekly';
 
 export interface AiPick {
   mediaType: 'movie' | 'tv';
@@ -166,10 +180,12 @@ export interface AiRun {
     seed: { mediaType: 'movie' | 'tv'; tmdbId: number; title: string } | null;
     only: 'movie' | 'tv' | null;
     anime: boolean;
+    availability?: AiAvailability | null;
     refinements: string[];
   };
   source: 'own' | 'server';
   model: string | null;
+  origin?: AiOrigin;
   result: AiRunResult | null;
   error: AiErrorBody | null;
 }
@@ -180,7 +196,64 @@ export interface AiRunSummary {
   createdAt: string;
   prompt: string;
   seedTitle: string | null;
+  only: 'movie' | 'tv' | null;
+  anime: boolean | null;
+  availability: AiAvailability | null;
+  refinements: string[] | null;
   headline: string | null;
+  pickCount: number;
+  /** TMDB poster paths of the first few picks. */
+  posters: string[];
+  /** Picks of this request the person requested, and liked. */
+  requested: number;
+  liked: number;
+  model: string | null;
+}
+
+/** How picks went over the last 30 days. */
+export interface AiOutcomes {
+  picks: number;
+  requested: number;
+  watched: number;
+  liked: number;
+}
+
+export interface AiUsageReport {
+  days: number;
+  month: { serverTokens: number; budget: number };
+  people: {
+    userId: number;
+    name: string;
+    avatar: string | null;
+    runs: number;
+    manual: number;
+    automatic: number;
+    failed: number;
+    today: number;
+    tokens: number;
+    serverTokens: number;
+    lastRunAt: string | null;
+    outcomes: AiOutcomes;
+  }[];
+  models: {
+    model: string | null;
+    runs: number;
+    failed: number;
+    inputTokens: number;
+    outputTokens: number;
+    picks: number;
+    requested: number;
+    watched: number;
+    ratedWell: number;
+  }[];
+  failures: {
+    id: number;
+    name: string;
+    createdAt: string;
+    model: string | null;
+    origin: AiOrigin;
+    message: string | null;
+  }[];
 }
 
 export interface AiFeedbackItem {
@@ -196,6 +269,7 @@ export interface AiTaste {
   updatedAt: string | null;
   feedbackCount: number;
   pendingFeedback: number;
+  outcomes?: AiOutcomes;
 }
 
 export interface AiUsage {

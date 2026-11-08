@@ -1,15 +1,17 @@
 import TasteCard from '@app/components/Ai/TasteCard';
 import { aiErrorOf } from '@app/components/Ai/aiError';
 import Alert from '@app/components/Common/Alert';
+import ConfirmButton from '@app/components/Common/ConfirmButton';
 import LinkButton from '@app/components/Common/LinkButton';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { TrashIcon } from '@heroicons/react/24/outline';
 import type { AiMe } from '@shared/interfaces/api/aiInterfaces';
 import axios from 'axios';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
-import useSWR from 'swr';
+import useSWR, { mutate as globalMutate } from 'swr';
 
 const messages = defineMessages(
   'components.UserProfile.UserSettings.UserDiscoverSettings.AiPreferences',
@@ -21,6 +23,17 @@ const messages = defineMessages(
     historyHint:
       'Include a summary of what you have watched, rated and saved from your media server and linked trackers. Your prompt, taste card and feedback can still be sent to your AI provider when this is off. With web search enabled, searches based on your request and taste are sent through SearXNG.',
     historySince: 'On since {date}.',
+    weekly: 'Weekly picks',
+    weeklyHint:
+      'Once a week, Foreseerr makes a set of picks for your taste overnight and lets you know. It doesn’t count toward your daily limit.',
+    learnHint:
+      'Foreseerr also notices when you request a pick, and (with watch history on) when you watch or rate one, and learns from it.',
+    historyData: 'Request history',
+    historyDataHint:
+      'Your AI requests, Discover row picks and weekly picks. Feedback and your taste card stay; reset them below.',
+    deleteHistory: 'Delete all',
+    deleteConfirm: 'Delete history?',
+    deleted: 'Your AI request history was deleted.',
     loadFailed: 'Unable to load your AI preferences.',
     disabled: 'AI features are turned off on this server.',
   }
@@ -33,10 +46,33 @@ const AiPreferences = () => {
   const { data, error, mutate } = useSWR<AiMe>('/api/v1/ai/me');
   const [saving, setSaving] = useState(false);
 
-  const saveHistory = async (useHistory: boolean) => {
+  const deleteHistory = async () => {
     setSaving(true);
     try {
-      const res = await axios.post<AiMe>('/api/v1/ai/me', { useHistory });
+      await axios.delete('/api/v1/ai/runs');
+      void globalMutate('/api/v1/ai/runs');
+      void globalMutate('/api/v1/ai/weekly');
+      addToast(intl.formatMessage(messages.deleted), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+    } catch (e) {
+      addToast(aiErrorOf(e, intl.formatMessage(globalMessages.error)).message, {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const save = async (change: {
+    useHistory?: boolean;
+    weeklyPicks?: boolean;
+  }) => {
+    setSaving(true);
+    try {
+      const res = await axios.post<AiMe>('/api/v1/ai/me', change);
       await mutate(res.data, { revalidate: false });
     } catch (e) {
       addToast(aiErrorOf(e, intl.formatMessage(globalMessages.error)).message, {
@@ -96,10 +132,52 @@ const AiPreferences = () => {
                 disabled={
                   saving || (!data.enabled && !data.preferences.useHistory)
                 }
-                onChange={(e) => void saveHistory(e.target.checked)}
+                onChange={(e) => void save({ useHistory: e.target.checked })}
               />
             </div>
           </div>
+          {data.enabled ? (
+            <div className="form-row">
+              <label htmlFor="ai-weekly" className="checkbox-label">
+                {intl.formatMessage(messages.weekly)}
+                <span className="label-tip">
+                  {intl.formatMessage(messages.weeklyHint)}
+                </span>
+              </label>
+              <div className="form-input-area">
+                <input
+                  id="ai-weekly"
+                  type="checkbox"
+                  checked={data.preferences.weeklyPicks}
+                  disabled={saving}
+                  onChange={(e) => void save({ weeklyPicks: e.target.checked })}
+                />
+              </div>
+            </div>
+          ) : null}
+          <div className="form-row">
+            <span className="checkbox-label">
+              {intl.formatMessage(messages.historyData)}
+              <span className="label-tip">
+                {intl.formatMessage(messages.historyDataHint)}
+              </span>
+            </span>
+            <div className="form-input-area">
+              <ConfirmButton
+                onClick={() => void deleteHistory()}
+                confirmText={intl.formatMessage(messages.deleteConfirm)}
+                disabled={saving}
+              >
+                <TrashIcon />
+                <span>{intl.formatMessage(messages.deleteHistory)}</span>
+              </ConfirmButton>
+            </div>
+          </div>
+          {data.enabled ? (
+            <p className="text-sm text-gray-400">
+              {intl.formatMessage(messages.learnHint)}
+            </p>
+          ) : null}
           {data.enabled ? <TasteCard /> : null}
         </div>
       ) : null}

@@ -20,6 +20,9 @@ Series and Sources. There's no chat:
 - **Describe a mood** ("a cozy mystery for a rainy night") or tap a mood chip.
   **Just for me** asks for picks from your taste alone.
 - **Choose All, Movies, Series or Anime** to narrow the search.
+- **Choose Anywhere, In library or Not in library.** In library
+  picks only from what's already available to watch; Not in library leaves
+  out anything available, requested or downloading.
 - **More like this** on any movie or series page starts AI Picks from that
   title.
 
@@ -31,7 +34,18 @@ one line on why each pick fits. Titles it suggests beyond those are checked
 against TMDB first, so every pick is a real, requestable title.
 
 Under the results, **Refine** chips ("lighter tone", "only movies") run the
-request again with that change. **Recent** reopens your earlier requests.
+request again with that change. **Recent** reopens your earlier requests and
+shows when you asked, the filters, a few posters, and how many of the picks
+you requested or liked. Delete one with its trash button, or **Clear history**
+to delete them all.
+
+### Weekly picks
+
+Once a week, Foreseerr makes a set of picks for your taste overnight. They show
+as **This week for you** at the top of AI Picks, and you get a web push when
+they're ready (if you've turned web push on). Weekly picks don't count toward
+your daily limit. Turn them off in **Profile → Discover → AI recommendations →
+Weekly picks**. Only people who used AI picks in the last week get them.
 
 ### Feedback and your taste card
 
@@ -44,6 +58,16 @@ choice. This feedback only tunes AI suggestions; it does not change your
 tracker ratings or watch status. Titles you rated never come back as picks, and
 liked and disliked ones steer later requests. Titles you passed on are left out
 of Discover rows.
+
+Foreseerr also notices what you do with picks, without you pressing anything:
+
+- **You requested a pick.** It counts like a like, and that title isn't
+  suggested again.
+- **You watched a pick, or rated it on Trakt or Simkl** (7 or more counts as
+  liked, 4 or less as disliked). These are watch history, so they only go to
+  the model when **Use my watch history** is on.
+
+These stay on your server. **Forget all ratings** forgets them too.
 
 After a few new ratings, Foreseerr rewrites your **taste card**, a short note
 about what you enjoy that goes with each request. You can read, edit or clear
@@ -61,8 +85,15 @@ row is the same for everyone, but each person sees picks for their own taste.
 Adding completed picks reuses that run for your slider's first day, without
 another AI request. The saved row keeps the original seed title, media filter,
 anime setting and refinements for future refreshes. Other people get their own
-personalized results. Picks are cached for a day per person, and each refresh counts as one request
-toward that person's daily limit.
+personalized results. Each person's picks are kept for a few days (3 by
+default; admins can change it), and a refresh made while they browse counts as
+one request toward their daily limit.
+
+Rows are mostly refreshed overnight instead, by the **AI Picks Refresh** job
+(Settings → Jobs, 4:30 by default). For people who used AI picks in the last
+week, it refreshes rows that would go stale during the next day, one request at
+a time. These overnight refreshes don't count toward anyone's daily limit.
+People who haven't used AI picks lately cost nothing.
 
 For API clients, `GET /api/v1/ai/row` reads cached picks only. To allow a new
 run when the cache has expired, use `POST` with the same query parameters and
@@ -130,10 +161,24 @@ connection pick any model it offers.
 | People can choose Fast, Balanced or Best       | On      |                                                                                                                         |
 | People can add their own endpoint              | Off     | This lets a user make the server call any address they enter, including ones on your network. Leave it off unless you trust every user. |
 | Daily AI requests per person                   | 30      | On the server connection, reset at midnight UTC. Admins and people using their own account aren't limited. 0 means no limit. |
+| Prepare picks overnight                        | On      | Refreshes Discover AI rows ahead of time and makes weekly picks for people active in the last week. |
+| Refresh Discover AI rows every (days)          | 3       | How long a person's row picks are kept. Longer means fewer AI requests. |
+| Keep request history (days)                    | 90      | Finished requests and their picks are deleted after this. 0 keeps them. |
+| Monthly token budget for the server connection | 0       | When the server connection has used this many tokens this month, new requests on it stop until the 1st. Own accounts aren't affected. 0 means no budget. |
 
 Admins can always use the server connection and connect their own accounts.
 Each person sees how many requests they have left on the AI Picks page and in
 Profile → Linked Accounts → AI account.
+
+## Usage
+
+**Settings → AI → Usage** shows the last 30 days: requests per person (asked
+for, or made automatically), failures, tokens, and how picks went (requested,
+watched or liked after being suggested). The **Models** table compares the
+models you've used, including how often their picks were requested, which
+helps decide whether Fast, Balanced or Best is worth it. Tokens are what the
+provider reported; Foreseerr doesn't estimate prices, since they differ by
+provider and plan.
 
 ## Watch history
 

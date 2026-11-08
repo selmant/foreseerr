@@ -28,6 +28,7 @@ const me: AiMe = {
     model: null,
     useHistory: false,
     historyConsentAt: null,
+    weeklyPicks: true,
   },
   effective: {
     available: true,

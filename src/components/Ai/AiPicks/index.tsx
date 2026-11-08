@@ -1,6 +1,8 @@
 import { visibleAiPicks } from '@shared/lib/aiVisibility';
 import { Permission } from '@shared/lib/permissions';
 import AiPickCard from '@app/components/Ai/AiPickCard';
+import RecentRequests from '@app/components/Ai/AiPicks/RecentRequests';
+import WeeklyPicks from '@app/components/Ai/AiPicks/WeeklyPicks';
 import { aiErrorOf } from '@app/components/Ai/aiError';
 import {
   isWorking,
@@ -22,7 +24,6 @@ import defineMessages from '@app/utils/defineMessages';
 import {
   ArrowPathIcon,
   CheckIcon,
-  ClockIcon,
   GlobeAltIcon,
   MagnifyingGlassIcon,
   PlusIcon,
@@ -32,6 +33,7 @@ import {
 import { DiscoverSliderType } from '@shared/constants/discover';
 import type DiscoverSlider from '@shared/entity/DiscoverSlider';
 import type {
+  AiAvailability,
   AiErrorBody,
   AiMe,
   AiPick,
@@ -39,6 +41,7 @@ import type {
   AiRun,
   AiRunStage,
   AiRunSummary,
+  AiTaste,
   AiVerdict,
 } from '@shared/interfaces/api/aiInterfaces';
 import axios from 'axios';
@@ -59,6 +62,12 @@ const messages = defineMessages('components.Ai.AiPicks', {
   series: 'Series',
   anime: 'Anime',
   kindLabel: 'What kind',
+  anywhere: 'Anywhere',
+  inLibrary: 'In library',
+  notInLibrary: 'Not in library',
+  whereLabel: 'Where from',
+  outcomes:
+    'Last 30 days: {requested} requested, {watched} watched, {liked} liked of {picks} picks',
   moreLike: 'More like {title}',
   clearSeed: 'Remove',
   moodCozy: 'Cozy & comforting',
@@ -91,7 +100,6 @@ const messages = defineMessages('components.Ai.AiPicks', {
   addedToDiscover:
     'Added to the top of Discover. Each person sees picks for their own taste.',
   addToDiscoverFailed: 'Couldn’t add the row to Discover.',
-  recent: 'Recent',
   feedbackFailed: 'Couldn’t save that. Try again.',
   using: 'Using {connection}',
   usingServer: 'the server connection',
@@ -109,6 +117,7 @@ const messages = defineMessages('components.Ai.AiPicks', {
 });
 
 type Kind = 'any' | 'movie' | 'tv' | 'anime';
+type Where = 'any' | AiAvailability;
 
 const MOODS: { label: keyof typeof messages; prompt: keyof typeof messages }[] =
   [
@@ -205,6 +214,7 @@ const AiPicks = () => {
   const seed = parseSeed(searchParams.get('seed'));
   const [prompt, setPrompt] = useState(searchParams.get('q') ?? '');
   const [kind, setKind] = useState<Kind>('any');
+  const [where, setWhere] = useState<Where>('any');
   const [starting, setStarting] = useState(false);
   const [addingSlider, setAddingSlider] = useState(false);
   const [startError, setStartError] = useState<AiErrorBody | null>(null);
@@ -213,6 +223,7 @@ const AiPicks = () => {
   const { data: me, mutate: mutateMe } = useSWR<AiMe>('/api/v1/ai/me');
   const { data: recent, mutate: mutateRecent } =
     useSWR<AiRunSummary[]>('/api/v1/ai/runs');
+  const { data: taste } = useSWR<AiTaste>('/api/v1/ai/taste');
   const { data: run, error: runError, mutate: mutateRun } = useAiRun(runParam);
   const { data: seedTitle } = useSWR<{ title?: string; name?: string }>(
     seed && !runParam ? `/api/v1/${seed.mediaType}/${seed.tmdbId}` : null
@@ -246,8 +257,16 @@ const AiPicks = () => {
     seed: !runParam ? seed : null,
     only: kind === 'movie' || kind === 'tv' ? kind : null,
     anime: kind === 'anime',
+    availability: where === 'any' ? null : where,
     refinements: [],
   });
+
+  const openRun = (id: number) => {
+    const next = new URLSearchParams();
+    next.set('run', String(id));
+    setSearchParams(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // "More like this" and ?q= links start right away, once.
   useEffect(() => {
@@ -299,6 +318,7 @@ const AiPicks = () => {
         : null,
       only: run.request.only,
       anime: run.request.anime,
+      availability: run.request.availability ?? null,
       refinements: [...run.request.refinements, chip].slice(-6),
     });
   };
@@ -317,6 +337,7 @@ const AiPicks = () => {
         : null,
       only: run.request.only,
       anime: run.request.anime,
+      availability: run.request.availability ?? null,
       refinements: run.request.refinements,
     });
   };
@@ -366,6 +387,12 @@ const AiPicks = () => {
     { value: 'tv', label: intl.formatMessage(messages.series) },
     { value: 'anime', label: intl.formatMessage(messages.anime) },
   ];
+  const whereOptions: SegmentedOption<Where>[] = [
+    { value: 'any', label: intl.formatMessage(messages.anywhere) },
+    { value: 'library', label: intl.formatMessage(messages.inLibrary) },
+    { value: 'new', label: intl.formatMessage(messages.notInLibrary) },
+  ];
+  const outcomes = taste?.outcomes;
 
   const effective = me?.effective;
   const connectionLabel = effective?.available
@@ -470,6 +497,13 @@ const AiPicks = () => {
               ariaLabel={intl.formatMessage(messages.kindLabel)}
               size="sm"
             />
+            <SegmentedControl
+              options={whereOptions}
+              value={where}
+              onChange={setWhere}
+              ariaLabel={intl.formatMessage(messages.whereLabel)}
+              size="sm"
+            />
             {showSeed && !run ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600/30 px-3 py-1 text-sm text-indigo-100 ring-1 ring-indigo-500">
                 {intl.formatMessage(messages.moreLike, { title: seedName })}
@@ -514,6 +548,11 @@ const AiPicks = () => {
               })}
             </span>
           ) : null}
+          {outcomes && outcomes.picks > 0 ? (
+            <span>
+              {intl.formatMessage(messages.outcomes, { ...outcomes })}
+            </span>
+          ) : null}
           <Link
             to="/profile/settings/discover#ai-preferences"
             className="hover:text-white"
@@ -521,6 +560,8 @@ const AiPicks = () => {
             {intl.formatMessage(messages.tasteLink)} →
           </Link>
         </div>
+
+        {!run && !working ? <WeeklyPicks onOpen={openRun} /> : null}
 
         {error ? (
           <div className="mt-5">
@@ -662,49 +703,16 @@ const AiPicks = () => {
         </div>
       ) : null}
 
-      {recent && recent.length > 0 ? (
-        <div className="mt-10 max-w-5xl">
-          <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-300">
-            <ClockIcon className="h-4 w-4" />
-            {intl.formatMessage(messages.recent)}
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {recent
-              .filter(
-                (r, i, all) =>
-                  r.id !== runParam &&
-                  r.stage === 'done' &&
-                  // Only the latest run of each request.
-                  all.findIndex(
-                    (o) =>
-                      o.stage === 'done' &&
-                      o.prompt === r.prompt &&
-                      o.seedTitle === r.seedTitle
-                  ) === i
-              )
-              .slice(0, 10)
-              .map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => {
-                    const next = new URLSearchParams();
-                    next.set('run', String(r.id));
-                    setSearchParams(next);
-                  }}
-                  className="max-w-xs truncate rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-1.5 text-left text-sm text-gray-300 hover:border-gray-500 hover:text-white"
-                  title={r.headline ?? r.prompt}
-                >
-                  {r.prompt ||
-                    (r.seedTitle
-                      ? intl.formatMessage(messages.moreLike, {
-                          title: r.seedTitle,
-                        })
-                      : (r.headline ?? ''))}
-                </button>
-              ))}
-          </div>
-        </div>
+      {recent ? (
+        <RecentRequests
+          runs={recent}
+          currentId={runParam}
+          onOpen={openRun}
+          onChanged={() => {
+            void mutateRecent();
+            void globalMutate('/api/v1/ai/weekly');
+          }}
+        />
       ) : null}
     </>
   );

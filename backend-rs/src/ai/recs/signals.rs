@@ -454,6 +454,65 @@ pub async fn by_model(db: &Db, since_iso: &str) -> Result<Vec<Value>> {
         .collect())
 }
 
+const DISPLAY_NAME: &str = r#"COALESCE(NULLIF(u."username", ''), NULLIF(u."jellyfinUsername", ''), NULLIF(u."plexUsername", ''), u."email")"#;
+
+/// Per person since `since_iso`: requests (asked for or automatic), failures,
+/// today's count toward the daily limit (`today_iso`) and tokens.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn people_usage(
+    db: &Db,
+    since_iso: &str,
+    today_iso: &str,
+) -> Result<Vec<serde_json::Map<String, Value>>> {
+    let created = db.iso_sql(r#"r."createdAt""#);
+    db.rows(
+        &format!(
+            r#"SELECT CAST(r."userId" AS BIGINT) AS "userId", {DISPLAY_NAME} AS "name", u."avatar" AS "avatar",
+            CAST(COUNT(*) AS BIGINT) AS "runs",
+            CAST(SUM(CASE WHEN r."origin" = 'manual' THEN 1 ELSE 0 END) AS BIGINT) AS "manual",
+            CAST(SUM(CASE WHEN r."origin" IN ('scheduled', 'weekly') THEN 1 ELSE 0 END) AS BIGINT) AS "automatic",
+            CAST(SUM(CASE WHEN r."stage" = 'failed' THEN 1 ELSE 0 END) AS BIGINT) AS "failed",
+            CAST(SUM(CASE WHEN r."source" = 'server' AND r."origin" NOT IN ('scheduled', 'weekly') AND {created} >= ?2 THEN 1 ELSE 0 END) AS BIGINT) AS "today",
+            CAST(COALESCE(SUM(r."inputTokens" + r."outputTokens"), 0) AS BIGINT) AS "tokens",
+            CAST(COALESCE(SUM(CASE WHEN r."source" = 'server' THEN r."inputTokens" + r."outputTokens" ELSE 0 END), 0) AS BIGINT) AS "serverTokens",
+            MAX({created}) AS "lastRunAt"
+            FROM "ai_run" r JOIN "user" u ON u."id" = r."userId"
+            WHERE {created} >= ?1
+            GROUP BY r."userId", u."username", u."jellyfinUsername", u."plexUsername", u."email", u."avatar"
+            ORDER BY COUNT(*) DESC"#
+        ),
+        &[
+            Bind::Text(since_iso.to_owned()),
+            Bind::Text(today_iso.to_owned()),
+        ],
+    )
+    .await
+}
+
+/// The last failed runs since `since_iso`, with who and the stored error.
+///
+/// # Errors
+///
+/// Fails on database errors.
+pub async fn recent_failures(
+    db: &Db,
+    since_iso: &str,
+) -> Result<Vec<serde_json::Map<String, Value>>> {
+    let created = db.iso_sql(r#"r."createdAt""#);
+    db.rows(
+        &format!(
+            r#"SELECT CAST(r."id" AS BIGINT) AS "id", {DISPLAY_NAME} AS "name", {created} AS "createdAt", r."model", r."origin", r."error"
+            FROM "ai_run" r JOIN "user" u ON u."id" = r."userId"
+            WHERE r."stage" = 'failed' AND {created} >= ?1 ORDER BY r."id" DESC LIMIT 10"#
+        ),
+        &[Bind::Text(since_iso.to_owned())],
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -554,6 +613,92 @@ mod tests {
         assert!(store::run(db, 1, new).await?.is_some());
         assert_eq!(store::delete_runs(db, 1).await?, 1);
         assert!(store::personal_runs(db, 1, 20).await?.is_empty());
+        Ok(())
+    }
+
+    /// The new tables and every new query on `PostgreSQL`.
+    #[tokio::test]
+    #[ignore = "requires an empty scratch database at FORESEERR_AI_TEST_POSTGRES_URL"]
+    async fn postgres_insights() -> Result<()> {
+        use crate::ai::recs::store::{Origin, Reserve};
+        let url = std::env::var("FORESEERR_AI_TEST_POSTGRES_URL")?;
+        let db = Db::Postgres(sqlx::PgPool::connect(&url).await?);
+        crate::dbmigrate::run(&db, &crate::dbmigrate::migrations(&db)).await?;
+        db.execute(r#"INSERT INTO "user" ("id", "email", "permissions", "userType", "avatar") VALUES (1, 'pg@example.test', 0, 1, '')"#, &[]).await?;
+        let how = Reserve {
+            source: "server",
+            model: Some("m"),
+            daily_limit: Some(5),
+            monthly_tokens: Some(10_000),
+            origin: Origin::Manual,
+            fresh_minutes: 60,
+        };
+        let (run, _) = store::reserve_run(&db, 1, &Request::default(), None, how)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        store::finish(&db, run, &json!({"picks": [{"mediaType": "movie", "tmdbId": 10, "tmdb": {"title": "A"}}, {"mediaType": "tv", "tmdbId": 20, "tmdb": {"name": "B"}}]})).await?;
+        store::add_tokens(
+            &db,
+            run,
+            crate::ai::Tokens {
+                input: 10,
+                output: 5,
+            },
+        )
+        .await?;
+        db.execute(r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status") VALUES (5, 'movie', 10, 2)"#, &[]).await?;
+        db.execute(r#"INSERT INTO "media_request" ("status", "type", "mediaId", "requestedById", "is4k", "isAutoRequest") VALUES (1, 'movie', 5, 1, false, false)"#, &[]).await?;
+        let state = AppState::for_tests(db.clone(), &std::env::temp_dir())?;
+        let settings = Settings::from_file_value(json!({}), None)?;
+        let watched = WatchedSets {
+            movie: vec![],
+            tv: vec![20.0],
+        };
+        sync(&state, &settings, 1, Some(&watched), false).await?;
+        assert_eq!(recent(&db, 1, true, 10).await?.len(), 2);
+        let ids: Vec<i64> = unlearned(&db, 1, true)
+            .await?
+            .iter()
+            .map(|s| s.id)
+            .collect();
+        mark_learned(&db, 1, &ids).await?;
+        let o = outcomes(&db, "2000-01-01T00:00:00.000Z")
+            .await?
+            .remove(&1)
+            .unwrap_or_default();
+        assert_eq!((o.picks, o.requested, o.watched), (2, 1, 1));
+        assert!(!by_model(&db, "2000-01-01T00:00:00.000Z").await?.is_empty());
+        assert_eq!(
+            people_usage(&db, "2000-01-01T00:00:00.000Z", "2000-01-01T00:00:00.000Z")
+                .await?
+                .len(),
+            1
+        );
+        assert!(recent_failures(&db, "2000-01-01T00:00:00.000Z")
+            .await?
+            .is_empty());
+        assert_eq!(
+            store::server_tokens_since(&db, "2000-01-01T00:00:00.000Z").await?,
+            15
+        );
+        store::touch_active(&db, 1).await?;
+        crate::ai::store::update_prefs(
+            &db,
+            1,
+            &crate::ai::store::PrefsChange {
+                weekly_picks: Some(false),
+                ..Default::default()
+            },
+        )
+        .await?;
+        assert!(!crate::ai::store::prefs(&db, 1).await?.weekly_picks);
+        assert!(store::latest_weekly(&db, 1).await?.is_none());
+        assert!(store::last_weekly_at(&db, 1).await?.is_none());
+        assert_eq!(store::personal_runs(&db, 1, 5).await?.len(), 1);
+        assert_eq!(store::prune_runs(&db, "2000-01-01T00:00:00.000Z").await?, 0);
+        assert!(store::delete_run(&db, 1, run).await?);
+        assert_eq!(store::delete_runs(&db, 1).await?, 0);
+        store::clear_all_feedback(&db, 1).await?;
         Ok(())
     }
 
