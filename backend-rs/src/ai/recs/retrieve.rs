@@ -578,25 +578,88 @@ async fn trakt(
     .collect()
 }
 
-async fn web(state: &AppState, url: &str, queries: &[String]) -> Vec<String> {
-    let mut lines = Vec::new();
-    for q in queries.iter().take(super::prompts::MAX_WEB_QUERIES) {
-        let Ok(hits) = crate::searxng::search(&state.outbound, url, q, 6).await else {
-            continue;
+/// Web research is always attempted when configured, even if the model
+/// forgets to supply queries. The summary already reflects the user's taste.
+fn web_queries(plan: &Plan, sources: &Sources) -> Vec<String> {
+    if sources.searxng.is_none() {
+        return Vec::new();
+    }
+    let mut queries = Vec::new();
+    for q in &plan.web_queries {
+        let q = clip(q.trim(), 240);
+        if !q.is_empty()
+            && !queries
+                .iter()
+                .any(|old: &String| old.eq_ignore_ascii_case(&q))
+        {
+            queries.push(q);
+        }
+        if queries.len() == super::prompts::MAX_WEB_QUERIES {
+            break;
+        }
+    }
+    if queries.is_empty() {
+        let topics = plan
+            .genres
+            .iter()
+            .chain(&plan.keywords)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let topic = if plan.summary.trim().is_empty() {
+            topics.trim()
+        } else {
+            plan.summary.trim()
         };
-        for hit in hits {
+        let media = match (sources.anime_only || plan.anime, sources.only) {
+            (true, _) => "anime",
+            (false, Some("movie")) => "movie",
+            (false, Some("tv")) => "TV series",
+            (false, Some(_) | None) => "movie and TV series",
+        };
+        queries.push(
+            format!("{} {media} recommendations", clip(topic, 200))
+                .trim()
+                .to_owned(),
+        );
+    }
+    queries
+}
+
+async fn web(client: &reqwest::Client, url: &str, queries: &[String]) -> Vec<String> {
+    let results = map_with_concurrency(
+        queries
+            .iter()
+            .take(super::prompts::MAX_WEB_QUERIES)
+            .cloned()
+            .collect(),
+        super::prompts::MAX_WEB_QUERIES,
+        |q: String| async move {
+            match crate::searxng::search(client, url, &q, 6).await {
+                Ok(hits) => hits,
+                Err(e) => {
+                    tracing::warn!("AI recommendation web search failed: {}", e.0);
+                    Vec::new()
+                }
+            }
+        },
+    )
+    .await;
+    results
+        .into_iter()
+        .flatten()
+        .map(|hit| {
             let host = reqwest::Url::parse(&hit.url)
                 .ok()
                 .and_then(|u| u.host_str().map(str::to_owned))
                 .unwrap_or_default();
-            lines.push(format!(
+            format!(
                 "{} — {} ({host})",
                 clip(hit.title.trim(), 120),
                 clip(hit.snippet.trim(), 240)
-            ));
-        }
-    }
-    lines
+            )
+        })
+        .collect()
 }
 
 /// What to look up besides the plan.
@@ -725,10 +788,11 @@ pub async fn gather<S: BuildHasher + Sync>(
             trakt(state, settings, user_id, language).await
         }));
     }
+    let queries = web_queries(plan, sources);
     let web_job = async {
         match &sources.searxng {
-            Some(url) if !plan.web_queries.is_empty() => web(state, url, &plan.web_queries).await,
-            Some(_) | None => Vec::new(),
+            Some(url) => web(&state.outbound, url, &queries).await,
+            None => Vec::new(),
         }
     };
     let (found, web) = tokio::join!(join_all(jobs), web_job);
@@ -756,6 +820,96 @@ pub async fn gather<S: BuildHasher + Sync>(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn enabled_web_search_falls_back_and_normalizes_queries() {
+        let mut plan = Plan {
+            summary: String::from("Twisty psychological mysteries"),
+            web_queries: vec![String::from("  ")],
+            ..Plan::default()
+        };
+        let sources = Sources {
+            searxng: Some(String::from("http://searxng:8080")),
+            only: Some("tv"),
+            ..Sources::default()
+        };
+        assert_eq!(
+            web_queries(&plan, &sources),
+            ["Twisty psychological mysteries TV series recommendations"]
+        );
+        assert!(web_queries(&plan, &Sources::default()).is_empty());
+        assert_eq!(
+            web_queries(&Plan::default(), &sources),
+            ["TV series recommendations"]
+        );
+        plan.web_queries = [
+            "  mystery recommendations ",
+            "MYSTERY RECOMMENDATIONS",
+            "slow burn shows",
+            "ignored",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        assert_eq!(
+            web_queries(&plan, &sources),
+            ["mystery recommendations", "slow burn shows"]
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_model_queries_still_fetch_web_context() -> anyhow::Result<()> {
+        if rustls::crypto::ring::default_provider()
+            .install_default()
+            .is_err()
+        {
+            tracing::trace!("a provider was installed");
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}", listener.local_addr()?);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = axum::Router::new().route(
+            "/search",
+            axum::routing::get(
+                move |axum::extract::Query(params): axum::extract::Query<
+                    HashMap<String, String>,
+                >| {
+                    let tx = tx.clone();
+                    async move {
+                        drop(tx.send(params));
+                        axum::Json(json!({"results": [{
+                            "title": "Mystery recommendations",
+                            "url": "https://example.test/mysteries",
+                            "content": "Try a puzzle-box mystery."
+                        }]}))
+                    }
+                },
+            ),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let sources = Sources {
+            searxng: Some(url.clone()),
+            only: Some("tv"),
+            ..Sources::default()
+        };
+        let plan = Plan {
+            summary: String::from("Puzzle-box mysteries"),
+            ..Plan::default()
+        };
+        let lines = web(&reqwest::Client::new(), &url, &web_queries(&plan, &sources)).await;
+        server.abort();
+        assert_eq!(lines.len(), 1, "search results reach ranking context");
+        assert!(lines
+            .first()
+            .is_some_and(|s| s.contains("Try a puzzle-box mystery.")));
+        let params = rx.try_recv()?;
+        assert_eq!(
+            params.get("q").map(String::as_str),
+            Some("Puzzle-box mysteries TV series recommendations")
+        );
+        assert_eq!(params.get("format").map(String::as_str), Some("json"));
+        Ok(())
+    }
 
     #[test]
     fn candidate_from_details_and_search_results() {

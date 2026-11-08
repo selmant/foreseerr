@@ -154,10 +154,18 @@ again.
 
 ## Web search with SearXNG
 
-With a [SearXNG](https://docs.searxng.org) instance, Foreseerr can also look up
-titles too new or too niche for the catalogs. Searches run from your server, so
-no search provider account is needed. In **Settings → AI → Web search**, turn
-it on, enter the instance's URL and use **Test**.
+With a [SearXNG](https://docs.searxng.org) instance, every new recommendation
+run researches the web alongside the catalogs. This includes personal Discover
+rows when they regenerate. The model creates one or two searches from your
+request and taste, and Foreseerr supplies a search from the plan's summary if
+the model leaves them empty. Results guide ranking, and extra titles are
+checked against TMDB before they appear. Cached rows reuse their existing picks.
+
+Searches run from your server, so no search provider account is needed.
+In **Settings → AI → Web search**, turn it on, enter the instance's URL and
+use **Test**. The results page shows **Web search used** when web results
+were included. If search fails or returns nothing, the catalogs can still
+provide recommendations.
 
 The instance needs:
 

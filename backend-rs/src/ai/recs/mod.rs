@@ -326,6 +326,7 @@ async fn person(
     seed_line: Option<String>,
 ) -> anyhow::Result<Person> {
     let prefs = super::store::prefs(&state.db, user_id).await?;
+    let policy = Policy::of(settings);
     let taste = store::taste(&state.db, user_id)
         .await?
         .map(|(card, _)| card);
@@ -400,6 +401,7 @@ async fn person(
             liked: liked_lines,
             avoid: avoid_lines,
             history,
+            web_search_enabled: policy.searxng_enabled && !policy.searxng_url.is_empty(),
         },
         liked,
         excluded,
