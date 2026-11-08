@@ -235,9 +235,7 @@ pub async fn complete(
             Some(_) | None => None,
         }
     }
-    .ok_or_else(|| {
-        AiError::input("This sign-in expired or was started elsewhere. Start again with Continue with ChatGPT.")
-    })?;
+    .ok_or_else(|| AiError::input("This sign-in expired or was started elsewhere. Start again."))?;
     if let Some(error) = params.get("error") {
         return Err(if error == "access_denied" {
             AiError::input("Sign-in was cancelled in ChatGPT.")
