@@ -200,7 +200,7 @@ const RefineInput = ({
         onChange={(e) => setText(e.target.value)}
         placeholder={intl.formatMessage(messages.refineOwn)}
         aria-label={intl.formatMessage(messages.refineOwnLabel)}
-        className="min-w-0 flex-1 border-0 bg-transparent p-0 py-1 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-0"
+        className="min-w-0 flex-1 !rounded-none !border-0 !bg-transparent p-0 py-1 text-sm text-white placeholder-gray-400 !shadow-none focus:outline-none focus:!ring-0"
       />
       <button
         type="submit"
