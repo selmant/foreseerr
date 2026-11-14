@@ -302,6 +302,12 @@ fn details_to_result(details: &Value) -> Value {
     Value::Object(out)
 }
 
+/// Whether a `tmdb:` lookup's details are shown: adult ones only to users
+/// who show adult content.
+fn shown_details(details: &Value, show_adult: bool) -> bool {
+    show_adult || !super::adultfilter::is_adult(details)
+}
+
 /// `searchProvider.search({ id, language, query })`; `Err` where it
 /// rejects (a failed `getByExternalId`).
 async fn provider_search(
@@ -319,9 +325,13 @@ async fn provider_search(
                 tmdb.tv(n, language),
                 tmdb.person(n, language)
             );
+            // Filtered on the raw details: the mapped TV result has no
+            // `adult` left for the later filter to read.
+            let show_adult = super::adultfilter::shows_adult(ctx);
             let results = <[_; 3]>::from((movie, tv, person))
                 .into_iter()
                 .filter_map(Result::ok)
+                .filter(|details| shown_details(details, show_adult))
                 .map(|details| details_to_result(&details))
                 .collect();
             Ok(single_page(results))
@@ -542,6 +552,19 @@ pub(super) fn map_person_result(result: &Value) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tmdb_lookup_hides_adult_tv() {
+        let show = serde_json::json!({"id": 7, "name": "x", "adult": true, "first_air_date": "2020-01-01", "number_of_seasons": 1});
+        assert!(
+            details_to_result(&show).get("adult").is_none(),
+            "the mapped TV result has no adult flag to filter on later"
+        );
+        assert!(!shown_details(&show, false), "hidden by default");
+        assert!(shown_details(&show, true), "shown when the user opts in");
+        let plain = serde_json::json!({"id": 8, "name": "y", "adult": false});
+        assert!(shown_details(&plain, false));
+    }
 
     #[test]
     fn provider_detection() {
