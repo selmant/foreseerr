@@ -371,6 +371,8 @@ enum Source {
         /// The keyword id in the path.
         id: i64,
         language: String,
+        /// TMDB's `include_adult`: the user's `showAdultContent`.
+        include_adult: bool,
     },
 }
 
@@ -409,16 +411,26 @@ impl Source {
                 }
                 (format!("/trending/{kind}/{window}"), params)
             }
-            Self::Keyword { id, language } => (
-                format!("/keyword/{id}/movies"),
-                vec![("page", page.to_string()), ("language", language.clone())],
-            ),
+            Self::Keyword {
+                id,
+                language,
+                include_adult,
+            } => {
+                let mut params = vec![("page", page.to_string()), ("language", language.clone())];
+                // TMDB's default is false; only showing asks.
+                if *include_adult {
+                    params.push(("include_adult", String::from("true")));
+                }
+                (format!("/keyword/{id}/movies"), params)
+            }
         }
     }
 }
 
 /// One upstream page, mapped.
 struct Upstream {
+    /// TMDB answered no results at all (before the adult filter).
+    raw_empty: bool,
     items: Vec<Value>,
     total_pages: Option<Value>,
     total_results: Option<Value>,
@@ -442,7 +454,9 @@ async fn fetch_mapped_page(
     let Some(results) = data.get("results").and_then(Value::as_array) else {
         return Err(Fail::Error(String::from("TMDB answered without results")));
     };
-    // Trending and keyword lists take no `include_adult`.
+    // Trending takes no `include_adult`. An empty page after this filter
+    // is not the end of the upstream list.
+    let upstream_empty = results.is_empty();
     let results = &super::adultfilter::drop_adult_results(ctx, results.clone());
     let kind = source.kind();
     let is_movie = |r: &Value| r.get("title").is_some();
@@ -480,6 +494,7 @@ async fn fetch_mapped_page(
         items.push(item);
     }
     Ok(Upstream {
+        raw_empty: upstream_empty,
         items,
         total_pages: data.get("total_pages").cloned(),
         total_results: data.get("total_results").cloned(),
@@ -551,7 +566,7 @@ async fn paginate(
     let mut upstream_has_more = false;
     while upstream_page <= MAX_UPSTREAM_PAGES {
         let upstream = fetch_mapped_page(ctx, pre, source, upstream_page).await?;
-        if upstream.items.is_empty() {
+        if upstream.raw_empty {
             upstream_has_more = false;
             break;
         }
@@ -1022,6 +1037,7 @@ pub(super) fn keyword_movies<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let source = Source::Keyword {
             id,
             language: pre.language(),
+            include_adult: pre.show_adult,
         };
         let result = paginate(ctx, &pre, &source).await.map(Value::Object);
         finish(ctx, result, "Unable to retrieve movies by keyword.")

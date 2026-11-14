@@ -539,6 +539,7 @@ async fn anilist(
     let ctx = &ctx;
     let mapped = map_with_concurrency(media, 4, |m: Value| async move {
         let id = m.get("id").and_then(Value::as_i64)?;
+        let anilist_adult = m.get("isAdult").and_then(Value::as_bool) == Some(true);
         let hint = m
             .pointer("/title/english")
             .and_then(Value::as_str)
@@ -552,7 +553,15 @@ async fn anilist(
             MediaType::Movie => "movie",
             MediaType::Tv => "tv",
         };
-        summary(state, language, (kind, tmdb_id), "anilist").await
+        let mut c = summary(state, language, (kind, tmdb_id), "anilist").await?;
+        // AniList's own flag counts too, here and on the saved pick.
+        if anilist_adult {
+            c.adult = true;
+            if let Some(obj) = c.tmdb.as_object_mut() {
+                obj.insert(String::from("adult"), Value::Bool(true));
+            }
+        }
+        Some(c)
     })
     .await;
     mapped.into_iter().flatten().collect()

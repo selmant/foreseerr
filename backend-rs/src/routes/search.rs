@@ -40,11 +40,14 @@ pub(super) fn multi<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 .search_multi(&query, page, &language, adult)
                 .await
         };
-        let results: Vec<Value> = data
-            .get("results")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        // `tmdb:`, `imdb:` and `tvdb:` lookups don't take `include_adult`.
+        let results = super::adultfilter::drop_adult_results(
+            ctx,
+            data.get("results")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+        );
         let of_type = |kind: &str| -> Vec<Value> {
             results
                 .iter()

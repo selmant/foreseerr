@@ -362,7 +362,8 @@ fn main_settings_changes(
             &int(p.watch_ahead_episode_count),
         );
     }
-    if let Some(v @ Value::Bool(_)) = body.get("showAdultContent") {
+    // null clears it back to unset (hidden).
+    if let Some(v @ (Value::Bool(_) | Value::Null)) = body.get("showAdultContent") {
         changes.assign("showAdultContent", Some(v), &flag(p.show_adult_content));
     }
     changes
@@ -462,6 +463,7 @@ fn main_settings_json(
     );
     let show_adult = match body.get("showAdultContent") {
         Some(Value::Bool(b)) => *b,
+        Some(Value::Null) => false,
         _ => s.is_some_and(|s| s.public.show_adult_content == Some(true)),
     };
     out.insert(String::from("showAdultContent"), Value::Bool(show_adult));
