@@ -1350,6 +1350,11 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "AiHistoryIgnore1790400000000",
         queries: &["CREATE TABLE \"ai_history_ignore\" (\"userId\" integer NOT NULL, \"mediaType\" varchar NOT NULL, \"tmdbId\" integer NOT NULL, PRIMARY KEY (\"userId\", \"mediaType\", \"tmdbId\"), CONSTRAINT \"FK_ai_history_ignore_user\" FOREIGN KEY (\"userId\") REFERENCES \"user\" (\"id\") ON DELETE CASCADE)"],
     },
+    Migration {
+        timestamp: 1_790_500_000_000,
+        name: "UserShowAdultContent1790500000000",
+        queries: &["ALTER TABLE \"user_settings\" ADD \"showAdultContent\" boolean"],
+    },
 ];
 
 /// `SeerrMigration1759769291608` from `server/lib/overseerrMerge.ts`,

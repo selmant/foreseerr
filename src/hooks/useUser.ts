@@ -39,6 +39,7 @@ export interface UserSettings {
   autoCompleteSkippedEpisodeEndings?: boolean;
   autoCompleteSkippedEpisodeThreshold?: number;
   watchAheadEpisodeCount?: number;
+  showAdultContent?: boolean | null;
   servarrInterventionsSeenAt?: Date | null;
 }
 

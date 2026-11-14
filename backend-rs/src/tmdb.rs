@@ -349,14 +349,20 @@ impl TmdbClient {
 
     /// `searchMulti`, cached five minutes; a failure is an empty page, as
     /// Node swallows it.
-    pub async fn search_multi(&self, query: &str, page: impl PathNumber, language: &str) -> Value {
+    pub async fn search_multi(
+        &self,
+        query: &str,
+        page: impl PathNumber,
+        language: &str,
+        include_adult: &str,
+    ) -> Value {
         match self
             .owned(
                 "/search/multi",
                 &[
                     ("query", query),
                     ("page", &page.path_text()),
-                    ("include_adult", "false"),
+                    ("include_adult", include_adult),
                     ("language", language),
                 ],
                 DEFAULT_TTL,

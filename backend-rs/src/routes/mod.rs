@@ -3,6 +3,7 @@
 //! (`src/standalone/fallback.rs`).
 
 pub mod accountlink;
+mod adultfilter;
 pub mod ai;
 pub mod airecs;
 pub mod anilistdiscover;
@@ -1231,6 +1232,7 @@ pub(super) mod testkit {
                     permissions,
                     webpush_enabled: false,
                     locale: None,
+                    show_adult: false,
                 }),
                 req: &parts,
                 body,

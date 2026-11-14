@@ -128,6 +128,7 @@ async fn run_view(ctx: &Ready<'_>, user_id: i64, run: &store::Run) -> Result<Val
 }
 
 async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Result<Value, AiError> {
+    let show_adult = super::adultfilter::shows_adult(ctx);
     let picks: Vec<Value> = result
         .get("picks")
         .and_then(Value::as_array)
@@ -169,6 +170,10 @@ async fn hydrate(ctx: &Ready<'_>, user_id: i64, result: &Value) -> Result<Value,
         let Some(raw) = p.get("tmdb") else {
             continue;
         };
+        // Picks saved before the person hid adult titles.
+        if !show_adult && super::adultfilter::is_adult(raw) {
+            continue;
+        }
         let Some(tmdb_id) = p.get("tmdbId").and_then(Value::as_i64) else {
             continue;
         };

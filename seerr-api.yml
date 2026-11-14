@@ -445,6 +445,11 @@ components:
           maximum: 50
           description: 'Default number of unwatched episodes to keep requested when using Watch ahead. Defaults to 10 when unset.'
           example: 10
+        showAdultContent:
+          type: boolean
+          nullable: true
+          description: 'Show adult titles in discover, search, person credits, recommendations, AI picks and provider lists. Hidden when unset or false.'
+          example: false
     DiscoverFilterDefaults:
       type: object
       description: >

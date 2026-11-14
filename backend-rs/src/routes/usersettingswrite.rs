@@ -133,7 +133,7 @@ const QUOTA_FIELDS: [(&str, &[Kind]); 4] = [
     ("tvQuotaDays", &[Kind::Int, Kind::Null]),
 ];
 
-const MAIN_FIELDS: [(&str, &[Kind]); 15] = [
+const MAIN_FIELDS: [(&str, &[Kind]); 16] = [
     ("username", &[Kind::Text, Kind::Null]),
     ("email", &[Kind::Text]),
     // `locale` is nullable in the schema, but the column is NOT NULL: a
@@ -157,6 +157,7 @@ const MAIN_FIELDS: [(&str, &[Kind]); 15] = [
         &[Kind::Int, Kind::Null],
     ),
     ("watchAheadEpisodeCount", &[Kind::Int, Kind::Null]),
+    ("showAdultContent", &[Kind::Bool, Kind::Null]),
 ];
 
 /// The integer settings, validated to their schema ranges; `None` means
@@ -361,6 +362,10 @@ fn main_settings_changes(
             &int(p.watch_ahead_episode_count),
         );
     }
+    // null clears it back to unset (hidden).
+    if let Some(v @ (Value::Bool(_) | Value::Null)) = body.get("showAdultContent") {
+        changes.assign("showAdultContent", Some(v), &flag(p.show_adult_content));
+    }
     changes
 }
 
@@ -395,6 +400,9 @@ fn main_settings_columns(
     }
     if let Some(w) = watch_ahead {
         columns.push(("watchAheadEpisodeCount", Value::from(w)));
+    }
+    if let Some(v @ Value::Bool(_)) = body.get("showAdultContent") {
+        columns.push(("showAdultContent", v.clone()));
     }
     columns.push(("userId", Value::from(user_id)));
     columns
@@ -453,6 +461,12 @@ fn main_settings_json(
             WATCH_AHEAD,
         ),
     );
+    let show_adult = match body.get("showAdultContent") {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Null) => false,
+        _ => s.is_some_and(|s| s.public.show_adult_content == Some(true)),
+    };
+    out.insert(String::from("showAdultContent"), Value::Bool(show_adult));
     out
 }
 
@@ -915,7 +929,7 @@ mod tests {
         let out = main_settings_json(&body, None, true, None, Some(80));
         assert_eq!(
             serde_json::to_string(&out).unwrap_or_default(),
-            r#"{"locale":"","discoverRegion":"US","streamingRegion":null,"originalLanguage":null,"watchlistSyncMovies":null,"watchlistSyncTv":null,"autoCompleteSkippedEpisodeEndings":null,"autoCompleteSkippedEpisodeThreshold":50,"watchAheadEpisodeCount":50}"#,
+            r#"{"locale":"","discoverRegion":"US","streamingRegion":null,"originalLanguage":null,"watchlistSyncMovies":null,"watchlistSyncTv":null,"autoCompleteSkippedEpisodeEndings":null,"autoCompleteSkippedEpisodeThreshold":50,"watchAheadEpisodeCount":50,"showAdultContent":false}"#,
             "defaults and clamping"
         );
     }
