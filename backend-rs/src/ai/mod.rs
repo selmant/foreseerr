@@ -927,6 +927,7 @@ mod tests {
             permissions,
             webpush_enabled: false,
             locale: None,
+            show_adult: false,
         }
     }
 

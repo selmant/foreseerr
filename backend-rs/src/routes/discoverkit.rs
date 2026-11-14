@@ -415,10 +415,12 @@ pub(super) fn route_error(
 /// `annotateProviderActiveRequests`: library status on tiles Foreseerr
 /// tracks, and `hasActiveRequest` while `hideRequested` is on. A database
 /// error leaves the tiles as they are, as `getRelatedMedia` returns `[]`.
+/// Adult titles go first unless the user shows them.
 pub(super) async fn annotate_provider_active_requests(
     ctx: &Ready<'_>,
     items: Vec<Value>,
 ) -> Vec<Value> {
+    let items = super::adultfilter::drop_adult_tiles(ctx, items).await;
     annotate_with(ctx.state, &ctx.settings, items).await
 }
 

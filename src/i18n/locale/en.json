@@ -3270,6 +3270,8 @@
   "components.UserProfile.UserSettings.UserGeneralSettings.save": "Save Changes",
   "components.UserProfile.UserSettings.UserGeneralSettings.saving": "Saving…",
   "components.UserProfile.UserSettings.UserGeneralSettings.seriesrequestlimit": "Series Request Limit",
+  "components.UserProfile.UserSettings.UserGeneralSettings.showAdultContent": "Show Adult Content",
+  "components.UserProfile.UserSettings.UserGeneralSettings.showAdultContentTip": "Include titles marked as adult in discover, search, person pages, recommendations, AI picks and lists from Trakt, MDBList, AniList and other providers.",
   "components.UserProfile.UserSettings.UserGeneralSettings.streamingRegion": "Streaming Region",
   "components.UserProfile.UserSettings.UserGeneralSettings.streamingRegionTip": "Show streaming sites by regional availability",
   "components.UserProfile.UserSettings.UserGeneralSettings.toastSettingsFailure": "Something went wrong while saving settings.",

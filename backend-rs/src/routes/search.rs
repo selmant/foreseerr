@@ -27,15 +27,18 @@ pub(super) fn multi<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Err(why) => return Outcome::forward(why),
         };
         let (main_locale, language) = languages(ctx, user.locale.as_deref(), language.as_deref());
-        let data = match search_provider(&query.to_lowercase()) {
-            Some((provider, id)) => {
-                let found = provider_search(ctx, provider, &id, (&query, &language, &main_locale));
-                let Ok(data) = found.await else {
-                    return ctx.error(500, "Unable to retrieve search results.");
-                };
-                data
-            }
-            None => ctx.state.tmdb.search_multi(&query, page, &language).await,
+        let data = if let Some((provider, id)) = search_provider(&query.to_lowercase()) {
+            let found = provider_search(ctx, provider, &id, (&query, &language, &main_locale));
+            let Ok(data) = found.await else {
+                return ctx.error(500, "Unable to retrieve search results.");
+            };
+            data
+        } else {
+            let adult = super::adultfilter::include_adult(ctx);
+            ctx.state
+                .tmdb
+                .search_multi(&query, page, &language, adult)
+                .await
         };
         let results: Vec<Value> = data
             .get("results")
@@ -352,7 +355,10 @@ async fn provider_search(
                 let params = vec![
                     ("query", stripped.clone()),
                     ("page", String::from("1")),
-                    ("include_adult", String::from("false")),
+                    (
+                        "include_adult",
+                        String::from(super::adultfilter::include_adult(ctx)),
+                    ),
                     ("language", main_locale.to_owned()),
                     (year_key, year.clone()),
                 ];

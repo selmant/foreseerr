@@ -485,7 +485,7 @@ fn to_watchlist_item(item: &Value) -> Value {
     if let Some(tmdb) = tmdb {
         out.insert(String::from("tmdbId"), tmdb.clone());
     }
-    for key in ["mediaType", "title"] {
+    for key in ["mediaType", "title", super::adultfilter::ANILIST_ADULT_KEY] {
         if let Some(v) = item.get(key) {
             out.insert(String::from(key), v.clone());
         }

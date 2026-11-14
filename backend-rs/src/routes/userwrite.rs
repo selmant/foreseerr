@@ -1156,6 +1156,7 @@ mod tests {
             permissions: 2,
             webpush_enabled: true,
             locale: None,
+            show_adult: false,
         };
         assert!(
             !can_make_permissions_change(2, &viewer(5)),

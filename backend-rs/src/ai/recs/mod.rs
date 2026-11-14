@@ -735,6 +735,7 @@ async fn work(
             user_id: user.id,
             language: &lang,
             genres: &genres,
+            show_adult: user.show_adult,
         },
         &plan,
         &sources,
@@ -799,10 +800,19 @@ async fn work(
         if request.only.is_some_and(|only| only != kind) {
             continue;
         }
-        if let Some(c) =
-            retrieve::search_title(state, &lang, &extra.title, extra.year, kind, "idea").await
+        if let Some(c) = retrieve::search_title(
+            state,
+            &lang,
+            &extra.title,
+            extra.year,
+            kind,
+            "idea",
+            user.show_adult,
+        )
+        .await
         {
             if (!request.anime || c.is_anime())
+                && (user.show_adult || !c.adult)
                 && !person.excluded.contains(&c.key())
                 && gathered.allows(&c.key())
                 && taken.insert(c.key())
@@ -1039,6 +1049,7 @@ mod worker_review_tests {
             permissions: 0,
             webpush_enabled: false,
             locale: None,
+            show_adult: false,
         };
         let eff = super::super::effective(&state, &settings, &user)
             .await?

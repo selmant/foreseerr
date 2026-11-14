@@ -158,6 +158,12 @@ pub(super) fn main<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                 WATCH_AHEAD,
             )),
         );
+        put(
+            "showAdultContent",
+            Some(Value::Bool(
+                s.is_some_and(|s| s.public.show_adult_content == Some(true)),
+            )),
+        );
         ctx.json(&Value::Object(out))
     })
 }

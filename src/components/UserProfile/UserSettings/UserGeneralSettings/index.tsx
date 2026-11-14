@@ -83,6 +83,9 @@ const messages = defineMessages(
     watchAheadEpisodeCountTip:
       'Default number of unwatched episodes to keep requested when you choose Watch Ahead on a series. You can override this per request.',
     validationWatchAheadEpisodeCount: 'Enter a whole number from 1 to 50.',
+    showAdultContent: 'Show Adult Content',
+    showAdultContentTip:
+      'Include titles marked as adult in discover, search, person pages, recommendations, AI picks and lists from Trakt, MDBList, AniList and other providers.',
   }
 );
 
@@ -212,6 +215,7 @@ const UserGeneralSettings = () => {
           autoCompleteSkippedEpisodeThreshold:
             data?.autoCompleteSkippedEpisodeThreshold ?? 50,
           watchAheadEpisodeCount: data?.watchAheadEpisodeCount ?? 10,
+          showAdultContent: data?.showAdultContent === true,
         }}
         validationSchema={UserGeneralSettingsSchema}
         enableReinitialize
@@ -239,6 +243,7 @@ const UserGeneralSettings = () => {
                 values.autoCompleteSkippedEpisodeThreshold
               ),
               watchAheadEpisodeCount: Number(values.watchAheadEpisodeCount),
+              showAdultContent: values.showAdultContent,
             });
 
             if (currentUser?.id === user?.id && setLocale) {
@@ -653,6 +658,27 @@ const UserGeneralSettings = () => {
                     </div>
                   </div>
                 )}
+              <div className="form-row">
+                <label htmlFor="showAdultContent" className="checkbox-label">
+                  <span>{intl.formatMessage(messages.showAdultContent)}</span>
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.showAdultContentTip)}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <Field
+                    type="checkbox"
+                    id="showAdultContent"
+                    name="showAdultContent"
+                    onChange={() =>
+                      setFieldValue(
+                        'showAdultContent',
+                        !values.showAdultContent
+                      )
+                    }
+                  />
+                </div>
+              </div>
               <div id="watch-ahead" className="form-row scroll-mt-24">
                 <label htmlFor="watchAheadEpisodeCount" className="text-label">
                   <span>

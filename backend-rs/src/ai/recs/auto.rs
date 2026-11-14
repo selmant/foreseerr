@@ -78,6 +78,7 @@ async fn person(state: &AppState, id: i64) -> anyhow::Result<Option<CurrentUser>
         permissions: u.permissions,
         webpush_enabled: true,
         locale: None,
+        show_adult: u.show_adult,
     }))
 }
 

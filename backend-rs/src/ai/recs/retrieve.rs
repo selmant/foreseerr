@@ -82,6 +82,8 @@ pub struct Candidate {
     pub source: &'static str,
     /// TMDB's result, slimmed to what a title card needs.
     pub tmdb: Value,
+    /// TMDB flags it adult; only users who show adult content get it.
+    pub adult: bool,
 }
 
 impl Candidate {
@@ -239,9 +241,6 @@ const KEEP: [&str; 18] = [
 /// candidate.
 #[must_use]
 pub fn candidate(v: &Value, media_type: &'static str, source: &'static str) -> Option<Candidate> {
-    if v.get("adult").and_then(Value::as_bool) == Some(true) {
-        return None;
-    }
     let tmdb_id = v.get("id").and_then(Value::as_i64)?;
     let title = v
         .get(if media_type == "tv" { "name" } else { "title" })
@@ -287,6 +286,7 @@ pub fn candidate(v: &Value, media_type: &'static str, source: &'static str) -> O
             .to_owned(),
         source,
         tmdb: Value::Object(slim),
+        adult: v.get("adult").and_then(Value::as_bool) == Some(true),
     })
 }
 
@@ -306,6 +306,7 @@ pub async fn search_title(
     year: Option<i64>,
     media_type: &'static str,
     source: &'static str,
+    show_adult: bool,
 ) -> Option<Candidate> {
     let path = format!("/search/{media_type}");
     let year_key = if media_type == "tv" {
@@ -321,7 +322,7 @@ pub async fn search_title(
         let mut params: Vec<(&str, String)> = vec![
             ("query", title.to_owned()),
             ("page", String::from("1")),
-            ("include_adult", String::from("false")),
+            ("include_adult", show_adult.to_string()),
             ("language", language.to_owned()),
         ];
         if let Some(y) = y {
@@ -405,6 +406,7 @@ struct DiscoverQuery {
     keywords: Vec<i64>,
     years: (Option<i64>, Option<i64>),
     anime: bool,
+    show_adult: bool,
 }
 
 async fn discover(state: &AppState, language: &str, q: DiscoverQuery) -> Vec<Candidate> {
@@ -427,7 +429,7 @@ async fn discover(state: &AppState, language: &str, q: DiscoverQuery) -> Vec<Can
         let mut params: Vec<(&str, String)> = vec![
             ("page", String::from("1")),
             ("language", language.to_owned()),
-            ("include_adult", String::from("false")),
+            ("include_adult", q.show_adult.to_string()),
             ("sort_by", String::from("popularity.desc")),
             (
                 "vote_count.gte",
@@ -497,6 +499,7 @@ async fn anilist(
     settings: &Settings,
     language: &str,
     plan: &Plan,
+    show_adult: bool,
 ) -> Vec<Candidate> {
     let genres: Vec<String> = plan
         .genres
@@ -520,7 +523,14 @@ async fn anilist(
         .collect();
     let client = crate::anilist::Anilist::new(&state.outbound, None);
     let Ok(media) = client
-        .search_media(&genres, &[], None, (plan.year_from, plan.year_to), 15)
+        .search_media(
+            &genres,
+            &[],
+            None,
+            (plan.year_from, plan.year_to),
+            15,
+            show_adult,
+        )
         .await
     else {
         return Vec::new();
@@ -786,6 +796,8 @@ pub struct Env<'a> {
     pub language: &'a str,
     /// TMDB's genres.
     pub genres: &'a Genres,
+    /// The person's `showAdultContent`.
+    pub show_adult: bool,
 }
 
 /// Look everything up at once, then merge: drop excluded and duplicate
@@ -806,6 +818,7 @@ pub async fn gather<S: BuildHasher + Sync>(
         user_id,
         language,
         genres,
+        show_adult,
     } = *env;
     let anime = sources.anime_only || plan.anime;
     let kinds: Vec<&'static str> = match sources.only {
@@ -843,6 +856,7 @@ pub async fn gather<S: BuildHasher + Sync>(
                 idea.year,
                 kind_of(&idea.media_type),
                 "idea",
+                show_adult,
             )
             .await
             .into_iter()
@@ -869,13 +883,14 @@ pub async fn gather<S: BuildHasher + Sync>(
                 keywords: keywords.clone(),
                 years: (plan.year_from, plan.year_to),
                 anime,
+                show_adult,
             };
             jobs.push(Box::pin(async move { discover(state, language, q).await }));
         }
     }
     if anime {
         jobs.push(Box::pin(async move {
-            anilist(state, settings, language, plan).await
+            anilist(state, settings, language, plan, show_adult).await
         }));
     }
     if sources.trakt {
@@ -913,6 +928,9 @@ pub async fn gather<S: BuildHasher + Sync>(
     let mut candidates = Vec::new();
     for c in found.into_iter().flatten() {
         if excluded.contains(&c.key()) || !kinds.contains(&c.media_type) {
+            continue;
+        }
+        if c.adult && !show_adult {
             continue;
         }
         if sources.anime_only && !c.is_anime() {
@@ -1118,8 +1136,12 @@ mod tests {
         );
         let adult = json!({"id": 2, "title": "x", "adult": true});
         assert!(
-            candidate(&adult, "movie", "idea").is_none(),
-            "adult titles are skipped"
+            candidate(&adult, "movie", "idea").is_some_and(|c| c.adult),
+            "adult titles are flagged, for gather to drop unless shown"
+        );
+        assert!(
+            candidate(&details, "movie", "idea").is_some_and(|c| !c.adult),
+            "others are not"
         );
     }
 

@@ -159,6 +159,8 @@ struct Prelude {
     /// is (possibly empty or missing).
     req_locale: Option<String>,
     region: RegionLanguage,
+    /// `user_settings.showAdultContent`.
+    show_adult: bool,
 }
 
 impl Prelude {
@@ -225,6 +227,7 @@ async fn prelude(
         main_locale,
         req_locale,
         region,
+        show_adult: user.show_adult,
     })
 }
 
@@ -241,6 +244,8 @@ fn defaults(rating: bool) -> Vec<(&'static str, Value)> {
 /// The options of `getDiscoverMovies` / `getDiscoverTv` the routes use.
 #[derive(Default)]
 struct DiscoverOptions {
+    /// TMDB's `include_adult`: the user's `showAdultContent`.
+    include_adult: bool,
     sort_by: Option<String>,
     language: String,
     /// `this.discoverRegion || ''`.
@@ -284,8 +289,11 @@ fn discover_params(tv: bool, page: i64, o: &DiscoverOptions) -> Vec<(&'static st
         ("page", Some(page.to_string())),
     ];
     if !tv {
-        p.push(("include_adult", Some(String::from("false"))));
+        p.push(("include_adult", Some(o.include_adult.to_string())));
         p.push(("include_video", Some(String::from("true"))));
+    } else if o.include_adult {
+        // TMDB's own default for series is false; only showing asks.
+        p.push(("include_adult", Some(String::from("true"))));
     }
     p.push(("language", Some(o.language.clone())));
     p.push(("region", Some(o.region.clone())));
@@ -434,6 +442,8 @@ async fn fetch_mapped_page(
     let Some(results) = data.get("results").and_then(Value::as_array) else {
         return Err(Fail::Error(String::from("TMDB answered without results")));
     };
+    // Trending and keyword lists take no `include_adult`.
+    let results = &super::adultfilter::drop_adult_results(ctx, results.clone());
     let kind = source.kind();
     let is_movie = |r: &Value| r.get("title").is_some();
     let of_type = |movie: bool| -> Vec<Value> {
@@ -686,6 +696,7 @@ async fn popular_body(ctx: &Ready<'_>, pre: &Prelude, tv: bool) -> Result<Value,
         None => Vec::new(),
     };
     let options = DiscoverOptions {
+        include_adult: pre.show_adult,
         sort_by,
         language: pre.locale_first(),
         region: pre.region.region.clone(),
@@ -732,6 +743,7 @@ pub(super) fn tv<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 /// language, with the region-aware client unless `plain`.
 fn plain_options(pre: &Prelude, plain: bool) -> DiscoverOptions {
     DiscoverOptions {
+        include_adult: pre.show_adult,
         language: pre.language(),
         region: if plain {
             String::new()
@@ -1049,6 +1061,7 @@ async fn genre_slider_body(
     let mut out = Vec::with_capacity(genres.len());
     for genre in &genres {
         let options = DiscoverOptions {
+            include_adult: pre.show_adult,
             language: pre.main_locale.clone(),
             genre: Some(crate::media::js_string(genre.get("id")).into_owned()),
             ..DiscoverOptions::default()
