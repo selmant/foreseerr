@@ -3,6 +3,8 @@ import LinkButton from '@app/components/Common/LinkButton';
 import PageTitle from '@app/components/Common/PageTitle';
 import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import DiscoverProviderResults from '@app/components/Discover/DiscoverProviderResults';
+import MdblistListFilters from '@app/components/Discover/MdblistListFilters';
+import { prepareMdblistOptions } from '@app/components/Discover/MdblistListFilters/mdblistFilterOptions';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useRouteQuery from '@app/hooks/useRouteQuery';
@@ -16,6 +18,10 @@ const messages = defineMessages('components.Discover.DiscoverMdblistList', {
   title: 'MDBList List',
   missingUrl: 'An MDBList list URL is required.',
   empty: 'This list has no titles to show. Try another list from Sources.',
+  emptyFiltered:
+    'No titles in this list match your filters. Adjust or clear them to see more.',
+  emptyRatedLocally:
+    'None of the first 1,000 titles in this list match your rating filters. Adjust or clear them to see more.',
   sources: 'Browse list sources',
 });
 
@@ -35,9 +41,12 @@ const DiscoverMdblistList = () => {
     fetchMore,
     loadError,
     mutate,
-  } = useDiscover<WatchlistItem, { title?: string }>(
+  } = useDiscover<
+    WatchlistItem,
+    { title?: string; ratingsFilteredLocally?: boolean }
+  >(
     url ? '/api/v1/discover/mdblist/list' : '',
-    url ? { url } : undefined,
+    url ? { url, ...prepareMdblistOptions(query) } : undefined,
     providerListFilters
   );
 
@@ -61,10 +70,11 @@ const DiscoverMdblistList = () => {
   return (
     <>
       <PageTitle title={pageTitle} />
-      <div className="mb-5 mt-1 [&_h2]:whitespace-normal [&_h2]:break-words">
+      <div className="mb-5 mt-1 space-y-4 [&_h2]:whitespace-normal [&_h2]:break-words">
         <Header>
           <SliderSourceTitle source="mdblist">{pageTitle}</SliderSourceTitle>
         </Header>
+        <MdblistListFilters />
       </div>
       <DiscoverProviderResults
         source="MDBList"
@@ -77,7 +87,13 @@ const DiscoverMdblistList = () => {
         error={loadError}
         onRefresh={() => mutate?.()}
         mutate={mutate}
-        emptyDescription={intl.formatMessage(messages.empty)}
+        emptyDescription={intl.formatMessage(
+          firstResultData?.ratingsFilteredLocally
+            ? messages.emptyRatedLocally
+            : Object.keys(prepareMdblistOptions(query)).length
+              ? messages.emptyFiltered
+              : messages.empty
+        )}
         emptyAction={
           <LinkButton to="/discover/sources" className="min-h-[44px]">
             {intl.formatMessage(messages.sources)}

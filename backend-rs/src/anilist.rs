@@ -60,10 +60,13 @@ const SEARCH_MEDIA_QUERY: &str = concat!(
     "\n        genres\n        averageScore\n      }\n    }\n  }\n"
 );
 
-/// `MEDIA_LIST_COLLECTION_QUERY`, byte for byte.
+/// `MEDIA_LIST_COLLECTION_QUERY`, plus what the list filters read: when
+/// an entry was added and updated, and the media's genres, airing status,
+/// country, scores, and full start date.
 const MEDIA_LIST_COLLECTION_QUERY: &str = concat!(
-    "\n  query MediaListCollection($userId: Int, $userName: String) {\n    MediaListCollection(userId: $userId, userName: $userName, type: ANIME) {\n      lists {\n        name\n        isCustomList\n        status\n        entries {\n          id\n          status\n          progress\n          score(format: POINT_10)\n          scoreRaw: score(format: POINT_100)\n          media { ",
+    "\n  query MediaListCollection($userId: Int, $userName: String) {\n    MediaListCollection(userId: $userId, userName: $userName, type: ANIME) {\n      lists {\n        name\n        isCustomList\n        status\n        entries {\n          id\n          status\n          progress\n          score(format: POINT_10)\n          scoreRaw: score(format: POINT_100)\n          createdAt\n          updatedAt\n          media { ",
     media_fields!(),
+    "  genres\n  status\n  countryOfOrigin\n  averageScore\n  popularity\n  releaseDate: startDate { year month day }\n",
     " }\n        }\n      }\n    }\n  }\n"
 );
 
@@ -782,7 +785,7 @@ mod tests {
         assert!(
             MEDIA_LIST_COLLECTION_QUERY.contains("media { \n  id\n")
                 && MEDIA_LIST_COLLECTION_QUERY
-                    .ends_with("large medium }\n }\n        }\n      }\n    }\n  }\n"),
+                    .ends_with("releaseDate: startDate { year month day }\n }\n        }\n      }\n    }\n  }\n"),
             "collection query"
         );
     }

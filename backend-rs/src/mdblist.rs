@@ -190,6 +190,248 @@ impl ListRef {
     }
 }
 
+/// The list-item sort keys `MDBList` accepts, as its API spells them.
+/// `random` is left out: every page would be its own draw.
+pub const LIST_SORTS: [&str; 24] = [
+    "rank",
+    "usort",
+    "score",
+    "score_average",
+    "released",
+    "releasedigital",
+    "added",
+    "imdbrating",
+    "imdbvotes",
+    "imdbpopular",
+    "tmdbpopular",
+    "rogerebert",
+    "rtomatoes",
+    "rtaudience",
+    "metacritic",
+    "myanimelist",
+    "letterrating",
+    "lettervotes",
+    "last_air_date",
+    "budget",
+    "revenue",
+    "runtime",
+    "title",
+    "sort_title",
+];
+
+/// The rating thresholds `MDBList` filters list items by.
+///
+/// A supporter feature, on its normalized 0–100 scale: the route's query
+/// prefix (`{prefix}Min` / `{prefix}Max`) and the API's
+/// `filter_{name}_min` / `filter_{name}_max` name.
+pub const RATING_FILTERS: [(&str, &str); 8] = [
+    ("score", "score"),
+    ("imdbRating", "imdbrating"),
+    ("tmdbRating", "tmdbrating"),
+    ("metacritic", "metarating"),
+    ("rtCritics", "tomatorating"),
+    ("rtAudience", "popcornrating"),
+    ("letterboxd", "letterrating"),
+    ("mal", "malrating"),
+];
+
+/// Which half of a list to read (`/items/movie` or `/items/show`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListMedia {
+    /// Movies only.
+    Movie,
+    /// Shows only.
+    Show,
+}
+
+/// A rating range for one [`RATING_FILTERS`] source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RatingRange {
+    /// The API's rating name (`imdbrating`, …).
+    pub source: &'static str,
+    /// The lowest score kept, 0–100.
+    pub min: Option<u8>,
+    /// The highest score kept, 0–100.
+    pub max: Option<u8>,
+}
+
+impl RatingRange {
+    /// Whether the payload's score for this source is in range.
+    #[must_use]
+    pub fn passes(&self, payload: Option<&Value>) -> bool {
+        if self.min.is_none() && self.max.is_none() {
+            return true;
+        }
+        let Some(score) = payload.and_then(|p| rating_score(p, self.source)) else {
+            return false;
+        };
+        self.min.is_none_or(|min| score >= f64::from(min))
+            && self.max.is_none_or(|max| score <= f64::from(max))
+    }
+}
+
+/// A media payload's normalized 0–100 score for a [`RATING_FILTERS`] API
+/// name: the top-level `score` for `score`, else the `ratings[]` entry of
+/// the matching source.
+fn rating_score(payload: &Value, source: &str) -> Option<f64> {
+    let entry = match source {
+        "score" => return payload.get("score").and_then(Value::as_f64),
+        "imdbrating" => "imdb",
+        "tmdbrating" => "tmdb",
+        "metarating" => "metacritic",
+        "tomatorating" => "tomatoes",
+        "popcornrating" => "popcorn",
+        "letterrating" => "letterboxd",
+        "malrating" => "myanimelist",
+        _ => return None,
+    };
+    payload
+        .get("ratings")?
+        .as_array()?
+        .iter()
+        .find(|r| r.get("source").and_then(Value::as_str) == Some(entry))?
+        .get("score")
+        .and_then(Value::as_f64)
+}
+
+/// The filters and order `MDBList` applies to a list's items itself.
+/// The default reads the list as its owner saved it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ListFilter {
+    /// Movies or shows only.
+    pub media: Option<ListMedia>,
+    /// One of [`LIST_SORTS`].
+    pub sort: Option<&'static str>,
+    /// `asc` or `desc`; `MDBList` picks when unset.
+    pub order: Option<&'static str>,
+    /// Titles containing this text.
+    pub title: Option<String>,
+    /// Genre slugs from `/genres`.
+    pub genres: Vec<String>,
+    /// Every genre must match (`and`) rather than any (`or`).
+    pub all_genres: bool,
+    /// The earliest release date, `YYYY-MM-DD`.
+    pub released_from: Option<String>,
+    /// The latest release date, `YYYY-MM-DD`.
+    pub released_to: Option<String>,
+    /// Rating ranges, in [`RATING_FILTERS`] order.
+    pub ratings: Vec<RatingRange>,
+}
+
+impl ListFilter {
+    /// Whether any rating range is set: those need a supporter plan.
+    #[must_use]
+    pub fn has_ratings(&self) -> bool {
+        self.ratings
+            .iter()
+            .any(|r| r.min.is_some() || r.max.is_some())
+    }
+
+    /// The same filter without its rating ranges: what a free account can
+    /// ask `MDBList` for while Foreseerr checks the ratings itself.
+    #[must_use]
+    pub fn without_ratings(&self) -> Self {
+        Self {
+            ratings: Vec::new(),
+            ..self.clone()
+        }
+    }
+
+    /// Whether a title's media payload (`/tmdb/{type}/{id}`) passes every
+    /// rating range; a title without a score for a ranged source fails.
+    #[must_use]
+    pub fn passes_ratings(&self, payload: Option<&Value>) -> bool {
+        self.ratings.iter().all(|range| range.passes(payload))
+    }
+
+    /// The `/items` path suffix for [`Self::media`].
+    const fn media_path(&self) -> &'static str {
+        match self.media {
+            None => "",
+            Some(ListMedia::Movie) => "/movie",
+            Some(ListMedia::Show) => "/show",
+        }
+    }
+
+    /// The query parameters `MDBList` reads, in a fixed order.
+    fn params(&self) -> Vec<(&'static str, String)> {
+        let mut out = Vec::new();
+        if let Some(sort) = self.sort {
+            out.push(("sort", sort.to_owned()));
+            // One ordering across movies and shows, not one per bucket.
+            out.push(("unified", String::from("true")));
+        }
+        if let Some(order) = self.order {
+            out.push(("order", order.to_owned()));
+        }
+        if let Some(title) = &self.title {
+            out.push(("filter_title", title.clone()));
+        }
+        if !self.genres.is_empty() {
+            out.push(("filter_genre", self.genres.join(",")));
+            if self.all_genres {
+                out.push(("genre_operator", String::from("and")));
+            }
+        }
+        if let Some(from) = &self.released_from {
+            out.push(("released_from", from.clone()));
+        }
+        if let Some(to) = &self.released_to {
+            out.push(("released_to", to.clone()));
+        }
+        for range in &self.ratings {
+            for (bound, value) in [("min", range.min), ("max", range.max)] {
+                if let Some(value) = value {
+                    out.push((rating_param(range.source, bound), value.to_string()));
+                }
+            }
+        }
+        out
+    }
+
+    /// A stable text for cache keys: the path suffix and parameters.
+    #[must_use]
+    pub fn key(&self) -> String {
+        let params: Vec<String> = self
+            .params()
+            .into_iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        format!("{}?{}", self.media_path(), params.join("&"))
+    }
+}
+
+/// `filter_{source}_{bound}` as a `'static` name.
+fn rating_param(source: &str, bound: &str) -> &'static str {
+    macro_rules! names {
+        ($($src:literal),*) => {
+            match (source, bound) {
+                $(($src, "min") => concat!("filter_", $src, "_min"),
+                  ($src, _) => concat!("filter_", $src, "_max"),)*
+                _ => "filter_unknown",
+            }
+        };
+    }
+    names!(
+        "score",
+        "imdbrating",
+        "tmdbrating",
+        "metarating",
+        "tomatorating",
+        "letterrating",
+        "popcornrating",
+        "malrating"
+    )
+}
+
+/// The most ids one `POST /{provider}/{type}` takes.
+const BATCH_LIMIT: usize = 200;
+
+/// `MDBList`'s genre catalog lasts a day.
+const GENRES_TTL_SECS: u64 = 86_400;
+/// The account's plan, re-read hourly.
+const USER_TTL_SECS: u64 = 60 * 60;
+
 /// One page of a list.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListPage {
@@ -399,9 +641,39 @@ impl Mdblist {
         media_type: &str,
         items: &[(i64, u64)],
     ) -> HashMap<i64, Option<Value>> {
+        self.batch_lookup(media_type, items).await.0
+    }
+
+    /// [`Self::batch_ratings`], failing when a lookup could not be made
+    /// (the circuit is open, the quota is spent, or a request failed)
+    /// rather than reading as "no ratings".
+    ///
+    /// # Errors
+    ///
+    /// [`ListError::Unavailable`] when any id could not be looked up.
+    pub async fn batch_ratings_strict(
+        &self,
+        media_type: &str,
+        items: &[(i64, u64)],
+    ) -> Result<HashMap<i64, Option<Value>>, ListError> {
+        if self.key.is_empty() {
+            return Err(ListError::NotConfigured);
+        }
+        match self.batch_lookup(media_type, items).await {
+            (results, true) => Ok(results),
+            (_, false) => Err(ListError::Unavailable(String::from(UNAVAILABLE))),
+        }
+    }
+
+    /// The batch lookup and whether every missing id was asked for.
+    async fn batch_lookup(
+        &self,
+        media_type: &str,
+        items: &[(i64, u64)],
+    ) -> (HashMap<i64, Option<Value>>, bool) {
         let mut results = HashMap::new();
         if self.key.is_empty() || items.is_empty() {
-            return results;
+            return (results, true);
         }
         let _turn = QUEUE.lock().await;
         let provider = provider_type(media_type);
@@ -425,46 +697,61 @@ impl Mdblist {
             }
         }
         if missing.is_empty() {
-            return results;
+            return (results, true);
         }
         let slot = lock(&SHARED).acquire();
         if slot == Slot::Blocked {
             for (id, _) in missing {
                 results.insert(id, None);
             }
-            return results;
+            return (results, false);
         }
-        let ids: Vec<Value> = missing.iter().map(|(id, _)| Value::from(*id)).collect();
-        let mut body = Map::new();
-        body.insert(String::from("ids"), Value::Array(ids));
-        let reply = self
-            .request(
-                Method::POST,
-                &format!("/tmdb/{provider}/"),
-                &[],
-                Some(&Value::Object(body)),
-            )
-            .await;
-        match reply {
-            Ok(payloads) => {
-                let mut shared = lock(&SHARED);
-                if slot == Slot::Probe {
-                    shared.close();
+        let mut complete = true;
+        for chunk in missing.chunks(BATCH_LIMIT) {
+            let ids: Vec<Value> = chunk.iter().map(|(id, _)| Value::from(*id)).collect();
+            let mut body = Map::new();
+            body.insert(String::from("ids"), Value::Array(ids));
+            let reply = self
+                .request(
+                    Method::POST,
+                    &format!("/tmdb/{provider}/"),
+                    &[],
+                    Some(&Value::Object(body)),
+                )
+                .await;
+            let stored = match reply {
+                Ok(payloads) => {
+                    let mut shared = lock(&SHARED);
+                    if slot == Slot::Probe {
+                        shared.close();
+                    }
+                    let stored = store_batch(provider, chunk, &payloads, &mut results);
+                    if !stored {
+                        shared.open(None);
+                    }
+                    stored
                 }
-                if !store_batch(provider, &missing, &payloads, &mut results) {
-                    shared.open(None);
+                Err(Failure::Status {
+                    status: 429,
+                    retry_after_ms,
+                }) => {
+                    lock(&SHARED).open(retry_after_ms);
+                    false
                 }
+                Err(_) => {
+                    lock(&SHARED).open(None);
+                    false
+                }
+            };
+            if !stored {
+                complete = false;
+                break;
             }
-            Err(Failure::Status {
-                status: 429,
-                retry_after_ms,
-            }) => lock(&SHARED).open(retry_after_ms),
-            Err(_) => lock(&SHARED).open(None),
         }
         for (id, _) in missing {
             results.entry(id).or_insert(None);
         }
-        results
+        (results, complete)
     }
 
     /// `searchLists(query)`.
@@ -501,6 +788,7 @@ impl Mdblist {
         list: &ListRef,
         limit: i64,
         offset: f64,
+        filter: &ListFilter,
     ) -> Result<ListPage, ListError> {
         if self.key.is_empty() {
             return Err(ListError::NotConfigured);
@@ -522,23 +810,86 @@ impl Mdblist {
         let title = metadata
             .first()
             .map_or_else(|| list.fallback_title(), |m| m.name.clone());
+        let mut params = vec![
+            ("limit", limit.to_string()),
+            ("offset", jsval::number_string(offset)),
+        ];
+        params.extend(filter.params());
         let payload = self
             .queued_get(
-                &format!("{path}/items"),
-                &[
-                    ("limit", limit.to_string()),
-                    ("offset", jsval::number_string(offset)),
-                ],
+                &format!("{path}/items{}", filter.media_path()),
+                &params,
                 LIST_ITEMS_TTL_SECS,
             )
             .await?;
         let raw = collect_list_items(&payload)?;
         let count = i64::try_from(raw.len()).unwrap_or(i64::MAX);
+        // A chosen sort is MDBList's order; otherwise rank merges the
+        // movie and show buckets.
+        let items = if filter.sort.is_some() {
+            map_list_items_in_order(&raw)?
+        } else {
+            map_list_items(&raw)?
+        };
         Ok(ListPage {
             title,
-            items: map_list_items(&raw)?,
+            items,
             has_more: count >= limit,
         })
+    }
+
+    /// `MDBList`'s genre catalog, regular genres then anime ones, each
+    /// `{ slug, title, anime }`, first slug wins.
+    ///
+    /// # Errors
+    ///
+    /// Fails as [`Self::list_items`] does.
+    pub async fn genres(&self) -> Result<Vec<Value>, ListError> {
+        if self.key.is_empty() {
+            return Err(ListError::NotConfigured);
+        }
+        let _turn = QUEUE.lock().await;
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for anime in [false, true] {
+            let payload = self
+                .queued_get(
+                    "/genres",
+                    &[("anime", String::from(if anime { "1" } else { "0" }))],
+                    GENRES_TTL_SECS,
+                )
+                .await?;
+            for genre in payload.as_array().into_iter().flatten() {
+                let text = |key: &str| {
+                    genre
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .map(jsval::trim)
+                        .filter(|s| !s.is_empty())
+                };
+                let Some(slug) = text("slug") else { continue };
+                if !seen.insert(slug.to_owned()) {
+                    continue;
+                }
+                out.push(serde_json::json!({
+                    "slug": slug,
+                    "title": text("title").unwrap_or(slug),
+                    "anime": anime,
+                }));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Whether the key's account has a supporter plan (rating filters need
+    /// one); `None` when `MDBList` doesn't say.
+    pub async fn supporter(&self) -> Option<bool> {
+        if self.key.is_empty() {
+            return None;
+        }
+        let _turn = QUEUE.lock().await;
+        let payload = self.queued_get("/user", &[], USER_TTL_SECS).await.ok()?;
+        payload.get("is_supporter").and_then(Value::as_bool)
     }
 
     /// `queuedGet`, inside the caller's turn.
@@ -878,15 +1229,21 @@ fn map_list_item(item: &Value) -> Result<Option<ListItem>, ListError> {
     }))
 }
 
-/// `mapMdblistListItems`: mapped, ranked, ties by title as
-/// `localeCompare` orders them ([`jsval::locale_compare_or_base`]).
-fn map_list_items(raw: &[Value]) -> Result<Vec<ListItem>, ListError> {
+/// List items mapped, in the order `MDBList` sent them.
+fn map_list_items_in_order(raw: &[Value]) -> Result<Vec<ListItem>, ListError> {
     let mut mapped = Vec::with_capacity(raw.len());
     for item in raw {
         if let Some(item) = map_list_item(item)? {
             mapped.push(item);
         }
     }
+    Ok(mapped)
+}
+
+/// `mapMdblistListItems`: mapped, ranked, ties by title as
+/// `localeCompare` orders them ([`jsval::locale_compare_or_base`]).
+fn map_list_items(raw: &[Value]) -> Result<Vec<ListItem>, ListError> {
+    let mut mapped = map_list_items_in_order(raw)?;
     let max = 9_007_199_254_740_991.0;
     mapped.sort_by(|a, b| {
         let (ra, rb) = (a.rank.unwrap_or(max), b.rank.unwrap_or(max));
@@ -1115,6 +1472,75 @@ mod tests {
             .path(),
             "/lists/a%20b/c",
             "encoded path"
+        );
+    }
+
+    #[test]
+    fn list_filter_params() {
+        let empty = ListFilter::default();
+        assert!(empty.params().is_empty(), "the owner's saved order");
+        assert_eq!(empty.media_path(), "");
+        let filter = ListFilter {
+            media: Some(ListMedia::Show),
+            sort: Some("imdbrating"),
+            order: Some("desc"),
+            title: Some(String::from("star")),
+            genres: vec![String::from("drama"), String::from("anime-isekai")],
+            all_genres: true,
+            released_from: Some(String::from("2020-01-01")),
+            released_to: None,
+            ratings: vec![RatingRange {
+                source: "metarating",
+                min: Some(60),
+                max: None,
+            }],
+        };
+        assert!(filter.has_ratings());
+        assert_eq!(
+            filter.key(),
+            "/show?sort=imdbrating&unified=true&order=desc&filter_title=star\
+             &filter_genre=drama,anime-isekai&genre_operator=and\
+             &released_from=2020-01-01&filter_metarating_min=60"
+        );
+        assert_eq!(rating_param("malrating", "max"), "filter_malrating_max");
+        let in_order = map_list_items_in_order(&[
+            json!({"rank": 2, "title": "B"}),
+            json!({"rank": 1, "title": "A"}),
+        ])
+        .unwrap_or_default();
+        assert_eq!(in_order.first().map(|i| i.title.as_str()), Some("B"));
+    }
+
+    #[test]
+    fn ratings_checked_locally() {
+        let range = |source, min, max| RatingRange { source, min, max };
+        let filter = ListFilter {
+            title: Some(String::from("x")),
+            ratings: vec![
+                range("score", Some(60), None),
+                range("tomatorating", None, Some(90)),
+            ],
+            ..ListFilter::default()
+        };
+        let payload = json!({"score": 72, "ratings": [
+            {"source": "imdb", "value": 7.0, "score": 70},
+            {"source": "tomatoes", "value": 88, "score": 88},
+        ]});
+        assert!(filter.passes_ratings(Some(&payload)));
+        let rotten = json!({"score": 72, "ratings": [{"source": "tomatoes", "score": 95}]});
+        assert!(!filter.passes_ratings(Some(&rotten)), "over the max");
+        let unrated = json!({"score": 72, "ratings": [{"source": "tomatoes", "score": null}]});
+        assert!(!filter.passes_ratings(Some(&unrated)), "no score fails");
+        assert!(!filter.passes_ratings(None), "no payload fails");
+        let upstream = filter.without_ratings();
+        assert!(!upstream.has_ratings() && upstream.title == filter.title);
+        assert!(ListFilter::default().passes_ratings(None), "no ranges");
+        assert_eq!(
+            rating_score(
+                &json!({"ratings": [{"source": "myanimelist", "score": 81}]}),
+                "malrating"
+            ),
+            Some(81.0)
         );
     }
 

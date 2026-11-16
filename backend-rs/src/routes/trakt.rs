@@ -29,7 +29,9 @@ use crate::media::js_string;
 use crate::rowcache::RowCache;
 use crate::settings::public::truthy;
 use crate::trakt::{app_credentials, FetchType, TraktClient, TraktError, UserRefresh};
-use crate::traktitems::{js_number_of_text, parse_list_url, ListUrlError, SortBy};
+use crate::traktitems::{
+    js_number_of_text, parse_list_url, ListUrlError, NativeSort, SortBy, NATIVE_SORTS,
+};
 
 type Native<'a> = Pin<Box<dyn Future<Output = Outcome> + Send + 'a>>;
 
@@ -91,9 +93,10 @@ const RECS: [Param; 2] = [
     ("ignoreWatchlisted", Kind::Bool),
 ];
 
-const LIST: [Param; 5] = [
+const LIST: [Param; 6] = [
     ("url", Kind::Str),
-    ("sort", Kind::Enum(&["added", "released"])),
+    ("sort", Kind::Enum(&NATIVE_SORTS)),
+    ("sortHow", Kind::Enum(&["asc", "desc"])),
     ("withRuntimeGte", Kind::Num),
     ("withRuntimeLte", Kind::Num),
     ("status", Kind::Str),
@@ -811,6 +814,7 @@ struct ListPlan<'a> {
     page: i64,
     list_sort: Option<SortBy>,
     sort_inside: Option<SortBy>,
+    native: Option<NativeSort>,
     use_post: bool,
 }
 
@@ -822,6 +826,21 @@ enum ListEarly {
     Bad(String),
     /// A client error, answered as `handleTraktDiscoverRouteError` does.
     Fail(Fail),
+}
+
+/// The order Trakt applies itself for a list's `sort` and `sortHow`.
+/// `added` / `released` without a direction keep the newest-first pool
+/// older links expect; other sorts default to A→Z for rank and title,
+/// high→low otherwise.
+fn native_sort(sort: Option<&str>, how: Option<&str>) -> Option<NativeSort> {
+    let by = NATIVE_SORTS.iter().copied().find(|s| Some(*s) == sort)?;
+    let how = match how {
+        None if matches!(by, "added" | "released") => return None,
+        Some("asc") => "asc",
+        None if matches!(by, "rank" | "title") => "asc",
+        Some(_) | None => "desc",
+    };
+    Some(NativeSort { by, how })
 }
 
 /// The list route up to its first Trakt call.
@@ -851,7 +870,10 @@ async fn plan_list<'a>(ctx: &'a Ready<'a>) -> Result<ListPlan<'a>, ListEarly> {
         Ok(Err(e)) => return Err(ListEarly::Fail(e.into())),
         Err(why) => return Err(ListEarly::Forward(why)),
     };
-    let list_sort = match start.query.get("sort").and_then(Value::as_str) {
+    let sort = start.query.get("sort").and_then(Value::as_str);
+    let how = start.query.get("sortHow").and_then(Value::as_str);
+    let native = native_sort(sort, how);
+    let list_sort = match sort.filter(|_| native.is_none()) {
         Some("added") => Some(SortBy::Added),
         Some("released") => Some(SortBy::Released),
         _ => None,
@@ -876,6 +898,7 @@ async fn plan_list<'a>(ctx: &'a Ready<'a>) -> Result<ListPlan<'a>, ListEarly> {
         page,
         list_sort,
         sort_inside,
+        native,
         use_post,
     })
 }
@@ -896,6 +919,7 @@ fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             plan.page,
             plan.list_sort,
             plan.sort_inside,
+            plan.native,
         ));
         let result = if plan.use_post {
             async {
@@ -927,6 +951,7 @@ async fn list_tiles(
     page: i64,
     list_sort: Option<SortBy>,
     sort_inside: Option<SortBy>,
+    native: Option<NativeSort>,
 ) -> Result<TraktRow, Fail> {
     let title = if list_ref == "watchlist" {
         Value::from(format!("{}'s Watchlist", username.as_deref().unwrap_or("")))
@@ -951,6 +976,7 @@ async fn list_tiles(
         username,
         list_ref,
         sort_inside,
+        native,
     };
     let paged = resolve_page(run, &upstream, page, ITEMS_PER_PAGE, false, list_sort).await?;
     Ok(TraktRow {
@@ -976,6 +1002,7 @@ fn refresh_list<'a>(
             plan.page,
             plan.list_sort,
             plan.sort_inside,
+            plan.native,
         )
         .await
     })
@@ -983,6 +1010,17 @@ fn refresh_list<'a>(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn native_list_sorts() {
+        let sort = |s, h| native_sort(Some(s), h).map(|n| (n.by, n.how));
+        assert_eq!(sort("added", None), None, "legacy newest-first pool");
+        assert_eq!(sort("added", Some("asc")), Some(("added", "asc")));
+        assert_eq!(sort("title", None), Some(("title", "asc")));
+        assert_eq!(sort("imdb_rating", None), Some(("imdb_rating", "desc")));
+        assert_eq!(sort("random", Some("asc")), None, "not offered");
+        assert_eq!(native_sort(None, Some("asc")), None);
+    }
     use super::*;
     use serde_json::json;
 

@@ -1,9 +1,12 @@
 import Header from '@app/components/Common/Header';
 import PageTitle from '@app/components/Common/PageTitle';
+import AnilistListFilters from '@app/components/Discover/AnilistListFilters';
+import { prepareAnilistOptions } from '@app/components/Discover/AnilistListFilters/anilistFilterOptions';
 import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import DiscoverProviderResults from '@app/components/Discover/DiscoverProviderResults';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
+import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
@@ -34,7 +37,19 @@ const messages = defineMessages('components.Discover.DiscoverAnilist', {
     'Anime from your linked AniList library, grouped by your watch status.',
   empty:
     'Try another AniList view above. Personal lists follow the library in your linked AniList account.',
+  emptyFiltered:
+    'No titles in this list match your filters. Adjust or clear them to see more.',
 });
+
+/** Views that read a whole list, so anilist.co's list filters apply. */
+const filterableKinds = new Set([
+  'watching',
+  'planning',
+  'paused',
+  'completed',
+  'dropped',
+  'list',
+]);
 
 type DiscoverAnilistPageProps = {
   kind:
@@ -50,6 +65,8 @@ type DiscoverAnilistPageProps = {
     | 'dropped'
     | 'list';
   endpoint: string;
+  /** Request parameters besides the filters, such as a list's link. */
+  params?: Record<string, string>;
   requiresLink?: boolean;
   /** Overrides the view name, such as with the name of an opened list. */
   title?: string;
@@ -58,12 +75,17 @@ type DiscoverAnilistPageProps = {
 const DiscoverAnilistPage = ({
   kind,
   endpoint,
+  params,
   requiresLink = false,
   title: titleOverride,
 }: DiscoverAnilistPageProps) => {
   const intl = useIntl();
   const settings = useSettings();
   const { user } = useUser();
+  const query = useRouteQuery();
+  const filterable = filterableKinds.has(kind);
+  const filterOptions = filterable ? prepareAnilistOptions(query) : {};
+  const filtered = Object.keys(filterOptions).length > 0;
   const {
     data: anilistStatus,
     error: accountError,
@@ -92,7 +114,7 @@ const DiscoverAnilistPage = ({
     mutate,
   } = useDiscover<WatchlistItem, { title?: string }>(
     enabled ? endpoint : '',
-    undefined,
+    { ...params, ...filterOptions },
     providerListFilters
   );
 
@@ -132,6 +154,7 @@ const DiscoverAnilistPage = ({
                 : messages.publicDescription
           )}
         </p>
+        {filterable && <AnilistListFilters />}
       </div>
       <DiscoverProviderResults
         source="AniList"
@@ -147,7 +170,9 @@ const DiscoverAnilistPage = ({
           await mutate?.();
         }}
         mutate={mutate}
-        emptyDescription={intl.formatMessage(messages.empty)}
+        emptyDescription={intl.formatMessage(
+          filtered ? messages.emptyFiltered : messages.empty
+        )}
       />
     </>
   );
