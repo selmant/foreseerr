@@ -115,6 +115,7 @@ fn settings_json(s: &UserSettingsRow) -> Result<Value, &'static str> {
         String::from("watchAheadEpisodeCount"),
         number(s.watch_ahead_episode_count),
     );
+    out.insert(String::from("showAdultContent"), flag(s.show_adult_content));
     out.insert(
         String::from("servarrInterventionsSeenAt"),
         text(&s.servarr_interventions_seen_at),
@@ -357,6 +358,7 @@ fn settings_record_json(s: &crate::db::UserSettingsRecord) -> Result<Value, &'st
         String::from("watchAheadEpisodeCount"),
         number(p.watch_ahead_episode_count),
     );
+    out.insert(String::from("showAdultContent"), flag(p.show_adult_content));
     out.insert(
         String::from("servarrInterventionsSeenAt"),
         text(&p.servarr_interventions_seen_at),

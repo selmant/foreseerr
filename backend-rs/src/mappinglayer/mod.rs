@@ -219,7 +219,7 @@ impl IdRef {
 
     /// `ref?.ns && ref.id`.
     #[must_use]
-    pub fn truthy(&self) -> bool {
+    pub const fn truthy(&self) -> bool {
         !self.ns.is_empty() && !self.id.is_empty()
     }
 

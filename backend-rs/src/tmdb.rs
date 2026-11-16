@@ -17,11 +17,11 @@ const BASE_URL: &str = "https://api.themoviedb.org/3";
 /// The key every Foreseerr install uses.
 const API_KEY: &str = "431a8708161bcd1f1fbe7536137e61ed";
 /// A day, the TTL of the configuration lookups.
-const DAY: Duration = Duration::from_secs(86_400);
+const DAY: Duration = Duration::from_hours(24);
 /// Twelve hours, the TTL of title details.
-const HALF_DAY: Duration = Duration::from_secs(43_200);
+const HALF_DAY: Duration = Duration::from_hours(12);
 /// `ExternalAPI`'s default TTL.
-const DEFAULT_TTL: Duration = Duration::from_secs(300);
+const DEFAULT_TTL: Duration = Duration::from_mins(5);
 const MOVIE_DETAILS_APPEND: &str =
     "credits,external_ids,videos,keywords,release_dates,watch/providers";
 const TV_DETAILS_APPEND: &str =
@@ -349,14 +349,20 @@ impl TmdbClient {
 
     /// `searchMulti`, cached five minutes; a failure is an empty page, as
     /// Node swallows it.
-    pub async fn search_multi(&self, query: &str, page: impl PathNumber, language: &str) -> Value {
+    pub async fn search_multi(
+        &self,
+        query: &str,
+        page: impl PathNumber,
+        language: &str,
+        include_adult: &str,
+    ) -> Value {
         match self
             .owned(
                 "/search/multi",
                 &[
                     ("query", query),
                     ("page", &page.path_text()),
-                    ("include_adult", "false"),
+                    ("include_adult", include_adult),
                     ("language", language),
                 ],
                 DEFAULT_TTL,

@@ -18,14 +18,14 @@ use super::traktrecs::{recommendation_page, RecsOptions};
 use crate::media::js_string;
 use crate::ratings::Title;
 use crate::settings::public::truthy;
-use crate::traktitems::{js_number, paginate_sorted, plain_page, Paged, SortBy};
+use crate::traktitems::{js_number, paginate_sorted, plain_page, NativeSort, Paged, SortBy};
 
 /// `MAX_TRAKT_PAGES` / `MAX_TRAKT_DISCOVER_UPSTREAM_PAGES`.
 const MAX_UPSTREAM_PAGES: i64 = 10;
 /// `ANIME_KEYWORD_ID`.
 const ANIME_KEYWORD_ID: f64 = 210_024.0;
 /// `ANIME_CACHE_TTL_SECONDS`: a week.
-const ANIME_CACHE_TTL: Duration = Duration::from_secs(604_800);
+const ANIME_CACHE_TTL: Duration = Duration::from_hours(168);
 /// `mediaHasKeyword`'s TMDB TTL, a week.
 const KEYWORDS_TTL_SECS: u64 = 604_800;
 /// The browse metadata TTL, twelve hours.
@@ -45,6 +45,8 @@ pub(super) enum Upstream {
         username: Option<String>,
         list_ref: String,
         sort_inside: Option<SortBy>,
+        /// The order Trakt applies itself, when one was picked.
+        native: Option<NativeSort>,
     },
     /// `getTraktRecommendationPage`, as the recommendations route's
     /// post-filter loop reads it.
@@ -76,6 +78,7 @@ async fn raw_page(run: &Run<'_>, upstream: &Upstream, trakt_page: i64) -> Result
             username,
             list_ref,
             sort_inside,
+            native,
         } => {
             if list_ref == "watchlist" {
                 client
@@ -95,7 +98,7 @@ async fn raw_page(run: &Run<'_>, upstream: &Upstream, trakt_page: i64) -> Result
                         fetch,
                         trakt_page,
                         run.extended,
-                        *sort_inside,
+                        (*sort_inside, *native),
                     )
                     .await?
             }

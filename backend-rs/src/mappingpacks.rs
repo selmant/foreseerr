@@ -616,8 +616,8 @@ pub async fn download_client(state: &crate::state::AppState) -> Result<reqwest::
         state.env.extra_ca_file.as_deref(),
     )?
     .redirect(reqwest::redirect::Policy::limited(5))
-    .connect_timeout(Duration::from_secs(60))
-    .read_timeout(Duration::from_secs(60))
+    .connect_timeout(Duration::from_mins(1))
+    .read_timeout(Duration::from_mins(1))
     .build()?)
 }
 

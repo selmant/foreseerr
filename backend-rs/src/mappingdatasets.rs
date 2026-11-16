@@ -868,7 +868,7 @@ pub async fn ensure_mapping_layer(state: Arc<AppState>) -> Result<()> {
             );
         }
         crate::sync::lock(&LAYER).initial = Some(false);
-        tokio::time::sleep(Duration::from_secs(3600)).await;
+        tokio::time::sleep(Duration::from_hours(1)).await;
         crate::sync::lock(&LAYER).initial = None;
     });
     Ok(())

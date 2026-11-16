@@ -572,7 +572,7 @@ impl<'s> Ajv<'s> {
                 "date" => Some(fast_date(text)),
                 "date-time" => Some(fast_date_time(text)),
                 "binary" | "password" => Some(true),
-                "byte" => Some(text.len() % 4 == 0 && base64ish(text)),
+                "byte" => Some(text.len().is_multiple_of(4) && base64ish(text)),
                 _ => None,
             };
             match valid {

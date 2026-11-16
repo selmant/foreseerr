@@ -131,7 +131,7 @@ pub struct CronExpr {
 }
 
 /// JavaScript's `\s`.
-fn js_space(c: char) -> bool {
+const fn js_space(c: char) -> bool {
     (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
@@ -410,7 +410,7 @@ fn is_nth_day_match(day: u32, nth: f64) -> bool {
     if day < 8 && (nth - 1.0).abs() < f64::EPSILON {
         return true;
     }
-    let offset = u32::from(day % 7 != 0);
+    let offset = u32::from(!day.is_multiple_of(7));
     let occurrence = (day - day % 7) / 7 + offset;
     (f64::from(occurrence) - nth).abs() < f64::EPSILON
 }

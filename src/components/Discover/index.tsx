@@ -4,6 +4,7 @@ import LinkButton from '@app/components/Common/LinkButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
+import AiPicksSlider from '@app/components/Discover/AiPicksSlider';
 import AnilistListSlider from '@app/components/Discover/AnilistListSlider';
 import AnilistSlider from '@app/components/Discover/AnilistSlider';
 import AnilistUserSlider from '@app/components/Discover/AnilistUserSlider';
@@ -609,6 +610,16 @@ const Discover = () => {
                 name={slider.data ?? ''}
               />
             );
+            break;
+          case DiscoverSliderType.AI_PICKS:
+            sliderComponent =
+              !slider.enabled || !slider.id ? null : (
+                <AiPicksSlider
+                  sliderKey={`custom-slider-${slider.id}`}
+                  title={slider.title ?? ''}
+                  sliderId={slider.id}
+                />
+              );
             break;
           case DiscoverSliderType.MDBLIST_LIST:
             sliderComponent = (

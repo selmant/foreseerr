@@ -28,7 +28,7 @@ const MAX_ENTRIES: usize = 500;
 /// `maxRetries`.
 const MAX_RETRIES: u32 = 3;
 /// `resolveWithTtl`'s TTL when the answer carries none.
-pub const DEFAULT_TTL: Duration = Duration::from_secs(300);
+pub const DEFAULT_TTL: Duration = Duration::from_mins(5);
 
 /// The cache's TTL settings, from `network.dnsCache`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +52,7 @@ impl Ttl {
     #[must_use]
     pub fn fallback(self) -> Duration {
         let ttl = self.max.map_or(Duration::ZERO, |max| {
-            self.min.max(Duration::from_secs(60)).min(max)
+            self.min.max(Duration::from_mins(1)).min(max)
         });
         self.min.max(ttl)
     }
@@ -442,10 +442,10 @@ mod tests {
     #[test]
     fn entry_ttl() {
         let ttl = Ttl {
-            min: Duration::from_secs(600),
+            min: Duration::from_mins(10),
             max: None,
         };
-        assert_eq!(ttl.entry(), Duration::from_secs(600), "raised");
+        assert_eq!(ttl.entry(), Duration::from_mins(10), "raised");
         let ttl = Ttl {
             min: Duration::ZERO,
             max: Some(Duration::from_secs(30)),

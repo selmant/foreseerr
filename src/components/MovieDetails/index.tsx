@@ -1,3 +1,4 @@
+import MoreLikeThisButton from '@app/components/Ai/MoreLikeThisButton';
 import Spinner from '@app/assets/spinner.svg';
 import BlocklistModal from '@app/components/BlocklistModal';
 import Button from '@app/components/Common/Button';
@@ -497,6 +498,11 @@ const MovieDetails = ({ movie }: MovieDetailsProps) => {
             tmdbId={data.id}
             mediaType="movie"
             showLabels
+          />
+          <MoreLikeThisButton
+            mediaType="movie"
+            tmdbId={data.id}
+            title={data.title}
           />
           {showHideButton &&
             data?.mediaInfo?.status !== MediaStatus.PROCESSING &&

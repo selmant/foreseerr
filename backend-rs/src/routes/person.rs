@@ -57,6 +57,7 @@ pub(super) fn combined_credits<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Err(why) => return Outcome::forward(why),
         };
         let user_id = ctx.user.as_ref().map(|u| u.id);
+        let show_adult = super::adultfilter::shows_adult(ctx);
         let credits = match ctx.state.tmdb.person_combined_credits(id, &language).await {
             Ok(credits) => credits,
             Err(e) => {
@@ -104,7 +105,7 @@ pub(super) fn combined_credits<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
                         .and_then(|(_, related)| related.media_info(ctx, credit, kind))
                 });
                 let mapped = map_credit(credit, extra, media_info);
-                let adult = truthy(mapped.get("adult"));
+                let adult = !show_adult && truthy(mapped.get("adult"));
                 let skipped = mapped.get(skip_key).and_then(Value::as_str) == Some(skip_value);
                 if !adult && !skipped {
                     sink.push(mapped);

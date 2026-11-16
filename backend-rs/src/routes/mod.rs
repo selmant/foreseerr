@@ -3,7 +3,11 @@
 //! (`src/standalone/fallback.rs`).
 
 pub mod accountlink;
+mod adultfilter;
+pub mod ai;
+pub mod airecs;
 pub mod anilistdiscover;
+mod anilistfilter;
 mod arrcall;
 pub mod arrsettings;
 pub mod authcommon;
@@ -163,6 +167,8 @@ const TABLES: &[&Table] = &[
     requestedit::ROUTES,
     overriderule::ROUTES,
     sonarrstorage::ROUTES,
+    ai::ROUTES,
+    airecs::ROUTES,
 ];
 
 /// The router: the handlers first, the fallback for the rest. HEAD goes to
@@ -1229,6 +1235,7 @@ pub(super) mod testkit {
                     permissions,
                     webpush_enabled: false,
                     locale: None,
+                    show_adult: false,
                 }),
                 req: &parts,
                 body,

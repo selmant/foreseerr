@@ -69,6 +69,11 @@ interface TitleCardProps {
   onLibraryManage?: () => void;
   /** Hover, focus, or tap opened (true) or closed (false) the detail overlay. */
   onShowDetailChange?: (shown: boolean) => void;
+  /**
+   * An extra badge under the ratings, given whether the detail overlay is
+   * open (hover, focus or tap). Clicks on its buttons don't open the title.
+   */
+  extraBadge?: (shown: boolean) => React.ReactNode;
 }
 
 const messages = defineMessages('components.TitleCard', {
@@ -120,6 +125,7 @@ const TitleCard = ({
   onLibraryOpenSeries,
   onLibraryManage,
   onShowDetailChange,
+  extraBadge,
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
@@ -157,6 +163,10 @@ const TitleCard = ({
   const cardRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const pointerOverSurface = useRef<Event | null>(null);
+  // Whether the card was open when the current press began. Focus (fired
+  // between pointerdown and click) opens the card, so reading showDetail in
+  // the click handler would make a first touch tap navigate.
+  const openAtPress = useRef(false);
   useEffect(() => {
     setCurrentStatus(status);
   }, [status]);
@@ -565,6 +575,49 @@ const TitleCard = ({
     }
   };
 
+  const isLibrarySeries = Boolean(
+    libraryMode && mediaType === 'tv' && jellyfinSeriesId && onLibraryOpenSeries
+  );
+
+  const openDetail = (newTab = false) => {
+    if (newTab && !isLibrarySeries) {
+      window.open(detailHref, '_blank', 'noopener');
+      return;
+    }
+    if (
+      libraryMode &&
+      mediaType === 'tv' &&
+      jellyfinSeriesId &&
+      onLibraryOpenSeries
+    ) {
+      onLibraryOpenSeries(jellyfinSeriesId);
+    } else {
+      navigate(detailHref);
+    }
+  };
+
+  // The badge row and button bar sit above the detail link and span the whole
+  // card width, so clicks on their padding, gaps, or the rating badges never
+  // reach the link. Treat a click on any non-control part of an open card as a
+  // click on the card. Closed cards (first tap on touch) only open.
+  const onSurfaceClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (
+      !openAtPress.current ||
+      event.defaultPrevented ||
+      isUpdating ||
+      showTvMenu ||
+      showRequestModal ||
+      showBlocklistModal ||
+      !event.currentTarget.contains(target) ||
+      target.closest('a, button, input, select, textarea, [role="menu"]')
+    ) {
+      setShowDetail(true);
+      return;
+    }
+    openDetail(event.ctrlKey || event.metaKey || event.shiftKey);
+  };
+
   const onLibraryCardNavigate = (event: React.MouseEvent) => {
     if (
       libraryMode &&
@@ -641,6 +694,9 @@ const TitleCard = ({
             setShowDetail(false);
           }
         }}
+        onPointerDownCapture={() => {
+          openAtPress.current = showDetail;
+        }}
         onPointerOver={(event) => {
           // Portaled children (tooltips) count as the card, as for mouseleave.
           pointerOverSurface.current = event.nativeEvent;
@@ -658,21 +714,12 @@ const TitleCard = ({
             setShowDetail(false);
           }
         }}
-        onClick={() => setShowDetail(true)}
+        onClick={onSurfaceClick}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) return;
           if (event.key === 'Enter') {
             event.preventDefault();
-            if (
-              libraryMode &&
-              mediaType === 'tv' &&
-              jellyfinSeriesId &&
-              onLibraryOpenSeries
-            ) {
-              onLibraryOpenSeries(jellyfinSeriesId);
-            } else {
-              navigate(detailHref);
-            }
+            openDetail();
           }
           if (event.key === 'Escape') setShowDetail(false);
         }}
@@ -740,6 +787,7 @@ const TitleCard = ({
                 compact
                 expanded={showDetail}
               />
+              {extraBadge?.(showDetail)}
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
               {showDetail && currentStatus !== MediaStatus.BLOCKLISTED && (

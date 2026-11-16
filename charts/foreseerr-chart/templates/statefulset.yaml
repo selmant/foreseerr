@@ -104,9 +104,15 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- with .Values.extraEnv }}
+          {{- if or .Values.extraEnv .Values.secretKey.existingSecret }}
           env:
+            {{- if .Values.secretKey.existingSecret }}
+            - name: FORESEERR_SECRET_KEY_FILE
+              value: /run/secrets/foreseerr/secret.key
+            {{- end }}
+            {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           {{- with .Values.extraEnvFrom }}
           envFrom:
@@ -116,6 +122,11 @@ spec:
             - name: config
               mountPath: /app/config
               subPath: {{ .Values.config.persistence.subPath }}
+            {{- if .Values.secretKey.existingSecret }}
+            - name: secret-key
+              mountPath: /run/secrets/foreseerr
+              readOnly: true
+            {{- end }}
           {{- with .Values.volumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -123,6 +134,15 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: {{ if .Values.config.persistence.existingClaim }}{{ .Values.config.persistence.existingClaim }}{{- else }}{{ include "foreseerr.configPersistenceName" . }}{{- end }}
+        {{- if .Values.secretKey.existingSecret }}
+        - name: secret-key
+          secret:
+            secretName: {{ .Values.secretKey.existingSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.secretKey.key }}
+                path: secret.key
+        {{- end }}
       {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
