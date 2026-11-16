@@ -63,6 +63,7 @@ pub mod simklapi;
 pub mod skippedepisodes;
 pub mod sonarrfiles;
 pub mod sonarrmeta;
+pub mod sonarrtracks;
 pub mod sonarrv5;
 pub mod standalone;
 pub mod state;

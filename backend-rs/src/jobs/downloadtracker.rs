@@ -61,6 +61,7 @@ pub async fn update(job: &JobCtx) -> anyhow::Result<()> {
         update_service(&job.state, &settings, Service::Radarr),
         update_service(&job.state, &settings, Service::Sonarr)
     );
+    crate::routes::trackcheck::check_servers(&job.state, &settings).await;
     Ok(())
 }
 

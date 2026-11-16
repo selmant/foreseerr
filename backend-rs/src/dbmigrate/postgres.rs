@@ -733,4 +733,14 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         name: "UserShowAdultContent1790500000000",
         queries: &["ALTER TABLE \"user_settings\" ADD \"showAdultContent\" boolean"],
     },
+    Migration {
+        timestamp: 1_790_600_000_000,
+        name: "AddInterventionTrackChecks1790600000000",
+        queries: &[
+            "ALTER TABLE \"servarr_intervention\" ADD \"kind\" character varying NOT NULL DEFAULT 'queue'",
+            "ALTER TABLE \"servarr_intervention\" ADD \"episodeFileId\" integer",
+            "ALTER TABLE \"servarr_intervention\" ADD \"historyId\" integer",
+            "CREATE INDEX \"IDX_servarr_intervention_file\" ON \"servarr_intervention\" (\"serviceId\", \"episodeFileId\")",
+        ],
+    },
 ];

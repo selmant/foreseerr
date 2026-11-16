@@ -100,6 +100,8 @@ pub(super) enum Ty {
     Str,
     Num,
     Bool,
+    /// An array of strings.
+    StrList,
 }
 
 /// One property of a request schema.
@@ -153,7 +155,7 @@ pub(super) fn fits(body: &Map<String, Value>, fields: &[Field], read_only: &[&st
         Some(v) => matches!(
             (f.ty, v),
             (Ty::Str, Value::String(_)) | (Ty::Num, Value::Number(_)) | (Ty::Bool, Value::Bool(_))
-        ),
+        ) || matches!((f.ty, v), (Ty::StrList, Value::Array(items)) if items.iter().all(Value::is_string)),
     })
 }
 

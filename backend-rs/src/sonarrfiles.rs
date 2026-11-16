@@ -72,10 +72,13 @@ fn codes<'a>(found: impl Iterator<Item = &'a str>) -> Vec<Value> {
 /// neither.
 fn languages(media_info: &Value, streams: &str, text: &str) -> Option<Vec<Value>> {
     if let Some(list) = media_info.get(streams).and_then(Value::as_array) {
-        return Some(codes(
-            list.iter()
-                .filter_map(|s| s.get("language").and_then(Value::as_str)),
-        ));
+        // A stream that names no language is still a track: `und`.
+        return Some(codes(list.iter().map(|s| {
+            s.get("language")
+                .and_then(Value::as_str)
+                .filter(|l| !l.trim().is_empty())
+                .unwrap_or("und")
+        })));
     }
     media_info
         .get(text)
@@ -188,7 +191,9 @@ mod tests {
         }});
         assert_eq!(
             file_tracks(&file),
-            Some(json!({"audioLanguages": ["jpn", "eng"], "subtitleLanguages": ["eng", "und"]}))
+            Some(
+                json!({"audioLanguages": ["jpn", "eng", "und"], "subtitleLanguages": ["eng", "und"]})
+            )
         );
     }
 

@@ -1,6 +1,7 @@
 import Modal from '@app/components/Common/Modal';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import type { SonarrTestResponse } from '@app/components/Settings/SettingsServices';
+import TrackLanguagesField from '@app/components/Settings/SonarrModal/TrackLanguagesField';
 import {
   useServarrConnectionTest,
   type ServarrConnectionTestInput,
@@ -107,6 +108,16 @@ const messages = defineMessages('components.Settings.SonarrModal', {
   sonarrDefaultLanguage: 'Sonarr default ({language})',
   sonarrDefault: 'Sonarr default',
   sameAsMetadataLanguage: 'Same as Metadata Language',
+  requiredAudioLanguages: 'Required Audio Languages',
+  requiredAudioLanguagesHelp:
+    'Imported episodes whose audio has none of these show up in Interventions to replace or keep. Sonarr can already refuse releases by audio language with a Language custom format; this checks the downloaded file.',
+  requiredSubtitleLanguages: 'Required Subtitle Languages',
+  requiredSubtitleLanguagesHelp:
+    'Imported episodes with none of these subtitles show up in Interventions. Only subtitles inside the file count, not separate .srt files.',
+  animeRequiredAudioLanguages: 'Anime Required Audio Languages',
+  animeRequiredSubtitleLanguages: 'Anime Required Subtitle Languages',
+  noLanguageRequirement: 'None required',
+  sameAsStandardLanguages: 'Same as the standard series',
 });
 
 const MetadataLanguageField = ({
@@ -317,6 +328,12 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
           enableInstantRequests: sonarr?.enableInstantRequests !== false,
           tagRequests: sonarr?.tagRequests ?? false,
           monitorNewItems: sonarr?.monitorNewItems ?? 'all',
+          requiredAudioLanguages: sonarr?.requiredAudioLanguages ?? [],
+          requiredSubtitleLanguages: sonarr?.requiredSubtitleLanguages ?? [],
+          animeRequiredAudioLanguages:
+            sonarr?.animeRequiredAudioLanguages ?? [],
+          animeRequiredSubtitleLanguages:
+            sonarr?.animeRequiredSubtitleLanguages ?? [],
         }}
         validationSchema={SonarrSettingsSchema}
         onSubmit={async (values) => {
@@ -368,6 +385,20 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
               enableInstantRequests: values.enableInstantRequests,
               tagRequests: values.tagRequests,
               monitorNewItems: values.monitorNewItems,
+              requiredAudioLanguages: values.requiredAudioLanguages.length
+                ? values.requiredAudioLanguages
+                : null,
+              requiredSubtitleLanguages: values.requiredSubtitleLanguages.length
+                ? values.requiredSubtitleLanguages
+                : null,
+              animeRequiredAudioLanguages: values.animeRequiredAudioLanguages
+                .length
+                ? values.animeRequiredAudioLanguages
+                : null,
+              animeRequiredSubtitleLanguages: values
+                .animeRequiredSubtitleLanguages.length
+                ? values.animeRequiredSubtitleLanguages
+                : null,
             };
             if (!sonarr) {
               await axios.post('/api/v1/settings/sonarr', submission);
@@ -1085,6 +1116,62 @@ const SonarrModal = ({ onClose, sonarr, onSave }: SonarrModalProps) => {
                     />
                   </div>
                 </div>
+                <TrackLanguagesField
+                  id="requiredAudioLanguages"
+                  label={intl.formatMessage(messages.requiredAudioLanguages)}
+                  help={intl.formatMessage(messages.requiredAudioLanguagesHelp)}
+                  placeholder={intl.formatMessage(
+                    messages.noLanguageRequirement
+                  )}
+                  value={values.requiredAudioLanguages}
+                  disabled={!isValidated || isTesting}
+                  onChange={(codes) =>
+                    setFieldValue('requiredAudioLanguages', codes)
+                  }
+                />
+                <TrackLanguagesField
+                  id="requiredSubtitleLanguages"
+                  label={intl.formatMessage(messages.requiredSubtitleLanguages)}
+                  help={intl.formatMessage(
+                    messages.requiredSubtitleLanguagesHelp
+                  )}
+                  placeholder={intl.formatMessage(
+                    messages.noLanguageRequirement
+                  )}
+                  value={values.requiredSubtitleLanguages}
+                  disabled={!isValidated || isTesting}
+                  onChange={(codes) =>
+                    setFieldValue('requiredSubtitleLanguages', codes)
+                  }
+                />
+                <TrackLanguagesField
+                  id="animeRequiredAudioLanguages"
+                  label={intl.formatMessage(
+                    messages.animeRequiredAudioLanguages
+                  )}
+                  placeholder={intl.formatMessage(
+                    messages.sameAsStandardLanguages
+                  )}
+                  value={values.animeRequiredAudioLanguages}
+                  disabled={!isValidated || isTesting}
+                  onChange={(codes) =>
+                    setFieldValue('animeRequiredAudioLanguages', codes)
+                  }
+                />
+                <TrackLanguagesField
+                  id="animeRequiredSubtitleLanguages"
+                  label={intl.formatMessage(
+                    messages.animeRequiredSubtitleLanguages
+                  )}
+                  placeholder={intl.formatMessage(
+                    messages.sameAsStandardLanguages
+                  )}
+                  value={values.animeRequiredSubtitleLanguages}
+                  disabled={!isValidated || isTesting}
+                  onChange={(codes) =>
+                    setFieldValue('animeRequiredSubtitleLanguages', codes)
+                  }
+                />
                 <div className="form-row">
                   <label
                     htmlFor="enableSeasonFolders"

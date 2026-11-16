@@ -4,7 +4,7 @@
 use super::fallback::ApiRoute;
 
 /// Every documented route.
-pub(super) static ROUTES: [ApiRoute; 279] = [
+pub(super) static ROUTES: [ApiRoute; 281] = [
     ApiRoute {
         template: "/api/v1/ai/feedback",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("feedback")],
@@ -721,8 +721,18 @@ pub(super) static ROUTES: [ApiRoute; 279] = [
         methods: &[("POST", true)],
     },
     ApiRoute {
+        template: "/api/v1/servarr/interventions/{interventionId}/keep",
+        segments: &[Some("api"), Some("v1"), Some("servarr"), Some("interventions"), None, Some("keep")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
         template: "/api/v1/servarr/interventions/{interventionId}/reject",
         segments: &[Some("api"), Some("v1"), Some("servarr"), Some("interventions"), None, Some("reject")],
+        methods: &[("POST", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/servarr/interventions/{interventionId}/replace",
+        segments: &[Some("api"), Some("v1"), Some("servarr"), Some("interventions"), None, Some("replace")],
         methods: &[("POST", true)],
     },
     ApiRoute {
