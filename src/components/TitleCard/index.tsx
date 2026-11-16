@@ -69,6 +69,11 @@ interface TitleCardProps {
   onLibraryManage?: () => void;
   /** Hover, focus, or tap opened (true) or closed (false) the detail overlay. */
   onShowDetailChange?: (shown: boolean) => void;
+  /**
+   * An extra badge under the ratings, given whether the detail overlay is
+   * open (hover, focus or tap). Clicks on its buttons don't open the title.
+   */
+  extraBadge?: (shown: boolean) => React.ReactNode;
 }
 
 const messages = defineMessages('components.TitleCard', {
@@ -120,6 +125,7 @@ const TitleCard = ({
   onLibraryOpenSeries,
   onLibraryManage,
   onShowDetailChange,
+  extraBadge,
 }: TitleCardProps) => {
   const isTouch = useIsTouch();
   const intl = useIntl();
@@ -781,6 +787,7 @@ const TitleCard = ({
                 compact
                 expanded={showDetail}
               />
+              {extraBadge?.(showDetail)}
             </div>
             <div className="flex shrink-0 flex-col items-end gap-1">
               {showDetail && currentStatus !== MediaStatus.BLOCKLISTED && (

@@ -27,21 +27,27 @@ pub(super) fn multi<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
             Err(why) => return Outcome::forward(why),
         };
         let (main_locale, language) = languages(ctx, user.locale.as_deref(), language.as_deref());
-        let data = match search_provider(&query.to_lowercase()) {
-            Some((provider, id)) => {
-                let found = provider_search(ctx, provider, &id, (&query, &language, &main_locale));
-                let Ok(data) = found.await else {
-                    return ctx.error(500, "Unable to retrieve search results.");
-                };
-                data
-            }
-            None => ctx.state.tmdb.search_multi(&query, page, &language).await,
+        let data = if let Some((provider, id)) = search_provider(&query.to_lowercase()) {
+            let found = provider_search(ctx, provider, &id, (&query, &language, &main_locale));
+            let Ok(data) = found.await else {
+                return ctx.error(500, "Unable to retrieve search results.");
+            };
+            data
+        } else {
+            let adult = super::adultfilter::include_adult(ctx);
+            ctx.state
+                .tmdb
+                .search_multi(&query, page, &language, adult)
+                .await
         };
-        let results: Vec<Value> = data
-            .get("results")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        // `tmdb:`, `imdb:` and `tvdb:` lookups don't take `include_adult`.
+        let results = super::adultfilter::drop_adult_results(
+            ctx,
+            data.get("results")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+        );
         let of_type = |kind: &str| -> Vec<Value> {
             results
                 .iter()
@@ -296,6 +302,12 @@ fn details_to_result(details: &Value) -> Value {
     Value::Object(out)
 }
 
+/// Whether a `tmdb:` lookup's details are shown: adult ones only to users
+/// who show adult content.
+fn shown_details(details: &Value, show_adult: bool) -> bool {
+    show_adult || !super::adultfilter::is_adult(details)
+}
+
 /// `searchProvider.search({ id, language, query })`; `Err` where it
 /// rejects (a failed `getByExternalId`).
 async fn provider_search(
@@ -313,9 +325,13 @@ async fn provider_search(
                 tmdb.tv(n, language),
                 tmdb.person(n, language)
             );
+            // Filtered on the raw details: the mapped TV result has no
+            // `adult` left for the later filter to read.
+            let show_adult = super::adultfilter::shows_adult(ctx);
             let results = <[_; 3]>::from((movie, tv, person))
                 .into_iter()
                 .filter_map(Result::ok)
+                .filter(|details| shown_details(details, show_adult))
                 .map(|details| details_to_result(&details))
                 .collect();
             Ok(single_page(results))
@@ -352,7 +368,10 @@ async fn provider_search(
                 let params = vec![
                     ("query", stripped.clone()),
                     ("page", String::from("1")),
-                    ("include_adult", String::from("false")),
+                    (
+                        "include_adult",
+                        String::from(super::adultfilter::include_adult(ctx)),
+                    ),
                     ("language", main_locale.to_owned()),
                     (year_key, year.clone()),
                 ];
@@ -533,6 +552,19 @@ pub(super) fn map_person_result(result: &Value) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tmdb_lookup_hides_adult_tv() {
+        let show = serde_json::json!({"id": 7, "name": "x", "adult": true, "first_air_date": "2020-01-01", "number_of_seasons": 1});
+        assert!(
+            details_to_result(&show).get("adult").is_none(),
+            "the mapped TV result has no adult flag to filter on later"
+        );
+        assert!(!shown_details(&show, false), "hidden by default");
+        assert!(shown_details(&show, true), "shown when the user opts in");
+        let plain = serde_json::json!({"id": 8, "name": "y", "adult": false});
+        assert!(shown_details(&plain, false));
+    }
 
     #[test]
     fn provider_detection() {

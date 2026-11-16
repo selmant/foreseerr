@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 use axum::http::Method;
 use serde_json::{json, Map, Value};
 
+use super::anilistfilter::{ListFilter, PARAMS as FILTER_PARAMS};
 use super::discoverkit::{
     anilist_media_list, annotate_provider_active_requests, confirm_or_repair, has_discover_tmdb_id,
     omit_unmapped, record_unmapped, route_error, with_tmdb_posters, Kind, Param, Query,
@@ -485,7 +486,7 @@ fn to_watchlist_item(item: &Value) -> Value {
     if let Some(tmdb) = tmdb {
         out.insert(String::from("tmdbId"), tmdb.clone());
     }
-    for key in ["mediaType", "title"] {
+    for key in ["mediaType", "title", super::adultfilter::ANILIST_ADULT_KEY] {
         if let Some(v) = item.get(key) {
             out.insert(String::from(key), v.clone());
         }
@@ -675,8 +676,13 @@ fn matches_list_name(
     Ok(label.to_lowercase() == requested || text.to_lowercase() == requested)
 }
 
-/// `collectUserListItems`'s walk: the matching lists' media, each once.
-fn collect_media(lists: &[Value], matcher: &Matcher<'_>) -> Result<Vec<Value>, String> {
+/// `collectUserListItems`'s walk: the matching lists' media, each once,
+/// filtered and sorted as the request asks.
+fn collect_media(
+    lists: &[Value],
+    matcher: &Matcher<'_>,
+    filter: &ListFilter,
+) -> Result<Vec<Value>, String> {
     let mut media = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     for list in lists {
@@ -706,11 +712,11 @@ fn collect_media(lists: &[Value], matcher: &Matcher<'_>) -> Result<Vec<Value>, S
                 continue;
             }
             if let Some(m) = entry_media {
-                media.push(m.clone());
+                media.push((entry.clone(), m.clone()));
             }
         }
     }
-    Ok(media)
+    Ok(filter.apply(media))
 }
 
 fn watching<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
@@ -737,7 +743,8 @@ const LIST_FAILED: &str = "Unable to retrieve AniList list.";
 
 /// `userList`: one of the linked account's status lists.
 async fn user_list(ctx: &Ready<'_>, matcher: &Matcher<'_>) -> Outcome {
-    let (_, row, query) = try_forward!(prepare(ctx, &[&PAGE_PARAMS], &page_defaults()).await);
+    let (_, row, query) =
+        try_forward!(prepare(ctx, &[&PAGE_PARAMS, &FILTER_PARAMS], &page_defaults()).await);
     linked_list(ctx, &row, &query, matcher, &[]).await
 }
 
@@ -750,6 +757,10 @@ async fn linked_list(
     extra: &[(&str, Value)],
 ) -> Outcome {
     let page = super::providerkit::page(query);
+    let filter = match ListFilter::parse(query) {
+        Ok(filter) => filter,
+        Err(message) => return route_error(ctx, 400, &message, None),
+    };
     if !configured(ctx) {
         return not_configured(ctx);
     }
@@ -762,7 +773,7 @@ async fn linked_list(
         Ok(lists) => lists,
         Err(e) => return anilist_error(ctx, e, LIST_FAILED, false),
     };
-    let media = try_forward!(collect_media(&lists, matcher));
+    let media = try_forward!(collect_media(&lists, matcher, &filter));
     // Only the requested page is mapped, not the whole list.
     let paged = map_media_page(media, page, |batch| anilist_media_list(ctx, batch)).await;
     let (slice, has_more, page) = match paged {
@@ -840,8 +851,14 @@ fn list_summary(list: &Map<String, Value>) -> Value {
 /// anyone's public list by link.
 fn list<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
-        let (_, row, query) =
-            try_forward!(prepare(ctx, &[&PAGE_PARAMS, &LIST_PARAMS], &page_defaults()).await);
+        let (_, row, query) = try_forward!(
+            prepare(
+                ctx,
+                &[&PAGE_PARAMS, &LIST_PARAMS, &FILTER_PARAMS],
+                &page_defaults()
+            )
+            .await
+        );
         let url = jsval::trim(&query.text("url")).to_owned();
         if !url.is_empty() {
             return public_list(ctx, &row, &query, &url).await;
@@ -870,6 +887,10 @@ async fn public_list(
         Err(message) => return route_error(ctx, 400, &message, None),
     };
     let page = super::providerkit::page(query);
+    let filter = match ListFilter::parse(query) {
+        Ok(filter) => filter,
+        Err(message) => return route_error(ctx, 400, &message, None),
+    };
     if !configured(ctx) {
         return not_configured(ctx);
     }
@@ -893,7 +914,7 @@ async fn public_list(
             .as_ref()
             .map_or(Ok(true), |wanted| matches_list_name(name, status, wanted))
     };
-    let media = match collect_media(&lists, &matcher) {
+    let media = match collect_media(&lists, &matcher, &filter) {
         Ok(media) => media,
         Err(why) if cleared => return fallback_error(ctx, LIST_FAILED, &why),
         Err(why) => return Outcome::forward(why),
@@ -1063,7 +1084,7 @@ mod tests {
         ];
         let all = |_: Option<&Value>, _: Option<&Value>| Ok(true);
         assert_eq!(
-            collect_media(&lists, &all).map(|m| m.len()),
+            collect_media(&lists, &all, &ListFilter::default()).map(|m| m.len()),
             Ok(2),
             "deduplicated"
         );

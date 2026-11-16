@@ -54,6 +54,8 @@ export enum DiscoverSliderType {
   SIMKL_ON_HOLD,
   SIMKL_COMPLETED,
   SIMKL_DROPPED,
+  /** AI picks for a prompt, personal to each viewer. */
+  AI_PICKS = 1027,
 }
 
 /** Built-in rows Simkl told us not to use (no TMDB/TVDB ids). */

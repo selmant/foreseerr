@@ -32,7 +32,7 @@ static GATE: RateGate = RateGate::new(RATE_LIMIT_MAX_WAIT);
 
 macro_rules! media_fields {
     () => {
-        "\n  id\n  idMal\n  title { romaji english native }\n  format\n  episodes\n  seasonYear\n  startDate { year }\n  coverImage { large medium }\n"
+        "\n  id\n  idMal\n  title { romaji english native }\n  format\n  isAdult\n  episodes\n  seasonYear\n  startDate { year }\n  coverImage { large medium }\n"
     };
 }
 
@@ -53,10 +53,20 @@ const PAGE_MEDIA_QUERY: &str = concat!(
     "\n      }\n    }\n  }\n"
 );
 
-/// `MEDIA_LIST_COLLECTION_QUERY`, byte for byte.
-const MEDIA_LIST_COLLECTION_QUERY: &str = concat!(
-    "\n  query MediaListCollection($userId: Int, $userName: String) {\n    MediaListCollection(userId: $userId, userName: $userName, type: ANIME) {\n      lists {\n        name\n        isCustomList\n        status\n        entries {\n          id\n          status\n          progress\n          score(format: POINT_10)\n          scoreRaw: score(format: POINT_100)\n          media { ",
+/// Anime by genres and tags, best rated first, for AI recommendations.
+const SEARCH_MEDIA_QUERY: &str = concat!(
+    "\n  query SearchMedia(\n    $page: Int\n    $perPage: Int\n    $genres: [String]\n    $tags: [String]\n    $search: String\n    $from: FuzzyDateInt\n    $to: FuzzyDateInt\n    $isAdult: Boolean\n  ) {\n    Page(page: $page, perPage: $perPage) {\n      media(\n        type: ANIME\n        isAdult: $isAdult\n        format_not: MUSIC\n        sort: [SCORE_DESC, POPULARITY_DESC]\n        genre_in: $genres\n        tag_in: $tags\n        search: $search\n        startDate_greater: $from\n        startDate_lesser: $to\n        popularity_greater: 2000\n      ) {\n        ",
     media_fields!(),
+    "\n        genres\n        averageScore\n      }\n    }\n  }\n"
+);
+
+/// `MEDIA_LIST_COLLECTION_QUERY`, plus what the list filters read: when
+/// an entry was added and updated, and the media's genres, airing status,
+/// country, scores, and full start date.
+const MEDIA_LIST_COLLECTION_QUERY: &str = concat!(
+    "\n  query MediaListCollection($userId: Int, $userName: String) {\n    MediaListCollection(userId: $userId, userName: $userName, type: ANIME) {\n      lists {\n        name\n        isCustomList\n        status\n        entries {\n          id\n          status\n          progress\n          score(format: POINT_10)\n          scoreRaw: score(format: POINT_100)\n          createdAt\n          updatedAt\n          media { ",
+    media_fields!(),
+    "  genres\n  status\n  countryOfOrigin\n  averageScore\n  popularity\n  releaseDate: startDate { year month day }\n",
     " }\n        }\n      }\n    }\n  }\n"
 );
 
@@ -374,6 +384,69 @@ impl Anilist {
             has_next_page,
             media,
         })
+    }
+
+    /// Anime matching any of `genres` and `tags` (`AniList`'s own names),
+    /// optionally a title search and a start-year range, best rated first.
+    ///
+    /// # Errors
+    ///
+    /// Fails as Node's `graphql` does.
+    pub async fn search_media(
+        &self,
+        genres: &[String],
+        tags: &[String],
+        search: Option<&str>,
+        years: (Option<i64>, Option<i64>),
+        per_page: i64,
+        show_adult: bool,
+    ) -> Result<Vec<Value>, AnilistError> {
+        let mut variables = Map::new();
+        variables.insert(String::from("page"), Value::from(1));
+        variables.insert(String::from("perPage"), Value::from(per_page));
+        // A null `isAdult` is no filter at all.
+        if !show_adult {
+            variables.insert(String::from("isAdult"), Value::Bool(false));
+        }
+        let list = |items: &[String]| {
+            Value::Array(items.iter().map(|g| Value::from(g.as_str())).collect())
+        };
+        if !genres.is_empty() {
+            variables.insert(String::from("genres"), list(genres));
+        }
+        if !tags.is_empty() {
+            variables.insert(String::from("tags"), list(tags));
+        }
+        if let Some(search) = search.filter(|s| !s.trim().is_empty()) {
+            variables.insert(String::from("search"), Value::from(search.trim()));
+        }
+        // FuzzyDateInt is YYYYMMDD; "greater"/"lesser" are exclusive.
+        if let Some(from) = years.0 {
+            variables.insert(
+                String::from("from"),
+                Value::from(from.saturating_mul(10_000).saturating_sub(1)),
+            );
+        }
+        if let Some(to) = years.1 {
+            variables.insert(
+                String::from("to"),
+                Value::from(to.saturating_add(1).saturating_mul(10_000)),
+            );
+        }
+        let data = self
+            .graphql(SEARCH_MEDIA_QUERY, variables, Some(PAGE_TTL))
+            .await?;
+        Ok(data
+            .pointer("/Page/media")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter(|m| m.get("id").and_then(Value::as_i64).is_some())
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// `getMediaListCollection(user)`: the lists (by account id or name).
@@ -712,7 +785,7 @@ mod tests {
         assert!(
             MEDIA_LIST_COLLECTION_QUERY.contains("media { \n  id\n")
                 && MEDIA_LIST_COLLECTION_QUERY
-                    .ends_with("large medium }\n }\n        }\n      }\n    }\n  }\n"),
+                    .ends_with("releaseDate: startDate { year month day }\n }\n        }\n      }\n    }\n  }\n"),
             "collection query"
         );
     }

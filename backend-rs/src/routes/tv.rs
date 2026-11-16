@@ -172,11 +172,13 @@ async fn tv_list(ctx: &Ready<'_>, kind: &str, failure: &str) -> Outcome {
             return ctx.error(500, failure);
         }
     };
-    let results: Vec<Value> = data
-        .get("results")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let results: Vec<Value> = super::adultfilter::drop_adult_results(
+        ctx,
+        data.get("results")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+    );
     let related = match RelatedTitles::load(ctx, &results, "tv", Some(user.id)).await {
         Ok(related) => related,
         Err(why) => return Outcome::forward(why),

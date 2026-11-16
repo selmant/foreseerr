@@ -20,6 +20,7 @@ const messages = defineMessages('components.Settings', {
   menuAbout: 'About',
   menuMetadataProviders: 'Metadata Providers',
   menuMapping: 'Mapping',
+  menuAi: 'AI',
 });
 
 type SettingsLayoutProps = {
@@ -70,6 +71,11 @@ const SettingsLayout = ({ children }: SettingsLayoutProps) => {
       text: intl.formatMessage(messages.menuMapping),
       route: '/settings/mapping',
       regex: /^\/settings\/mapping/,
+    },
+    {
+      text: intl.formatMessage(messages.menuAi),
+      route: '/settings/ai',
+      regex: /^\/settings\/ai/,
     },
     {
       text: intl.formatMessage(messages.menuNotifications),

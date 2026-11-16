@@ -3,6 +3,7 @@
 //! `src/runtime/`.
 #![recursion_limit = "256"]
 
+pub mod ai;
 pub mod anilist;
 pub mod arr;
 pub mod auth;
@@ -54,6 +55,7 @@ pub mod respond;
 pub mod routes;
 pub mod rowcache;
 pub mod runtime;
+pub mod searxng;
 pub mod servarr;
 pub mod settings;
 pub mod simkl;
@@ -71,6 +73,7 @@ pub mod traktitems;
 pub mod tvdb;
 pub mod typeorm;
 pub mod user;
+pub mod vault;
 pub mod version;
 
 use std::process::ExitCode;

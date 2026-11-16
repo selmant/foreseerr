@@ -11,7 +11,8 @@ const AnilistListPage = () => {
     return (
       <DiscoverAnilistPage
         kind="list"
-        endpoint={`/api/v1/discover/anilist/list?url=${encodeURIComponent(url)}`}
+        endpoint="/api/v1/discover/anilist/list"
+        params={{ url }}
       />
     );
   }
@@ -19,11 +20,8 @@ const AnilistListPage = () => {
   return (
     <DiscoverAnilistPage
       kind="list"
-      endpoint={
-        name
-          ? `/api/v1/discover/anilist/list?name=${encodeURIComponent(name)}`
-          : ''
-      }
+      endpoint={name ? '/api/v1/discover/anilist/list' : ''}
+      params={name ? { name } : undefined}
       requiresLink
       title={name}
     />

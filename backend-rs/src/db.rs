@@ -39,6 +39,8 @@ pub struct UserRow {
     pub locale: Option<String>,
     /// `user_settings.notificationTypes` as stored (JSON text).
     pub notification_types: Option<String>,
+    /// `user_settings.showAdultContent` is true.
+    pub show_adult: bool,
 }
 
 impl Db {
@@ -131,9 +133,9 @@ impl Db {
     ///
     /// Fails on database errors.
     pub async fn user(&self, id: i64) -> Result<Option<UserRow>> {
-        const SQL_SQLITE: &str = r#"SELECT u."id" AS "id", u."permissions" AS "permissions", s."id" AS "settingsId", s."locale" AS "locale", s."notificationTypes" AS "notificationTypes"
+        const SQL_SQLITE: &str = r#"SELECT u."id" AS "id", u."permissions" AS "permissions", s."id" AS "settingsId", s."locale" AS "locale", s."notificationTypes" AS "notificationTypes", s."showAdultContent" AS "showAdultContent"
             FROM "user" u LEFT JOIN "user_settings" s ON s."userId" = u."id" WHERE u."id" = ?1"#;
-        const SQL_PG: &str = r#"SELECT u."id"::bigint AS "id", u."permissions"::bigint AS "permissions", s."id"::bigint AS "settingsId", s."locale" AS "locale", s."notificationTypes" AS "notificationTypes"
+        const SQL_PG: &str = r#"SELECT u."id"::bigint AS "id", u."permissions"::bigint AS "permissions", s."id"::bigint AS "settingsId", s."locale" AS "locale", s."notificationTypes" AS "notificationTypes", s."showAdultContent" AS "showAdultContent"
             FROM "user" u LEFT JOIN "user_settings" s ON s."userId" = u."id" WHERE u."id" = $1"#;
         let row = match self {
             Self::Sqlite(p) => sqlx::query(SQL_SQLITE)
@@ -147,6 +149,9 @@ impl Db {
                         has_settings: r.try_get::<Option<i64>, _>("settingsId")?.is_some(),
                         locale: r.try_get("locale")?,
                         notification_types: r.try_get("notificationTypes")?,
+                        show_adult: r
+                            .try_get::<Option<bool>, _>("showAdultContent")?
+                            .unwrap_or(false),
                     })
                 })
                 .transpose()?,
@@ -161,6 +166,9 @@ impl Db {
                         has_settings: r.try_get::<Option<i64>, _>("settingsId")?.is_some(),
                         locale: r.try_get("locale")?,
                         notification_types: r.try_get("notificationTypes")?,
+                        show_adult: r
+                            .try_get::<Option<bool>, _>("showAdultContent")?
+                            .unwrap_or(false),
                     })
                 })
                 .transpose()?,
@@ -2102,6 +2110,7 @@ where
             auto_complete_skipped_episode_threshold: r
                 .try_get("autoCompleteSkippedEpisodeThreshold")?,
             watch_ahead_episode_count: r.try_get("watchAheadEpisodeCount")?,
+            show_adult_content: r.try_get("showAdultContent")?,
             servarr_interventions_seen_at: date("servarrInterventionsSeenAt")?,
             discover_filter_defaults: r.try_get("discoverFilterDefaults")?,
         })
@@ -2234,6 +2243,8 @@ pub struct UserSettingsRow {
     pub servarr_interventions_seen_at: Option<String>,
     /// `discoverFilterDefaults` JSON text.
     pub discover_filter_defaults: Option<String>,
+    /// `showAdultContent`.
+    pub show_adult_content: Option<bool>,
 }
 
 /// `User` plus its settings and request count, as `findOne` with
@@ -2249,7 +2260,8 @@ const PROFILE_SQLITE: &str = concat!(
     s."autoCompleteSkippedEpisodeEndings" AS "autoCompleteSkippedEpisodeEndings",
     s."autoCompleteSkippedEpisodeThreshold" AS "autoCompleteSkippedEpisodeThreshold",
     s."watchAheadEpisodeCount" AS "watchAheadEpisodeCount",
-    s."discoverFilterDefaults" AS "discoverFilterDefaults","#,
+    s."discoverFilterDefaults" AS "discoverFilterDefaults",
+    s."showAdultContent" AS "showAdultContent","#,
     r#" u."createdAt" AS "createdAt", u."updatedAt" AS "updatedAt",
     s."servarrInterventionsSeenAt" AS "servarrInterventionsSeenAt",
     (SELECT COUNT(*) FROM "media_request" r WHERE r."requestedById" = u."id") AS "requestCount"
@@ -2268,7 +2280,8 @@ const PROFILE_PG: &str = concat!(
     s."autoCompleteSkippedEpisodeEndings" AS "autoCompleteSkippedEpisodeEndings",
     s."autoCompleteSkippedEpisodeThreshold"::bigint AS "autoCompleteSkippedEpisodeThreshold",
     s."watchAheadEpisodeCount"::bigint AS "watchAheadEpisodeCount",
-    s."discoverFilterDefaults" AS "discoverFilterDefaults","#,
+    s."discoverFilterDefaults" AS "discoverFilterDefaults",
+    s."showAdultContent" AS "showAdultContent","#,
     r#" to_char(u."createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
     to_char(u."updatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",
     to_char(s."servarrInterventionsSeenAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "servarrInterventionsSeenAt",
@@ -2563,7 +2576,7 @@ const SETTINGS_COLUMNS_SQLITE: &str = r#"s."id" AS "settingsId", s."locale", s."
     s."autoCompleteSkippedEpisodeEndings", s."autoCompleteSkippedEpisodeThreshold", s."watchAheadEpisodeCount",
     s."servarrInterventionsSeenAt", s."traktUsername", s."traktUserId", s."anilistUsername", s."anilistUserId",
     s."simklUsername", s."simklUserId", s."mediaActionsTraktEnabled", s."mediaActionsAnilistEnabled", s."mediaActionsSimklEnabled",
-    s."discoverFilterDefaults", s."notificationTypes""#;
+    s."discoverFilterDefaults", s."notificationTypes", s."showAdultContent""#;
 
 const SETTINGS_COLUMNS_PG: &str = r#"s."id"::bigint AS "settingsId", s."locale", s."discoverRegion", s."streamingRegion", s."originalLanguage",
     s."pgpKey", s."discordIds", s."pushbulletAccessToken", s."pushoverApplicationToken", s."pushoverUserKey", s."pushoverSound",
@@ -2573,7 +2586,7 @@ const SETTINGS_COLUMNS_PG: &str = r#"s."id"::bigint AS "settingsId", s."locale",
     to_char(s."servarrInterventionsSeenAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "servarrInterventionsSeenAt",
     s."traktUsername", s."traktUserId", s."anilistUsername", s."anilistUserId",
     s."simklUsername", s."simklUserId", s."mediaActionsTraktEnabled", s."mediaActionsAnilistEnabled", s."mediaActionsSimklEnabled",
-    s."discoverFilterDefaults", s."notificationTypes""#;
+    s."discoverFilterDefaults", s."notificationTypes", s."showAdultContent""#;
 
 /// The `ORDER BY` key for a sort, written as `createQueryBuilder` does.
 const fn user_sort_key(sort: UserSort) -> &'static str {
@@ -2713,6 +2726,7 @@ where
             auto_complete_skipped_episode_threshold: r
                 .try_get("autoCompleteSkippedEpisodeThreshold")?,
             watch_ahead_episode_count: r.try_get("watchAheadEpisodeCount")?,
+            show_adult_content: r.try_get("showAdultContent")?,
             servarr_interventions_seen_at: date_column(
                 r,
                 "servarrInterventionsSeenAt",

@@ -33,6 +33,9 @@ pub struct CurrentUser {
     /// `user_settings.locale` when it is a non-empty string; `req.locale`
     /// falls back to `main.locale` otherwise.
     pub locale: Option<String>,
+    /// `user_settings.showAdultContent`: adult titles are shown to this
+    /// user. Off (the default, and with no settings row) hides them.
+    pub show_adult: bool,
 }
 
 /// `Permission.ADMIN`, which satisfies every check.
@@ -124,6 +127,7 @@ async fn load(db: &Db, id: i64) -> Result<Identity> {
             permissions: row.permissions,
             webpush_enabled,
             locale: row.locale.clone().filter(|l| !l.is_empty()),
+            show_adult: row.show_adult,
         }),
         Err(why) => Identity::Unportable(why),
     })
@@ -331,6 +335,7 @@ mod tests {
             permissions,
             webpush_enabled: true,
             locale: None,
+            show_adult: false,
         };
         assert!(user(0).has_permission(0), "nothing required");
         assert!(user(2).has_permission(4), "admin passes everything");
@@ -369,6 +374,7 @@ mod tests {
             has_settings,
             locale: None,
             notification_types: types.map(str::to_owned),
+            show_adult: false,
         };
         assert_eq!(
             webpush_enabled(&row(false, None)),
