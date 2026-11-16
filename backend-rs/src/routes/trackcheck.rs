@@ -49,7 +49,7 @@ pub(super) const ROUTES: &Table = &[
 ];
 
 /// How often a server's imports are checked.
-const INTERVAL: Duration = Duration::from_secs(5 * 60);
+const INTERVAL: Duration = Duration::from_mins(5);
 /// How far back the first check after a start looks.
 const FIRST_LOOKBACK_MS: i64 = 24 * 3_600_000;
 /// How far each check reaches back into the previous one, for imports
