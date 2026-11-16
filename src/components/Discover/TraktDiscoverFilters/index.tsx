@@ -127,13 +127,13 @@ const TraktDiscoverFilters = ({
       : traktListSorts.some((s) => s.value === query.sort))
       ? query.sort
       : '';
-  // A direction makes Trakt order the whole list; links from before it was
-  // offered (`added` / `released` alone) keep their newest-first sort.
+  // Without a direction the backend picks the sort's default (A→Z for rank
+  // and title, high→low otherwise; legacy `added` / `released` newest first).
   const sortHow =
     query.sortHow === 'asc' || query.sortHow === 'desc'
       ? query.sortHow
       : currentSort
-        ? 'desc'
+        ? defaultTraktSortHow(currentSort)
         : undefined;
 
   const activeFilterCount =

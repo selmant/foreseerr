@@ -59,7 +59,7 @@ describe('MDBList list filters', () => {
         letterboxdMin: '70',
         hideUnmapped: 'false',
       }),
-      5
+      4
     );
   });
 

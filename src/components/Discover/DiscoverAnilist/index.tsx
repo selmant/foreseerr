@@ -1,10 +1,14 @@
 import Header from '@app/components/Common/Header';
 import PageTitle from '@app/components/Common/PageTitle';
 import AnilistListFilters from '@app/components/Discover/AnilistListFilters';
-import { prepareAnilistOptions } from '@app/components/Discover/AnilistListFilters/anilistFilterOptions';
+import {
+  countAnilistFilters,
+  prepareAnilistOptions,
+} from '@app/components/Discover/AnilistListFilters/anilistFilterOptions';
 import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import DiscoverProviderResults from '@app/components/Discover/DiscoverProviderResults';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
+import { discoverDefaultsRequestExtras } from '@app/components/Discover/mergeFilterDefaults';
 import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
@@ -85,7 +89,7 @@ const DiscoverAnilistPage = ({
   const query = useRouteQuery();
   const filterable = filterableKinds.has(kind);
   const filterOptions = filterable ? prepareAnilistOptions(query) : {};
-  const filtered = Object.keys(filterOptions).length > 0;
+  const filtered = filterable && countAnilistFilters(query) > 0;
   const {
     data: anilistStatus,
     error: accountError,
@@ -114,7 +118,11 @@ const DiscoverAnilistPage = ({
     mutate,
   } = useDiscover<WatchlistItem, { title?: string }>(
     enabled ? endpoint : '',
-    { ...params, ...filterOptions },
+    {
+      ...params,
+      ...discoverDefaultsRequestExtras(user?.id),
+      ...filterOptions,
+    },
     providerListFilters
   );
 

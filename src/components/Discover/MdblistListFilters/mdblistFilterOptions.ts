@@ -102,8 +102,11 @@ export const countMdblistFilters = (query: RouteQuery) => {
   for (const rating of mdblistRatingFilters) {
     if (text(query[`${rating}Min`]) || text(query[`${rating}Max`])) count += 1;
   }
-  if (query.hideUnmapped === 'true' || query.hideUnmapped === 'false') {
-    count += 1;
-  }
+  // `false` is what "Clear" writes to keep saved defaults off.
+  if (query.hideUnmapped === 'true') count += 1;
   return count;
 };
+
+/** Whether anything narrows the list: a panel filter or the content type. */
+export const hasMdblistFilters = (query: RouteQuery) =>
+  countMdblistFilters(query) > 0 || text(query.mediaType) !== undefined;

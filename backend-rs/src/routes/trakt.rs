@@ -872,7 +872,8 @@ async fn plan_list<'a>(ctx: &'a Ready<'a>) -> Result<ListPlan<'a>, ListEarly> {
     };
     let sort = start.query.get("sort").and_then(Value::as_str);
     let how = start.query.get("sortHow").and_then(Value::as_str);
-    let native = native_sort(sort, how);
+    // Trakt's watchlist endpoint takes no `sort_by`; it keeps the local sort.
+    let native = native_sort(sort, how).filter(|_| list_ref != "watchlist");
     let list_sort = match sort.filter(|_| native.is_none()) {
         Some("added") => Some(SortBy::Added),
         Some("released") => Some(SortBy::Released),

@@ -132,8 +132,7 @@ export const countAnilistFilters = (query: RouteQuery) => {
         : [`${range}Min`, `${range}Max`];
     if (text(query[low]) || text(query[high])) count += 1;
   }
-  if (query.hideUnmapped === 'true' || query.hideUnmapped === 'false') {
-    count += 1;
-  }
+  // `false` is what "Clear" writes to keep saved defaults off.
+  if (query.hideUnmapped === 'true') count += 1;
   return count;
 };

@@ -4,11 +4,16 @@ import PageTitle from '@app/components/Common/PageTitle';
 import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import DiscoverProviderResults from '@app/components/Discover/DiscoverProviderResults';
 import MdblistListFilters from '@app/components/Discover/MdblistListFilters';
-import { prepareMdblistOptions } from '@app/components/Discover/MdblistListFilters/mdblistFilterOptions';
+import {
+  hasMdblistFilters,
+  prepareMdblistOptions,
+} from '@app/components/Discover/MdblistListFilters/mdblistFilterOptions';
+import { discoverDefaultsRequestExtras } from '@app/components/Discover/mergeFilterDefaults';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
 import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
+import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
 import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
@@ -28,6 +33,7 @@ const messages = defineMessages('components.Discover.DiscoverMdblistList', {
 const DiscoverMdblistList = () => {
   const intl = useIntl();
   const settings = useSettings();
+  const { user } = useUser();
   const query = useRouteQuery();
   const url = typeof query.url === 'string' ? query.url : '';
 
@@ -46,7 +52,13 @@ const DiscoverMdblistList = () => {
     { title?: string; ratingsFilteredLocally?: boolean }
   >(
     url ? '/api/v1/discover/mdblist/list' : '',
-    url ? { url, ...prepareMdblistOptions(query) } : undefined,
+    url
+      ? {
+          url,
+          ...discoverDefaultsRequestExtras(user?.id),
+          ...prepareMdblistOptions(query),
+        }
+      : undefined,
     providerListFilters
   );
 
@@ -90,7 +102,7 @@ const DiscoverMdblistList = () => {
         emptyDescription={intl.formatMessage(
           firstResultData?.ratingsFilteredLocally
             ? messages.emptyRatedLocally
-            : Object.keys(prepareMdblistOptions(query)).length
+            : hasMdblistFilters(query)
               ? messages.emptyFiltered
               : messages.empty
         )}
