@@ -185,7 +185,7 @@ pub struct Rule {
 impl Rule {
     /// Whether the rule requires anything.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.audio.is_empty() && self.subtitles.is_empty()
     }
 }
