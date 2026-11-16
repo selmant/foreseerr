@@ -529,8 +529,22 @@ fn slider_json(r: &DiscoverSliderRow) -> Map<String, Value> {
 fn slider_add<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     Box::pin(async move {
         try_forward!(ctx.no_query());
-        try_forward!(ctx.authenticated(ADMIN));
-        let [(_, title), (_, data), (_, sort), (_, kind)] = try_forward!(slider_fields(ctx));
+        let user = try_forward!(ctx.authenticated(ADMIN));
+        let [(_, title), (_, mut data), (_, sort), (_, kind)] = try_forward!(slider_fields(ctx));
+        if let Some(run_id) = ctx
+            .body
+            .as_ref()
+            .and_then(|b| b.get("aiRunId"))
+            .and_then(Value::as_i64)
+        {
+            if kind != Field::Int(crate::ai::recs::rows::SLIDER_TYPE) {
+                return ctx.error(400, "aiRunId is only valid for AI sliders.");
+            }
+            data = match crate::ai::recs::rows::from_run(&ctx.state.db, user.id, run_id).await {
+                Ok(config) => Field::Text(config),
+                Err(e) => return ctx.json_with(e.status(), &e.to_json()),
+            };
+        }
         let inserted = ctx
                 .state
                 .db

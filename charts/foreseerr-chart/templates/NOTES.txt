@@ -2,4 +2,13 @@
  Welcome to {{ .Chart.Name }}
  Chart version: {{ .Chart.Version }}
  App   version: {{ .Chart.AppVersion }}
-***********************************************************************
+***********************************************************************{{- if .Values.searxng.enabled }}
+
+ Web search: in Foreseerr, open Settings → AI → Web search, turn SearXNG
+ on and use http://{{ include "foreseerr.searxngName" . }}:8080
+{{- end }}
+{{- if not .Values.secretKey.existingSecret }}
+
+ Saved AI credentials are encrypted with secret.key on the config volume.
+ Set secretKey.existingSecret to keep the key apart from the database.
+{{- end }}

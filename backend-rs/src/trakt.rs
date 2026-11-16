@@ -19,7 +19,8 @@ use crate::tmdb::{axios_encode, js_numbers};
 use crate::traktitems::{
     chart_entries, item_key, js_number, merge_and_paginate, normalize_liked_lists,
     normalize_list_items, normalize_list_metadata, normalize_recommendation_items,
-    normalize_search_lists, normalize_user_lists, num_value, paginate_sorted, Paged, SortBy,
+    normalize_search_lists, normalize_user_lists, num_value, paginate_sorted, NativeSort, Paged,
+    SortBy,
 };
 
 pub mod actions;
@@ -905,8 +906,15 @@ impl TraktClient {
         page: i64,
         limit: i64,
         extended: &str,
+        native: Option<NativeSort>,
     ) -> Result<Value, TraktError> {
-        let params = page_params(limit, page, extended);
+        let mut params = page_params(limit, page, extended).to_vec();
+        if let Some(sort) = native {
+            // As query parameters: Trakt ignored the path form on personal
+            // lists (trakt-api#688).
+            params.push(("sort_by", Value::from(sort.by)));
+            params.push(("sort_how", Value::from(sort.how)));
+        }
         if self.access().is_some() {
             self.authed_or_public(path, &params).await
         } else {
@@ -926,7 +934,7 @@ impl TraktClient {
         fetch_type: FetchType,
         page: i64,
         extended: &str,
-        sort_by: Option<SortBy>,
+        (sort_by, native): (Option<SortBy>, Option<NativeSort>),
     ) -> Result<Paged, TraktError> {
         let list_ref = list_ref.trim();
         if list_ref.is_empty() {
@@ -939,8 +947,8 @@ impl TraktClient {
             || format!("/lists/{list_ref}/items/{types}"),
             |user| format!("/users/{user}/lists/{list_ref}/items/{types}"),
         );
-        let Some(sort_by) = sort_by else {
-            let payload = self.list_page(&path, page, limit, extended).await?;
+        let Some(sort_by) = sort_by.filter(|_| native.is_none()) else {
+            let payload = self.list_page(&path, page, limit, extended, native).await?;
             let items = normalize_list_items(Some(&payload)).map_err(other)?;
             let has_more = items.len() >= 20;
             return Ok(Paged { items, has_more });
@@ -965,7 +973,9 @@ impl TraktClient {
         let mut has_more_upstream = false;
         let mut trakt_page = 1;
         while trakt_page <= SORTED_LIST_MAX_PAGES {
-            let payload = self.list_page(&path, trakt_page, limit, extended).await?;
+            let payload = self
+                .list_page(&path, trakt_page, limit, extended, None)
+                .await?;
             let batch = normalize_list_items(Some(&payload)).map_err(other)?;
             if batch.is_empty() {
                 has_more_upstream = false;

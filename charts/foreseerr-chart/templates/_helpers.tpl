@@ -68,3 +68,29 @@ Create the name of the pvc config to use
 {{- define "foreseerr.configPersistenceName" -}}
 {{- default (printf "%s-config" (include "foreseerr.fullname" .)) .Values.config.persistence.name }}
 {{- end }}
+
+{{/*
+SearXNG's resource name.
+*/}}
+{{- define "foreseerr.searxngName" -}}
+{{- printf "%s-searxng" (include "foreseerr.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+SearXNG selector labels.
+*/}}
+{{- define "foreseerr.searxngSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "foreseerr.name" . }}-searxng
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+SearXNG labels.
+*/}}
+{{- define "foreseerr.searxngLabels" -}}
+helm.sh/chart: {{ include "foreseerr.chart" . }}
+{{ include "foreseerr.searxngSelectorLabels" . }}
+app.kubernetes.io/component: search
+app.kubernetes.io/part-of: {{ .Chart.Name }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}

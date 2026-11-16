@@ -234,7 +234,7 @@ async fn candidates(arr: &ArrServer<'_>, source: &Value) -> Result<Value, ArrErr
 }
 
 /// `x?.length` as a truthy check.
-fn has_length(v: Option<&Value>) -> bool {
+const fn has_length(v: Option<&Value>) -> bool {
     match v {
         Some(Value::Array(items)) => !items.is_empty(),
         Some(Value::String(s)) => !s.is_empty(),

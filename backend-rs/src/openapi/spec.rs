@@ -657,6 +657,32 @@ fn visit(doc: &mut Value, parent: Option<&str>, node: &str, last: &str) {
 mod tests {
     use super::*;
 
+    /// Our own operations must validate exactly: an "unsure" one leaves
+    /// handlers without the coerced query (a header parameter did that to
+    /// the AI row refresh, which then ignored `sliderId`).
+    #[test]
+    fn foreseerr_operations_validate_exactly() -> Result<()> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../seerr-api.yml");
+        let spec = Spec::new(crate::openapi::yaml::load(&std::fs::read_to_string(
+            &path,
+        )?)?)?;
+        let unsure: Vec<String> = spec
+            .routes
+            .iter()
+            .flat_map(|r| {
+                r.methods.iter().filter_map(move |(method, op)| {
+                    let ours = op.schema.get("x-foreseerr").is_some_and(truthy);
+                    op.unsupported
+                        .as_ref()
+                        .filter(|_| ours)
+                        .map(|why| format!("{method} {}: {why}", r.open_api))
+                })
+            })
+            .collect();
+        assert!(unsure.is_empty(), "{unsure:?}");
+        Ok(())
+    }
+
     #[test]
     fn routes_sort_static_before_params() {
         let mut routes = vec!["/a/:id", "/a/b", "/a", "/a/:id/c", "/b"];

@@ -16,7 +16,7 @@ use crate::sync::lock;
 /// `MediaServerType.EMBY`.
 const EMBY: i64 = 3;
 /// `HEALTH_CHECK_TTL_MS`.
-const TTL: Duration = Duration::from_secs(300);
+const TTL: Duration = Duration::from_mins(5);
 const TRAKT_BASE: &str = "https://api.trakt.tv";
 /// The `rawAxios` instance's timeout and user agent.
 const RAW_TIMEOUT: Duration = Duration::from_secs(15);

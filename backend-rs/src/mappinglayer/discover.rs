@@ -825,6 +825,10 @@ async fn map_anilist_media(ctx: &Ctx<'_>, media: &Value) -> Result<Option<Map<St
     if let Some(image) = cover_image(media) {
         out.insert(String::from("image"), Value::from(image));
     }
+    // The per-user adult filter reads it, and drops it before serving.
+    if media.get("isAdult").and_then(Value::as_bool) == Some(true) {
+        out.insert(String::from("isAdult"), Value::Bool(true));
+    }
     Ok(Some(out))
 }
 

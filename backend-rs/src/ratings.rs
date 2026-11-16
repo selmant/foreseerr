@@ -22,11 +22,11 @@ const RT_API_KEY: &str = "175588f6e5f8319b27702e4cc4013561";
 const RT_APP_ID: &str = "79FRDP12PN";
 const IMDB_BASE: &str = "https://api.radarr.video/v1";
 /// `ExternalAPI`'s default TTL, which the RT and `IMDb` calls use.
-const DEFAULT_TTL: Duration = Duration::from_secs(300);
+const DEFAULT_TTL: Duration = Duration::from_mins(5);
 /// `MDBList` ratings TTLs by the title's age.
-const MDBLIST_HOT: Duration = Duration::from_secs(86_400);
-const MDBLIST_WARM: Duration = Duration::from_secs(86_400 * 7);
-const MDBLIST_COLD: Duration = Duration::from_secs(86_400 * 30);
+const MDBLIST_HOT: Duration = Duration::from_hours(24);
+const MDBLIST_WARM: Duration = Duration::from_hours(168);
+const MDBLIST_COLD: Duration = Duration::from_hours(720);
 
 const INEXACT_TITLE_FACTOR: f64 = 0.25;
 const ALTERNATE_TITLE_FACTOR: f64 = 0.8;

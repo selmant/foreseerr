@@ -1,0 +1,45 @@
+# Optional: a private SearXNG instance for the AI features' web search.
+# Add it to either compose file:
+#
+#   echo "SEARXNG_SECRET=$(openssl rand -hex 32)" >> .env
+#   docker compose -f compose.yaml -f compose.searxng.yaml up -d
+#
+# Then, in Settings → AI → Web search, turn SearXNG on with the URL
+# http://searxng:8080.
+#
+# SearXNG has no login, so it publishes no port: only containers in this
+# project (Foreseerr) can reach it. Needs Docker Compose 2.23.1 or newer.
+services:
+  searxng:
+    image: docker.io/searxng/searxng:2026.11.6-ac11e14c5
+    restart: unless-stopped
+    # The image's own unprivileged user.
+    user: '977:977'
+    environment:
+      # Signs SearXNG's cookies. Required; keep it out of this file.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Set SEARXNG_SECRET, e.g. openssl rand -hex 32}
+      # The settings file is mounted read-only; don't try to chown it.
+      FORCE_OWNERSHIP: 'false'
+    configs:
+      - source: searxng-settings
+        target: /etc/searxng/settings.yml
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+configs:
+  searxng-settings:
+    # The defaults, plus what Foreseerr needs: JSON results (search.formats)
+    # and no rate limiter (it would need Valkey and is for public instances).
+    content: |
+      use_default_settings: true
+      server:
+        limiter: false
+        public_instance: false
+        image_proxy: false
+      search:
+        safe_search: 1
+        formats:
+          - html
+          - json

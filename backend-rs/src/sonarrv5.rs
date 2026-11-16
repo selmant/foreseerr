@@ -29,10 +29,10 @@ impl ApiVersion {
 }
 
 /// `API_VERSION_TTL_MS`: how long a detected version is trusted.
-const API_VERSION_TTL: Duration = Duration::from_secs(600);
+const API_VERSION_TTL: Duration = Duration::from_mins(10);
 /// `API_VERSION_RETRY_MS`: how long the v3 fallback is kept after
 /// `GET /api` failed.
-const API_VERSION_RETRY: Duration = Duration::from_secs(60);
+const API_VERSION_RETRY: Duration = Duration::from_mins(1);
 /// The longest `GET /api` may take, whatever `apiRequestTimeout` says:
 /// every request to the server waits for it.
 const API_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(30);

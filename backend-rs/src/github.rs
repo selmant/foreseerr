@@ -10,7 +10,7 @@ use crate::memcache::{self, CacheId};
 const BASE_URL: &str = "https://api.github.com";
 const REPO: &str = "selmant/foreseerr";
 /// `DEFAULT_TTL` in `ExternalAPI`.
-const CACHE_TTL: Duration = Duration::from_secs(300);
+const CACHE_TTL: Duration = Duration::from_mins(5);
 
 /// A GitHub client over the shared `github` response cache.
 #[derive(Debug)]

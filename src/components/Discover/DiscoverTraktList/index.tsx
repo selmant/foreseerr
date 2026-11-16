@@ -17,7 +17,7 @@ const DiscoverTraktList = () => {
     <TraktDiscoverPage
       title={intl.formatMessage(messages.title)}
       endpoint="/api/v1/discover/trakt/list"
-      queryExcludes={['url', 'sort']}
+      queryExcludes={['url', 'sort', 'sortHow']}
       missingMessage={intl.formatMessage(messages.missingUrl)}
       urlReady={Boolean(url)}
       registerHideWatched

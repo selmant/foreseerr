@@ -20,6 +20,7 @@ export interface UserSettingsGeneralResponse {
   autoCompleteSkippedEpisodeEndings?: boolean;
   autoCompleteSkippedEpisodeThreshold?: number;
   watchAheadEpisodeCount?: number;
+  showAdultContent?: boolean;
 }
 
 export type NotificationAgentTypes = Record<NotificationAgentKey, number>;

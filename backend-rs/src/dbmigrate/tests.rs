@@ -252,3 +252,33 @@ fn generated_order() {
         );
     }
 }
+
+#[tokio::test]
+async fn reconciles_duplicate_server_connections_before_the_unique_index() -> Result<()> {
+    let (dir, db) = temp_db("ai-singleton-upgrade")?;
+    let all = super::migrations(&db);
+    let boundary = all
+        .iter()
+        .position(|m| m.name == "UniqueAiServerConnection1790100000000")
+        .context("singleton migration")?;
+    run(&db, all.get(..boundary).context("earlier migrations")?).await?;
+    db.execute(r#"INSERT INTO "ai_connection" ("kind", "model") VALUES ('openai', 'selected'), ('openai', 'duplicate')"#, &[]).await?;
+    run(&db, all.get(boundary..).context("remaining migrations")?).await?;
+    assert_eq!(
+        db.scalar(
+            r#"SELECT CAST(COUNT(*) AS BIGINT) FROM "ai_connection" WHERE "userId" IS NULL"#,
+            &[]
+        )
+        .await?,
+        1
+    );
+    assert_eq!(
+        crate::ai::store::load(&db, crate::ai::store::Owner::Server)
+            .await?
+            .and_then(|c| c.model)
+            .as_deref(),
+        Some("selected")
+    );
+    std::fs::remove_dir_all(dir)?;
+    Ok(())
+}

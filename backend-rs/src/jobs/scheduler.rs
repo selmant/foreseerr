@@ -124,7 +124,7 @@ const JELLYFIN_JOBS: [JobDef; 2] = [
     ),
 ];
 
-const COMMON_JOBS: [JobDef; 10] = [
+const COMMON_JOBS: [JobDef; 11] = [
     def(
         "radarr-scan",
         "Radarr Scan",
@@ -211,6 +211,14 @@ const COMMON_JOBS: [JobDef; 10] = [
         Weight::Light,
         Cancel::None,
     ),
+    def(
+        "ai-picks-refresh",
+        "AI Picks Refresh",
+        "AI Picks Refresh",
+        "hours",
+        Weight::Light,
+        Cancel::Flag,
+    ),
 ];
 
 /// The job of an id, whatever the media server.
@@ -236,6 +244,7 @@ async fn run_job(id: &str, job: &JobCtx) -> anyhow::Result<()> {
         "plex-refresh-token" => super::refreshtoken::run(job).await,
         "image-cache-cleanup" => super::image_cache_cleanup::run(job).await,
         "mapping-pack-refresh" => super::mapping_refresh::run(job).await,
+        "ai-picks-refresh" => super::ai_picks::run(job).await,
         "plex-recently-added-scan" => super::plexscan::run_recent(job).await,
         "plex-full-scan" => super::plexscan::run_full(job).await,
         "jellyfin-recently-added-scan" => super::jellyfinscan::run_recent(job).await,
@@ -837,7 +846,7 @@ mod tests {
             .chain(JELLYFIN_JOBS.iter())
             .chain(COMMON_JOBS.iter())
             .count();
-        assert_eq!(count, 16, "every JobId");
+        assert_eq!(count, 17, "every JobId");
         assert_eq!(
             definition("jellyfin-full-scan").map(|d| (d.name, d.log_name)),
             Some(("Jellyfin Full Library Scan", "Jellyfin Full Scan")),

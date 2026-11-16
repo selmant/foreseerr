@@ -13,7 +13,7 @@ use bytes::Bytes;
 use crate::memcache::{self, Limits};
 
 /// `LIBRARY_IMAGE_CACHE_TTL_MS`.
-const TTL: Duration = Duration::from_secs(6 * 60 * 60);
+const TTL: Duration = Duration::from_hours(6);
 /// `LIBRARY_IMAGE_CACHE_MAX_ENTRIES`.
 const MAX_ENTRIES: usize = 256;
 /// `LIBRARY_IMAGE_CACHE_MAX_BYTES`.

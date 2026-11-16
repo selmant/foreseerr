@@ -41,6 +41,15 @@ pub fn fast_date_time(text: &str) -> bool {
     ajv::fast_date_time(text)
 }
 
+/// Check generated JSON without coercion or defaults. Unsupported schema
+/// keywords fail closed; this is used with Foreseerr's small AI schemas.
+#[must_use]
+pub fn matches_schema(schema: &Value, data: &Value) -> bool {
+    let patterns = HashMap::new();
+    let mut validator = Ajv::new(schema, &patterns, false);
+    validator.validate(schema, &mut data.clone(), "", true) && validator.unsure.is_none()
+}
+
 /// What the validator leaves for the route handlers: `req.query` and the
 /// path parameters after coercion and defaults, and `req.body` (`None`
 /// for `undefined`) with defaults applied.

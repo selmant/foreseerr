@@ -10,6 +10,7 @@
 //! them on their cron schedules (and records `job_execution_state`) is
 //! separate, so a job can also be run by hand from a settings route.
 
+pub mod ai_picks;
 pub mod arrscan;
 pub mod availability_sync;
 pub mod blocklisted_tags;

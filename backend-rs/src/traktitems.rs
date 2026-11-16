@@ -38,6 +38,39 @@ impl SortBy {
     }
 }
 
+/// The list-item sorts Trakt applies itself (`sort_by`), as its API
+/// spells them. `random` is left out: every page would be its own draw.
+/// Trakt falls back to `rank` for VIP-only sorts on other accounts.
+pub const NATIVE_SORTS: [&str; 18] = [
+    "rank",
+    "added",
+    "title",
+    "released",
+    "runtime",
+    "popularity",
+    "percentage",
+    "votes",
+    "imdb_rating",
+    "imdb_votes",
+    "tmdb_rating",
+    "tmdb_votes",
+    "rt_tomatometer",
+    "rt_audience",
+    "metascore",
+    "my_rating",
+    "watched",
+    "collected",
+];
+
+/// A list order Trakt applies (`sort_by` / `sort_how`), paging included.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeSort {
+    /// One of [`NATIVE_SORTS`].
+    pub by: &'static str,
+    /// `asc` or `desc`.
+    pub how: &'static str,
+}
+
 /// `Number(text)`.
 #[must_use]
 pub fn js_number_of_text(text: &str) -> f64 {
