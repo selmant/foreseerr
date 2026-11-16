@@ -648,6 +648,8 @@ fn sonarr_tmdb_id(series: &Value) -> Option<i64> {
 
 /// The seasons `processSonarrSeries` builds from the provider's seasons and
 /// Sonarr's (seasons Sonarr doesn't list count as unmonitored and empty).
+/// A season without files is processing while it is monitored, or, on
+/// Sonarr 5, while any of its episodes is.
 fn sonarr_seasons(
     provider: &[(i64, i64)],
     sonarr: &[Value],
@@ -667,8 +669,11 @@ fn sonarr_seasons(
                         .and_then(Value::as_i64)
                         .unwrap_or(0)
                 };
+                // Sonarr 5 counts the season's monitored episodes: a
+                // season whose own flag is off (Watch Ahead monitors
+                // single episodes) is still wanted when one is.
                 (
-                    js_truthy(s.get("monitored")),
+                    js_truthy(s.get("monitored")) || n("monitoredEpisodeCount") > 0,
                     n("episodeFileCount"),
                     n("totalEpisodeCount"),
                 )
@@ -948,6 +953,33 @@ mod tests {
                 }
             ],
             "Sonarr's totals, missing seasons unmonitored"
+        );
+    }
+
+    #[test]
+    fn sonarr5_monitored_episodes_make_a_season_processing() {
+        let sonarr = [
+            json!({
+                "seasonNumber": 1, "monitored": false,
+                "statistics": { "episodeFileCount": 0, "totalEpisodeCount": 8, "monitoredEpisodeCount": 2 }
+            }),
+            json!({
+                "seasonNumber": 2, "monitored": false,
+                "statistics": { "episodeFileCount": 0, "totalEpisodeCount": 6, "monitoredEpisodeCount": 0 }
+            }),
+            json!({
+                "seasonNumber": 3, "monitored": false,
+                "statistics": { "episodeFileCount": 0, "totalEpisodeCount": 4 }
+            }),
+        ];
+        let processing: Vec<bool> = sonarr_seasons(&[(1, 8), (2, 6), (3, 4)], &sonarr, false)
+            .iter()
+            .map(|s| s.processing)
+            .collect();
+        assert_eq!(
+            processing,
+            vec![true, false, false],
+            "a Watch Ahead season is wanted; Sonarr 4 (no count) keeps the season flag"
         );
     }
 }

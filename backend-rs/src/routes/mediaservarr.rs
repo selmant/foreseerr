@@ -383,11 +383,25 @@ async fn context_json(ctx: &Ready<'_>, id: i64, is4k: bool) -> Step<Value> {
     }
     let arr = c.arr(ctx);
     let series_path = format!("/series/{}", c.external_id);
-    let (series, episodes, queue) = tokio::join!(
+    let files_query = [("seriesId", c.external_id.to_string())];
+    let (series, episodes, queue, files) = tokio::join!(
         arr.get(&series_path, &[]),
         arr.episodes(c.external_id),
-        arr.series_queue(c.external_id)
+        arr.series_queue(c.external_id),
+        arr.get("/episodefile", &files_query)
     );
+    // The files' tracks are extra: without them the panel still works.
+    let tracks_by_file: Vec<(i64, Value)> = files
+        .ok()
+        .and_then(|files| files.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|file| {
+            let id = file.get("id").and_then(Value::as_i64)?;
+            Some((id, crate::sonarrfiles::file_tracks(file)?))
+        })
+        .collect();
+    let now = crate::clock::now_millis();
     let series = series.map_err(|e| e.wrapped("[Sonarr] Failed to retrieve series by ID: "))?;
     put(
         &mut out,
@@ -432,31 +446,58 @@ async fn context_json(ctx: &Ready<'_>, id: i64, is4k: bool) -> Step<Value> {
                 .iter()
                 .filter(|e| e.get("seasonNumber") == number)
                 .map(|e| {
-                    let mut e = e.as_object().cloned().unwrap_or_default();
-                    let status = e.get("id").and_then(|id| {
-                        status_by_episode
-                            .iter()
-                            .find(|(k, _)| k == id)
-                            .and_then(|(_, s)| *s)
-                    });
-                    match status {
-                        Some(s) => {
-                            e.insert(String::from("queueStatus"), Value::from(s));
-                        }
-                        None => {
-                            e.shift_remove("queueStatus");
-                        }
-                    }
-                    Value::Object(e)
+                    let entry = e
+                        .get("id")
+                        .and_then(|id| status_by_episode.iter().find(|(k, _)| k == id));
+                    context_episode(
+                        e,
+                        entry.and_then(|(_, s)| *s),
+                        entry.is_some(),
+                        &tracks_by_file,
+                        now,
+                    )
                 })
                 .collect();
             let mut s = season.as_object().cloned().unwrap_or_default();
+            s.extend(crate::sonarrfiles::season_files(season));
             s.insert(String::from("episodes"), Value::Array(list));
             Value::Object(s)
         })
         .collect();
     out.insert(String::from("seasons"), Value::Array(seasons));
     Ok(Value::Object(out))
+}
+
+/// An episode as the context lists it: Sonarr's own, with its queue
+/// status (`queued` when Sonarr's queue has it at all), `grabStalled`
+/// when Sonarr 5 grabbed it long ago and it never arrived, and the
+/// `tracks` of its file.
+fn context_episode(
+    episode: &Value,
+    status: Option<&'static str>,
+    queued: bool,
+    tracks_by_file: &[(i64, Value)],
+    now: i64,
+) -> Value {
+    let mut e = episode.as_object().cloned().unwrap_or_default();
+    for key in ["queueStatus", "grabStalled", "tracks"] {
+        e.shift_remove(key);
+    }
+    if let Some(s) = status {
+        e.insert(String::from("queueStatus"), Value::from(s));
+    }
+    if crate::sonarrfiles::stalled_grab(episode, queued, now).is_some() {
+        e.insert(String::from("grabStalled"), Value::Bool(true));
+    }
+    let tracks = e
+        .get("episodeFileId")
+        .and_then(Value::as_i64)
+        .filter(|_| truthy(e.get("hasFile")))
+        .and_then(|id| tracks_by_file.iter().find(|(f, _)| *f == id));
+    if let Some((_, t)) = tracks {
+        e.insert(String::from("tracks"), t.clone());
+    }
+    Value::Object(e)
 }
 
 /// One release as the search answers it, with its token.
@@ -1115,6 +1156,40 @@ mod tests {
             out,
             json!({"token": "tok", "title": "t", "rejections": []}),
             "false || undefined is undefined"
+        );
+    }
+
+    #[test]
+    fn context_episodes() {
+        let now = crate::clock::parse_date_millis("2026-11-05T12:00:00Z").unwrap_or_default();
+        let tracks = vec![(
+            9,
+            json!({"audioLanguages": ["jpn"], "subtitleLanguages": ["eng"]}),
+        )];
+        let downloaded = json!({"id": 1, "hasFile": true, "monitored": true, "episodeFileId": 9, "tracks": "stale"});
+        assert_eq!(
+            context_episode(&downloaded, None, false, &tracks, now),
+            json!({"id": 1, "hasFile": true, "monitored": true, "episodeFileId": 9,
+                   "tracks": {"audioLanguages": ["jpn"], "subtitleLanguages": ["eng"]}})
+        );
+        let lost = json!({"id": 2, "hasFile": false, "monitored": true, "episodeFileId": 0, "grabDate": "2026-11-04T12:00:00Z"});
+        assert_eq!(
+            context_episode(&lost, None, false, &tracks, now).get("grabStalled"),
+            Some(&json!(true))
+        );
+        let queued = context_episode(&lost, Some("downloading"), true, &tracks, now);
+        assert_eq!(queued.get("grabStalled"), None, "still in the queue");
+        assert_eq!(queued.get("queueStatus"), Some(&json!("downloading")));
+        assert_eq!(
+            context_episode(&lost, None, true, &tracks, now).get("grabStalled"),
+            None,
+            "queued without a status"
+        );
+        let sonarr4 =
+            json!({"id": 3, "hasFile": false, "monitored": true, "queueStatus": "queued"});
+        assert_eq!(
+            context_episode(&sonarr4, None, false, &[], now),
+            json!({"id": 3, "hasFile": false, "monitored": true})
         );
     }
 }

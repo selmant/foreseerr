@@ -256,6 +256,16 @@ pub fn to_v5_request(
     }
 }
 
+/// The query a v3 API (Sonarr 4, Radarr) gets for a call built with v5's
+/// extras: the blocklist `message` of a queue removal is v5's only.
+#[must_use]
+pub fn to_v3_query(method: &str, path: &str, mut query: Query) -> Query {
+    if method.eq_ignore_ascii_case("delete") && is_queue_item(path) {
+        query.retain(|(k, _)| k != "message");
+    }
+    query
+}
+
 fn is_queue_item(path: &str) -> bool {
     path.strip_prefix("/queue/")
         .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
@@ -1009,5 +1019,33 @@ mod tests {
             &json!({"message": "Unable to mark download as failed, no grabbed history available"})
         ));
         assert!(!removed_without_grab(404, &json!({})));
+    }
+
+    #[test]
+    fn the_blocklist_message_is_v5s_only() {
+        let removal = q(&[
+            ("removeFromClient", "true"),
+            ("blocklist", "true"),
+            ("message", "Rejected in Foreseerr by ann"),
+        ]);
+        assert_eq!(
+            to_v5_request("DELETE", "/queue/7", removal.clone(), None).0,
+            q(&[
+                ("message", "Rejected in Foreseerr by ann"),
+                ("removalMethod", "removeFromClient"),
+                ("blocklistMethod", "blocklistAndSearch")
+            ]),
+            "kept for v5"
+        );
+        assert_eq!(
+            to_v3_query("DELETE", "/queue/7", removal),
+            q(&[("removeFromClient", "true"), ("blocklist", "true")]),
+            "dropped for v3"
+        );
+        assert_eq!(
+            to_v3_query("GET", "/queue", q(&[("message", "x")])),
+            q(&[("message", "x")]),
+            "other calls keep their query"
+        );
     }
 }

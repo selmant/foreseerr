@@ -357,6 +357,7 @@ async fn sonarr_context(
         }
         return Ok(None);
     };
+    warn_stalled_grabs(job, &server, external_id, &episodes).await;
     let context = Context {
         prevent_search: truthy(server.get("preventSearch")),
         server,
@@ -365,6 +366,62 @@ async fn sonarr_context(
     };
     cache.insert(key, context.clone());
     Ok(Some(context))
+}
+
+/// Grabs already warned about, by server, episode and grab date: each is
+/// logged once per run of the process, not on every sync.
+static WARNED_GRABS: LazyLock<Mutex<HashSet<(String, i64, i64)>>> = LazyLock::new(Mutex::default);
+
+/// Logs the episodes of a series Sonarr 5 grabbed hours ago that never
+/// arrived and that its queue no longer has. The queue is read only when
+/// an episode looks stuck; Sonarr 4 reports no grab date, so never there.
+async fn warn_stalled_grabs(job: &JobCtx, server: &Value, series_id: i64, episodes: &[Value]) {
+    let now = crate::clock::now_millis();
+    let server_id = crate::media::js_string(server.get("id")).into_owned();
+    let stuck: Vec<(&Value, i64)> = episodes
+        .iter()
+        .filter_map(|e| Some((e, crate::sonarrfiles::stalled_grab(e, false, now)?)))
+        .filter(|(e, grabbed)| {
+            episode_int(e, "id").is_some_and(|id| {
+                !crate::sync::lock(&WARNED_GRABS).contains(&(server_id.clone(), id, *grabbed))
+            })
+        })
+        .collect();
+    if stuck.is_empty() {
+        return;
+    }
+    let queued = match sonarr_get(
+        job,
+        server,
+        "/queue/details",
+        &[
+            ("seriesId", series_id.to_string()),
+            ("includeEpisode", String::from("true")),
+        ],
+    )
+    .await
+    {
+        Ok(Value::Array(items)) => crate::sonarrfiles::queued_episode_ids(&items),
+        Ok(_) | Err(_) => return,
+    };
+    for (episode, grabbed) in stuck {
+        let Some(id) = episode_int(episode, "id").filter(|id| !queued.contains(id)) else {
+            continue;
+        };
+        if !crate::sync::lock(&WARNED_GRABS).insert((server_id.clone(), id, grabbed)) {
+            continue;
+        }
+        tracing::warn!(
+            label = "Episode Request Sync",
+            series_id,
+            episode_id = id,
+            grab_date = %sonarr_text(episode, "grabDate").unwrap_or_default(),
+            "S{:02}E{:02} was grabbed in Sonarr over {} hours ago, but it never downloaded and Sonarr's queue no longer has it",
+            episode_int(episode, "seasonNumber").unwrap_or_default(),
+            episode_int(episode, "episodeNumber").unwrap_or_default(),
+            crate::sonarrfiles::STALLED_GRAB_MS / 3_600_000
+        );
+    }
 }
 
 /// Sonarr's answer for a series' episodes as a list to act on: `None` when
