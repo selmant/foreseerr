@@ -18,6 +18,7 @@ interface DiscoverProviderSliderProps {
   configured: boolean;
   title: string;
   endpoint: string | null;
+  cacheKey?: string | null;
   linkUrl: string;
   sliderKey: string;
   emptyMessage: string;
@@ -36,6 +37,7 @@ const DiscoverProviderSlider = ({
   configured,
   title,
   endpoint,
+  cacheKey = endpoint,
   linkUrl,
   sliderKey,
   emptyMessage,
@@ -48,8 +50,11 @@ const DiscoverProviderSlider = ({
 }: DiscoverProviderSliderProps) => {
   const settings = useSettings();
   const { data, error } = useSWR<WatchlistResponse>(
-    configured ? endpoint : null,
-    { revalidateOnMount: true, ...(fetcher ? { fetcher } : {}) }
+    configured ? cacheKey : null,
+    {
+      revalidateOnMount: true,
+      ...(fetcher && endpoint ? { fetcher: () => fetcher(endpoint) } : {}),
+    }
   );
   const orderedResults =
     data && transformResults ? transformResults(data.results) : data?.results;

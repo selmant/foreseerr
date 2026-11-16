@@ -1,3 +1,4 @@
+import { mdblistBrowseCacheKey } from '@app/hooks/useMdblistBrowse';
 import { SettingsContext } from '@app/context/SettingsContext';
 import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import assert from 'node:assert/strict';
@@ -21,7 +22,11 @@ const items: WatchlistItem[] = Array.from({ length: 25 }, (_, id) => ({
   voteAverage: 7,
 }));
 
-const render = (endpoint: string, child: ReactNode) => {
+const render = (
+  endpoint: string,
+  child: ReactNode,
+  fallback = { [endpoint]: { page: 1, hasMore: false, results: items } }
+) => {
   const Harness = () => {
     const settings = useContext(SettingsContext);
     return (
@@ -43,9 +48,7 @@ const render = (endpoint: string, child: ReactNode) => {
         <SWRConfig
           value={{
             provider: () => new Map(),
-            fallback: {
-              [endpoint]: { page: 1, hasMore: false, results: items },
-            },
+            fallback,
             isPaused: () => true,
           }}
         >
@@ -59,7 +62,7 @@ const render = (endpoint: string, child: ReactNode) => {
 describe('provider slider ordering', () => {
   it('shows the newest 20 MDBList titles while retaining the complete source list', () => {
     const markup = render(
-      '/api/v1/discover/mdblist/list?url=fixture',
+      mdblistBrowseCacheKey('/api/v1/discover/mdblist/list?url=fixture'),
       <MdblistListSlider
         title="Movies"
         url="fixture"
@@ -75,6 +78,36 @@ describe('provider slider ordering', () => {
         markup.indexOf('aria-label="Title23, 2023"')
     );
     assert.equal(items[0].title, 'Title0');
+  });
+  it('keeps first-page and complete-list caches separate for the same list', () => {
+    const endpoint = '/api/v1/discover/mdblist/list?url=fixture';
+    const fallback = {
+      [endpoint]: { page: 1, hasMore: true, results: items.slice(0, 1) },
+      [mdblistBrowseCacheKey(endpoint)]: {
+        page: 1,
+        hasMore: false,
+        results: items,
+      },
+    };
+    const source = render(
+      endpoint,
+      <MdblistListSlider title="Source" url="fixture" sliderKey="source" />,
+      fallback
+    );
+    const sorted = render(
+      endpoint,
+      <MdblistListSlider
+        title="Sorted"
+        url="fixture"
+        sliderKey="sorted"
+        sort="release_date.desc"
+      />,
+      fallback
+    );
+    assert.match(source, /aria-label="Title0, 2000"/);
+    assert.doesNotMatch(source, /aria-label="Title24, 2024"/);
+    assert.match(sorted, /aria-label="Title24, 2024"/);
+    assert.match(sorted, /aria-label="Title5, 2005"/);
   });
   it('preserves source ranking on an MDBList row without an explicit sort', () => {
     const markup = render(

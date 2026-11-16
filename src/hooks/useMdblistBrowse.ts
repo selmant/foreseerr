@@ -7,6 +7,9 @@ import useSWR from 'swr';
 export const mdblistBrowseEndpoint = (url: string) =>
   `/api/v1/discover/mdblist/list?url=${encodeURIExtraParams(url)}`;
 
+export const mdblistBrowseCacheKey = (endpoint: string) =>
+  `${endpoint}#complete`;
+
 export const fetchMdblistBrowse = (endpoint: string): Promise<MdblistPage> =>
   loadMdblistPages(async (page) => {
     const { data } = await axios.get<MdblistPage>(endpoint, {
@@ -17,11 +20,12 @@ export const fetchMdblistBrowse = (endpoint: string): Promise<MdblistPage> =>
 
 const useMdblistBrowse = (url: string) => {
   const settings = useSettings();
+  const endpoint = mdblistBrowseEndpoint(url);
   return useSWR<MdblistPage>(
     url && settings.currentSettings.mdblistConfigured
-      ? mdblistBrowseEndpoint(url)
+      ? mdblistBrowseCacheKey(endpoint)
       : null,
-    fetchMdblistBrowse,
+    () => fetchMdblistBrowse(endpoint),
     { revalidateOnFocus: false, dedupingInterval: 60000 }
   );
 };

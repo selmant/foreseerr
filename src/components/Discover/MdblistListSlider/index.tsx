@@ -2,6 +2,7 @@ import DiscoverProviderSlider from '@app/components/Discover/DiscoverProviderSli
 import {
   fetchMdblistBrowse,
   mdblistBrowseEndpoint,
+  mdblistBrowseCacheKey,
 } from '@app/hooks/useMdblistBrowse';
 import { mdblistSort, viewMdblistItems } from '@app/utils/mdblistBrowse';
 import useSettings from '@app/hooks/useSettings';
@@ -33,13 +34,17 @@ const MdblistListSlider = ({
   const settings = useSettings();
   const sortBy = mdblistSort(sort);
   const reorder = sortBy !== 'source';
+  const endpoint = url ? mdblistBrowseEndpoint(url) : null;
 
   return (
     <DiscoverProviderSlider
       source="mdblist"
       configured={settings.currentSettings.mdblistConfigured}
       title={title}
-      endpoint={url ? mdblistBrowseEndpoint(url) : null}
+      endpoint={endpoint}
+      cacheKey={
+        endpoint && reorder ? mdblistBrowseCacheKey(endpoint) : endpoint
+      }
       linkUrl={`/discover/mdblist/list?url=${encodeURIComponent(url)}${reorder ? `&sortBy=${sortBy}` : ''}`}
       fetcher={reorder ? fetchMdblistBrowse : undefined}
       transformResults={
