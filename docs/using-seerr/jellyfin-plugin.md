@@ -18,7 +18,7 @@ Standalone Docker and compiled binaries remain the supported ways to run Foresee
 - Foreseerr UI at `https://your-jellyfin/Foreseerr/`, including Jellyfin servers on a subpath such as `/jellyfin/Foreseerr/`. Anyone signed in to Jellyfin Web in that browser can open it, including from links and bookmarks.
 - Jellyfin hostname, libraries, API key, and first admin imported from this server (setup wizard skipped)
 - Foreseerr admin rights for Jellyfin administrators. Removing administrator in Jellyfin takes back only rights the plugin granted, not ones you grant in Foreseerr.
-- Crash restart of the sidecar and a plugin page with its status and last error
+- Crash restart of the sidecar, and a plugin page with its status, a restart button, and its recent output
 - A Foreseerr button in the Jellyfin Web header if you install [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)
 - Better Trakt: if that plugin is loaded and no direct Trakt app is set up, Foreseerr uses it for Trakt actions
 
@@ -32,11 +32,22 @@ Radarr, Sonarr, notifications, and other integrations are configured inside Fore
 4. Open Foreseerr as a Jellyfin administrator first; that account becomes the Foreseerr owner. Configure Radarr/Sonarr there.
 5. Share `https://your-jellyfin/Foreseerr/` with your users, or install File Transformation for a header button.
 
-The plugin has its own version, separate from Foreseerr's, and its [releases](https://github.com/selmant/jellyfin-plugin-foreseerr/releases) each bundle a specific Foreseerr version, named in the release title.
+The plugin version follows the Foreseerr version it bundles (`0.15.0-alpha.1` bundles Foreseerr `v0.15.0`), and each [plugin release](https://github.com/selmant/jellyfin-plugin-foreseerr/releases) names its Foreseerr in the title.
 
 To install manually, extract `foreseerr-jellyfin-10.11.zip` or `foreseerr-jellyfin-12.zip` from a [plugin release](https://github.com/selmant/jellyfin-plugin-foreseerr/releases) into Jellyfin's `plugins/Foreseerr/` folder and restart Jellyfin.
 
 Sidecar config and SQLite live under Jellyfin plugin configuration (`…/plugins/configurations/Foreseerr/foreseerr`). They are kept when the plugin updates, but during the alpha a new version may not read them correctly.
+
+## Plugin settings
+
+**Dashboard → Plugins → Foreseerr** holds what concerns running Foreseerr inside Jellyfin. Everything about Foreseerr itself is set up in Foreseerr, and the page links straight to those screens.
+
+- **Run Foreseerr**: turn it off to stop Foreseerr without uninstalling the plugin or restarting Jellyfin, for example while you restore a backup of its data folder.
+- **Who can open Foreseerr**: everyone signed in to Jellyfin, or Jellyfin administrators only (for example while you set it up). Foreseerr's own user settings still apply.
+- **Header button**: shows the Foreseerr button in the Jellyfin Web header when File Transformation is installed.
+- **Public Jellyfin URL**: the address used for links in notifications.
+
+The page also shows whether Foreseerr is running, its version and uptime, the last error, and its recent output, with **Open Foreseerr** and **Restart Foreseerr** buttons. Only a change to the public URL, or turning Foreseerr on or off, restarts it.
 
 ## How Foreseerr differs inside Jellyfin
 
