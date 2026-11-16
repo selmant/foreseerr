@@ -6,7 +6,10 @@ import TmdbTitleCard, {
 } from '@app/components/TitleCard/TmdbTitleCard';
 import useSeeMorePosters from '@app/hooks/useSeeMorePosters';
 import useSettings from '@app/hooks/useSettings';
-import type { WatchlistResponse } from '@shared/interfaces/api/discoverInterfaces';
+import type {
+  WatchlistItem,
+  WatchlistResponse,
+} from '@shared/interfaces/api/discoverInterfaces';
 import { useEffect } from 'react';
 import useSWR from 'swr';
 
@@ -21,6 +24,9 @@ interface DiscoverProviderSliderProps {
   hideTitle?: boolean;
   /** Same as MediaSlider: hide the row entirely when the provider returns no titles. */
   hideWhenEmpty?: boolean;
+  fetcher?: (endpoint: string) => Promise<WatchlistResponse>;
+  transformResults?: (items: WatchlistItem[]) => WatchlistItem[];
+  itemLimit?: number;
   onNewTitles?: (titleCount: number) => void;
 }
 
@@ -36,20 +42,34 @@ const DiscoverProviderSlider = ({
   hideTitle = false,
   hideWhenEmpty = false,
   onNewTitles,
+  fetcher,
+  transformResults,
+  itemLimit,
 }: DiscoverProviderSliderProps) => {
   const settings = useSettings();
   const { data, error } = useSWR<WatchlistResponse>(
     configured ? endpoint : null,
-    { revalidateOnMount: true }
+    { revalidateOnMount: true, ...(fetcher ? { fetcher } : {}) }
   );
-  const titles = settings.currentSettings.hideRequested
-    ? data?.results.filter((item) => !item.hasActiveRequest)
-    : data?.results;
-  const seeMorePosters = useSeeMorePosters(
+  const orderedResults =
+    data && transformResults ? transformResults(data.results) : data?.results;
+  const filteredTitles = settings.currentSettings.hideRequested
+    ? orderedResults?.filter((item) => !item.hasActiveRequest)
+    : orderedResults;
+  const titles = itemLimit
+    ? filteredTitles?.slice(0, itemLimit)
+    : filteredTitles;
+  const nextPagePosters = useSeeMorePosters(
     configured ? endpoint : null,
     data,
     settings.currentSettings.hideRequested
   );
+
+  const seeMorePosters = itemLimit
+    ? filteredTitles
+        ?.slice(itemLimit, itemLimit + 4)
+        .map((item) => item.image || item.posterPath)
+    : nextPagePosters;
 
   useEffect(() => {
     onNewTitles?.(titles?.length ?? 0);

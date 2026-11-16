@@ -101,6 +101,8 @@ pub struct Probe {
     pub first_air_date: Option<String>,
     /// `voteAverage`: TMDB's `vote_average`, when the record carries one.
     pub vote_average: Option<serde_json::Number>,
+    /// TMDB popularity, when present on the already fetched record.
+    pub popularity: Option<serde_json::Number>,
 }
 
 fn non_empty(value: Option<&Value>) -> Option<String> {
@@ -157,6 +159,10 @@ pub async fn tmdb_record(ctx: &Ctx<'_>, media_type: &str, tmdb_id: i64) -> Resul
         release_date: date.clone().filter(|_| movie),
         first_air_date: date.filter(|_| !movie),
         vote_average: match record.get("vote_average") {
+            Some(Value::Number(n)) => Some(n.clone()),
+            _ => None,
+        },
+        popularity: match record.get("popularity") {
             Some(Value::Number(n)) => Some(n.clone()),
             _ => None,
         },

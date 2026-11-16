@@ -627,6 +627,7 @@ const Discover = () => {
                 sliderKey={`custom-slider-${slider.id}`}
                 title={slider.title ?? ''}
                 url={slider.data ?? ''}
+                sort={slider.sort}
               />
             );
             break;

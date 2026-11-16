@@ -1,3 +1,4 @@
+import ReleaseDateFilter from '@app/components/Discover/ReleaseDateFilter';
 import Button from '@app/components/Common/Button';
 import MultiRangeSlider from '@app/components/Common/MultiRangeSlider';
 import SlideOver from '@app/components/Common/SlideOver';
@@ -29,7 +30,6 @@ import {
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { XCircleIcon } from '@heroicons/react/24/outline';
-import Datepicker from '@seerr-team/react-tailwindcss-datepicker';
 import { Fragment } from 'react';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -38,10 +38,6 @@ const messages = defineMessages('components.Discover.FilterSlideover', {
   filters: 'Filters',
   activefilters:
     '{count, plural, one {# Active Filter} other {# Active Filters}}',
-  releaseDate: 'Release Date',
-  firstAirDate: 'First Air Date',
-  from: 'From',
-  to: 'To',
   studio: 'Studio',
   genres: 'Genres',
   keywords: 'Keywords',
@@ -180,11 +176,6 @@ const FilterSlideover = ({
   const supports = (capability: FilterCapability) =>
     capabilities.has(capability);
 
-  const dateGte =
-    type === 'movie' ? 'primaryReleaseDateGte' : 'firstAirDateGte';
-  const dateLte =
-    type === 'movie' ? 'primaryReleaseDateLte' : 'firstAirDateLte';
-
   const defaultsActive = !areDiscoverDefaultsCleared(user?.id);
   const ignoreWatched =
     currentFilters.ignoreWatched === 'true' ||
@@ -297,57 +288,11 @@ const FilterSlideover = ({
             </div>
           </div>
         )}
-        <div>
-          <div className="mb-2 text-lg font-semibold">
-            {intl.formatMessage(
-              type === 'movie' ? messages.releaseDate : messages.firstAirDate
-            )}
-          </div>
-          <div className="relative z-40 flex space-x-2">
-            <div className="flex flex-col">
-              <div className="mb-2">{intl.formatMessage(messages.from)}</div>
-              <Datepicker
-                primaryColor="indigo"
-                value={{
-                  startDate: currentFilters[dateGte] ?? null,
-                  endDate: currentFilters[dateGte] ?? null,
-                }}
-                onChange={(value) => {
-                  updateQueryParams(
-                    dateGte,
-                    value?.startDate ? (value.startDate as string) : undefined
-                  );
-                }}
-                inputName="fromdate"
-                useRange={false}
-                asSingle
-                containerClassName="datepicker-wrapper"
-                inputClassName="pr-1 sm:pr-4 text-base leading-5"
-              />
-            </div>
-            <div className="flex flex-col">
-              <div className="mb-2">{intl.formatMessage(messages.to)}</div>
-              <Datepicker
-                primaryColor="indigo"
-                value={{
-                  startDate: currentFilters[dateLte] ?? null,
-                  endDate: currentFilters[dateLte] ?? null,
-                }}
-                onChange={(value) => {
-                  updateQueryParams(
-                    dateLte,
-                    value?.startDate ? (value.startDate as string) : undefined
-                  );
-                }}
-                inputName="todate"
-                useRange={false}
-                asSingle
-                containerClassName="datepicker-wrapper"
-                inputClassName="pr-1 sm:pr-4 text-base leading-5"
-              />
-            </div>
-          </div>
-        </div>
+        <ReleaseDateFilter
+          type={type}
+          currentFilters={currentFilters}
+          onChange={updateQueryParams}
+        />
         {type === 'movie' && supports('studio') && (
           <>
             <span className="text-lg font-semibold">

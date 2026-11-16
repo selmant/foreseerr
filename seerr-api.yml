@@ -3814,6 +3814,11 @@ components:
           type: string
           example: '1234'
           nullable: true
+        sort:
+          type: string
+          nullable: true
+          description: Default browser ordering for an MDBList slider. Unset keeps source order.
+          example: release_date.desc
         endpoint:
           type: string
           description: >
@@ -7104,6 +7109,10 @@ paths:
                 type:
                   type: number
                   example: 1
+                sort:
+                  type: string
+                  description: Default browser ordering for MDBList rows; source, release_date.desc, popularity.desc or vote_average.desc.
+                  example: release_date.desc
                 data:
                   type: string
                   example: '1'
@@ -7156,6 +7165,10 @@ paths:
                   type: integer
                   minimum: 1
                   description: For AI sliders, reuse one of the caller’s completed runs and retain its full request.
+                sort:
+                  type: string
+                  description: Default browser ordering for MDBList rows; source, release_date.desc, popularity.desc or vote_average.desc.
+                  example: release_date.desc
                 data:
                   type: string
                   example: '1'

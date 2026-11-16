@@ -287,8 +287,8 @@ pub async fn confirm_items(
     .collect()
 }
 
-/// `withTmdbPoster(item)`: the poster, backdrop, date and score
-/// (`voteAverage`) the confirm probe already fetched, on a tile that has
+/// `withTmdbPoster(item)`: the art, date, score and popularity
+/// the confirm probe already fetched, on a tile that has
 /// none.
 pub async fn with_tmdb_poster(ctx: &Ctx<'_>, item: Value) -> Value {
     let Value::Object(mut map) = item else {
@@ -330,6 +330,9 @@ pub async fn with_tmdb_poster(ctx: &Ctx<'_>, item: Value) -> Value {
     }
     if let Some(score) = record.vote_average {
         map.insert(String::from("voteAverage"), Value::Number(score));
+    }
+    if let Some(popularity) = record.popularity {
+        map.insert(String::from("popularity"), Value::Number(popularity));
     }
     Value::Object(map)
 }
@@ -882,7 +885,7 @@ mod tests {
             "/movie/9700101",
             &[("language", "en")],
             json!({"id": 9_700_101, "title": "Scored", "poster_path": "/s.jpg", "backdrop_path": "/b.jpg",
-                   "release_date": "2020-01-02", "vote_average": 7.25}),
+                   "release_date": "2020-01-02", "vote_average": 7.25, "popularity": 42.5}),
         );
         crate::tmdb::remember_for_tests(
             "/tv/9700102",
@@ -914,7 +917,7 @@ mod tests {
         .await;
         assert_eq!(
             movie.to_string(),
-            r#"{"id":9700101,"tmdbId":9700101,"mediaType":"movie","title":"Scored","posterPath":"/s.jpg","backdropPath":"/b.jpg","releaseDate":"2020-01-02","voteAverage":7.25}"#,
+            r#"{"id":9700101,"tmdbId":9700101,"mediaType":"movie","title":"Scored","posterPath":"/s.jpg","backdropPath":"/b.jpg","releaseDate":"2020-01-02","voteAverage":7.25,"popularity":42.5}"#,
             "art, date and score in Node's order"
         );
         let show = with_tmdb_poster(

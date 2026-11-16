@@ -58,6 +58,8 @@ export interface WatchlistItem {
   firstAirDate?: string;
   /** TMDB `vote_average`, from the same confirm probe as `posterPath`. */
   voteAverage?: number;
+  /** TMDB popularity, from the same confirm probe as `posterPath`. */
+  popularity?: number;
   /** Library/request status when Foreseerr already tracks the title. */
   mediaInfo?: WatchlistItemMediaInfo;
   hasActiveRequest?: boolean;

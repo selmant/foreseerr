@@ -197,3 +197,10 @@ Users with Discover edit permission can:
 2. Reorder or enable/disable built-in sliders.
 3. Create a custom slider (TMDB, Trakt list, AniList list, or MDBList list).
 4. Save. Custom sliders start disabled until you enable them.
+
+
+### Filtering and sorting MDBList rows
+
+Open a row’s **Filters** drawer to set a date range; January 1–December 31 selects a whole year. Series use their first-air date.
+Choose source order, newest first, TMDB popularity, or TMDB rating. **Default Sort** in the custom-row editor sets its homepage/list order; existing rows keep source order.
+Filtering and non-source sorting load the complete list (maximum 100 pages) to avoid incorrect ordering across pages. Source order keeps normal pagination. Clearing filters preserves the saved list.

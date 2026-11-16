@@ -1,5 +1,9 @@
 import DiscoverProviderSlider from '@app/components/Discover/DiscoverProviderSlider';
-import { encodeURIExtraParams } from '@app/hooks/useDiscover';
+import {
+  fetchMdblistBrowse,
+  mdblistBrowseEndpoint,
+} from '@app/hooks/useMdblistBrowse';
+import { mdblistSort, viewMdblistItems } from '@app/utils/mdblistBrowse';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import { useIntl } from 'react-intl';
@@ -12,6 +16,7 @@ interface MdblistListSliderProps {
   title: string;
   url: string;
   sliderKey: string;
+  sort?: string;
   hideTitle?: boolean;
   onNewTitles?: (titleCount: number) => void;
 }
@@ -20,23 +25,27 @@ const MdblistListSlider = ({
   title,
   url,
   sliderKey,
+  sort,
   hideTitle = false,
   onNewTitles,
 }: MdblistListSliderProps) => {
   const intl = useIntl();
   const settings = useSettings();
+  const sortBy = mdblistSort(sort);
+  const reorder = sortBy !== 'source';
 
   return (
     <DiscoverProviderSlider
       source="mdblist"
       configured={settings.currentSettings.mdblistConfigured}
       title={title}
-      endpoint={
-        url
-          ? `/api/v1/discover/mdblist/list?url=${encodeURIExtraParams(url)}`
-          : null
+      endpoint={url ? mdblistBrowseEndpoint(url) : null}
+      linkUrl={`/discover/mdblist/list?url=${encodeURIComponent(url)}${reorder ? `&sortBy=${sortBy}` : ''}`}
+      fetcher={reorder ? fetchMdblistBrowse : undefined}
+      transformResults={
+        reorder ? (items) => viewMdblistItems(items, { sortBy }) : undefined
       }
-      linkUrl={`/discover/mdblist/list?url=${encodeURIComponent(url)}`}
+      itemLimit={reorder ? 20 : undefined}
       sliderKey={sliderKey}
       emptyMessage={intl.formatMessage(messages.empty)}
       hideTitle={hideTitle}

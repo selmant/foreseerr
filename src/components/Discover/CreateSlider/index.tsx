@@ -1,3 +1,4 @@
+import { MdblistSortOptions } from '@app/components/Discover/MdblistBrowseControls';
 import { parseAiSlider, editAiSliderPrompt } from '@shared/lib/aiSlider';
 import Button from '@app/components/Common/Button';
 import Tooltip from '@app/components/Common/Tooltip';
@@ -53,6 +54,7 @@ const messages = defineMessages('components.Discover.CreateSlider', {
   customMdblistList: 'Use: {value}',
   liked: 'liked',
   yours: 'yours',
+  defaultSort: 'Default Sort',
   addsuccess: 'Created new slider and saved discover customization settings.',
   addfail: 'Failed to create new slider.',
   editsuccess: 'Edited slider and saved discover customization settings.',
@@ -626,6 +628,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
         slider
           ? {
               sliderType: slider.type,
+              sort: slider.sort || 'source',
               title: slider.title,
               data:
                 slider.type === DiscoverSliderType.AI_PICKS
@@ -634,6 +637,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
             }
           : {
               sliderType: DiscoverSliderType.TMDB_MOVIE_KEYWORD,
+              sort: 'source',
               title: '',
               data: '',
             }
@@ -646,6 +650,9 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
             await axios.put(`/api/v1/settings/discover/${slider.id}`, {
               type: Number(values.sliderType),
               title: values.title,
+              ...(Number(values.sliderType) === DiscoverSliderType.MDBLIST_LIST
+                ? { sort: values.sort }
+                : {}),
               data:
                 Number(values.sliderType) === DiscoverSliderType.AI_PICKS &&
                 slider.type === DiscoverSliderType.AI_PICKS
@@ -656,6 +663,9 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
             await axios.post('/api/v1/settings/discover/add', {
               type: Number(values.sliderType),
               title: values.title,
+              ...(Number(values.sliderType) === DiscoverSliderType.MDBLIST_LIST
+                ? { sort: values.sort }
+                : {}),
               data: values.data,
             });
           }
@@ -964,6 +974,19 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                     );
                   }}
                 />
+                <label htmlFor="mdblistSort" className="block">
+                  <span className="mb-1 block text-sm text-gray-300">
+                    {intl.formatMessage(messages.defaultSort)}
+                  </span>
+                  <Field
+                    as="select"
+                    name="sort"
+                    id="mdblistSort"
+                    className="min-h-[44px] w-full"
+                  >
+                    <MdblistSortOptions />
+                  </Field>
+                </label>
               </div>
             );
             break;
@@ -1075,6 +1098,7 @@ const CreateSlider = ({ onCreate, slider }: CreateSliderProps) => {
                       sliderKey={`preview-${values.title}`}
                       title={values.title}
                       url={values.data ?? ''}
+                      sort={values.sort}
                       hideTitle
                     />
                   ) : (
