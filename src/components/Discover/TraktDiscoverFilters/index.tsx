@@ -1,13 +1,27 @@
-import Button from '@app/components/Common/Button';
+import { prepareFilterValues } from '@app/components/Discover/constants';
 import FilterSlideover, {
   browseFilterCapabilities,
 } from '@app/components/Discover/FilterSlideover';
-import { SortDirectionButton } from '@app/components/Discover/ListFilterControls';
 import {
-  countActiveFilters,
-  prepareFilterValues,
-} from '@app/components/Discover/constants';
+  FilterButton,
+  listFilterMessages,
+  SortDirectionButton,
+  SortMenu,
+} from '@app/components/Discover/ListFilterControls';
+import {
+  groupSorts,
+  sortAvailability,
+} from '@app/components/Discover/listSort';
 import { mergeFilterDefaults } from '@app/components/Discover/mergeFilterDefaults';
+import type { TraktListSort } from '@app/components/Discover/TraktDiscoverFilters/traktListOptions';
+import {
+  countTraktFilters,
+  defaultTraktSortHow,
+  isWatchlistUrl,
+  traktListSortOptions,
+  traktSortOption,
+  traktWatchlistSortOptions,
+} from '@app/components/Discover/TraktDiscoverFilters/traktListOptions';
 import { useDiscoverFilterDefaults } from '@app/hooks/useDiscoverFilterDefaults';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import {
@@ -17,20 +31,17 @@ import {
 import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { FunnelIcon } from '@heroicons/react/24/solid';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
+import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover.TraktDiscoverFilters', {
   anime: 'Anime',
-  contentType: 'Content type',
-  sortLabel: 'Sort',
-  traktOrder: 'Trakt List Order',
-  dateAdded: 'Date Added Descending',
-  releaseDate: 'Release Date Descending',
-  vipSort: '{label} (VIP)',
-  sortRank: 'Rank',
-  sortAdded: 'Recently Added',
+  watchlistAdded: 'Date Added (Newest First)',
+  watchlistReleased: 'Release Date (Newest First)',
+  needsVip: '{label} (needs Trakt VIP)',
+  sortRank: 'List Position',
+  sortAdded: 'Date Added',
   sortTitle: 'Title',
   sortReleased: 'Release Date',
   sortRuntime: 'Runtime',
@@ -42,50 +53,36 @@ const messages = defineMessages('components.Discover.TraktDiscoverFilters', {
   sortTmdbRating: 'TMDB Rating',
   sortTmdbVotes: 'TMDB Votes',
   sortRtTomatometer: 'RT Tomatometer',
-  sortRtAudience: 'RT Audience',
+  sortRtAudience: 'RT Audience Score',
   sortMetascore: 'Metascore',
-  sortMyRating: 'My Rating',
+  sortMyRating: 'Your Rating',
   sortWatched: 'Watched',
   sortCollected: 'Collected',
-  activefilters:
-    '{count, plural, one {# Active Filter} other {# Active Filters}}',
 });
 
+const sortMessages: Record<TraktListSort, keyof typeof messages> = {
+  rank: 'sortRank',
+  added: 'sortAdded',
+  title: 'sortTitle',
+  released: 'sortReleased',
+  runtime: 'sortRuntime',
+  popularity: 'sortPopularity',
+  percentage: 'sortPercentage',
+  votes: 'sortVotes',
+  imdb_rating: 'sortImdbRating',
+  imdb_votes: 'sortImdbVotes',
+  tmdb_rating: 'sortTmdbRating',
+  tmdb_votes: 'sortTmdbVotes',
+  rt_tomatometer: 'sortRtTomatometer',
+  rt_audience: 'sortRtAudience',
+  metascore: 'sortMetascore',
+  my_rating: 'sortMyRating',
+  watched: 'sortWatched',
+  collected: 'sortCollected',
+};
+
 type TraktMediaType = 'all' | 'movie' | 'tv' | 'anime';
-
-/** Trakt's list sorts (`sort_by`), as trakt.tv's list menu offers them. */
-const traktListSorts = [
-  { value: 'rank', label: 'sortRank' },
-  { value: 'added', label: 'sortAdded' },
-  { value: 'title', label: 'sortTitle' },
-  { value: 'released', label: 'sortReleased' },
-  { value: 'runtime', label: 'sortRuntime' },
-  { value: 'popularity', label: 'sortPopularity' },
-  { value: 'percentage', label: 'sortPercentage' },
-  { value: 'votes', label: 'sortVotes' },
-  { value: 'imdb_rating', label: 'sortImdbRating', vip: true },
-  { value: 'imdb_votes', label: 'sortImdbVotes', vip: true },
-  { value: 'tmdb_rating', label: 'sortTmdbRating', vip: true },
-  { value: 'tmdb_votes', label: 'sortTmdbVotes', vip: true },
-  { value: 'rt_tomatometer', label: 'sortRtTomatometer', vip: true },
-  { value: 'rt_audience', label: 'sortRtAudience', vip: true },
-  { value: 'metascore', label: 'sortMetascore', vip: true },
-  { value: 'my_rating', label: 'sortMyRating' },
-  { value: 'watched', label: 'sortWatched' },
-  { value: 'collected', label: 'sortCollected' },
-] as const satisfies readonly {
-  value: string;
-  label: keyof typeof messages;
-  vip?: boolean;
-}[];
-
-/** Rank and title read A→Z; dates, ratings, and counts high→low. */
-const defaultTraktSortHow = (sort: string) =>
-  sort === 'rank' || sort === 'title' ? 'asc' : 'desc';
-
-/** A watchlist link reads Trakt's watchlist, which only sorts by date. */
-const isWatchlistUrl = (url: unknown) =>
-  typeof url === 'string' && /\/watchlist\/?(?:[?#]|$)/.test(url);
+type TraktAccount = { linked: boolean; vip: boolean | null };
 
 interface TraktDiscoverFiltersProps {
   showRecommendationFilters?: boolean;
@@ -93,6 +90,7 @@ interface TraktDiscoverFiltersProps {
   showListSort?: boolean;
 }
 
+/** The Trakt pages' toolbar controls, for `ListFilterHeader`. */
 const TraktDiscoverFilters = ({
   showRecommendationFilters = false,
   showHideWatchedFilter = true,
@@ -120,13 +118,20 @@ const TraktDiscoverFilters = ({
   const genreType: 'movie' | 'tv' | 'all' =
     currentType === 'movie' || currentType === 'tv' ? currentType : 'all';
   const watchlistSort = isWatchlistUrl(query.url);
-  const currentSort =
+  // Which list sorts this account can use: VIP ones and personal ones.
+  const { data: account } = useSWR<TraktAccount>(
+    showListSort && !watchlistSort ? '/api/v1/discover/trakt/account' : null,
+    { revalidateOnFocus: false, dedupingInterval: 10 * 60 * 1000 }
+  );
+  const sortOptions = watchlistSort
+    ? traktWatchlistSortOptions
+    : traktListSortOptions;
+  const currentSort = (
     typeof query.sort === 'string' &&
-    (watchlistSort
-      ? query.sort === 'added' || query.sort === 'released'
-      : traktListSorts.some((s) => s.value === query.sort))
+    sortOptions.some((s) => s.value === query.sort)
       ? query.sort
-      : '';
+      : ''
+  ) as TraktListSort | '';
   // Without a direction the backend picks the sort's default (A→Z for rank
   // and title, high→low otherwise; legacy `added` / `released` newest first).
   const sortHow =
@@ -134,55 +139,111 @@ const TraktDiscoverFilters = ({
       ? query.sortHow
       : currentSort
         ? defaultTraktSortHow(currentSort)
-        : undefined;
+        : 'asc';
+  const sortContext = {
+    mediaType: genreType === 'all' ? undefined : genreType,
+    linked: account?.linked,
+    vip: account?.vip,
+  };
 
-  const activeFilterCount =
-    countActiveFilters(preparedFilters) +
-    (showHideWatchedFilter &&
-    (preparedFilters.ignoreWatched === 'true' ||
-      preparedFilters.ignoreWatched === 'false')
-      ? 1
-      : 0) +
-    (showRecommendationFilters && preparedFilters.ignoreCollected === 'true'
-      ? 1
-      : 0) +
-    (showRecommendationFilters && preparedFilters.ignoreWatchlisted === 'true'
-      ? 1
-      : 0) +
-    (preparedFilters.hideUnmapped === 'true' ||
-    preparedFilters.hideUnmapped === 'false'
-      ? 1
-      : 0);
+  const activeFilterCount = countTraktFilters(preparedFilters, {
+    showHideWatched: showHideWatchedFilter,
+    showRecommendationFilters,
+  });
+
+  const sortLabel = (value: TraktListSort) => {
+    if (watchlistSort) {
+      return intl.formatMessage(
+        value === 'released'
+          ? messages.watchlistReleased
+          : messages.watchlistAdded
+      );
+    }
+    return intl.formatMessage(messages[sortMessages[value]]);
+  };
+  const currentOption = currentSort ? traktSortOption(currentSort) : undefined;
+  const selectedLabel = !currentSort
+    ? intl.formatMessage(listFilterMessages.listOrder)
+    : currentOption &&
+        !watchlistSort &&
+        sortAvailability(currentOption, sortContext) === 'needsVip'
+      ? intl.formatMessage(messages.needsVip, {
+          label: sortLabel(currentSort),
+        })
+      : sortLabel(currentSort);
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="w-full min-w-0 sm:w-48">
-        <label
-          htmlFor="traktMediaType"
-          className="mb-1 block text-sm text-gray-300"
-        >
-          {intl.formatMessage(messages.contentType)}
-        </label>
-        <select
-          id="traktMediaType"
-          name="traktMediaType"
-          className="min-h-[44px] w-full"
-          value={currentType}
-          onChange={(e) => {
-            const value = e.target.value as TraktMediaType;
-            updateQueryParams('type', value === 'all' ? undefined : value);
-          }}
-        >
-          <option value="all">{intl.formatMessage(globalMessages.all)}</option>
-          <option value="movie">
-            {intl.formatMessage(globalMessages.movies)}
-          </option>
-          <option value="tv">
-            {intl.formatMessage(globalMessages.tvshows)}
-          </option>
-          <option value="anime">{intl.formatMessage(messages.anime)}</option>
-        </select>
+    <>
+      <div className="flex gap-2 sm:contents">
+        <div className="min-w-0 flex-1 sm:order-1 sm:w-44 sm:flex-none">
+          <label htmlFor="traktMediaType" className="sr-only">
+            {intl.formatMessage(listFilterMessages.contentType)}
+          </label>
+          <select
+            id="traktMediaType"
+            name="traktMediaType"
+            className="min-h-[44px] w-full"
+            value={currentType}
+            onChange={(e) => {
+              const value = e.target.value as TraktMediaType;
+              updateQueryParams('type', value === 'all' ? undefined : value);
+            }}
+          >
+            <option value="all">
+              {intl.formatMessage(globalMessages.all)}
+            </option>
+            <option value="movie">
+              {intl.formatMessage(globalMessages.movies)}
+            </option>
+            <option value="tv">
+              {intl.formatMessage(globalMessages.tvshows)}
+            </option>
+            <option value="anime">{intl.formatMessage(messages.anime)}</option>
+          </select>
+        </div>
+        <div className="sm:order-3">
+          <FilterButton
+            count={activeFilterCount}
+            expanded={showFilters}
+            onClick={() => setShowFilters(true)}
+          />
+        </div>
       </div>
+      {showListSort && (
+        <div className="flex gap-2 sm:contents">
+          <div className="flex min-w-0 flex-1 sm:order-2 sm:w-64 sm:flex-none">
+            <SortMenu<TraktListSort>
+              id="traktListSort"
+              value={currentSort}
+              groups={groupSorts<TraktListSort>(
+                sortOptions as readonly (typeof traktListSortOptions)[number][],
+                sortContext
+              )}
+              labelFor={sortLabel}
+              selectedLabel={selectedLabel}
+              defaultLabel={intl.formatMessage(listFilterMessages.listOrder)}
+              onChange={(next) =>
+                batchUpdateQueryParams({
+                  sort: next || undefined,
+                  sortHow:
+                    next && !watchlistSort
+                      ? defaultTraktSortHow(next)
+                      : undefined,
+                })
+              }
+            />
+          </div>
+          {currentOption && !watchlistSort && (
+            <div className="sm:order-2">
+              <SortDirectionButton
+                kind={currentOption.kind}
+                order={sortHow}
+                onChange={(next) => updateQueryParams('sortHow', next)}
+              />
+            </div>
+          )}
+        </div>
+      )}
       <FilterSlideover
         type={filterType}
         genreType={genreType}
@@ -194,82 +255,7 @@ const TraktDiscoverFilters = ({
         onClose={() => setShowFilters(false)}
         show={showFilters}
       />
-      {showListSort && (
-        <div className="flex w-full min-w-0 items-end gap-2 sm:w-72">
-          <div className="min-w-0 flex-1">
-            <label
-              htmlFor="traktListSort"
-              className="mb-1 block text-sm text-gray-300"
-            >
-              {intl.formatMessage(messages.sortLabel)}
-            </label>
-            <select
-              id="traktListSort"
-              name="traktListSort"
-              className="min-h-[44px] w-full"
-              value={currentSort}
-              onChange={(e) => {
-                const next = e.target.value || undefined;
-                batchUpdateQueryParams({
-                  sort: next,
-                  sortHow:
-                    next && !watchlistSort
-                      ? defaultTraktSortHow(next)
-                      : undefined,
-                });
-              }}
-            >
-              <option value="">
-                {intl.formatMessage(messages.traktOrder)}
-              </option>
-              {watchlistSort ? (
-                <>
-                  <option value="added">
-                    {intl.formatMessage(messages.dateAdded)}
-                  </option>
-                  <option value="released">
-                    {intl.formatMessage(messages.releaseDate)}
-                  </option>
-                </>
-              ) : (
-                traktListSorts.map((sort) => {
-                  const label = intl.formatMessage(messages[sort.label]);
-                  return (
-                    <option key={sort.value} value={sort.value}>
-                      {'vip' in sort && sort.vip
-                        ? intl.formatMessage(messages.vipSort, { label })
-                        : label}
-                    </option>
-                  );
-                })
-              )}
-            </select>
-          </div>
-          {!watchlistSort && (
-            <SortDirectionButton
-              order={sortHow}
-              disabled={!currentSort}
-              onChange={(next) => updateQueryParams('sortHow', next)}
-            />
-          )}
-        </div>
-      )}
-      <div className="w-full sm:w-auto">
-        <Button
-          onClick={() => setShowFilters(true)}
-          className="min-h-[44px] w-full"
-          aria-haspopup="dialog"
-          aria-expanded={showFilters}
-        >
-          <FunnelIcon />
-          <span>
-            {intl.formatMessage(messages.activefilters, {
-              count: activeFilterCount,
-            })}
-          </span>
-        </Button>
-      </div>
-    </div>
+    </>
   );
 };
 

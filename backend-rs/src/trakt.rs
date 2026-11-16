@@ -397,6 +397,23 @@ impl TraktClient {
         }
     }
 
+    /// Whether the account has Trakt VIP, which unlocks the rating sorts on
+    /// lists. `None` without a user token or when Trakt does not say.
+    ///
+    /// # Errors
+    ///
+    /// Fails as `getAuthenticated` does.
+    pub async fn vip(&self) -> Result<Option<bool>, TraktError> {
+        if self.access().is_none() {
+            return Ok(None);
+        }
+        let payload = self.request("/users/settings", &[]).await?;
+        Ok(payload
+            .get("user")
+            .and_then(|u| u.get("vip"))
+            .and_then(Value::as_bool))
+    }
+
     /// `getUserSettings()`: `(username, traktUserId)`.
     ///
     /// # Errors

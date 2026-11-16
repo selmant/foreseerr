@@ -1,10 +1,18 @@
+import { groupSorts } from '@app/components/Discover/listSort';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   countMdblistFilters,
   defaultMdblistOrder,
+  hasMdblistFilters,
+  mdblistClearParams,
+  mdblistSortOptions,
   mdblistSorts,
   prepareMdblistOptions,
+  ratingToDisplay,
+  ratingToQuery,
+  releaseDatesForYears,
+  yearOfDate,
 } from './mdblistFilterOptions';
 
 describe('MDBList list filters', () => {
@@ -46,6 +54,7 @@ describe('MDBList list filters', () => {
   });
 
   it('counts panel filters, one per rating source and date range', () => {
+    // The content type is in the panel now; the bar's search is not counted.
     assert.equal(
       countMdblistFilters({
         sort: 'score',
@@ -58,9 +67,12 @@ describe('MDBList list filters', () => {
         scoreMax: '90',
         letterboxdMin: '70',
         hideUnmapped: 'false',
+        title: 'star',
       }),
-      4
+      5
     );
+    assert.ok(hasMdblistFilters({ title: 'star' }));
+    assert.ok(!hasMdblistFilters({ sort: 'score', hideUnmapped: 'false' }));
   });
 
   it('orders names A→Z and everything else high→low by default', () => {
@@ -68,5 +80,45 @@ describe('MDBList list filters', () => {
     assert.equal(defaultMdblistOrder('rank'), 'asc');
     assert.equal(defaultMdblistOrder('imdbrating'), 'desc');
     assert.ok(!(mdblistSorts as readonly string[]).includes('random'));
+  });
+
+  it('groups the menu and drops duplicates and sorts that do not fit', () => {
+    const values = (mediaType?: 'movie' | 'tv') =>
+      groupSorts(mdblistSortOptions, { mediaType }).flatMap((g) =>
+        g.options.map((o) => o.option.value)
+      );
+    assert.ok(!values().includes('rank'));
+    assert.ok(!values().includes('usort'));
+    assert.ok(!values().includes('sort_title'));
+    assert.ok(values('tv').includes('last_air_date'));
+    assert.ok(!values('tv').includes('budget'));
+    assert.ok(!values('movie').includes('last_air_date'));
+    assert.ok(values().length < mdblistSorts.length);
+  });
+
+  it("shows ratings on each source's own scale", () => {
+    assert.equal(ratingToDisplay('imdbRating', 73), 7.3);
+    assert.equal(ratingToQuery('imdbRating', 7.3), 73);
+    assert.equal(ratingToDisplay('letterboxd', 92), 4.6);
+    assert.equal(ratingToQuery('letterboxd', 3.7), 74);
+    assert.equal(ratingToQuery('mal', 8.7), 87);
+    assert.equal(ratingToDisplay('rtCritics', 88), 88);
+    assert.equal(ratingToQuery('imdbRating', 10.04), 100);
+  });
+
+  it('reads and writes release years as whole-year dates', () => {
+    assert.equal(yearOfDate('2020-06-15'), 2020);
+    assert.equal(yearOfDate('soon'), undefined);
+    assert.deepEqual(releaseDatesForYears(2001, 2010), {
+      releasedFrom: '2001-01-01',
+      releasedTo: '2010-12-31',
+    });
+  });
+
+  it('clears the panel, and the search only from an empty result', () => {
+    assert.equal(mdblistClearParams().hideUnmapped, 'false');
+    assert.ok('mediaType' in mdblistClearParams());
+    assert.ok(!('title' in mdblistClearParams()));
+    assert.ok('title' in mdblistClearParams({ search: true }));
   });
 });

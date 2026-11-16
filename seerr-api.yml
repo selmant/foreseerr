@@ -10727,6 +10727,26 @@ paths:
                       type: object
         '404':
           description: Trakt account not linked
+  /discover/trakt/account:
+    get:
+      x-foreseerr: true
+      summary: Trakt account capabilities for list sorts
+      description: Whether the current user's Trakt account is linked (directly or through the Jellyfin plugin) and has Trakt VIP, which list rating sorts need. vip is null when the account is not linked or Trakt does not say.
+      tags:
+        - search
+      responses:
+        '200':
+          description: Account capabilities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  linked:
+                    type: boolean
+                  vip:
+                    type: boolean
+                    nullable: true
   /discover/trakt/lists:
     get:
       x-foreseerr: true

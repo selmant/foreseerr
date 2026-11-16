@@ -2,6 +2,8 @@
  * The filters an AniList list view reads, as anilist.co's list sidebar
  * offers them. The backend applies them to the whole list before paging.
  */
+import type { ListSortOption } from '@app/components/Discover/listSort';
+import { defaultOrderForKind } from '@app/components/Discover/listSort';
 
 export const anilistFormats = [
   'TV',
@@ -45,23 +47,32 @@ export const anilistGenres = [
   'Thriller',
 ] as const;
 
-/** anilist.co's list sorts. */
-export const anilistSorts = [
-  'score',
-  'title',
-  'progress',
-  'updatedAt',
-  'createdAt',
-  'releaseDate',
-  'averageScore',
-  'popularity',
-] as const;
+/** anilist.co's list sorts, with how the menu groups them. */
+export const anilistSortOptions = [
+  { value: 'createdAt', kind: 'date', group: 'list' },
+  { value: 'updatedAt', kind: 'date', group: 'list' },
+  { value: 'title', kind: 'alpha', group: 'list' },
+  { value: 'releaseDate', kind: 'date', group: 'release' },
+  { value: 'score', kind: 'number', group: 'ratings' },
+  { value: 'averageScore', kind: 'number', group: 'ratings' },
+  { value: 'popularity', kind: 'number', group: 'popularity' },
+  { value: 'progress', kind: 'number', group: 'details' },
+] as const satisfies readonly ListSortOption<string>[];
 
-export type AnilistSort = (typeof anilistSorts)[number];
+export type AnilistSort = (typeof anilistSortOptions)[number]['value'];
+
+export const anilistSorts: readonly AnilistSort[] = anilistSortOptions.map(
+  (o) => o.value
+);
+
+export const anilistSortOption = (sort: AnilistSort) =>
+  anilistSortOptions.find(
+    (o) => o.value === sort
+  ) as ListSortOption<AnilistSort>;
 
 /** Titles read A→Z; every score, count, and date high→low. */
 export const defaultAnilistOrder = (sort: AnilistSort): 'asc' | 'desc' =>
-  sort === 'title' ? 'asc' : 'desc';
+  defaultOrderForKind(anilistSortOption(sort).kind);
 
 /** The release-year slider's range: 1940 through next year. */
 export const anilistYearRange = (now = new Date()) => ({
@@ -75,9 +86,8 @@ export const anilistYearRange = (now = new Date()) => ({
  */
 export const anilistScoreFilters = ['averageScore', 'myScore'] as const;
 
-/** Filters shown in the panel or the search box (the bar holds the sort). */
+/** Filters in the panel (the bar holds the search and the sort). */
 export const anilistPanelKeys = [
-  'search',
   'format',
   'airingStatus',
   'genres',
@@ -92,6 +102,7 @@ export const anilistPanelKeys = [
 
 /** Every key the list routes read for filtering, besides `page`. */
 export const anilistQueryKeys = [
+  'search',
   ...anilistPanelKeys,
   'sort',
   'order',
@@ -113,16 +124,13 @@ export const prepareAnilistOptions = (query: RouteQuery) => {
   return options;
 };
 
-/** How many filters are set (search included, sort not; a range once). */
+/**
+ * How many panel filters are set: the Filters button's badge. The bar's
+ * search is visible, so it is not counted; a range counts once.
+ */
 export const countAnilistFilters = (query: RouteQuery) => {
   let count = 0;
-  for (const key of [
-    'search',
-    'format',
-    'airingStatus',
-    'genres',
-    'country',
-  ] as const) {
+  for (const key of ['format', 'airingStatus', 'genres', 'country'] as const) {
     if (text(query[key])) count += 1;
   }
   for (const range of ['year', ...anilistScoreFilters]) {
@@ -136,3 +144,17 @@ export const countAnilistFilters = (query: RouteQuery) => {
   if (query.hideUnmapped === 'true') count += 1;
   return count;
 };
+
+/** Whether anything narrows the list: a panel filter or the search. */
+export const hasAnilistFilters = (query: RouteQuery) =>
+  countAnilistFilters(query) > 0 || text(query.search) !== undefined;
+
+/**
+ * The route update that clears the panel (and the search, from an empty
+ * result). `hideUnmapped=false` keeps saved defaults from coming back.
+ */
+export const anilistClearParams = ({ search = false } = {}) => ({
+  ...Object.fromEntries(anilistPanelKeys.map((k) => [k, undefined])),
+  ...(search ? { search: undefined } : {}),
+  hideUnmapped: 'false',
+});

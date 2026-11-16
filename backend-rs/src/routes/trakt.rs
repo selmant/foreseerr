@@ -12,7 +12,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use axum::http::Method;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
 use super::discoverkit::{
     annotate_provider_active_requests, has_discover_tmdb_id, omit_unmapped, record_unmapped,
@@ -51,6 +51,7 @@ pub(super) const ROUTES: &Table = &[
         Method::GET,
         anticipated,
     ),
+    ("/api/v1/discover/trakt/account", Method::GET, account),
     ("/api/v1/discover/trakt/lists", Method::GET, lists),
     (
         "/api/v1/discover/trakt/lists/search",
@@ -776,6 +777,33 @@ fn results_body(results: Vec<Value>) -> Value {
     let mut body = Map::new();
     body.insert(String::from("results"), Value::Array(results));
     Value::Object(body)
+}
+
+/// `GET /discover/trakt/account`: whether the user's Trakt account is
+/// linked (directly or through the Jellyfin plugin) and has VIP, so the
+/// list sort menu offers only the sorts Trakt will apply. `vip` is null
+/// when unlinked or when Trakt does not say.
+fn account<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    Box::pin(async move {
+        let user_id = match ctx.authenticated(0) {
+            Ok(user) => user.id,
+            Err(why) => return Outcome::forward(why),
+        };
+        let client = match user_client(ctx, user_id).await {
+            Ok(Ok(client)) => client,
+            Ok(Err(_)) => return ctx.json(&json!({ "linked": false, "vip": null })),
+            Err(why) => return Outcome::forward(why),
+        };
+        // A failed settings read only hides the VIP marks; the list still works.
+        let vip = match client.vip().await {
+            Ok(vip) => vip,
+            Err(e) => {
+                tracing::debug!("Trakt VIP lookup failed: {e:?}");
+                None
+            }
+        };
+        ctx.json(&json!({ "linked": true, "vip": vip }))
+    })
 }
 
 fn lists_search<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
