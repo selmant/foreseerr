@@ -238,9 +238,8 @@ export const FilterButton = ({
 };
 
 /**
- * The toolbar for a list's title: one row below the title (two on phones),
- * and on the title's line only on very wide screens, where long list names
- * still have room.
+ * A list's title with its toolbar on one row below it (two on phones). List
+ * names run long, so the toolbar never shares the title's line.
  */
 export const ListFilterHeader = ({
   title,
@@ -249,9 +248,9 @@ export const ListFilterHeader = ({
   title: ReactNode;
   children: ReactNode;
 }) => (
-  <div className="mb-5 mt-1 flex flex-col gap-3 2xl:flex-row 2xl:items-end 2xl:justify-between 2xl:gap-6 [&_h2]:whitespace-normal [&_h2]:break-words">
-    <div className="min-w-0 flex-1 space-y-2">{title}</div>
-    <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center 2xl:w-auto 2xl:max-w-[46rem] 2xl:flex-nowrap 2xl:justify-end">
+  <div className="mb-5 mt-1 flex flex-col gap-3 [&_h2]:whitespace-normal [&_h2]:break-words">
+    <div className="min-w-0 space-y-2">{title}</div>
+    <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
       {children}
     </div>
   </div>

@@ -300,6 +300,14 @@ fn rating_score(payload: &Value, source: &str) -> Option<f64> {
 /// first, `imdbrating` highest first, `added` most recent first. Only its
 /// position and name sorts read ascending the usual way (checked against
 /// api.mdblist.com, 2026-11-16).
+fn default_order(sort: &str) -> &'static str {
+    if matches!(sort, "rank" | "usort" | "title" | "sort_title") {
+        "asc"
+    } else {
+        "desc"
+    }
+}
+
 fn api_order(sort: Option<&str>, order: &'static str) -> &'static str {
     match sort {
         None | Some("rank" | "usort" | "title" | "sort_title") => order,
@@ -375,7 +383,10 @@ impl ListFilter {
             // One ordering across movies and shows, not one per bucket.
             out.push(("unified", String::from("true")));
         }
-        if let Some(order) = self.order {
+        // Spelled out even when the link names none, so the order shown
+        // (A→Z for positions and names, high→low otherwise) is the one asked.
+        let order = self.order.or_else(|| self.sort.map(default_order));
+        if let Some(order) = order {
             out.push(("order", api_order(self.sort, order).to_owned()));
         }
         if let Some(title) = &self.title {
@@ -1522,6 +1533,11 @@ mod tests {
         assert_eq!(api_order(Some("released"), "asc"), "desc");
         assert_eq!(api_order(Some("title"), "asc"), "asc");
         assert_eq!(api_order(Some("rank"), "desc"), "desc");
+        let unordered = ListFilter {
+            sort: Some("released"),
+            ..ListFilter::default()
+        };
+        assert_eq!(unordered.key(), "?sort=released&unified=true&order=asc");
         let in_order = map_list_items_in_order(&[
             json!({"rank": 2, "title": "B"}),
             json!({"rank": 1, "title": "A"}),
