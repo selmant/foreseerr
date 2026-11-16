@@ -4,11 +4,13 @@ import SlideOver from '@app/components/Common/SlideOver';
 import type { AnilistSort } from '@app/components/Discover/AnilistListFilters/anilistFilterOptions';
 import {
   anilistAiringStatuses,
+  anilistClearParams,
   anilistCountries,
   anilistFormats,
   anilistGenres,
-  anilistPanelKeys,
   anilistScoreFilters,
+  anilistSortOption,
+  anilistSortOptions,
   anilistSorts,
   anilistYearRange,
   countAnilistFilters,
@@ -17,10 +19,14 @@ import {
 import {
   ChipGroup,
   DebouncedSearchInput,
+  FilterButton,
   FilterSectionTitle as SectionTitle,
   SortDirectionButton,
+  SortMenu,
+  listFilterMessages,
   splitList,
 } from '@app/components/Discover/ListFilterControls';
+import { groupSorts } from '@app/components/Discover/listSort';
 import {
   areDiscoverDefaultsCleared,
   markDiscoverDefaultsCleared,
@@ -34,43 +40,27 @@ import {
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { XCircleIcon } from '@heroicons/react/24/outline';
-import { FunnelIcon } from '@heroicons/react/24/solid';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
 import Select from 'react-select';
 
 const messages = defineMessages('components.Discover.AnilistListFilters', {
-  search: 'Search',
-  searchPlaceholder: 'Search this list',
-  sortLabel: 'Sort',
-  sortDefault: 'List Order',
-  filters: 'AniList Filters',
-  activefilters:
-    '{count, plural, one {# Active Filter} other {# Active Filters}}',
   format: 'Format',
   airingStatus: 'Airing Status',
-  genres: 'Genres',
-  genresPlaceholder: 'Any genre',
+  genresPlaceholder: 'Select genres',
   genresTip: 'Titles must have every genre picked.',
   country: 'Country',
-  year: 'Release Year',
-  yearText: 'Released {minValue}–{maxValue}',
   scores: 'Scores',
   scoresTip:
     'On AniList’s 0–100 scale. Leave a slider at its full range to skip it.',
   averageScore: 'Average Score',
   myScore: 'List Owner’s Score',
   myScoreTip: 'Entries the list’s owner has not scored are left out.',
-  scoreText: '{label} between {minValue} and {maxValue}',
-  visibility: 'Visibility',
-  hideUnmapped: 'Hide Unmapped Titles',
-  hideUnmappedTip: 'Hide titles that could not be mapped to TMDB.',
-  clearfilters: 'Clear Active Filters',
-  sortScore: 'Score',
+  sortScore: 'List Owner’s Score',
   sortTitle: 'Title',
-  sortProgress: 'Progress',
+  sortProgress: 'List Owner’s Progress',
   sortUpdatedAt: 'Last Updated',
-  sortCreatedAt: 'Last Added',
+  sortCreatedAt: 'Date Added',
   sortReleaseDate: 'Release Date',
   sortAverageScore: 'Average Score',
   sortPopularity: 'Popularity',
@@ -181,85 +171,74 @@ const AnilistListFilters = () => {
   const listParam = (values: string[]) =>
     values.length ? values.join(',') : undefined;
 
+  const sortLabel = (value: AnilistSort) =>
+    intl.formatMessage(messages[sortMessages[value]]);
+
   const clearFilters = () => {
     markDiscoverDefaultsCleared(user?.id);
-    batchUpdateQueryParams({
-      ...Object.fromEntries(anilistPanelKeys.map((k) => [k, undefined])),
-      hideUnmapped: 'false',
-    });
+    batchUpdateQueryParams(anilistClearParams());
     setResetKey((k) => k + 1);
     setShowFilters(false);
   };
 
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="w-full min-w-0 sm:w-64">
-        <label
-          htmlFor="anilistSearch"
-          className="mb-1 block text-sm text-gray-300"
-        >
-          {intl.formatMessage(messages.search)}
-        </label>
-        <DebouncedSearchInput
-          id="anilistSearch"
-          value={typeof query.search === 'string' ? query.search : ''}
-          placeholder={intl.formatMessage(messages.searchPlaceholder)}
-          onChange={(value) => updateQueryParams('search', value)}
-        />
-      </div>
-      <div className="flex w-full min-w-0 items-end gap-2 sm:w-72">
-        <div className="min-w-0 flex-1">
-          <label
-            htmlFor="anilistSort"
-            className="mb-1 block text-sm text-gray-300"
-          >
-            {intl.formatMessage(messages.sortLabel)}
-          </label>
-          <select
-            id="anilistSort"
-            className="min-h-[44px] w-full"
-            value={sort ?? ''}
-            onChange={(e) => {
-              const next = anilistSorts.find((s) => s === e.target.value);
-              batchUpdateQueryParams({
-                sort: next,
-                order: next ? defaultAnilistOrder(next) : undefined,
-              });
-            }}
-          >
-            <option value="">{intl.formatMessage(messages.sortDefault)}</option>
-            {anilistSorts.map((s) => (
-              <option key={s} value={s}>
-                {intl.formatMessage(messages[sortMessages[s]])}
-              </option>
-            ))}
-          </select>
+    <>
+      <div className="flex gap-2 sm:contents">
+        <div className="min-w-0 flex-1 sm:order-1 sm:w-56 sm:flex-none">
+          <DebouncedSearchInput
+            id="anilistSearch"
+            withIcon
+            value={typeof query.search === 'string' ? query.search : ''}
+            label={intl.formatMessage(listFilterMessages.search)}
+            placeholder={intl.formatMessage(
+              listFilterMessages.searchPlaceholder
+            )}
+            onChange={(value) => updateQueryParams('search', value)}
+          />
         </div>
-        <SortDirectionButton
-          order={order}
-          disabled={!sort}
-          onChange={(next) => updateQueryParams('order', next)}
-        />
+        <div className="sm:order-3">
+          <FilterButton
+            count={activeCount}
+            expanded={showFilters}
+            onClick={() => setShowFilters(true)}
+          />
+        </div>
       </div>
-      <div className="w-full sm:w-auto">
-        <Button
-          onClick={() => setShowFilters(true)}
-          className="min-h-[44px] w-full"
-          aria-haspopup="dialog"
-          aria-expanded={showFilters}
-        >
-          <FunnelIcon />
-          <span>
-            {intl.formatMessage(messages.activefilters, {
-              count: activeCount,
-            })}
-          </span>
-        </Button>
+      <div className="flex gap-2 sm:contents">
+        <div className="flex min-w-0 flex-1 sm:order-2 sm:w-64 sm:flex-none">
+          <SortMenu
+            id="anilistSort"
+            value={sort ?? ''}
+            groups={groupSorts(anilistSortOptions)}
+            labelFor={sortLabel}
+            selectedLabel={
+              sort
+                ? sortLabel(sort)
+                : intl.formatMessage(listFilterMessages.listOrder)
+            }
+            defaultLabel={intl.formatMessage(listFilterMessages.listOrder)}
+            onChange={(next) =>
+              batchUpdateQueryParams({
+                sort: next || undefined,
+                order: undefined,
+              })
+            }
+          />
+        </div>
+        {sort && order && (
+          <div className="sm:order-2">
+            <SortDirectionButton
+              kind={anilistSortOption(sort).kind}
+              order={order}
+              onChange={(next) => updateQueryParams('order', next)}
+            />
+          </div>
+        )}
       </div>
       <SlideOver
         show={showFilters}
-        title={intl.formatMessage(messages.filters)}
-        subText={intl.formatMessage(messages.activefilters, {
+        title={intl.formatMessage(listFilterMessages.filters)}
+        subText={intl.formatMessage(listFilterMessages.activeFilters, {
           count: activeCount,
         })}
         onClose={() => setShowFilters(false)}
@@ -296,9 +275,12 @@ const AnilistListFilters = () => {
             />
           </div>
           <div>
-            <SectionTitle>{intl.formatMessage(messages.genres)}</SectionTitle>
+            <SectionTitle id="anilistGenresLabel">
+              {intl.formatMessage(listFilterMessages.genres)}
+            </SectionTitle>
             <Select<{ value: string; label: string }, true>
-              aria-label={intl.formatMessage(messages.genres)}
+              inputId="anilistGenres"
+              aria-labelledby="anilistGenresLabel"
               className="react-select-container"
               classNamePrefix="react-select"
               isMulti
@@ -331,10 +313,17 @@ const AnilistListFilters = () => {
             />
           </div>
           <div>
-            <SectionTitle>{intl.formatMessage(messages.year)}</SectionTitle>
+            <SectionTitle
+              value={intl.formatMessage(listFilterMessages.rangeText, {
+                minValue: yearFrom ?? yearMin,
+                maxValue: yearTo ?? yearMax,
+              })}
+            >
+              {intl.formatMessage(listFilterMessages.releaseYear)}
+            </SectionTitle>
             <div className="relative z-0">
               <MultiRangeSlider
-                label={intl.formatMessage(messages.year)}
+                label={intl.formatMessage(listFilterMessages.releaseYear)}
                 min={yearMin}
                 max={yearMax}
                 defaultMinValue={yearFrom}
@@ -351,10 +340,6 @@ const AnilistListFilters = () => {
                     value < yearMax ? String(value) : undefined
                   )
                 }
-                subText={intl.formatMessage(messages.yearText, {
-                  minValue: yearFrom ?? yearMin,
-                  maxValue: yearTo ?? yearMax,
-                })}
               />
             </div>
           </div>
@@ -375,7 +360,15 @@ const AnilistListFilters = () => {
                 const label = intl.formatMessage(messages[score]);
                 return (
                   <div key={score}>
-                    <div className="mb-1 font-semibold">{label}</div>
+                    <div className="mb-1 flex items-baseline justify-between gap-2">
+                      <span className="font-semibold">{label}</span>
+                      <span className="text-sm text-gray-400">
+                        {intl.formatMessage(listFilterMessages.rangeText, {
+                          minValue: min ?? 0,
+                          maxValue: max ?? 100,
+                        })}
+                      </span>
+                    </div>
                     <div className="relative z-0">
                       <MultiRangeSlider
                         label={label}
@@ -395,11 +388,6 @@ const AnilistListFilters = () => {
                             value < 100 ? String(value) : undefined
                           )
                         }
-                        subText={intl.formatMessage(messages.scoreText, {
-                          label,
-                          minValue: min ?? 0,
-                          maxValue: max ?? 100,
-                        })}
                       />
                     </div>
                     {score === 'myScore' && (
@@ -414,11 +402,11 @@ const AnilistListFilters = () => {
           </div>
           <div>
             <SectionTitle>
-              {intl.formatMessage(messages.visibility)}
+              {intl.formatMessage(listFilterMessages.visibility)}
             </SectionTitle>
             <label
               htmlFor="anilistHideUnmapped"
-              className="flex cursor-pointer items-center gap-3"
+              className="flex min-h-[44px] cursor-pointer items-center gap-3"
             >
               <input
                 type="checkbox"
@@ -431,10 +419,10 @@ const AnilistListFilters = () => {
                   )
                 }
               />
-              <span>{intl.formatMessage(messages.hideUnmapped)}</span>
+              <span>{intl.formatMessage(listFilterMessages.hideUnmapped)}</span>
             </label>
-            <p className="ml-9 mt-1 text-sm text-gray-400">
-              {intl.formatMessage(messages.hideUnmappedTip)}
+            <p className="ml-9 text-sm text-gray-400">
+              {intl.formatMessage(listFilterMessages.hideUnmappedTip)}
             </p>
           </div>
           <div className="pt-2">
@@ -444,12 +432,12 @@ const AnilistListFilters = () => {
               onClick={clearFilters}
             >
               <XCircleIcon />
-              <span>{intl.formatMessage(messages.clearfilters)}</span>
+              <span>{intl.formatMessage(listFilterMessages.clearFilters)}</span>
             </Button>
           </div>
         </div>
       </SlideOver>
-    </div>
+    </>
   );
 };
 

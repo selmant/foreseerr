@@ -294,6 +294,28 @@ fn rating_score(payload: &Value, source: &str) -> Option<f64> {
         .and_then(Value::as_f64)
 }
 
+/// `MDBList`'s `order` for the route's `asc` / `desc`. The route means them
+/// as usual (`desc` = newest, highest, longest first), but `MDBList` puts the
+/// top of a measure first on `asc`: `sort=released&order=asc` is newest
+/// first, `imdbrating` highest first, `added` most recent first. Only its
+/// position and name sorts read ascending the usual way (checked against
+/// api.mdblist.com, 2026-11-16).
+fn default_order(sort: &str) -> &'static str {
+    if matches!(sort, "rank" | "usort" | "title" | "sort_title") {
+        "asc"
+    } else {
+        "desc"
+    }
+}
+
+fn api_order(sort: Option<&str>, order: &'static str) -> &'static str {
+    match sort {
+        None | Some("rank" | "usort" | "title" | "sort_title") => order,
+        Some(_) if order == "asc" => "desc",
+        Some(_) => "asc",
+    }
+}
+
 /// The filters and order `MDBList` applies to a list's items itself.
 /// The default reads the list as its owner saved it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -361,8 +383,11 @@ impl ListFilter {
             // One ordering across movies and shows, not one per bucket.
             out.push(("unified", String::from("true")));
         }
-        if let Some(order) = self.order {
-            out.push(("order", order.to_owned()));
+        // Spelled out even when the link names none, so the order shown
+        // (A→Z for positions and names, high→low otherwise) is the one asked.
+        let order = self.order.or_else(|| self.sort.map(default_order));
+        if let Some(order) = order {
+            out.push(("order", api_order(self.sort, order).to_owned()));
         }
         if let Some(title) = &self.title {
             out.push(("filter_title", title.clone()));
@@ -1498,11 +1523,21 @@ mod tests {
         assert!(filter.has_ratings());
         assert_eq!(
             filter.key(),
-            "/show?sort=imdbrating&unified=true&order=desc&filter_title=star\
+            "/show?sort=imdbrating&unified=true&order=asc&filter_title=star\
              &filter_genre=drama,anime-isekai&genre_operator=and\
              &released_from=2020-01-01&filter_metarating_min=60"
         );
         assert_eq!(rating_param("malrating", "max"), "filter_malrating_max");
+        // Highest first is `MDBList`'s `asc`; names and positions are as usual.
+        assert_eq!(api_order(Some("imdbrating"), "desc"), "asc");
+        assert_eq!(api_order(Some("released"), "asc"), "desc");
+        assert_eq!(api_order(Some("title"), "asc"), "asc");
+        assert_eq!(api_order(Some("rank"), "desc"), "desc");
+        let unordered = ListFilter {
+            sort: Some("released"),
+            ..ListFilter::default()
+        };
+        assert_eq!(unordered.key(), "?sort=released&unified=true&order=asc");
         let in_order = map_list_items_in_order(&[
             json!({"rank": 2, "title": "B"}),
             json!({"rank": 1, "title": "A"}),

@@ -1,20 +1,31 @@
+import Button from '@app/components/Common/Button';
 import Header from '@app/components/Common/Header';
 import PageTitle from '@app/components/Common/PageTitle';
 import AnilistListFilters from '@app/components/Discover/AnilistListFilters';
 import {
-  countAnilistFilters,
+  anilistClearParams,
+  hasAnilistFilters,
   prepareAnilistOptions,
 } from '@app/components/Discover/AnilistListFilters/anilistFilterOptions';
 import DiscoverProviderMessage from '@app/components/Discover/DiscoverProviderMessage';
 import DiscoverProviderResults from '@app/components/Discover/DiscoverProviderResults';
+import {
+  ListFilterHeader,
+  listFilterMessages,
+} from '@app/components/Discover/ListFilterControls';
 import { SliderSourceTitle } from '@app/components/Discover/SliderSourceMark';
-import { discoverDefaultsRequestExtras } from '@app/components/Discover/mergeFilterDefaults';
+import {
+  discoverDefaultsRequestExtras,
+  markDiscoverDefaultsCleared,
+} from '@app/components/Discover/mergeFilterDefaults';
 import useDiscover, { providerListFilters } from '@app/hooks/useDiscover';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
+import { useBatchUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import { useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
+import { XCircleIcon } from '@heroicons/react/24/outline';
 import type { WatchlistItem } from '@shared/interfaces/api/discoverInterfaces';
 import { useIntl } from 'react-intl';
 import useSWR from 'swr';
@@ -41,8 +52,7 @@ const messages = defineMessages('components.Discover.DiscoverAnilist', {
     'Anime from your linked AniList library, grouped by your watch status.',
   empty:
     'Try another AniList view above. Personal lists follow the library in your linked AniList account.',
-  emptyFiltered:
-    'No titles in this list match your filters. Adjust or clear them to see more.',
+  emptyFiltered: 'No titles in this list match your search and filters.',
 });
 
 /** Views that read a whole list, so anilist.co's list filters apply. */
@@ -87,9 +97,10 @@ const DiscoverAnilistPage = ({
   const settings = useSettings();
   const { user } = useUser();
   const query = useRouteQuery();
+  const batchUpdateQueryParams = useBatchUpdateQueryParams({});
   const filterable = filterableKinds.has(kind);
   const filterOptions = filterable ? prepareAnilistOptions(query) : {};
-  const filtered = filterable && countAnilistFilters(query) > 0;
+  const filtered = filterable && hasAnilistFilters(query);
   const {
     data: anilistStatus,
     error: accountError,
@@ -146,24 +157,35 @@ const DiscoverAnilistPage = ({
     );
   }
 
+  const heading = (
+    <>
+      <Header>
+        <SliderSourceTitle source="anilist">{title}</SliderSourceTitle>
+      </Header>
+      <p className="max-w-2xl text-sm leading-6 text-gray-400">
+        {intl.formatMessage(
+          requiresLink
+            ? messages.personalDescription
+            : kind === 'list'
+              ? messages.publicListDescription
+              : messages.publicDescription
+        )}
+      </p>
+    </>
+  );
+
   return (
     <>
       <PageTitle title={title} />
-      <div className="mb-5 mt-1 space-y-4 [&_h2]:whitespace-normal [&_h2]:break-words">
-        <Header>
-          <SliderSourceTitle source="anilist">{title}</SliderSourceTitle>
-        </Header>
-        <p className="max-w-2xl text-sm leading-6 text-gray-400">
-          {intl.formatMessage(
-            requiresLink
-              ? messages.personalDescription
-              : kind === 'list'
-                ? messages.publicListDescription
-                : messages.publicDescription
-          )}
-        </p>
-        {filterable && <AnilistListFilters />}
-      </div>
+      {filterable ? (
+        <ListFilterHeader title={heading}>
+          <AnilistListFilters />
+        </ListFilterHeader>
+      ) : (
+        <div className="mb-5 mt-1 space-y-4 [&_h2]:whitespace-normal [&_h2]:break-words">
+          {heading}
+        </div>
+      )}
       <DiscoverProviderResults
         source="AniList"
         titles={titles}
@@ -181,6 +203,20 @@ const DiscoverAnilistPage = ({
         emptyDescription={intl.formatMessage(
           filtered ? messages.emptyFiltered : messages.empty
         )}
+        emptyAction={
+          filtered ? (
+            <Button
+              className="min-h-[44px]"
+              onClick={() => {
+                markDiscoverDefaultsCleared(user?.id);
+                batchUpdateQueryParams(anilistClearParams({ search: true }));
+              }}
+            >
+              <XCircleIcon />
+              <span>{intl.formatMessage(listFilterMessages.clearFilters)}</span>
+            </Button>
+          ) : undefined
+        }
       />
     </>
   );

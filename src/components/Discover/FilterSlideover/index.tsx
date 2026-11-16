@@ -207,18 +207,11 @@ const FilterSlideover = ({
       defaultsActive &&
       discoverDefaults?.hideUnmapped === true);
 
+  // An explicit `false` (what "Clear" writes) shows everything: not a filter.
   const activeCount =
     countActiveFilters(currentFilters) +
-    (showHideWatched &&
-    (currentFilters.ignoreWatched === 'true' ||
-      currentFilters.ignoreWatched === 'false')
-      ? 1
-      : 0) +
-    (showHideUnmapped &&
-    (currentFilters.hideUnmapped === 'true' ||
-      currentFilters.hideUnmapped === 'false')
-      ? 1
-      : 0) +
+    (showHideWatched && currentFilters.ignoreWatched === 'true' ? 1 : 0) +
+    (showHideUnmapped && currentFilters.hideUnmapped === 'true' ? 1 : 0) +
     (showTraktRecommendationFilters && ignoreCollected ? 1 : 0) +
     (showTraktRecommendationFilters && ignoreWatchlisted ? 1 : 0);
 
