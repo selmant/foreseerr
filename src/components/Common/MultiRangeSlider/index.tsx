@@ -45,7 +45,10 @@ const MultiRangeSlider = ({
   label,
 }: MultiRangeSliderProps) => {
   const intl = useIntl();
-  const touched = useRef(false);
+  // Per bound, so a URL update to one bound (its default changing) leaves a
+  // pending edit to the other in place.
+  const touchedMin = useRef(false);
+  const touchedMax = useRef(false);
   const [valueMin, finalValueMin, setValueMin] = useDebouncedState(
     defaultMinValue ?? min
   );
@@ -57,22 +60,26 @@ const MultiRangeSlider = ({
   const maxThumb = ((valueMax - min) / (max - min)) * 100;
 
   useEffect(() => {
-    if (touched.current) {
+    if (touchedMin.current) {
       onUpdateMin(finalValueMin);
     }
   }, [finalValueMin, onUpdateMin]);
 
   useEffect(() => {
-    if (touched.current) {
+    if (touchedMax.current) {
       onUpdateMax(finalValueMax);
     }
   }, [finalValueMax, onUpdateMax]);
 
   useEffect(() => {
-    touched.current = false;
-    setValueMax(defaultMaxValue ?? max);
+    touchedMin.current = false;
     setValueMin(defaultMinValue ?? min);
-  }, [defaultMinValue, defaultMaxValue, setValueMax, setValueMin, min, max]);
+  }, [defaultMinValue, setValueMin, min]);
+
+  useEffect(() => {
+    touchedMax.current = false;
+    setValueMax(defaultMaxValue ?? max);
+  }, [defaultMaxValue, setValueMax, max]);
 
   return (
     <div
@@ -106,7 +113,7 @@ const MultiRangeSlider = ({
             const value = Number(e.target.value);
 
             if (value <= valueMax) {
-              touched.current = true;
+              touchedMin.current = true;
               setValueMin(value);
             }
           }}
@@ -133,7 +140,7 @@ const MultiRangeSlider = ({
             const value = Number(e.target.value);
 
             if (value >= valueMin) {
-              touched.current = true;
+              touchedMax.current = true;
               setValueMax(value);
             }
           }}

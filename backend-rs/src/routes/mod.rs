@@ -7,6 +7,7 @@ mod adultfilter;
 pub mod ai;
 pub mod airecs;
 pub mod anilistdiscover;
+mod anilistfilter;
 mod arrcall;
 pub mod arrsettings;
 pub mod authcommon;

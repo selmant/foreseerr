@@ -3886,6 +3886,111 @@ components:
               meaning: 'Some material may not be suitable for children under 10.'
               order: 2
   parameters:
+    AnilistListSearch:
+      in: query
+      name: search
+      description: Titles (romaji, English, or native) containing this text.
+      schema:
+        type: string
+        maxLength: 200
+    AnilistListFormat:
+      in: query
+      name: format
+      description: Comma-separated AniList formats.
+      schema:
+        type: string
+        example: TV,MOVIE
+    AnilistListAiringStatus:
+      in: query
+      name: airingStatus
+      description: Comma-separated AniList airing statuses (RELEASING, FINISHED, NOT_YET_RELEASED, CANCELLED, HIATUS).
+      schema:
+        type: string
+    AnilistListGenres:
+      in: query
+      name: genres
+      description: Comma-separated AniList genres; a title must have every one.
+      schema:
+        type: string
+        example: Action,Drama
+    AnilistListCountry:
+      in: query
+      name: country
+      description: Comma-separated countries of origin (JP, KR, CN, TW).
+      schema:
+        type: string
+    AnilistListYearFrom:
+      in: query
+      name: yearFrom
+      description: Earliest release year.
+      schema:
+        type: integer
+        minimum: 1900
+        maximum: 2100
+    AnilistListYearTo:
+      in: query
+      name: yearTo
+      description: Latest release year.
+      schema:
+        type: integer
+        minimum: 1900
+        maximum: 2100
+    AnilistListSort:
+      in: query
+      name: sort
+      description: anilist.co's list sorts. Omit to keep the list's order.
+      schema:
+        type: string
+        enum:
+          [
+            score,
+            title,
+            progress,
+            updatedAt,
+            createdAt,
+            releaseDate,
+            averageScore,
+            popularity,
+          ]
+    AnilistListOrder:
+      in: query
+      name: order
+      description: Sort direction; titles default to ascending, the rest to descending.
+      schema:
+        type: string
+        enum: [asc, desc]
+    AnilistListAverageScoreMin:
+      in: query
+      name: averageScoreMin
+      description: Lowest AniList average score (0-100).
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+    AnilistListAverageScoreMax:
+      in: query
+      name: averageScoreMax
+      description: Highest AniList average score (0-100).
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+    AnilistListMyScoreMin:
+      in: query
+      name: myScoreMin
+      description: Lowest score the list owner gave, on AniList's 0-100 scale; unscored entries are left out.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+    AnilistListMyScoreMax:
+      in: query
+      name: myScoreMax
+      description: Highest score the list owner gave, on AniList's 0-100 scale; unscored entries are left out.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
     DiscoverImdbRatingGte:
       in: query
       name: imdbRatingGte
@@ -10635,10 +10740,36 @@ paths:
             default: all
         - in: query
           name: sort
-          description: Sort a Trakt list by date added or release date, newest first.
+          description: Trakt's list sort (sort_by). With sortHow, Trakt orders the whole list; added or released alone sort newest first. IMDb, TMDB, RT, Metacritic and vote sorts need Trakt VIP and fall back to rank otherwise.
           schema:
             type: string
-            enum: [added, released]
+            enum:
+              [
+                rank,
+                added,
+                title,
+                released,
+                runtime,
+                popularity,
+                percentage,
+                votes,
+                imdb_rating,
+                imdb_votes,
+                tmdb_rating,
+                tmdb_votes,
+                rt_tomatometer,
+                rt_audience,
+                metascore,
+                my_rating,
+                watched,
+                collected,
+              ]
+        - in: query
+          name: sortHow
+          description: Sort direction (sort_how) for Trakt's own list order. Defaults to asc for rank and title and desc otherwise; added or released without it keep the legacy newest-first order.
+          schema:
+            type: string
+            enum: [asc, desc]
         - $ref: '#/components/parameters/DiscoverGenre'
         - $ref: '#/components/parameters/DiscoverLanguage'
         - $ref: '#/components/parameters/DiscoverPrimaryReleaseDateGte'
@@ -10768,11 +10899,26 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/AnilistListSearch'
+        - $ref: '#/components/parameters/AnilistListFormat'
+        - $ref: '#/components/parameters/AnilistListAiringStatus'
+        - $ref: '#/components/parameters/AnilistListGenres'
+        - $ref: '#/components/parameters/AnilistListCountry'
+        - $ref: '#/components/parameters/AnilistListYearFrom'
+        - $ref: '#/components/parameters/AnilistListYearTo'
+        - $ref: '#/components/parameters/AnilistListSort'
+        - $ref: '#/components/parameters/AnilistListOrder'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMin'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMax'
+        - $ref: '#/components/parameters/AnilistListMyScoreMin'
+        - $ref: '#/components/parameters/AnilistListMyScoreMax'
         - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList watching list returned
+        '400':
+          description: A list filter is malformed
         '404':
           description: AniList account not linked
   /discover/anilist/planning:
@@ -10787,11 +10933,26 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/AnilistListSearch'
+        - $ref: '#/components/parameters/AnilistListFormat'
+        - $ref: '#/components/parameters/AnilistListAiringStatus'
+        - $ref: '#/components/parameters/AnilistListGenres'
+        - $ref: '#/components/parameters/AnilistListCountry'
+        - $ref: '#/components/parameters/AnilistListYearFrom'
+        - $ref: '#/components/parameters/AnilistListYearTo'
+        - $ref: '#/components/parameters/AnilistListSort'
+        - $ref: '#/components/parameters/AnilistListOrder'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMin'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMax'
+        - $ref: '#/components/parameters/AnilistListMyScoreMin'
+        - $ref: '#/components/parameters/AnilistListMyScoreMax'
         - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList planning list returned
+        '400':
+          description: A list filter is malformed
         '404':
           description: AniList account not linked
   /discover/anilist/completed:
@@ -10806,11 +10967,26 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/AnilistListSearch'
+        - $ref: '#/components/parameters/AnilistListFormat'
+        - $ref: '#/components/parameters/AnilistListAiringStatus'
+        - $ref: '#/components/parameters/AnilistListGenres'
+        - $ref: '#/components/parameters/AnilistListCountry'
+        - $ref: '#/components/parameters/AnilistListYearFrom'
+        - $ref: '#/components/parameters/AnilistListYearTo'
+        - $ref: '#/components/parameters/AnilistListSort'
+        - $ref: '#/components/parameters/AnilistListOrder'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMin'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMax'
+        - $ref: '#/components/parameters/AnilistListMyScoreMin'
+        - $ref: '#/components/parameters/AnilistListMyScoreMax'
         - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList completed list returned
+        '400':
+          description: A list filter is malformed
         '404':
           description: AniList account not linked
   /discover/anilist/paused:
@@ -10825,11 +11001,26 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/AnilistListSearch'
+        - $ref: '#/components/parameters/AnilistListFormat'
+        - $ref: '#/components/parameters/AnilistListAiringStatus'
+        - $ref: '#/components/parameters/AnilistListGenres'
+        - $ref: '#/components/parameters/AnilistListCountry'
+        - $ref: '#/components/parameters/AnilistListYearFrom'
+        - $ref: '#/components/parameters/AnilistListYearTo'
+        - $ref: '#/components/parameters/AnilistListSort'
+        - $ref: '#/components/parameters/AnilistListOrder'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMin'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMax'
+        - $ref: '#/components/parameters/AnilistListMyScoreMin'
+        - $ref: '#/components/parameters/AnilistListMyScoreMax'
         - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList on-hold (paused) list returned
+        '400':
+          description: A list filter is malformed
         '404':
           description: AniList account not linked
   /discover/anilist/dropped:
@@ -10844,11 +11035,26 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/AnilistListSearch'
+        - $ref: '#/components/parameters/AnilistListFormat'
+        - $ref: '#/components/parameters/AnilistListAiringStatus'
+        - $ref: '#/components/parameters/AnilistListGenres'
+        - $ref: '#/components/parameters/AnilistListCountry'
+        - $ref: '#/components/parameters/AnilistListYearFrom'
+        - $ref: '#/components/parameters/AnilistListYearTo'
+        - $ref: '#/components/parameters/AnilistListSort'
+        - $ref: '#/components/parameters/AnilistListOrder'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMin'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMax'
+        - $ref: '#/components/parameters/AnilistListMyScoreMin'
+        - $ref: '#/components/parameters/AnilistListMyScoreMax'
         - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
           description: AniList dropped list returned
+        '400':
+          description: A list filter is malformed
         '404':
           description: AniList account not linked
   /discover/anilist/lists:
@@ -10882,6 +11088,19 @@ paths:
           schema:
             type: number
             default: 1
+        - $ref: '#/components/parameters/AnilistListSearch'
+        - $ref: '#/components/parameters/AnilistListFormat'
+        - $ref: '#/components/parameters/AnilistListAiringStatus'
+        - $ref: '#/components/parameters/AnilistListGenres'
+        - $ref: '#/components/parameters/AnilistListCountry'
+        - $ref: '#/components/parameters/AnilistListYearFrom'
+        - $ref: '#/components/parameters/AnilistListYearTo'
+        - $ref: '#/components/parameters/AnilistListSort'
+        - $ref: '#/components/parameters/AnilistListOrder'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMin'
+        - $ref: '#/components/parameters/AnilistListAverageScoreMax'
+        - $ref: '#/components/parameters/AnilistListMyScoreMin'
+        - $ref: '#/components/parameters/AnilistListMyScoreMax'
         - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
@@ -10927,15 +11146,236 @@ paths:
             type: number
             example: 1
             default: 1
+        - in: query
+          name: mediaType
+          description: Only movies or only shows.
+          schema:
+            type: string
+            enum: [movie, tv]
+        - in: query
+          name: sort
+          description: MDBList's sort key. Omit for the list's default (ranked) order.
+          schema:
+            type: string
+            enum:
+              [
+                rank,
+                usort,
+                score,
+                score_average,
+                released,
+                releasedigital,
+                added,
+                imdbrating,
+                imdbvotes,
+                imdbpopular,
+                tmdbpopular,
+                rogerebert,
+                rtomatoes,
+                rtaudience,
+                metacritic,
+                myanimelist,
+                letterrating,
+                lettervotes,
+                last_air_date,
+                budget,
+                revenue,
+                runtime,
+                title,
+                sort_title,
+              ]
+        - in: query
+          name: order
+          description: Sort direction.
+          schema:
+            type: string
+            enum: [asc, desc]
+        - in: query
+          name: title
+          description: Titles containing this text.
+          schema:
+            type: string
+            maxLength: 200
+        - in: query
+          name: genres
+          description: Comma-separated MDBList genre slugs (see /discover/mdblist/filters).
+          schema:
+            type: string
+            example: drama,anime-isekai
+        - in: query
+          name: genreMode
+          description: Match any (or) or all (and) of the genres.
+          schema:
+            type: string
+            enum: [or, and]
+        - in: query
+          name: releasedFrom
+          description: Earliest release date, YYYY-MM-DD.
+          schema:
+            type: string
+            example: '2020-01-01'
+        - in: query
+          name: releasedTo
+          description: Latest release date, YYYY-MM-DD.
+          schema:
+            type: string
+            example: '2024-12-31'
+        - in: query
+          name: scoreMin
+          description: Lowest MDBList score on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: scoreMax
+          description: Highest MDBList score on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: imdbRatingMin
+          description: Lowest IMDb rating on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: imdbRatingMax
+          description: Highest IMDb rating on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: tmdbRatingMin
+          description: Lowest TMDB rating on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: tmdbRatingMax
+          description: Highest TMDB rating on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: metacriticMin
+          description: Lowest Metacritic on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: metacriticMax
+          description: Highest Metacritic on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: rtCriticsMin
+          description: Lowest Rotten Tomatoes critics on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: rtCriticsMax
+          description: Highest Rotten Tomatoes critics on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: rtAudienceMin
+          description: Lowest Rotten Tomatoes audience on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: rtAudienceMax
+          description: Highest Rotten Tomatoes audience on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: letterboxdMin
+          description: Lowest Letterboxd rating on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: letterboxdMax
+          description: Highest Letterboxd rating on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: malMin
+          description: Lowest MyAnimeList rating on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+        - in: query
+          name: malMax
+          description: Highest MyAnimeList rating on MDBList's 0-100 scale. MDBList applies it for supporter accounts; for other accounts Foreseerr checks it against each title's MDBList ratings across the first 1,000 list items.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
         - $ref: '#/components/parameters/DiscoverHideUnmapped'
         - $ref: '#/components/parameters/DiscoverIgnoreDefaults'
       responses:
         '200':
-          description: MDBList list items returned
+          description: MDBList list items returned. `ratingsFilteredLocally` is true when Foreseerr, not MDBList, applied the rating filters.
         '400':
-          description: MDBList is not configured or the list reference is invalid
+          description: MDBList is not configured, the list reference is invalid, or a filter is malformed
         '404':
           description: MDBList list not found
+  /discover/mdblist/filters:
+    get:
+      x-foreseerr: true
+      summary: MDBList list filter options
+      description: MDBList's genre catalog (regular then anime genres), its list sort keys, and whether the configured account has a supporter plan (null when MDBList does not say); without one, rating filters are checked by Foreseerr.
+      tags:
+        - search
+      responses:
+        '200':
+          description: Filter options
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  genres:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        slug:
+                          type: string
+                        title:
+                          type: string
+                        anime:
+                          type: boolean
+                  sorts:
+                    type: array
+                    items:
+                      type: string
+                  supporter:
+                    type: boolean
+                    nullable: true
+        '400':
+          description: MDBList is not configured
   /discover/watchlist:
     get:
       summary: Get the Plex watchlist.
