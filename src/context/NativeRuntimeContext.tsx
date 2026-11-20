@@ -1,3 +1,4 @@
+import { playInForeseerrPlayer } from '@app/context/foreseerrPlayer';
 import type { NativeHostEventTypeV1 } from '@app/context/nativeRuntimeProtocol';
 import {
   isCurrentNativePlayRequest,
@@ -298,10 +299,13 @@ export const NativeRuntimeProvider = ({
         if (canAdmitNativePlay(state)) {
           return admitPlay(target);
         }
+        if (state === 'web' && userId !== undefined) {
+          return playInForeseerrPlayer(target.itemId);
+        }
         return false;
       },
     }),
-    [admitPlay, canQuit, quit, state]
+    [admitPlay, canQuit, quit, state, userId]
   );
 
   return (

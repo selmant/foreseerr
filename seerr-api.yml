@@ -54,6 +54,23 @@ servers:
 
 components:
   schemas:
+    PlayerPairTicket:
+      type: object
+      required: [ticket]
+      properties:
+        ticket:
+          type: string
+          writeOnly: true
+          pattern: '^[A-Za-z0-9_-]{43}$'
+    PlayerPairing:
+      type: object
+      required: [serverUrls, serverId, userId]
+      properties:
+        serverUrls:
+          type: array
+          items: { type: string, format: uri }
+        serverId: { type: string }
+        userId: { type: string }
     Blocklist:
       type: object
       properties:
@@ -4360,6 +4377,87 @@ paths:
           {
             description: 'Ticket, verifier, issuer session, or linked token invalid',
           }
+        '409': { description: Ticket used or Jellyfin account not linked }
+        '429': { description: Rate limited }
+        '503': { description: Jellyfin server unavailable }
+  /player/pair-tickets:
+    post:
+      x-foreseerr: true
+      summary: Issue a single-use ticket that pairs the native player
+      tags: [auth]
+      security:
+        - cookieAuth: []
+        - apiKey: []
+      responses:
+        '201':
+          description: Single-use ticket issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticket, expiresIn]
+                properties:
+                  ticket:
+                    type: string
+                    description: Sensitive single-use value; never log or cache.
+                  expiresIn: { type: integer }
+        '401': { description: Authentication required }
+        '409': { description: Jellyfin account is not linked or unsupported }
+        '429': { description: Rate limited }
+  /player/pair-tickets/info:
+    post:
+      x-foreseerr: true
+      summary: Read the Jellyfin server and user a pairing ticket is for
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlayerPairTicket'
+      responses:
+        '200':
+          description: Server addresses and user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerPairing'
+        '401': { description: Ticket expired or linked token invalid }
+        '409': { description: Jellyfin account not linked }
+        '429': { description: Rate limited }
+        '503': { description: Jellyfin server unavailable }
+  /player/pair-tickets/quickconnect:
+    post:
+      x-foreseerr: true
+      summary: Approve the player's Quick Connect code as the ticket's user
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket, code]
+              properties:
+                ticket:
+                  type: string
+                  writeOnly: true
+                  pattern: '^[A-Za-z0-9_-]{43}$'
+                code:
+                  type: string
+                  pattern: '^[0-9]{4,16}$'
+      responses:
+        '200':
+          description: Code approved; the ticket is spent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerPairing'
+        '401': { description: Ticket expired or linked token invalid }
+        '403': { description: Quick Connect is disabled on the server }
+        '404': { description: Unknown Quick Connect code }
         '409': { description: Ticket used or Jellyfin account not linked }
         '429': { description: Rate limited }
         '503': { description: Jellyfin server unavailable }

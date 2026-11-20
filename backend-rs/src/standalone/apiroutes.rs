@@ -4,7 +4,7 @@
 use super::fallback::ApiRoute;
 
 /// Every documented route.
-pub(super) static ROUTES: [ApiRoute; 282] = [
+pub(super) static ROUTES: [ApiRoute; 285] = [
     ApiRoute {
         template: "/api/v1/ai/feedback",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("feedback")],
@@ -669,6 +669,21 @@ pub(super) static ROUTES: [ApiRoute; 282] = [
         template: "/api/v1/person/{personId}",
         segments: &[Some("api"), Some("v1"), Some("person"), None],
         methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/player/pair-tickets/info",
+        segments: &[Some("api"), Some("v1"), Some("player"), Some("pair-tickets"), Some("info")],
+        methods: &[("POST", false)],
+    },
+    ApiRoute {
+        template: "/api/v1/player/pair-tickets/quickconnect",
+        segments: &[Some("api"), Some("v1"), Some("player"), Some("pair-tickets"), Some("quickconnect")],
+        methods: &[("POST", false)],
+    },
+    ApiRoute {
+        template: "/api/v1/player/pair-tickets",
+        segments: &[Some("api"), Some("v1"), Some("player"), Some("pair-tickets")],
+        methods: &[("POST", true)],
     },
     ApiRoute {
         template: "/api/v1/regions",

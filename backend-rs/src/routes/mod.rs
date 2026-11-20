@@ -55,6 +55,7 @@ pub mod nodestate;
 pub mod overriderule;
 mod params;
 pub mod person;
+pub mod player;
 pub mod plexdiscover;
 pub mod plexsettings;
 pub mod plexxml;
@@ -141,6 +142,7 @@ const TABLES: &[&Table] = &[
     authreset::ROUTES,
     desktop::ROUTES,
     desktopcache::ROUTES,
+    player::ROUTES,
     arrsettings::ROUTES,
     jobsettings::ROUTES,
     logs::ROUTES,

@@ -41,9 +41,11 @@ const BODY_LIMIT: usize = 100 * 1024;
 /// urlencoded's `parameterLimit`.
 const PARAMETER_LIMIT: usize = 1000;
 /// csurf's `ignoreRequest`: native hosts redeem without browser cookies.
-const IGNORED_POSTS: [&str; 2] = [
+const IGNORED_POSTS: [&str; 4] = [
     "/api/v1/desktop/auth-tickets/redeem",
     "/api/v1/desktop/browser-cache/redeem",
+    "/api/v1/player/pair-tickets/info",
+    "/api/v1/player/pair-tickets/quickconnect",
 ];
 /// The headers csurf's default `value()` reads, in its order.
 const TOKEN_HEADERS: [&str; 4] = ["csrf-token", "xsrf-token", "x-csrf-token", "x-xsrf-token"];
