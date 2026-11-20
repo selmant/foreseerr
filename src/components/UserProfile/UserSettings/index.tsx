@@ -4,6 +4,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import type { SettingsRoute } from '@app/components/Common/SettingsTabs';
 import SettingsTabs from '@app/components/Common/SettingsTabs';
 import ProfileHeader from '@app/components/UserProfile/ProfileHeader';
+import { foreseerrPlayerHost } from '@app/context/foreseerrPlayer';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
@@ -23,6 +24,7 @@ const messages = defineMessages('components.UserProfile.UserSettings', {
   menuLinkedAccounts: 'Linked Accounts',
   menuNotifications: 'Notifications',
   menuPermissions: 'Permissions',
+  menuPlayer: 'Player',
   unauthorizedDescription:
     "You do not have permission to modify this user's settings.",
 });
@@ -96,6 +98,14 @@ const UserSettings = ({ children }: UserSettingsProps) => {
       regex: /\/settings\/permissions/,
       requiredPermission: Permission.MANAGE_USERS,
       hidden: currentUser?.id !== 1 && currentUser?.id === user.id,
+    },
+    {
+      text: intl.formatMessage(messages.menuPlayer),
+      route: '/settings/player',
+      regex: /\/settings\/player/,
+      // The player's settings live in the app on this device, so only its
+      // own user sees them, and only inside the app.
+      hidden: !foreseerrPlayerHost() || currentUser?.id !== user.id,
     },
   ];
 
