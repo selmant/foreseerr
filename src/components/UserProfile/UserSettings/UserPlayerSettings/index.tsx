@@ -163,7 +163,10 @@ const SettingControl = ({
         >
           <SlideCheckbox
             checked={setting.value}
-            onClick={() => onChange(!setting.value)}
+            onClick={() => {
+              // The switch stays focusable, so Enter still reaches here.
+              if (setting.enabled) onChange(!setting.value);
+            }}
           />
         </div>
       );
@@ -261,8 +264,10 @@ const UserPlayerSettings = () => {
     if (inApp) void load();
   }, [inApp, load]);
 
+  // Not while saving: the save replaces the changes when it is done.
   const change = useCallback(
     (setting: PlayerSetting, value: unknown) =>
+      !saving &&
       setChanges((current) => {
         const next = new Map(current);
         next.delete(setting.key);
@@ -272,7 +277,7 @@ const UserPlayerSettings = () => {
         }
         return next;
       }),
-    [schema]
+    [saving, schema]
   );
 
   // Sets the changes one at a time, in the order they were made: one can

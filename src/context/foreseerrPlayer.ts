@@ -1,6 +1,9 @@
+import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
+import defineMessages from '@app/utils/defineMessages';
 import axios from 'axios';
 import { useCallback } from 'react';
+import { useIntl } from 'react-intl';
 
 /**
  * Hands Jellyfin playback to the Foreseerr app's own player. Only inside the
@@ -14,6 +17,13 @@ import { useCallback } from 'react';
  * the pairing is kept here.
  */
 const SCHEME = 'foreseerr-player';
+
+const messages = defineMessages('context.foreseerrPlayer', {
+  notLinked:
+    'Link your Jellyfin account in your profile settings to play here.',
+  rateLimited: 'Too many plays at once. Try again in a minute.',
+  playFailed: 'The player could not be opened: {error}',
+});
 
 /** What the app puts on `window` in its own pages. */
 interface ForeseerrPlayerHost {
@@ -38,14 +48,23 @@ const ticket = async (): Promise<string> =>
   (await axios.post<{ ticket: string }>('/api/v1/player/pair-tickets')).data
     .ticket;
 
+/** The latest play; an earlier one finishing late must not replace it. */
+let latestPlay = 0;
+
 /**
  * Opens [itemId] in the app's player. False outside the app, so the caller
- * keeps its browser link.
+ * keeps its browser link. When the ticket can't be had, [onError] gets the
+ * server's error code (or the error's message).
  */
-export const playInForeseerrPlayer = (itemId: string): boolean => {
+export const playInForeseerrPlayer = (
+  itemId: string,
+  onError?: (code: string) => void
+): boolean => {
   if (!foreseerrPlayerHost()) return false;
+  const play = ++latestPlay;
   ticket()
     .then((value) => {
+      if (play !== latestPlay) return;
       const params = new URLSearchParams({
         foreseerr: window.location.origin,
         ticket: value,
@@ -54,8 +73,13 @@ export const playInForeseerrPlayer = (itemId: string): boolean => {
       window.location.href = `${SCHEME}://open?${params}`;
     })
     .catch((e) => {
+      if (play !== latestPlay) return;
       // eslint-disable-next-line no-console
       console.error('The player could not be opened', e);
+      const code = axios.isAxiosError(e)
+        ? (e.response?.data as { code?: string } | undefined)?.code
+        : undefined;
+      onError?.(code ?? (e instanceof Error ? e.message : String(e)));
     });
   return true;
 };
@@ -76,14 +100,25 @@ export interface PlayTarget {
  */
 export const usePlayInApp = (): ((target: PlayTarget) => boolean) => {
   const { user, error } = useUser();
+  const intl = useIntl();
+  const { addToast } = useToasts();
   const signedIn = !error && !!user;
   return useCallback(
     (target: PlayTarget) =>
       signedIn &&
       target.provider === 'jellyfin' &&
       !!target.itemId &&
-      playInForeseerrPlayer(target.itemId),
-    [signedIn]
+      playInForeseerrPlayer(target.itemId, (code) =>
+        addToast(
+          code === 'not_linked'
+            ? intl.formatMessage(messages.notLinked)
+            : code === 'rate_limited'
+              ? intl.formatMessage(messages.rateLimited)
+              : intl.formatMessage(messages.playFailed, { error: code }),
+          { appearance: 'error', autoDismiss: true }
+        )
+      ),
+    [addToast, intl, signedIn]
   );
 };
 
