@@ -6,7 +6,6 @@ import ServiceWorkerSetup from '@app/components/ServiceWorkerSetup';
 import StatusChecker from '@app/components/StatusChecker';
 import { InteractionProvider } from '@app/context/InteractionContext';
 import { LanguageContext } from '@app/context/LanguageContext';
-import { NativeRuntimeProvider } from '@app/context/NativeRuntimeContext';
 import { SettingsProvider } from '@app/context/SettingsContext';
 import { UserContext } from '@app/context/UserContext';
 import type { User } from '@app/hooks/useUser';
@@ -254,9 +253,7 @@ const AppShell = ({
             <PWAHeader applicationTitle={currentSettings.applicationTitle} />
             <StatusChecker />
             <ServiceWorkerSetup />
-            <UserContext initialUser={user}>
-              <NativeRuntimeProvider>{content}</NativeRuntimeProvider>
-            </UserContext>
+            <UserContext initialUser={user}>{content}</UserContext>
             <Toaster
               position="top-right"
               toastOptions={{ duration: 4000 }}

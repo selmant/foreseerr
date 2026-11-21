@@ -596,6 +596,17 @@
     }
   }
 
+  /* Native app only: see components/Common/Transition. */
+  html.native-shell [data-animates='opacity'] {
+    will-change: opacity;
+  }
+  html.native-shell [data-animates='transform'] {
+    will-change: transform;
+  }
+  html.native-shell [data-animates='opacity transform'] {
+    will-change: opacity, transform;
+  }
+
   .extra-bottom-space {
     height: calc(4rem + env(safe-area-inset-bottom));
   }

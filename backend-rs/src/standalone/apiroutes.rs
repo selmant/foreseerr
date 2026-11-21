@@ -4,7 +4,7 @@
 use super::fallback::ApiRoute;
 
 /// Every documented route.
-pub(super) static ROUTES: [ApiRoute; 282] = [
+pub(super) static ROUTES: [ApiRoute; 283] = [
     ApiRoute {
         template: "/api/v1/ai/feedback",
         segments: &[Some("api"), Some("v1"), Some("ai"), Some("feedback")],
@@ -179,16 +179,6 @@ pub(super) static ROUTES: [ApiRoute; 282] = [
         template: "/api/v1/collection/{collectionId}",
         segments: &[Some("api"), Some("v1"), Some("collection"), None],
         methods: &[("GET", true)],
-    },
-    ApiRoute {
-        template: "/api/v1/desktop/auth-tickets/redeem",
-        segments: &[Some("api"), Some("v1"), Some("desktop"), Some("auth-tickets"), Some("redeem")],
-        methods: &[("POST", false)],
-    },
-    ApiRoute {
-        template: "/api/v1/desktop/auth-tickets",
-        segments: &[Some("api"), Some("v1"), Some("desktop"), Some("auth-tickets")],
-        methods: &[("POST", true)],
     },
     ApiRoute {
         template: "/api/v1/discover/anilist/completed",
@@ -669,6 +659,21 @@ pub(super) static ROUTES: [ApiRoute; 282] = [
         template: "/api/v1/person/{personId}",
         segments: &[Some("api"), Some("v1"), Some("person"), None],
         methods: &[("GET", true)],
+    },
+    ApiRoute {
+        template: "/api/v1/player/pair-tickets/info",
+        segments: &[Some("api"), Some("v1"), Some("player"), Some("pair-tickets"), Some("info")],
+        methods: &[("POST", false)],
+    },
+    ApiRoute {
+        template: "/api/v1/player/pair-tickets/redeem",
+        segments: &[Some("api"), Some("v1"), Some("player"), Some("pair-tickets"), Some("redeem")],
+        methods: &[("POST", false)],
+    },
+    ApiRoute {
+        template: "/api/v1/player/pair-tickets",
+        segments: &[Some("api"), Some("v1"), Some("player"), Some("pair-tickets")],
+        methods: &[("POST", true)],
     },
     ApiRoute {
         template: "/api/v1/regions",

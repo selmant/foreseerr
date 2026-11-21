@@ -14,8 +14,7 @@
 //! `{"message":"Invalid local desktop request"}` when its `Host` isn't the
 //! loopback origin's, it carries `X-Forwarded-Host` or `Forwarded`, its
 //! target is an absolute URL, or it is a `POST`/`PUT`/`PATCH`/`DELETE`
-//! whose `Origin` isn't the loopback origin (the two native redeem routes
-//! excepted).
+//! whose `Origin` isn't the loopback origin.
 //!
 //! Both: Express writes the session cookie last, after the cookies
 //! middleware set, so `connect.sid` moves behind them.
@@ -38,12 +37,6 @@ use crate::state::AppState;
 /// and directory redirects print `req.originalUrl`.
 #[derive(Debug, Clone)]
 pub struct Mounted(pub String);
-
-/// The native hosts' redeem routes, which carry no browser `Origin`.
-const NATIVE_TICKETS: [&str; 2] = [
-    "/api/v1/desktop/auth-tickets/redeem",
-    "/api/v1/desktop/browser-cache/redeem",
-];
 
 /// The middleware.
 pub async fn layer(
@@ -143,7 +136,6 @@ fn guard(req: &Request) -> Option<Response<Body>> {
     let headers = req.headers();
     let unsafe_method =
         [Method::POST, Method::PUT, Method::PATCH, Method::DELETE].contains(req.method());
-    let native_ticket = NATIVE_TICKETS.contains(&path);
     let absolute = matches!(req.uri().scheme_str(), Some("http" | "https"));
     let header_is = |name: header::HeaderName, want: Option<&str>| {
         let got = headers.get(name).map(HeaderValue::as_bytes);
@@ -155,7 +147,7 @@ fn guard(req: &Request) -> Option<Response<Body>> {
         || headers.contains_key("x-forwarded-host")
         || headers.contains_key(header::FORWARDED)
         || absolute
-        || (unsafe_method && !native_ticket && !header_is(header::ORIGIN, origin.as_deref()));
+        || (unsafe_method && !header_is(header::ORIGIN, origin.as_deref()));
     if !refused {
         return None;
     }

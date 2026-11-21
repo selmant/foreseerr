@@ -1,7 +1,7 @@
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import useToasts from '@app/hooks/useToasts';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import axios from 'axios';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';

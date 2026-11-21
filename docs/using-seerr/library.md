@@ -35,7 +35,7 @@ The final card opens the complete catalog from Continue Watching, the catalog so
 
 Empty shelves are omitted. If nothing is linked, Library tells you to link
 Jellyfin in settings. Playback uses the normal Jellyfin link in a browser, or
-native playback when [Foreseer Desktop](native-desktop.md) is running.
+the player of the [desktop app](native-desktop.md) when you use Foreseerr there.
 
 Open a poster for series/season details, resume, next-unwatched, or rewatch
 choices. Episode watched/unwatched toggles apply to Jellyfin (and to Trakt or

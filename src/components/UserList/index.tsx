@@ -8,6 +8,7 @@ import Modal from '@app/components/Common/Modal';
 import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import Table from '@app/components/Common/Table';
+import { Transition } from '@app/components/Common/Transition';
 import BulkEditModal from '@app/components/UserList/BulkEditModal';
 import PlexImportModal from '@app/components/UserList/PlexImportModal';
 import useDebouncedState from '@app/hooks/useDebouncedState';
@@ -19,7 +20,6 @@ import type { User } from '@app/hooks/useUser';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import {
   BarsArrowDownIcon,
   BarsArrowUpIcon,

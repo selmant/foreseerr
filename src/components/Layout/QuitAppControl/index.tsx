@@ -1,7 +1,7 @@
 import Modal from '@app/components/Common/Modal';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { Transition } from '@app/components/Common/Transition';
+import { foreseerrPlayerHost, quitApp } from '@app/context/foreseerrPlayer';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import { PowerIcon } from '@heroicons/react/24/outline';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -21,7 +21,7 @@ type QuitAppControlProps = {
 
 const QuitAppControl = ({ variant = 'sidebar' }: QuitAppControlProps) => {
   const intl = useIntl();
-  const { canQuit, quit } = useNativeRuntime();
+  const canQuit = !!foreseerrPlayerHost();
   const [showConfirm, setShowConfirm] = useState(false);
 
   if (!canQuit) {
@@ -66,7 +66,7 @@ const QuitAppControl = ({ variant = 'sidebar' }: QuitAppControlProps) => {
           onCancel={() => setShowConfirm(false)}
           onOk={() => {
             setShowConfirm(false);
-            quit();
+            void quitApp();
           }}
           okText={intl.formatMessage(messages.quitConfirm)}
           okButtonType="danger"

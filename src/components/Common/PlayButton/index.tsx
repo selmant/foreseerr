@@ -1,6 +1,6 @@
 import ButtonWithDropdown from '@app/components/Common/ButtonWithDropdown';
-import type { NativePlayTarget } from '@app/context/NativeRuntimeContext';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import type { PlayTarget } from '@app/context/foreseerrPlayer';
+import { usePlayInApp } from '@app/context/foreseerrPlayer';
 import defineMessages from '@app/utils/defineMessages';
 import { useIntl } from 'react-intl';
 
@@ -16,12 +16,12 @@ export interface PlayButtonLink {
   text: string;
   url: string;
   svg: React.ReactNode;
-  native?: Omit<NativePlayTarget, 'fallbackUrl' | 'label'>;
+  native?: Omit<PlayTarget, 'fallbackUrl' | 'label'>;
 }
 
 const PlayButton = ({ links }: PlayButtonProps) => {
   const intl = useIntl();
-  const { play } = useNativeRuntime();
+  const play = usePlayInApp();
   if (!links || !links.length) {
     return null;
   }

@@ -5,12 +5,13 @@ import CachedImage from '@app/components/Common/CachedImage';
 import RatingBadges from '@app/components/Common/RatingBadges';
 import StatusBadgeMini from '@app/components/Common/StatusBadgeMini';
 import Tooltip from '@app/components/Common/Tooltip';
+import { Transition } from '@app/components/Common/Transition';
 import RequestModal from '@app/components/RequestModal';
 import ErrorCard from '@app/components/TitleCard/ErrorCard';
 import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
 import TvRequestMenu from '@app/components/TitleCard/TvRequestMenu';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { usePlayInApp } from '@app/context/foreseerrPlayer';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import useSettings from '@app/hooks/useSettings';
@@ -23,7 +24,6 @@ import {
   quickRequestTvSeasons,
 } from '@app/utils/quickRequest';
 import { withProperties } from '@app/utils/typeHelpers';
-import { Transition } from '@headlessui/react';
 import {
   ArrowDownTrayIcon,
   BookmarkIcon,
@@ -134,7 +134,7 @@ const TitleCard = ({
   const cardLabel = [title, displayYear, subtitle].filter(Boolean).join(', ');
   const settings = useSettings();
   const { user, hasPermission } = useUser();
-  const { play } = useNativeRuntime();
+  const play = usePlayInApp();
   const [isUpdating, setIsUpdating] = useState(false);
   const { data: mediaActionCapabilities } = useMediaActionCapabilities();
   const surfaceCapabilities =

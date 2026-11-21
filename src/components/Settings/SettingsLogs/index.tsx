@@ -5,6 +5,7 @@ import Modal from '@app/components/Common/Modal';
 import PageTitle from '@app/components/Common/PageTitle';
 import Table from '@app/components/Common/Table';
 import Tooltip from '@app/components/Common/Tooltip';
+import { Transition } from '@app/components/Common/Transition';
 import useDebouncedState from '@app/hooks/useDebouncedState';
 import useRouteQuery from '@app/hooks/useRouteQuery';
 import useToasts from '@app/hooks/useToasts';
@@ -12,7 +13,6 @@ import { useUpdateQueryParams } from '@app/hooks/useUpdateQueryParams';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,

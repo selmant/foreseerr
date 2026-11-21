@@ -1,30 +1,30 @@
-import { aiErrorOf } from '@app/components/Ai/aiError';
-import { fetchModels } from '@app/components/Ai/fetchModels';
 import EndpointModal from '@app/components/Ai/EndpointModal';
 import ModelPicker from '@app/components/Ai/ModelPicker';
+import { aiErrorOf } from '@app/components/Ai/aiError';
+import { fetchModels } from '@app/components/Ai/fetchModels';
 import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
-import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import LinkButton from '@app/components/Common/LinkButton';
+import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import type { SegmentedOption } from '@app/components/Common/SegmentedControl';
 import SegmentedControl from '@app/components/Common/SegmentedControl';
+import { Transition } from '@app/components/Common/Transition';
 import ChatgptConnectModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/ChatgptConnectModal';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import {
   ArrowTopRightOnSquareIcon,
   BeakerIcon,
   CheckCircleIcon,
+  ChevronDownIcon,
   CommandLineIcon,
   ServerIcon,
   SparklesIcon,
   TrashIcon,
   UserCircleIcon,
-  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import type {
   AiConnection,

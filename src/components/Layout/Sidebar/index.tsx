@@ -1,5 +1,6 @@
 import AppImage from '@app/components/Common/AppImage';
 import Badge from '@app/components/Common/Badge';
+import { Transition, TransitionChild } from '@app/components/Common/Transition';
 import QuitAppControl from '@app/components/Layout/QuitAppControl';
 import VersionStatus from '@app/components/Layout/VersionStatus';
 import {
@@ -9,7 +10,6 @@ import {
 } from '@app/components/Layout/navigation';
 import useClickOutside from '@app/hooks/useClickOutside';
 import { Permission, useUser } from '@app/hooks/useUser';
-import { Transition, TransitionChild } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Fragment, useEffect, useRef } from 'react';
 import { useIntl } from 'react-intl';

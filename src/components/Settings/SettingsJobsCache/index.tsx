@@ -8,11 +8,15 @@ import Table from '@app/components/Common/Table';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
 
+import { Transition } from '@app/components/Common/Transition';
+import {
+  clearAppCache,
+  foreseerrPlayerHost,
+} from '@app/context/foreseerrPlayer';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { formatBytes } from '@app/utils/numberHelpers';
-import { Transition } from '@headlessui/react';
 import { PlayIcon, StopIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { PencilIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@shared/constants/server';
@@ -298,8 +302,7 @@ const SettingsJobs = () => {
   };
 
   const canClearBrowserCache =
-    typeof window !== 'undefined' &&
-    !!window.foreseerNative?.capabilities.includes('browser-cache-clear');
+    typeof window !== 'undefined' && !!foreseerrPlayerHost();
 
   const runCacheClear = async (
     clear: () => Promise<unknown>,
@@ -325,62 +328,16 @@ const SettingsJobs = () => {
     );
 
   const requestBrowserCacheClear = async () => {
-    const host = window.foreseerNative;
-    if (!host?.capabilities.includes('browser-cache-clear')) {
-      return false;
-    }
-    const response = await axios.post<{ ticket: string }>(
-      '/api/v1/settings/cache/browser/flush'
-    );
-    const id = crypto.randomUUID();
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        cleanup();
-        reject(new Error('Native browser cache clear timed out'));
-      }, 10_000);
-      const onEvent = (event: Event) => {
-        const detail = (
-          event as CustomEvent<{
-            id?: string;
-            type?: string;
-            errorCode?: string;
-          }>
-        ).detail;
-        if (detail?.id !== id) return;
-        if (detail.type === 'browser-cache-cleared') {
-          cleanup();
-          resolve();
-        } else if (detail.type === 'error') {
-          cleanup();
-          reject(
-            new Error(detail.errorCode ?? 'Native browser cache clear failed')
-          );
-        }
-      };
-      const cleanup = () => {
-        window.clearTimeout(timeout);
-        window.removeEventListener('foreseer:native-event', onEvent);
-      };
-      window.addEventListener('foreseer:native-event', onEvent);
-      if (
-        !host.send({
-          type: 'browser-cache.clear',
-          id,
-          ticket: response.data.ticket,
-        })
-      ) {
-        cleanup();
-        reject(new Error('Native browser cache bridge is unavailable'));
-      }
-    });
+    if (!foreseerrPlayerHost()) return false;
+    await clearAppCache();
     return true;
   };
 
   const flushAllCaches = () =>
     runCacheClear(async () => {
       await axios.post('/api/v1/settings/cache/all/flush');
-      // Browser cache is native-owned. Include it when this is the desktop
-      // app, while preserving the hosted deployment's server-only clear.
+      // The app's web cache is the app's. Include it inside the app, while
+      // a browser only clears the server's caches.
       await requestBrowserCacheClear();
     }, intl.formatMessage(messages.allcachesflushed));
 

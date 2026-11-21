@@ -1,7 +1,7 @@
+import { Transition } from '@app/components/Common/Transition';
 import CollectionRequestModal from '@app/components/RequestModal/CollectionRequestModal';
 import MovieRequestModal from '@app/components/RequestModal/MovieRequestModal';
 import TvRequestModal from '@app/components/RequestModal/TvRequestModal';
-import { Transition } from '@headlessui/react';
 import type { MediaStatus } from '@shared/constants/media';
 import type { MediaRequest } from '@shared/entity/MediaRequest';
 import type { NonFunctionProperties } from '@shared/interfaces/api/common';

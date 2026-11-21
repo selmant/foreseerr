@@ -1,4 +1,5 @@
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import LanguageSelector from '@app/components/LanguageSelector';
 import {
   GenreSelector,
@@ -10,7 +11,6 @@ import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import type OverrideRule from '@shared/entity/OverrideRule';
 import type { RadarrSettings, SonarrSettings } from '@shared/lib/settings';
 import axios from 'axios';

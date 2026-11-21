@@ -1,4 +1,3 @@
-import { parseAiSlider } from '@shared/lib/aiSlider';
 import Button from '@app/components/Common/Button';
 import SlideCheckbox from '@app/components/Common/SlideCheckbox';
 import Tag from '@app/components/Common/Tag';
@@ -11,13 +10,12 @@ import SliderSourceMark, {
 import { sliderTitles } from '@app/components/Discover/constants';
 import GenreTag from '@app/components/GenreTag';
 import KeywordTag from '@app/components/KeywordTag';
-import { isUsableForeseerNative } from '@app/context/nativeRuntimeProtocol';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import {
-  MagnifyingGlassIcon,
   LightBulbIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import {
   ArrowUturnLeftIcon,
@@ -29,6 +27,7 @@ import {
 } from '@heroicons/react/24/solid';
 import { DiscoverSliderType } from '@shared/constants/discover';
 import type DiscoverSlider from '@shared/entity/DiscoverSlider';
+import { parseAiSlider } from '@shared/lib/aiSlider';
 import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
 import { useDrag, useDrop } from 'react-aria';
@@ -77,15 +76,7 @@ const DiscoverSliderEdit = ({
   const [hoverPosition, setHoverPosition] = useState<keyof typeof Position>(
     Position.None
   );
-  // HTML5 DnD is unreliable in CEF; native uses arrow reorder only.
-  const [allowHtml5Drag, setAllowHtml5Drag] = useState(true);
-
-  useEffect(() => {
-    setAllowHtml5Drag(!isUsableForeseerNative(window.foreseerNative));
-  }, []);
-
   const { dragProps, isDragging: ariaDragging } = useDrag({
-    isDisabled: !allowHtml5Drag,
     getItems() {
       return [{ id: (slider.id ?? -1).toString(), title: slider.title ?? '' }];
     },
@@ -95,10 +86,10 @@ const DiscoverSliderEdit = ({
   // react-aria stuck in isDragging. Opacity-0 then permanently hides the row.
   // Keep a visible drag affordance and force-clear on pointer/drag end.
   const [forceShowAfterDrag, setForceShowAfterDrag] = useState(false);
-  const isDragging = allowHtml5Drag && ariaDragging && !forceShowAfterDrag;
+  const isDragging = ariaDragging && !forceShowAfterDrag;
 
   useEffect(() => {
-    if (!allowHtml5Drag || !ariaDragging) {
+    if (!ariaDragging) {
       setForceShowAfterDrag(false);
       return;
     }
@@ -115,7 +106,7 @@ const DiscoverSliderEdit = ({
       window.removeEventListener('dragend', release, true);
       window.removeEventListener('blur', release);
     };
-  }, [allowHtml5Drag, ariaDragging]);
+  }, [ariaDragging]);
 
   const deleteSlider = async () => {
     try {
@@ -135,7 +126,6 @@ const DiscoverSliderEdit = ({
 
   const { dropProps } = useDrop({
     ref,
-    isDisabled: !allowHtml5Drag,
     onDropMove: (e) => {
       if (ref.current) {
         const middlePoint = ref.current.offsetHeight / 2;
@@ -267,16 +257,16 @@ const DiscoverSliderEdit = ({
       className={`relative mb-4 rounded-lg bg-gray-800 shadow-md ${
         isDragging ? 'opacity-60 ring-2 ring-indigo-400/80' : 'opacity-100'
       }`}
-      {...(allowHtml5Drag ? dragProps : {})}
-      {...(allowHtml5Drag ? dropProps : {})}
+      {...dragProps}
+      {...dropProps}
       ref={ref}
     >
-      {allowHtml5Drag && hoverPosition === Position.Above && (
+      {hoverPosition === Position.Above && (
         <div
           className={`absolute -top-3 left-0 w-full border-t-4 border-indigo-500`}
         />
       )}
-      {allowHtml5Drag && hoverPosition === Position.Below && (
+      {hoverPosition === Position.Below && (
         <div
           className={`absolute -bottom-2 left-0 w-full border-t-4 border-indigo-500`}
         />
@@ -285,7 +275,7 @@ const DiscoverSliderEdit = ({
         <div
           className={`${slider.data ? 'mb-4' : 'mb-0'} flex space-x-2 md:mb-0`}
         >
-          {allowHtml5Drag && <Bars3Icon className="h-6 w-6" />}
+          <Bars3Icon className="h-6 w-6" />
           <div className="flex min-w-0 items-center gap-2">
             {sliderSource && <SliderSourceMark source={sliderSource} />}
             <div className="w-7/12 truncate md:w-full">

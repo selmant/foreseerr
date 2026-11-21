@@ -3,7 +3,7 @@ import Badge from '@app/components/Common/Badge';
 import Tooltip from '@app/components/Common/Tooltip';
 import DownloadBlock from '@app/components/DownloadBlock';
 import ProgressBadge from '@app/components/StatusBadge/ProgressBadge';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { usePlayInApp } from '@app/context/foreseerrPlayer';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
@@ -52,7 +52,7 @@ const StatusBadge = ({
   const intl = useIntl();
   const { hasPermission } = useUser();
   const settings = useSettings();
-  const { play } = useNativeRuntime();
+  const play = usePlayInApp();
 
   let mediaLink: string | undefined;
   let mediaLinkDescription: string | undefined;

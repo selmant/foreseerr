@@ -4,13 +4,13 @@ import Button from '@app/components/Common/Button';
 import Modal from '@app/components/Common/Modal';
 import SegmentedControl from '@app/components/Common/SegmentedControl';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
+import { Transition } from '@app/components/Common/Transition';
 import SettingsBetterTrakt, {
   type BetterTraktReadiness,
 } from '@app/components/Settings/SettingsBetterTrakt';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { Field, Formik } from 'formik';

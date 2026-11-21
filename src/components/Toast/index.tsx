@@ -1,4 +1,4 @@
-import { Transition } from '@headlessui/react';
+import { Transition } from '@app/components/Common/Transition';
 import {
   CheckCircleIcon,
   ExclamationCircleIcon,

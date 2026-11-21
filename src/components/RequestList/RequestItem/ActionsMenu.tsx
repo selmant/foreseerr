@@ -1,14 +1,9 @@
 import Alert from '@app/components/Common/Alert';
 import LinkButton from '@app/components/Common/LinkButton';
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import defineMessages from '@app/utils/defineMessages';
-import {
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-  Transition,
-} from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import {
   ChevronDownIcon,
   Cog6ToothIcon,

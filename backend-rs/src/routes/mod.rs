@@ -21,8 +21,6 @@ pub mod browsefilter;
 pub mod calendar;
 mod calendarquery;
 pub mod collection;
-pub mod desktop;
-pub mod desktopcache;
 pub mod deviceauth;
 pub mod discover;
 pub mod discoverkit;
@@ -55,6 +53,7 @@ pub mod nodestate;
 pub mod overriderule;
 mod params;
 pub mod person;
+pub mod player;
 pub mod plexdiscover;
 pub mod plexsettings;
 pub mod plexxml;
@@ -139,8 +138,7 @@ const TABLES: &[&Table] = &[
     authplex::ROUTES,
     authjellyfin::ROUTES,
     authreset::ROUTES,
-    desktop::ROUTES,
-    desktopcache::ROUTES,
+    player::ROUTES,
     arrsettings::ROUTES,
     jobsettings::ROUTES,
     logs::ROUTES,
@@ -1139,22 +1137,11 @@ mod spec_coverage {
         );
     }
 
-    /// Handlers deliberately left out of seerr-api.yml.
-    const UNDOCUMENTED: [&str; 1] = [
-        // The native desktop host's private route: undocumented so the
-        // validator, csurf and the desktop guard's Origin check skip it
-        // (see `desktopcache`).
-        "POST /api/v1/desktop/browser-cache/redeem",
-    ];
-
     /// The reverse: every handler is documented, so the spec (and the
     /// Seerr-compatibility check run on it) describes the whole API.
     #[test]
     fn every_handler_is_documented() {
-        let undocumented: Vec<String> = unmatched(&handled(), &documented())
-            .into_iter()
-            .filter(|op| !UNDOCUMENTED.contains(&op.as_str()))
-            .collect();
+        let undocumented = unmatched(&handled(), &documented());
         assert!(
             undocumented.is_empty(),
             "handled in routes::router but not documented in seerr-api.yml:\n{}",

@@ -1,8 +1,8 @@
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import { ApiErrorCode } from '@shared/constants/error';
 import axios from 'axios';
 import { Field, Formik } from 'formik';

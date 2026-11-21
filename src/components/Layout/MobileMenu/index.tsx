@@ -1,13 +1,13 @@
 import Badge from '@app/components/Common/Badge';
+import { Transition } from '@app/components/Common/Transition';
 import QuitAppControl from '@app/components/Layout/QuitAppControl';
 import {
   menuMessages,
   useAppNavigation,
   type NavigationCounts,
 } from '@app/components/Layout/navigation';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { foreseerrPlayerHost } from '@app/context/foreseerrPlayer';
 import useClickOutside from '@app/hooks/useClickOutside';
-import { Transition } from '@headlessui/react';
 import { EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -21,7 +21,7 @@ const MobileMenu = (counts: NavigationCounts) => {
     []
   );
   const intl = useIntl();
-  const { canQuit } = useNativeRuntime();
+  const canQuit = !!foreseerrPlayerHost();
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
   const links = useAppNavigation(counts);

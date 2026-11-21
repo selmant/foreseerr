@@ -9,13 +9,13 @@ Welcome to the Foreseerr Documentation.
 
 **Foreseerr** is a free and open source software application for managing requests for your media library. It integrates with the media server of your choice: [Jellyfin](https://jellyfin.org), [Plex](https://plex.tv), and [Emby](https://emby.media/). In addition, it integrates with your existing services, such as **[Sonarr](https://sonarr.tv/)**, **[Radarr](https://radarr.video/)**.
 
-## Optional Native Desktop
+## Optional Desktop App
 
-Foreseerr is a complete web application. If you want same-window native
-Jellyfin playback on a desktop computer, install the optional
-[Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) companion. It
-uses this hosted UI and preserves ordinary browser playback whenever the native
-runtime is unavailable. See [Native Desktop](using-seerr/native-desktop.md).
+Foreseerr is a complete web application. If you want Jellyfin playback in the
+same window on a desktop computer, install the optional
+[desktop app](https://github.com/selmant/foreseerr-player) (Linux). Its player
+is [Moonfin](https://github.com/Moonfin-Client/Moonfin-Core)'s. Browsers keep
+their normal Jellyfin links. See [Desktop App](using-seerr/native-desktop.md).
 
 Optional: run Foreseerr **inside Jellyfin** with the third-party [sidecar plugin](using-seerr/jellyfin-plugin.md) (alpha).
 
@@ -36,7 +36,7 @@ Optional: run Foreseerr **inside Jellyfin** with the third-party [sidecar plugin
 - Easily **Watchlist** or **Blocklist** media.
 - **Discover** from TMDB plus optional Trakt, AniList, Simkl, and MDBList sources.
 - **Mapping** from those sources onto TMDB, with packs, live resolvers, and a repair queue.
-- Optional **Foreseer Desktop** companion for same-window Jellyfin playback.
+- Optional **desktop app** that plays Jellyfin media in the same window.
 - More features to come!
 
 ## We need your help!

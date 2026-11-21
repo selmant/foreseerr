@@ -54,6 +54,23 @@ servers:
 
 components:
   schemas:
+    PlayerPairTicket:
+      type: object
+      required: [ticket]
+      properties:
+        ticket:
+          type: string
+          writeOnly: true
+          pattern: '^[A-Za-z0-9_-]{43}$'
+    PlayerPairing:
+      type: object
+      required: [serverUrls, serverId, userId]
+      properties:
+        serverUrls:
+          type: array
+          items: { type: string, format: uri }
+        serverId: { type: string }
+        userId: { type: string }
     Blocklist:
       type: object
       properties:
@@ -4261,33 +4278,17 @@ components:
       name: X-Api-Key
 
 paths:
-  /desktop/auth-tickets:
+  /player/pair-tickets:
     post:
       x-foreseerr: true
-      summary: Issue a challenge-bound desktop authentication ticket
+      summary: Issue a single-use ticket that pairs the native player
       tags: [auth]
       security:
         - cookieAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [challenge, protocolVersion]
-              properties:
-                challenge:
-                  type: string
-                  pattern: '^[a-f0-9]{64}$'
-                protocolVersion:
-                  type: integer
-                  enum: [1]
+        - apiKey: []
       responses:
         '201':
           description: Single-use ticket issued
-          headers:
-            Cache-Control:
-              schema: { type: string, enum: [no-store] }
           content:
             application/json:
               schema:
@@ -4297,16 +4298,14 @@ paths:
                   ticket:
                     type: string
                     description: Sensitive single-use value; never log or cache.
-                  expiresIn:
-                    type: integer
+                  expiresIn: { type: integer }
         '401': { description: Authentication required }
-        '403': { description: Browser cookie session required }
         '409': { description: Jellyfin account is not linked or unsupported }
         '429': { description: Rate limited }
-  /desktop/auth-tickets/redeem:
+  /player/pair-tickets/info:
     post:
       x-foreseerr: true
-      summary: Redeem a challenge-bound desktop authentication ticket
+      summary: Read the Jellyfin server and user a pairing ticket is for
       tags: [auth]
       security: []
       requestBody:
@@ -4314,52 +4313,48 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [ticket, verifier, protocolVersion]
-              properties:
-                ticket:
-                  type: string
-                  writeOnly: true
-                  pattern: '^[A-Za-z0-9_-]{43}$'
-                verifier:
-                  type: string
-                  writeOnly: true
-                  pattern: '^[A-Za-z0-9_-]{43}$'
-                protocolVersion:
-                  type: integer
-                  enum: [1]
+              $ref: '#/components/schemas/PlayerPairTicket'
       responses:
         '200':
-          description: Native Jellyfin session bootstrap
-          headers:
-            Cache-Control:
-              schema: { type: string, enum: [no-store] }
+          description: Server addresses and user
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  [
-                    serverUrl,
-                    serverId,
-                    userId,
-                    deviceId,
-                    accessToken,
-                    bootstrapGeneration,
-                  ]
-                properties:
-                  serverUrl: { type: string, format: uri }
-                  serverId: { type: string }
-                  userId: { type: string }
-                  deviceId: { type: string }
-                  accessToken:
-                    type: string
-                    description: Sensitive native-only credential; response is no-store.
-                  bootstrapGeneration: { type: string }
-        '401':
-          {
-            description: 'Ticket, verifier, issuer session, or linked token invalid',
-          }
+                $ref: '#/components/schemas/PlayerPairing'
+        '401': { description: Ticket expired or linked token invalid }
+        '409': { description: Jellyfin account not linked }
+        '429': { description: Rate limited }
+        '503': { description: Jellyfin server unavailable }
+  /player/pair-tickets/redeem:
+    post:
+      x-foreseerr: true
+      summary: Spend a pairing ticket for the user's linked Jellyfin session
+      description: >-
+        The player signs in with the returned token. Player and Foreseerr
+        then share that Jellyfin session.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlayerPairTicket'
+      responses:
+        '200':
+          description: The ticket is spent
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PlayerPairing'
+                  - type: object
+                    required: [accessToken]
+                    properties:
+                      accessToken:
+                        type: string
+                        description: Sensitive Jellyfin token; never log or cache.
+        '401': { description: Ticket expired or linked token invalid }
         '409': { description: Ticket used or Jellyfin account not linked }
         '429': { description: Rate limited }
         '503': { description: Jellyfin server unavailable }

@@ -1,8 +1,8 @@
+import { Transition } from '@app/components/Common/Transition';
 import { availableLanguages } from '@app/context/LanguageContext';
 import useClickOutside from '@app/hooks/useClickOutside';
 import useLocale from '@app/hooks/useLocale';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import { LanguageIcon } from '@heroicons/react/24/solid';
 import type { AvailableLocale } from '@shared/types/languages';
 import { useRef, useState } from 'react';

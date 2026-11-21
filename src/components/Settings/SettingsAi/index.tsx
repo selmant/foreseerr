@@ -1,19 +1,19 @@
-import { aiErrorOf } from '@app/components/Ai/aiError';
-import { fetchModels } from '@app/components/Ai/fetchModels';
 import EndpointModal from '@app/components/Ai/EndpointModal';
 import ModelPicker from '@app/components/Ai/ModelPicker';
-import AiUsagePanel from '@app/components/Settings/SettingsAi/AiUsagePanel';
+import { aiErrorOf } from '@app/components/Ai/aiError';
+import { fetchModels } from '@app/components/Ai/fetchModels';
 import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import ConfirmButton from '@app/components/Common/ConfirmButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
+import { Transition } from '@app/components/Common/Transition';
+import AiUsagePanel from '@app/components/Settings/SettingsAi/AiUsagePanel';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import {
   BeakerIcon,
   CheckCircleIcon,

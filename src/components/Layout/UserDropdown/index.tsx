@@ -1,17 +1,12 @@
 import CachedImage from '@app/components/Common/CachedImage';
+import { Transition } from '@app/components/Common/Transition';
 import MiniQuotaDisplay from '@app/components/Layout/UserDropdown/MiniQuotaDisplay';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { jellyfinWebPath } from '@app/utils/publicBasePath';
 import { unsubscribeToPushNotifications } from '@app/utils/pushSubscriptionHelpers';
-import {
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-  Transition,
-} from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import {
   AdjustmentsHorizontalIcon,
   ArrowLeftOnRectangleIcon,

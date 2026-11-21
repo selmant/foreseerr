@@ -1,9 +1,9 @@
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import type { StatusResponse } from '@shared/interfaces/api/settingsInterfaces';
 import { Fragment, useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
