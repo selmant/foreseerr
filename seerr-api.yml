@@ -4427,10 +4427,13 @@ paths:
         '409': { description: Jellyfin account not linked }
         '429': { description: Rate limited }
         '503': { description: Jellyfin server unavailable }
-  /player/pair-tickets/quickconnect:
+  /player/pair-tickets/redeem:
     post:
       x-foreseerr: true
-      summary: Approve the player's Quick Connect code as the ticket's user
+      summary: Spend a pairing ticket for the user's linked Jellyfin session
+      description: >-
+        The player signs in with the returned token. Player and Foreseerr
+        then share that Jellyfin session.
       tags: [auth]
       security: []
       requestBody:
@@ -4438,26 +4441,22 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [ticket, code]
-              properties:
-                ticket:
-                  type: string
-                  writeOnly: true
-                  pattern: '^[A-Za-z0-9_-]{43}$'
-                code:
-                  type: string
-                  pattern: '^[0-9]{4,16}$'
+              $ref: '#/components/schemas/PlayerPairTicket'
       responses:
         '200':
-          description: Code approved; the ticket is spent
+          description: The ticket is spent
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlayerPairing'
+                allOf:
+                  - $ref: '#/components/schemas/PlayerPairing'
+                  - type: object
+                    required: [accessToken]
+                    properties:
+                      accessToken:
+                        type: string
+                        description: Sensitive Jellyfin token; never log or cache.
         '401': { description: Ticket expired or linked token invalid }
-        '403': { description: Quick Connect is disabled on the server }
-        '404': { description: Unknown Quick Connect code }
         '409': { description: Ticket used or Jellyfin account not linked }
         '429': { description: Rate limited }
         '503': { description: Jellyfin server unavailable }

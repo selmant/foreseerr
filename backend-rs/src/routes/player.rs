@@ -2,11 +2,12 @@
 //!
 //! A signed-in user asks for a short-lived, single-use ticket and the page
 //! hands it to the player in a link. `info` tells the player which Jellyfin
-//! server and user the ticket is for, without spending it. The player then
-//! starts Jellyfin Quick Connect itself and sends the code to
-//! `quickconnect`, where Foreseerr approves it with the user's linked
-//! Jellyfin token. The player ends up with a Jellyfin device and session of
-//! its own; Foreseerr's token never leaves Foreseerr.
+//! server and user the ticket is for, without spending it, so a player
+//! already signed in as that user just switches to them. Otherwise it
+//! spends the ticket at `redeem` for the user's linked Jellyfin session (the
+//! token Foreseerr signed in with) and signs in with it. Player and
+//! Foreseerr then share that Jellyfin session: removing it in Jellyfin signs
+//! out both, and the user signs in to Foreseerr again.
 //!
 //! Tickets live in process memory.
 
@@ -30,11 +31,7 @@ use crate::db::Bind;
 pub(super) const ROUTES: &Table = &[
     ("/api/v1/player/pair-tickets", Method::POST, issue),
     ("/api/v1/player/pair-tickets/info", Method::POST, info),
-    (
-        "/api/v1/player/pair-tickets/quickconnect",
-        Method::POST,
-        quickconnect,
-    ),
+    ("/api/v1/player/pair-tickets/redeem", Method::POST, redeem),
 ];
 
 const TICKET_LIFETIME_MS: i64 = 120_000;
@@ -99,11 +96,6 @@ fn ticket_like(s: &str) -> bool {
     s.len() == 43
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-}
-
-/// A Quick Connect code: Jellyfin hands out six digits.
-fn code_like(s: &str) -> bool {
-    (4..=16).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// The body's string field, or the validator's answer.
@@ -183,9 +175,6 @@ struct Pairing {
     server_id: Value,
     user_id: String,
     token: String,
-    device_id: String,
-    /// The first host that answered, for the calls that follow.
-    reached: String,
 }
 
 /// Looks the ticket's user up and asks Jellyfin who the token belongs to.
@@ -226,8 +215,6 @@ async fn pairing(ctx: &Ready<'_>, ticket: &str) -> Result<Result<Pairing, Outcom
                     server_id: server_id.unwrap_or(Value::Null),
                     user_id,
                     token,
-                    device_id,
-                    reached: host.clone(),
                 }));
             }
             Err(CallError::Status(401 | 403)) => last = "token_invalid",
@@ -317,21 +304,17 @@ async fn info_route(ctx: &Ready<'_>) -> Step {
     Ok(no_store(ctx.json(&Value::Object(describe(&pairing)))))
 }
 
-fn quickconnect<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
-    Box::pin(async move { finish(quickconnect_route(ctx).await) })
+fn redeem<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
+    Box::pin(async move { finish(redeem_route(ctx).await) })
 }
 
-/// `POST /player/pair-tickets/quickconnect`: approves the player's code
-/// as the ticket's user.
-async fn quickconnect_route(ctx: &Ready<'_>) -> Step {
+/// `POST /player/pair-tickets/redeem`: spends the ticket for the user's
+/// linked Jellyfin session.
+async fn redeem_route(ctx: &Ready<'_>) -> Step {
     let ticket = match redeemable(ctx, "redeem")? {
         Ok(ticket) => ticket,
         Err(outcome) => return Ok(outcome),
     };
-    let qc_code = field(ctx, "code")?;
-    if !code_like(qc_code) {
-        return Err(String::from("code is the validator's").into());
-    }
     let pairing = match pairing(ctx, ticket).await? {
         Ok(pairing) => pairing,
         Err(outcome) => return Ok(outcome),
@@ -339,29 +322,9 @@ async fn quickconnect_route(ctx: &Ready<'_>) -> Step {
     if !spend(ticket) {
         return Ok(code(ctx, 409, "ticket_used"));
     }
-    let version = client_version(ctx, current_type(ctx));
-    let jf = Jellyfin::new(
-        &ctx.state.outbound,
-        &pairing.reached,
-        authorization(Some(&pairing.token), Some(&pairing.device_id), &version),
-        Some(Duration::from_secs(10)),
-    );
-    let path = format!("/QuickConnect/Authorize?code={qc_code}");
-    match jf.call(Method::POST, &path, None, &[]).await {
-        Ok(_) => {}
-        Err(CallError::Status(401)) => return Ok(code(ctx, 401, "token_invalid")),
-        Err(CallError::Status(403)) => return Ok(code(ctx, 403, "quickconnect_disabled")),
-        Err(CallError::Status(404)) => return Ok(code(ctx, 404, "unknown_code")),
-        Err(CallError::Status(status)) => {
-            tracing::warn!("player pairing: Quick Connect authorize answered {status}");
-            return Ok(code(ctx, 502, "quickconnect_failed"));
-        }
-        Err(CallError::NoResponse(e)) => {
-            tracing::warn!("player pairing: Quick Connect authorize failed: {e}");
-            return Ok(code(ctx, 503, "server_unreachable"));
-        }
-    }
-    Ok(no_store(ctx.json(&Value::Object(describe(&pairing)))))
+    let mut out = describe(&pairing);
+    out.insert(String::from("accessToken"), Value::from(pairing.token));
+    Ok(no_store(ctx.json(&Value::Object(out))))
 }
 
 #[cfg(test)]
@@ -399,9 +362,6 @@ mod tests {
     fn shapes() {
         assert!(ticket_like(&("a_-".repeat(14) + "b")));
         assert!(!ticket_like("short"));
-        assert!(code_like("123456"));
-        assert!(!code_like("12a456"), "digits only");
-        assert!(!code_like("1&x=2"), "no query smuggling");
         assert_eq!(
             normalize_url("https://jf.example.com/").as_deref(),
             Some("https://jf.example.com")

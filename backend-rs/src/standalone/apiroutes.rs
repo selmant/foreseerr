@@ -676,8 +676,8 @@ pub(super) static ROUTES: [ApiRoute; 285] = [
         methods: &[("POST", false)],
     },
     ApiRoute {
-        template: "/api/v1/player/pair-tickets/quickconnect",
-        segments: &[Some("api"), Some("v1"), Some("player"), Some("pair-tickets"), Some("quickconnect")],
+        template: "/api/v1/player/pair-tickets/redeem",
+        segments: &[Some("api"), Some("v1"), Some("player"), Some("pair-tickets"), Some("redeem")],
         methods: &[("POST", false)],
     },
     ApiRoute {

@@ -9,9 +9,9 @@ import axios from 'axios';
  *
  * Every play sends the player a fresh single-use ticket in a
  * `foreseerr-player://open` link. The player plays at once when it is
- * already signed in as the ticket's user, and otherwise signs in first with
- * Jellyfin Quick Connect, which Foreseerr approves. A ticket it didn't need
- * just expires, so nothing about the pairing is kept here.
+ * already signed in as the ticket's user, and otherwise redeems the ticket
+ * for the user's linked Jellyfin session and signs in with it. A ticket it
+ * didn't need just expires, so nothing about the pairing is kept here.
  */
 const ENABLED_KEY = 'foreseerrPlayer.enabled';
 const SCHEME = 'foreseerr-player';

@@ -45,7 +45,7 @@ const IGNORED_POSTS: [&str; 4] = [
     "/api/v1/desktop/auth-tickets/redeem",
     "/api/v1/desktop/browser-cache/redeem",
     "/api/v1/player/pair-tickets/info",
-    "/api/v1/player/pair-tickets/quickconnect",
+    "/api/v1/player/pair-tickets/redeem",
 ];
 /// The headers csurf's default `value()` reads, in its order.
 const TOKEN_HEADERS: [&str; 4] = ["csrf-token", "xsrf-token", "x-csrf-token", "x-xsrf-token"];
