@@ -1,19 +1,16 @@
 import axios from 'axios';
 
 /**
- * Hands Jellyfin playback to Foreseerr Player, the native player app.
+ * Hands Jellyfin playback to the Foreseerr app's own player. Only inside the
+ * app (Foreseerr's page in its window); a browser keeps Jellyfin's links.
  *
- * Inside the app (Foreseerr's page in its window) this is always on. In an
- * ordinary browser it is experimental and off by default; turn it on in the
- * browser console: `localStorage.setItem('foreseerrPlayer.enabled', 'true')`.
- *
- * Every play sends the player a fresh single-use ticket in a
- * `foreseerr-player://open` link. The player plays at once when it is
- * already signed in as the ticket's user, and otherwise redeems the ticket
- * for the user's linked Jellyfin session and signs in with it. A ticket it
- * didn't need just expires, so nothing about the pairing is kept here.
+ * Every play sends the app a fresh single-use ticket in a
+ * `foreseerr-player://open` link, which the app takes instead of loading.
+ * It plays at once when it is already signed in as the ticket's user, and
+ * otherwise redeems the ticket for the user's linked Jellyfin session and
+ * signs in with it. A ticket it didn't need just expires, so nothing about
+ * the pairing is kept here.
  */
-const ENABLED_KEY = 'foreseerrPlayer.enabled';
 const SCHEME = 'foreseerr-player';
 
 /** What the app puts on `window` in its own pages. */
@@ -35,25 +32,16 @@ export const foreseerrPlayerHost = (): ForeseerrPlayerHost | undefined =>
     ? window.foreseerrPlayer
     : undefined;
 
-export const foreseerrPlayerEnabled = (): boolean => {
-  if (foreseerrPlayerHost()) return true;
-  try {
-    return window.localStorage.getItem(ENABLED_KEY) === 'true';
-  } catch {
-    return false;
-  }
-};
-
 const ticket = async (): Promise<string> =>
   (await axios.post<{ ticket: string }>('/api/v1/player/pair-tickets')).data
     .ticket;
 
 /**
- * Opens [itemId] in Foreseerr Player. False when the player is off, so the
- * caller keeps its browser link.
+ * Opens [itemId] in the app's player. False outside the app, so the caller
+ * keeps its browser link.
  */
 export const playInForeseerrPlayer = (itemId: string): boolean => {
-  if (!foreseerrPlayerEnabled()) return false;
+  if (!foreseerrPlayerHost()) return false;
   ticket()
     .then((value) => {
       const params = new URLSearchParams({
@@ -65,7 +53,7 @@ export const playInForeseerrPlayer = (itemId: string): boolean => {
     })
     .catch((e) => {
       // eslint-disable-next-line no-console
-      console.error('Foreseerr Player could not be opened', e);
+      console.error('The player could not be opened', e);
     });
   return true;
 };
