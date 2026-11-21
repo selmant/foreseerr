@@ -7,9 +7,15 @@ sidebar_position: 5
 # Interventions
 
 **Interventions** is an inbox for mapped Radarr/Sonarr queue warnings (failed
-or blocked imports) and for imported Sonarr episodes that lack a required
-audio or subtitle language. It is listed in the sidebar for users with the
-Manage Requests permission.
+or blocked imports, and downloads the download client warns about, such as a
+stalled torrent with no connections) and for imported Sonarr episodes that
+lack a required audio or subtitle language. It is listed in the sidebar for
+users with the Manage Requests permission.
+
+Queue warnings are only raised for titles Foreseerr added: ones with an
+approved, completed, or failed request in that quality. Downloads of titles
+added in Radarr or Sonarr directly stay out of the inbox, and automatic cleanup
+leaves them alone.
 
 ## Active vs history
 
@@ -25,8 +31,11 @@ Each warning separates the service's explanation from the available next steps.
 **Manual Import** opens that warning's own download and lists its files for
 review, with the ready ones selected. It
 appears when the service reports a completed download with a file location.
-Otherwise, the row explains why import is unavailable. **Manage downloads** opens
-the title's management panel to review its queue or find another release.
+Otherwise, the row explains why import is unavailable. A stalled download has
+nothing to import yet: reject it to blocklist the release and let Arr search
+for another, or wait. Once it downloads again, the warning resolves on its own.
+**Manage downloads** opens the title's management panel to review its queue or
+find another release.
 
 Use **Refresh** to check the queue immediately. Empty filtered results offer
 **Clear filters**. Rejecting a release opens a confirmation showing the release
@@ -69,7 +78,8 @@ entries.
 
 On **Settings → Integrations**, under Radarr/Sonarr, **Intervention cleanup**
 can automatically reject overdue warnings after a grace period (hours). That
-deletes the download, blocklists the release in Arr, and lets Arr retry.
+deletes the download, blocklists the release in Arr, and lets Arr retry. This
+includes stalled downloads that stay stalled for the whole grace period.
 
 Leave automatic cleanup off if you always want to choose import vs reject
 yourself.
