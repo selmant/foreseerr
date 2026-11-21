@@ -802,6 +802,9 @@ mod tests {
                 r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status", "serviceId", "externalServiceId") VALUES (1, 'movie', 101, 3, 1, 11), (2, 'movie', 102, 3, 1, 12), (3, 'movie', 103, 3, 1, 13), (4, 'movie', 104, 3, 1, 14)"#,
                 r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status", "serviceId4k", "externalServiceId4k") VALUES (5, 'movie', 105, 1, 1, 15)"#,
                 r#"INSERT INTO "media_request" ("id", "status", "type", "mediaId", "requestedById", "is4k") VALUES (1, 2, 'movie', 1, 1, false), (2, 3, 'movie', 3, 1, false), (3, 5, 'movie', 4, 1, false), (4, 2, 'movie', 5, 1, false)"#,
+                // An overdue warning recorded for movie 2 before only
+                // titles Foreseerr added counted.
+                r#"INSERT INTO "servarr_intervention" ("id", "serviceType", "serviceId", "serviceName", "is4k", "queueId", "externalServiceId", "mediaId", "tmdbId", "mediaType", "releaseTitle", "warningMessages", "manualImportCapable", "state", "firstSeenAt", "cleanupDeadlineAt") VALUES (50, 'radarr', 1, 'Radarr', false, 2, 12, 2, 102, 'movie', 'Release.2', '[]', false, 'active', '2020-01-01 00:00:00.000', '2020-01-02 00:00:00.000')"#,
             ],
         )
         .await?;
@@ -832,13 +835,18 @@ mod tests {
         std::fs::create_dir_all(&dir)?;
         std::fs::write(dir.join("settings.json"), "{}")?;
         let state = Arc::new(AppState::for_tests(db.clone(), &dir)?);
-        let settings = Arc::new(Settings::from_file_value(json!({}), None)?);
+        // Cleanup is on, so the old warning would be rejected in Arr if it
+        // were still active when the cleanup pass runs.
+        let settings = Arc::new(Settings::from_file_value(
+            json!({"servarrInterventions": {"automaticCleanupEnabled": true, "cleanupGraceHours": 24}}),
+            None,
+        )?);
         let server = json!({"id": 1, "name": "Radarr", "syncEnabled": true});
 
         reconcile(&state, &settings, Service::Radarr, &server, &queue).await?;
         let rows = db
             .rows(
-                r#"SELECT CAST("queueId" AS BIGINT) AS "queueId", "warningMessages" FROM "servarr_intervention" ORDER BY "queueId""#,
+                r#"SELECT CAST("queueId" AS BIGINT) AS "queueId", "warningMessages" FROM "servarr_intervention" WHERE "state" = 'active' ORDER BY "queueId""#,
                 &[],
             )
             .await?;
@@ -864,6 +872,18 @@ mod tests {
                 ),
             ],
             "the stalled and the unimportable download of titles Foreseerr added"
+        );
+        let old = load(db, 50)
+            .await?
+            .ok_or_else(|| anyhow!("the old record"))?;
+        assert_eq!(
+            (
+                old.state.as_str(),
+                old.resolution.as_deref(),
+                old.cleanup_error
+            ),
+            ("resolved", Some("recovered"), None),
+            "the old warning resolves quietly, out of History and untouched by cleanup"
         );
         std::fs::remove_dir_all(&dir).ok();
         Ok(())
