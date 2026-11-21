@@ -48,7 +48,7 @@ Keep this short; full Trakt/MDBList/Arr matrices from the alpha era are not a re
 4. Update release notes under `docs/release-notes-*.md` and any versioned README banners.
 5. Run `bun run check:versions`.
 6. Tag `vX.Y.Z` to trigger `.github/workflows/release.yml`.
-7. Check that the release attached the server archives (`foreseerr-*.tar.gz`/`.zip`, the `foreseerr-plugin-*` ones) and `SHA256SUMS`; the Jellyfin plugin and Foreseer Desktop download them.
+7. Check that the release attached the server archives (`foreseerr-*.tar.gz`/`.zip`, the `foreseerr-plugin-*` ones) and `SHA256SUMS`; the Jellyfin plugin downloads them.
 
 ## Deprecation policy
 

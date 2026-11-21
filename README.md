@@ -14,21 +14,19 @@ It keeps Seerr’s request pipeline, media-server integrations (Jellyfin / Plex 
 
 Foreseerr can also run **inside Jellyfin** as a third-party plugin that supervises the compiled server on localhost and serves it at `/Foreseerr` with SSO. The plugin is developed in [selmant/jellyfin-plugin-foreseerr](https://github.com/selmant/jellyfin-plugin-foreseerr); see the [user guide](docs/using-seerr/jellyfin-plugin.md). This is not an official Jellyfin catalog plugin, and it is in alpha.
 
-## Optional Native Desktop Companion
+## Optional Desktop App
 
-[Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) is the
-optional native companion for Foreseerr. It loads the same hosted Foreseerr UI
-in a desktop window and, for supported Jellyfin playback, uses the maintained
-[Jellium runtime fork](https://github.com/selmant/jellium-desktop) to play in
-that window. It is not required for normal browser use, requests, library
-browsing, or any server-side feature.
+The [Foreseerr desktop app](https://github.com/selmant/foreseerr-player)
+(Linux) shows your Foreseerr in its own window and plays Jellyfin media right
+there, with a full player and on-screen controls. The player is
+[Moonfin](https://github.com/Moonfin-Client/Moonfin-Core), the open-source
+Jellyfin client by the Moonfin team, built into the app; the app itself is
+not a Moonfin project. Signing in to Foreseerr is enough: the app signs its
+player in to Jellyfin with your linked Jellyfin account.
 
-The desktop binary never replaces this web application: browsers keep their
-normal Jellyfin links, while a compatible desktop runtime adds native playback
-only after the signed-in user's account is linked to Jellyfin. See the
-[native desktop guide](docs/using-seerr/native-desktop.md) for the user-facing
-behavior and [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop)
-`0.3.0` for installation and release compatibility.
+The app is optional: browsers keep their normal Jellyfin links. See the
+[desktop app guide](docs/using-seerr/native-desktop.md). It replaces the
+earlier Foreseer Desktop companion, which is no longer developed.
 
 ## AI picks that fit your taste
 
@@ -99,7 +97,7 @@ Shipped on top of Seerr (requests stay manual; no Discover auto-request bot):
 - **Interventions** — review mapped Radarr/Sonarr queue warnings, import, or reject and blocklist
 - Watched / unwatched / score actions (Trakt, optional AniList, Simkl, Jellyfin where linked)
 - **Watch ahead** — opt-in from the TV request modal: keep N unwatched episodes requested as you watch in Jellyfin
-- Optional [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) companion for same-window Jellyfin playback
+- Optional [desktop app](https://github.com/selmant/foreseerr-player) that plays Jellyfin media in the same window, with [Moonfin](https://github.com/Moonfin-Client/Moonfin-Core)'s player
 
 You still click Request on a title. Discover and AI picks never request titles automatically. Watch ahead is an enrolled per-series buffer.
 
@@ -159,7 +157,7 @@ GitHub Releases also attach standalone server archives plus `SHA256SUMS`:
 - **`foreseerr-linux-x64.tar.gz` / `foreseerr-linux-arm64.tar.gz` / `foreseerr-windows-x64.zip`** — the `foreseerr` server binary next to the web app (`dist/public/`), its API spec (`seerr-api.yml`) and `committag.json`. Keep those files together and start the binary from that directory, then open `http://127.0.0.1:5055`. Config defaults to `config/` in that directory (`CONFIG_DIRECTORY` overrides it). The Linux builds need glibc 2.28 or newer and the system CA certificates (the `ca-certificates` package).
 - **`foreseerr-plugin-*`** — the same server built for the Jellyfin plugin's `/Foreseerr` sub-path; the plugin downloads these itself.
 
-Those are the Foreseerr **server**, not [Foreseer Desktop](https://github.com/selmant/foreseerr-desktop). Postgres still needs a real Postgres; Windows SmartScreen will warn on the unsigned `.exe`.
+Those are the Foreseerr **server**, not the [desktop app](https://github.com/selmant/foreseerr-player). Postgres still needs a real Postgres; Windows SmartScreen will warn on the unsigned `.exe`.
 
 ```bash
 mkdir foreseerr && tar -xzf foreseerr-linux-x64.tar.gz -C foreseerr

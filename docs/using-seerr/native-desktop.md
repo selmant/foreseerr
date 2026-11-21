@@ -1,74 +1,69 @@
 ---
-title: Native Desktop
-description: Use Foreseerr through the optional Foreseer Desktop companion.
+title: Desktop App
+description: Use Foreseerr as a desktop app that plays Jellyfin media in its own window.
 sidebar_position: 7
 ---
 
-# Native Desktop
+# Desktop App
 
-[Foreseer Desktop](https://github.com/selmant/foreseerr-desktop) is an optional
-native shell for the hosted Foreseerr application. It is useful when you want
-to browse Foreseerr normally and start supported Jellyfin playback in the same
-desktop window.
+The [Foreseerr desktop app](https://github.com/selmant/foreseerr-player)
+shows your Foreseerr in a window of its own and plays Jellyfin media in that
+same window. When you press Play, a full player with on-screen controls takes
+over the window; when you stop, you are back in Foreseerr where you left it.
 
-Foreseerr itself remains the source of truth for sign-in, linked media-server
-accounts, discovery, requests, library browsing, and playback fallback. You do
-not need Foreseer Desktop to use Foreseerr in a browser.
+You don't need the app to use Foreseerr: in a browser, play buttons keep
+opening Jellyfin as before.
 
-## How it works
-
-| Surface | Responsibility |
-| --- | --- |
-| Foreseerr | Hosted UI, authentication, linked Jellyfin identity, discovery, requests, and ordinary browser links. |
-| Foreseer Desktop | Desktop window, native capability bridge, secure one-time session bootstrap, and product configuration. |
-| Jellium runtime | CEF/mpv window and compositor lifecycle plus the generic native extension seam. |
-| Jellyfin Web | Media resolution, resume position, stream selection, and playback reporting. |
-
-When Foreseerr runs in a normal browser, its play controls remain ordinary
-Jellyfin links. When the same page detects a compatible Foreseer Desktop
-runtime, it may hand a supported Jellyfin item ID to the native app instead.
-Unsupported providers, trailers, missing native capability, and desktop errors
-all retain the browser fallback.
+The player is [Moonfin](https://github.com/Moonfin-Client/Moonfin-Core), the
+open-source Jellyfin client, built into the app. The app is not made or
+supported by the Moonfin team; report problems with it in the
+[app's repository](https://github.com/selmant/foreseerr-player/issues).
 
 ## Requirements
 
-- Foreseer Desktop `0.3.0` (or later) for standalone mode, recovery, and
-  LAN Jellyfin playback. See the
-  [Desktop README](https://github.com/selmant/foreseerr-desktop#readme) for the
-  current platform and packaging status.
-- A linked Jellyfin account for native playback. Standalone mode starts a
-  bundled Foreseerr on localhost and does not need a separate hosted instance.
-  Remote mode still needs the HTTPS address of your existing Foreseerr
-  deployment. Do not put Jellyfin tokens, device IDs, or administrative keys
-  in the URL or desktop configuration.
+- Linux (x64), with WebKitGTK 4.1 and libmpv from your distribution. Download
+  the latest release from the
+  [app's releases](https://github.com/selmant/foreseerr-player/releases),
+  unpack it, and run `./install.sh` for a menu entry.
+- A Foreseerr account linked to Jellyfin (Profile → Settings → Linked
+  Accounts). Plex and Emby playback in the app is not supported yet.
 
-Remote mode’s first session uses your normal Foreseerr browser session to
-perform a short-lived, single-use bootstrap. The page never receives the
-linked Jellyfin access token. Standalone mode owns its own local database
-under the Desktop config directory; upgrades of the bundled Foreseerr version
-create a timestamped backup first.
+On first start, the app asks for your Foreseerr address. Then sign in to
+Foreseerr as usual; the app keeps you signed in.
 
-## Expected behavior
+## How playback works
 
-- Sign in through Foreseerr as usual. The desktop app does not introduce a
-  second normal Jellyfin login screen.
-- A supported Jellyfin play action stays in the current Foreseerr route while
-  native playback starts. Back or stop returns to that same route.
-- Logging out or switching Foreseerr accounts clears the private native session.
-- If the desktop runtime is unavailable, incompatible, or not linked, use the
-  normal browser playback link instead.
+- Press Play on a title in Foreseerr. The app plays it from where you left
+  off.
+- The first time you play, the app signs its player in to Jellyfin as you,
+  using your linked Jellyfin account. There is no separate Jellyfin sign-in.
+  Foreseerr hands the player a single-use ticket for this, valid for a short
+  time.
+- The player uses the same Jellyfin session as your Foreseerr link. Signing
+  that session out in Jellyfin (Dashboard → Devices) signs out both; link
+  Jellyfin again in Foreseerr and play once more.
+- If someone else signs in to Foreseerr in the app and plays, the player
+  switches to their Jellyfin user.
+- Made fullscreen from the player, the window returns to windowed when you
+  stop.
+
+## Player settings
+
+In the app, Profile → Settings → **Player** shows the player's own settings,
+such as subtitles, audio and playback options. Change them and press
+**Save Changes**. This page only appears inside the app.
 
 ## Troubleshooting
 
-- **Playback opens in the browser:** confirm that Foreseer Desktop is running,
-  points at the same Foreseerr origin, and that the signed-in account is linked
-  to Jellyfin.
-- **Desktop reports unavailable playback:** continue with the browser link,
-  then check the Desktop app's safe diagnostics and release notes. Do not share
-  tokens, tickets, cookies, or full private media URLs in bug reports.
-- **Foreseerr works but native playback does not:** this is an optional-client
-  issue; requests, library browsing, and normal browser links should remain
-  usable.
+- **Play opens Jellyfin instead:** you are in a browser, not the app.
+- **"Could not play" at the bottom of the page:** check that your Foreseerr
+  account is linked to Jellyfin and that Jellyfin is reachable from this
+  computer.
+- **The app can't open Foreseerr:** it shows the error with Retry and Change
+  address.
 
-For installation, release pins, and native-runtime troubleshooting, use the
-[Foreseer Desktop repository](https://github.com/selmant/foreseerr-desktop).
+Don't share tokens, tickets, cookies or full private media URLs in bug
+reports.
+
+The earlier Foreseer Desktop companion (based on Jellium) is no longer
+developed; its repository is archived. This app replaces it.
