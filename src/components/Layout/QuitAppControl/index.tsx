@@ -1,7 +1,7 @@
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import { PowerIcon } from '@heroicons/react/24/outline';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';

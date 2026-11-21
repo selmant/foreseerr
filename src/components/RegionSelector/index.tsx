@@ -1,3 +1,4 @@
+import { Transition } from '@app/components/Common/Transition';
 import useSettings from '@app/hooks/useSettings';
 import defineMessages from '@app/utils/defineMessages';
 import {
@@ -5,7 +6,6 @@ import {
   ListboxButton,
   ListboxOption,
   ListboxOptions,
-  Transition,
 } from '@headlessui/react';
 import { CheckIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
 import type { Region } from '@shared/lib/settings';

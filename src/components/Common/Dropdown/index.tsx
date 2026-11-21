@@ -1,11 +1,6 @@
+import { Transition } from '@app/components/Common/Transition';
 import { withProperties } from '@app/utils/typeHelpers';
-import {
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuItems,
-  Transition,
-} from '@headlessui/react';
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/24/solid';
 import {
   Fragment,

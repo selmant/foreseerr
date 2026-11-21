@@ -1,9 +1,9 @@
 import Alert from '@app/components/Common/Alert';
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { Fragment, forwardRef, useState } from 'react';

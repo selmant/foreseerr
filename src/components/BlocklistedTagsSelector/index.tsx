@@ -1,9 +1,9 @@
 import Modal from '@app/components/Common/Modal';
 import Tooltip from '@app/components/Common/Tooltip';
+import { Transition } from '@app/components/Common/Transition';
 import CopyButton from '@app/components/Settings/CopyButton';
 import { encodeURIExtraParams } from '@app/hooks/useDiscover';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import { ArrowDownIcon } from '@heroicons/react/24/solid';
 import type {
   TmdbKeyword,

@@ -1,4 +1,5 @@
 import Badge from '@app/components/Common/Badge';
+import { Transition } from '@app/components/Common/Transition';
 import QuitAppControl from '@app/components/Layout/QuitAppControl';
 import {
   menuMessages,
@@ -7,7 +8,6 @@ import {
 } from '@app/components/Layout/navigation';
 import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
 import useClickOutside from '@app/hooks/useClickOutside';
-import { Transition } from '@headlessui/react';
 import { EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';

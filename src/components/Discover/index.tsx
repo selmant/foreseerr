@@ -4,6 +4,7 @@ import LinkButton from '@app/components/Common/LinkButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
+import { Transition } from '@app/components/Common/Transition';
 import AiPicksSlider from '@app/components/Discover/AiPicksSlider';
 import AnilistListSlider from '@app/components/Discover/AnilistListSlider';
 import AnilistSlider from '@app/components/Discover/AnilistSlider';
@@ -32,7 +33,6 @@ import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import {
   AdjustmentsHorizontalIcon,
   ArrowDownOnSquareIcon,

@@ -1,5 +1,6 @@
 import Modal from '@app/components/Common/Modal';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
+import { Transition } from '@app/components/Common/Transition';
 import type { RadarrTestResponse } from '@app/components/Settings/SettingsServices';
 import {
   useServarrConnectionTest,
@@ -9,7 +10,6 @@ import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { isValidURL } from '@app/utils/urlValidationHelper';
-import { Transition } from '@headlessui/react';
 import type { RadarrSettings } from '@shared/lib/settings';
 import axios from 'axios';
 import { Field, Formik } from 'formik';

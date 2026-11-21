@@ -4,6 +4,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import PageTitle from '@app/components/Common/PageTitle';
+import { Transition } from '@app/components/Common/Transition';
 import IssueComment from '@app/components/IssueDetails/IssueComment';
 import IssueDescription from '@app/components/IssueDetails/IssueDescription';
 import { issueOptions } from '@app/components/IssueModal/constants';
@@ -15,7 +16,6 @@ import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import {
   ChatBubbleOvalLeftEllipsisIcon,
   CheckCircleIcon,

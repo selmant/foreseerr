@@ -1,6 +1,6 @@
 /* eslint-disable jsx-a11y/click-events-have-key-events */
+import { Transition, TransitionChild } from '@app/components/Common/Transition';
 import { useLockBodyScroll } from '@app/hooks/useLockBodyScroll';
-import { Transition, TransitionChild } from '@headlessui/react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { FocusScope } from 'react-aria';

@@ -1,7 +1,7 @@
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 
 import Alert from '@app/components/Common/Alert';
 import Button from '@app/components/Common/Button';

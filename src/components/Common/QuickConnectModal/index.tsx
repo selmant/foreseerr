@@ -1,9 +1,9 @@
 import Alert from '@app/components/Common/Alert';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
+import { Transition } from '@app/components/Common/Transition';
 import { useQuickConnect } from '@app/hooks/useQuickConnect';
 import defineMessages from '@app/utils/defineMessages';
-import { Transition } from '@headlessui/react';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import { useIntl } from 'react-intl';
 

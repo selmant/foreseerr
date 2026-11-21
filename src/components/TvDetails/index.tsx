@@ -1,5 +1,5 @@
-import MoreLikeThisButton from '@app/components/Ai/MoreLikeThisButton';
 import Spinner from '@app/assets/spinner.svg';
+import MoreLikeThisButton from '@app/components/Ai/MoreLikeThisButton';
 import BlocklistModal from '@app/components/BlocklistModal';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
@@ -12,6 +12,7 @@ import RatingBadges from '@app/components/Common/RatingBadges';
 import StatusBadgeMini from '@app/components/Common/StatusBadgeMini';
 import Tag from '@app/components/Common/Tag';
 import Tooltip from '@app/components/Common/Tooltip';
+import { Transition } from '@app/components/Common/Transition';
 import ExternalLinkBlock from '@app/components/ExternalLinkBlock';
 import IssueModal from '@app/components/IssueModal';
 import ManageSlideOver from '@app/components/ManageSlideOver';
@@ -42,7 +43,6 @@ import {
   Disclosure,
   DisclosureButton,
   DisclosurePanel,
-  Transition,
 } from '@headlessui/react';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 import {

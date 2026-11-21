@@ -8,11 +8,11 @@ import Table from '@app/components/Common/Table';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
 
+import { Transition } from '@app/components/Common/Transition';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { formatBytes } from '@app/utils/numberHelpers';
-import { Transition } from '@headlessui/react';
 import { PlayIcon, StopIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { PencilIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@shared/constants/server';

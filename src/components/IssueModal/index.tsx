@@ -1,5 +1,5 @@
+import { Transition } from '@app/components/Common/Transition';
 import CreateIssueModal from '@app/components/IssueModal/CreateIssueModal';
-import { Transition } from '@headlessui/react';
 
 interface IssueModalProps {
   show?: boolean;

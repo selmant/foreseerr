@@ -2,6 +2,7 @@
 import CachedImage from '@app/components/Common/CachedImage';
 import { SmallLoadingSpinner } from '@app/components/Common/LoadingSpinner';
 import SlideCheckbox from '@app/components/Common/SlideCheckbox';
+import { Transition } from '@app/components/Common/Transition';
 import useToasts from '@app/hooks/useToasts';
 import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -14,7 +15,6 @@ import {
   ListboxButton,
   ListboxOption,
   ListboxOptions,
-  Transition,
 } from '@headlessui/react';
 import { CheckIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
 import type { OverrideRulesResult } from '@shared/interfaces/api/overrideRuleInterfaces';
