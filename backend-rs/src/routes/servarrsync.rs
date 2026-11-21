@@ -15,12 +15,13 @@ use serde_json::{Map, Value};
 
 use super::arrcall::ArrServer;
 use super::interventions::{
-    date_bind, date_param, js_slice, load, mapped_to_service, rejection_message, rejection_timeout,
-    rejection_work, save, RejectError,
+    date_bind, date_param, js_slice, load, mapped_to_service, needs_attention, rejection_message,
+    rejection_timeout, rejection_work, save, RejectError,
 };
 use super::mediawrite::timeout_ms;
 use crate::clock::Utc;
 use crate::db::{Bind, Db, MediaRow};
+use crate::lifecycle;
 use crate::settings::public::truthy;
 use crate::settings::Settings;
 use crate::state::AppState;
@@ -203,6 +204,36 @@ async fn mapped_media(db: &Db, service: Service, server_id: i64) -> Result<Vec<M
     Ok(media)
 }
 
+/// The titles Foreseerr added to this server, as `(media id, is4k)`: those
+/// with a request that reached Arr (approved, completed, or failed after
+/// approval). Titles added in Arr directly get no interventions.
+async fn requested_media(
+    db: &Db,
+    service: Service,
+    server_id: i64,
+) -> Result<HashSet<(i64, bool)>> {
+    let rows = db
+        .rows(
+            &format!(
+                r#"SELECT DISTINCT CAST(r."mediaId" AS BIGINT) AS "mediaId", r."is4k" AS "is4k" FROM "media_request" r INNER JOIN "media" m ON m."id" = r."mediaId" WHERE r."status" IN ({}, {}, {}) AND m."mediaType" = ?1 AND (m."serviceId" = ?2 OR m."serviceId4k" = ?2)"#,
+                lifecycle::APPROVED,
+                lifecycle::FAILED,
+                lifecycle::COMPLETED
+            ),
+            &[Bind::Text(service.media_type().to_owned()), Bind::Int(server_id)],
+        )
+        .await?;
+    Ok(rows
+        .iter()
+        .filter_map(|r| {
+            Some((
+                r.get("mediaId").and_then(Value::as_i64)?,
+                flag(r.get("is4k")),
+            ))
+        })
+        .collect())
+}
+
 /// `warningMessages(item)`.
 fn warning_messages(item: &Value) -> Result<Vec<String>> {
     let statuses = match item.get("statusMessages") {
@@ -260,7 +291,19 @@ fn fields_of(item: &Value) -> Result<Fields> {
         .get("title")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("a status message is missing"))?;
-    let messages = warning_messages(item)?;
+    let mut messages = warning_messages(item)?;
+    // A download client's warning (a stalled torrent) has no status
+    // messages: its explanation is the client's own message.
+    if messages.is_empty() {
+        if let Some(error) = item
+            .get("errorMessage")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            messages.push(js_slice(error, 1000));
+        }
+    }
     Ok(Fields {
         release_title: js_slice(title, 500),
         warning_messages: Value::from(messages).to_string(),
@@ -444,10 +487,13 @@ async fn reconcile(
             }
         }
     }
-    let media = if external_ids.is_empty() {
-        Vec::new()
+    let (media, requested) = if external_ids.is_empty() {
+        (Vec::new(), HashSet::new())
     } else {
-        mapped_media(db, service, server_id).await?
+        (
+            mapped_media(db, service, server_id).await?,
+            requested_media(db, service, server_id).await?,
+        )
     };
     let mut mapped: HashMap<i64, (&MediaRow, bool)> = HashMap::new();
     for item in &media {
@@ -477,7 +523,10 @@ async fn reconcile(
         let Some((media_item, is4k)) = external_id.and_then(|id| mapped.get(&id)).copied() else {
             continue;
         };
-        if !lower_eq(item, "trackedDownloadStatus", "warning") {
+        if !requested.contains(&(media_item.id, is4k)) {
+            continue;
+        }
+        if !needs_attention(item) {
             continue;
         }
         let queue_id = item
@@ -701,6 +750,33 @@ mod tests {
             Some((String::from("[]"), false, None)),
             "no messages, not importable"
         );
+        let stalled = fields_of(&json!({
+            "title": "t",
+            "status": "warning",
+            "downloadId": "abc",
+            "errorMessage": "The download is stalled with no connections",
+            "statusMessages": []
+        }))
+        .ok();
+        assert_eq!(
+            stalled.map(|f| (f.warning_messages, f.manual_import_capable)),
+            Some((
+                String::from(r#"["The download is stalled with no connections"]"#),
+                false
+            )),
+            "a stalled download explains itself with the client's message"
+        );
+        let both = fields_of(&json!({
+            "title": "t",
+            "errorMessage": "client",
+            "statusMessages": [{"title": "arr", "messages": []}]
+        }))
+        .ok();
+        assert_eq!(
+            both.map(|f| f.warning_messages),
+            Some(String::from(r#"["arr"]"#)),
+            "Arr's own messages win"
+        );
         assert!(
             fields_of(&json!({"status": "x"})).is_err(),
             "no title throws"
@@ -708,6 +784,109 @@ mod tests {
         assert_eq!(normalized_messages(Some("")), "[]", "empty");
         assert_eq!(normalized_messages(Some("nope")), "[]", "unparseable");
         assert_eq!(normalized_messages(Some(r#"["a"]"#)), r#"["a"]"#, "stored");
+    }
+
+    #[tokio::test]
+    async fn only_titles_foreseerr_added() -> Result<()> {
+        use crate::dbtx::scratch;
+
+        let scratch = scratch::sqlite("servarrsync").await?;
+        let db = &scratch.db;
+        // Movies 1-4 are in Radarr 1 as 11-14. Foreseerr added 1 (approved)
+        // and 4 (completed); 2 was added in Radarr; 3's request was
+        // declined; 5 is mapped in 4K but was only requested in HD.
+        scratch::run(
+            db,
+            &[
+                r#"INSERT INTO "user" ("id", "email", "avatar", "permissions") VALUES (1, 'owner@example.test', '', 2)"#,
+                r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status", "serviceId", "externalServiceId") VALUES (1, 'movie', 101, 3, 1, 11), (2, 'movie', 102, 3, 1, 12), (3, 'movie', 103, 3, 1, 13), (4, 'movie', 104, 3, 1, 14)"#,
+                r#"INSERT INTO "media" ("id", "mediaType", "tmdbId", "status", "serviceId4k", "externalServiceId4k") VALUES (5, 'movie', 105, 1, 1, 15)"#,
+                r#"INSERT INTO "media_request" ("id", "status", "type", "mediaId", "requestedById", "is4k") VALUES (1, 2, 'movie', 1, 1, false), (2, 3, 'movie', 3, 1, false), (3, 5, 'movie', 4, 1, false), (4, 2, 'movie', 5, 1, false)"#,
+                // An overdue warning recorded for movie 2 before only
+                // titles Foreseerr added counted.
+                r#"INSERT INTO "servarr_intervention" ("id", "serviceType", "serviceId", "serviceName", "is4k", "queueId", "externalServiceId", "mediaId", "tmdbId", "mediaType", "releaseTitle", "warningMessages", "manualImportCapable", "state", "firstSeenAt", "cleanupDeadlineAt") VALUES (50, 'radarr', 1, 'Radarr', false, 2, 12, 2, 102, 'movie', 'Release.2', '[]', false, 'active', '2020-01-01 00:00:00.000', '2020-01-02 00:00:00.000')"#,
+            ],
+        )
+        .await?;
+        let stalled = |queue_id: i64, movie_id: i64| {
+            json!({
+                "id": queue_id, "movieId": movie_id, "title": format!("Release.{queue_id}"),
+                "status": "warning", "trackedDownloadStatus": "ok",
+                "errorMessage": "The download is stalled with no connections"
+            })
+        };
+        let queue = vec![
+            stalled(1, 11),
+            stalled(2, 12),
+            stalled(3, 13),
+            json!({
+                "id": 4, "movieId": 14, "title": "Release.4", "status": "completed",
+                "trackedDownloadStatus": "warning",
+                "statusMessages": [{"title": "No files found are eligible for import"}]
+            }),
+            stalled(5, 15),
+            json!({"id": 6, "movieId": 11, "title": "Release.6", "status": "downloading", "trackedDownloadStatus": "ok"}),
+        ];
+        let dir = std::env::temp_dir().join(format!(
+            "foreseerr-servarrsync-{}-{}",
+            std::process::id(),
+            crate::clock::now_millis()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(dir.join("settings.json"), "{}")?;
+        let state = Arc::new(AppState::for_tests(db.clone(), &dir)?);
+        // Cleanup is on, so the old warning would be rejected in Arr if it
+        // were still active when the cleanup pass runs.
+        let settings = Arc::new(Settings::from_file_value(
+            json!({"servarrInterventions": {"automaticCleanupEnabled": true, "cleanupGraceHours": 24}}),
+            None,
+        )?);
+        let server = json!({"id": 1, "name": "Radarr", "syncEnabled": true});
+
+        reconcile(&state, &settings, Service::Radarr, &server, &queue).await?;
+        let rows = db
+            .rows(
+                r#"SELECT CAST("queueId" AS BIGINT) AS "queueId", "warningMessages" FROM "servarr_intervention" WHERE "state" = 'active' ORDER BY "queueId""#,
+                &[],
+            )
+            .await?;
+        let found: Vec<(Option<i64>, Option<&str>)> = rows
+            .iter()
+            .map(|r| {
+                (
+                    r.get("queueId").and_then(Value::as_i64),
+                    r.get("warningMessages").and_then(Value::as_str),
+                )
+            })
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                (
+                    Some(1),
+                    Some(r#"["The download is stalled with no connections"]"#)
+                ),
+                (
+                    Some(4),
+                    Some(r#"["No files found are eligible for import"]"#)
+                ),
+            ],
+            "the stalled and the unimportable download of titles Foreseerr added"
+        );
+        let old = load(db, 50)
+            .await?
+            .ok_or_else(|| anyhow!("the old record"))?;
+        assert_eq!(
+            (
+                old.state.as_str(),
+                old.resolution.as_deref(),
+                old.cleanup_error
+            ),
+            ("resolved", Some("recovered"), None),
+            "the old warning resolves quietly, out of History and untouched by cleanup"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        Ok(())
     }
 
     #[test]

@@ -653,9 +653,7 @@ pub(super) async fn rejection_work(
     let external_key = if radarr { "movieId" } else { "seriesId" };
     let still_valid = match (exact, media.as_ref()) {
         (Some(item), Some(media)) => {
-            item.get("trackedDownloadStatus")
-                .and_then(Value::as_str)
-                .is_some_and(|s| s.to_lowercase() == "warning")
+            needs_attention(item)
                 && item.get(external_key).and_then(Value::as_i64)
                     == Some(record.external_service_id)
                 && mapped_to_service(media, record.service_id, record.external_service_id)
@@ -741,6 +739,17 @@ pub(super) fn rejection_message(actor: Option<&str>, warnings: &Value) -> String
         }
     }
     message
+}
+
+/// Whether a queue item needs someone to step in: Arr's own warning (a
+/// download it can't import) or the download client's (a stalled torrent,
+/// a client error), which Arr reports in `status` instead.
+pub(super) fn needs_attention(item: &Value) -> bool {
+    ["trackedDownloadStatus", "status"].iter().any(|key| {
+        item.get(*key)
+            .and_then(Value::as_str)
+            .is_some_and(|s| s.eq_ignore_ascii_case("warning"))
+    })
 }
 
 /// `mappedToService`.
@@ -944,6 +953,28 @@ mod tests {
             "bad json"
         );
         assert_eq!(string_array(None), serde_json::json!([]), "null");
+    }
+
+    #[test]
+    fn attention() {
+        use serde_json::json;
+        assert!(
+            needs_attention(&json!({"status": "completed", "trackedDownloadStatus": "warning"})),
+            "an import Arr can't finish"
+        );
+        assert!(
+            needs_attention(&json!({"status": "warning", "trackedDownloadStatus": "ok"})),
+            "a stalled download"
+        );
+        assert!(needs_attention(&json!({"status": "Warning"})), "any case");
+        assert!(
+            !needs_attention(&json!({"status": "downloading", "trackedDownloadStatus": "ok"})),
+            "a healthy download"
+        );
+        assert!(
+            !needs_attention(&json!({"status": "failed", "trackedDownloadStatus": "error"})),
+            "a failed one Arr handles"
+        );
     }
 
     #[test]
