@@ -40,10 +40,8 @@ const SECRET_COOKIE: &str = "_csrf";
 const BODY_LIMIT: usize = 100 * 1024;
 /// urlencoded's `parameterLimit`.
 const PARAMETER_LIMIT: usize = 1000;
-/// csurf's `ignoreRequest`: native hosts redeem without browser cookies.
-const IGNORED_POSTS: [&str; 4] = [
-    "/api/v1/desktop/auth-tickets/redeem",
-    "/api/v1/desktop/browser-cache/redeem",
+/// csurf's `ignoreRequest`: the player app redeems without browser cookies.
+const IGNORED_POSTS: [&str; 2] = [
     "/api/v1/player/pair-tickets/info",
     "/api/v1/player/pair-tickets/redeem",
 ];
@@ -617,7 +615,7 @@ mod tests {
         );
         assert!(ignored(&Method::GET, "/x"), "GET");
         assert!(
-            ignored(&Method::POST, "/api/v1/desktop/auth-tickets/redeem"),
+            ignored(&Method::POST, "/api/v1/player/pair-tickets/redeem"),
             "redeem"
         );
         assert!(!ignored(&Method::POST, "/api/v1/auth/logout"), "POST");

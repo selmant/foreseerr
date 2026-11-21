@@ -7,7 +7,7 @@ import SlideOver from '@app/components/Common/SlideOver';
 import LibraryEpisodeList from '@app/components/Library/LibraryEpisodeList';
 import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
 import MediaActionDetailBar from '@app/components/MediaActions/MediaActionDetailBar';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { usePlayInApp } from '@app/context/foreseerrPlayer';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { registerLibraryShelfRevalidator } from '@app/utils/mediaActionInvalidation';
@@ -67,7 +67,7 @@ const LibraryInspector = ({
   onManage,
 }: LibraryInspectorProps) => {
   const intl = useIntl();
-  const { play } = useNativeRuntime();
+  const play = usePlayInApp();
   const { hasPermission } = useUser();
   const show = Boolean(item);
   // Keep rendering the last title while the panel slides out.

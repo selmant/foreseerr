@@ -6,7 +6,7 @@ import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import { handleLibraryPlayClick } from '@app/components/Library/libraryPlayAction';
 import useLibraryItem from '@app/components/Library/useLibraryItem';
 import RequestModal from '@app/components/RequestModal';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { usePlayInApp } from '@app/context/foreseerrPlayer';
 import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -170,7 +170,7 @@ const Season = ({
   onRequestComplete,
 }: SeasonProps) => {
   const intl = useIntl();
-  const { play } = useNativeRuntime();
+  const play = usePlayInApp();
   const libraryEpisodes = useLibrarySeasonEpisodes(
     jellyfinSeriesId,
     seasonNumber

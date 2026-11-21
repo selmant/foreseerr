@@ -11,7 +11,7 @@ import ErrorCard from '@app/components/TitleCard/ErrorCard';
 import MediaActionControls from '@app/components/TitleCard/MediaActionControls';
 import Placeholder from '@app/components/TitleCard/Placeholder';
 import TvRequestMenu from '@app/components/TitleCard/TvRequestMenu';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { usePlayInApp } from '@app/context/foreseerrPlayer';
 import { useIsTouch } from '@app/hooks/useIsTouch';
 import { useMediaActionCapabilities } from '@app/hooks/useMediaActions';
 import useSettings from '@app/hooks/useSettings';
@@ -134,7 +134,7 @@ const TitleCard = ({
   const cardLabel = [title, displayYear, subtitle].filter(Boolean).join(', ');
   const settings = useSettings();
   const { user, hasPermission } = useUser();
-  const { play } = useNativeRuntime();
+  const play = usePlayInApp();
   const [isUpdating, setIsUpdating] = useState(false);
   const { data: mediaActionCapabilities } = useMediaActionCapabilities();
   const surfaceCapabilities =

@@ -1,4 +1,6 @@
+import { useUser } from '@app/hooks/useUser';
 import axios from 'axios';
+import { useCallback } from 'react';
 
 /**
  * Hands Jellyfin playback to the Foreseerr app's own player. Only inside the
@@ -56,6 +58,33 @@ export const playInForeseerrPlayer = (itemId: string): boolean => {
       console.error('The player could not be opened', e);
     });
   return true;
+};
+
+/** What a play button plays, and the link it falls back to. */
+export interface PlayTarget {
+  provider: 'jellyfin' | 'emby' | 'plex' | 'trailer';
+  itemId?: string;
+  fallbackUrl: string;
+  label: string;
+  quality: 'standard' | '4k' | 'trailer';
+}
+
+/**
+ * `play(target)` for play buttons: plays a Jellyfin item in the app's player
+ * for a signed-in user and answers true, or answers false so the button
+ * keeps its link (outside the app, or anything else).
+ */
+export const usePlayInApp = (): ((target: PlayTarget) => boolean) => {
+  const { user, error } = useUser();
+  const signedIn = !error && !!user;
+  return useCallback(
+    (target: PlayTarget) =>
+      signedIn &&
+      target.provider === 'jellyfin' &&
+      !!target.itemId &&
+      playInForeseerrPlayer(target.itemId),
+    [signedIn]
+  );
 };
 
 /**
@@ -138,6 +167,21 @@ export const setPlayerSetting = async (
     key,
     value,
   })) as PlayerSettingsSchema;
+
+/** Quits the app. */
+export const quitApp = async (): Promise<void> => {
+  await host().request({ type: 'quit' });
+};
+
+/** Clears the app's web cache (its HTTP cache, not cookies or storage). */
+export const clearAppCache = async (): Promise<void> => {
+  await host().request({ type: 'clearCache' });
+};
+
+/** Shows the app's setup page, to open another Foreseerr server. */
+export const changeAppAddress = async (): Promise<void> => {
+  await host().request({ type: 'changeAddress' });
+};
 
 /** Signs the player in as this user, as a first play would. */
 export const pairPlayer = async (): Promise<boolean> =>

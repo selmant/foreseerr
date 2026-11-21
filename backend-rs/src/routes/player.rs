@@ -22,7 +22,6 @@ use super::authcommon::{
     authorization, client_ip, client_version, current_type, finish, media_server_type, prop,
     random_bytes, settings_hostname, CallError, Jellyfin, Native, Step, JELLYFIN,
 };
-use super::desktop::{allow_request, digest};
 use super::{Outcome, Ready, Table};
 use crate::auth::now_ms;
 use crate::db::Bind;
@@ -36,6 +35,49 @@ pub(super) const ROUTES: &Table = &[
 
 const TICKET_LIFETIME_MS: i64 = 120_000;
 const MAX_TICKETS: usize = 1024;
+const MAX_REQUESTS_PER_WINDOW: u32 = 10;
+const RATE_WINDOW_MS: i64 = 60_000;
+const MAX_KEYS: usize = 4096;
+
+/// Requests per key: key, count and window end, oldest first.
+static REQUESTS: Mutex<Vec<(String, u32, i64)>> = Mutex::new(Vec::new());
+
+/// Whether `key` may make another request in its rate window.
+fn allow_request(key: &str) -> bool {
+    allow_in(&mut crate::sync::lock(&REQUESTS), key, now_ms())
+}
+
+fn allow_in(requests: &mut Vec<(String, u32, i64)>, key: &str, now: i64) -> bool {
+    if requests.len() >= MAX_KEYS {
+        requests.retain(|(_, _, reset_at)| *reset_at > now);
+        while requests.len() >= MAX_KEYS {
+            requests.remove(0);
+        }
+    }
+    match requests.iter_mut().find(|(k, _, _)| k == key) {
+        Some(entry) if entry.2 > now => {
+            if entry.1 >= MAX_REQUESTS_PER_WINDOW {
+                return false;
+            }
+            entry.1 += 1;
+            true
+        }
+        Some(entry) => {
+            entry.1 = 1;
+            entry.2 = now + RATE_WINDOW_MS;
+            true
+        }
+        None => {
+            requests.push((key.to_owned(), 1, now + RATE_WINDOW_MS));
+            true
+        }
+    }
+}
+
+/// A ticket's SHA-256, in hex.
+fn digest(value: &str) -> String {
+    super::authcommon::hex(&<sha2::Sha256 as sha2::Digest>::digest(value.as_bytes()))
+}
 
 /// A ticket by its SHA-256 digest.
 #[derive(Debug, Clone)]
@@ -330,6 +372,25 @@ async fn redeem_route(ctx: &Ready<'_>) -> Step {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rate_windows() {
+        let mut requests = Vec::new();
+        for _ in 0..10 {
+            assert!(allow_in(&mut requests, "k", 1000), "within the window");
+        }
+        assert!(!allow_in(&mut requests, "k", 1000), "eleventh is refused");
+        assert!(allow_in(&mut requests, "k", 61_000), "a new window");
+        assert!(allow_in(&mut requests, "other", 1000), "keys apart");
+    }
+
+    #[test]
+    fn digests() {
+        assert_eq!(
+            digest("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
 
     fn ticket(id: &str, user_id: i64, expires_at: i64) -> Ticket {
         Ticket {

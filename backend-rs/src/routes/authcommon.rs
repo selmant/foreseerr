@@ -1,7 +1,7 @@
 //! What the sign-in routes share.
 //!
 //! Used by `/auth/plex`, `/auth/jellyfin*`, `/auth/reset-password*` and
-//! `/desktop/auth-tickets*`: express-session's preconditions, `req.ip`,
+//! the player pairing: express-session's preconditions, `req.ip`,
 //! the `User` entity as `toPublicJSON` prints it, users inserted the way
 //! `userRepository.save(new User(...))` inserts them, the calls Node's
 //! `JellyfinAPI` makes, and Node's job scheduler and avatar check over the
@@ -38,17 +38,6 @@ pub(super) type Step = Result<Outcome, super::Fallback>;
 /// Turn a [`Step`] into what the router expects.
 pub(super) fn finish(step: Step) -> Outcome {
     step.unwrap_or_else(Outcome::forward)
-}
-
-/// Whether the request carries a cookie named `name` at all.
-pub(super) fn has_cookie(ctx: &Ready<'_>, name: &str) -> bool {
-    ctx.req
-        .headers
-        .get_all(header::COOKIE)
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|h| h.split(';'))
-        .any(|pair| pair.split_once('=').is_some_and(|(k, _)| k.trim() == name))
 }
 
 /// `settings.main.mediaServerType`, when it is a plain integer.

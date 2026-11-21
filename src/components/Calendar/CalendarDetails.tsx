@@ -6,7 +6,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import LinkButton from '@app/components/Common/LinkButton';
 import SlideOver from '@app/components/Common/SlideOver';
 import ManageSlideOver from '@app/components/ManageSlideOver';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { usePlayInApp } from '@app/context/foreseerrPlayer';
 import { Permission, useUser } from '@app/hooks/useUser';
 import {
   ArrowTopRightOnSquareIcon,
@@ -36,7 +36,7 @@ const CalendarDetails = ({
   onClose: () => void;
 }) => {
   const intl = useIntl();
-  const { play } = useNativeRuntime();
+  const play = usePlayInApp();
   const { hasPermission } = useUser();
   const [showManage, setShowManage] = useState(false);
   // Keep rendering the last release while the panel slides out.

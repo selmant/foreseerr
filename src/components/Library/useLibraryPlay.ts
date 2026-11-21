@@ -3,7 +3,7 @@ import {
   navigatePlayFallback,
   shouldNavigatePlayFallback,
 } from '@app/components/Library/libraryPlayAction';
-import { useNativeRuntime } from '@app/context/NativeRuntimeContext';
+import { usePlayInApp } from '@app/context/foreseerrPlayer';
 import type {
   LibraryItemInspectorResponse,
   LibraryTitle,
@@ -12,7 +12,7 @@ import axios from 'axios';
 import { useCallback } from 'react';
 
 const useLibraryPlay = () => {
-  const { play } = useNativeRuntime();
+  const play = usePlayInApp();
 
   const playItem = useCallback(
     async (

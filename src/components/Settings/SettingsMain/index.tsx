@@ -8,6 +8,10 @@ import RegionSelector from '@app/components/RegionSelector';
 import CopyButton from '@app/components/Settings/CopyButton';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
 import { availableLanguages } from '@app/context/LanguageContext';
+import {
+  changeAppAddress,
+  foreseerrPlayerHost,
+} from '@app/context/foreseerrPlayer';
 import useLocale from '@app/hooks/useLocale';
 import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -84,10 +88,9 @@ const messages = defineMessages('components.Settings.SettingsMain', {
     'Base URL for YouTube videos if a self-hosted YouTube instance is used.',
   versionCheck: 'Version Check',
   versionCheckTip: 'Automatically check for new versions on GitHub.',
-  desktopMode: 'Desktop Mode',
-  desktopModeTip:
-    'Switch between the bundled standalone server and a remote Foreseerr connection. Foreseer Desktop will restart to apply the change.',
-  changeDesktopMode: 'Change Desktop Mode',
+  appAddress: 'Foreseerr Address',
+  appAddressTip: 'The Foreseerr server this app opens.',
+  changeAppAddress: 'Change Address',
   validationUrl: 'You must provide a valid URL',
 });
 
@@ -156,14 +159,7 @@ const SettingsMain = () => {
     }
   };
 
-  const canChangeDesktopMode =
-    typeof window !== 'undefined' &&
-    window.foreseerNative?.capabilities.includes('setup');
-  const openDesktopModePreferences = () => {
-    const host = window.foreseerNative;
-    if (!host?.capabilities.includes('setup')) return;
-    host.send({ type: 'runtime.open-setup', id: crypto.randomUUID() });
-  };
+  const inApp = typeof window !== 'undefined' && !!foreseerrPlayerHost();
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -709,28 +705,27 @@ const SettingsMain = () => {
                     />
                   </div>
                 </div>
-                {userHasPermission(Permission.ADMIN) &&
-                  canChangeDesktopMode && (
-                    <div className="form-row">
-                      <label className="text-label">
-                        {intl.formatMessage(messages.desktopMode)}
-                        <span className="label-tip">
-                          {intl.formatMessage(messages.desktopModeTip)}
+                {userHasPermission(Permission.ADMIN) && inApp && (
+                  <div className="form-row">
+                    <label className="text-label">
+                      {intl.formatMessage(messages.appAddress)}
+                      <span className="label-tip">
+                        {intl.formatMessage(messages.appAddressTip)}
+                      </span>
+                    </label>
+                    <div className="form-input-area">
+                      <Button
+                        buttonType="default"
+                        type="button"
+                        onClick={() => void changeAppAddress()}
+                      >
+                        <span>
+                          {intl.formatMessage(messages.changeAppAddress)}
                         </span>
-                      </label>
-                      <div className="form-input-area">
-                        <Button
-                          buttonType="default"
-                          type="button"
-                          onClick={openDesktopModePreferences}
-                        >
-                          <span>
-                            {intl.formatMessage(messages.changeDesktopMode)}
-                          </span>
-                        </Button>
-                      </div>
+                      </Button>
                     </div>
-                  )}
+                  </div>
+                )}
                 <div className="actions">
                   <div className="flex justify-end">
                     <span className="ml-3 inline-flex rounded-md shadow-sm">

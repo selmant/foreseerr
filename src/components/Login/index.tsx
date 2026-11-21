@@ -11,7 +11,10 @@ import JellyfinLogin from '@app/components/Login/JellyfinLogin';
 import LocalLogin from '@app/components/Login/LocalLogin';
 import PlexLoginButton from '@app/components/Login/PlexLoginButton';
 import PluginLogin from '@app/components/Login/PluginLogin';
-import { isUsableForeseerNative } from '@app/context/nativeRuntimeProtocol';
+import {
+  changeAppAddress,
+  foreseerrPlayerHost,
+} from '@app/context/foreseerrPlayer';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
@@ -31,7 +34,7 @@ const messages = defineMessages('components.Login', {
   signinwithjellyfin: 'Use your {mediaServerName} account',
   signinwithoverseerr: 'Use your {applicationTitle} account',
   orsigninwith: 'Or sign in with',
-  useRemoteForeseerr: 'Use a remote Foreseerr instead',
+  useOtherForeseerr: 'Use another Foreseerr server',
 });
 
 const Login = () => {
@@ -45,22 +48,11 @@ const Login = () => {
   const [mediaServerLogin, setMediaServerLogin] = useState(
     settings.currentSettings.mediaServerLogin
   );
-  const [canOpenRemoteSetup, setCanOpenRemoteSetup] = useState(false);
+  const [canChangeAddress, setCanChangeAddress] = useState(false);
 
   useEffect(() => {
-    const host = window.foreseerNative;
-    setCanOpenRemoteSetup(
-      isUsableForeseerNative(host) && host.capabilities.includes('setup')
-    );
+    setCanChangeAddress(!!foreseerrPlayerHost());
   }, []);
-
-  const openRemoteSetup = () => {
-    const host = window.foreseerNative;
-    if (!isUsableForeseerNative(host) || !host.capabilities.includes('setup')) {
-      return;
-    }
-    host.send({ type: 'runtime.open-setup', id: crypto.randomUUID() });
-  };
 
   // Effect that is triggered when the `authToken` comes back from the Plex OAuth
   // We take the token and attempt to sign in. If we get a success message, we will
@@ -280,16 +272,15 @@ const Login = () => {
                 >
                   {additionalLoginOptions}
                 </div>
-                {canOpenRemoteSetup && (
+                {canChangeAddress && (
                   <div className="mt-6">
                     <Button
                       buttonType="ghost"
                       className="w-full"
                       type="button"
-                      data-foreseer-remote-setup=""
-                      onClick={openRemoteSetup}
+                      onClick={() => void changeAppAddress()}
                     >
-                      {intl.formatMessage(messages.useRemoteForeseerr)}
+                      {intl.formatMessage(messages.useOtherForeseerr)}
                     </Button>
                   </div>
                 )}
