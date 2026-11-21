@@ -15,8 +15,10 @@ import {
   setPlayerSetting,
 } from '@app/context/foreseerrPlayer';
 import useToasts from '@app/hooks/useToasts';
+import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages(
@@ -33,6 +35,10 @@ const messages = defineMessages(
     connectFailed: 'The player could not sign in.',
     loadFailed: 'Could not load the player settings: {error}',
     saveFailed: 'Could not change “{setting}”: {error}',
+    saved: 'Player settings saved.',
+    discard: 'Discard Changes',
+    unsaved:
+      '{count, plural, one {# unsaved change} other {# unsaved changes}}',
     search: 'Search player settings',
     noResults: 'No player settings match “{query}”.',
   }
@@ -71,23 +77,47 @@ const filterPages = (
     .filter((page) => page.sections.length > 0);
 };
 
-/** The schema with one setting's value replaced, for an instant update. */
-const withValue = (
+/** The schema as it would be with the unsaved [changes] made. */
+const withChanges = (
   schema: PlayerSettingsSchema,
-  key: string,
-  value: unknown
-): PlayerSettingsSchema => ({
-  ...schema,
-  pages: schema.pages.map((page) => ({
-    ...page,
-    sections: page.sections.map((section) => ({
-      ...section,
-      settings: section.settings.map((setting) =>
-        setting.key === key ? ({ ...setting, value } as PlayerSetting) : setting
-      ),
+  changes: Map<string, unknown>
+): PlayerSettingsSchema => {
+  if (changes.size === 0) return schema;
+  const change = (setting: PlayerSetting): PlayerSetting => {
+    if (!changes.has(setting.key)) return setting;
+    const value = changes.get(setting.key);
+    if (setting.type === 'slider') {
+      const label = setting.labels?.[String(value)] ?? String(value);
+      return { ...setting, value: value as number, label };
+    }
+    return { ...setting, value } as PlayerSetting;
+  };
+  return {
+    ...schema,
+    pages: schema.pages.map((page) => ({
+      ...page,
+      sections: page.sections.map((section) => ({
+        ...section,
+        settings: section.settings.map(change),
+      })),
     })),
-  })),
-});
+  };
+};
+
+/** Every setting in [schema] by key. */
+const settingsByKey = (
+  schema: PlayerSettingsSchema
+): Map<string, PlayerSetting> =>
+  new Map(
+    schema.pages.flatMap((page) =>
+      page.sections.flatMap((section) =>
+        section.settings.map((setting) => [setting.key, setting] as const)
+      )
+    )
+  );
+
+const sameValue = (a: unknown, b: unknown): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
 
 const SliderControl = ({
   setting,
@@ -96,13 +126,6 @@ const SliderControl = ({
   setting: Extract<PlayerSetting, { type: 'slider' }>;
   onChange: (value: number) => void;
 }) => {
-  const [draft, setDraft] = useState(setting.value);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => setDraft(setting.value), [setting.value]);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  const label =
-    setting.labels?.[String(draft)] ??
-    (draft === setting.value ? setting.label : String(draft));
   return (
     <div className="flex max-w-xl items-center gap-4">
       <input
@@ -111,17 +134,14 @@ const SliderControl = ({
         min={setting.min}
         max={setting.max}
         step={setting.step}
-        value={draft}
+        value={setting.value}
         disabled={!setting.enabled}
         aria-label={setting.title}
-        onChange={(e) => {
-          const value = Number(e.target.value);
-          setDraft(value);
-          window.clearTimeout(timer.current);
-          timer.current = window.setTimeout(() => onChange(value), 400);
-        }}
+        onChange={(e) => onChange(Number(e.target.value))}
       />
-      <span className="w-24 shrink-0 text-right text-gray-300">{label}</span>
+      <span className="w-24 shrink-0 text-right text-gray-300">
+        {setting.label}
+      </span>
     </div>
   );
 };
@@ -218,6 +238,9 @@ const UserPlayerSettings = () => {
   const [notPaired, setNotPaired] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [query, setQuery] = useState('');
+  // Unsaved changes, by key, in the order they were made.
+  const [changes, setChanges] = useState<Map<string, unknown>>(new Map());
+  const [saving, setSaving] = useState(false);
   const inApp = !!foreseerrPlayerHost();
 
   const load = useCallback(async () => {
@@ -239,25 +262,50 @@ const UserPlayerSettings = () => {
   }, [inApp, load]);
 
   const change = useCallback(
-    async (setting: PlayerSetting, value: unknown) => {
-      setSchema((current) =>
-        current ? withValue(current, setting.key, value) : current
-      );
+    (setting: PlayerSetting, value: unknown) =>
+      setChanges((current) => {
+        const next = new Map(current);
+        next.delete(setting.key);
+        const saved = schema && settingsByKey(schema).get(setting.key);
+        if (!saved || !sameValue(saved.value, value)) {
+          next.set(setting.key, value);
+        }
+        return next;
+      }),
+    [schema]
+  );
+
+  // Sets the changes one at a time, in the order they were made: one can
+  // turn on or change what another offers.
+  const save = async () => {
+    if (!schema) return;
+    setSaving(true);
+    let latest = schema;
+    const failed = new Map<string, unknown>();
+    for (const [key, value] of changes) {
       try {
-        setSchema(await setPlayerSetting(setting.key, value));
+        latest = await setPlayerSetting(key, value);
       } catch (e) {
+        failed.set(key, value);
         addToast(
           intl.formatMessage(messages.saveFailed, {
-            setting: setting.title,
+            setting: settingsByKey(latest).get(key)?.title ?? key,
             error: errorText(e),
           }),
           { appearance: 'error', autoDismiss: true }
         );
-        void load();
       }
-    },
-    [addToast, intl, load]
-  );
+    }
+    setSchema(latest);
+    setChanges(failed);
+    setSaving(false);
+    if (failed.size === 0) {
+      addToast(intl.formatMessage(messages.saved), {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+    }
+  };
 
   const connect = async () => {
     setConnecting(true);
@@ -277,8 +325,9 @@ const UserPlayerSettings = () => {
   };
 
   const pages = useMemo(
-    () => (schema ? filterPages(schema.pages, query) : []),
-    [schema, query]
+    () =>
+      schema ? filterPages(withChanges(schema, changes).pages, query) : [],
+    [schema, changes, query]
   );
 
   const header = (
@@ -369,7 +418,7 @@ const UserPlayerSettings = () => {
                   <div className="form-input-area">
                     <SettingControl
                       setting={setting}
-                      onChange={(value) => void change(setting, value)}
+                      onChange={(value) => change(setting, value)}
                     />
                   </div>
                 </div>
@@ -378,6 +427,38 @@ const UserPlayerSettings = () => {
           ))}
         </div>
       ))}
+      <div className="actions sticky bottom-0 bg-gray-900 pb-5">
+        <div className="flex items-center justify-end">
+          {changes.size > 0 && (
+            <span className="mr-auto text-sm text-gray-400">
+              {intl.formatMessage(messages.unsaved, { count: changes.size })}
+            </span>
+          )}
+          <span className="ml-3 inline-flex rounded-md shadow-sm">
+            <Button
+              buttonType="default"
+              disabled={saving || changes.size === 0}
+              onClick={() => setChanges(new Map())}
+            >
+              <span>{intl.formatMessage(messages.discard)}</span>
+            </Button>
+          </span>
+          <span className="ml-3 inline-flex rounded-md shadow-sm">
+            <Button
+              buttonType="primary"
+              disabled={saving || changes.size === 0}
+              onClick={() => void save()}
+            >
+              <ArrowDownOnSquareIcon />
+              <span>
+                {intl.formatMessage(
+                  saving ? globalMessages.saving : globalMessages.save
+                )}
+              </span>
+            </Button>
+          </span>
+        </div>
+      </div>
     </>
   );
 };
