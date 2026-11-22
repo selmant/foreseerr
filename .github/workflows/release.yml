@@ -489,9 +489,26 @@ jobs:
             --certificate-identity "https://github.com/${{ github.workflow_ref }}" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" > /dev/null
 
+  desktop-app:
+    name: Desktop app
+    needs: create-draft-release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/desktop-app.yml
+    with:
+      tag: ${{ github.ref_name }}
+
   publish-release:
     name: Publish release
-    needs: [create-draft-release, runtime, quality-gate, sign]
+    needs: [create-draft-release, runtime, quality-gate, sign, desktop-app]
+    # The desktop app is extra: a failed app build doesn't hold the release
+    # back (run desktop-app.yml by hand for it afterwards).
+    if: >-
+      ${{ !cancelled()
+      && needs.create-draft-release.result == 'success'
+      && needs.runtime.result == 'success'
+      && needs.quality-gate.result == 'success'
+      && needs.sign.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
