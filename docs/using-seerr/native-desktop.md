@@ -21,7 +21,9 @@ supported by the Moonfin team; report problems with it in the
 
 ## Requirements
 
-- Linux (x64), with WebKitGTK 4.1 and libmpv from your distribution.
+- Linux (x64), with WebKitGTK 4.1 and libmpv from your distribution. Use
+  mpv 0.42 or newer: with older libmpv the app's memory grows during and
+  after every play (two mpv leaks fixed in 0.42).
   Download `foreseerr-desktop-linux-x64.tar.gz` from the
   [Foreseerr release](https://github.com/selmant/foreseerr/releases) your
   server runs (or the newest one from the
