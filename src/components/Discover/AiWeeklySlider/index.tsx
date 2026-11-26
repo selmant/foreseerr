@@ -1,6 +1,7 @@
 import AiPickCard from '@app/components/Ai/AiPickCard';
 import { useAiFeedback, useAiRun } from '@app/components/Ai/useAiRun';
 import Slider from '@app/components/Slider';
+import TitleCard from '@app/components/TitleCard';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import { useUser } from '@app/hooks/useUser';
@@ -34,7 +35,7 @@ const AiWeeklySlider = ({ title }: { title: string }) => {
   const { hasPermission } = useUser();
   const { addToast } = useToasts();
   const enabled = settings.currentSettings.aiEnabled === true;
-  const { data } = useSWR<{ run: AiRun | null }>(
+  const { data, error } = useSWR<{ run: AiRun | null }>(
     enabled ? '/api/v1/ai/weekly' : null,
     { revalidateOnFocus: false }
   );
@@ -52,7 +53,10 @@ const AiWeeklySlider = ({ title }: { title: string }) => {
     }),
     run?.request.availability
   );
-  if (!enabled || !run || picks.length === 0) {
+  // Like the other personal rows: a placeholder while it loads, then
+  // nothing once there turns out to be no picks.
+  const loading = enabled && !data && !error;
+  if (!loading && (!enabled || !run || picks.length === 0)) {
     return null;
   }
 
@@ -71,7 +75,7 @@ const AiWeeklySlider = ({ title }: { title: string }) => {
     <>
       <div className="slider-header">
         <Link
-          to={`/discover/ai?run=${run.id}`}
+          to={run ? `/discover/ai?run=${run.id}` : '/discover/ai'}
           className="slider-title min-w-0"
         >
           <CalendarDaysIcon className="!ml-0 mr-2 !h-6 !w-6 shrink-0 text-indigo-400" />
@@ -79,7 +83,7 @@ const AiWeeklySlider = ({ title }: { title: string }) => {
           <ArrowRightCircleIcon />
         </Link>
       </div>
-      {run.result?.headline ? (
+      {run?.result?.headline ? (
         <p className="-mt-1 mb-2 truncate text-sm text-gray-400">
           {run.result.headline}
         </p>
@@ -87,8 +91,9 @@ const AiWeeklySlider = ({ title }: { title: string }) => {
       <Slider
         sliderKey="ai-weekly"
         ariaLabel={title}
-        isLoading={false}
+        isLoading={loading}
         isEmpty={false}
+        placeholder={<TitleCard.Placeholder />}
         items={picks.map((pick) => (
           <AiPickCard
             key={`${pick.mediaType}-${pick.tmdbId}`}
