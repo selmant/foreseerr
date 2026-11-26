@@ -103,6 +103,7 @@ export const sliderTitles = defineMessages('components.Discover', {
   anilistlist: 'AniList List',
   mdblistlist: 'MDBList List',
   aipicks: 'AI Picks',
+  aiweekly: 'This week for you',
   simkltrending: 'Simkl Trending',
   simklplantowatch: 'Simkl Plan to Watch',
   simklwatching: 'Simkl Watching',

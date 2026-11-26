@@ -56,6 +56,8 @@ export enum DiscoverSliderType {
   SIMKL_DROPPED,
   /** AI picks for a prompt, personal to each viewer. */
   AI_PICKS = 1027,
+  /** This week's AI picks, personal to each viewer. */
+  AI_WEEKLY,
 }
 
 /** Built-in rows Simkl told us not to use (no TMDB/TVDB ids). */
@@ -242,5 +244,11 @@ export const defaultSliders: Partial<DiscoverSlider>[] = [
     enabled: true,
     isBuiltIn: true,
     order: 28,
+  },
+  {
+    type: DiscoverSliderType.AI_WEEKLY,
+    enabled: true,
+    isBuiltIn: true,
+    order: 29,
   },
 ];

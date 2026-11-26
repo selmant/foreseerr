@@ -6,6 +6,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
 import { Transition } from '@app/components/Common/Transition';
 import AiPicksSlider from '@app/components/Discover/AiPicksSlider';
+import AiWeeklySlider from '@app/components/Discover/AiWeeklySlider';
 import AnilistListSlider from '@app/components/Discover/AnilistListSlider';
 import AnilistSlider from '@app/components/Discover/AnilistSlider';
 import AnilistUserSlider from '@app/components/Discover/AnilistUserSlider';
@@ -620,6 +621,13 @@ const Discover = () => {
                   sliderId={slider.id}
                 />
               );
+            break;
+          case DiscoverSliderType.AI_WEEKLY:
+            sliderComponent = (
+              <AiWeeklySlider
+                title={intl.formatMessage(sliderTitles.aiweekly)}
+              />
+            );
             break;
           case DiscoverSliderType.MDBLIST_LIST:
             sliderComponent = (

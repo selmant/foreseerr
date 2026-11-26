@@ -379,13 +379,22 @@ fn runs_delete<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     })
 }
 
-/// `GET /ai/weekly`: their latest weekly picks, if any.
+/// `GET /ai/weekly`: their latest weekly picks, if any. None once they
+/// turned weekly picks off, so the last week's picks stop showing too.
 fn weekly<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
     answer(ctx, |ctx, user| async move {
         active(ctx, user.id).await;
-        let run = store::latest_weekly(&ctx.state.db, user.id)
+        let wanted = crate::ai::store::prefs(&ctx.state.db, user.id)
             .await
-            .map_err(|e| db_err(&e))?;
+            .map_err(|e| db_err(&e))?
+            .weekly_picks;
+        let run = if wanted {
+            store::latest_weekly(&ctx.state.db, user.id)
+                .await
+                .map_err(|e| db_err(&e))?
+        } else {
+            None
+        };
         Ok(json!({"run": match run {
             Some(r) => Some(run_view(ctx, user.id, &r).await?),
             None => None,

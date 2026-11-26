@@ -167,6 +167,8 @@ const UserDiscoverSettings = () => {
       if (aiChanged) {
         const res = await axios.post<AiMe>('/api/v1/ai/me', aiDraft);
         await globalMutate('/api/v1/ai/me', res.data, { revalidate: false });
+        // The weekly picks hide or come back with the toggle.
+        void globalMutate('/api/v1/ai/weekly');
         setAiDraft({});
       }
       addToast(intl.formatMessage(messages.toastSettingsSuccess), {
