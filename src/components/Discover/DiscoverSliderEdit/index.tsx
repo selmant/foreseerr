@@ -231,6 +231,8 @@ const DiscoverSliderEdit = ({
         return slider.title || intl.formatMessage(sliderTitles.mdblistlist);
       case DiscoverSliderType.AI_PICKS:
         return slider.title || intl.formatMessage(sliderTitles.aipicks);
+      case DiscoverSliderType.AI_WEEKLY:
+        return intl.formatMessage(sliderTitles.aiweekly);
       case DiscoverSliderType.SIMKL_TRENDING:
         return intl.formatMessage(sliderTitles.simkltrending);
       case DiscoverSliderType.SIMKL_PLAN_TO_WATCH:

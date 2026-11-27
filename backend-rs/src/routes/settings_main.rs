@@ -772,7 +772,7 @@ fn discover<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
 }
 
 /// `defaultSliders`: type and order of each built-in slider.
-const DEFAULT_SLIDERS: [(i64, i64); 29] = [
+const DEFAULT_SLIDERS: [(i64, i64); 30] = [
     (1, 0),
     (2, 1),
     (3, 2),
@@ -802,6 +802,8 @@ const DEFAULT_SLIDERS: [(i64, i64); 29] = [
     (1024, 26),
     (1025, 27),
     (1026, 28),
+    // This week for you: each person's weekly AI picks.
+    (1028, 29),
 ];
 
 /// `clear()` then `DiscoverSlider.bootstrapSliders()`.
