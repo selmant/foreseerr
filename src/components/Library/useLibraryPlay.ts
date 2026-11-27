@@ -46,7 +46,12 @@ const useLibraryPlay = () => {
       }
 
       if (!itemId) {
-        onNeedInspector?.(item);
+        // Show the details instead of following the card's Jellyfin link,
+        // which the app would open in the browser.
+        if (onNeedInspector) {
+          event.preventDefault();
+          onNeedInspector(item);
+        }
         return false;
       }
 
