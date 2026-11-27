@@ -187,9 +187,9 @@ const TmdbTitleCard = ({
       ? `/api/v1/movie/${resolvedTmdbId}`
       : `/api/v1/tv/${resolvedTmdbId}`
     : null;
-  const { data: title, error } = useSWR<MovieDetails | TvDetails>(
-    (detailsWanted || (detailsOnView && inView)) && url ? url : null
-  );
+  const detailsKey =
+    (detailsWanted || (detailsOnView && inView)) && url ? url : null;
+  const { data: title, error } = useSWR<MovieDetails | TvDetails>(detailsKey);
 
   const showUnmapped =
     Boolean(source) &&
@@ -253,7 +253,10 @@ const TmdbTitleCard = ({
   if (!title && !error) {
     return (
       <div ref={ref}>
-        <TitleCard.Placeholder canExpand={canExpand} />
+        <TitleCard.Placeholder
+          canExpand={canExpand}
+          loading={detailsKey !== null}
+        />
       </div>
     );
   }
