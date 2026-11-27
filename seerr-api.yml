@@ -897,10 +897,11 @@ components:
           example: 'your-trakt-client-id'
         clientSecret:
           type: string
-          description: Masked on GET responses when configured
+          description: Optional; Trakt apps created since 2026-10-01 have none. Masked on GET responses when set
           example: '********'
         configured:
           type: boolean
+          description: True once a Client ID is saved (or, with Better Trakt, Jellyfin is set up)
           example: true
         actionsEnabled:
           type: boolean

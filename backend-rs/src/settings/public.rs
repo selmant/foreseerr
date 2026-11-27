@@ -179,7 +179,8 @@ fn integration_fields(settings: &Settings, plugin_mode: bool) -> Vec<(&'static s
     let trakt_configured = if settings.str("/trakt/provider") == "jellyfin" {
         truthy(settings.get("/jellyfin/ip"))
     } else {
-        truthy(settings.get("/trakt/clientId")) && truthy(settings.get("/trakt/clientSecret"))
+        // The secret is optional: Trakt apps made since 2026-10-01 have none.
+        truthy(settings.get("/trakt/clientId"))
     };
     let provider_enabled = |name: &str| {
         Value::Bool(not_false(

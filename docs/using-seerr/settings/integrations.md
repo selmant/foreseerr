@@ -22,10 +22,13 @@ For Radarr/Sonarr field-by-field setup, see [Services](services.md).
 
 Trakt powers personalized Discover rows and watched/rating actions.
 
-1. Create an API app at [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications).
-2. Enter the client ID and secret in **Settings → Integrations → Trakt**, or
-   switch the instance to **Better Trakt via Jellyfin** if that plugin is
-   installed.
+1. Create an app at [developer.trakt.tv](https://developer.trakt.tv/apps) and
+   set its redirect URI to `urn:ietf:wg:oauth:2.0:oob`. A new app is a
+   Development app: you and up to 16 people you invite can link it.
+2. Enter the Client ID in **Settings → Integrations → Trakt**, or switch the
+   instance to **Better Trakt via Jellyfin** if that plugin is installed.
+   Apps created since October 2026 have no Client Secret, so leave that field
+   blank. Older apps can keep using theirs.
 3. Direct Trakt users link in **Linked Accounts** with a device code
    (`trakt.tv/activate`). Better Trakt users link inside Jellyfin.
 

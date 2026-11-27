@@ -192,11 +192,13 @@ impl TraktError {
     }
 }
 
-/// `getTraktAppCredentials`: the trimmed client id and secret.
+/// `getTraktAppCredentials`: the trimmed client id and secret. The secret
+/// may be empty: Trakt stopped issuing one to new apps on 2026-10-01, and
+/// those sign users in with the client id alone.
 ///
 /// # Errors
 ///
-/// `NotConfigured` when either is blank.
+/// `NotConfigured` when the client id is blank.
 pub fn app_credentials(settings: &Settings) -> Result<(String, String), TraktError> {
     let read = |pointer: &str| match settings.get(pointer) {
         None | Some(Value::Null) => Ok(String::new()),
@@ -210,10 +212,16 @@ pub fn app_credentials(settings: &Settings) -> Result<(String, String), TraktErr
         return Err(TraktError::NotConfigured);
     }
     let secret = read("/trakt/clientSecret")?;
-    if secret.is_empty() {
-        return Err(TraktError::NotConfigured);
-    }
     Ok((id, secret))
+}
+
+/// Adds `client_secret` to a Trakt OAuth body when the app has one. Trakt
+/// marks it optional on every `/oauth` body, and apps created since
+/// 2026-10-01 have none to send.
+pub fn insert_secret(body: &mut Map<String, Value>, secret: &str) {
+    if !secret.is_empty() {
+        body.insert(String::from("client_secret"), Value::from(secret));
+    }
 }
 
 /// `TraktFetchMediaType`.
@@ -1176,6 +1184,45 @@ impl TraktClient {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn app_credentials_need_only_a_client_id() -> anyhow::Result<()> {
+        let of = |trakt: Value| Settings::from_file_value(json!({ "trakt": trakt }), None);
+        let secretless = of(json!({"clientId": " id ", "clientSecret": ""}))?;
+        assert_eq!(
+            app_credentials(&secretless).ok(),
+            Some((String::from("id"), String::new())),
+            "an app made since 2026-10-01 has no secret"
+        );
+        let legacy = of(json!({"clientId": "id", "clientSecret": " secret "}))?;
+        assert_eq!(
+            app_credentials(&legacy).ok(),
+            Some((String::from("id"), String::from("secret"))),
+            "an older app keeps its secret"
+        );
+        let blank = of(json!({"clientId": "  ", "clientSecret": "secret"}))?;
+        assert!(
+            matches!(app_credentials(&blank), Err(TraktError::NotConfigured)),
+            "no client id is not configured"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn insert_secret_skips_a_blank_one() {
+        let mut body = Map::new();
+        insert_secret(&mut body, "");
+        assert!(
+            !body.contains_key("client_secret"),
+            "blank secret is left out"
+        );
+        insert_secret(&mut body, "s");
+        assert_eq!(
+            body.get("client_secret"),
+            Some(&json!("s")),
+            "set secret is sent"
+        );
+    }
 
     #[test]
     fn parses_retry_after_like_parse_int() {

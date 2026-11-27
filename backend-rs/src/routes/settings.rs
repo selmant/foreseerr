@@ -203,7 +203,7 @@ pub(super) fn trakt<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let configured = if provider == "jellyfin" {
             truthy(s.get("/jellyfin/ip"))
         } else {
-            truthy(s.get("/trakt/clientId")) && truthy(s.get("/trakt/clientSecret"))
+            truthy(s.get("/trakt/clientId"))
         };
         let mut out = Map::new();
         out.insert(String::from("provider"), Value::from(provider));

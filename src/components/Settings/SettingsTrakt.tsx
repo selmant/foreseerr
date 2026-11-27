@@ -47,13 +47,14 @@ const messages = defineMessages('components.Settings.SettingsTrakt', {
   directSetupDescription:
     'Create a Trakt application, then enter its credentials below. Each Foreseerr user will authorize it separately.',
   createAppTip:
-    'Create an API app at <TraktAppLink>trakt.tv/oauth/applications</TraktAppLink>. Set its redirect URI to urn:ietf:wg:oauth:2.0:oob.',
+    'Create an app at <TraktAppLink>developer.trakt.tv</TraktAppLink> and set its redirect URI to urn:ietf:wg:oauth:2.0:oob.',
   clientId: 'Client ID',
   clientSecret: 'Client Secret',
   validationClientId: 'You must provide a Client ID',
-  validationClientSecret: 'You must provide a Client Secret',
   clientSecretTip:
     'A secret is saved. Leave this blank to keep it, or enter a replacement',
+  clientSecretOptionalTip:
+    'Only apps created before October 2026 have one. Leave this blank for newer apps.',
   showSecret: 'Show Client Secret',
   hideSecret: 'Hide Client Secret',
   behavior: 'Shared Behavior',
@@ -141,6 +142,7 @@ const SettingsTrakt = forwardRef<HTMLDivElement, SettingsTraktProps>(
     const [pending, setPending] = useState<PendingConfirmation>();
     const linkedAccountCount = data?.linkedAccountCount ?? 0;
     const directConfigured = data?.provider === 'direct' && data.configured;
+    const secretSaved = directConfigured && data.clientSecret !== '';
     const activeHealth = health?.trakt;
 
     const refreshHealth = async () => {
@@ -228,14 +230,6 @@ const SettingsTrakt = forwardRef<HTMLDivElement, SettingsTraktProps>(
               schema
                 .trim()
                 .required(intl.formatMessage(messages.validationClientId)),
-          }),
-          clientSecret: Yup.string().when('provider', {
-            is: (provider: TraktProvider) =>
-              provider === 'direct' && !directConfigured,
-            then: (schema) =>
-              schema
-                .trim()
-                .required(intl.formatMessage(messages.validationClientSecret)),
           }),
         })}
         onSubmit={async (values) => {
@@ -410,7 +404,7 @@ const SettingsTrakt = forwardRef<HTMLDivElement, SettingsTraktProps>(
                         {intl.formatMessage(messages.createAppTip, {
                           TraktAppLink: (msg: ReactNode) => (
                             <a
-                              href="https://trakt.tv/oauth/applications"
+                              href="https://developer.trakt.tv/apps"
                               target="_blank"
                               rel="noreferrer"
                               className="text-white underline transition hover:text-gray-200"
@@ -445,13 +439,13 @@ const SettingsTrakt = forwardRef<HTMLDivElement, SettingsTraktProps>(
                           className="text-label"
                         >
                           {intl.formatMessage(messages.clientSecret)}
-                          {directConfigured ? (
-                            <span className="label-tip">
-                              {intl.formatMessage(messages.clientSecretTip)}
-                            </span>
-                          ) : (
-                            <span className="label-required">*</span>
-                          )}
+                          <span className="label-tip">
+                            {intl.formatMessage(
+                              secretSaved
+                                ? messages.clientSecretTip
+                                : messages.clientSecretOptionalTip
+                            )}
+                          </span>
                         </label>
                         <div className="form-input-area">
                           <div className="form-input-field">
@@ -468,9 +462,6 @@ const SettingsTrakt = forwardRef<HTMLDivElement, SettingsTraktProps>(
                               )}
                             />
                           </div>
-                          {errors.clientSecret && touched.clientSecret && (
-                            <div className="error">{errors.clientSecret}</div>
-                          )}
                         </div>
                       </div>
                     </>
