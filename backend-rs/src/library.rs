@@ -414,6 +414,8 @@ impl Lib<'_> {
                 "jellyfinSeriesId",
                 (media.media_type == "tv").then(|| Value::from(item_id.as_str())),
             );
+            // A movie plays its own item; a series gets an episode in `enrich`.
+            title.set("playItemId", movie.then(|| Value::from(item_id.as_str())));
             title.put("title", Value::from(if movie { "Movie" } else { "Series" }));
             let url = if is4k {
                 &media.media_url4k
@@ -764,6 +766,8 @@ impl Lib<'_> {
                 "jellyfinSeriesId",
                 (media.media_type == "tv").then(|| Value::from(item_id.as_str())),
             );
+            // A movie plays its own item; a series gets an episode in `enrich`.
+            title.set("playItemId", movie.then(|| Value::from(item_id.as_str())));
             title.put("title", Value::from(if movie { "Movie" } else { "Series" }));
             title.set(
                 "mediaUrl",
