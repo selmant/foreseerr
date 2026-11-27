@@ -180,19 +180,29 @@ fn trakt<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let (client_id, client_secret) = if jellyfin {
             (Value::from(""), Value::from(""))
         } else {
+            let client_id = Value::from(body_text(body, "clientId"));
+            // A blank secret keeps the saved one for the same app. For a
+            // new Client ID it means the app has none: Trakt stopped
+            // issuing secrets to new apps on 2026-10-01.
             let secret = body_text(body, "clientSecret");
-            let secret = if secret.is_empty() || secret == MASK {
-                previous_secret.clone().unwrap_or(Value::Null)
+            let keep =
+                secret == MASK || secret.is_empty() && previous_id.as_ref() == Some(&client_id);
+            let secret = if keep {
+                previous_secret.clone().unwrap_or_else(|| Value::from(""))
             } else {
                 Value::from(secret)
             };
-            (Value::from(body_text(body, "clientId")), secret)
+            (client_id, secret)
         };
-        let credentials_changing = previous_id.as_ref() != Some(&client_id)
-            || previous_secret.as_ref() != Some(&client_secret);
+        // An unset secret and a blank one are the same app.
+        let secret_changing = previous_secret.as_ref().map_or_else(
+            || truthy(Some(&client_secret)),
+            |previous| previous != &client_secret,
+        );
+        let credentials_changing = previous_id.as_ref() != Some(&client_id) || secret_changing;
         let provider_changing = was_jellyfin != jellyfin;
-        if !(jellyfin || truthy(Some(&client_id)) && truthy(Some(&client_secret))) {
-            return ctx.error(400, "A Trakt Client ID and Client Secret are required.");
+        if !(jellyfin || truthy(Some(&client_id))) {
+            return ctx.error(400, "A Trakt Client ID is required.");
         }
         if jellyfin && provider_changing {
             if !is_true(body, "confirmProviderSwitch") {
@@ -269,7 +279,7 @@ fn trakt<'a>(ctx: &'a Ready<'a>) -> Native<'a> {
         let configured = if jellyfin {
             truthy(data.pointer("/jellyfin/ip"))
         } else {
-            truthy(data.pointer("/trakt/clientId")) && truthy(data.pointer("/trakt/clientSecret"))
+            truthy(data.pointer("/trakt/clientId"))
         };
         let mut out = Map::new();
         out.insert(String::from("provider"), Value::from(provider));

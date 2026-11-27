@@ -147,7 +147,7 @@ async fn refresh(
         .map_err(|e| thrown("Error", &format!("{e:#}")))?;
     let client_id = crate::jsval::trim(settings.str("/trakt/clientId")).to_owned();
     let client_secret = crate::jsval::trim(settings.str("/trakt/clientSecret")).to_owned();
-    if client_id.is_empty() || client_secret.is_empty() {
+    if client_id.is_empty() {
         return Err(thrown(
             "TraktNotConfiguredError",
             "Trakt application credentials are not configured",
@@ -217,7 +217,7 @@ async fn post_refresh(
     let mut body = Map::new();
     body.insert(String::from("refresh_token"), Value::from(refresh_token));
     body.insert(String::from("client_id"), Value::from(client_id));
-    body.insert(String::from("client_secret"), Value::from(client_secret));
+    crate::trakt::insert_secret(&mut body, client_secret);
     body.insert(
         String::from("redirect_uri"),
         Value::from("urn:ietf:wg:oauth:2.0:oob"),

@@ -299,13 +299,15 @@ impl TraktUser {
                 "Cannot refresh Trakt token without a refresh token",
             ));
         }
-        let body = json!({
+        let mut body = json!({
             "refresh_token": self.refresh_token,
             "client_id": self.client_id,
-            "client_secret": self.client_secret,
             "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
             "grant_type": "refresh_token",
         });
+        if let Some(map) = body.as_object_mut() {
+            crate::trakt::insert_secret(map, &self.client_secret);
+        }
         let (status, _, data) = trakt_send(
             ctx,
             Method::POST,
@@ -579,11 +581,13 @@ async fn poll_for_token(
     client_secret: &str,
     device_code: &str,
 ) -> Result<Poll, String> {
-    let body = json!({
+    let mut body = json!({
         "code": device_code,
         "client_id": client_id,
-        "client_secret": client_secret,
     });
+    if let Some(map) = body.as_object_mut() {
+        crate::trakt::insert_secret(map, client_secret);
+    }
     let (status, _, data) = trakt_send(
         ctx,
         Method::POST,

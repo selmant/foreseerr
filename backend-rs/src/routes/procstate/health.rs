@@ -131,11 +131,15 @@ async fn direct_trakt(state: &AppState, settings: &Settings) -> Map<String, Valu
     }
     let client_id = settings.get("/trakt/clientId");
     let client_secret = settings.get("/trakt/clientSecret");
-    if !truthy(client_id) || !truthy(client_secret) {
+    if !truthy(client_id) {
         return not_configured("Trakt application credentials are not configured.");
     }
     let id = crate::media::js_string(client_id).into_owned();
-    let secret = crate::media::js_string(client_secret).into_owned();
+    let secret = if truthy(client_secret) {
+        crate::media::js_string(client_secret).into_owned()
+    } else {
+        String::new()
+    };
     if validate_trakt_credentials(&state.outbound, &id, &secret).await {
         healthy("Trakt is reachable and the Client ID was accepted.")
     } else {
@@ -166,8 +170,9 @@ async fn trakt_raw_post(
 }
 
 /// `validateApplicationCredentials()`: a device code for the client id,
-/// then a refresh with a dummy token that only a wrong secret answers with
-/// 401 or 403.
+/// then, for an app with a secret, a refresh with a dummy token that only
+/// a wrong secret answers with 401 or 403. Apps created since 2026-10-01
+/// have no secret, so the device code is the whole check.
 pub(crate) async fn validate_trakt_credentials(
     client: &reqwest::Client,
     client_id: &str,
@@ -185,6 +190,9 @@ pub(crate) async fn validate_trakt_credentials(
     .is_some_and(|status| (200..300).contains(&status));
     if !code_ok {
         return false;
+    }
+    if secret.is_empty() {
+        return true;
     }
     let mut token = Map::new();
     token.insert(
