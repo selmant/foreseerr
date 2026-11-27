@@ -410,7 +410,7 @@ const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
   if (!title && !error) {
     return (
       <div
-        className="h-64 w-full animate-pulse rounded-xl bg-gray-800 xl:h-28"
+        className={`h-64 w-full ${inView ? 'animate-pulse' : ''} rounded-xl bg-gray-800 xl:h-28`}
         ref={ref}
       />
     );

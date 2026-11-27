@@ -59,9 +59,18 @@ const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
   return (movie as MovieDetails).title !== undefined;
 };
 
-const RequestCardPlaceholder = () => {
+interface RequestCardPlaceholderProps {
+  /** Pulse only while something loads; a card waiting to scroll into view stays still. */
+  loading?: boolean;
+}
+
+const RequestCardPlaceholder = ({
+  loading = true,
+}: RequestCardPlaceholderProps) => {
   return (
-    <div className="relative w-72 animate-pulse rounded-xl bg-gray-700 p-4 sm:w-96">
+    <div
+      className={`relative w-72 ${loading ? 'animate-pulse' : ''} rounded-xl bg-gray-700 p-4 sm:w-96`}
+    >
       <div className="w-20 sm:w-28">
         <div className="w-full" style={{ paddingBottom: '150%' }} />
       </div>
@@ -327,7 +336,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
   if (!title && !error) {
     return (
       <div ref={ref}>
-        <RequestCardPlaceholder />
+        <RequestCardPlaceholder loading={inView} />
       </div>
     );
   }
